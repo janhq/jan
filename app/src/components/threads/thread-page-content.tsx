@@ -1,4 +1,3 @@
-/* eslint-disable no-case-declarations */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import ChatInput from '@/components/chat-input'
 import { AppSidebar } from '@/components/sidebar/app-sidebar'
@@ -11,37 +10,16 @@ import {
   ConversationContent,
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation'
-import {
-  Message,
-  MessageContent,
-  MessageResponse,
-  MessageActions,
-  MessageAction,
-  MessageAttachments,
-  MessageAttachment,
-} from '@/components/ai-elements/message'
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input'
-import {
-  Reasoning,
-  ReasoningTrigger,
-  ReasoningContent,
-} from '@/components/ai-elements/reasoning'
-import {
-  Tool,
-  ToolHeader,
-  ToolContent,
-  ToolInput,
-  ToolOutput,
-} from '@/components/ai-elements/tool'
-import { CopyIcon, Loader, CheckIcon, RefreshCcwIcon } from 'lucide-react'
+import { Loader } from 'lucide-react'
 import { useModels } from '@/stores/models-store'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useConversations } from '@/stores/conversation-store'
-import { twMerge } from 'tailwind-merge'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
-import { cn } from '@/lib/utils'
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
+import type { UIMessage } from 'ai'
+import { MessageItem } from './message-item'
 
 interface ThreadPageContentProps {
   conversationId?: string
@@ -63,13 +41,6 @@ export function ThreadPageContent({
     (state) => state.deepResearchEnabled
   )
   const enableThinking = useCapabilities((state) => state.reasoningEnabled)
-  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
-  const [editContent, setEditContent] = useState<string>('')
-
-  const editMessage = useConversations((state) => state.editMessage)
-  const regenerateMessage = useConversations((state) => state.regenerateMessage)
-  // const deleteMessage = useConversations((state) => state.deleteMessage)
 
   const provider = janProvider(
     conversationId,
@@ -80,6 +51,8 @@ export function ThreadPageContent({
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
   const tools = useRef<any>([])
+  const messagesRef = useRef<UIMessage[]>([])
+  const idMapRef = useRef<Map<string, string>>(new Map()) // temp ID -> real ID
 
   const {
     messages,
@@ -90,6 +63,7 @@ export function ThreadPageContent({
     addToolOutput,
     stop,
   } = useChat(provider(selectedModel?.id), {
+    experimental_throttle: 50,
     onFinish: () => {
       initialMessageSentRef.current = false
       const hadToolCalls = tools.current.length > 0
@@ -125,9 +99,18 @@ export function ThreadPageContent({
       )
         .then(() => {
           if (conversationId && !isPrivateChat && !hadToolCalls) {
-            // Refresh messages from backend to sync IDs for edit/regenerate operations
-            // The AI SDK generates temporary IDs during streaming, but the backend has the real IDs
-            getUIMessages(conversationId).then(setMessages).catch(console.error)
+            // Build ID mapping without updating state to avoid scroll jump
+            getUIMessages(conversationId)
+              .then((backendMessages) => {
+                const currentMessages = messagesRef.current
+                currentMessages.forEach((msg, index) => {
+                  const backendMsg = backendMessages[index]
+                  if (backendMsg && msg.id !== backendMsg.id) {
+                    idMapRef.current.set(msg.id, backendMsg.id)
+                  }
+                })
+              })
+              .catch(console.error)
           }
         })
         .finally(() => {
@@ -140,6 +123,46 @@ export function ThreadPageContent({
       return
     },
   })
+
+  // Keep ref in sync for use in onFinish closure
+  messagesRef.current = messages
+
+  // Resolve temp ID to real backend ID
+  const resolveMessageId = (tempId: string) =>
+    idMapRef.current.get(tempId) ?? tempId
+
+  const regenerateMessage = useConversations((state) => state.regenerateMessage)
+
+  const handleRegenerate = async (messageId: string) => {
+    if (!conversationId) return
+    try {
+      const realId = resolveMessageId(messageId)
+      const response = await regenerateMessage(conversationId, realId)
+
+      if (response.branch_created && response.branch) {
+        // Start regeneration immediately - don't wait for getUIMessages
+        setTimeout(() => regenerate(), 0)
+
+        // Fetch IDs in background for future operations
+        getUIMessages(conversationId, response.branch)
+          .then((branchMessages) => {
+            const currentMessages = messagesRef.current
+            const regenIndex = currentMessages.findIndex((m) => m.id === messageId)
+
+            // Build ID mapping in background
+            branchMessages.forEach((branchMsg, i) => {
+              const current = currentMessages[i]
+              if (i < regenIndex && current && current.id !== branchMsg.id) {
+                idMapRef.current.set(current.id, branchMsg.id)
+              }
+            })
+          })
+          .catch(console.error)
+      }
+    } catch (error) {
+      console.error('Failed to regenerate:', error)
+    }
+  }
 
   const handleSubmit = (message?: PromptInputMessage) => {
     if (message && status !== 'streaming') {
@@ -243,355 +266,15 @@ export function ThreadPageContent({
             <Conversation className="absolute inset-0 text-start">
               <ConversationContent className="max-w-3xl mx-auto">
                 {messages.map((message, messageIndex) => (
-                  <div key={message.id}>
-                    {message.parts.map((part, i) => {
-                      const isFirstMessage = messageIndex === 0
-                      const isLastMessage = messageIndex === messages.length - 1
-                      const isLastPart = i === message.parts.length - 1
-
-                      switch (part.type) {
-                        case 'text':
-                          const isEditing = editingMessageId === message.id
-                          return (
-                            <Message
-                              key={`${message.id}-${i}`}
-                              from={message.role}
-                              className={cn(
-                                isFirstMessage &&
-                                  message.role === 'user' &&
-                                  'mt-0!'
-                              )}
-                            >
-                              <MessageContent
-                                className={cn(
-                                  'leading-relaxed',
-                                  message.role === 'user' &&
-                                    'whitespace-pre-wrap'
-                                )}
-                              >
-                                {/* Note currently we don't use editig Feature */}
-                                {isEditing && message.role === 'user' ? (
-                                  <div className="flex flex-col gap-2">
-                                    <textarea
-                                      className="w-full p-2 border rounded-md bg-background text-foreground resize-none"
-                                      value={editContent}
-                                      onChange={(e) =>
-                                        setEditContent(e.target.value)
-                                      }
-                                      rows={3}
-                                      autoFocus
-                                    />
-                                    <div className="flex gap-2 justify-end">
-                                      <button
-                                        className="px-3 py-1 text-sm rounded-md bg-muted hover:bg-muted/80"
-                                        onClick={() => {
-                                          setEditingMessageId(null)
-                                          setEditContent('')
-                                        }}
-                                      >
-                                        Cancel
-                                      </button>
-                                      <button
-                                        className="px-3 py-1 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
-                                        onClick={async () => {
-                                          if (
-                                            conversationId &&
-                                            editContent.trim()
-                                          ) {
-                                            try {
-                                              const response =
-                                                await editMessage(
-                                                  conversationId,
-                                                  message.id,
-                                                  editContent.trim()
-                                                )
-                                              setEditingMessageId(null)
-                                              setEditContent('')
-                                              // Load the new branch's messages and trigger regeneration
-                                              if (
-                                                response.branch_created &&
-                                                response.branch
-                                              ) {
-                                                const branchMessages =
-                                                  await getUIMessages(
-                                                    conversationId,
-                                                    response.branch
-                                                  )
-                                                setMessages(branchMessages)
-                                                // Trigger a new chat completion to generate the AI response
-                                                // Use setTimeout to ensure setMessages state update is applied first
-                                                // Use regenerate() which resubmits the last user message without re-adding it
-                                                setTimeout(
-                                                  () => regenerate(),
-                                                  0
-                                                )
-                                              }
-                                            } catch (error) {
-                                              console.error(
-                                                'Failed to edit message:',
-                                                error
-                                              )
-                                            }
-                                          }
-                                        }}
-                                      >
-                                        Save & Regenerate
-                                      </button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <>
-                                    {message.role === 'user' ? (
-                                      part.text
-                                    ) : (
-                                      <MessageResponse>
-                                        {part.text}
-                                      </MessageResponse>
-                                    )}
-                                  </>
-                                )}
-                              </MessageContent>
-                              {/* Temporary hide Edit and delete button for user messages */}
-                              {/* {message.role === 'user' &&
-                                !isEditing &&
-                                conversationId && (
-                                  <MessageActions className="mt-1 gap-0 ml-auto justify-end w-fit">
-                                    <MessageAction
-                                      onClick={() => {
-                                        setEditingMessageId(message.id)
-                                        setEditContent(part.text)
-                                      }}
-                                      label="Edit"
-                                    >
-                                      <PencilIcon className="text-muted-foreground size-3" />
-                                    </MessageAction>
-                                    <MessageAction
-                                      onClick={async () => {
-                                        try {
-                                          await deleteMessage(
-                                            conversationId,
-                                            message.id
-                                          )
-                                          // Refresh messages after deletion
-                                          const updatedMessages =
-                                            await getUIMessages(conversationId)
-                                          setMessages(updatedMessages)
-                                        } catch (error) {
-                                          console.error(
-                                            'Failed to delete message:',
-                                            error
-                                          )
-                                        }
-                                      }}
-                                      label="Delete"
-                                    >
-                                      <Trash2Icon className="text-muted-foreground size-3" />
-                                    </MessageAction>
-                                  </MessageActions>
-                                )} */}
-                              {message.role === 'assistant' &&
-                                isLastMessage &&
-                                isLastPart && (
-                                  <MessageActions className="mt-1 gap-0">
-                                    <MessageAction
-                                      onClick={() => {
-                                        navigator.clipboard.writeText(
-                                          part.text.trim()
-                                        )
-                                        setCopiedMessageId(message.id)
-                                        setTimeout(
-                                          () => setCopiedMessageId(null),
-                                          2000
-                                        )
-                                      }}
-                                      label="Copy"
-                                    >
-                                      {copiedMessageId === message.id ? (
-                                        <CheckIcon className="text-green-600 dark:text-green-400 size-3" />
-                                      ) : (
-                                        <CopyIcon className="text-muted-foreground size-3" />
-                                      )}
-                                    </MessageAction>
-                                    {conversationId && (
-                                      <MessageAction
-                                        onClick={async () => {
-                                          try {
-                                            const response =
-                                              await regenerateMessage(
-                                                conversationId,
-                                                message.id
-                                              )
-                                            // Load the new branch's messages (this includes the user message to regenerate from)
-                                            if (
-                                              response.branch_created &&
-                                              response.branch
-                                            ) {
-                                              const branchMessages =
-                                                await getUIMessages(
-                                                  conversationId,
-                                                  response.branch
-                                                )
-                                              setMessages(branchMessages)
-                                              // Trigger a new chat completion to regenerate the response
-                                              // Use setTimeout to ensure setMessages state update is applied first
-                                              // Use regenerate() which resubmits the last user message without re-adding it
-                                              setTimeout(() => regenerate(), 0)
-                                            }
-                                          } catch (error) {
-                                            console.error(
-                                              'Failed to regenerate:',
-                                              error
-                                            )
-                                          }
-                                        }}
-                                        label="Retry"
-                                      >
-                                        <RefreshCcwIcon className="text-muted-foreground size-3" />
-                                      </MessageAction>
-                                    )}
-
-                                    {/* Temporary hide till product guy decide we should have this feature? */}
-                                    {/* {conversationId && (
-                                      <MessageAction
-                                        onClick={async () => {
-                                          try {
-                                            await deleteMessage(
-                                              conversationId,
-                                              message.id
-                                            )
-                                            // Refresh messages after deletion
-                                            const updatedMessages =
-                                              await getUIMessages(
-                                                conversationId
-                                              )
-                                            setMessages(updatedMessages)
-                                          } catch (error) {
-                                            console.error(
-                                              'Failed to delete message:',
-                                              error
-                                            )
-                                          }
-                                        }}
-                                        label="Delete"
-                                      >
-                                        <Trash2Icon className="text-muted-foreground size-3" />
-                                      </MessageAction>
-                                    )} */}
-
-                                    {/* Temporary hide till we have function */}
-                                    {/* <MessageAction label="Like">
-                                      <ThumbsUpIcon className="text-muted-foreground size-3" />
-                                    </MessageAction> */}
-                                    {/* <MessageAction label="Dislike">
-                                      <ThumbsDownIcon className="text-muted-foreground size-3" />
-                                    </MessageAction> */}
-                                  </MessageActions>
-                                )}
-                            </Message>
-                          )
-                        case 'file':
-                          return (
-                            <MessageAttachments className="mb-2">
-                              <MessageAttachment
-                                data={part}
-                                key={part.filename || 'image'}
-                              />
-                            </MessageAttachments>
-                          )
-
-                        case 'reasoning':
-                          return (
-                            <Reasoning
-                              key={`${message.id}-${i}`}
-                              className="w-full text-muted-foreground"
-                              isStreaming={
-                                status === 'streaming' &&
-                                isLastPart &&
-                                isLastMessage
-                              }
-                              defaultOpen={
-                                status === 'streaming' && isLastMessage
-                              }
-                            >
-                              <ReasoningTrigger />
-                              <div className="relative">
-                                {status === 'streaming' && isLastMessage && (
-                                  <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-background to-transparent pointer-events-none z-10" />
-                                )}
-                                <div
-                                  ref={
-                                    status === 'streaming' && isLastMessage
-                                      ? reasoningContainerRef
-                                      : null
-                                  }
-                                  className={twMerge(
-                                    'w-full overflow-auto relative',
-                                    status === 'streaming' && isLastMessage
-                                      ? 'max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
-                                      : 'h-auto opacity-100'
-                                  )}
-                                >
-                                  <ReasoningContent>
-                                    {part.text}
-                                  </ReasoningContent>
-                                </div>
-                              </div>
-                            </Reasoning>
-                          )
-
-                        default:
-                          // Handle all tool-* cases (tool-call, tool-result, etc.)
-                          if (!part.type.startsWith('tool-')) {
-                            return null
-                          }
-                          // Type narrowing: ensure part has tool-related properties
-                          if (!('state' in part)) {
-                            return null
-                          }
-                          // Extract tool name from the type (e.g., 'tool-call-web_search' -> 'web_search')
-                          const toolName = part.type
-                            .split('-')
-                            .slice(1)
-                            .join('-')
-                          return (
-                            <Tool
-                              key={`${message.id}-${i}`}
-                              className={cn(i < 2 && 'mt-4')}
-                            >
-                              <ToolHeader
-                                title={toolName}
-                                type={part.type as `tool-${string}`}
-                                state={part.state}
-                              />
-                              <ToolContent>
-                                {<ToolInput input={part.input} />}
-                                {part.state === 'output-available' &&
-                                  'output' in part && (
-                                    <ToolOutput
-                                      output={part.output}
-                                      errorText={
-                                        'errorText' in part
-                                          ? part.errorText
-                                          : undefined
-                                      }
-                                    />
-                                  )}
-                                {part.state === 'output-error' && (
-                                  <ToolOutput
-                                    output={undefined}
-                                    errorText={
-                                      'errorText' in part
-                                        ? part.errorText
-                                        : undefined
-                                    }
-                                  />
-                                )}
-                              </ToolContent>
-                            </Tool>
-                          )
-                      }
-                    })}
-                  </div>
+                  <MessageItem
+                    key={message.id}
+                    message={message}
+                    isFirstMessage={messageIndex === 0}
+                    isLastMessage={messageIndex === messages.length - 1}
+                    status={status}
+                    reasoningContainerRef={reasoningContainerRef}
+                    onRegenerate={conversationId ? handleRegenerate : undefined}
+                  />
                 ))}
                 {status === 'submitted' && <Loader />}
               </ConversationContent>
