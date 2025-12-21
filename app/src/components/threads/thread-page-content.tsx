@@ -21,6 +21,11 @@ import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from 'ai'
 import { MessageItem } from './message-item'
 
+// Scroll animation config (spring physics) - a tad slower than default
+const SCROLL_MASS = 1.35 // inertia, higher = slower (default: 1.25)
+const SCROLL_DAMPING = 0.72 // 0-1, higher = less bouncy (default: 0.7)
+const SCROLL_STIFFNESS = 0.045 // acceleration, lower = gentler (default: 0.05)
+
 interface ThreadPageContentProps {
   conversationId?: string
   isPrivateChat?: boolean
@@ -232,7 +237,8 @@ export function ThreadPageContent({
       !fetchingMessagesRef.current
     ) {
       fetchingMessagesRef.current = true
-      // Fetch messages for old conversations
+      // Clear messages first, then fetch (like ChatGPT)
+      setMessages([])
       getUIMessages(conversationId)
         .then((uiMessages) => {
           if (!initialMessageSentRef.current) setMessages(uiMessages)
@@ -263,7 +269,12 @@ export function ThreadPageContent({
         <div className="flex flex-1 flex-col h-full overflow-hidden max-h-[calc(100vh-56px)] w-full ">
           {/* Messages Area */}
           <div className="flex-1 relative">
-            <Conversation className="absolute inset-0 text-start">
+            <Conversation
+              className="absolute inset-0 text-start"
+              mass={SCROLL_MASS}
+              damping={SCROLL_DAMPING}
+              stiffness={SCROLL_STIFFNESS}
+            >
               <ConversationContent className="max-w-3xl mx-auto">
                 {messages.map((message, messageIndex) => (
                   <MessageItem
