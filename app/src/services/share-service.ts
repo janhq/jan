@@ -11,7 +11,7 @@ export const shareService = {
     request: CreateShareRequest
   ): Promise<ShareResponse> => {
     return fetchJsonWithAuth<ShareResponse>(
-      `${JAN_API_BASE_URL}v1/conversations/${conversationId}/share`,
+      `${JAN_API_BASE_URL}v1/conversations/${conversationId}/share?branch=MAIN`,
       {
         method: 'POST',
         body: JSON.stringify(request),
