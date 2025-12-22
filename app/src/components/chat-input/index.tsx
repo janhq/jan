@@ -80,6 +80,14 @@ const ChatInput = ({
     }
   }, [isMobile])
 
+  // Auto-focus when assistant finishes responding (desktop only)
+  useEffect(() => {
+    // Focus when status changes from 'streaming' to idle (assistant finished)
+    if (status !== 'streaming' && textareaRef.current && !isMobile) {
+      textareaRef.current.focus()
+    }
+  }, [status, isMobile])
+
   const selectedModel = useModels((state) => state.selectedModel)
   const modelDetail = useModels((state) => state.modelDetail)
 
@@ -234,8 +242,14 @@ const ChatInput = ({
     const controller = usePromptInputController()
 
     useEffect(() => {
+      // Reset input and attachments when conversationId changes
       controller.textInput.clear()
       controller.attachments.clear()
+
+      // Restore focus after clearing (desktop only)
+      if (textareaRef.current && !isMobile) {
+        textareaRef.current.focus()
+      }
     }, [])
 
     return null
