@@ -29,6 +29,15 @@ export const shareService = {
   },
 
   /**
+   * List all shares across all conversations
+   */
+  listAllShares: async (): Promise<ListSharesResponse> => {
+    return fetchJsonWithAuth<ListSharesResponse>(
+      `${JAN_API_BASE_URL}v1/shares`
+    )
+  },
+
+  /**
    * Revoke a share link
    */
   revokeShare: async (
@@ -37,6 +46,18 @@ export const shareService = {
   ): Promise<DeleteShareResponse> => {
     return fetchJsonWithAuth<DeleteShareResponse>(
       `${JAN_API_BASE_URL}v1/conversations/${conversationId}/shares/${shareId}`,
+      {
+        method: 'DELETE',
+      }
+    )
+  },
+
+  /**
+   * Revoke a share link directly by share ID (without conversation ID)
+   */
+  revokeShareById: async (shareId: string): Promise<DeleteShareResponse> => {
+    return fetchJsonWithAuth<DeleteShareResponse>(
+      `${JAN_API_BASE_URL}v1/shares/${shareId}`,
       {
         method: 'DELETE',
       }

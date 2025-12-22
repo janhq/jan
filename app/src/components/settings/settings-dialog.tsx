@@ -8,9 +8,10 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { GeneralSettings } from '@/components/settings/general-settings'
-import { Settings2, type LucideIcon, LeafIcon } from 'lucide-react'
+import { Settings2, type LucideIcon, LeafIcon, Share2Icon } from 'lucide-react'
 
 import { PersonalizationSettings } from './personalization-setting'
+import { SharesSettings } from './shares-settings'
 
 interface SettingsDialogProps {
   open: boolean
@@ -22,6 +23,7 @@ type SettingsSection =
   // | 'apps-connectors'
   // | 'privacy'
   | 'personalization'
+  | 'shares'
 
 const sections: Array<{
   id: SettingsSection
@@ -30,6 +32,7 @@ const sections: Array<{
 }> = [
   { id: 'general', label: 'General', icon: Settings2 },
   { id: 'personalization', label: 'Personalization', icon: LeafIcon },
+  { id: 'shares', label: 'Share Links', icon: Share2Icon },
   // { id: 'apps-connectors', label: 'Connectors', icon: ShapesIcon },
   // { id: 'privacy', label: 'Privacy', icon: LockKeyhole },
 ]
@@ -64,6 +67,8 @@ export function SettingsDialog({
       //   return <AppsConnectorSettings />
       case 'personalization':
         return <PersonalizationSettings />
+      case 'shares':
+        return <SharesSettings />
       // case 'privacy':
       //   return <PrivacySettings />
       default:
@@ -84,7 +89,7 @@ export function SettingsDialog({
 
         <div className="flex flex-col lg:flex-row max-h-screen lg:h-[500px]">
           {/* Sidebar - Mobile: Horizontal Scrollable Tabs */}
-          <div className="lg:w-60 lg:p-4 flex lg:flex-col justify-between shrink-0">
+          <div className="lg:w-48 lg:p-4 flex lg:flex-col justify-between shrink-0">
             <nav className="flex lg:flex-col gap-1 w-full whitespace-nowrap overflow-x-auto lg:overflow-x-visible p-4 lg:p-0 border-b lg:border-b-0">
               {sections.map((s) => (
                 <button

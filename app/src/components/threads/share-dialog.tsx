@@ -10,15 +10,12 @@ import {
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
+import { InputGroup, InputGroupInput } from '@/components/ui/input-group'
+import { Skeleton } from '@/components/ui/skeleton'
 import { shareService } from '@/services/share-service'
 import { toast } from 'sonner'
-import {
-  CopyIcon,
-  CheckIcon,
-  Share2Icon,
-  Loader2Icon,
-  TrashIcon,
-} from 'lucide-react'
+import { CopyIcon, CheckIcon, Loader2Icon, TrashIcon } from 'lucide-react'
+import { Separator } from '@/components/ui/separator'
 
 interface ShareDialogProps {
   open: boolean
@@ -92,6 +89,9 @@ export function ShareDialog({
       // Reset form
       setCustomTitle('')
       setIncludeImages(true)
+
+      // Reload shares from server to get the latest data
+      await loadShares()
     } catch (error) {
       console.error('Failed to create share:', error)
       toast.error(
@@ -142,79 +142,8 @@ export function ShareDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Existing shares */}
-          {isLoadingShares ? (
-            <div className="flex items-center justify-center py-4">
-              <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : existingShares.length > 0 ? (
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Active Shares</Label>
-              {existingShares.map((share) => (
-                <div
-                  key={share.id}
-                  className="flex flex-col gap-2 rounded-lg border p-3"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium break-words line-clamp-2">
-                      {share.title || 'Untitled'}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {share.view_count} views
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1"
-                      onClick={() => handleCopyLink(share.slug, share.id)}
-                    >
-                      {copiedShareId === share.id ? (
-                        <>
-                          <CheckIcon className="size-4 mr-2" />
-                          Copied
-                        </>
-                      ) : (
-                        <>
-                          <CopyIcon className="size-4 mr-2" />
-                          Copy Link
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleRevokeShare(share.id)}
-                    >
-                      <TrashIcon className="size-4 text-destructive" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
           {/* Create new share */}
           <div className="space-y-3">
-            <Label className="text-sm font-medium">
-              Create New Share Link
-            </Label>
-
-            <div className="space-y-2">
-              <Label htmlFor="share-title" className="text-sm">
-                Custom Title (optional)
-              </Label>
-              <input
-                id="share-title"
-                type="text"
-                placeholder={conversationTitle || 'Conversation'}
-                value={customTitle}
-                onChange={(e) => setCustomTitle(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              />
-            </div>
-
             <div className="flex items-center justify-between">
               <Label htmlFor="include-images" className="text-sm">
                 Include images
@@ -225,24 +154,114 @@ export function ShareDialog({
                 onCheckedChange={setIncludeImages}
               />
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="share-title" className="text-sm">
+                Custom Title (optional)
+              </Label>
+              <InputGroup>
+                <InputGroupInput
+                  id="share-title"
+                  type="text"
+                  placeholder={conversationTitle || 'Conversation'}
+                  value={customTitle}
+                  onChange={(e) => setCustomTitle(e.target.value)}
+                  autoComplete="off"
+                />
+              </InputGroup>
+            </div>
           </div>
+
+          {/* Existing shares */}
+          {isLoadingShares ? (
+            <>
+              <Separator />
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-32" />
+                <div className="flex gap-2 rounded-lg border p-3">
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-16" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-8 w-24" />
+                    <Skeleton className="h-8 w-8" />
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : existingShares.length > 0 ? (
+            <>
+              <Separator />
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Active Shares</Label>
+                {existingShares.map((share) => (
+                  <div
+                    key={share.id}
+                    className="flex gap-2 rounded-lg border p-3"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium wrap-break-word line-clamp-1">
+                        {share.title || 'Untitled'}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {share.view_count} views
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => handleCopyLink(share.slug, share.id)}
+                      >
+                        {copiedShareId === share.id ? (
+                          <>
+                            <CheckIcon className="size-4 " />
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <CopyIcon className="size-4 " />
+                            Copy Link
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRevokeShare(share.id)}
+                      >
+                        <TrashIcon className="size-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Close
+          <Button
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            className="rounded-full"
+          >
+            Cancel
           </Button>
-          <Button onClick={handleCreateShare} disabled={isCreating}>
+          <Button
+            onClick={handleCreateShare}
+            disabled={isCreating}
+            className="rounded-full"
+          >
             {isCreating ? (
               <>
                 <Loader2Icon className="size-4 animate-spin mr-2" />
                 Creating...
               </>
             ) : (
-              <>
-                <Share2Icon className="size-4 mr-2" />
-                Create Share Link
-              </>
+              <>Create Share Link</>
             )}
           </Button>
         </DialogFooter>
