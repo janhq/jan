@@ -59,40 +59,93 @@ export function generateState(): string {
 }
 
 /**
- * Store OAuth flow data in sessionStorage
+ * Encode OAuth data into the state parameter (iOS Safari compatible)
+ * This ensures state survives even if localStorage is cleared
+ */
+function encodeOAuthData(data: {
+  state: string
+  codeVerifier: string
+  redirectUrl?: string
+}): string {
+  const json = JSON.stringify(data)
+  const bytes = new TextEncoder().encode(json)
+  return base64URLEncode(bytes.buffer)
+}
+
+/**
+ * Decode OAuth data from the state parameter
+ */
+function decodeOAuthData(encoded: string): {
+  state: string
+  codeVerifier: string
+  redirectUrl?: string
+} | null {
+  try {
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/')
+    const padding = '='.repeat((4 - (base64.length % 4)) % 4)
+    const jsonStr = atob(base64 + padding)
+    const bytes = new Uint8Array(jsonStr.length)
+    for (let i = 0; i < jsonStr.length; i++) {
+      bytes[i] = jsonStr.charCodeAt(i)
+    }
+    const decoded = new TextDecoder().decode(bytes)
+    return JSON.parse(decoded)
+  } catch (error) {
+    console.error('Failed to decode OAuth data:', error)
+    return null
+  }
+}
+
+/**
+ * Store OAuth flow data in localStorage (fallback only)
  */
 export function storeOAuthState(data: {
   state: string
   codeVerifier: string
   redirectUrl?: string
 }) {
-  sessionStorage.setItem('oauth_state', data.state)
-  sessionStorage.setItem('oauth_code_verifier', data.codeVerifier)
+  localStorage.setItem('oauth_state', data.state)
+  localStorage.setItem('oauth_code_verifier', data.codeVerifier)
   if (data.redirectUrl) {
-    sessionStorage.setItem('oauth_redirect_url', data.redirectUrl)
+    localStorage.setItem('oauth_redirect_url', data.redirectUrl)
   }
 }
 
 /**
- * Retrieve and validate OAuth state from sessionStorage
+ * Retrieve and validate OAuth state from URL-encoded state or localStorage fallback
  */
 export function retrieveOAuthState(state: string): {
   codeVerifier: string
   redirectUrl?: string
 } | null {
-  const storedState = sessionStorage.getItem('oauth_state')
-  const codeVerifier = sessionStorage.getItem('oauth_code_verifier')
+  // First, try to decode from the state parameter itself
+  const decoded = decodeOAuthData(state)
+  if (decoded && decoded.state) {
+    // Clean up localStorage if it exists
+    localStorage.removeItem('oauth_state')
+    localStorage.removeItem('oauth_code_verifier')
+    localStorage.removeItem('oauth_redirect_url')
+
+    return {
+      codeVerifier: decoded.codeVerifier,
+      redirectUrl: decoded.redirectUrl,
+    }
+  }
+
+  // Fallback to localStorage (for backward compatibility)
+  const storedState = localStorage.getItem('oauth_state')
+  const codeVerifier = localStorage.getItem('oauth_code_verifier')
 
   if (!storedState || !codeVerifier || storedState !== state) {
     return null
   }
 
-  const redirectUrl = sessionStorage.getItem('oauth_redirect_url') || undefined
+  const redirectUrl = localStorage.getItem('oauth_redirect_url') || undefined
 
   // Clean up
-  sessionStorage.removeItem('oauth_state')
-  sessionStorage.removeItem('oauth_code_verifier')
-  sessionStorage.removeItem('oauth_redirect_url')
+  localStorage.removeItem('oauth_state')
+  localStorage.removeItem('oauth_code_verifier')
+  localStorage.removeItem('oauth_redirect_url')
 
   return { codeVerifier, redirectUrl }
 }
@@ -106,8 +159,11 @@ export async function buildGoogleAuthUrl(
   const { codeVerifier, codeChallenge } = await generatePKCE()
   const state = generateState()
 
-  // Store for later verification
+  // Store in localStorage as fallback
   storeOAuthState({ state, codeVerifier, redirectUrl })
+
+  // Encode the OAuth data into the state parameter for iOS Safari compatibility
+  const encodedState = encodeOAuthData({ state, codeVerifier, redirectUrl })
 
   const authEndpoint = `${VITE_AUTH_URL}/realms/${VITE_AUTH_REALM}/protocol/openid-connect/auth`
 
@@ -116,7 +172,7 @@ export async function buildGoogleAuthUrl(
     redirect_uri: VITE_OAUTH_REDIRECT_URI,
     response_type: 'code',
     scope: 'openid profile email',
-    state: state,
+    state: encodedState, // Use encoded state instead of plain state
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
     kc_idp_hint: 'google', // Direct to Google IdP in Keycloak

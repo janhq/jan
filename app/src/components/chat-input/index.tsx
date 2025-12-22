@@ -16,6 +16,7 @@ import {
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
+  usePromptInputController,
 } from '@/components/ai-elements/prompt-input'
 
 import { useRef, useEffect, useState } from 'react'
@@ -78,6 +79,14 @@ const ChatInput = ({
       textareaRef.current.focus()
     }
   }, [isMobile])
+
+  // Auto-focus when assistant finishes responding (desktop only)
+  useEffect(() => {
+    // Focus when status changes from 'streaming' to idle (assistant finished)
+    if (status !== 'streaming' && textareaRef.current && !isMobile) {
+      textareaRef.current.focus()
+    }
+  }, [status, isMobile])
 
   const selectedModel = useModels((state) => state.selectedModel)
   const modelDetail = useModels((state) => state.modelDetail)
@@ -228,6 +237,24 @@ const ChatInput = ({
     }
   }
 
+  // Component to handle resetting input when conversation changes
+  const InputResetHandler = () => {
+    const controller = usePromptInputController()
+
+    useEffect(() => {
+      // Reset input and attachments when conversationId changes
+      controller.textInput.clear()
+      controller.attachments.clear()
+
+      // Restore focus after clearing (desktop only)
+      if (textareaRef.current && !isMobile) {
+        textareaRef.current.focus()
+      }
+    }, [])
+
+    return null
+  }
+
   return (
     <div
       className={cn(
@@ -243,6 +270,7 @@ const ChatInput = ({
         accept="image/jpeg,image/jpg,image/png"
         onError={handleError}
       >
+        <InputResetHandler />
         <PromptInput
           accept="image/jpeg,image/jpg,image/png"
           globalDrop
