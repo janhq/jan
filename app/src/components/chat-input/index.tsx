@@ -16,6 +16,7 @@ import {
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
+  usePromptInputController,
 } from '@/components/ai-elements/prompt-input'
 
 import { useRef, useEffect, useState } from 'react'
@@ -228,6 +229,18 @@ const ChatInput = ({
     }
   }
 
+  // Component to handle resetting input when conversation changes
+  const InputResetHandler = () => {
+    const controller = usePromptInputController()
+
+    useEffect(() => {
+      controller.textInput.clear()
+      controller.attachments.clear()
+    }, [])
+
+    return null
+  }
+
   return (
     <div
       className={cn(
@@ -243,6 +256,7 @@ const ChatInput = ({
         accept="image/jpeg,image/jpg,image/png"
         onError={handleError}
       >
+        <InputResetHandler />
         <PromptInput
           accept="image/jpeg,image/jpg,image/png"
           globalDrop
