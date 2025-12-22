@@ -4,7 +4,15 @@ import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import { ThemeToggle } from '../themes/theme-toggle'
 import { memo } from 'react'
 
-export const NavHeader = memo(function NavHeader() {
+interface NavHeaderProps {
+  conversationId?: string
+  conversationTitle?: string
+}
+
+export const NavHeader = memo(function NavHeader({
+  conversationId,
+  conversationTitle
+}: NavHeaderProps = {}) {
   const { state, isMobile } = useSidebar()
 
   return (
@@ -17,7 +25,10 @@ export const NavHeader = memo(function NavHeader() {
       </div>
       <div className="ml-auto px-3 flex items-center gap-2">
         <ThemeToggle />
-        <NavActions />
+        <NavActions
+          conversationId={conversationId}
+          conversationTitle={conversationTitle}
+        />
       </div>
     </header>
   )
