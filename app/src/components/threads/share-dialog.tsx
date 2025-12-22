@@ -82,7 +82,7 @@ export function ShareDialog({
       })
 
       // Add to existing shares
-      setExistingShares([share, ...existingShares])
+      setExistingShares([share])
 
       // Copy to clipboard immediately using local URL
       const localShareUrl = getLocalShareUrl(share.slug)
