@@ -19,7 +19,7 @@ import {
   usePromptInputController,
 } from '@/components/ai-elements/prompt-input'
 
-import { useRef, useEffect, useState } from 'react'
+import React, { useRef, useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useModels } from '@/stores/models-store'
 import { useConversations } from '@/stores/conversation-store'
@@ -50,6 +50,34 @@ import {
 } from '@/components/ui/tooltip'
 import { useBrowserConnection } from '@/stores/browser-connection-store'
 import { useProfile } from '@/stores/profile-store'
+
+// Component to handle resetting input when conversation changes
+// IMPORTANT: This must be defined outside ChatInput to prevent remounting on every render
+const InputResetHandler = ({
+  textareaRef,
+  isMobile,
+  conversationId,
+}: {
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>
+  isMobile: boolean
+  conversationId?: string
+}) => {
+  const controller = usePromptInputController()
+
+  useEffect(() => {
+    // Reset input and attachments when conversationId changes
+    controller.textInput.clear()
+    controller.attachments.clear()
+
+    // Restore focus after clearing (desktop only)
+    if (textareaRef.current && !isMobile) {
+      textareaRef.current.focus()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId])
+
+  return null
+}
 
 const ChatInput = ({
   initialConversation = false,
@@ -237,24 +265,6 @@ const ChatInput = ({
     }
   }
 
-  // Component to handle resetting input when conversation changes
-  const InputResetHandler = () => {
-    const controller = usePromptInputController()
-
-    useEffect(() => {
-      // Reset input and attachments when conversationId changes
-      controller.textInput.clear()
-      controller.attachments.clear()
-
-      // Restore focus after clearing (desktop only)
-      if (textareaRef.current && !isMobile) {
-        textareaRef.current.focus()
-      }
-    }, [])
-
-    return null
-  }
-
   return (
     <div
       className={cn(
@@ -270,7 +280,7 @@ const ChatInput = ({
         accept="image/jpeg,image/jpg,image/png"
         onError={handleError}
       >
-        <InputResetHandler />
+        <InputResetHandler textareaRef={textareaRef} isMobile={isMobile} conversationId={conversationId} />
         <PromptInput
           accept="image/jpeg,image/jpg,image/png"
           globalDrop
