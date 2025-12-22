@@ -66,7 +66,7 @@ export function PersonalizationSettings() {
       {/* Personalization */}
       <div className="mb-6">
         <FieldGroup className="gap-8">
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-1">
             <Field>
               <FieldLabel>Nickname</FieldLabel>
               <FieldDescription>
