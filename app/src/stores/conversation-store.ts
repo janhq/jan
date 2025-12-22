@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { conversationService } from '@/services/conversation-service'
 import type { UIMessage } from '@ai-sdk/react'
-import { convertToUIMessages } from '@/lib/message-utils'
+import { convertToUIMessages } from '@/lib/utils'
 
 let fetchPromise: Promise<void> | null = null
 
