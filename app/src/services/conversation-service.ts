@@ -36,6 +36,12 @@ export const conversationService = {
     )
   },
 
+  deleteAllConversations: async (): Promise<void> => {
+    return fetchJsonWithAuth<void>(`${JAN_API_BASE_URL}v1/conversations`, {
+      method: 'DELETE',
+    })
+  },
+
   updateConversation: async (
     conversationId: string,
     payload: UpdateConversationPayload
@@ -63,7 +69,9 @@ export const conversationService = {
   },
 
   // Branch operations
-  getBranches: async (conversationId: string): Promise<ListBranchesResponse> => {
+  getBranches: async (
+    conversationId: string
+  ): Promise<ListBranchesResponse> => {
     return fetchJsonWithAuth<ListBranchesResponse>(
       `${JAN_API_BASE_URL}v1/conversations/${conversationId}/branches`
     )

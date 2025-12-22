@@ -15,7 +15,10 @@ interface ConversationState {
   // Conversation operations
   getConversations: () => Promise<void>
   getConversation: (conversationId: string) => Promise<Conversation>
-  getUIMessages: (conversationId: string, branch?: string) => Promise<UIMessage[]>
+  getUIMessages: (
+    conversationId: string,
+    branch?: string
+  ) => Promise<UIMessage[]>
   createConversation: (
     payload: CreateConversationPayload
   ) => Promise<Conversation>
@@ -24,17 +27,33 @@ interface ConversationState {
     payload: UpdateConversationPayload
   ) => Promise<Conversation>
   deleteConversation: (conversationId: string) => Promise<void>
+  deleteAllConversations: () => Promise<void>
   clearConversations: () => void
   // Branch operations
   fetchBranches: (conversationId: string) => Promise<ConversationBranch[]>
   switchBranch: (conversationId: string, branchName: string) => Promise<void>
-  createBranch: (conversationId: string, request: CreateBranchRequest) => Promise<ConversationBranch>
+  createBranch: (
+    conversationId: string,
+    request: CreateBranchRequest
+  ) => Promise<ConversationBranch>
   deleteBranch: (conversationId: string, branchName: string) => Promise<void>
   setActiveBranch: (branchName: string) => void
   // Message actions
-  editMessage: (conversationId: string, itemId: string, content: string, regenerate?: boolean) => Promise<EditMessageResponse>
-  regenerateMessage: (conversationId: string, itemId: string, options?: RegenerateMessageRequest) => Promise<RegenerateMessageResponse>
-  deleteMessage: (conversationId: string, itemId: string) => Promise<DeleteItemResponse>
+  editMessage: (
+    conversationId: string,
+    itemId: string,
+    content: string,
+    regenerate?: boolean
+  ) => Promise<EditMessageResponse>
+  regenerateMessage: (
+    conversationId: string,
+    itemId: string,
+    options?: RegenerateMessageRequest
+  ) => Promise<RegenerateMessageResponse>
+  deleteMessage: (
+    conversationId: string,
+    itemId: string
+  ) => Promise<DeleteItemResponse>
 }
 
 export const useConversations = create<ConversationState>((set, get) => ({
@@ -77,7 +96,9 @@ export const useConversations = create<ConversationState>((set, get) => ({
   getUIMessages: async (conversationId: string, branch?: string) => {
     try {
       const branchToUse = branch ?? get().activeBranch
-      const items = (await conversationService.getItems(conversationId, branchToUse)).data
+      const items = (
+        await conversationService.getItems(conversationId, branchToUse)
+      ).data
       return convertToUIMessages(items)
     } catch (err) {
       console.error('Error fetching conversation items:', err)
@@ -132,8 +153,25 @@ export const useConversations = create<ConversationState>((set, get) => ({
       throw err
     }
   },
+
+  deleteAllConversations: async () => {
+    try {
+      await conversationService.deleteAllConversations()
+      set(() => ({
+        conversations: [],
+      }))
+    } catch (err) {
+      console.error('Error deleting conversation:', err)
+      throw err
+    }
+  },
   clearConversations: () => {
-    set({ conversations: [], loading: false, branches: [], activeBranch: 'MAIN' })
+    set({
+      conversations: [],
+      loading: false,
+      branches: [],
+      activeBranch: 'MAIN',
+    })
     fetchPromise = null
   },
 
@@ -162,9 +200,15 @@ export const useConversations = create<ConversationState>((set, get) => ({
     }
   },
 
-  createBranch: async (conversationId: string, request: CreateBranchRequest) => {
+  createBranch: async (
+    conversationId: string,
+    request: CreateBranchRequest
+  ) => {
     try {
-      const branch = await conversationService.createBranch(conversationId, request)
+      const branch = await conversationService.createBranch(
+        conversationId,
+        request
+      )
       set((state) => ({
         branches: [...state.branches, branch],
       }))
@@ -181,7 +225,8 @@ export const useConversations = create<ConversationState>((set, get) => ({
       set((state) => ({
         branches: state.branches.filter((b) => b.name !== branchName),
         // If we deleted the active branch, switch to MAIN
-        activeBranch: state.activeBranch === branchName ? 'MAIN' : state.activeBranch,
+        activeBranch:
+          state.activeBranch === branchName ? 'MAIN' : state.activeBranch,
       }))
     } catch (err) {
       console.error('Error deleting branch:', err)
@@ -194,9 +239,19 @@ export const useConversations = create<ConversationState>((set, get) => ({
   },
 
   // Message actions
-  editMessage: async (conversationId: string, itemId: string, content: string, regenerate = true) => {
+  editMessage: async (
+    conversationId: string,
+    itemId: string,
+    content: string,
+    regenerate = true
+  ) => {
     try {
-      const response = await conversationService.editMessage(conversationId, itemId, content, regenerate)
+      const response = await conversationService.editMessage(
+        conversationId,
+        itemId,
+        content,
+        regenerate
+      )
       // If a new branch was created, add it to the list and switch to it
       if (response.branch_created && response.new_branch) {
         set((state) => ({
@@ -211,9 +266,17 @@ export const useConversations = create<ConversationState>((set, get) => ({
     }
   },
 
-  regenerateMessage: async (conversationId: string, itemId: string, options?: RegenerateMessageRequest) => {
+  regenerateMessage: async (
+    conversationId: string,
+    itemId: string,
+    options?: RegenerateMessageRequest
+  ) => {
     try {
-      const response = await conversationService.regenerateMessage(conversationId, itemId, options)
+      const response = await conversationService.regenerateMessage(
+        conversationId,
+        itemId,
+        options
+      )
       // If a new branch was created, add it to the list and switch to it
       if (response.branch_created && response.new_branch) {
         set((state) => ({
@@ -230,7 +293,10 @@ export const useConversations = create<ConversationState>((set, get) => ({
 
   deleteMessage: async (conversationId: string, itemId: string) => {
     try {
-      const response = await conversationService.deleteMessage(conversationId, itemId)
+      const response = await conversationService.deleteMessage(
+        conversationId,
+        itemId
+      )
       return response
     } catch (err) {
       console.error('Error deleting message:', err)
