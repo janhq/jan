@@ -74,7 +74,7 @@ export function SettingsDialog({
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
       <DialogContent
-        className="md:max-w-2xl lg:max-w-[80%] p-0 gap-0 rounded-xl overflow-hidden"
+        className="md:max-w-2xl lg:max-w-[800px] lg:max-h-[700px] p-0 gap-0 rounded-xl overflow-hidden"
         onPointerDownOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
