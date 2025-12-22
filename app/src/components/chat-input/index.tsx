@@ -426,11 +426,11 @@ const ChatInput = ({
           </div>
         )}
       </PromptInputProvider>
-      {status !== 'streaming' && (
+      {/* {status !== 'streaming' && (
         <div className="absolute inset-0 scale-90 opacity-50 dark:opacity-25 blur-xl transition-all duration-100">
           <div className="bg-linear-to-r/increasing animate-hue-rotate absolute inset-x-0 bottom-0 top-6 from-pink-300 to-purple-300" />
         </div>
-      )}
+      )} */}
     </div>
   )
 }

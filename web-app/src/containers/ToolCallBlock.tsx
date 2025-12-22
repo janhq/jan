@@ -1,5 +1,4 @@
 import { ChevronDown, ChevronUp, Loader } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import { create } from 'zustand'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useMemo, useState } from 'react'
@@ -166,13 +165,8 @@ const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
           </button>
         </div>
 
-        <div
-          className={cn(
-            'h-fit w-full overflow-auto transition-all duration-300 px-2',
-            isExpanded ? '' : 'max-h-0 overflow-hidden'
-          )}
-        >
-          <div className="mt-2 text-main-view-fg/60 overflow-hidden">
+        {isExpanded && (
+          <div className="px-2 pb-2 text-main-view-fg/60 overflow-hidden">
             {args && Object.keys(args).length > 3 && (
               <>
                 <p className="mb-3">Arguments:</p>
@@ -211,7 +205,7 @@ const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
               </>
             )}
           </div>
-        </div>
+        )}
       </div>
 
       <ImageModal image={modalImage} onClose={closeModal} />
