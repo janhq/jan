@@ -120,11 +120,13 @@ export function SharePageContent({ slug }: SharePageContentProps) {
         {error || !shareData ? (
           <div className="flex items-center justify-center h-full">
             <div className="flex flex-col items-center gap-4 max-w-md text-center px-4">
-              {error?.includes('revoked') ? (
-                <LockIcon className="size-12 text-muted-foreground" />
-              ) : (
-                <AlertCircleIcon className="size-12 text-muted-foreground" />
-              )}
+              <div className="size-12 rounded-full bg-muted flex items-center justify-center">
+                {error?.includes('revoked') ? (
+                  <LockIcon className="size-8 text-muted-foreground" />
+                ) : (
+                  <AlertCircleIcon className="size-8 text-muted-foreground" />
+                )}
+              </div>
               <div className="space-y-2">
                 <h2 className="text-lg font-semibold">
                   {error?.includes('revoked')

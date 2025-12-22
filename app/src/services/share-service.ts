@@ -32,9 +32,7 @@ export const shareService = {
    * List all shares across all conversations
    */
   listAllShares: async (): Promise<ListSharesResponse> => {
-    return fetchJsonWithAuth<ListSharesResponse>(
-      `${JAN_API_BASE_URL}v1/shares`
-    )
+    return fetchJsonWithAuth<ListSharesResponse>(`${JAN_API_BASE_URL}v1/shares`)
   },
 
   /**
@@ -69,7 +67,10 @@ export const shareService = {
    */
   getPublicShare: async (slug: string): Promise<PublicShareResponse> => {
     const response = await fetch(
-      `${JAN_API_BASE_URL}v1/public/shares/${slug}`
+      `${JAN_API_BASE_URL}v1/public/shares/${slug}`,
+      {
+        cache: 'no-store', // Prevent browser caching
+      }
     )
 
     if (!response.ok) {
