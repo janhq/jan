@@ -25,6 +25,7 @@ import {
   buildIdMapping,
   resolveMessageId,
 } from '@/lib/message-utils'
+import { useNavigate } from '@tanstack/react-router'
 
 // Scroll animation config (spring physics) - a tad slower than default
 const SCROLL_MASS = 1.35 // inertia, higher = slower (default: 1.25)
@@ -40,10 +41,14 @@ export function ThreadPageContent({
   conversationId,
   isPrivateChat = false,
 }: ThreadPageContentProps) {
+  const navigate = useNavigate()
   const selectedModel = useModels((state) => state.selectedModel)
   const models = useModels((state) => state.models)
   const setSelectedModel = useModels((state) => state.setSelectedModel)
   const getConversation = useConversations((state) => state.getConversation)
+  const createConversation = useConversations(
+    (state) => state.createConversation
+  )
   const initialMessageSentRef = useRef(false)
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
   const fetchingMessagesRef = useRef(false)
@@ -135,7 +140,6 @@ export function ThreadPageContent({
   // Keep ref in sync for use in onFinish closure
   messagesRef.current = messages
 
-
   const regenerateMessage = useConversations((state) => state.regenerateMessage)
 
   const handleRegenerate = async (messageId: string) => {
@@ -145,7 +149,9 @@ export function ThreadPageContent({
       const currentMessages = messagesRef.current
 
       // Find the clicked assistant message index
-      const assistantIndex = currentMessages.findIndex((m) => m.id === messageId)
+      const assistantIndex = currentMessages.findIndex(
+        (m) => m.id === messageId
+      )
       if (assistantIndex === -1) return
 
       // Find the preceding user message
@@ -169,11 +175,7 @@ export function ThreadPageContent({
         // Fetch IDs in background for future operations
         getUIMessages(conversationId, response.branch)
           .then((branchMessages) => {
-            buildIdMapping(
-              truncatedMessages,
-              branchMessages,
-              idMapRef.current
-            )
+            buildIdMapping(truncatedMessages, branchMessages, idMapRef.current)
           })
           .catch(console.error)
       }
@@ -184,11 +186,51 @@ export function ThreadPageContent({
 
   const handleSubmit = (message?: PromptInputMessage) => {
     if (message && status !== 'streaming') {
-      tools.current = []
-      sendMessage({
-        text: message.text || 'Sent with attachments',
-        files: message.files,
-      })
+      if (conversationId && !isPrivateChat && models.length > 0) {
+        getConversation(conversationId)
+          .then((conversation) => {
+            // Load model from metadata
+            const modelId = conversation.metadata?.model_id
+            if (modelId && modelId !== selectedModel?.id && selectedModel) {
+              // Create a new conversation with the currently selected model
+              const conversationPayload: CreateConversationPayload = {
+                title: message.text || 'New Chat',
+                metadata: {
+                  model_id: selectedModel.id,
+                  model_provider: selectedModel.owned_by,
+                  is_favorite: 'false',
+                },
+              }
+
+              createConversation(conversationPayload)
+                .then((newConversation) => {
+                  // Store the initial message in sessionStorage for the new conversation
+                  sessionStorage.setItem(
+                    `initial-message-${newConversation.id}`,
+                    JSON.stringify(message)
+                  )
+
+                  // Redirect to the new conversation
+                  navigate({
+                    to: '/threads/$conversationId',
+                    params: { conversationId: newConversation.id },
+                  })
+                })
+                .catch((error) => {
+                  console.error('Failed to create conversation:', error)
+                })
+            } else {
+              tools.current = []
+              sendMessage({
+                text: message.text || 'Sent with attachments',
+                files: message.files,
+              })
+            }
+          })
+          .catch((error) => {
+            console.error('Failed to load conversation:', error)
+          })
+      }
     } else if (status === 'streaming') {
       stop()
     }
