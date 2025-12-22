@@ -13,7 +13,7 @@ import {
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input'
 import { Loader } from 'lucide-react'
 import { useModels } from '@/stores/models-store'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useConversations } from '@/stores/conversation-store'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
@@ -25,6 +25,7 @@ import {
   buildIdMapping,
   resolveMessageId,
 } from '@/lib/message-utils'
+import { convertToUIMessages } from '@/lib/utils'
 
 // Scroll animation config (spring physics) - a tad slower than default
 const SCROLL_MASS = 1.35 // inertia, higher = slower (default: 1.25)
@@ -51,6 +52,7 @@ export function ThreadPageContent({
     (state) => state.deepResearchEnabled
   )
   const enableThinking = useCapabilities((state) => state.reasoningEnabled)
+  const [conversationTitle, setConversationTitle] = useState<string>('')
 
   const provider = janProvider(
     conversationId,
@@ -135,7 +137,6 @@ export function ThreadPageContent({
   // Keep ref in sync for use in onFinish closure
   messagesRef.current = messages
 
-
   const regenerateMessage = useConversations((state) => state.regenerateMessage)
 
   const handleRegenerate = async (messageId: string) => {
@@ -145,7 +146,9 @@ export function ThreadPageContent({
       const currentMessages = messagesRef.current
 
       // Find the clicked assistant message index
-      const assistantIndex = currentMessages.findIndex((m) => m.id === messageId)
+      const assistantIndex = currentMessages.findIndex(
+        (m) => m.id === messageId
+      )
       if (assistantIndex === -1) return
 
       // Find the preceding user message
@@ -169,11 +172,7 @@ export function ThreadPageContent({
         // Fetch IDs in background for future operations
         getUIMessages(conversationId, response.branch)
           .then((branchMessages) => {
-            buildIdMapping(
-              truncatedMessages,
-              branchMessages,
-              idMapRef.current
-            )
+            buildIdMapping(truncatedMessages, branchMessages, idMapRef.current)
           })
           .catch(console.error)
       }
@@ -199,6 +198,9 @@ export function ThreadPageContent({
     if (conversationId && !isPrivateChat && models.length > 0) {
       getConversation(conversationId)
         .then((conversation) => {
+          // Store conversation title for share dialog
+          setConversationTitle(conversation.title)
+
           // Load model from metadata
           const modelId = conversation.metadata?.model_id
           if (modelId) {
@@ -220,6 +222,7 @@ export function ThreadPageContent({
     const initialMessageKey = isPrivateChat
       ? 'initial-message-temporary'
       : `initial-message-${conversationId}`
+
     const storedMessage = sessionStorage.getItem(initialMessageKey)
 
     if (storedMessage && (isPrivateChat || conversationId)) {
@@ -230,6 +233,16 @@ export function ThreadPageContent({
         // Mark as sent to prevent duplicate sends
         initialMessageSentRef.current = true
         tools.current = []
+
+        // Preload cached items if any
+        const initialItemsKey = `initial-items-${conversationId}`
+        const cachedItems = sessionStorage.getItem(initialItemsKey)
+        if (cachedItems) {
+          const items = JSON.parse(cachedItems) as any[]
+          setMessages(convertToUIMessages(items))
+          sessionStorage.removeItem(initialItemsKey)
+        }
+
         // Send the message
         sendMessage({
           text: message.text,
@@ -278,7 +291,10 @@ export function ThreadPageContent({
     <>
       <AppSidebar />
       <SidebarInset>
-        <NavHeader />
+        <NavHeader
+          conversationId={conversationId}
+          conversationTitle={conversationTitle}
+        />
         <div className="flex flex-1 flex-col h-full overflow-hidden max-h-[calc(100vh-56px)] w-full ">
           {/* Messages Area */}
           <div className="flex-1 relative">

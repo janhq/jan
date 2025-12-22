@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ThreadsTemporaryRouteImport } from './routes/threads/temporary'
 import { Route as ThreadsConversationIdRouteImport } from './routes/threads/$conversationId'
+import { Route as ShareSlugRouteImport } from './routes/share/$slug'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 
@@ -30,6 +31,11 @@ const ThreadsConversationIdRoute = ThreadsConversationIdRouteImport.update({
   path: '/threads/$conversationId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShareSlugRoute = ShareSlugRouteImport.update({
+  id: '/share/$slug',
+  path: '/share/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
   id: '/projects/$projectId',
   path: '/projects/$projectId',
@@ -45,6 +51,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/share/$slug': typeof ShareSlugRoute
   '/threads/$conversationId': typeof ThreadsConversationIdRoute
   '/threads/temporary': typeof ThreadsTemporaryRoute
 }
@@ -52,6 +59,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/share/$slug': typeof ShareSlugRoute
   '/threads/$conversationId': typeof ThreadsConversationIdRoute
   '/threads/temporary': typeof ThreadsTemporaryRoute
 }
@@ -60,6 +68,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/share/$slug': typeof ShareSlugRoute
   '/threads/$conversationId': typeof ThreadsConversationIdRoute
   '/threads/temporary': typeof ThreadsTemporaryRoute
 }
@@ -69,6 +78,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth/callback'
     | '/projects/$projectId'
+    | '/share/$slug'
     | '/threads/$conversationId'
     | '/threads/temporary'
   fileRoutesByTo: FileRoutesByTo
@@ -76,6 +86,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth/callback'
     | '/projects/$projectId'
+    | '/share/$slug'
     | '/threads/$conversationId'
     | '/threads/temporary'
   id:
@@ -83,6 +94,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth/callback'
     | '/projects/$projectId'
+    | '/share/$slug'
     | '/threads/$conversationId'
     | '/threads/temporary'
   fileRoutesById: FileRoutesById
@@ -91,6 +103,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
+  ShareSlugRoute: typeof ShareSlugRoute
   ThreadsConversationIdRoute: typeof ThreadsConversationIdRoute
   ThreadsTemporaryRoute: typeof ThreadsTemporaryRoute
 }
@@ -118,6 +131,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ThreadsConversationIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/share/$slug': {
+      id: '/share/$slug'
+      path: '/share/$slug'
+      fullPath: '/share/$slug'
+      preLoaderRoute: typeof ShareSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$projectId': {
       id: '/projects/$projectId'
       path: '/projects/$projectId'
@@ -139,6 +159,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   ProjectsProjectIdRoute: ProjectsProjectIdRoute,
+  ShareSlugRoute: ShareSlugRoute,
   ThreadsConversationIdRoute: ThreadsConversationIdRoute,
   ThreadsTemporaryRoute: ThreadsTemporaryRoute,
 }

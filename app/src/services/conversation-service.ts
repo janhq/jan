@@ -68,6 +68,19 @@ export const conversationService = {
     )
   },
 
+  createItems: async (
+    conversationId: string,
+    items: CreateItemRequest[]
+  ): Promise<ConversationItemsResponse> => {
+    return fetchJsonWithAuth<ConversationItemsResponse>(
+      `${JAN_API_BASE_URL}v1/conversations/${conversationId}/items`,
+      {
+        method: 'POST',
+        body: JSON.stringify(items),
+      }
+    )
+  },
+
   // Branch operations
   getBranches: async (
     conversationId: string
