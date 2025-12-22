@@ -82,6 +82,10 @@ interface ConversationItemContent {
   reasoning_text?: string
   image?: { url: string }
   tool_calls?: Array<ToolCall>
+
+  // Tool result fields
+  mcp_call?: string | unknown
+  tool_result?: string | unknown
 }
 
 // Branch types

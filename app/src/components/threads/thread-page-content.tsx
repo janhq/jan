@@ -96,7 +96,7 @@ export function ThreadPageContent({
               state: 'output-error',
               tool: toolCall.toolName,
               toolCallId: toolCall.toolCallId,
-              errorText: result.error,
+              errorText: `Error: ${result.error}`,
             })
           } else {
             addToolOutput({

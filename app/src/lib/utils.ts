@@ -1,6 +1,5 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import type { UIMessage } from '@ai-sdk/react'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -12,82 +11,4 @@ export const getInitialsAvatar = (name: string) => {
     return (words[0][0] + words[1][0]).toUpperCase()
   }
   return words[0][0].toUpperCase()
-}
-
-// Convert ConversationItem[] to UIMessage[]
-export const convertToUIMessages = (items: ConversationItem[]): UIMessage[] => {
-  return items
-    .filter((e) => e.role !== 'tool')
-    .map((item) => {
-      const parts = item.content
-        .map((content) => {
-          // Determine the content type
-          let contentType: 'text' | 'reasoning' | 'file' = 'text'
-
-          if (content.type === 'reasoning_text') {
-            contentType = 'reasoning'
-          } else if (content.type === 'input_text' || content.type === 'text') {
-            contentType = 'text'
-          } else if (content.type === 'image') {
-            contentType = 'file'
-          } else if (content.type === 'tool_calls') {
-            contentType = 'text'
-            return (
-              content.tool_calls?.map((toolCall) => {
-                // Find the corresponding tool result by matching tool_call_id
-                const toolResult = items.find(
-                  (item) =>
-                    item.role === 'tool' &&
-                    (item.content.some(
-                      (c: any) => c.tool_call_id === toolCall.id
-                    ) ||
-                      // @ts-ignore fallback for older structure
-                      (item.call_id === toolCall.id && item.type === 'message'))
-                )
-
-                return {
-                  type: `tool-${toolCall.function.name}`,
-                  input:
-                    typeof toolCall.function.arguments === 'string'
-                      ? JSON.parse(toolCall.function.arguments)
-                      : toolCall.function.arguments,
-                  output: toolResult?.content || '',
-                  state: 'output-available',
-                  toolCallId: toolCall.id || '',
-                }
-              }) || []
-            )
-          } else {
-            contentType = content.type as 'text' | 'reasoning' | 'file'
-          }
-
-          return [
-            {
-              type: contentType,
-              text:
-                content.text?.text ||
-                content.text ||
-                content.input_text ||
-                content.reasoning_text ||
-                '',
-              mediaType: contentType === 'file' ? 'image/jpeg' : undefined,
-              url: contentType === 'file' ? content.image?.url : undefined,
-            },
-          ]
-        })
-        .flat()
-
-      // Sort parts: reasoning first, then other types
-      const sortedParts = parts.sort((a, b) => {
-        if (a.type === 'reasoning' && b.type !== 'reasoning') return -1
-        if (a.type !== 'reasoning' && b.type === 'reasoning') return 1
-        return 0
-      })
-
-      return {
-        id: item.id,
-        role: item.role as 'user' | 'assistant' | 'system',
-        parts: sortedParts,
-      } as UIMessage
-    })
 }
