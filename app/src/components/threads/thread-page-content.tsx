@@ -20,6 +20,11 @@ import { useCapabilities } from '@/stores/capabilities-store'
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from 'ai'
 import { MessageItem } from './message-item'
+import {
+  findPrecedingUserMessageIndex,
+  buildIdMapping,
+  resolveMessageId,
+} from '@/lib/message-utils'
 
 // Scroll animation config (spring physics) - a tad slower than default
 const SCROLL_MASS = 1.35 // inertia, higher = slower (default: 1.25)
@@ -107,13 +112,11 @@ export function ThreadPageContent({
             // Build ID mapping without updating state to avoid scroll jump
             getUIMessages(conversationId)
               .then((backendMessages) => {
-                const currentMessages = messagesRef.current
-                currentMessages.forEach((msg, index) => {
-                  const backendMsg = backendMessages[index]
-                  if (backendMsg && msg.id !== backendMsg.id) {
-                    idMapRef.current.set(msg.id, backendMsg.id)
-                  }
-                })
+                buildIdMapping(
+                  messagesRef.current,
+                  backendMessages,
+                  idMapRef.current
+                )
               })
               .catch(console.error)
           }
@@ -132,35 +135,45 @@ export function ThreadPageContent({
   // Keep ref in sync for use in onFinish closure
   messagesRef.current = messages
 
-  // Resolve temp ID to real backend ID
-  const resolveMessageId = (tempId: string) =>
-    idMapRef.current.get(tempId) ?? tempId
 
   const regenerateMessage = useConversations((state) => state.regenerateMessage)
 
   const handleRegenerate = async (messageId: string) => {
     if (!conversationId) return
     try {
-      const realId = resolveMessageId(messageId)
+      const realId = resolveMessageId(messageId, idMapRef.current)
+      const currentMessages = messagesRef.current
+
+      // Find the clicked assistant message index
+      const assistantIndex = currentMessages.findIndex((m) => m.id === messageId)
+      if (assistantIndex === -1) return
+
+      // Find the preceding user message
+      const userIndex = findPrecedingUserMessageIndex(
+        currentMessages,
+        assistantIndex
+      )
+      if (userIndex === -1) return
+
+      // Call server to create branch (for persistence)
       const response = await regenerateMessage(conversationId, realId)
 
       if (response.branch_created && response.branch) {
-        // Start regeneration immediately - don't wait for getUIMessages
+        // Truncate local messages to keep only messages up to and including the user message
+        const truncatedMessages = currentMessages.slice(0, userIndex + 1)
+        setMessages(truncatedMessages)
+
+        // Now regenerate - AI SDK will regenerate response for the last user message
         setTimeout(() => regenerate(), 0)
 
         // Fetch IDs in background for future operations
         getUIMessages(conversationId, response.branch)
           .then((branchMessages) => {
-            const currentMessages = messagesRef.current
-            const regenIndex = currentMessages.findIndex((m) => m.id === messageId)
-
-            // Build ID mapping in background
-            branchMessages.forEach((branchMsg, i) => {
-              const current = currentMessages[i]
-              if (i < regenIndex && current && current.id !== branchMsg.id) {
-                idMapRef.current.set(current.id, branchMsg.id)
-              }
-            })
+            buildIdMapping(
+              truncatedMessages,
+              branchMessages,
+              idMapRef.current
+            )
           })
           .catch(console.error)
       }

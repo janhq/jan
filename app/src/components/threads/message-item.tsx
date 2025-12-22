@@ -93,7 +93,7 @@ export const MessageItem = memo(
             </MessageActions>
           )}
 
-          {message.role === 'assistant' && isLastMessage && isLastPart && (
+          {message.role === 'assistant' && isLastPart && (
             <MessageActions className="mt-1 gap-0">
               <MessageAction onClick={() => handleCopy(part.text)} label="Copy">
                 {copiedMessageId === message.id ? (
