@@ -1,6 +1,6 @@
+import type { UIMessage } from 'ai'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import type { UIMessage } from '@ai-sdk/react'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -14,7 +14,11 @@ export const getInitialsAvatar = (name: string) => {
   return words[0][0].toUpperCase()
 }
 
-// Convert ConversationItem[] to UIMessage[]
+/**
+ * Convert ConversationItems to UIMessage format
+ * @param items - Array of ConversationItems
+ * @returns  Array of UIMessage objects
+ */
 export const convertToUIMessages = (items: ConversationItem[]): UIMessage[] => {
   return items
     .filter((e) => e.role !== 'tool')
@@ -44,6 +48,20 @@ export const convertToUIMessages = (items: ConversationItem[]): UIMessage[] => {
                       // @ts-ignore fallback for older structure
                       (item.call_id === toolCall.id && item.type === 'message'))
                 )
+                const isError =
+                  !toolResult?.content ||
+                  toolResult?.content.some(
+                    (e) =>
+                      (typeof e.mcp_call === 'string' &&
+                        e.mcp_call?.toLowerCase().includes('error:')) ||
+                      (typeof e.tool_result === 'string' &&
+                        e.tool_result?.toLowerCase().includes('error:'))
+                  ) ||
+                  false
+
+                const error = isError
+                  ? toolResult?.content.find((e) => e.tool_result || e.mcp_call)
+                  : undefined
 
                 return {
                   type: `tool-${toolCall.function.name}`,
@@ -52,7 +70,10 @@ export const convertToUIMessages = (items: ConversationItem[]): UIMessage[] => {
                       ? JSON.parse(toolCall.function.arguments)
                       : toolCall.function.arguments,
                   output: toolResult?.content || '',
-                  state: 'output-available',
+                  state: isError ? 'output-error' : 'output-available',
+                  errorText: isError
+                    ? error?.tool_result || error?.mcp_call
+                    : undefined,
                   toolCallId: toolCall.id || '',
                 }
               }) || []
