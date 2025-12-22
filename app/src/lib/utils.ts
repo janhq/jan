@@ -59,15 +59,21 @@ export const convertToUIMessages = (items: ConversationItem[]): UIMessage[] => {
                   ) ||
                   false
 
+                const error = isError
+                  ? toolResult?.content.find((e) => e.tool_result || e.mcp_call)
+                  : undefined
+
                 return {
                   type: `tool-${toolCall.function.name}`,
                   input:
                     typeof toolCall.function.arguments === 'string'
                       ? JSON.parse(toolCall.function.arguments)
                       : toolCall.function.arguments,
-                  output: isError ? undefined : toolResult?.content || '',
+                  output: toolResult?.content || '',
                   state: isError ? 'output-error' : 'output-available',
-                  error: isError ? toolResult?.content : undefined,
+                  errorText: isError
+                    ? error?.tool_result || error?.mcp_call
+                    : undefined,
                   toolCallId: toolCall.id || '',
                 }
               }) || []
