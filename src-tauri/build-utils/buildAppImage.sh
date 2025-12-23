@@ -24,4 +24,5 @@ echo $APP_IMAGE
 rm -f $APP_IMAGE
 
 # repackage appimage with additional resources
+export ARCH=x86_64
 "${APPIMAGETOOL}" $APP_DIR $APP_IMAGE
