@@ -68,20 +68,40 @@ export class JanBrowserClient implements ToolCallClient {
   }
   async callTool(
     payload: CallToolPayload,
-    // @ts-expect-error unused parameter
-    metadata?: { conversationId?: string; toolCallId?: string }
+    metadata?: { conversationId?: string; toolCallId?: string; signal?: AbortSignal }
   ): Promise<MCPToolCallResult> {
     try {
+      // Check if already aborted
+      if (metadata?.signal?.aborted) {
+        return createErrorResult('Tool call was cancelled')
+      }
+
       if (!this.client?.isConnected()) {
         return createErrorResult(
           'Browser extension not connected',
           'Browser extension is not connected. Please click the Browser button to connect.'
         )
       }
-      const response = await this.client?.call(
+
+      // Create a promise that can be cancelled
+      const toolCallPromise = this.client?.call(
         payload.toolName,
         payload.arguments
       )
+
+      // If we have an abort signal, race the tool call with abort
+      let response
+      if (metadata?.signal) {
+        const abortPromise = new Promise<never>((_, reject) => {
+          metadata.signal?.addEventListener('abort', () => {
+            reject(new Error('Tool call was cancelled'))
+          })
+        })
+        response = await Promise.race([toolCallPromise, abortPromise])
+      } else {
+        response = await toolCallPromise
+      }
+
       const toolResult = toToolResult(response)
 
       return {
@@ -91,6 +111,12 @@ export class JanBrowserClient implements ToolCallClient {
         content: toolResult.content,
       }
     } catch (err) {
+      // Handle abort errors
+      if (err instanceof Error && err.message === 'Tool call was cancelled') {
+        console.log(`Browser tool call ${payload.toolName} was cancelled`)
+        return createErrorResult('Tool call was cancelled')
+      }
+
       let errorMessage: string
 
       if (err instanceof TimeoutError) {

@@ -18,6 +18,7 @@ import { useConversations } from '@/stores/conversation-store'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
+import type { UIDataTypes, UIMessage, UITools } from 'ai'
 import { MessageItem } from './message-item'
 import {
   findPrecedingUserMessageIndex,
@@ -72,12 +73,30 @@ export function ThreadPageContent({
   // sessionData is a mutable ref-like object - direct mutations don't trigger re-renders (intentional)
   const sessionData = getSessionData(chatSessionId)
 
+  // AbortController for cancelling tool calls (kept as ref since it's a signal, not session data)
+  const toolCallAbortController = useRef<AbortController | null>(null)
+
   // Helper to get current messages for this session
   const getCurrentMessages = useCallback(() => {
     const state = useChatSessions.getState()
     const session = state.sessions[chatSessionId]
     return session?.chat.messages ?? state.getSessionData(chatSessionId).messages
   }, [chatSessionId])
+
+  // Check if we should follow up with tool calls (respects abort signal)
+  const followUpMessage = ({
+    messages,
+  }: {
+    messages: UIMessage<unknown, UIDataTypes, UITools>[]
+  }) => {
+    if (
+      !toolCallAbortController.current ||
+      toolCallAbortController.current?.signal.aborted
+    ) {
+      return false
+    }
+    return lastAssistantMessageIsCompleteWithToolCalls({ messages })
+  }
 
   const {
     messages,
@@ -97,9 +116,18 @@ export function ThreadPageContent({
       initialMessageSentRef.current = false
       const hadToolCalls = sessionData.tools.length > 0
 
+      // Create a new AbortController for tool calls
+      toolCallAbortController.current = new AbortController()
+      const signal = toolCallAbortController.current.signal
+
       // After finishing a message, check if we need to resubmit for tool calls
       Promise.all(
         sessionData.tools.map(async (toolCall: any) => {
+          // Check if already aborted before starting
+          if (signal.aborted) {
+            return
+          }
+
           const result = await mcpService.callTool(
             {
               toolName: toolCall.toolName,
@@ -109,8 +137,10 @@ export function ThreadPageContent({
             {
               conversationId,
               toolCallId: toolCall.toolCallId,
+              signal, // Pass abort signal to tool call
             }
           )
+
           if (result.error) {
             addToolOutput({
               state: 'output-error',
@@ -141,11 +171,18 @@ export function ThreadPageContent({
               .catch(console.error)
           }
         })
+        .catch((error) => {
+          // Ignore abort errors
+          if (error.name !== 'AbortError') {
+            console.error('Tool call error:', error)
+          }
+        })
         .finally(() => {
           sessionData.tools = []
+          toolCallAbortController.current = null
         })
     },
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    sendAutomaticallyWhen: followUpMessage,
     onToolCall: ({ toolCall }) => {
       sessionData.tools.push(toolCall)
       return
@@ -211,6 +248,13 @@ export function ThreadPageContent({
         })
       } else if (status === 'streaming') {
         stop()
+      } else {
+        // Stop pending tool calls when user clicks stop (not streaming but tools are running)
+        if (toolCallAbortController.current) {
+          toolCallAbortController.current.abort()
+          toolCallAbortController.current = null
+          sessionData.tools = []
+        }
       }
     },
     [sendMessage, sessionData, status, stop]

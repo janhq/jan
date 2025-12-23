@@ -169,9 +169,18 @@ export class StreamableHttpMCPClient implements ToolCallClient {
    */
   async callTool(
     payload: CallToolPayload,
-    metadata?: { conversationId?: string; toolCallId?: string }
+    metadata?: {
+      conversationId?: string
+      toolCallId?: string
+      signal?: AbortSignal
+    }
   ): Promise<MCPToolCallResult> {
     try {
+      // Check if already aborted
+      if (metadata?.signal?.aborted) {
+        return createErrorResult('Tool call was cancelled')
+      }
+
       // Build headers
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -197,19 +206,20 @@ export class StreamableHttpMCPClient implements ToolCallClient {
 
       console.log(`Calling MCP tool ${payload.toolName} with headers:`, headers)
 
-      // Make fetch request
+      // Make fetch request with abort signal
       const response = await fetchWithAuth(
         `${JAN_API_BASE_URL}${this.mcpEndpoint}`,
         {
           method: 'POST',
           headers,
           body: JSON.stringify(jsonRpcRequest),
+          signal: metadata?.signal, // Pass abort signal to fetch
         }
       )
 
       if (!response.ok) {
         const errorText = await response.text()
-        throw new Error(
+        return createErrorResult(
           `MCP tool call failed: ${response.status} ${response.statusText} - ${errorText}`
         )
       }
@@ -238,7 +248,7 @@ export class StreamableHttpMCPClient implements ToolCallClient {
       }
 
       if (!result) {
-        throw new Error('No valid response from MCP server')
+        return createErrorResult('No valid response from MCP server')
       }
 
       // Check for JSON-RPC error
@@ -268,14 +278,17 @@ export class StreamableHttpMCPClient implements ToolCallClient {
       })
       return { error: '', content }
     } catch (error) {
+      // Handle abort errors separately
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log(`MCP tool call ${payload.toolName} was cancelled`)
+        return createErrorResult('Tool call was cancelled')
+      }
+
       const errorMessage =
         error instanceof Error ? error.message : String(error)
       console.error(`Failed to call MCP tool ${payload.toolName}:`, error)
 
-      return {
-        error: errorMessage,
-        content: [{ type: 'text', text: errorMessage }],
-      }
+      return createErrorResult(errorMessage)
     }
   }
 
