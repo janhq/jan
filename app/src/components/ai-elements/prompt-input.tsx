@@ -1391,7 +1391,12 @@ export const PromptInputSubmit = ({
 
   const trimmedText = controller?.textInput.value?.trim() ?? ''
   const hasContent = trimmedText.length > 0 || attachments.files.length > 0
-  const isDisabled = disabled || isUploading || hasFailedUploads || !hasContent
+  // Keep stop-action clickable while streaming even when the input was cleared
+  const isDisabled =
+    disabled ||
+    isUploading ||
+    hasFailedUploads ||
+    (!hasContent && status !== 'streaming')
 
   return (
     <InputGroupButton
