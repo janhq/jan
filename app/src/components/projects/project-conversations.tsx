@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/dialog'
 import { useConversations } from '@/stores/conversation-store'
 import { useProjects } from '@/stores/projects-store'
-import { useChatSessions } from '@/stores/chat-session-store'
+import { useChatSessions, isSessionBusy } from '@/stores/chat-session-store'
 
 interface ProjectConversationsProps {
   projectId: string
@@ -45,7 +45,7 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
   const updateConversation = useConversations(
     (state) => state.updateConversation
   )
-  const isSessionBusy = useChatSessions((state) => state.isSessionBusy)
+  const sessions = useChatSessions((state) => state.sessions)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<Conversation | null>(null)
@@ -202,7 +202,7 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
                 {(conversation as ConversationWithLatestMessage).latestMessage}
               </p>
             </Link>
-            {isSessionBusy(conversation.id) ? (
+            {isSessionBusy(sessions[conversation.id]) ? (
               <Loader2 className="size-4 animate-spin text-muted-foreground flex-shrink-0 mx-2" />
             ) : (
               <DropDrawer>

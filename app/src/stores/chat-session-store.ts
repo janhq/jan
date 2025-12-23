@@ -11,14 +11,14 @@ export type SessionData = {
   idMap: Map<string, string>
 }
 
-type ChatSession = {
+export type ChatSession = {
   chat: Chat<UIMessage>
   transport: CustomChatTransport
   status: ChatStatus
   title?: string
   isStreaming: boolean
   unsubscribers: Array<() => void>
-  memory: SessionData
+  data: SessionData
 }
 
 interface ChatSessionState {
@@ -32,7 +32,6 @@ interface ChatSessionState {
     title?: string
   ) => Chat<UIMessage>
   getSessionData: (sessionId: string) => SessionData
-  isSessionBusy: (sessionId: string) => boolean
   updateStatus: (sessionId: string, status: ChatStatus) => void
   setSessionTitle: (sessionId: string, title?: string) => void
   removeSession: (sessionId: string) => void
@@ -41,13 +40,18 @@ interface ChatSessionState {
 
 const STREAMING_STATUSES: ChatStatus[] = ['submitted', 'streaming']
 
+// Pure helper function for checking if a session is busy (for reactive use in components)
+export function isSessionBusy(session: ChatSession | undefined): boolean {
+  return session?.isStreaming || (session?.data?.tools?.length ?? 0) > 0
+}
+
 const createSessionData = (): SessionData => ({
   tools: [],
   messages: [],
   idMap: new Map<string, string>(),
 })
 
-// Standalone memory store for sessions that don't have a Chat yet
+// Standalone data store for sessions that don't have a Chat yet
 const standaloneData: Record<string, SessionData> = {}
 
 export const useChatSessions = create<ChatSessionState>((set, get) => ({
@@ -81,8 +85,8 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       ? chat['~registerStatusCallback'](syncStatus)
       : undefined
 
-    // Use existing standalone memory if available, otherwise create new
-    const memory = standaloneData[sessionId] ?? createSessionData()
+    // Use existing standalone data if available, otherwise create new
+    const data = standaloneData[sessionId] ?? createSessionData()
     delete standaloneData[sessionId] // Move to session
 
     const newSession: ChatSession = {
@@ -92,7 +96,7 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       title,
       isStreaming: STREAMING_STATUSES.includes(chat.status),
       unsubscribers: unsubscribeStatus ? [unsubscribeStatus] : [],
-      memory,
+      data,
     }
 
     set((state) => ({
@@ -107,17 +111,13 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
   getSessionData: (sessionId) => {
     const existing = get().sessions[sessionId]
     if (existing) {
-      return existing.memory
+      return existing.data
     }
-    // Return or create standalone memory for sessions without a Chat yet
+    // Return or create standalone data for sessions without a Chat yet
     if (!standaloneData[sessionId]) {
       standaloneData[sessionId] = createSessionData()
     }
     return standaloneData[sessionId]
-  },
-  isSessionBusy: (sessionId) => {
-    const session = get().sessions[sessionId]
-    return session?.isStreaming || (session?.memory?.tools?.length ?? 0) > 0
   },
   updateStatus: (sessionId, status) => {
     set((state) => {
@@ -138,7 +138,7 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       // 3. Chat has messages (not a brand new session)
       // 4. No pending tool calls (tools are still being executed)
       const hasMessages = existing.chat.messages.length > 0
-      const hasPendingTools = existing.memory.tools.length > 0
+      const hasPendingTools = existing.data.tools.length > 0
       const shouldNotify =
         wasStreaming &&
         !isStreaming &&
@@ -197,7 +197,7 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       }
     }
 
-    // Also clean up standalone memory
+    // Also clean up standalone data
     delete standaloneData[sessionId]
 
     set((state) => {
@@ -226,7 +226,7 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       }
     })
 
-    // Clear standalone memory
+    // Clear standalone data
     Object.keys(standaloneData).forEach((key) => {
       delete standaloneData[key]
     })

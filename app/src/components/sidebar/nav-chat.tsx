@@ -32,7 +32,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 import { useConversations } from '@/stores/conversation-store'
-import { useChatSessions } from '@/stores/chat-session-store'
+import { useChatSessions, isSessionBusy } from '@/stores/chat-session-store'
 
 export function NavChats() {
   const { isMobile, setOpenMobile } = useSidebar()
@@ -49,7 +49,7 @@ export function NavChats() {
   const updateConversation = useConversations(
     (state) => state.updateConversation
   )
-  const isSessionBusy = useChatSessions((state) => state.isSessionBusy)
+  const sessions = useChatSessions((state) => state.sessions)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false)
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
@@ -185,7 +185,7 @@ export function NavChats() {
                   <span className="truncate">{item.title}</span>
                 </Link>
               </SidebarMenuButton>
-              {isSessionBusy(item.id) ? (
+              {isSessionBusy(sessions[item.id]) ? (
                 <SidebarMenuAction>
                   <Loader2 className="size-4 animate-spin text-muted-foreground" />
                 </SidebarMenuAction>
