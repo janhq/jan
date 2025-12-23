@@ -228,9 +228,12 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
                   onClick={() => handleRemoveFromProject(conversation.id)}
                 >
                   <div className="flex gap-2 items-center">
-                    <FolderX className="size-4 text-muted-foreground" />
-                    <span>
-                      Remove from {currentProject?.name || 'Project'}
+                    <FolderX className="size-4 text-muted-foreground flex-shrink-0" />
+                    <span className="truncate">
+                      Remove from{' '}
+                      {(currentProject?.name || 'Project').length > 8
+                        ? `${(currentProject?.name || 'Project').slice(0, 8)}...`
+                        : currentProject?.name || 'Project'}
                     </span>
                   </div>
                 </DropDrawerItem>
