@@ -1,6 +1,6 @@
 import { toast } from 'sonner'
 import type { UIMessage } from '@ai-sdk/react'
-import { router } from '@/main'
+import { useNavigate } from '@tanstack/react-router'
 import { X } from 'lucide-react'
 
 // Helper to extract text content from assistant messages (searches backwards)
@@ -23,6 +23,50 @@ function getLastAssistantContent(messages: UIMessage[]): string | null {
   return null
 }
 
+interface ChatCompletionToastContentProps {
+  title: string
+  content?: string
+  conversationId: string
+  toastId: string | number
+}
+
+function ChatCompletionToastContent({
+  title,
+  content,
+  conversationId,
+  toastId,
+}: ChatCompletionToastContentProps) {
+  const navigate = useNavigate()
+
+  return (
+    <div
+      className="flex items-start gap-3 w-full bg-popover text-popover-foreground border rounded-lg p-4 shadow-lg cursor-pointer"
+      onClick={() => {
+        toast.dismiss(toastId)
+        navigate({ to: '/threads/$conversationId', params: { conversationId } })
+      }}
+    >
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-sm">{title}</p>
+        {content && (
+          <p className="text-muted-foreground text-sm mt-1 truncate">
+            {content}
+          </p>
+        )}
+      </div>
+      <button
+        className="text-muted-foreground hover:text-foreground"
+        onClick={(e) => {
+          e.stopPropagation()
+          toast.dismiss(toastId)
+        }}
+      >
+        <X className="size-4" />
+      </button>
+    </div>
+  )
+}
+
 export function showChatCompletionToast(
   title: string,
   messages: UIMessage[],
@@ -37,34 +81,12 @@ export function showChatCompletionToast(
 
   const toastId = toast.custom(
     (t) => (
-      <div
-        className="flex items-start gap-3 w-full bg-popover text-popover-foreground border rounded-lg p-4 shadow-lg cursor-pointer"
-        onClick={() => {
-          toast.dismiss(t)
-          router.navigate({
-            to: '/threads/$conversationId',
-            params: { conversationId },
-          })
-        }}
-      >
-        <div className="flex-1 min-w-0">
-          <p className="font-medium text-sm">{title}</p>
-          {truncatedContent && (
-            <p className="text-muted-foreground text-sm mt-1 truncate">
-              {truncatedContent}
-            </p>
-          )}
-        </div>
-        <button
-          className="text-muted-foreground hover:text-foreground"
-          onClick={(e) => {
-            e.stopPropagation()
-            toast.dismiss(t)
-          }}
-        >
-          <X className="size-4" />
-        </button>
-      </div>
+      <ChatCompletionToastContent
+        toastId={t}
+        title={title}
+        content={truncatedContent}
+        conversationId={conversationId}
+      />
     ),
     { duration: 5000 }
   )
