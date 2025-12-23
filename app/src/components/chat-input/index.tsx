@@ -19,7 +19,7 @@ import {
   usePromptInputController,
 } from '@/components/ai-elements/prompt-input'
 
-import React, { useRef, useEffect, useState, useMemo } from 'react'
+import React, { memo, useRef, useEffect, useState, useMemo } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useModels } from '@/stores/models-store'
 import { useConversations } from '@/stores/conversation-store'
@@ -486,4 +486,4 @@ const ChatInput = ({
   )
 }
 
-export default ChatInput
+export default memo(ChatInput)

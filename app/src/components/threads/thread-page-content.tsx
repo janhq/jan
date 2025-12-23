@@ -13,7 +13,7 @@ import {
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input'
 import { Loader } from 'lucide-react'
 import { useModels } from '@/stores/models-store'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConversations } from '@/stores/conversation-store'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
@@ -181,17 +181,20 @@ export function ThreadPageContent({
     }
   }
 
-  const handleSubmit = (message?: PromptInputMessage) => {
-    if (message && status !== 'streaming') {
-      tools.current = []
-      sendMessage({
-        text: message.text || 'Sent with attachments',
-        files: message.files,
-      })
-    } else if (status === 'streaming') {
-      stop()
-    }
-  }
+  const handleSubmit = useCallback(
+    (message?: PromptInputMessage) => {
+      if (message && status !== 'streaming') {
+        tools.current = []
+        sendMessage({
+          text: message.text || 'Sent with attachments',
+          files: message.files,
+        })
+      } else if (status === 'streaming') {
+        stop()
+      }
+    },
+    [sendMessage, status, stop]
+  )
 
   // Load conversation metadata (only for persistent conversations)
   useEffect(() => {
