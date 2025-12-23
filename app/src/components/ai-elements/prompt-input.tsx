@@ -1083,7 +1083,11 @@ export const PromptInput = ({
     )
 
     try {
-      const result = onSubmit({ text, files: submittableFiles }, event)
+      const trimmedText = text.trim()
+      const result = onSubmit(
+        { text: trimmedText, files: submittableFiles },
+        event
+      )
 
       // Handle both sync and async onSubmit
       if (result instanceof Promise) {
@@ -1372,6 +1376,8 @@ export const PromptInputSubmit = ({
 }: PromptInputSubmitProps) => {
   const isUploading = usePromptInputIsUploading()
   const hasFailedUploads = usePromptInputHasFailedUploads()
+  const controller = useOptionalPromptInputController()
+  const attachments = usePromptInputAttachments()
 
   let Icon = <ArrowUp className="size-4" />
 
@@ -1383,7 +1389,9 @@ export const PromptInputSubmit = ({
     Icon = <SquareIcon className="size-4" />
   }
 
-  const isDisabled = disabled || isUploading || hasFailedUploads
+  const trimmedText = controller?.textInput.value?.trim() ?? ''
+  const hasContent = trimmedText.length > 0 || attachments.files.length > 0
+  const isDisabled = disabled || isUploading || hasFailedUploads || !hasContent
 
   return (
     <InputGroupButton
