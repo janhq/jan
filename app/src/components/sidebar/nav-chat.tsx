@@ -176,7 +176,6 @@ export function NavChats() {
                   to="/threads/$conversationId"
                   params={{ conversationId: item.id }}
                   title={item.title}
-                  className="flex items-center gap-2 truncate"
                   onClick={() => {
                     if (isMobile) {
                       setOpenMobile(false)
@@ -184,48 +183,55 @@ export function NavChats() {
                   }}
                 >
                   <span className="truncate">{item.title}</span>
-                  {chatSessions[item.id]?.isStreaming && (
-                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                  )}
                 </Link>
               </SidebarMenuButton>
-              <DropDrawer>
-                <DropDrawerTrigger asChild>
-                  <SidebarMenuAction showOnHover>
-                    <MoreHorizontal className="text-muted-foreground" />
-                    <span className="sr-only">More</span>
-                  </SidebarMenuAction>
-                </DropDrawerTrigger>
-                <DropDrawerContent
-                  className="md:w-56"
-                  side={isMobile ? 'bottom' : 'right'}
-                  align={isMobile ? 'end' : 'start'}
-                >
-                  <DropDrawerItem onClick={() => handleRenameClick(item)}>
-                    <div className="flex gap-2 items-center justify-center">
-                      <PencilLine />
-                      <span>Rename</span>
-                    </div>
-                  </DropDrawerItem>
-                  <ProjectsChatInput
-                    title="Move to Project"
-                    currentProjectId={item.project_id}
-                    onProjectSelect={(projectId) =>
-                      handleMoveToProject(item.id, projectId)
-                    }
-                  />
-                  <DropDrawerSeparator />
-                  <DropDrawerItem
-                    variant="destructive"
-                    onClick={() => handleDeleteClick(item)}
+              {(() => {
+                const session = chatSessions[item.id]
+                const isBusy = session?.isStreaming || (session?.memory?.tools?.length ?? 0) > 0
+                return isBusy
+              })() ? (
+                <SidebarMenuAction>
+                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                </SidebarMenuAction>
+              ) : (
+                <DropDrawer>
+                  <DropDrawerTrigger asChild>
+                    <SidebarMenuAction showOnHover>
+                      <MoreHorizontal className="text-muted-foreground" />
+                      <span className="sr-only">More</span>
+                    </SidebarMenuAction>
+                  </DropDrawerTrigger>
+                  <DropDrawerContent
+                    className="md:w-56"
+                    side={isMobile ? 'bottom' : 'right'}
+                    align={isMobile ? 'end' : 'start'}
                   >
-                    <div className="flex gap-2 items-center justify-center">
-                      <Trash2 className="text-destructive" />
-                      <span>Delete</span>
-                    </div>
-                  </DropDrawerItem>
-                </DropDrawerContent>
-              </DropDrawer>
+                    <DropDrawerItem onClick={() => handleRenameClick(item)}>
+                      <div className="flex gap-2 items-center justify-center">
+                        <PencilLine />
+                        <span>Rename</span>
+                      </div>
+                    </DropDrawerItem>
+                    <ProjectsChatInput
+                      title="Move to Project"
+                      currentProjectId={item.project_id}
+                      onProjectSelect={(projectId) =>
+                        handleMoveToProject(item.id, projectId)
+                      }
+                    />
+                    <DropDrawerSeparator />
+                    <DropDrawerItem
+                      variant="destructive"
+                      onClick={() => handleDeleteClick(item)}
+                    >
+                      <div className="flex gap-2 items-center justify-center">
+                        <Trash2 className="text-destructive" />
+                        <span>Delete</span>
+                      </div>
+                    </DropDrawerItem>
+                  </DropDrawerContent>
+                </DropDrawer>
+              )}
             </SidebarMenuItem>
           ))}
         </SidebarMenu>

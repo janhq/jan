@@ -18,7 +18,6 @@ import { useConversations } from '@/stores/conversation-store'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
-import type { UIMessage } from 'ai'
 import { MessageItem } from './message-item'
 import {
   findPrecedingUserMessageIndex,
@@ -32,12 +31,6 @@ import { useChatSessions } from '@/stores/chat-session-store'
 const SCROLL_MASS = 1.35 // inertia, higher = slower (default: 1.25)
 const SCROLL_DAMPING = 0.72 // 0-1, higher = less bouncy (default: 0.7)
 const SCROLL_STIFFNESS = 0.045 // acceleration, lower = gentler (default: 0.05)
-
-type SessionMemory = {
-  tools: any[]
-  messages: UIMessage[]
-  idMap: Map<string, string>
-}
 
 interface ThreadPageContentProps {
   conversationId?: string
@@ -69,31 +62,22 @@ export function ThreadPageContent({
   )
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
-  const sessionMemoryRef = useRef<Record<string, SessionMemory>>({})
-  const getSessionMemory = useCallback(
-    (sessionKey: string): SessionMemory => {
-      if (!sessionMemoryRef.current[sessionKey]) {
-        sessionMemoryRef.current[sessionKey] = {
-          tools: [],
-          messages: [],
-          idMap: new Map<string, string>(),
-        }
-      }
-      return sessionMemoryRef.current[sessionKey]
-    },
-    []
-  )
   const setActiveConversationId = useChatSessions(
     (state) => state.setActiveConversationId
   )
+  const getSessionMemory = useChatSessions((state) => state.getSessionMemory)
 
   const chatSessionId =
     conversationId ?? (isPrivateChat ? 'private-chat' : 'temporary-chat')
   const sessionMemory = getSessionMemory(chatSessionId)
+
+  // Helper to get current messages for this session
   const getCurrentMessages = useCallback(() => {
-    const session = useChatSessions.getState().sessions[chatSessionId]
-    return session?.chat.messages ?? sessionMemory.messages
-  }, [chatSessionId, sessionMemory])
+    const state = useChatSessions.getState()
+    const session = state.sessions[chatSessionId]
+    return session?.chat.messages ?? state.getSessionMemory(chatSessionId).messages
+  }, [chatSessionId])
+
   const {
     messages,
     status,
@@ -107,8 +91,11 @@ export function ThreadPageContent({
     sessionId: chatSessionId,
     sessionTitle: conversationTitle || undefined,
     onFinish: () => {
+      // Note: These values are captured at Chat creation time, which is correct
+      // because onFinish fires for the Chat that started the stream, not the current conversation
       initialMessageSentRef.current = false
       const hadToolCalls = sessionMemory.tools.length > 0
+
       // After finishing a message, check if we need to resubmit for tool calls
       Promise.all(
         sessionMemory.tools.map(async (toolCall: any) => {
@@ -302,11 +289,23 @@ export function ThreadPageContent({
       !initialMessageSentRef.current &&
       !fetchingMessagesRef.current
     ) {
+      // Check if session already has messages (e.g., returning to a streaming conversation)
+      const existingSession = useChatSessions.getState().sessions[chatSessionId]
+      if (existingSession?.chat.messages.length > 0 || existingSession?.isStreaming) {
+        // Don't overwrite existing messages - session already has data
+        return
+      }
+
       fetchingMessagesRef.current = true
       // Clear messages first, then fetch (like ChatGPT)
       setMessages([])
       getUIMessages(conversationId)
         .then((uiMessages) => {
+          // Double-check session state hasn't changed during async fetch
+          const currentSession = useChatSessions.getState().sessions[chatSessionId]
+          if (currentSession?.isStreaming) {
+            return // Don't overwrite if streaming started
+          }
           if (!initialMessageSentRef.current) setMessages(uiMessages)
         })
         .catch((error) => {
@@ -317,7 +316,7 @@ export function ThreadPageContent({
         })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, isPrivateChat])
+  }, [conversationId, isPrivateChat, chatSessionId])
 
   // Auto-scroll to bottom during streaming
   useEffect(() => {

@@ -1,8 +1,15 @@
 import { create } from 'zustand'
 import type { Chat, UIMessage } from '@ai-sdk/react'
 import type { ChatStatus } from 'ai'
-import { toast } from 'sonner'
 import { CustomChatTransport } from '@/lib/custom-chat-transport'
+import { showChatCompletionToast } from '@/components/chat-completion-toast'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type SessionMemory = {
+  tools: any[]
+  messages: UIMessage[]
+  idMap: Map<string, string>
+}
 
 type ChatSession = {
   chat: Chat<UIMessage>
@@ -11,6 +18,7 @@ type ChatSession = {
   title?: string
   isStreaming: boolean
   unsubscribers: Array<() => void>
+  memory: SessionMemory
 }
 
 interface ChatSessionState {
@@ -23,6 +31,7 @@ interface ChatSessionState {
     createChat: () => Chat<UIMessage>,
     title?: string
   ) => Chat<UIMessage>
+  getSessionMemory: (sessionId: string) => SessionMemory
   updateStatus: (sessionId: string, status: ChatStatus) => void
   setSessionTitle: (sessionId: string, title?: string) => void
   removeSession: (sessionId: string) => void
@@ -30,6 +39,15 @@ interface ChatSessionState {
 }
 
 const STREAMING_STATUSES: ChatStatus[] = ['submitted', 'streaming']
+
+const createSessionMemory = (): SessionMemory => ({
+  tools: [],
+  messages: [],
+  idMap: new Map<string, string>(),
+})
+
+// Standalone memory store for sessions that don't have a Chat yet
+const standaloneMemory: Record<string, SessionMemory> = {}
 
 export const useChatSessions = create<ChatSessionState>((set, get) => ({
   sessions: {},
@@ -62,6 +80,10 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       ? chat['~registerStatusCallback'](syncStatus)
       : undefined
 
+    // Use existing standalone memory if available, otherwise create new
+    const memory = standaloneMemory[sessionId] ?? createSessionMemory()
+    delete standaloneMemory[sessionId] // Move to session
+
     const newSession: ChatSession = {
       chat,
       transport,
@@ -69,6 +91,7 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       title,
       isStreaming: STREAMING_STATUSES.includes(chat.status),
       unsubscribers: unsubscribeStatus ? [unsubscribeStatus] : [],
+      memory,
     }
 
     set((state) => ({
@@ -79,6 +102,17 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
     }))
 
     return chat
+  },
+  getSessionMemory: (sessionId) => {
+    const existing = get().sessions[sessionId]
+    if (existing) {
+      return existing.memory
+    }
+    // Return or create standalone memory for sessions without a Chat yet
+    if (!standaloneMemory[sessionId]) {
+      standaloneMemory[sessionId] = createSessionMemory()
+    }
+    return standaloneMemory[sessionId]
   },
   updateStatus: (sessionId, status) => {
     set((state) => {
@@ -92,14 +126,24 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       if (existing.status === status && wasStreaming === isStreaming) {
         return state
       }
+
+      // Only notify if:
+      // 1. Was streaming and now stopped
+      // 2. Not the active conversation
+      // 3. Chat has messages (not a brand new session)
+      // 4. No pending tool calls (tools are still being executed)
+      const hasMessages = existing.chat.messages.length > 0
+      const hasPendingTools = existing.memory.tools.length > 0
       const shouldNotify =
         wasStreaming &&
         !isStreaming &&
+        hasMessages &&
+        !hasPendingTools &&
         state.activeConversationId !== sessionId
 
       if (shouldNotify) {
         const title = existing.title ?? 'Conversation'
-        toast.info(`${title} finished streaming`)
+        showChatCompletionToast(title, existing.chat.messages, sessionId)
       }
 
       return {
@@ -148,6 +192,9 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       }
     }
 
+    // Also clean up standalone memory
+    delete standaloneMemory[sessionId]
+
     set((state) => {
       if (!state.sessions[sessionId]) {
         return state
@@ -172,6 +219,11 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       } catch (error) {
         console.error('Failed to stop chat session', error)
       }
+    })
+
+    // Clear standalone memory
+    Object.keys(standaloneMemory).forEach((key) => {
+      delete standaloneMemory[key]
     })
 
     set({ sessions: {}, activeConversationId: undefined })

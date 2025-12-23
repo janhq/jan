@@ -195,67 +195,70 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
               params={{ conversationId: conversation.id }}
               className="flex-1 min-w-0"
             >
-              <div className="flex items-center gap-2">
-                <h3 className="font-medium text-sm truncate">
-                  {conversation.title}
-                </h3>
-                {chatSessions[conversation.id]?.isStreaming && (
-                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                )}
-              </div>
+              <h3 className="font-medium text-sm truncate">
+                {conversation.title}
+              </h3>
               <p className="text-muted-foreground truncate mt-1">
                 {(conversation as ConversationWithLatestMessage).latestMessage}
               </p>
             </Link>
-            <DropDrawer>
-              <DropDrawerTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <MoreHorizontal className="text-muted-foreground size-4" />
-                </Button>
-              </DropDrawerTrigger>
-              <DropDrawerContent className="md:w-56" align="end">
-                <DropDrawerItem onClick={() => handleRenameClick(conversation)}>
-                  <div className="flex gap-2 items-center">
-                    <PencilLine />
-                    <span>Rename</span>
-                  </div>
-                </DropDrawerItem>
-                <ProjectsChatInput
-                  title="Move to Project"
-                  currentProjectId={conversation.project_id}
-                  onProjectSelect={(projectId) =>
-                    handleMoveToProject(conversation.id, projectId)
-                  }
-                />
-                <DropDrawerItem
-                  onClick={() => handleRemoveFromProject(conversation.id)}
-                >
-                  <div className="flex gap-2 items-center">
-                    <FolderX className="size-4 text-muted-foreground flex-shrink-0" />
-                    <span className="truncate">
-                      Remove from{' '}
-                      {(currentProject?.name || 'Project').length > 8
-                        ? `${(currentProject?.name || 'Project').slice(0, 8)}...`
-                        : currentProject?.name || 'Project'}
-                    </span>
-                  </div>
-                </DropDrawerItem>
-                <DropDrawerSeparator />
-                <DropDrawerItem
-                  variant="destructive"
-                  onClick={() => handleDeleteClick(conversation)}
-                >
-                  <div className="flex gap-2 items-center">
-                    <Trash2 className="text-destructive" />
-                    <span>Delete</span>
-                  </div>
-                </DropDrawerItem>
-              </DropDrawerContent>
-            </DropDrawer>
+            {(() => {
+              const session = chatSessions[conversation.id]
+              const isBusy = session?.isStreaming || (session?.memory?.tools?.length ?? 0) > 0
+              return isBusy
+            })() ? (
+              <Loader2 className="size-4 animate-spin text-muted-foreground flex-shrink-0 mx-2" />
+            ) : (
+              <DropDrawer>
+                <DropDrawerTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <MoreHorizontal className="text-muted-foreground size-4" />
+                  </Button>
+                </DropDrawerTrigger>
+                <DropDrawerContent className="md:w-56" align="end">
+                  <DropDrawerItem onClick={() => handleRenameClick(conversation)}>
+                    <div className="flex gap-2 items-center">
+                      <PencilLine />
+                      <span>Rename</span>
+                    </div>
+                  </DropDrawerItem>
+                  <ProjectsChatInput
+                    title="Move to Project"
+                    currentProjectId={conversation.project_id}
+                    onProjectSelect={(projectId) =>
+                      handleMoveToProject(conversation.id, projectId)
+                    }
+                  />
+                  <DropDrawerItem
+                    onClick={() => handleRemoveFromProject(conversation.id)}
+                  >
+                    <div className="flex gap-2 items-center">
+                      <FolderX className="size-4 text-muted-foreground flex-shrink-0" />
+                      <span className="truncate">
+                        Remove from{' '}
+                        {(currentProject?.name || 'Project').length > 8
+                          ? `${(currentProject?.name || 'Project').slice(0, 8)}...`
+                          : currentProject?.name || 'Project'}
+                      </span>
+                    </div>
+                  </DropDrawerItem>
+                  <DropDrawerSeparator />
+                  <DropDrawerItem
+                    variant="destructive"
+                    onClick={() => handleDeleteClick(conversation)}
+                  >
+                    <div className="flex gap-2 items-center">
+                      <Trash2 className="text-destructive" />
+                      <span>Delete</span>
+                    </div>
+                  </DropDrawerItem>
+                </DropDrawerContent>
+              </DropDrawer>
+            )}
           </div>
         ))}
       </div>
