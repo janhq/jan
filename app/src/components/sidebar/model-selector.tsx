@@ -51,18 +51,25 @@ export function ModelSelector() {
   return (
     <DropDrawer open={open} onOpenChange={setOpen}>
       <DropDrawerTrigger asChild>
-        <Button variant="outline" className="justify-between rounded-full">
-          <Jan className="size-4 shrink-0" />
-          <span
-            className={
-              selectedModel ? 'truncate' : 'truncate text-muted-foreground'
-            }
-          >
-            {!loading &&
-              (selectedModel?.model_display_name || 'Select a model')}
-          </span>
-          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
-        </Button>
+        <div className="relative">
+          <Button variant="outline" className="justify-between rounded-full">
+            <Jan className="size-4 shrink-0" />
+            <span
+              className={
+                selectedModel ? 'truncate' : 'truncate text-muted-foreground'
+              }
+            >
+              {!loading &&
+                (selectedModel?.model_display_name || 'Select a model')}
+            </span>
+            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+          </Button>
+          <img
+            src="/hat.png"
+            alt="Christmas tree"
+            className="size-9 object-contain absolute -top-3.5 -right-3 pointer-events-none select-none"
+          />
+        </div>
       </DropDrawerTrigger>
       <DropDrawerContent align="start" className="p-2 md:w-70">
         {!loading && (
