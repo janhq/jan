@@ -216,7 +216,8 @@ const ChatInput = ({
   }
 
   const handleSubmit = (message: PromptInputMessage) => {
-    const hasText = Boolean(message.text)
+    const trimmedText = message.text.trim()
+    const hasText = Boolean(trimmedText)
     const hasAttachments = Boolean(message.files?.length)
 
     if (!(hasText || hasAttachments)) {
@@ -224,12 +225,17 @@ const ChatInput = ({
       return
     }
 
+    const normalizedMessage: PromptInputMessage = {
+      ...message,
+      text: trimmedText,
+    }
+
     if (selectedModel) {
       if (initialConversation) {
         if (isPrivateChat) {
           sessionStorage.setItem(
             `initial-message-temporary`,
-            JSON.stringify(message)
+            JSON.stringify(normalizedMessage)
           )
           navigate({
             to: '/threads/temporary',
@@ -239,7 +245,7 @@ const ChatInput = ({
         }
 
         const conversationPayload: CreateConversationPayload = {
-          title: message.text || 'New Chat',
+          title: normalizedMessage.text || 'New Chat',
           ...(projectId && { project_id: String(projectId) }),
           ...(selectedProjectId && { project_id: selectedProjectId }),
           metadata: {
@@ -254,7 +260,7 @@ const ChatInput = ({
             // Store the initial message in sessionStorage for the new conversation
             sessionStorage.setItem(
               `initial-message-${conversation.id}`,
-              JSON.stringify(message)
+              JSON.stringify(normalizedMessage)
             )
 
             // Clear selected project after creating conversation
@@ -272,7 +278,7 @@ const ChatInput = ({
             console.error('Failed to create initial conversation:', error)
           })
       } else {
-        submit?.(message)
+        submit?.(normalizedMessage)
       }
     }
   }
