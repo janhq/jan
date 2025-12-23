@@ -1,6 +1,6 @@
-import { Separator } from '@/components/ui/separator'
-import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
+// import { Separator } from '@/components/ui/separator'
+// import { Button } from '@/components/ui/button'
+// import { Switch } from '@/components/ui/switch'
 import { HatGlassesIcon, LockKeyhole, MessagesSquareIcon } from 'lucide-react'
 
 export function PrivacySettings() {
@@ -8,18 +8,13 @@ export function PrivacySettings() {
     <div>
       <p className="text-base font-medium mb-2 font-studio">Privacy</p>
       <div className="flex justify-between items-center">
-        <div className="mt-6 font-medium">Export Data</div>
-        <Button variant="outline">Export data</Button>
-      </div>
-      <Separator className="my-4 w-full h-1" />
-      <div className="flex justify-between items-center">
         <div>
           <div className="font-medium">Help Jan get better</div>
           <p className="text-muted-foreground mt-2">
             Sharing anonymous usage data helps us improve Jan.
           </p>
         </div>
-        <Switch />
+        {/* <Switch /> */}
       </div>
       <div className="text-muted-foreground mt-2 space-y-1">
         <p className="font-semibold">Your privacy is protected:</p>
