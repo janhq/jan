@@ -18,7 +18,7 @@ import { useConversations } from '@/stores/conversation-store'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
-import type { UIMessage } from 'ai'
+import type { UIDataTypes, UIMessage, UITools } from 'ai'
 import { MessageItem } from './message-item'
 import {
   findPrecedingUserMessageIndex,
@@ -65,6 +65,21 @@ export function ThreadPageContent({
   const tools = useRef<any>([])
   const messagesRef = useRef<UIMessage[]>([])
   const idMapRef = useRef<Map<string, string>>(new Map()) // temp ID -> real ID
+  const toolCallAbortController = useRef<AbortController | null>(null)
+
+  const followUpMessage = ({
+    messages,
+  }: {
+    messages: UIMessage<unknown, UIDataTypes, UITools>[]
+  }) => {
+    if (
+      !toolCallAbortController.current ||
+      toolCallAbortController.current?.signal.aborted
+    ) {
+      return false
+    }
+    return lastAssistantMessageIsCompleteWithToolCalls({ messages })
+  }
 
   const {
     messages,
@@ -79,9 +94,19 @@ export function ThreadPageContent({
     onFinish: () => {
       initialMessageSentRef.current = false
       const hadToolCalls = tools.current.length > 0
+
+      // Create a new AbortController for tool calls
+      toolCallAbortController.current = new AbortController()
+      const signal = toolCallAbortController.current.signal
+
       // After finishing a message, check if we need to resubmit for tool calls
       Promise.all(
         tools.current.map(async (toolCall: any) => {
+          // Check if already aborted before starting
+          if (signal.aborted) {
+            return
+          }
+
           const result = await mcpService.callTool(
             {
               toolName: toolCall.toolName,
@@ -91,8 +116,10 @@ export function ThreadPageContent({
             {
               conversationId,
               toolCallId: toolCall.toolCallId,
+              signal, // Pass abort signal to tool call
             }
           )
+
           if (result.error) {
             addToolOutput({
               state: 'output-error',
@@ -123,11 +150,18 @@ export function ThreadPageContent({
               .catch(console.error)
           }
         })
+        .catch((error) => {
+          // Ignore abort errors
+          if (error.name !== 'AbortError') {
+            console.error('Tool call error:', error)
+          }
+        })
         .finally(() => {
           tools.current = []
+          toolCallAbortController.current = null
         })
     },
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    sendAutomaticallyWhen: followUpMessage,
     onToolCall: ({ toolCall }) => {
       tools.current.push(toolCall)
       return
@@ -191,6 +225,12 @@ export function ThreadPageContent({
         })
       } else if (status === 'streaming') {
         stop()
+      } else {
+        if (toolCallAbortController.current) {
+          toolCallAbortController.current.abort()
+          toolCallAbortController.current = null
+          tools.current = []
+        }
       }
     },
     [sendMessage, status, stop]

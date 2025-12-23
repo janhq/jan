@@ -205,7 +205,11 @@ class MCPService {
    */
   async callTool(
     payload: CallToolPayload,
-    metadata?: { conversationId?: string; toolCallId?: string }
+    metadata?: {
+      conversationId?: string
+      toolCallId?: string
+      signal?: AbortSignal
+    }
   ): Promise<MCPToolCallResult> {
     try {
       await this.ensureInitialized()
@@ -251,12 +255,22 @@ class MCPService {
       console.log(
         `Routing tool call "${payload.toolName}" to client: ${targetClientKey}`
       )
+
+      // Check if already aborted before calling
+      if (metadata?.signal?.aborted) {
+        return createErrorResult('Tool call was cancelled')
+      }
+
       return await targetClient
         .callTool(payload, metadata)
         .then(async (toolResult) => {
           console.log(
-            `Tool "${payload.toolName}" executed successfully on client: ${targetClientKey}`
+            `Tool "${payload.toolName}" executed successfully on client: ${targetClientKey}`,
+            toolResult
           )
+          if (toolResult.error) {
+            return createErrorResult(toolResult.error)
+          }
 
           // Process content to upload images and convert to Jan media URLs
           const processedContent = await Promise.all(
