@@ -5,7 +5,7 @@ import { CustomChatTransport } from '@/lib/custom-chat-transport'
 import { showChatCompletionToast } from '@/lib/chat-completion-toast'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type SessionMemory = {
+export type SessionData = {
   tools: any[]
   messages: UIMessage[]
   idMap: Map<string, string>
@@ -18,7 +18,7 @@ type ChatSession = {
   title?: string
   isStreaming: boolean
   unsubscribers: Array<() => void>
-  memory: SessionMemory
+  memory: SessionData
 }
 
 interface ChatSessionState {
@@ -31,7 +31,7 @@ interface ChatSessionState {
     createChat: () => Chat<UIMessage>,
     title?: string
   ) => Chat<UIMessage>
-  getSessionMemory: (sessionId: string) => SessionMemory
+  getSessionData: (sessionId: string) => SessionData
   isSessionBusy: (sessionId: string) => boolean
   updateStatus: (sessionId: string, status: ChatStatus) => void
   setSessionTitle: (sessionId: string, title?: string) => void
@@ -41,14 +41,14 @@ interface ChatSessionState {
 
 const STREAMING_STATUSES: ChatStatus[] = ['submitted', 'streaming']
 
-const createSessionMemory = (): SessionMemory => ({
+const createSessionData = (): SessionData => ({
   tools: [],
   messages: [],
   idMap: new Map<string, string>(),
 })
 
 // Standalone memory store for sessions that don't have a Chat yet
-const standaloneMemory: Record<string, SessionMemory> = {}
+const standaloneData: Record<string, SessionData> = {}
 
 export const useChatSessions = create<ChatSessionState>((set, get) => ({
   sessions: {},
@@ -82,8 +82,8 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       : undefined
 
     // Use existing standalone memory if available, otherwise create new
-    const memory = standaloneMemory[sessionId] ?? createSessionMemory()
-    delete standaloneMemory[sessionId] // Move to session
+    const memory = standaloneData[sessionId] ?? createSessionData()
+    delete standaloneData[sessionId] // Move to session
 
     const newSession: ChatSession = {
       chat,
@@ -104,16 +104,16 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
 
     return chat
   },
-  getSessionMemory: (sessionId) => {
+  getSessionData: (sessionId) => {
     const existing = get().sessions[sessionId]
     if (existing) {
       return existing.memory
     }
     // Return or create standalone memory for sessions without a Chat yet
-    if (!standaloneMemory[sessionId]) {
-      standaloneMemory[sessionId] = createSessionMemory()
+    if (!standaloneData[sessionId]) {
+      standaloneData[sessionId] = createSessionData()
     }
-    return standaloneMemory[sessionId]
+    return standaloneData[sessionId]
   },
   isSessionBusy: (sessionId) => {
     const session = get().sessions[sessionId]
@@ -198,7 +198,7 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
     }
 
     // Also clean up standalone memory
-    delete standaloneMemory[sessionId]
+    delete standaloneData[sessionId]
 
     set((state) => {
       if (!state.sessions[sessionId]) {
@@ -227,8 +227,8 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
     })
 
     // Clear standalone memory
-    Object.keys(standaloneMemory).forEach((key) => {
-      delete standaloneMemory[key]
+    Object.keys(standaloneData).forEach((key) => {
+      delete standaloneData[key]
     })
 
     set({ sessions: {}, activeConversationId: undefined })

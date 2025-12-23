@@ -65,17 +65,17 @@ export function ThreadPageContent({
   const setActiveConversationId = useChatSessions(
     (state) => state.setActiveConversationId
   )
-  const getSessionMemory = useChatSessions((state) => state.getSessionMemory)
+  const getSessionData = useChatSessions((state) => state.getSessionData)
 
   const chatSessionId =
     conversationId ?? (isPrivateChat ? 'private-chat' : 'temporary-chat')
-  const sessionMemory = getSessionMemory(chatSessionId)
+  const sessionData = getSessionData(chatSessionId)
 
   // Helper to get current messages for this session
   const getCurrentMessages = useCallback(() => {
     const state = useChatSessions.getState()
     const session = state.sessions[chatSessionId]
-    return session?.chat.messages ?? state.getSessionMemory(chatSessionId).messages
+    return session?.chat.messages ?? state.getSessionData(chatSessionId).messages
   }, [chatSessionId])
 
   const {
@@ -94,11 +94,11 @@ export function ThreadPageContent({
       // Note: These values are captured at Chat creation time, which is correct
       // because onFinish fires for the Chat that started the stream, not the current conversation
       initialMessageSentRef.current = false
-      const hadToolCalls = sessionMemory.tools.length > 0
+      const hadToolCalls = sessionData.tools.length > 0
 
       // After finishing a message, check if we need to resubmit for tool calls
       Promise.all(
-        sessionMemory.tools.map(async (toolCall: any) => {
+        sessionData.tools.map(async (toolCall: any) => {
           const result = await mcpService.callTool(
             {
               toolName: toolCall.toolName,
@@ -134,34 +134,34 @@ export function ThreadPageContent({
                 buildIdMapping(
                   getCurrentMessages(),
                   backendMessages,
-                  sessionMemory.idMap
+                  sessionData.idMap
                 )
               })
               .catch(console.error)
           }
         })
         .finally(() => {
-          sessionMemory.tools = []
+          sessionData.tools = []
         })
     },
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
     onToolCall: ({ toolCall }) => {
-      sessionMemory.tools.push(toolCall)
+      sessionData.tools.push(toolCall)
       return
     },
   })
 
   // Keep ref in sync for use in onFinish closure
   useEffect(() => {
-    sessionMemory.messages = messages
-  }, [messages, sessionMemory])
+    sessionData.messages = messages
+  }, [messages, sessionData])
 
   const regenerateMessage = useConversations((state) => state.regenerateMessage)
 
   const handleRegenerate = async (messageId: string) => {
     if (!conversationId) return
     try {
-      const realId = resolveMessageId(messageId, sessionMemory.idMap)
+      const realId = resolveMessageId(messageId, sessionData.idMap)
       const currentMessages = getCurrentMessages()
 
       // Find the clicked assistant message index
@@ -191,7 +191,7 @@ export function ThreadPageContent({
         // Fetch IDs in background for future operations
         getUIMessages(conversationId, response.branch)
           .then((branchMessages) => {
-            buildIdMapping(truncatedMessages, branchMessages, sessionMemory.idMap)
+            buildIdMapping(truncatedMessages, branchMessages, sessionData.idMap)
           })
           .catch(console.error)
       }
@@ -203,7 +203,7 @@ export function ThreadPageContent({
   const handleSubmit = useCallback(
     (message?: PromptInputMessage) => {
       if (message && status !== 'streaming') {
-        sessionMemory.tools = []
+        sessionData.tools = []
         sendMessage({
           text: message.text || 'Sent with attachments',
           files: message.files,
@@ -212,7 +212,7 @@ export function ThreadPageContent({
         stop()
       }
     },
-    [sendMessage, sessionMemory, status, stop]
+    [sendMessage, sessionData, status, stop]
   )
 
   // Load conversation metadata (only for persistent conversations)
@@ -254,7 +254,7 @@ export function ThreadPageContent({
         sessionStorage.removeItem(initialMessageKey)
         // Mark as sent to prevent duplicate sends
         initialMessageSentRef.current = true
-        sessionMemory.tools = []
+        sessionData.tools = []
 
         // Preload cached items if any
         const initialItemsKey = `initial-items-${conversationId}`
@@ -274,7 +274,7 @@ export function ThreadPageContent({
         console.error('Failed to parse initial message:', error)
       }
     }
-  }, [conversationId, isPrivateChat, sendMessage, sessionMemory, setMessages])
+  }, [conversationId, isPrivateChat, sendMessage, sessionData, setMessages])
 
   useEffect(() => {
     setActiveConversationId(conversationId)
@@ -365,7 +365,7 @@ export function ThreadPageContent({
           <div className="px-4 py-4 max-w-3xl mx-auto w-full">
             <ChatInput
               submit={handleSubmit}
-              status={sessionMemory.tools.length > 0 ? 'streaming' : status}
+              status={sessionData.tools.length > 0 ? 'streaming' : status}
               conversationId={conversationId}
             />
           </div>
