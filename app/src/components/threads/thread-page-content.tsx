@@ -26,11 +26,18 @@ import {
   resolveMessageId,
 } from '@/lib/message-utils'
 import { convertToUIMessages } from '@/lib/utils'
+import { useChatSessions } from '@/stores/chat-session-store'
 
 // Scroll animation config (spring physics) - a tad slower than default
 const SCROLL_MASS = 1.35 // inertia, higher = slower (default: 1.25)
 const SCROLL_DAMPING = 0.72 // 0-1, higher = less bouncy (default: 0.7)
 const SCROLL_STIFFNESS = 0.045 // acceleration, lower = gentler (default: 0.05)
+
+type SessionMemory = {
+  tools: any[]
+  messages: UIMessage[]
+  idMap: Map<string, string>
+}
 
 interface ThreadPageContentProps {
   conversationId?: string
@@ -62,10 +69,31 @@ export function ThreadPageContent({
   )
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
-  const tools = useRef<any>([])
-  const messagesRef = useRef<UIMessage[]>([])
-  const idMapRef = useRef<Map<string, string>>(new Map()) // temp ID -> real ID
+  const sessionMemoryRef = useRef<Record<string, SessionMemory>>({})
+  const getSessionMemory = useCallback(
+    (sessionKey: string): SessionMemory => {
+      if (!sessionMemoryRef.current[sessionKey]) {
+        sessionMemoryRef.current[sessionKey] = {
+          tools: [],
+          messages: [],
+          idMap: new Map<string, string>(),
+        }
+      }
+      return sessionMemoryRef.current[sessionKey]
+    },
+    []
+  )
+  const setActiveConversationId = useChatSessions(
+    (state) => state.setActiveConversationId
+  )
 
+  const chatSessionId =
+    conversationId ?? (isPrivateChat ? 'private-chat' : 'temporary-chat')
+  const sessionMemory = getSessionMemory(chatSessionId)
+  const getCurrentMessages = useCallback(() => {
+    const session = useChatSessions.getState().sessions[chatSessionId]
+    return session?.chat.messages ?? sessionMemory.messages
+  }, [chatSessionId, sessionMemory])
   const {
     messages,
     status,
@@ -76,12 +104,14 @@ export function ThreadPageContent({
     stop,
   } = useChat(provider(selectedModel?.id), {
     experimental_throttle: 50,
+    sessionId: chatSessionId,
+    sessionTitle: conversationTitle || undefined,
     onFinish: () => {
       initialMessageSentRef.current = false
-      const hadToolCalls = tools.current.length > 0
+      const hadToolCalls = sessionMemory.tools.length > 0
       // After finishing a message, check if we need to resubmit for tool calls
       Promise.all(
-        tools.current.map(async (toolCall: any) => {
+        sessionMemory.tools.map(async (toolCall: any) => {
           const result = await mcpService.callTool(
             {
               toolName: toolCall.toolName,
@@ -115,35 +145,37 @@ export function ThreadPageContent({
             getUIMessages(conversationId)
               .then((backendMessages) => {
                 buildIdMapping(
-                  messagesRef.current,
+                  getCurrentMessages(),
                   backendMessages,
-                  idMapRef.current
+                  sessionMemory.idMap
                 )
               })
               .catch(console.error)
           }
         })
         .finally(() => {
-          tools.current = []
+          sessionMemory.tools = []
         })
     },
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
     onToolCall: ({ toolCall }) => {
-      tools.current.push(toolCall)
+      sessionMemory.tools.push(toolCall)
       return
     },
   })
 
   // Keep ref in sync for use in onFinish closure
-  messagesRef.current = messages
+  useEffect(() => {
+    sessionMemory.messages = messages
+  }, [messages, sessionMemory])
 
   const regenerateMessage = useConversations((state) => state.regenerateMessage)
 
   const handleRegenerate = async (messageId: string) => {
     if (!conversationId) return
     try {
-      const realId = resolveMessageId(messageId, idMapRef.current)
-      const currentMessages = messagesRef.current
+      const realId = resolveMessageId(messageId, sessionMemory.idMap)
+      const currentMessages = getCurrentMessages()
 
       // Find the clicked assistant message index
       const assistantIndex = currentMessages.findIndex(
@@ -172,7 +204,7 @@ export function ThreadPageContent({
         // Fetch IDs in background for future operations
         getUIMessages(conversationId, response.branch)
           .then((branchMessages) => {
-            buildIdMapping(truncatedMessages, branchMessages, idMapRef.current)
+            buildIdMapping(truncatedMessages, branchMessages, sessionMemory.idMap)
           })
           .catch(console.error)
       }
@@ -184,7 +216,7 @@ export function ThreadPageContent({
   const handleSubmit = useCallback(
     (message?: PromptInputMessage) => {
       if (message && status !== 'streaming') {
-        tools.current = []
+        sessionMemory.tools = []
         sendMessage({
           text: message.text || 'Sent with attachments',
           files: message.files,
@@ -193,7 +225,7 @@ export function ThreadPageContent({
         stop()
       }
     },
-    [sendMessage, status, stop]
+    [sendMessage, sessionMemory, status, stop]
   )
 
   // Load conversation metadata (only for persistent conversations)
@@ -235,7 +267,7 @@ export function ThreadPageContent({
         sessionStorage.removeItem(initialMessageKey)
         // Mark as sent to prevent duplicate sends
         initialMessageSentRef.current = true
-        tools.current = []
+        sessionMemory.tools = []
 
         // Preload cached items if any
         const initialItemsKey = `initial-items-${conversationId}`
@@ -255,7 +287,12 @@ export function ThreadPageContent({
         console.error('Failed to parse initial message:', error)
       }
     }
-  }, [conversationId, isPrivateChat, sendMessage])
+  }, [conversationId, isPrivateChat, sendMessage, sessionMemory, setMessages])
+
+  useEffect(() => {
+    setActiveConversationId(conversationId)
+    return () => setActiveConversationId(undefined)
+  }, [conversationId, setActiveConversationId])
 
   // Fetch messages for old conversations (only for persistent conversations)
   useEffect(() => {
@@ -329,7 +366,7 @@ export function ThreadPageContent({
           <div className="px-4 py-4 max-w-3xl mx-auto w-full">
             <ChatInput
               submit={handleSubmit}
-              status={tools.current.length > 0 ? 'streaming' : status}
+              status={sessionMemory.tools.length > 0 ? 'streaming' : status}
               conversationId={conversationId}
             />
           </div>

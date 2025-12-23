@@ -1,4 +1,4 @@
-import { MoreHorizontal, Trash2, PencilLine } from 'lucide-react'
+import { MoreHorizontal, Trash2, PencilLine, Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 
@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 import { useConversations } from '@/stores/conversation-store'
+import { useChatSessions } from '@/stores/chat-session-store'
 
 export function NavChats() {
   const { isMobile, setOpenMobile } = useSidebar()
@@ -48,6 +49,7 @@ export function NavChats() {
   const updateConversation = useConversations(
     (state) => state.updateConversation
   )
+  const chatSessions = useChatSessions((state) => state.sessions)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false)
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
@@ -174,13 +176,17 @@ export function NavChats() {
                   to="/threads/$conversationId"
                   params={{ conversationId: item.id }}
                   title={item.title}
+                  className="flex items-center gap-2 truncate"
                   onClick={() => {
                     if (isMobile) {
                       setOpenMobile(false)
                     }
                   }}
                 >
-                  <span>{item.title}</span>
+                  <span className="truncate">{item.title}</span>
+                  {chatSessions[item.id]?.isStreaming && (
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                  )}
                 </Link>
               </SidebarMenuButton>
               <DropDrawer>

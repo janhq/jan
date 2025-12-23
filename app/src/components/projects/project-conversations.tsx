@@ -1,4 +1,4 @@
-import { MoreHorizontal, Trash2, PencilLine, FolderX } from 'lucide-react'
+import { MoreHorizontal, Trash2, PencilLine, Loader2, FolderX } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 
@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog'
 import { useConversations } from '@/stores/conversation-store'
 import { useProjects } from '@/stores/projects-store'
+import { useChatSessions } from '@/stores/chat-session-store'
 
 interface ProjectConversationsProps {
   projectId: string
@@ -44,6 +45,7 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
   const updateConversation = useConversations(
     (state) => state.updateConversation
   )
+  const chatSessions = useChatSessions((state) => state.sessions)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<Conversation | null>(null)
@@ -193,9 +195,14 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
               params={{ conversationId: conversation.id }}
               className="flex-1 min-w-0"
             >
-              <h3 className="font-medium text-sm truncate">
-                {conversation.title}
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-medium text-sm truncate">
+                  {conversation.title}
+                </h3>
+                {chatSessions[conversation.id]?.isStreaming && (
+                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                )}
+              </div>
               <p className="text-muted-foreground truncate mt-1">
                 {(conversation as ConversationWithLatestMessage).latestMessage}
               </p>
