@@ -1,6 +1,7 @@
 import { toast } from 'sonner'
 import type { UIMessage } from '@ai-sdk/react'
 import { router } from '@/main'
+import { X } from 'lucide-react'
 
 // Helper to extract text content from assistant messages (searches backwards)
 function getLastAssistantContent(messages: UIMessage[]): string | null {
@@ -34,26 +35,39 @@ export function showChatCompletionToast(
       : content
     : undefined
 
-  let toastId: string | number
-
-  toastId = toast(title, {
-    description: truncatedContent,
-    duration: 20000,
-    action: {
-      label: 'View',
-      onClick: () => {
-        toast.dismiss(toastId)
-        router.navigate({
-          to: '/threads/$conversationId',
-          params: { conversationId },
-        })
-      },
-    },
-    actionButtonStyle: {
-      backgroundColor: 'var(--color-primary)',
-      color: 'var(--color-primary-foreground)',
-    },
-  })
+  const toastId = toast.custom(
+    (t) => (
+      <div
+        className="flex items-start gap-3 w-full bg-popover text-popover-foreground border rounded-lg p-4 shadow-lg cursor-pointer"
+        onClick={() => {
+          toast.dismiss(t)
+          router.navigate({
+            to: '/threads/$conversationId',
+            params: { conversationId },
+          })
+        }}
+      >
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm">{title}</p>
+          {truncatedContent && (
+            <p className="text-muted-foreground text-sm mt-1 truncate">
+              {truncatedContent}
+            </p>
+          )}
+        </div>
+        <button
+          className="text-muted-foreground hover:text-foreground"
+          onClick={(e) => {
+            e.stopPropagation()
+            toast.dismiss(t)
+          }}
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+    ),
+    { duration: 5000 }
+  )
 
   return toastId
 }

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { Chat, UIMessage } from '@ai-sdk/react'
 import type { ChatStatus } from 'ai'
 import { CustomChatTransport } from '@/lib/custom-chat-transport'
-import { showChatCompletionToast } from '@/lib/chat-completion-toast'
+import { showChatCompletionToast } from '@/components/ui/chat-completion-toast'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type SessionData = {
