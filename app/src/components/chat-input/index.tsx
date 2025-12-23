@@ -19,13 +19,14 @@ import {
   usePromptInputController,
 } from '@/components/ai-elements/prompt-input'
 
-import { memo, useEffect, useRef, useState } from 'react'
+import React, { useRef, useEffect, useState, useMemo } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useModels } from '@/stores/models-store'
 import { useConversations } from '@/stores/conversation-store'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { useProjects } from '@/stores/projects-store'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useIsMobileDevice } from '@/hooks/use-is-mobile-device'
 import { toast } from 'sonner'
 import {
   FolderIcon,
@@ -35,6 +36,7 @@ import {
   Settings2,
   X,
 } from 'lucide-react'
+import { isChromeBrowser } from '@janhq/mcp-web-client'
 
 import { BorderAnimate } from '../ui/border-animate'
 import { cn } from '@/lib/utils'
@@ -72,6 +74,9 @@ const ChatInput = ({
     (state) => state.connectionState
   )
   const isMobile = useIsMobile()
+  const isMobileDevice = useIsMobileDevice()
+  const isBrowserSupported = useMemo(() => isChromeBrowser(), [])
+  const shouldShowBrowserUI = isBrowserSupported && !isMobileDevice
 
   // Auto-focus on chat input when component mounts (desktop only)
   useEffect(() => {
@@ -157,6 +162,13 @@ const ChatInput = ({
       setBrowserEnabled(false)
     }
   }, [browserConnectionState, browserEnabled, setBrowserEnabled])
+
+  // Disable browser capability on unsupported environments
+  useEffect(() => {
+    if (!shouldShowBrowserUI && browserEnabled) {
+      setBrowserEnabled(false)
+    }
+  }, [shouldShowBrowserUI, browserEnabled, setBrowserEnabled])
 
   useEffect(() => {
     fetchPreferences()
@@ -327,6 +339,7 @@ const ChatInput = ({
                   setDeepResearchEnabled(false)
                   setSearchEnabled(false)
                 }}
+                isBrowserSupported={isBrowserSupported}
                 toggleInstruct={toggleInstruct}
                 isSupportTools={isSupportTools}
                 isSupportDeepResearch={isSupportDeepResearch}
@@ -378,7 +391,7 @@ const ChatInput = ({
                   <span className="text-primary">Deep Research</span>
                 </PromptInputButton>
               )}
-              {browserEnabled && (
+              {browserEnabled && shouldShowBrowserUI && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <PromptInputButton

@@ -38,6 +38,7 @@ interface SettingChatInputProps {
   toggleBrowser: () => void
   toggleSearch: () => void
   toggleDeepResearch: () => void
+  isBrowserSupported: boolean
   isSupportTools: boolean
   isSupportReasoningToggle: boolean
   isSupportDeepResearch: boolean
@@ -65,6 +66,7 @@ export const SettingChatInput = ({
   toggleSearch,
   toggleDeepResearch,
   toggleBrowser,
+  isBrowserSupported,
   isSupportTools,
   isSupportDeepResearch,
   isSupportReasoningToggle,
@@ -74,8 +76,10 @@ export const SettingChatInput = ({
   children,
 }: SettingChatInputProps) => {
   const isMobileDevice = useIsMobileDevice()
+  const shouldShowBrowserControl = !isMobileDevice && isBrowserSupported
 
   const toggleBrowserAttempt = async () => {
+    if (!isBrowserSupported) return
     const browserUseAvailable = await isExtensionAvailable(EXTENSION_ID)
     if ((browserUseAvailable && !browserEnabled) || browserEnabled) {
       toggleBrowser()
@@ -154,7 +158,7 @@ export const SettingChatInput = ({
             </TooltipContent>
           )}
         </Tooltip>
-        {!isMobileDevice && (
+        {shouldShowBrowserControl && (
           <Tooltip>
             <TooltipTrigger asChild>
               <div>
