@@ -235,6 +235,16 @@
     },
     "messageMetadata": {
       "title": "Nachricht Metadaten"
+    },
+    "exportResponse": {
+      "title": "Antwort exportieren",
+      "description": "Wählen Sie ein Exportformat und entscheiden Sie, ob der Denkprozess einbezogen werden soll.",
+      "export": "Exportieren",
+      "format": "Format",
+      "thinking": "Denkprozess einschließen",
+      "includingThinkingDescription": "Den Denkprozess des Modells in den Export einschließen",
+      "cancel": "Abbrechen",
+      "exporting": "Wird exportiert..."
     }
   },
   "projects": {
@@ -371,6 +381,15 @@
     "downloadAndVerificationComplete": {
       "title": "Download abgeschlossen",
       "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
+    },
+    "markdownDownloaded": {
+      "title": "Markdown-Datei erfolgreich heruntergeladen"
+    },
+    "pdfDownloaded": {
+      "title": "PDF-Datei erfolgreich heruntergeladen"
+    },
+    "imageDownloaded": {
+      "title": "Bilddatei erfolgreich heruntergeladen"
     }
   }
 }

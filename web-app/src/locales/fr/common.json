@@ -236,6 +236,16 @@
     },
     "messageMetadata": {
       "title": "Métadonnées du message"
+    },
+    "exportResponse": {
+      "title": "Exporter la réponse",
+      "description": "Sélectionnez un format d'exportation et indiquez si vous souhaitez inclure le processus de réflexion.",
+      "export": "Exporter",
+      "format": "Format",
+      "thinking": "Inclure le processus de réflexion",
+      "includingThinkingDescription": "Inclure le processus de raisonnement du modèle dans l'exportation",
+      "cancel": "Annuler",
+      "exporting": "Exportation en cours..."
     }
   },
   "projects": {
@@ -371,6 +381,15 @@
     "threadRemovedFromProject": {
       "title": "Discussion retirée",
       "description": "Discussion retirée de \"{{projectName}}\" avec succès"
+    },
+    "markdownDownloaded": {
+      "title": "Markdown-Datei erfolgreich heruntergeladen"
+    },
+    "pdfDownloaded": {
+      "title": "PDF-Datei erfolgreich heruntergeladen"
+    },
+    "imageDownloaded": {
+      "title": "Bilddatei erfolgreich heruntergeladen"
     }
   },
   "attachmentInjectedIndicator": "Injecté dans la discussion",

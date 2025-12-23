@@ -289,6 +289,16 @@
     },
     "messageMetadata": {
       "title": "Siêu dữ liệu tin nhắn"
+    },
+    "exportResponse": {
+      "title": "Xuất Phản hồi",
+      "description": "Chọn định dạng xuất và quyết định có bao gồm quá trình tư duy hay không.",
+      "export": "Xuất",
+      "format": "Định dạng",
+      "thinking": "Bao gồm Quá trình Tư duy",
+      "includingThinkingDescription": "Bao gồm quá trình lập luận của mô hình trong bản xuất",
+      "cancel": "Hủy",
+      "exporting": "Đang xuất..."
     }
   },
   "toast": {
@@ -371,6 +381,15 @@
     "threadRemovedFromProject": {
       "title": "Chủ đề đã được xóa",
       "description": "Chủ đề đã được xóa khỏi \"{{projectName}}\" thành công"
+    },
+    "markdownDownloaded": {
+      "title": "Tải tập tin Markdown thành công"
+    },
+    "pdfDownloaded": {
+      "title": "Tải tập tin PDF thành công"
+    },
+    "imageDownloaded": {
+      "title": "Tải tập tin hình ảnh thành công"
     }
   }
 }

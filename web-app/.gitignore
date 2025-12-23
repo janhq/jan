@@ -23,3 +23,6 @@ dist-web
 *.njsproj
 *.sln
 *.sw?
+
+# Public assets
+public/twemoji
