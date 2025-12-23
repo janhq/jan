@@ -40,7 +40,7 @@ function ChatCompletionToastContent({
 
   return (
     <div
-      className="flex items-start gap-3 w-full bg-popover text-popover-foreground border rounded-lg p-4 shadow-lg cursor-pointer"
+      className="flex items-start gap-3 w-[400px] bg-popover text-popover-foreground border rounded-lg p-4 shadow-lg cursor-pointer"
       onClick={() => {
         toast.dismiss(toastId)
         navigate({ to: '/threads/$conversationId', params: { conversationId } })
@@ -72,19 +72,14 @@ export function showChatCompletionToast(
   messages: UIMessage[],
   conversationId: string
 ) {
-  const content = getLastAssistantContent(messages)
-  const truncatedContent = content
-    ? content.length > 80
-      ? content.slice(0, 80) + '...'
-      : content
-    : undefined
+  const content = getLastAssistantContent(messages) ?? undefined
 
   const toastId = toast.custom(
     (t) => (
       <ChatCompletionToastContent
         toastId={t}
         title={title}
-        content={truncatedContent}
+        content={content}
         conversationId={conversationId}
       />
     ),

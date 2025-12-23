@@ -182,7 +182,7 @@ export function NavChats() {
                     }
                   }}
                 >
-                  <span className="truncate">{item.title}</span>
+                  <span>{item.title}</span>
                 </Link>
               </SidebarMenuButton>
               {isSessionBusy(sessions[item.id]) ? (
