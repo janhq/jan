@@ -69,6 +69,7 @@ export function ThreadPageContent({
 
   const chatSessionId =
     conversationId ?? (isPrivateChat ? 'private-chat' : 'temporary-chat')
+  // sessionData is a mutable ref-like object - direct mutations don't trigger re-renders (intentional)
   const sessionData = getSessionData(chatSessionId)
 
   // Helper to get current messages for this session
@@ -318,13 +319,13 @@ export function ThreadPageContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, isPrivateChat, chatSessionId])
 
-  // Auto-scroll to bottom during streaming
+  // Auto-scroll reasoning container to bottom during streaming
   useEffect(() => {
     if (status === 'streaming' && reasoningContainerRef.current) {
       reasoningContainerRef.current.scrollTop =
         reasoningContainerRef.current.scrollHeight
     }
-  }, [status, reasoningContainerRef.current?.textContent])
+  }, [status, messages])
 
   return (
     <>
