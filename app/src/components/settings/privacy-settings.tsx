@@ -21,17 +21,21 @@ export function PrivacySettings() {
         <ul className="mt-2 space-y-1">
           <li className="flex items-center gap-2">
             <MessagesSquareIcon className="text-muted-foreground" />
-            We don’t collect your conversations
+            We don't collect your conversations
           </li>
           <li className="flex items-center gap-2">
             <LockKeyhole className="text-muted-foreground" />
-            We don’t collect personal data or files
+            We don't collect personal data or files
           </li>
           <li className="flex items-center gap-2">
             <HatGlassesIcon className="text-muted-foreground" />
             Everything shared is anonymous and aggregated
           </li>
         </ul>
+        <p className="text-sm mt-3 pt-3 border-t border-border">
+          We use Google Analytics with standard default tracking only, no custom
+          events, conversations, or personal data are collected.
+        </p>
       </div>
     </div>
   )
