@@ -32,6 +32,7 @@ interface ChatSessionState {
     title?: string
   ) => Chat<UIMessage>
   getSessionMemory: (sessionId: string) => SessionMemory
+  isSessionBusy: (sessionId: string) => boolean
   updateStatus: (sessionId: string, status: ChatStatus) => void
   setSessionTitle: (sessionId: string, title?: string) => void
   removeSession: (sessionId: string) => void
@@ -113,6 +114,10 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       standaloneMemory[sessionId] = createSessionMemory()
     }
     return standaloneMemory[sessionId]
+  },
+  isSessionBusy: (sessionId) => {
+    const session = get().sessions[sessionId]
+    return session?.isStreaming || (session?.memory?.tools?.length ?? 0) > 0
   },
   updateStatus: (sessionId, status) => {
     set((state) => {

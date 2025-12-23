@@ -49,7 +49,7 @@ export function NavChats() {
   const updateConversation = useConversations(
     (state) => state.updateConversation
   )
-  const chatSessions = useChatSessions((state) => state.sessions)
+  const isSessionBusy = useChatSessions((state) => state.isSessionBusy)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false)
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
@@ -185,11 +185,7 @@ export function NavChats() {
                   <span className="truncate">{item.title}</span>
                 </Link>
               </SidebarMenuButton>
-              {(() => {
-                const session = chatSessions[item.id]
-                const isBusy = session?.isStreaming || (session?.memory?.tools?.length ?? 0) > 0
-                return isBusy
-              })() ? (
+              {isSessionBusy(item.id) ? (
                 <SidebarMenuAction>
                   <Loader2 className="size-4 animate-spin text-muted-foreground" />
                 </SidebarMenuAction>

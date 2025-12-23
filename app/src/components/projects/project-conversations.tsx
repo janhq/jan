@@ -45,7 +45,7 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
   const updateConversation = useConversations(
     (state) => state.updateConversation
   )
-  const chatSessions = useChatSessions((state) => state.sessions)
+  const isSessionBusy = useChatSessions((state) => state.isSessionBusy)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<Conversation | null>(null)
@@ -202,11 +202,7 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
                 {(conversation as ConversationWithLatestMessage).latestMessage}
               </p>
             </Link>
-            {(() => {
-              const session = chatSessions[conversation.id]
-              const isBusy = session?.isStreaming || (session?.memory?.tools?.length ?? 0) > 0
-              return isBusy
-            })() ? (
+            {isSessionBusy(conversation.id) ? (
               <Loader2 className="size-4 animate-spin text-muted-foreground flex-shrink-0 mx-2" />
             ) : (
               <DropDrawer>
