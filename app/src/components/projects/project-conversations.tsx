@@ -1,4 +1,4 @@
-import { MoreHorizontal, Trash2, PencilLine } from 'lucide-react'
+import { MoreHorizontal, Trash2, PencilLine, FolderX } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 
@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useConversations } from '@/stores/conversation-store'
+import { useProjects } from '@/stores/projects-store'
 
 interface ProjectConversationsProps {
   projectId: string
@@ -34,6 +35,8 @@ interface ConversationWithLatestMessage extends Conversation {
 export function ProjectConversations({ projectId }: ProjectConversationsProps) {
   const params = useParams({ strict: false }) as { conversationId?: string }
   const allConversations = useConversations((state) => state.conversations)
+  const projects = useProjects((state) => state.projects)
+  const currentProject = projects.find((p) => p.id === projectId)
   const getUIMessages = useConversations((state) => state.getUIMessages)
   const deleteConversation = useConversations(
     (state) => state.deleteConversation
@@ -133,6 +136,14 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
     }
   }
 
+  const handleRemoveFromProject = async (conversationId: string) => {
+    try {
+      await updateConversation(conversationId, { project_id: '' })
+    } catch (error) {
+      console.error('Failed to remove conversation from project:', error)
+    }
+  }
+
   const handleRenameClick = (item: Conversation) => {
     setItemToRename(item)
     setNewTitle(item.title)
@@ -213,6 +224,16 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
                     handleMoveToProject(conversation.id, projectId)
                   }
                 />
+                <DropDrawerItem
+                  onClick={() => handleRemoveFromProject(conversation.id)}
+                >
+                  <div className="flex gap-2 items-center">
+                    <FolderX className="size-4 text-muted-foreground" />
+                    <span>
+                      Remove from {currentProject?.name || 'Project'}
+                    </span>
+                  </div>
+                </DropDrawerItem>
                 <DropDrawerSeparator />
                 <DropDrawerItem
                   variant="destructive"
