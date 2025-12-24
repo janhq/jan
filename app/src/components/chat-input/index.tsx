@@ -75,7 +75,6 @@ const InputResetHandler = ({
     if (textareaRef.current && !isMobile) {
       textareaRef.current.focus()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId])
 
   return null
@@ -298,7 +297,11 @@ const ChatInput = ({
         accept="image/jpeg,image/jpg,image/png"
         onError={handleError}
       >
-        <InputResetHandler textareaRef={textareaRef} isMobile={isMobile} conversationId={conversationId} />
+        <InputResetHandler
+          textareaRef={textareaRef}
+          isMobile={isMobile}
+          conversationId={conversationId}
+        />
         <PromptInput
           accept="image/jpeg,image/jpg,image/png"
           globalDrop
@@ -480,6 +483,11 @@ const ChatInput = ({
                 )}
               />
             </BorderAnimate>
+          </div>
+        )}
+        {conversationId && (
+          <div className="mt-2 text-xs text-muted-foreground text-center">
+            <p>Jan can make mistakes. Please double check responses.</p>
           </div>
         )}
       </PromptInputProvider>
