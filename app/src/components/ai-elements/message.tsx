@@ -22,7 +22,10 @@ import {
 } from 'lucide-react'
 import type { ComponentProps, HTMLAttributes, ReactElement } from 'react'
 import { createContext, memo, useContext, useEffect, useState } from 'react'
-import { Streamdown } from 'streamdown'
+import { Streamdown, defaultRehypePlugins } from 'streamdown'
+import type { BundledTheme } from 'shiki'
+
+const themes = ['github-light', 'github-dark'] as [BundledTheme, BundledTheme]
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage['role']
@@ -32,7 +35,9 @@ export const Message = ({ className, from, ...props }: MessageProps) => (
   <div
     className={cn(
       'group flex w-full max-w-[95%] flex-col gap-2',
-      from === 'user' ? 'is-user ml-auto justify-end mt-8 mb-2' : 'is-assistant',
+      from === 'user'
+        ? 'is-user ml-auto justify-end mt-8 mb-2'
+        : 'is-assistant',
       className
     )}
     {...props}
@@ -314,6 +319,8 @@ export const MessageResponse = memo(
         'size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
         className
       )}
+      shikiTheme={themes}
+      rehypePlugins={[defaultRehypePlugins.katex, defaultRehypePlugins.harden]}
       {...props}
     />
   ),
@@ -339,14 +346,14 @@ export function MessageAttachment({
     data.mediaType?.startsWith('image/') && data.url ? 'image' : 'file'
   const isImage = mediaType === 'image'
   const attachmentLabel = filename || (isImage ? 'Image' : 'Attachment')
-  
+
   // Resolve jan media URL to presigned URL
   const [displayUrl, setDisplayUrl] = useState<string | undefined>(data.url)
   const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
     if (!data.url) return
-    
+
     // If it's a jan media URL, resolve it to presigned URL
     if (isJanMediaUrl(data.url)) {
       setIsLoading(true)
