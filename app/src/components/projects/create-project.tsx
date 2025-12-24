@@ -19,6 +19,8 @@ import { z } from 'zod'
 import { useProjects } from '@/stores/projects-store'
 import { Folder } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { ApiError } from '@/lib/api-client'
+import { useState } from 'react'
 
 const createProjectSchema = z.object({
   name: z.string().min(1, 'Project name is required'),
@@ -35,10 +37,11 @@ interface CreateProjectProps {
 export function CreateProject({ open, onOpenChange }: CreateProjectProps) {
   const router = useRouter()
   const createProject = useProjects((state) => state.createProject)
+  const [serverError, setServerError] = useState<string | null>(null)
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isSubmitted },
     reset,
   } = useForm<CreateProjectFormData>({
     resolver: zodResolver(createProjectSchema),
@@ -46,6 +49,7 @@ export function CreateProject({ open, onOpenChange }: CreateProjectProps) {
 
   const handleClose = () => {
     onOpenChange?.(false)
+    setServerError(null)
     // Fallback to URL-based closing if no callback provided
     const url = new URL(window.location.href)
     if (!onOpenChange && url.searchParams.get('projects') === 'create') {
@@ -55,6 +59,7 @@ export function CreateProject({ open, onOpenChange }: CreateProjectProps) {
   }
 
   const onSubmit = async (data: CreateProjectFormData) => {
+    setServerError(null)
     try {
       const newProject = await createProject({
         name: data.name,
@@ -67,7 +72,11 @@ export function CreateProject({ open, onOpenChange }: CreateProjectProps) {
         params: { projectId: newProject.id },
       })
     } catch (error) {
-      console.error('Failed to create project:', error)
+      if (error instanceof ApiError && error.isDuplicateProjectName()) {
+        setServerError(error.message)
+      } else {
+        console.error('Failed to create project:', error)
+      }
     }
   }
 
@@ -101,11 +110,15 @@ export function CreateProject({ open, onOpenChange }: CreateProjectProps) {
                       placeholder="Name"
                       autoComplete="off"
                       autoFocus={isMobile ? false : true}
-                      {...register('name')}
+                      {...register('name', {
+                        onChange: () => setServerError(null),
+                      })}
                     />
                   </InputGroup>
-                  {errors.name && (
-                    <FieldError>{errors.name.message}</FieldError>
+                  {isSubmitted && (errors.name || serverError) && (
+                    <FieldError>
+                      {errors.name?.message || serverError}
+                    </FieldError>
                   )}
                 </Field>
 
