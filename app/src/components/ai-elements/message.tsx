@@ -24,6 +24,7 @@ import type { ComponentProps, HTMLAttributes, ReactElement } from 'react'
 import { createContext, memo, useContext, useEffect, useState } from 'react'
 import { Streamdown } from 'streamdown'
 import type { BundledTheme } from 'shiki'
+import rehypeRaw from 'rehype-raw'
 
 const themes = ['github-light', 'github-dark'] as [BundledTheme, BundledTheme]
 
@@ -320,7 +321,7 @@ export const MessageResponse = memo(
         className
       )}
       shikiTheme={themes}
-      rehypePlugins={[]}
+      rehypePlugins={[[rehypeRaw, { tagfilter: ['script', 'style'] }]]}
       {...props}
     />
   ),
