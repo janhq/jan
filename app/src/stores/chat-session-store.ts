@@ -182,24 +182,12 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
   },
   removeSession: (sessionId) => {
     const existing = get().sessions[sessionId]
-    if (existing) {
-      existing.unsubscribers.forEach((unsubscribe) => {
-        try {
-          unsubscribe()
-        } catch (error) {
-          console.error('Failed to unsubscribe chat session listener', error)
-        }
-      })
-      try {
-        existing.chat.stop()
-      } catch (error) {
-        console.error('Failed to stop chat session', error)
-      }
+    if (!existing) {
+      delete standaloneData[sessionId]
+      return
     }
 
-    // Also clean up standalone data
-    delete standaloneData[sessionId]
-
+    // Remove from store FIRST - prevents updateStatus from showing toast during cleanup
     set((state) => {
       if (!state.sessions[sessionId]) {
         return state
@@ -208,6 +196,22 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       delete rest[sessionId]
       return { sessions: rest }
     })
+
+    // Then cleanup (existing is a copy, safe to use after removal)
+    existing.unsubscribers.forEach((unsubscribe) => {
+      try {
+        unsubscribe()
+      } catch (error) {
+        console.error('Failed to unsubscribe chat session listener', error)
+      }
+    })
+    try {
+      existing.chat.stop()
+    } catch (error) {
+      console.error('Failed to stop chat session', error)
+    }
+
+    delete standaloneData[sessionId]
   },
   clearSessions: () => {
     const sessions = get().sessions
