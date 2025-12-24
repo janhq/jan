@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { conversationService } from '@/services/conversation-service'
 import type { UIMessage } from '@ai-sdk/react'
 import { convertToUIMessages } from '@/lib/utils'
+import { useChatSessions } from './chat-session-store'
 
 let fetchPromise: Promise<void> | null = null
 
@@ -143,6 +144,7 @@ export const useConversations = create<ConversationState>((set, get) => ({
   deleteConversation: async (conversationId: string) => {
     try {
       await conversationService.deleteConversation(conversationId)
+      useChatSessions.getState().removeSession(conversationId)
       set((state) => ({
         conversations: state.conversations.filter(
           (conv) => conv.id !== conversationId
@@ -157,6 +159,7 @@ export const useConversations = create<ConversationState>((set, get) => ({
   deleteAllConversations: async () => {
     try {
       await conversationService.deleteAllConversations()
+      useChatSessions.getState().clearSessions()
       set(() => ({
         conversations: [],
       }))
@@ -166,6 +169,7 @@ export const useConversations = create<ConversationState>((set, get) => ({
     }
   },
   clearConversations: () => {
+    useChatSessions.getState().clearSessions()
     set({
       conversations: [],
       loading: false,

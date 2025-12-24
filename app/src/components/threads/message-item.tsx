@@ -132,12 +132,16 @@ export const MessageItem = memo(
       const isLastPart = partIndex === message.parts.length - 1
       const isStreaming = status === 'streaming' && isLastMessage
 
+      // Only open if this reasoning part is actively being streamed
+      // (last part in message AND status is streaming AND this is the last message)
+      const shouldBeOpen = isStreaming && isLastPart
+
       return (
         <Reasoning
           key={`${message.id}-${partIndex}`}
           className="w-full text-muted-foreground"
           isStreaming={isStreaming && isLastPart}
-          defaultOpen={isStreaming}
+          defaultOpen={shouldBeOpen}
         >
           <ReasoningTrigger />
           <div className="relative">
