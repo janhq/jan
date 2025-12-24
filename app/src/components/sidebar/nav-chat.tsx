@@ -1,4 +1,4 @@
-import { MoreHorizontal, Trash2, PencilLine } from 'lucide-react'
+import { MoreHorizontal, Trash2, PencilLine, Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 
@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 import { useConversations } from '@/stores/conversation-store'
+import { useChatSessions, isSessionBusy } from '@/stores/chat-session-store'
 
 export function NavChats() {
   const { isMobile, setOpenMobile } = useSidebar()
@@ -48,6 +49,7 @@ export function NavChats() {
   const updateConversation = useConversations(
     (state) => state.updateConversation
   )
+  const sessions = useChatSessions((state) => state.sessions)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false)
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
@@ -183,43 +185,49 @@ export function NavChats() {
                   <span>{item.title}</span>
                 </Link>
               </SidebarMenuButton>
-              <DropDrawer>
-                <DropDrawerTrigger asChild>
-                  <SidebarMenuAction showOnHover>
-                    <MoreHorizontal className="text-muted-foreground" />
-                    <span className="sr-only">More</span>
-                  </SidebarMenuAction>
-                </DropDrawerTrigger>
-                <DropDrawerContent
-                  className="md:w-56"
-                  side={isMobile ? 'bottom' : 'right'}
-                  align={isMobile ? 'end' : 'start'}
-                >
-                  <DropDrawerItem onClick={() => handleRenameClick(item)}>
-                    <div className="flex gap-2 items-center justify-center">
-                      <PencilLine />
-                      <span>Rename</span>
-                    </div>
-                  </DropDrawerItem>
-                  <ProjectsChatInput
-                    title="Move to Project"
-                    currentProjectId={item.project_id}
-                    onProjectSelect={(projectId) =>
-                      handleMoveToProject(item.id, projectId)
-                    }
-                  />
-                  <DropDrawerSeparator />
-                  <DropDrawerItem
-                    variant="destructive"
-                    onClick={() => handleDeleteClick(item)}
+              {isSessionBusy(sessions[item.id]) ? (
+                <SidebarMenuAction>
+                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                </SidebarMenuAction>
+              ) : (
+                <DropDrawer>
+                  <DropDrawerTrigger asChild>
+                    <SidebarMenuAction showOnHover>
+                      <MoreHorizontal className="text-muted-foreground" />
+                      <span className="sr-only">More</span>
+                    </SidebarMenuAction>
+                  </DropDrawerTrigger>
+                  <DropDrawerContent
+                    className="md:w-56"
+                    side={isMobile ? 'bottom' : 'right'}
+                    align={isMobile ? 'end' : 'start'}
                   >
-                    <div className="flex gap-2 items-center justify-center">
-                      <Trash2 className="text-destructive" />
-                      <span>Delete</span>
-                    </div>
-                  </DropDrawerItem>
-                </DropDrawerContent>
-              </DropDrawer>
+                    <DropDrawerItem onClick={() => handleRenameClick(item)}>
+                      <div className="flex gap-2 items-center justify-center">
+                        <PencilLine />
+                        <span>Rename</span>
+                      </div>
+                    </DropDrawerItem>
+                    <ProjectsChatInput
+                      title="Move to Project"
+                      currentProjectId={item.project_id}
+                      onProjectSelect={(projectId) =>
+                        handleMoveToProject(item.id, projectId)
+                      }
+                    />
+                    <DropDrawerSeparator />
+                    <DropDrawerItem
+                      variant="destructive"
+                      onClick={() => handleDeleteClick(item)}
+                    >
+                      <div className="flex gap-2 items-center justify-center">
+                        <Trash2 className="text-destructive" />
+                        <span>Delete</span>
+                      </div>
+                    </DropDrawerItem>
+                  </DropDrawerContent>
+                </DropDrawer>
+              )}
             </SidebarMenuItem>
           ))}
         </SidebarMenu>

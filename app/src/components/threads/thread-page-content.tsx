@@ -26,6 +26,7 @@ import {
   resolveMessageId,
 } from '@/lib/message-utils'
 import { convertToUIMessages } from '@/lib/utils'
+import { useChatSessions } from '@/stores/chat-session-store'
 
 // Scroll animation config (spring physics) - a tad slower than default
 const SCROLL_MASS = 1.35 // inertia, higher = slower (default: 1.25)
@@ -62,11 +63,27 @@ export function ThreadPageContent({
   )
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
-  const tools = useRef<any>([])
-  const messagesRef = useRef<UIMessage[]>([])
-  const idMapRef = useRef<Map<string, string>>(new Map()) // temp ID -> real ID
+  const setActiveConversationId = useChatSessions(
+    (state) => state.setActiveConversationId
+  )
+  const getSessionData = useChatSessions((state) => state.getSessionData)
+
+  const chatSessionId =
+    conversationId ?? (isPrivateChat ? 'private-chat' : 'temporary-chat')
+  // sessionData is a mutable ref-like object - direct mutations don't trigger re-renders (intentional)
+  const sessionData = getSessionData(chatSessionId)
+
+  // AbortController for cancelling tool calls (kept as ref since it's a signal, not session data)
   const toolCallAbortController = useRef<AbortController | null>(null)
 
+  // Helper to get current messages for this session
+  const getCurrentMessages = useCallback(() => {
+    const state = useChatSessions.getState()
+    const session = state.sessions[chatSessionId]
+    return session?.chat.messages ?? state.getSessionData(chatSessionId).messages
+  }, [chatSessionId])
+
+  // Check if we should follow up with tool calls (respects abort signal)
   const followUpMessage = ({
     messages,
   }: {
@@ -91,9 +108,13 @@ export function ThreadPageContent({
     stop,
   } = useChat(provider(selectedModel?.id), {
     experimental_throttle: 50,
+    sessionId: chatSessionId,
+    sessionTitle: conversationTitle || undefined,
     onFinish: () => {
+      // Note: These values are captured at Chat creation time, which is correct
+      // because onFinish fires for the Chat that started the stream, not the current conversation
       initialMessageSentRef.current = false
-      const hadToolCalls = tools.current.length > 0
+      const hadToolCalls = sessionData.tools.length > 0
 
       // Create a new AbortController for tool calls
       toolCallAbortController.current = new AbortController()
@@ -101,7 +122,7 @@ export function ThreadPageContent({
 
       // After finishing a message, check if we need to resubmit for tool calls
       Promise.all(
-        tools.current.map(async (toolCall: any) => {
+        sessionData.tools.map(async (toolCall: any) => {
           // Check if already aborted before starting
           if (signal.aborted) {
             return
@@ -142,9 +163,9 @@ export function ThreadPageContent({
             getUIMessages(conversationId)
               .then((backendMessages) => {
                 buildIdMapping(
-                  messagesRef.current,
+                  getCurrentMessages(),
                   backendMessages,
-                  idMapRef.current
+                  sessionData.idMap
                 )
               })
               .catch(console.error)
@@ -157,27 +178,29 @@ export function ThreadPageContent({
           }
         })
         .finally(() => {
-          tools.current = []
+          sessionData.tools = []
           toolCallAbortController.current = null
         })
     },
     sendAutomaticallyWhen: followUpMessage,
     onToolCall: ({ toolCall }) => {
-      tools.current.push(toolCall)
+      sessionData.tools.push(toolCall)
       return
     },
   })
 
   // Keep ref in sync for use in onFinish closure
-  messagesRef.current = messages
+  useEffect(() => {
+    sessionData.messages = messages
+  }, [messages, sessionData])
 
   const regenerateMessage = useConversations((state) => state.regenerateMessage)
 
   const handleRegenerate = async (messageId: string) => {
     if (!conversationId) return
     try {
-      const realId = resolveMessageId(messageId, idMapRef.current)
-      const currentMessages = messagesRef.current
+      const realId = resolveMessageId(messageId, sessionData.idMap)
+      const currentMessages = getCurrentMessages()
 
       // Find the clicked assistant message index
       const assistantIndex = currentMessages.findIndex(
@@ -206,7 +229,7 @@ export function ThreadPageContent({
         // Fetch IDs in background for future operations
         getUIMessages(conversationId, response.branch)
           .then((branchMessages) => {
-            buildIdMapping(truncatedMessages, branchMessages, idMapRef.current)
+            buildIdMapping(truncatedMessages, branchMessages, sessionData.idMap)
           })
           .catch(console.error)
       }
@@ -218,7 +241,7 @@ export function ThreadPageContent({
   const handleSubmit = useCallback(
     (message?: PromptInputMessage) => {
       if (message && status !== 'streaming') {
-        tools.current = []
+        sessionData.tools = []
         sendMessage({
           text: message.text || 'Sent with attachments',
           files: message.files,
@@ -226,14 +249,15 @@ export function ThreadPageContent({
       } else if (status === 'streaming') {
         stop()
       } else {
+        // Stop pending tool calls when user clicks stop (not streaming but tools are running)
         if (toolCallAbortController.current) {
           toolCallAbortController.current.abort()
           toolCallAbortController.current = null
-          tools.current = []
+          sessionData.tools = []
         }
       }
     },
-    [sendMessage, status, stop]
+    [sendMessage, sessionData, status, stop]
   )
 
   // Load conversation metadata (only for persistent conversations)
@@ -275,7 +299,7 @@ export function ThreadPageContent({
         sessionStorage.removeItem(initialMessageKey)
         // Mark as sent to prevent duplicate sends
         initialMessageSentRef.current = true
-        tools.current = []
+        sessionData.tools = []
 
         // Preload cached items if any
         const initialItemsKey = `initial-items-${conversationId}`
@@ -295,7 +319,12 @@ export function ThreadPageContent({
         console.error('Failed to parse initial message:', error)
       }
     }
-  }, [conversationId, isPrivateChat, sendMessage])
+  }, [conversationId, isPrivateChat, sendMessage, sessionData, setMessages])
+
+  useEffect(() => {
+    setActiveConversationId(conversationId)
+    return () => setActiveConversationId(undefined)
+  }, [conversationId, setActiveConversationId])
 
   // Fetch messages for old conversations (only for persistent conversations)
   useEffect(() => {
@@ -305,11 +334,23 @@ export function ThreadPageContent({
       !initialMessageSentRef.current &&
       !fetchingMessagesRef.current
     ) {
+      // Check if session already has messages (e.g., returning to a streaming conversation)
+      const existingSession = useChatSessions.getState().sessions[chatSessionId]
+      if (existingSession?.chat.messages.length > 0 || existingSession?.isStreaming) {
+        // Don't overwrite existing messages - session already has data
+        return
+      }
+
       fetchingMessagesRef.current = true
       // Clear messages first, then fetch (like ChatGPT)
       setMessages([])
       getUIMessages(conversationId)
         .then((uiMessages) => {
+          // Double-check session state hasn't changed during async fetch
+          const currentSession = useChatSessions.getState().sessions[chatSessionId]
+          if (currentSession?.isStreaming) {
+            return // Don't overwrite if streaming started
+          }
           if (!initialMessageSentRef.current) setMessages(uiMessages)
         })
         .catch((error) => {
@@ -320,15 +361,15 @@ export function ThreadPageContent({
         })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, isPrivateChat])
+  }, [conversationId, isPrivateChat, chatSessionId])
 
-  // Auto-scroll to bottom during streaming
+  // Auto-scroll reasoning container to bottom during streaming
   useEffect(() => {
     if (status === 'streaming' && reasoningContainerRef.current) {
       reasoningContainerRef.current.scrollTop =
         reasoningContainerRef.current.scrollHeight
     }
-  }, [status, reasoningContainerRef.current?.textContent])
+  }, [status, messages])
 
   return (
     <>
@@ -369,7 +410,7 @@ export function ThreadPageContent({
           <div className="px-4 py-4 max-w-3xl mx-auto w-full">
             <ChatInput
               submit={handleSubmit}
-              status={tools.current.length > 0 ? 'streaming' : status}
+              status={sessionData.tools.length > 0 ? 'streaming' : status}
               conversationId={conversationId}
             />
           </div>
