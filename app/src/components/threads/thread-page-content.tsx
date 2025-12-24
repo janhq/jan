@@ -110,7 +110,7 @@ export function ThreadPageContent({
     experimental_throttle: 50,
     sessionId: chatSessionId,
     sessionTitle: conversationTitle || undefined,
-    onFinish: () => {
+    onFinish: ({ message }) => {
       // Note: These values are captured at Chat creation time, which is correct
       // because onFinish fires for the Chat that started the stream, not the current conversation
       initialMessageSentRef.current = false
@@ -120,6 +120,11 @@ export function ThreadPageContent({
       toolCallAbortController.current = new AbortController()
       const signal = toolCallAbortController.current.signal
 
+      // Check whether this is a valid message otherwise continue
+      const needFollowUp =
+        message?.parts.length > 0 &&
+        !hadToolCalls &&
+        !message?.parts.some((e) => e.type === 'text' && e.text.length > 0)
       // After finishing a message, check if we need to resubmit for tool calls
       Promise.all(
         sessionData.tools.map(async (toolCall: any) => {
@@ -158,7 +163,10 @@ export function ThreadPageContent({
         })
       )
         .then(() => {
-          if (conversationId && !isPrivateChat && !hadToolCalls) {
+          // Continue generate if need follow up on a blank message
+          if (needFollowUp) {
+            sendMessage()
+          } else if (conversationId && !isPrivateChat && !hadToolCalls) {
             // Build ID mapping without updating state to avoid scroll jump
             getUIMessages(conversationId)
               .then((backendMessages) => {
