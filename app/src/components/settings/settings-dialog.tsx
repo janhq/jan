@@ -8,10 +8,17 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { GeneralSettings } from '@/components/settings/general-settings'
-import { Settings2, type LucideIcon, LeafIcon, Share2Icon } from 'lucide-react'
+import {
+  Settings2,
+  type LucideIcon,
+  LeafIcon,
+  Share2Icon,
+  LockKeyhole,
+} from 'lucide-react'
 
 import { PersonalizationSettings } from './personalization-setting'
 import { SharesSettings } from './shares-settings'
+import { PrivacySettings } from './privacy-settings'
 
 interface SettingsDialogProps {
   open: boolean
@@ -21,7 +28,7 @@ interface SettingsDialogProps {
 type SettingsSection =
   | 'general'
   // | 'apps-connectors'
-  // | 'privacy'
+  | 'privacy'
   | 'personalization'
   | 'shares'
 
@@ -34,7 +41,7 @@ const sections: Array<{
   { id: 'personalization', label: 'Personalization', icon: LeafIcon },
   { id: 'shares', label: 'Share Links', icon: Share2Icon },
   // { id: 'apps-connectors', label: 'Connectors', icon: ShapesIcon },
-  // { id: 'privacy', label: 'Privacy', icon: LockKeyhole },
+  { id: 'privacy', label: 'Privacy', icon: LockKeyhole },
 ]
 
 export function SettingsDialog({
@@ -69,8 +76,8 @@ export function SettingsDialog({
         return <PersonalizationSettings />
       case 'shares':
         return <SharesSettings />
-      // case 'privacy':
-      //   return <PrivacySettings />
+      case 'privacy':
+        return <PrivacySettings />
       default:
         return <GeneralSettings />
     }
