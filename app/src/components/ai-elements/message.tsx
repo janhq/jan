@@ -22,7 +22,7 @@ import {
 } from 'lucide-react'
 import type { ComponentProps, HTMLAttributes, ReactElement } from 'react'
 import { createContext, memo, useContext, useEffect, useState } from 'react'
-import { Streamdown } from 'streamdown'
+import { Streamdown, defaultRehypePlugins } from 'streamdown'
 import type { BundledTheme } from 'shiki'
 import rehypeRaw from 'rehype-raw'
 
@@ -321,7 +321,10 @@ export const MessageResponse = memo(
         className
       )}
       shikiTheme={themes}
-      rehypePlugins={[[rehypeRaw, { tagfilter: ['script', 'style'] }]]}
+      rehypePlugins={[
+        ...Object.values(defaultRehypePlugins),
+        [rehypeRaw, { tagfilter: ['script', 'style'] }],
+      ]}
       {...props}
     />
   ),
