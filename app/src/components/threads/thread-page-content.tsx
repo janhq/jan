@@ -80,7 +80,9 @@ export function ThreadPageContent({
   const getCurrentMessages = useCallback(() => {
     const state = useChatSessions.getState()
     const session = state.sessions[chatSessionId]
-    return session?.chat.messages ?? state.getSessionData(chatSessionId).messages
+    return (
+      session?.chat.messages ?? state.getSessionData(chatSessionId).messages
+    )
   }, [chatSessionId])
 
   // Check if we should follow up with tool calls (respects abort signal)
@@ -122,8 +124,8 @@ export function ThreadPageContent({
 
       // Check whether this is a valid message otherwise continue
       const needFollowUp =
-        message?.parts.length > 0 &&
         !hadToolCalls &&
+        message?.parts.some((e) => e.type === 'reasoning') &&
         !message?.parts.some((e) => e.type === 'text' && e.text.length > 0)
       // After finishing a message, check if we need to resubmit for tool calls
       Promise.all(
@@ -344,7 +346,10 @@ export function ThreadPageContent({
     ) {
       // Check if session already has messages (e.g., returning to a streaming conversation)
       const existingSession = useChatSessions.getState().sessions[chatSessionId]
-      if (existingSession?.chat.messages.length > 0 || existingSession?.isStreaming) {
+      if (
+        existingSession?.chat.messages.length > 0 ||
+        existingSession?.isStreaming
+      ) {
         // Don't overwrite existing messages - session already has data
         return
       }
@@ -355,7 +360,8 @@ export function ThreadPageContent({
       getUIMessages(conversationId)
         .then((uiMessages) => {
           // Double-check session state hasn't changed during async fetch
-          const currentSession = useChatSessions.getState().sessions[chatSessionId]
+          const currentSession =
+            useChatSessions.getState().sessions[chatSessionId]
           if (currentSession?.isStreaming) {
             return // Don't overwrite if streaming started
           }
