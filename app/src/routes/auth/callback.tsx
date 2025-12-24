@@ -52,12 +52,7 @@ function OAuthCallbackPage() {
         loginWithOAuth(tokens)
         console.log('OAuth login successful')
         // Navigate to the original URL or home
-        let redirectUrl = oauthData.redirectUrl || '/'
-
-        // Remove modal parameter from redirect URL
-        const url = new URL(redirectUrl, window.location.origin)
-        url.searchParams.delete('modal')
-        redirectUrl = url.pathname + url.search
+        let redirectUrl = '/'
 
         navigate({ to: redirectUrl })
       } catch (err) {
