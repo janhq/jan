@@ -73,7 +73,7 @@ export function CreateProject({ open, onOpenChange }: CreateProjectProps) {
       })
     } catch (error) {
       if (error instanceof ApiError && error.isDuplicateProjectName()) {
-        setServerError('Project name already exists')
+        setServerError(error.message)
       } else {
         console.error('Failed to create project:', error)
       }

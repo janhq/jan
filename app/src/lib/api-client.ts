@@ -26,10 +26,11 @@ export class ApiError extends Error {
   }
 
   /**
-   * Check if this error is a duplicate project name error
+   * Check if this error is a duplicate project name error.
+   * Returns true if status is 409 (Conflict) and the error code contains a project ID.
    */
   isDuplicateProjectName(): boolean {
-    return this.status === 409 && this.code.startsWith('proj-repo-duplicate-')
+    return this.status === 409 && this.code.startsWith('proj_')
   }
 }
 

@@ -80,7 +80,7 @@ export function EditProject({
       onSuccess?.()
     } catch (error) {
       if (error instanceof ApiError && error.isDuplicateProjectName()) {
-        setServerError('Project name already exists')
+        setServerError(error.message)
       } else {
         console.error('Failed to update project:', error)
       }
