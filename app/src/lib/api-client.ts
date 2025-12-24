@@ -8,13 +8,29 @@ declare const JAN_API_BASE_URL: string
 let isRefreshing = false
 let refreshPromise: Promise<string> | null = null
 
+export interface ApiErrorResponse {
+  code: string
+  error: string
+  message: string
+}
+
 export class ApiError extends Error {
   status: number
+  code: string
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code: string = '') {
     super(message)
     this.status = status
+    this.code = code
     this.name = 'ApiError'
+  }
+
+  /**
+   * Check if this error is a duplicate project name error.
+   * Returns true if status is 409 (Conflict) and the error code contains a project ID.
+   */
+  isDuplicateProjectName(): boolean {
+    return this.status === 409 && this.code.startsWith('proj_')
   }
 }
 
@@ -120,8 +136,20 @@ export async function fetchJsonWithAuth<T>(
   const response = await fetchWithAuth(url, options)
 
   if (!response.ok) {
-    const errorText = await response.text().catch(() => 'Unknown error')
-    throw new ApiError(response.status, errorText)
+    // Try to parse JSON error response from server
+    let errorMessage = 'Unknown error'
+    let errorCode = ''
+
+    try {
+      const errorJson = (await response.json()) as ApiErrorResponse
+      errorMessage = errorJson.message || errorJson.error || errorMessage
+      errorCode = errorJson.code || ''
+    } catch {
+      // If JSON parsing fails, try to get text
+      errorMessage = await response.text().catch(() => 'Unknown error')
+    }
+
+    throw new ApiError(response.status, errorMessage, errorCode)
   }
 
   return response.json()
