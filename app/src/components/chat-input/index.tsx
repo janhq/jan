@@ -53,6 +53,36 @@ import {
 import { useBrowserConnection } from '@/stores/browser-connection-store'
 import { useProfile } from '@/stores/profile-store'
 
+/**
+ * Generates a meaningful title from message text.
+ * Returns 'New Conversation' if the text contains only special characters, URLs, or is empty.
+ */
+function generateThreadTitle(text: string): string {
+  const trimmed = text.trim()
+
+  // Check if the text is only a URL (or multiple URLs)
+  // This regex matches common URL patterns
+  const urlPattern =
+    /^(https?:\/\/|www\.)[^\s]+$|^([^\s]+\.(com|org|net|io|co|edu|gov|app|dev|ai|me|info|biz|tv|cc|xyz|tech|online|site|store|blog|cloud|pro|link|page|space|live|world|zone|digital|agency|email|network|social|media|video|music|news|shop|design|studio|work|team|group|chat|help|support|docs|api|cdn|assets|static|img|images|files|data|db|admin|dashboard|portal|app|mobile|web|server|service|system|platform|solution|software|tool|tools|product|project|projects|code|dev|test|stage|prod|demo|beta|alpha|v1|v2|v3)[^\s]*)$/i
+
+  const isOnlyUrl = urlPattern.test(trimmed)
+
+  // Check if the text contains any word characters (letters or numbers, including Unicode)
+  const hasWordCharacters = /[\p{L}\p{N}]/u.test(trimmed)
+
+  if (!hasWordCharacters || isOnlyUrl) {
+    return 'New Conversation'
+  }
+
+  // Truncate long titles to keep them manageable
+  const maxLength = 100
+  if (trimmed.length > maxLength) {
+    return trimmed.substring(0, maxLength).trim() + '...'
+  }
+
+  return trimmed
+}
+
 // Component to handle resetting input when conversation changes
 // IMPORTANT: This must be defined outside ChatInput to prevent remounting on every render
 const InputResetHandler = ({
@@ -244,7 +274,7 @@ const ChatInput = ({
         }
 
         const conversationPayload: CreateConversationPayload = {
-          title: normalizedMessage.text || 'New Chat',
+          title: generateThreadTitle(normalizedMessage.text),
           ...(projectId && { project_id: String(projectId) }),
           ...(selectedProjectId && { project_id: selectedProjectId }),
           metadata: {
