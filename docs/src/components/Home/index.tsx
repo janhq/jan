@@ -128,7 +128,7 @@ const Home = () => {
                 </p>
               </div>
               <div className="flex px-4 flex-col lg:flex-row items-start gap-4 w-full justify-center text-center animate-fade-in-up delay-600 mt-8 lg:mt-10">
-                <div>
+                <div className="w-full lg:w-auto">
                   <DropdownButton
                     size="xxl"
                     className="w-full !rounded-[20px] lg:w-auto"
