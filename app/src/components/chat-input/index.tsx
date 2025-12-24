@@ -313,219 +313,221 @@ const ChatInput = ({
   }
 
   return (
-    <div
-      className={cn(
-        'w-full relative rounded-3xl p-[1.5px]',
-        !initialConversation &&
-          status === 'streaming' &&
-          'overflow-hidden outline-0'
-      )}
-    >
-      <PromptInputProvider
-        maxImages={10}
-        maxFileSize={10 * 1024 * 1024} //10MB
-        accept="image/jpeg,image/jpg,image/png"
-        onError={handleError}
+    <div>
+      <div
+        className={cn(
+          'w-full relative rounded-3xl p-[1.5px]',
+          !initialConversation &&
+            status === 'streaming' &&
+            'overflow-hidden outline-0'
+        )}
       >
-        <InputResetHandler
-          textareaRef={textareaRef}
-          isMobile={isMobile}
-          conversationId={conversationId}
-        />
-        <PromptInput
+        <PromptInputProvider
+          maxImages={10}
+          maxFileSize={10 * 1024 * 1024} //10MB
           accept="image/jpeg,image/jpg,image/png"
-          globalDrop
-          multiple
-          userId={conversationId || projectId || 'anonymous'}
           onError={handleError}
-          onSubmit={handleSubmit}
-          className="rounded-3xl relative z-40 bg-background"
         >
-          <PromptInputAttachments>
-            {(attachment) => <PromptInputAttachment data={attachment} />}
-          </PromptInputAttachments>
-          <PromptInputBody>
-            <PromptInputTextarea
-              ref={textareaRef}
-              disabled={status === 'streaming'}
-            />
-          </PromptInputBody>
-          <PromptInputFooter>
-            <PromptInputTools>
-              <PromptInputActionMenu>
-                <PromptInputActionMenuTrigger
-                  className="rounded-full"
-                  variant="secondary"
-                />
-                <PromptInputActionMenuContent className="lg:w-56">
-                  <PromptInputActionAddAttachments label="Add photos" />
-                  {initialConversation && !projectId && !isPrivateChat && (
-                    <ProjectsChatInput
-                      currentProjectId={selectedProjectId || undefined}
-                      onProjectSelect={(projectId) => {
-                        setSelectedProjectId(projectId)
-                      }}
-                    />
-                  )}
-                </PromptInputActionMenuContent>
-              </PromptInputActionMenu>
-              <SettingChatInput
-                searchEnabled={searchEnabled}
-                deepResearchEnabled={deepResearchEnabled}
-                browserEnabled={browserEnabled}
-                reasoningEnabled={reasoningEnabled}
-                disablePreferences={status === 'streaming'}
-                toggleSearch={() => {
-                  toggleSearch()
-                  setBrowserEnabled(false)
-                }}
-                toggleDeepResearch={() => {
-                  toggleDeepResearch()
-                  setBrowserEnabled(false)
-                }}
-                toggleBrowser={() => {
-                  toggleBrowser()
-                  setDeepResearchEnabled(false)
-                  setSearchEnabled(false)
-                }}
-                isBrowserSupported={isBrowserSupported}
-                toggleInstruct={toggleInstruct}
-                isSupportTools={isSupportTools}
-                isSupportDeepResearch={isSupportDeepResearch}
-                isSupportReasoningToggle={isSupportInstruct}
-              >
-                <Button
-                  className="rounded-full mx-1 size-8"
-                  variant="secondary"
-                  size="icon"
+          <InputResetHandler
+            textareaRef={textareaRef}
+            isMobile={isMobile}
+            conversationId={conversationId}
+          />
+          <PromptInput
+            accept="image/jpeg,image/jpg,image/png"
+            globalDrop
+            multiple
+            userId={conversationId || projectId || 'anonymous'}
+            onError={handleError}
+            onSubmit={handleSubmit}
+            className="rounded-3xl relative z-40 bg-background"
+          >
+            <PromptInputAttachments>
+              {(attachment) => <PromptInputAttachment data={attachment} />}
+            </PromptInputAttachments>
+            <PromptInputBody>
+              <PromptInputTextarea
+                ref={textareaRef}
+                disabled={status === 'streaming'}
+              />
+            </PromptInputBody>
+            <PromptInputFooter>
+              <PromptInputTools>
+                <PromptInputActionMenu>
+                  <PromptInputActionMenuTrigger
+                    className="rounded-full"
+                    variant="secondary"
+                  />
+                  <PromptInputActionMenuContent className="lg:w-56">
+                    <PromptInputActionAddAttachments label="Add photos" />
+                    {initialConversation && !projectId && !isPrivateChat && (
+                      <ProjectsChatInput
+                        currentProjectId={selectedProjectId || undefined}
+                        onProjectSelect={(projectId) => {
+                          setSelectedProjectId(projectId)
+                        }}
+                      />
+                    )}
+                  </PromptInputActionMenuContent>
+                </PromptInputActionMenu>
+                <SettingChatInput
+                  searchEnabled={searchEnabled}
+                  deepResearchEnabled={deepResearchEnabled}
+                  browserEnabled={browserEnabled}
+                  reasoningEnabled={reasoningEnabled}
+                  disablePreferences={status === 'streaming'}
+                  toggleSearch={() => {
+                    toggleSearch()
+                    setBrowserEnabled(false)
+                  }}
+                  toggleDeepResearch={() => {
+                    toggleDeepResearch()
+                    setBrowserEnabled(false)
+                  }}
+                  toggleBrowser={() => {
+                    toggleBrowser()
+                    setDeepResearchEnabled(false)
+                    setSearchEnabled(false)
+                  }}
+                  isBrowserSupported={isBrowserSupported}
+                  toggleInstruct={toggleInstruct}
+                  isSupportTools={isSupportTools}
+                  isSupportDeepResearch={isSupportDeepResearch}
+                  isSupportReasoningToggle={isSupportInstruct}
                 >
-                  <Settings2 className="size-4 text-muted-foreground" />
-                </Button>
-              </SettingChatInput>
-              {isSupportInstruct &&
-                reasoningEnabled &&
-                !deepResearchEnabled && (
-                  <PromptInputButton
-                    variant="outline"
-                    className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
-                    disabled={status === 'streaming'}
-                    onClick={toggleInstruct}
+                  <Button
+                    className="rounded-full mx-1 size-8"
+                    variant="secondary"
+                    size="icon"
                   >
-                    <LightbulbIcon className="text-primary size-4 group-hover:hidden" />
-                    <X className="text-primary size-4 hidden group-hover:block" />
-                    <span className="text-primary">Think</span>
-                  </PromptInputButton>
-                )}
-              {searchEnabled && !deepResearchEnabled && (
-                <PromptInputButton
-                  variant="outline"
-                  className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
-                  disabled={status === 'streaming'}
-                  onClick={toggleSearch}
-                >
-                  <GlobeIcon className="text-primary size-4 group-hover:hidden" />
-                  <X className="text-primary size-4 hidden group-hover:block" />
-                  <span className="text-primary">Search</span>
-                </PromptInputButton>
-              )}
-              {deepResearchEnabled && (
-                <PromptInputButton
-                  variant="outline"
-                  className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
-                  disabled={status === 'streaming'}
-                  onClick={toggleDeepResearch}
-                >
-                  <MegaphoneIcon className="text-primary size-4 group-hover:hidden" />
-                  <X className="text-primary size-4 hidden group-hover:block" />
-                  <span className="text-primary">Deep Research</span>
-                </PromptInputButton>
-              )}
-              {browserEnabled && shouldShowBrowserUI && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
+                    <Settings2 className="size-4 text-muted-foreground" />
+                  </Button>
+                </SettingChatInput>
+                {isSupportInstruct &&
+                  reasoningEnabled &&
+                  !deepResearchEnabled && (
                     <PromptInputButton
                       variant="outline"
                       className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
                       disabled={status === 'streaming'}
-                      onClick={toggleBrowser}
+                      onClick={toggleInstruct}
                     >
-                      <div className="size-4 flex items-center justify-center group-hover:hidden">
-                        {browserConnectionState === 'error' && (
-                          <div className="size-3 bg-red-400 rounded-full" />
-                        )}
-                        {browserConnectionState === 'connecting' && (
-                          <div className="size-3 animate-pulse bg-blue-400 rounded-full" />
-                        )}
-                        {browserConnectionState === 'connected' && (
-                          <div className="size-3 bg-green-400 rounded-full" />
-                        )}
-                      </div>
+                      <LightbulbIcon className="text-primary size-4 group-hover:hidden" />
                       <X className="text-primary size-4 hidden group-hover:block" />
-                      <span className="text-primary">Browse</span>
+                      <span className="text-primary">Think</span>
                     </PromptInputButton>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {browserConnectionState === 'error' && (
-                      <p>Connection error</p>
-                    )}
-                    {browserConnectionState === 'connecting' && (
-                      <p>Connecting...</p>
-                    )}
-                    {browserConnectionState === 'connected' && (
-                      <p>Ready to use</p>
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-              )}
-              {selectedProjectId && !isPrivateChat && (
-                <PromptInputButton
-                  variant="outline"
-                  className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
-                  disabled={status === 'streaming'}
-                  onClick={() => setSelectedProjectId(null)}
-                >
-                  <FolderIcon className="text-primary size-4 group-hover:hidden" />
-                  <X className="text-primary size-4 hidden group-hover:block" />
-                  <span className="text-primary">
-                    {projects.find((p) => p.id === selectedProjectId)?.name ||
-                      'Project'}
-                  </span>
-                </PromptInputButton>
-              )}
-            </PromptInputTools>
-            <div className="flex items-center gap-2">
-              {/* Disabled speech input button */}
-              {/* <PromptInputSpeechButton textareaRef={textareaRef} /> */}
-              <PromptInputSubmit
-                status={status}
-                className="rounded-full"
-                variant={status === 'streaming' ? 'destructive' : 'default'}
-              />
-            </div>
-          </PromptInputFooter>
-        </PromptInput>
-        {status === 'streaming' && (
-          <div className="absolute inset-0 ">
-            <BorderAnimate rx="10%" ry="10%">
-              <div
-                className={cn(
-                  'h-100 w-100 bg-[radial-gradient(var(--primary),transparent_50%)]'
+                  )}
+                {searchEnabled && !deepResearchEnabled && (
+                  <PromptInputButton
+                    variant="outline"
+                    className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                    disabled={status === 'streaming'}
+                    onClick={toggleSearch}
+                  >
+                    <GlobeIcon className="text-primary size-4 group-hover:hidden" />
+                    <X className="text-primary size-4 hidden group-hover:block" />
+                    <span className="text-primary">Search</span>
+                  </PromptInputButton>
                 )}
-              />
-            </BorderAnimate>
-          </div>
-        )}
-        {conversationId && (
-          <div className="mt-2 text-xs text-muted-foreground text-center">
-            <p>Jan can make mistakes. Please double check responses.</p>
-          </div>
-        )}
-      </PromptInputProvider>
-      {/* {status !== 'streaming' && (
+                {deepResearchEnabled && (
+                  <PromptInputButton
+                    variant="outline"
+                    className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                    disabled={status === 'streaming'}
+                    onClick={toggleDeepResearch}
+                  >
+                    <MegaphoneIcon className="text-primary size-4 group-hover:hidden" />
+                    <X className="text-primary size-4 hidden group-hover:block" />
+                    <span className="text-primary">Deep Research</span>
+                  </PromptInputButton>
+                )}
+                {browserEnabled && shouldShowBrowserUI && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <PromptInputButton
+                        variant="outline"
+                        className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                        disabled={status === 'streaming'}
+                        onClick={toggleBrowser}
+                      >
+                        <div className="size-4 flex items-center justify-center group-hover:hidden">
+                          {browserConnectionState === 'error' && (
+                            <div className="size-3 bg-red-400 rounded-full" />
+                          )}
+                          {browserConnectionState === 'connecting' && (
+                            <div className="size-3 animate-pulse bg-blue-400 rounded-full" />
+                          )}
+                          {browserConnectionState === 'connected' && (
+                            <div className="size-3 bg-green-400 rounded-full" />
+                          )}
+                        </div>
+                        <X className="text-primary size-4 hidden group-hover:block" />
+                        <span className="text-primary">Browse</span>
+                      </PromptInputButton>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {browserConnectionState === 'error' && (
+                        <p>Connection error</p>
+                      )}
+                      {browserConnectionState === 'connecting' && (
+                        <p>Connecting...</p>
+                      )}
+                      {browserConnectionState === 'connected' && (
+                        <p>Ready to use</p>
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {selectedProjectId && !isPrivateChat && (
+                  <PromptInputButton
+                    variant="outline"
+                    className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                    disabled={status === 'streaming'}
+                    onClick={() => setSelectedProjectId(null)}
+                  >
+                    <FolderIcon className="text-primary size-4 group-hover:hidden" />
+                    <X className="text-primary size-4 hidden group-hover:block" />
+                    <span className="text-primary">
+                      {projects.find((p) => p.id === selectedProjectId)?.name ||
+                        'Project'}
+                    </span>
+                  </PromptInputButton>
+                )}
+              </PromptInputTools>
+              <div className="flex items-center gap-2">
+                {/* Disabled speech input button */}
+                {/* <PromptInputSpeechButton textareaRef={textareaRef} /> */}
+                <PromptInputSubmit
+                  status={status}
+                  className="rounded-full"
+                  variant={status === 'streaming' ? 'destructive' : 'default'}
+                />
+              </div>
+            </PromptInputFooter>
+          </PromptInput>
+          {status === 'streaming' && (
+            <div className="absolute inset-0 ">
+              <BorderAnimate rx="10%" ry="10%">
+                <div
+                  className={cn(
+                    'h-100 w-100 bg-[radial-gradient(var(--primary),transparent_50%)]'
+                  )}
+                />
+              </BorderAnimate>
+            </div>
+          )}
+        </PromptInputProvider>
+        {/* {status !== 'streaming' && (
         <div className="absolute inset-0 scale-90 opacity-50 dark:opacity-25 blur-xl transition-all duration-100">
           <div className="bg-linear-to-r/increasing animate-hue-rotate absolute inset-x-0 bottom-0 top-6 from-pink-300 to-purple-300" />
         </div>
       )} */}
+      </div>
+      {conversationId && (
+        <div className="mt-2 text-xs text-muted-foreground text-center">
+          <p>Jan can make mistakes. Please double check responses.</p>
+        </div>
+      )}
     </div>
   )
 }
