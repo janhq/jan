@@ -17,7 +17,7 @@ import { convertToUIMessages } from '@/lib/utils'
 import { useModels } from '@/stores/models-store'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { conversationService } from '@/services/conversation-service'
+import { useConversations } from '@/stores/conversation-store'
 
 interface SharePageContentProps {
   slug: string
@@ -34,6 +34,10 @@ export function SharePageContent({ slug }: SharePageContentProps) {
   const [messages, setMessages] = useState<UIMessage[]>([])
   const [isForking, setIsForking] = useState(false)
 
+  const createConversation = useConversations(
+    (state) => state.createConversation
+  )
+
   const selectedModel = useModels((state) => state.selectedModel)
   const navigate = useNavigate()
 
@@ -43,7 +47,7 @@ export function SharePageContent({ slug }: SharePageContentProps) {
     setIsForking(true)
     try {
       // Fork the shared conversation to create a new conversation
-      const conversation = await conversationService.createConversation({
+      const conversation = await createConversation({
         title: shareData.title || 'Forked Conversation',
         items: shareData.snapshot.items.map((item) => ({
           content: item.content,
