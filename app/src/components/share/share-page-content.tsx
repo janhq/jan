@@ -17,7 +17,6 @@ import { convertToUIMessages } from '@/lib/utils'
 import { useModels } from '@/stores/models-store'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { conversationService } from '@/services/conversation-service'
 import { useConversations } from '@/stores/conversation-store'
 
 interface SharePageContentProps {
