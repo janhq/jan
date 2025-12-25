@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/sidebar'
 import { useStaggeredFadeIn } from '@/hooks/useStaggeredFadeIn'
 
-type NavMainItem = {
+export type NavMainItem = {
   title: string
   url: string
   icon: LucideIcon

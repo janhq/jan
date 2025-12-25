@@ -1,9 +1,8 @@
-import { type LucideIcon } from 'lucide-react'
 import { MessageCirclePlusIcon, FolderPenIcon, Search } from 'lucide-react'
 import { useRouter } from '@tanstack/react-router'
 
 import { SidebarMenu, useSidebar } from '@/components/ui/sidebar'
-import { AnimatedMenuItem } from '@/components/sidebar/items'
+import { AnimatedMenuItem, type NavMainItem } from '@/components/sidebar/items'
 
 export function NavMain() {
   const router = useRouter()
