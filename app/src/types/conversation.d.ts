@@ -88,6 +88,14 @@ interface ConversationItemContent {
   // Tool result fields
   mcp_call?: string | unknown
   tool_result?: string | unknown
+
+  // Share snapshot format for files/images (file_ref instead of image.url)
+  file_ref?: {
+    file_id: string
+    mime_type?: string
+    name?: string
+    url?: string // Presigned URL from server (for public access)
+  }
 }
 
 // Branch types
