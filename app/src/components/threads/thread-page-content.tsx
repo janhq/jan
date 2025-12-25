@@ -13,7 +13,7 @@ import {
 import type { PromptInputMessage } from '@/components/ai-elements/prompt-input'
 import { Loader } from 'lucide-react'
 import { useModels } from '@/stores/models-store'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useConversations } from '@/stores/conversation-store'
 import { mcpService } from '@/services/mcp-service'
 import { useCapabilities } from '@/stores/capabilities-store'
@@ -48,21 +48,20 @@ export function ThreadPageContent({
   const getConversation = useConversations((state) => state.getConversation)
   const initialMessageSentRef = useRef(false)
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
-  const fetchingMessagesRef = useRef(false)
   const deepResearchEnabled = useCapabilities(
     (state) => state.deepResearchEnabled
   )
   const enableThinking = useCapabilities((state) => state.reasoningEnabled)
   const [conversationTitle, setConversationTitle] = useState<string>('')
 
-  const provider = janProvider(
-    conversationId,
-    deepResearchEnabled,
-    isPrivateChat,
-    enableThinking
+  const provider = useMemo(
+    () => janProvider(conversationId, deepResearchEnabled, isPrivateChat, enableThinking),
+    [conversationId, deepResearchEnabled, isPrivateChat, enableThinking]
   )
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
+  const isFetchingConversation = useConversations((state) => state.isFetchingConversation)
+  const setFetchingConversation = useConversations((state) => state.setFetchingConversation)
   const moveConversationToTop = useConversations(
     (state) => state.moveConversationToTop
   )
@@ -303,10 +302,9 @@ export function ThreadPageContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, models.length, isPrivateChat])
 
-  // Reset refs when conversation changes
+  // Reset state when conversation changes
   useEffect(() => {
     initialMessageSentRef.current = false
-    fetchingMessagesRef.current = false
   }, [conversationId])
 
   useEffect(() => {
@@ -355,7 +353,7 @@ export function ThreadPageContent({
       conversationId &&
       !isPrivateChat &&
       !initialMessageSentRef.current &&
-      !fetchingMessagesRef.current
+      !isFetchingConversation(conversationId)
     ) {
       // Check if session already has messages (e.g., returning to a streaming conversation)
       const existingSession = useChatSessions.getState().sessions[chatSessionId]
@@ -367,7 +365,7 @@ export function ThreadPageContent({
         return
       }
 
-      fetchingMessagesRef.current = true
+      setFetchingConversation(conversationId, true)
       // Clear messages first, then fetch (like ChatGPT)
       setMessages([])
       getUIMessages(conversationId)
@@ -384,7 +382,7 @@ export function ThreadPageContent({
           console.error('Failed to load conversation items:', error)
         })
         .finally(() => {
-          fetchingMessagesRef.current = false
+          setFetchingConversation(conversationId, false)
         })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
