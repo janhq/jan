@@ -30,6 +30,7 @@ interface ConversationState {
   deleteConversation: (conversationId: string) => Promise<void>
   deleteAllConversations: () => Promise<void>
   clearConversations: () => void
+  moveConversationToTop: (conversationId: string) => void
   // Branch operations
   fetchBranches: (conversationId: string) => Promise<ConversationBranch[]>
   switchBranch: (conversationId: string, branchName: string) => Promise<void>
@@ -177,6 +178,28 @@ export const useConversations = create<ConversationState>((set, get) => ({
       activeBranch: 'MAIN',
     })
     fetchPromise = null
+  },
+
+  moveConversationToTop: (conversationId: string) => {
+    set((state) => {
+      const conversation = state.conversations.find(
+        (conv) => conv.id === conversationId
+      )
+      if (!conversation) return state
+
+      const updatedConversation = {
+        ...conversation,
+        updated_at: Date.now(),
+      }
+
+      const otherConversations = state.conversations.filter(
+        (conv) => conv.id !== conversationId
+      )
+
+      return {
+        conversations: [updatedConversation, ...otherConversations],
+      }
+    })
   },
 
   // Branch operations
