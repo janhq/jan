@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { useAuth } from '@/stores/auth-store'
 import { useRouter } from '@tanstack/react-router'
 import { usePrivateChat } from '@/stores/private-chat-store'
+import { useChatSessions } from '@/stores/chat-session-store'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ShareDialog } from '@/components/threads/share-dialog'
 import { useState } from 'react'
@@ -20,6 +21,7 @@ export function NavActions({
   const isGuest = useAuth((state) => state.isGuest)
   const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
   const setIsPrivateChat = usePrivateChat((state) => state.setIsPrivateChat)
+  const removeSession = useChatSessions((state) => state.removeSession)
   const router = useRouter()
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
 
@@ -85,6 +87,7 @@ export function NavActions({
           variant="destructive"
           className="rounded-full size-8 md:size-auto"
           onClick={() => {
+            removeSession('private-chat')
             setIsPrivateChat(false)
             router.navigate({ to: '/' })
           }}
