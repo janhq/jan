@@ -11,6 +11,7 @@ import { useTheme } from '@/components/themes/theme-provider'
 import { ChevronsUpDown, CircleCheck, Monitor, Moon, Sun } from 'lucide-react'
 import { Button } from '../ui/button'
 import { useRef } from 'react'
+import { THEME } from '@/constants'
 
 export function GeneralSettings() {
   const user = useAuth((state) => state.user)
@@ -57,11 +58,11 @@ export function GeneralSettings() {
 
   const getThemeDisplay = () => {
     switch (theme) {
-      case 'light':
+      case THEME.LIGHT:
         return 'Light'
-      case 'dark':
+      case THEME.DARK:
         return 'Dark'
-      case 'system':
+      case THEME.SYSTEM:
         return 'System'
       default:
         return 'System'
@@ -70,11 +71,11 @@ export function GeneralSettings() {
 
   const getThemeIcon = () => {
     switch (theme) {
-      case 'light':
+      case THEME.LIGHT:
         return <Sun className="size-4 text-muted-foreground" />
-      case 'dark':
+      case THEME.DARK:
         return <Moon className="size-4 text-muted-foreground" />
-      case 'system':
+      case THEME.SYSTEM:
         return <Monitor className="size-4 text-muted-foreground" />
       default:
         return <Monitor className="size-4 text-muted-foreground" />
@@ -122,9 +123,9 @@ export function GeneralSettings() {
           </DropDrawerTrigger>
           <DropDrawerContent>
             <DropDrawerItem
-              onSelect={() => handleThemeChange('light')}
+              onSelect={() => handleThemeChange(THEME.LIGHT)}
               icon={
-                theme === 'light' ? (
+                theme === THEME.LIGHT ? (
                   <CircleCheck className="size-4 text-primary" />
                 ) : null
               }
@@ -135,9 +136,9 @@ export function GeneralSettings() {
               </div>
             </DropDrawerItem>
             <DropDrawerItem
-              onSelect={() => handleThemeChange('dark')}
+              onSelect={() => handleThemeChange(THEME.DARK)}
               icon={
-                theme === 'dark' ? (
+                theme === THEME.DARK ? (
                   <CircleCheck className="size-4 text-primary" />
                 ) : null
               }
@@ -148,9 +149,9 @@ export function GeneralSettings() {
               </div>
             </DropDrawerItem>
             <DropDrawerItem
-              onSelect={() => handleThemeChange('system')}
+              onSelect={() => handleThemeChange(THEME.SYSTEM)}
               icon={
-                theme === 'system' ? (
+                theme === THEME.SYSTEM ? (
                   <CircleCheck className="size-4 text-primary" />
                 ) : null
               }

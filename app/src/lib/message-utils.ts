@@ -1,4 +1,5 @@
 import type { UIMessage } from 'ai'
+import { MESSAGE_ROLE } from '@/constants'
 
 /**
  * Find the index of the preceding user message before an assistant message
@@ -11,7 +12,7 @@ export function findPrecedingUserMessageIndex(
   assistantIndex: number
 ): number {
   for (let i = assistantIndex - 1; i >= 0; i--) {
-    if (messages[i].role === 'user') {
+    if (messages[i].role === MESSAGE_ROLE.USER) {
       return i
     }
   }

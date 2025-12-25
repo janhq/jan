@@ -1,6 +1,7 @@
 /* eslint-disable no-case-declarations */
 import { memo, useState } from 'react'
-import type { UIMessage } from 'ai'
+import type { UIMessage, ChatStatus } from 'ai'
+import { TOOL_STATE, CHAT_STATUS, CONTENT_TYPE, MESSAGE_ROLE } from '@/constants'
 import {
   Message,
   MessageContent,
@@ -30,7 +31,7 @@ export type MessageItemProps = {
   message: UIMessage
   isFirstMessage: boolean
   isLastMessage: boolean
-  status: 'streaming' | 'submitted' | 'ready' | 'error'
+  status: ChatStatus
   reasoningContainerRef?: React.RefObject<HTMLDivElement | null>
   onRegenerate?: (messageId: string) => Promise<void>
 }
@@ -56,7 +57,7 @@ export const MessageItem = memo(
       onRegenerate?.(message.id)
     }
 
-    const isStreaming = isLastMessage && status === 'streaming'
+    const isStreaming = isLastMessage && status === CHAT_STATUS.STREAMING
 
     const renderTextPart = (part: { text: string }, partIndex: number) => {
       const isLastPart = partIndex === message.parts.length - 1
@@ -67,23 +68,23 @@ export const MessageItem = memo(
           from={message.role}
           className={cn(
             'group',
-            isFirstMessage && message.role === 'user' && 'mt-0!'
+            isFirstMessage && message.role === MESSAGE_ROLE.USER && 'mt-0!'
           )}
         >
           <MessageContent
             className={cn(
               'leading-relaxed',
-              message.role === 'user' && 'whitespace-pre-wrap'
+              message.role === MESSAGE_ROLE.USER && 'whitespace-pre-wrap'
             )}
           >
-            {message.role === 'user' ? (
+            {message.role === MESSAGE_ROLE.USER ? (
               part.text
             ) : (
               <MessageResponse>{part.text}</MessageResponse>
             )}
           </MessageContent>
 
-          {message.role === 'user' && isLastPart && (
+          {message.role === MESSAGE_ROLE.USER && isLastPart && (
             <MessageActions className="gap-0 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
               <MessageAction onClick={() => handleCopy(part.text)} label="Copy">
                 {copiedMessageId === message.id ? (
@@ -95,7 +96,7 @@ export const MessageItem = memo(
             </MessageActions>
           )}
 
-          {message.role === 'assistant' && isLastPart && !isStreaming && (
+          {message.role === MESSAGE_ROLE.ASSISTANT && isLastPart && !isStreaming && (
             <MessageActions className="mt-1 gap-0">
               <MessageAction onClick={() => handleCopy(part.text)} label="Copy">
                 {copiedMessageId === message.id ? (
@@ -184,13 +185,13 @@ export const MessageItem = memo(
           />
           <ToolContent>
             <ToolInput input={part.input} />
-            {part.state === 'output-available' && 'output' in part && (
+            {part.state === TOOL_STATE.OUTPUT_AVAILABLE && 'output' in part && (
               <ToolOutput
                 output={part.output}
                 errorText={'errorText' in part ? part.errorText : undefined}
               />
             )}
-            {part.state === 'output-error' && (
+            {part.state === TOOL_STATE.OUTPUT_ERROR && (
               <ToolOutput
                 output={undefined}
                 errorText={'errorText' in part ? part.errorText : undefined}
@@ -205,11 +206,11 @@ export const MessageItem = memo(
       <div>
         {message.parts.map((part, i) => {
           switch (part.type) {
-            case 'text':
+            case CONTENT_TYPE.TEXT:
               return renderTextPart(part, i)
-            case 'file':
+            case CONTENT_TYPE.FILE:
               return renderFilePart(part, i)
-            case 'reasoning':
+            case CONTENT_TYPE.REASONING:
               return renderReasoningPart(part, i)
             default:
               return renderToolPart(part, i)
@@ -219,7 +220,7 @@ export const MessageItem = memo(
     )
   },
   (prevProps, nextProps) => {
-    if (nextProps.isLastMessage && nextProps.status === 'streaming') {
+    if (nextProps.isLastMessage && nextProps.status === CHAT_STATUS.STREAMING) {
       return false
     }
 

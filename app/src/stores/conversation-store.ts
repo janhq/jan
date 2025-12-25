@@ -3,6 +3,7 @@ import { conversationService } from '@/services/conversation-service'
 import type { UIMessage } from '@ai-sdk/react'
 import { convertToUIMessages } from '@/lib/utils'
 import { useChatSessions } from './chat-session-store'
+import { BRANCH } from '@/constants'
 
 let fetchPromise: Promise<void> | null = null
 
@@ -63,7 +64,7 @@ export const useConversations = create<ConversationState>((set, get) => ({
   loading: false,
   // Branch state
   branches: [],
-  activeBranch: 'MAIN',
+  activeBranch: BRANCH.MAIN,
   branchesLoading: false,
   getConversations: async () => {
     if (fetchPromise) {
@@ -175,7 +176,7 @@ export const useConversations = create<ConversationState>((set, get) => ({
       conversations: [],
       loading: false,
       branches: [],
-      activeBranch: 'MAIN',
+      activeBranch: BRANCH.MAIN,
     })
     fetchPromise = null
   },
@@ -253,7 +254,7 @@ export const useConversations = create<ConversationState>((set, get) => ({
         branches: state.branches.filter((b) => b.name !== branchName),
         // If we deleted the active branch, switch to MAIN
         activeBranch:
-          state.activeBranch === branchName ? 'MAIN' : state.activeBranch,
+          state.activeBranch === branchName ? BRANCH.MAIN : state.activeBranch,
       }))
     } catch (err) {
       console.error('Error deleting branch:', err)

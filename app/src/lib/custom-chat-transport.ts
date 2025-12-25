@@ -11,6 +11,7 @@ import {
   type CoreMessage,
 } from 'ai'
 import { mcpService } from '@/services/mcp-service'
+import { CONTENT_TYPE, MESSAGE_ROLE } from '@/constants'
 
 /**
  * Custom download function that returns null for all URLs.
@@ -32,7 +33,7 @@ async function passUrlsDirectly(
  */
 function convertToImageUrlFormat(messages: CoreMessage[]): CoreMessage[] {
   return messages.map((message) => {
-    if (message.role === 'user' && Array.isArray(message.content)) {
+    if (message.role === MESSAGE_ROLE.USER && Array.isArray(message.content)) {
       return {
         ...message,
         content: message.content.map((part) => {
@@ -67,7 +68,7 @@ function filterBase64FromMessages(messages: CoreMessage[]): CoreMessage[] {
   const base64Pattern = /data:image\/[^;]+;base64,[A-Za-z0-9+/=]{100,}/g
 
   return messages.map((message) => {
-    if (message.role === 'tool') {
+    if (message.role === MESSAGE_ROLE.TOOL) {
       // Tool messages have content as array of ToolResultPart
       if (Array.isArray(message.content)) {
         return {
@@ -98,7 +99,7 @@ function filterBase64FromMessages(messages: CoreMessage[]): CoreMessage[] {
     }
 
     // Handle user messages with image parts
-    if (message.role === 'user' && Array.isArray(message.content)) {
+    if (message.role === MESSAGE_ROLE.USER && Array.isArray(message.content)) {
       return {
         ...message,
         content: message.content.map((part) => {
@@ -111,14 +112,14 @@ function filterBase64FromMessages(messages: CoreMessage[]): CoreMessage[] {
             ) {
               // Replace with placeholder text
               return {
-                type: 'text' as const,
+                type: CONTENT_TYPE.TEXT,
                 text: `[Image: screenshot captured]`,
               }
             }
           }
           // Check for text parts with embedded base64
           if (
-            part.type === 'text' &&
+            part.type === CONTENT_TYPE.TEXT &&
             'text' in part &&
             typeof part.text === 'string'
           ) {

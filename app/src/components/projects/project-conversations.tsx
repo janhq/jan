@@ -24,6 +24,7 @@ import {
 import { useConversations } from '@/stores/conversation-store'
 import { useProjects } from '@/stores/projects-store'
 import { useChatSessions, isSessionBusy } from '@/stores/chat-session-store'
+import { CONTENT_TYPE } from '@/constants'
 
 interface ProjectConversationsProps {
   projectId: string
@@ -73,9 +74,9 @@ export function ProjectConversations({ projectId }: ProjectConversationsProps) {
             if (latestUserMessage) {
               // Get text from the message parts
               const textPart = latestUserMessage.parts.find(
-                (part) => part.type === 'text'
+                (part) => part.type === CONTENT_TYPE.TEXT
               )
-              if (textPart && textPart.type === 'text') {
+              if (textPart && textPart.type === CONTENT_TYPE.TEXT) {
                 latestMessage = textPart.text
               }
             }

@@ -21,6 +21,7 @@ import { Folder } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { ApiError } from '@/lib/api-client'
 import { useState } from 'react'
+import { URL_PARAM, URL_PARAM_VALUE } from '@/constants'
 
 const createProjectSchema = z.object({
   name: z.string().min(1, 'Project name is required'),
@@ -52,8 +53,8 @@ export function CreateProject({ open, onOpenChange }: CreateProjectProps) {
     setServerError(null)
     // Fallback to URL-based closing if no callback provided
     const url = new URL(window.location.href)
-    if (!onOpenChange && url.searchParams.get('projects') === 'create') {
-      url.searchParams.delete('projects')
+    if (!onOpenChange && url.searchParams.get(URL_PARAM.PROJECTS) === URL_PARAM_VALUE.CREATE) {
+      url.searchParams.delete(URL_PARAM.PROJECTS)
       router.navigate({ to: url.pathname + url.search })
     }
   }

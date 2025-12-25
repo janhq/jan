@@ -9,6 +9,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { MESSAGE_ROLE } from '@/constants'
 import {
   isJanMediaUrl,
   resolveJanMediaUrl,
@@ -32,7 +33,7 @@ export const Message = ({ className, from, ...props }: MessageProps) => (
   <div
     className={cn(
       'group flex w-full max-w-[95%] flex-col gap-2',
-      from === 'user' ? 'is-user ml-auto justify-end mt-8 mb-2' : 'is-assistant',
+      from === MESSAGE_ROLE.USER ? 'is-user ml-auto justify-end mt-8 mb-2' : 'is-assistant',
       className
     )}
     {...props}
