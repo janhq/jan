@@ -7,7 +7,7 @@ import {
   useChat as useChatSDK,
 } from '@ai-sdk/react'
 import { type ChatInit, type LanguageModel } from 'ai'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useChatSessions } from '@/stores/chat-session-store'
 
 type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
@@ -71,14 +71,17 @@ export function useChat(model: LanguageModel, options?: CustomChatOptions) {
     }
   }, [browserEnabled])
 
-  const chat = sessionId
-    ? ensureSession(
-        sessionId,
-        transportRef.current,
-        () => new Chat({ ...chatInitOptions, transport: transportRef.current }),
-        sessionTitle
-      )
-    : undefined
+  // Memoize to prevent calling ensureSession (which has side effects) on every render
+  const chat = useMemo(() => {
+    if (!sessionId || !transportRef.current) return undefined
+    return ensureSession(
+      sessionId,
+      transportRef.current,
+      () => new Chat({ ...chatInitOptions, transport: transportRef.current }),
+      sessionTitle
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, ensureSession])
 
   useEffect(() => {
     if (sessionId && sessionTitle) {
