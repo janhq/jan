@@ -63,6 +63,9 @@ export function ThreadPageContent({
   )
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
+  const moveConversationToTop = useConversations(
+    (state) => state.moveConversationToTop
+  )
   const setActiveConversationId = useChatSessions(
     (state) => state.setActiveConversationId
   )
@@ -257,6 +260,10 @@ export function ThreadPageContent({
           text: message.text || 'Sent with attachments',
           files: message.files,
         })
+        // Move conversation to top when a new message is sent
+        if (conversationId && !isPrivateChat) {
+          moveConversationToTop(conversationId)
+        }
       } else if (status === 'streaming') {
         stop()
       } else {
@@ -268,7 +275,7 @@ export function ThreadPageContent({
         }
       }
     },
-    [sendMessage, sessionData, status, stop]
+    [sendMessage, sessionData, status, stop, conversationId, isPrivateChat, moveConversationToTop]
   )
 
   // Load conversation metadata (only for persistent conversations)
@@ -326,11 +333,15 @@ export function ThreadPageContent({
           text: message.text,
           files: message.files,
         })
+        // Move conversation to top when initial message is sent
+        if (conversationId && !isPrivateChat) {
+          moveConversationToTop(conversationId)
+        }
       } catch (error) {
         console.error('Failed to parse initial message:', error)
       }
     }
-  }, [conversationId, isPrivateChat, sendMessage, sessionData, setMessages])
+  }, [conversationId, isPrivateChat, sendMessage, sessionData, setMessages, moveConversationToTop])
 
   useEffect(() => {
     setActiveConversationId(conversationId)

@@ -3,6 +3,7 @@ interface Conversation {
   object: string
   title: string
   created_at: number
+  updated_at: number
   project_id?: string
   active_branch?: string
   metadata: {
