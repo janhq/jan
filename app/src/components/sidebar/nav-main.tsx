@@ -1,23 +1,8 @@
-import { type LucideIcon } from 'lucide-react'
-
 import { MessageCirclePlusIcon, FolderPenIcon, Search } from 'lucide-react'
+import { useRouter } from '@tanstack/react-router'
 
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from '@/components/ui/sidebar'
-import { Link, useRouter } from '@tanstack/react-router'
-
-type NavMainItem = {
-  title: string
-  url: string
-  icon: LucideIcon
-  isActive?: boolean
-  badge?: string
-  onClick?: () => void
-}
+import { SidebarMenu, useSidebar } from '@/components/ui/sidebar'
+import { AnimatedMenuItem, type NavMainItem } from '@/components/sidebar/items'
 
 export function NavMain() {
   const router = useRouter()
@@ -59,31 +44,14 @@ export function NavMain() {
 
   return (
     <SidebarMenu>
-      {navMain.map((item) => (
-        <SidebarMenuItem key={item.title}>
-          <SidebarMenuButton
-            asChild={!item.onClick}
-            isActive={item.isActive}
-            onClick={() => {
-              item.onClick?.()
-              if (isMobile) {
-                setOpenMobile(false)
-              }
-            }}
-          >
-            {item.onClick ? (
-              <>
-                <item.icon />
-                <span>{item.title}</span>
-              </>
-            ) : (
-              <Link to={item.url}>
-                <item.icon />
-                <span>{item.title}</span>
-              </Link>
-            )}
-          </SidebarMenuButton>
-        </SidebarMenuItem>
+      {navMain.map((item, index) => (
+        <AnimatedMenuItem
+          key={item.title}
+          item={item}
+          isMobile={isMobile}
+          setOpenMobile={setOpenMobile}
+          index={index}
+        />
       ))}
     </SidebarMenu>
   )

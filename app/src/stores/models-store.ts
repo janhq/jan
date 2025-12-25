@@ -37,6 +37,7 @@ export const useModels = create<ModelState>((set, get) => ({
         fetchPromise = null
       }
     })()
+    return fetchPromise
   },
   setSelectedModel: async (model: Model) => {
     set({ selectedModel: model })
