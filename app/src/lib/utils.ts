@@ -83,15 +83,9 @@ export const convertToUIMessages = (items: ConversationItem[]): UIMessage[] => {
           }
 
           let imageUrl: string | undefined = undefined
-          if (contentType === 'file') {
-            if (content.image?.url) {
-              imageUrl = content.image.url
-            } else if (content.file_ref?.url) {
-              imageUrl = content.file_ref.url
-            } else if (content.file_ref?.file_id) {
-              const mimeType = content.file_ref.mime_type || 'image/jpeg'
-              imageUrl = `data:${mimeType};base64,${content.file_ref.file_id}`
-            }
+          if (contentType === 'file' && content.image) {
+            // Use presigned URL if available, otherwise construct from file_id
+            imageUrl = content.image.url
           }
 
           return [

@@ -82,20 +82,15 @@ interface ConversationItemContent {
   text?: string & { text?: string }
   input_text?: string
   reasoning_text?: string
-  image?: { url: string }
+  image?: {
+    url?: string    // Direct URL or presigned URL for public shares
+    file_id?: string // Media ID (jan_xxx) for internal reference
+  }
   tool_calls?: Array<ToolCall>
 
   // Tool result fields
   mcp_call?: string | unknown
   tool_result?: string | unknown
-
-  // Share snapshot format for files/images (file_ref instead of image.url)
-  file_ref?: {
-    file_id: string
-    mime_type?: string
-    name?: string
-    url?: string // Presigned URL from server (for public access)
-  }
 }
 
 // Branch types
