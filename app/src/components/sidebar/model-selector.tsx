@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Jan } from '@/components/ui/svgs/jan'
 import { useModels } from '@/stores/models-store'
 import { useProfile } from '@/stores/profile-store'
+import { useAnimationStore } from '@/stores/animation-store'
 import { cn } from '@/lib/utils'
 
 export function ModelSelector() {
@@ -22,6 +23,10 @@ export function ModelSelector() {
   const selectedModel = useModels((state) => state.selectedModel)
   const setSelectedModel = useModels((state) => state.setSelectedModel)
   const loading = useModels((state) => state.loading)
+
+  const modelSelectorAnimated = useAnimationStore((state) => state.modelSelectorAnimated)
+  const setModelSelectorAnimated = useAnimationStore((state) => state.setModelSelectorAnimated)
+  const [shouldAnimate] = useState(() => !modelSelectorAnimated)
 
   useEffect(() => {
     const initialize = async () => {
@@ -41,9 +46,12 @@ export function ModelSelector() {
         console.error('Failed to fetch preferences:', error)
       }
       setIsReady(true)
+      if (!modelSelectorAnimated) {
+        setModelSelectorAnimated()
+      }
     }
     initialize()
-  }, [fetchPreferences, getModels, setSelectedModel])
+  }, [fetchPreferences, getModels, setSelectedModel, modelSelectorAnimated, setModelSelectorAnimated])
 
   const handleSelectModel = (model: Model) => {
     setSelectedModel(model)
@@ -65,7 +73,7 @@ export function ModelSelector() {
           variant="outline"
           className={cn(
             'justify-between rounded-full',
-            'animate-in fade-in duration-200'
+            shouldAnimate && 'animate-in fade-in duration-200'
           )}
         >
           <Jan className="size-4 shrink-0" />
