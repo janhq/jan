@@ -25,7 +25,6 @@ export function useChat(model: LanguageModel, options?: CustomChatOptions) {
     sessionId,
     sessionTitle,
     experimental_throttle,
-    resume,
     ...chatInitOptions
   } = options ?? {}
   const ensureSession = useChatSessions((state) => state.ensureSession)
@@ -92,7 +91,7 @@ export function useChat(model: LanguageModel, options?: CustomChatOptions) {
       ? { chat }
       : { transport: transportRef.current, ...chatInitOptions }),
     experimental_throttle,
-    resume: sessionId ? true : resume,
+    resume: false,
   })
 
   useEffect(() => {

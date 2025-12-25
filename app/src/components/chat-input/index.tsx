@@ -318,7 +318,7 @@ const ChatInput = ({
         className={cn(
           'w-full relative rounded-3xl p-[1.5px]',
           !initialConversation &&
-            status === 'streaming' &&
+            (status === 'streaming' || status === 'submitted') &&
             'overflow-hidden outline-0'
         )}
       >
@@ -348,7 +348,7 @@ const ChatInput = ({
             <PromptInputBody>
               <PromptInputTextarea
                 ref={textareaRef}
-                disabled={status === 'streaming'}
+                disabled={status === 'streaming' || status === 'submitted'}
               />
             </PromptInputBody>
             <PromptInputFooter>
@@ -500,12 +500,16 @@ const ChatInput = ({
                 <PromptInputSubmit
                   status={status}
                   className="rounded-full"
-                  variant={status === 'streaming' ? 'destructive' : 'default'}
+                  variant={
+                    status === 'streaming' || status === 'submitted'
+                      ? 'destructive'
+                      : 'default'
+                  }
                 />
               </div>
             </PromptInputFooter>
           </PromptInput>
-          {status === 'streaming' && (
+          {(status === 'streaming' || status === 'submitted') && (
             <div className="absolute inset-0 ">
               <BorderAnimate rx="10%" ry="10%">
                 <div
