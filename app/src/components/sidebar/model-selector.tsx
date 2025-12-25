@@ -10,9 +10,11 @@ import { Button } from '@/components/ui/button'
 import { Jan } from '@/components/ui/svgs/jan'
 import { useModels } from '@/stores/models-store'
 import { useProfile } from '@/stores/profile-store'
+import { cn } from '@/lib/utils'
 
 export function ModelSelector() {
   const [open, setOpen] = useState(false)
+  const [isReady, setIsReady] = useState(false)
   const models = useModels((state) => state.models)
   const fetchPreferences = useProfile((state) => state.fetchPreferences)
   const updatePreferences = useProfile((state) => state.updatePreferences)
@@ -22,21 +24,26 @@ export function ModelSelector() {
   const loading = useModels((state) => state.loading)
 
   useEffect(() => {
-    getModels()
-    fetchPreferences()
-      .then((preferences) => {
+    const initialize = async () => {
+      await getModels()
+      try {
+        const preferences = await fetchPreferences()
         const selectedModelId = preferences?.preferences.selected_model
         if (selectedModelId) {
-          const model = models.find((m) => m.id === selectedModelId)
+          // Get fresh models from store (not stale closure value)
+          const freshModels = useModels.getState().models
+          const model = freshModels.find((m) => m.id === selectedModelId)
           if (model) {
             setSelectedModel(model)
           }
         }
-      })
-      .catch((error) => {
+      } catch (error) {
         console.error('Failed to fetch preferences:', error)
-      })
-  }, [fetchPreferences, getModels, models, setSelectedModel])
+      }
+      setIsReady(true)
+    }
+    initialize()
+  }, [fetchPreferences, getModels, setSelectedModel])
 
   const handleSelectModel = (model: Model) => {
     setSelectedModel(model)
@@ -48,18 +55,28 @@ export function ModelSelector() {
     setOpen(false)
   }
 
+  // Don't render until initialization is complete to prevent flashing
+  if (!isReady) return null
+
   return (
     <DropDrawer open={open} onOpenChange={setOpen}>
       <DropDrawerTrigger asChild>
-        <Button variant="outline" className="justify-between rounded-full">
+        <Button
+          variant="outline"
+          className={cn(
+            'justify-between rounded-full',
+            'animate-in fade-in duration-200'
+          )}
+        >
           <Jan className="size-4 shrink-0" />
           <span
             className={
-              selectedModel ? 'truncate' : 'truncate text-muted-foreground'
+              selectedModel?.model_display_name
+                ? 'truncate'
+                : 'truncate text-muted-foreground'
             }
           >
-            {!loading &&
-              (selectedModel?.model_display_name || 'Select a model')}
+            {selectedModel?.model_display_name || 'Select a model'}
           </span>
           <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
         </Button>
