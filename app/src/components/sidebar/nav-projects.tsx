@@ -1,20 +1,9 @@
-import { MoreHorizontal, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from '@tanstack/react-router'
+import { useState } from 'react'
+import { useNavigate, useParams } from '@tanstack/react-router'
 
 import {
-  DropDrawer,
-  DropDrawerContent,
-  DropDrawerItem,
-  DropDrawerTrigger,
-} from '@/components/ui/dropdrawer'
-import {
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarMenu,
-  SidebarMenuAction,
-  SidebarMenuButton,
-  SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar'
 import {
@@ -29,20 +18,16 @@ import {
 import { Button } from '@/components/ui/button'
 
 import { useProjects } from '@/stores/projects-store'
+import { AnimatedGroupLabel, AnimatedProjectItem } from '@/components/sidebar/items'
 
-export function NavProjects() {
+export function NavProjects({ startIndex = 3 }: { startIndex?: number }) {
   const { isMobile } = useSidebar()
   const navigate = useNavigate()
   const params = useParams({ strict: false }) as { projectId?: string }
   const projects = useProjects((state) => state.projects)
-  const getProjects = useProjects((state) => state.getProjects)
   const deleteProject = useProjects((state) => state.deleteProject)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<Project | null>(null)
-
-  useEffect(() => {
-    getProjects()
-  }, [getProjects])
 
   const handleDeleteClick = (item: Project) => {
     setItemToDelete(item)
@@ -72,47 +57,17 @@ export function NavProjects() {
   return (
     <>
       <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-        <SidebarGroupLabel className="text-muted-foreground flex w-full items-center justify-between pr-0">
-          Projects
-        </SidebarGroupLabel>
+        <AnimatedGroupLabel index={startIndex}>Projects</AnimatedGroupLabel>
         <SidebarMenu>
-          {projects.map((item) => (
-            <SidebarMenuItem key={item.id}>
-              <SidebarMenuButton
-                asChild
-                isActive={params.projectId === item.id}
-              >
-                <Link
-                  to="/projects/$projectId"
-                  params={{ projectId: item.id }}
-                  title={item.name}
-                >
-                  <span>{item.name}</span>
-                </Link>
-              </SidebarMenuButton>
-              <DropDrawer>
-                <DropDrawerTrigger asChild>
-                  <SidebarMenuAction showOnHover>
-                    <MoreHorizontal className="text-muted-foreground" />
-                    <span className="sr-only">More</span>
-                  </SidebarMenuAction>
-                </DropDrawerTrigger>
-                <DropDrawerContent
-                  side={isMobile ? 'bottom' : 'right'}
-                  align={isMobile ? 'end' : 'start'}
-                >
-                  <DropDrawerItem
-                    variant="destructive"
-                    onClick={() => handleDeleteClick(item)}
-                  >
-                    <div className="flex gap-2 items-center justify-center">
-                      <Trash2 className="text-destructive" />
-                      <span>Delete Project</span>
-                    </div>
-                  </DropDrawerItem>
-                </DropDrawerContent>
-              </DropDrawer>
-            </SidebarMenuItem>
+          {projects.map((item, idx) => (
+            <AnimatedProjectItem
+              key={item.id}
+              item={item}
+              isActive={params.projectId === item.id}
+              isMobile={isMobile}
+              onDeleteClick={handleDeleteClick}
+              index={startIndex + 1 + idx}
+            />
           ))}
         </SidebarMenu>
       </SidebarGroup>
