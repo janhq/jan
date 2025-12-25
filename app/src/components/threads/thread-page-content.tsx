@@ -112,7 +112,7 @@ export function ThreadPageContent({
     experimental_throttle: 50,
     sessionId: chatSessionId,
     sessionTitle: conversationTitle || undefined,
-    onFinish: ({ message }) => {
+    onFinish: ({ message, isAbort }) => {
       // Note: These values are captured at Chat creation time, which is correct
       // because onFinish fires for the Chat that started the stream, not the current conversation
       initialMessageSentRef.current = false
@@ -125,6 +125,7 @@ export function ThreadPageContent({
       // Check whether this is a valid message otherwise continue
       const needFollowUp =
         !hadToolCalls &&
+        !isAbort &&
         message?.parts.some((e) => e.type === 'reasoning') &&
         !message?.parts.some((e) => e.type === 'text' && e.text.length > 0)
       // After finishing a message, check if we need to resubmit for tool calls
