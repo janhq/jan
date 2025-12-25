@@ -56,6 +56,8 @@ export const MessageItem = memo(
       onRegenerate?.(message.id)
     }
 
+    const isStreaming = isLastMessage && status === 'streaming'
+
     const renderTextPart = (part: { text: string }, partIndex: number) => {
       const isLastPart = partIndex === message.parts.length - 1
 
@@ -93,7 +95,7 @@ export const MessageItem = memo(
             </MessageActions>
           )}
 
-          {message.role === 'assistant' && isLastPart && (
+          {message.role === 'assistant' && isLastPart && !isStreaming && (
             <MessageActions className="mt-1 gap-0">
               <MessageAction onClick={() => handleCopy(part.text)} label="Copy">
                 {copiedMessageId === message.id ? (
@@ -130,7 +132,6 @@ export const MessageItem = memo(
       partIndex: number
     ) => {
       const isLastPart = partIndex === message.parts.length - 1
-      const isStreaming = status === 'streaming' && isLastMessage
 
       // Only open if this reasoning part is actively being streamed
       // (last part in message AND status is streaming AND this is the last message)
