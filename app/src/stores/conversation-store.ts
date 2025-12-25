@@ -9,10 +9,6 @@ let fetchPromise: Promise<void> | null = null
 interface ConversationState {
   conversations: Conversation[]
   loading: boolean
-  // Fetching state (guards against duplicate fetches)
-  fetchingConversations: Set<string>
-  isFetchingConversation: (id: string) => boolean
-  setFetchingConversation: (id: string, fetching: boolean) => void
   // Branch state
   branches: ConversationBranch[]
   activeBranch: string
@@ -65,17 +61,6 @@ interface ConversationState {
 export const useConversations = create<ConversationState>((set, get) => ({
   conversations: [],
   loading: false,
-  // Fetching state
-  fetchingConversations: new Set<string>(),
-  isFetchingConversation: (id: string) => get().fetchingConversations.has(id),
-  setFetchingConversation: (id: string, fetching: boolean) => {
-    set((state) => {
-      const newSet = new Set(state.fetchingConversations)
-      if (fetching) newSet.add(id)
-      else newSet.delete(id)
-      return { fetchingConversations: newSet }
-    })
-  },
   // Branch state
   branches: [],
   activeBranch: 'MAIN',

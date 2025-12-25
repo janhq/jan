@@ -60,8 +60,7 @@ export function ThreadPageContent({
   )
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
-  const isFetchingConversation = useConversations((state) => state.isFetchingConversation)
-  const setFetchingConversation = useConversations((state) => state.setFetchingConversation)
+  const fetchingMessagesRef = useRef(false)
   const moveConversationToTop = useConversations(
     (state) => state.moveConversationToTop
   )
@@ -353,7 +352,7 @@ export function ThreadPageContent({
       conversationId &&
       !isPrivateChat &&
       !initialMessageSentRef.current &&
-      !isFetchingConversation(conversationId)
+      !fetchingMessagesRef.current
     ) {
       // Check if session already has messages (e.g., returning to a streaming conversation)
       const existingSession = useChatSessions.getState().sessions[chatSessionId]
@@ -365,7 +364,7 @@ export function ThreadPageContent({
         return
       }
 
-      setFetchingConversation(conversationId, true)
+      fetchingMessagesRef.current = true
       // Clear messages first, then fetch (like ChatGPT)
       setMessages([])
       getUIMessages(conversationId)
@@ -382,7 +381,7 @@ export function ThreadPageContent({
           console.error('Failed to load conversation items:', error)
         })
         .finally(() => {
-          setFetchingConversation(conversationId, false)
+          fetchingMessagesRef.current = false
         })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

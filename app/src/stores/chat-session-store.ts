@@ -60,7 +60,10 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
   setActiveConversationId: (conversationId) => set({ activeConversationId: conversationId }),
   ensureSession: (sessionId, transport, createChat, title) => {
     // Set active immediately - prevents toast for this session during status sync
-    set({ activeConversationId: sessionId })
+    // Only update activeConversationId if it changed (avoid unnecessary state updates during render)
+    if (get().activeConversationId !== sessionId) {
+      set({ activeConversationId: sessionId })
+    }
 
     const existing = get().sessions[sessionId]
     if (existing) {
