@@ -1383,20 +1383,18 @@ export const PromptInputSubmit = ({
 
   if (isUploading) {
     Icon = <Loader2Icon className="size-4 animate-spin" />
-  } else if (status === 'submitted') {
-    Icon = <Loader2Icon className="size-4 animate-spin" />
-  } else if (status === 'streaming') {
+  } else if (status === 'submitted' || status === 'streaming') {
     Icon = <SquareIcon className="size-4" />
   }
 
   const trimmedText = controller?.textInput.value?.trim() ?? ''
   const hasContent = trimmedText.length > 0 || attachments.files.length > 0
-  // Keep stop-action clickable while streaming even when the input was cleared
+  // Keep stop-action clickable while streaming or submitted even when the input was cleared
   const isDisabled =
     disabled ||
     isUploading ||
     hasFailedUploads ||
-    (!hasContent && status !== 'streaming')
+    (!hasContent && status !== 'streaming' && status !== 'submitted')
 
   return (
     <InputGroupButton

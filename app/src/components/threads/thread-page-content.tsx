@@ -66,9 +66,6 @@ export function ThreadPageContent({
   const moveConversationToTop = useConversations(
     (state) => state.moveConversationToTop
   )
-  const setActiveConversationId = useChatSessions(
-    (state) => state.setActiveConversationId
-  )
   const getSessionData = useChatSessions((state) => state.getSessionData)
 
   const chatSessionId =
@@ -254,7 +251,11 @@ export function ThreadPageContent({
 
   const handleSubmit = useCallback(
     (message?: PromptInputMessage) => {
-      if (message && status !== 'streaming') {
+      // Get the current session to check its status directly
+      const currentSession = useChatSessions.getState().sessions[chatSessionId]
+      const currentStatus = currentSession?.status ?? status
+
+      if (message && currentStatus !== 'streaming' && currentStatus !== 'submitted') {
         sessionData.tools = []
         sendMessage({
           text: message.text || 'Sent with attachments',
@@ -264,7 +265,7 @@ export function ThreadPageContent({
         if (conversationId && !isPrivateChat) {
           moveConversationToTop(conversationId)
         }
-      } else if (status === 'streaming') {
+      } else if (currentStatus === 'streaming' || currentStatus === 'submitted') {
         stop()
       } else {
         // Stop pending tool calls when user clicks stop (not streaming but tools are running)
@@ -275,7 +276,7 @@ export function ThreadPageContent({
         }
       }
     },
-    [sendMessage, sessionData, status, stop, conversationId, isPrivateChat, moveConversationToTop]
+    [chatSessionId, sendMessage, sessionData, status, stop, conversationId, isPrivateChat, moveConversationToTop]
   )
 
   // Load conversation metadata (only for persistent conversations)
@@ -302,7 +303,12 @@ export function ThreadPageContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, models.length, isPrivateChat])
 
-  // Check for initial message and send it automatically
+  // Reset refs when conversation changes
+  useEffect(() => {
+    initialMessageSentRef.current = false
+    fetchingMessagesRef.current = false
+  }, [conversationId])
+
   useEffect(() => {
     const initialMessageKey = isPrivateChat
       ? 'initial-message-temporary'
@@ -342,11 +348,6 @@ export function ThreadPageContent({
       }
     }
   }, [conversationId, isPrivateChat, sendMessage, sessionData, setMessages, moveConversationToTop])
-
-  useEffect(() => {
-    setActiveConversationId(conversationId)
-    return () => setActiveConversationId(undefined)
-  }, [conversationId, setActiveConversationId])
 
   // Fetch messages for old conversations (only for persistent conversations)
   useEffect(() => {
