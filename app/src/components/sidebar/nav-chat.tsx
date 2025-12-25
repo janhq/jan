@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input'
 import { useConversations } from '@/stores/conversation-store'
 import { useChatSessions, isSessionBusy } from '@/stores/chat-session-store'
 import { AnimatedGroupLabel, AnimatedChatItem } from '@/components/sidebar/items'
+import { useAuth } from '@/stores/auth-store'
 
 export function NavChats({ startIndex = 3 }: { startIndex?: number }) {
   const { isMobile, setOpenMobile } = useSidebar()
@@ -50,6 +51,7 @@ export function NavChats({ startIndex = 3 }: { startIndex?: number }) {
   const [itemToDelete, setItemToDelete] = useState<Conversation | null>(null)
   const [itemToRename, setItemToRename] = useState<Conversation | null>(null)
   const [newTitle, setNewTitle] = useState('')
+  const isGuest = useAuth((state) => state.isGuest)
 
   // Filter conversations to only show those without a project_id
   const conversations = allConversations.filter(
@@ -123,7 +125,7 @@ export function NavChats({ startIndex = 3 }: { startIndex?: number }) {
     }
   }
 
-  if (conversations.length === 0) {
+  if (isGuest || conversations.length === 0) {
     return null
   }
 

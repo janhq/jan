@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { extractUserFromTokens } from '@/lib/oauth'
+import { useGuestUsage } from './guest-usage-store'
 import { fetchJsonWithAuth } from '@/lib/api-client'
 
 declare const JAN_API_BASE_URL: string
@@ -26,9 +27,9 @@ export const useAuth = create<AuthState>()(
       isGuest: false,
       accessToken: null,
       refreshToken: null,
-      login: (user) => set({ user, isAuthenticated: true, isGuest: false }),
       loginWithOAuth: (tokens) => {
         const userData = extractUserFromTokens(tokens)
+        useGuestUsage.getState().reset()
         set({
           user: {
             id: userData.id,
@@ -42,6 +43,10 @@ export const useAuth = create<AuthState>()(
           accessToken: userData.accessToken,
           refreshToken: userData.refreshToken,
         })
+      },
+      login: (user) => {
+        useGuestUsage.getState().reset()
+        set({ user, isAuthenticated: true, isGuest: false })
       },
       logout: async () => {
         try {

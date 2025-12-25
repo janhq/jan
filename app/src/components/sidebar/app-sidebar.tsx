@@ -17,6 +17,7 @@ import { Jan } from '@/components/ui/svgs/jan'
 import { StaggeredAnimationProvider } from '@/hooks/useStaggeredFadeIn'
 import { useProjects } from '@/stores/projects-store'
 import { useConversations } from '@/stores/conversation-store'
+import { useAuth } from '@/stores/auth-store'
 
 export const AppSidebar = memo(function AppSidebar({
   ...props
@@ -28,6 +29,7 @@ export const AppSidebar = memo(function AppSidebar({
   const getProjects = useProjects((state) => state.getProjects)
   const getConversations = useConversations((state) => state.getConversations)
   const projects = useProjects((state) => state.projects)
+  const isGuest = useAuth((state) => state.isGuest)
 
   // Calculate animation indices:
   // NavMain: 0, 1, 2 (3 items)
@@ -36,15 +38,25 @@ export const AppSidebar = memo(function AppSidebar({
   const chatsStartIndex = projects.length > 0 ? 3 + 1 + projects.length : 3
 
   useEffect(() => {
-    const loadData = async () => {
-      await Promise.all([getProjects(), getConversations()])
-      // Wait for next frame to ensure store updates have propagated
-      requestAnimationFrame(() => {
-        setIsReady(true)
-      })
+    if (isGuest) {
+      setIsReady(true)
+      return
     }
-    loadData()
-  }, [getProjects, getConversations])
+
+    let mounted = true
+    Promise.all([getProjects(), getConversations()]).finally(() => {
+      if (!mounted) return
+      requestAnimationFrame(() => setIsReady(true))
+    })
+
+    return () => {
+      mounted = false
+    }
+  }, [getProjects, getConversations, isGuest])
+
+  if (isGuest) {
+    return null
+  }
 
   return (
     <Sidebar className="border-r-0" {...props}>

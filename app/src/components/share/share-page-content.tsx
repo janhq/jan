@@ -18,6 +18,8 @@ import { useModels } from '@/stores/models-store'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useConversations } from '@/stores/conversation-store'
+import { useAuth } from '@/stores/auth-store'
+import { useLoginModal } from '@/hooks/use-login-modal'
 
 interface SharePageContentProps {
   slug: string
@@ -40,9 +42,16 @@ export function SharePageContent({ slug }: SharePageContentProps) {
 
   const selectedModel = useModels((state) => state.selectedModel)
   const navigate = useNavigate()
+  const isGuest = useAuth((state) => state.isGuest)
+  const openLoginModal = useLoginModal()
 
   const handleSubmit = async (message?: PromptInputMessage) => {
     if (!shareData || !selectedModel || !message) return
+
+    if (isGuest) {
+      openLoginModal()
+      return
+    }
 
     setIsForking(true)
     try {
@@ -192,6 +201,7 @@ export function SharePageContent({ slug }: SharePageContentProps) {
               <ChatInput
                 submit={handleSubmit}
                 status={isForking ? 'submitted' : 'ready'}
+                requireAuthForGuests
               />
             </div>
           </div>

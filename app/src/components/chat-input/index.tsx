@@ -27,6 +27,7 @@ import { useCapabilities } from '@/stores/capabilities-store'
 import { useProjects } from '@/stores/projects-store'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useIsMobileDevice } from '@/hooks/use-is-mobile-device'
+import { useAuth } from '@/stores/auth-store'
 import { toast } from 'sonner'
 import {
   FolderIcon,
@@ -52,6 +53,8 @@ import {
 } from '@/components/ui/tooltip'
 import { useBrowserConnection } from '@/stores/browser-connection-store'
 import { useProfile } from '@/stores/profile-store'
+import { useGuestUsage } from '@/stores/guest-usage-store'
+import { useLoginModal } from '@/hooks/use-login-modal'
 
 /**
  * Generates a meaningful title from message text.
@@ -116,16 +119,24 @@ const ChatInput = ({
   projectId,
   conversationId,
   submit,
+  requireAuthForGuests = false,
 }: {
   initialConversation?: boolean
   projectId?: string
   conversationId?: string
   status?: ChatStatus
   submit?: (message?: PromptInputMessage) => void
+  requireAuthForGuests?: boolean
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const navigate = useNavigate()
   const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
+  const setIsPrivateChat = usePrivateChat((state) => state.setIsPrivateChat)
+  const isGuest = useAuth((state) => state.isGuest)
+  const guestCount = useGuestUsage((state) => state.count)
+  const guestLimit = useGuestUsage((state) => state.limit)
+  const incrementGuestUsage = useGuestUsage((state) => state.increment)
+  const openLoginModal = useLoginModal()
 
   const browserConnectionState = useBrowserConnection(
     (state) => state.connectionState
@@ -259,56 +270,72 @@ const ChatInput = ({
       text: trimmedText,
     }
 
-    if (selectedModel) {
-      if (initialConversation) {
-        if (isPrivateChat) {
+    if (isGuest && requireAuthForGuests) {
+      openLoginModal()
+      return
+    }
+
+    if (!selectedModel) {
+      return
+    }
+
+    if (isGuest) {
+      if (guestCount >= guestLimit) {
+        openLoginModal()
+        return
+      }
+      incrementGuestUsage()
+    }
+
+    if (initialConversation) {
+      if (isGuest || isPrivateChat) {
+        setIsPrivateChat(true)
+        sessionStorage.setItem(
+          `initial-message-temporary`,
+          JSON.stringify(normalizedMessage)
+        )
+        navigate({
+          to: '/threads/temporary',
+        })
+
+        return
+      }
+
+      const conversationPayload: CreateConversationPayload = {
+        title: generateThreadTitle(normalizedMessage.text),
+        ...(projectId && { project_id: String(projectId) }),
+        ...(selectedProjectId && { project_id: selectedProjectId }),
+        metadata: {
+          model_id: selectedModel.id,
+          model_provider: selectedModel.owned_by,
+          is_favorite: 'false',
+        },
+      }
+
+      createConversation(conversationPayload)
+        .then((conversation) => {
+          // Store the initial message in sessionStorage for the new conversation
           sessionStorage.setItem(
-            `initial-message-temporary`,
+            `initial-message-${conversation.id}`,
             JSON.stringify(normalizedMessage)
           )
+
+          // Clear selected project after creating conversation
+          setSelectedProjectId(null)
+
+          // Redirect to the conversation detail page
           navigate({
-            to: '/threads/temporary',
+            to: '/threads/$conversationId',
+            params: { conversationId: conversation.id },
           })
 
           return
-        }
-
-        const conversationPayload: CreateConversationPayload = {
-          title: generateThreadTitle(normalizedMessage.text),
-          ...(projectId && { project_id: String(projectId) }),
-          ...(selectedProjectId && { project_id: selectedProjectId }),
-          metadata: {
-            model_id: selectedModel.id,
-            model_provider: selectedModel.owned_by,
-            is_favorite: 'false',
-          },
-        }
-
-        createConversation(conversationPayload)
-          .then((conversation) => {
-            // Store the initial message in sessionStorage for the new conversation
-            sessionStorage.setItem(
-              `initial-message-${conversation.id}`,
-              JSON.stringify(normalizedMessage)
-            )
-
-            // Clear selected project after creating conversation
-            setSelectedProjectId(null)
-
-            // Redirect to the conversation detail page
-            navigate({
-              to: '/threads/$conversationId',
-              params: { conversationId: conversation.id },
-            })
-
-            return
-          })
-          .catch((error) => {
-            console.error('Failed to create initial conversation:', error)
-          })
-      } else {
-        submit?.(normalizedMessage)
-      }
+        })
+        .catch((error) => {
+          console.error('Failed to create initial conversation:', error)
+        })
+    } else {
+      submit?.(normalizedMessage)
     }
   }
 
@@ -337,7 +364,11 @@ const ChatInput = ({
             accept="image/jpeg,image/jpg,image/png"
             globalDrop
             multiple
-            userId={conversationId || projectId || 'anonymous'}
+            userId={
+              isGuest
+                ? 'anonymous'
+                : conversationId || projectId || 'anonymous'
+            }
             onError={handleError}
             onSubmit={handleSubmit}
             className="rounded-3xl relative z-40 bg-background"
