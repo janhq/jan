@@ -3,24 +3,24 @@ import { ModelSelector } from '@/components/sidebar/model-selector'
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import { ThemeToggle } from '../themes/theme-toggle'
 import { memo } from 'react'
-import { useAuth } from '@/stores/auth-store'
 
 interface NavHeaderProps {
   conversationId?: string
   conversationTitle?: string
+  showSidebarTrigger?: boolean
 }
 
 export const NavHeader = memo(function NavHeader({
   conversationId,
-  conversationTitle
+  conversationTitle,
+  showSidebarTrigger = true,
 }: NavHeaderProps = {}) {
   const { state, isMobile } = useSidebar()
-  const isGuest = useAuth((state) => state.isGuest)
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 justify-between">
       <div className="flex flex-1 items-center gap-2 px-3">
-        {!isGuest && (isMobile || state === 'collapsed') && (
+        {showSidebarTrigger && (isMobile || state === 'collapsed') && (
           <SidebarTrigger className="text-muted-foreground" />
         )}
         <ModelSelector />

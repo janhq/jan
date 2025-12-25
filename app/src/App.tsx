@@ -7,19 +7,23 @@ import { usePrivateChat } from './stores/private-chat-store'
 import { HatGlassesIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
+import { useAuth } from '@/stores/auth-store'
 
 function AppPageContent() {
   const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
+  const isGuest = useAuth((state) => state.isGuest)
+  const showPrivateUi = isPrivateChat && !isGuest
+  const showSidebar = !isGuest
 
   return (
     <>
-      <AppSidebar />
+      {showSidebar && <AppSidebar />}
       <SidebarInset>
-        <NavHeader />
+        <NavHeader showSidebarTrigger={showSidebar} />
         <div className="flex flex-1 flex-col items-center justify-center h-full gap-4 px-4 py-10 max-w-3xl w-full mx-auto ">
           <div className="mx-auto flex justify-center items-center h-full w-full rounded-xl">
             <div className="w-full text-center">
-              {isPrivateChat ? (
+              {showPrivateUi ? (
                 <>
                   <div className="flex items-center justify-center mb-3">
                     <motion.div
@@ -140,11 +144,13 @@ function AppPageContent() {
 
 export default function AppPage() {
   const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
+  const isGuest = useAuth((state) => state.isGuest)
+  const showPrivateUi = isPrivateChat && !isGuest
 
   return (
     <SidebarProvider
       className={cn(
-        isPrivateChat &&
+        showPrivateUi &&
           '**:data-[slot="sidebar"]:opacity-0 **:data-[slot="sidebar"]:-translate-x-full **:data-[slot="sidebar-gap"]:w-0 **:data-[slot="sidebar"]:transition-all **:data-[slot="sidebar-gap"]:transition-all **:data-[slot="sidebar"]:duration-300 **:data-[slot="sidebar-gap"]:duration-300'
       )}
     >

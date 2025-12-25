@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import { extractUserFromTokens } from '@/lib/oauth'
 import { useGuestUsage } from './guest-usage-store'
 import { fetchJsonWithAuth } from '@/lib/api-client'
+import { usePrivateChat } from './private-chat-store'
 
 declare const JAN_API_BASE_URL: string
 
@@ -30,6 +31,7 @@ export const useAuth = create<AuthState>()(
       loginWithOAuth: (tokens) => {
         const userData = extractUserFromTokens(tokens)
         useGuestUsage.getState().reset()
+        usePrivateChat.getState().setIsPrivateChat(false)
         set({
           user: {
             id: userData.id,
@@ -46,6 +48,7 @@ export const useAuth = create<AuthState>()(
       },
       login: (user) => {
         useGuestUsage.getState().reset()
+        usePrivateChat.getState().setIsPrivateChat(false)
         set({ user, isAuthenticated: true, isGuest: false })
       },
       logout: async () => {
