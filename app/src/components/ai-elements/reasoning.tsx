@@ -172,7 +172,9 @@ export const ReasoningContent = memo(
       )}
       {...props}
     >
-      <Streamdown {...props}>{children}</Streamdown>
+      <Streamdown animate={true} animationDuration={300} {...props}>
+        {children}
+      </Streamdown>
     </CollapsibleContent>
   )
 )

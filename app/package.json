@@ -44,7 +44,7 @@
     "react-hook-form": "^7.68.0",
     "shiki": "^3.19.0",
     "sonner": "^2.0.7",
-    "streamdown": "^1.6.10",
+    "streamdown": "npm:@janhq/streamdown@^1.1.4",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.17",
     "use-stick-to-bottom": "^1.1.1",
