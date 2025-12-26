@@ -65,6 +65,7 @@ interface ModelDetail {
   supports_audio: boolean
   supports_video: boolean
   supports_instruct: boolean
+  supports_browser: boolean
   created_at: number
   updated_at: number
 }
