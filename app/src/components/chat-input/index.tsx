@@ -134,8 +134,7 @@ const ChatInput = ({
   )
   const isMobile = useIsMobile()
   const isMobileDevice = useIsMobileDevice()
-  const isBrowserSupported = useMemo(() => isChromeBrowser(), [])
-  const shouldShowBrowserUI = isBrowserSupported && !isMobileDevice
+  const isChromiumBrowser = useMemo(() => isChromeBrowser(), [])
 
   // Auto-focus on chat input when component mounts (desktop only)
   useEffect(() => {
@@ -205,6 +204,8 @@ const ChatInput = ({
   const isSupportReasoning = modelDetail.supports_reasoning
   const isSupportDeepResearch = isSupportTools && isSupportReasoning
   const isSupportInstruct = modelDetail.supports_instruct
+  const isBrowserSupported = isChromiumBrowser && modelDetail.supports_browser
+  const shouldShowBrowserUI = isBrowserSupported && !isMobileDevice
   const isSupportImageGeneration =
     settings?.server_capabilities?.image_generation_enabled ?? false
 
