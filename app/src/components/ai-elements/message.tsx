@@ -10,10 +10,7 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { MESSAGE_ROLE } from '@/constants'
-import {
-  isJanMediaUrl,
-  resolveJanMediaUrl,
-} from '@/services/media-upload-service'
+import { useResolvedMediaUrl } from '@/hooks/use-resolved-media-url'
 import type { FileUIPart, UIMessage } from 'ai'
 import {
   ChevronLeftIcon,
@@ -350,27 +347,8 @@ export function MessageAttachment({
   const isImage = mediaType === 'image'
   const attachmentLabel = filename || (isImage ? 'Image' : 'Attachment')
 
-  // Resolve jan media URL to presigned URL
-  const [displayUrl, setDisplayUrl] = useState<string | undefined>(data.url)
-  const [isLoading, setIsLoading] = useState(false)
-
-  useEffect(() => {
-    if (!data.url) return
-
-    // If it's a jan media URL, resolve it to presigned URL
-    if (isJanMediaUrl(data.url)) {
-      setIsLoading(true)
-      resolveJanMediaUrl(data.url)
-        .then(setDisplayUrl)
-        .catch((err) => {
-          console.error('Failed to resolve jan media URL:', err)
-          setDisplayUrl(undefined)
-        })
-        .finally(() => setIsLoading(false))
-    } else {
-      setDisplayUrl(data.url)
-    }
-  }, [data.url])
+  // Resolve jan media URL to presigned URL using shared hook
+  const { displayUrl, isLoading } = useResolvedMediaUrl(data.url)
 
   return (
     <div
