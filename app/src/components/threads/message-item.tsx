@@ -1,7 +1,13 @@
 /* eslint-disable no-case-declarations */
 import { memo, useState } from 'react'
 import type { UIMessage, ChatStatus } from 'ai'
-import { TOOL_STATE, CHAT_STATUS, CONTENT_TYPE, MESSAGE_ROLE } from '@/constants'
+import {
+  TOOL_STATE,
+  CHAT_STATUS,
+  CONTENT_TYPE,
+  MESSAGE_ROLE,
+} from '@/constants'
+import { useResolvedMediaUrl } from '@/hooks/use-resolved-media-url'
 import {
   Message,
   MessageContent,
@@ -11,6 +17,11 @@ import {
   MessageAttachments,
   MessageAttachment,
 } from '@/components/ai-elements/message'
+import {
+  PromptInputHoverCard,
+  PromptInputHoverCardContent,
+} from '@/components/ai-elements/prompt-input'
+import { HoverCardTrigger } from '@/components/ui/hover-card'
 import {
   Reasoning,
   ReasoningTrigger,
@@ -23,7 +34,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import { CopyIcon, CheckIcon, RefreshCcwIcon } from 'lucide-react'
+import { CopyIcon, CheckIcon, RefreshCcwIcon, DownloadIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 import { cn } from '@/lib/utils'
 
@@ -112,7 +123,8 @@ export const MessageItem = memo(
             <MessageActions
               className={cn(
                 'mt-1 gap-0 transition-opacity',
-                status === CHAT_STATUS.STREAMING && 'opacity-0 pointer-events-none'
+                status === CHAT_STATUS.STREAMING &&
+                  'opacity-0 pointer-events-none'
               )}
             >
               <MessageAction onClick={() => handleCopy(part.text)} label="Copy">
@@ -133,22 +145,98 @@ export const MessageItem = memo(
       )
     }
 
-    const renderFilePart = (
-      part: { filename?: string },
-      partIndex: number
-    ) => (
-      <MessageAttachments className="mb-2" key={`${message.id}-${partIndex}`}>
+    const renderFilePart = (part: { filename?: string, url?: string, mediaType?: string }, partIndex: number) => {
+      const isAssistant = message.role === MESSAGE_ROLE.ASSISTANT
+      const isImage = part.mediaType?.startsWith('image/')
+      const isLastPart = partIndex === message.parts.length - 1
+
+      // Resolve Jan media URL to displayable URL using shared hook
+      const { displayUrl, isLoading } = useResolvedMediaUrl(part.url)
+
+      const handleDownload = async () => {
+        if (!displayUrl) return
+
+        try {
+          const response = await fetch(displayUrl)
+          const blob = await response.blob()
+          const url = window.URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = part.filename || 'generated-image.png'
+          document.body.appendChild(a)
+          a.click()
+          window.URL.revokeObjectURL(url)
+          document.body.removeChild(a)
+        } catch (error) {
+          console.error('Failed to download image:', error)
+        }
+      }
+
+      const attachmentElement = (
         <MessageAttachment
           data={part as any}
           key={part.filename || 'image'}
+          className={cn(
+            isAssistant && 'size-64' // Bigger for assistant (size-64 = 16rem = 256px vs size-24 = 6rem = 96px)
+          )}
         />
-      </MessageAttachments>
-    )
+      )
 
-    const renderReasoningPart = (
-      part: { text: string },
-      partIndex: number
-    ) => {
+      return (
+        <Message
+          key={`${message.id}-${partIndex}`}
+          from={message.role}
+          className="group"
+        >
+          <MessageAttachments
+            className={cn(
+              isAssistant && 'ml-0 mr-auto' // Left-align for assistant
+            )}
+          >
+            {isImage && displayUrl ? (
+              <PromptInputHoverCard>
+                <HoverCardTrigger asChild>
+                  {attachmentElement}
+                </HoverCardTrigger>
+                <PromptInputHoverCardContent className="w-auto p-2">
+                  {isLoading ? (
+                    <div className="flex h-96 w-96 items-center justify-center">
+                      <div className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                    </div>
+                  ) : (
+                    <div className="flex max-h-96 w-96 items-center justify-center overflow-hidden rounded-md border">
+                      <img
+                        alt={part.filename || 'Generated image'}
+                        className="max-h-full max-w-full object-contain"
+                        src={displayUrl}
+                      />
+                    </div>
+                  )}
+                </PromptInputHoverCardContent>
+              </PromptInputHoverCard>
+            ) : (
+              attachmentElement
+            )}
+          </MessageAttachments>
+
+          {/* Message actions for assistant images */}
+          {message.role === MESSAGE_ROLE.ASSISTANT && isImage && displayUrl && isLastPart && (
+            <MessageActions
+              className={cn(
+                'gap-0 transition-opacity',
+                status === CHAT_STATUS.STREAMING && 'opacity-0 pointer-events-none'
+              )}
+            >
+              <MessageAction onClick={handleDownload} label="Download">
+                <DownloadIcon className="text-muted-foreground size-3" />
+              </MessageAction>
+            </MessageActions>
+          )}
+        </Message>
+      )
+    }
+
+    const renderReasoningPart = (part: { text: string }, partIndex: number) => {
       const isLastPart = partIndex === message.parts.length - 1
 
       // Only open if this reasoning part is actively being streamed

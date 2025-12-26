@@ -31,6 +31,7 @@ import { toast } from 'sonner'
 import {
   FolderIcon,
   GlobeIcon,
+  ImageIcon,
   LightbulbIcon,
   MegaphoneIcon,
   Settings2,
@@ -169,26 +170,43 @@ const ChatInput = ({
   )
   const browserEnabled = useCapabilities((state) => state.browserEnabled)
   const reasoningEnabled = useCapabilities((state) => state.reasoningEnabled)
+  const imageGenerationEnabled = useCapabilities(
+    (state) => state.imageGenerationEnabled
+  )
   const toggleSearch = useCapabilities((state) => state.toggleSearch)
   const toggleDeepResearch = useCapabilities(
     (state) => state.toggleDeepResearch
   )
   const toggleBrowser = useCapabilities((state) => state.toggleBrowser)
   const toggleInstruct = useCapabilities((state) => state.toggleReasoning)
+  const toggleImageGeneration = useCapabilities(
+    (state) => state.toggleImageGeneration
+  )
   const hydrateCapabilities = useCapabilities((state) => state.hydrate)
+
   const setSearchEnabled = useCapabilities((state) => state.setSearchEnabled)
   const setDeepResearchEnabled = useCapabilities(
     (state) => state.setDeepResearchEnabled
   )
   const setBrowserEnabled = useCapabilities((state) => state.setBrowserEnabled)
+  const setReasoningEnabled = useCapabilities(
+    (state) => state.setReasoningEnabled
+  )
+  const setImageGenerationEnabled = useCapabilities(
+    (state) => state.setImageGenerationEnabled
+  )
 
   const fetchPreferences = useProfile((state) => state.fetchPreferences)
+  const fetchSettings = useProfile((state) => state.fetchSettings)
   const pref = useProfile((state) => state.preferences)
+  const settings = useProfile((state) => state.settings)
 
   const isSupportTools = modelDetail.supports_tools
   const isSupportReasoning = modelDetail.supports_reasoning
   const isSupportDeepResearch = isSupportTools && isSupportReasoning
   const isSupportInstruct = modelDetail.supports_instruct
+  const isSupportImageGeneration =
+    settings?.server_capabilities?.image_generation_enabled ?? false
 
   // Auto-disable capabilities when model doesn't support them
   useEffect(() => {
@@ -230,6 +248,7 @@ const ChatInput = ({
 
   useEffect(() => {
     fetchPreferences()
+    fetchSettings()
   }, [])
 
   useEffect(() => {
@@ -237,6 +256,13 @@ const ChatInput = ({
       hydrateCapabilities(pref.preferences)
     }
   }, [pref, hydrateCapabilities])
+
+  // Auto-disable image generation when server doesn't support it
+  useEffect(() => {
+    if (!isSupportImageGeneration && imageGenerationEnabled) {
+      setImageGenerationEnabled(false)
+    }
+  }, [isSupportImageGeneration, imageGenerationEnabled, setImageGenerationEnabled])
 
   const handleError = (err: {
     code: 'max_files' | 'max_file_size' | 'accept' | 'max_images'
@@ -376,25 +402,43 @@ const ChatInput = ({
                   deepResearchEnabled={deepResearchEnabled}
                   browserEnabled={browserEnabled}
                   reasoningEnabled={reasoningEnabled}
+                  imageGenerationEnabled={imageGenerationEnabled}
                   disablePreferences={status === CHAT_STATUS.STREAMING}
                   toggleSearch={() => {
                     toggleSearch()
                     setBrowserEnabled(false)
+                    setImageGenerationEnabled(false)
                   }}
                   toggleDeepResearch={() => {
                     toggleDeepResearch()
                     setBrowserEnabled(false)
+                    setImageGenerationEnabled(false)
                   }}
                   toggleBrowser={() => {
                     toggleBrowser()
                     setDeepResearchEnabled(false)
                     setSearchEnabled(false)
+                    setImageGenerationEnabled(false)
+                  }}
+                  toggleImageGeneration={() => {
+                    toggleImageGeneration()
+                    // Disable all other capabilities when image generation is enabled
+                    if (!imageGenerationEnabled) {
+                      setSearchEnabled(false)
+                      setDeepResearchEnabled(false)
+                      setBrowserEnabled(false)
+                      setReasoningEnabled(false)
+                    }
                   }}
                   isBrowserSupported={isBrowserSupported}
-                  toggleInstruct={toggleInstruct}
+                  toggleInstruct={() => {
+                    toggleInstruct()
+                    setImageGenerationEnabled(false)
+                  }}
                   isSupportTools={isSupportTools}
                   isSupportDeepResearch={isSupportDeepResearch}
                   isSupportReasoningToggle={isSupportInstruct}
+                  isSupportImageGeneration={isSupportImageGeneration}
                 >
                   <Button
                     className="rounded-full mx-1 size-8"
@@ -406,19 +450,23 @@ const ChatInput = ({
                 </SettingChatInput>
                 {isSupportInstruct &&
                   reasoningEnabled &&
-                  !deepResearchEnabled && (
+                  !deepResearchEnabled &&
+                  !imageGenerationEnabled && (
                     <PromptInputButton
                       variant="outline"
                       className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
                       disabled={status === CHAT_STATUS.STREAMING}
-                      onClick={toggleInstruct}
+                      onClick={() => {
+                        toggleInstruct()
+                        setImageGenerationEnabled(false)
+                      }}
                     >
                       <LightbulbIcon className="text-primary size-4 group-hover:hidden" />
                       <X className="text-primary size-4 hidden group-hover:block" />
                       <span className="text-primary">Think</span>
                     </PromptInputButton>
                   )}
-                {searchEnabled && !deepResearchEnabled && (
+                {searchEnabled && !deepResearchEnabled && !imageGenerationEnabled && (
                   <PromptInputButton
                     variant="outline"
                     className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
@@ -430,7 +478,7 @@ const ChatInput = ({
                     <span className="text-primary">Search</span>
                   </PromptInputButton>
                 )}
-                {deepResearchEnabled && (
+                {deepResearchEnabled && !imageGenerationEnabled && (
                   <PromptInputButton
                     variant="outline"
                     className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
@@ -442,7 +490,7 @@ const ChatInput = ({
                     <span className="text-primary">Deep Research</span>
                   </PromptInputButton>
                 )}
-                {browserEnabled && shouldShowBrowserUI && (
+                {browserEnabled && shouldShowBrowserUI && !imageGenerationEnabled && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <PromptInputButton
@@ -479,7 +527,7 @@ const ChatInput = ({
                     </TooltipContent>
                   </Tooltip>
                 )}
-                {selectedProjectId && !isPrivateChat && (
+                {selectedProjectId && !isPrivateChat && !imageGenerationEnabled && (
                   <PromptInputButton
                     variant="outline"
                     className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
@@ -492,6 +540,21 @@ const ChatInput = ({
                       {projects.find((p) => p.id === selectedProjectId)?.name ||
                         'Project'}
                     </span>
+                  </PromptInputButton>
+                )}
+                {isSupportImageGeneration && imageGenerationEnabled && (
+                  <PromptInputButton
+                    variant="outline"
+                    className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                    disabled={status === CHAT_STATUS.STREAMING}
+                    onClick={() => {
+                      toggleImageGeneration()
+                      // Re-enable other capabilities when image generation is toggled off
+                    }}
+                  >
+                    <ImageIcon className="text-primary size-4 group-hover:hidden" />
+                    <X className="text-primary size-4 hidden group-hover:block" />
+                    <span className="text-primary">Create Image</span>
                   </PromptInputButton>
                 )}
               </PromptInputTools>

@@ -31,6 +31,10 @@ interface AdvancedSettings {
   code_enabled: boolean
 }
 
+interface ServerCapabilities {
+  image_generation_enabled: boolean
+}
+
 interface ProfileSettingsResponse {
   id: number
   user_id: number
@@ -40,6 +44,7 @@ interface ProfileSettingsResponse {
   enable_trace: boolean
   enable_tools: boolean
   preferences: Preferences
+  server_capabilities?: ServerCapabilities
   created_at: string
   updated_at: string
 }
@@ -58,5 +63,6 @@ interface Preferences {
   enable_deep_research: boolean
   enable_search: boolean
   enable_thinking: boolean
+  enable_image_generation: boolean
   selected_model: string
 }
