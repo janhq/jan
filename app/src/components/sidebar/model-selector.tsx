@@ -24,8 +24,12 @@ export function ModelSelector() {
   const setSelectedModel = useModels((state) => state.setSelectedModel)
   const loading = useModels((state) => state.loading)
 
-  const modelSelectorAnimated = useAnimationStore((state) => state.modelSelectorAnimated)
-  const setModelSelectorAnimated = useAnimationStore((state) => state.setModelSelectorAnimated)
+  const modelSelectorAnimated = useAnimationStore(
+    (state) => state.modelSelectorAnimated
+  )
+  const setModelSelectorAnimated = useAnimationStore(
+    (state) => state.setModelSelectorAnimated
+  )
   const [shouldAnimate] = useState(() => !modelSelectorAnimated)
 
   useEffect(() => {
@@ -51,7 +55,13 @@ export function ModelSelector() {
       }
     }
     initialize()
-  }, [fetchPreferences, getModels, setSelectedModel, modelSelectorAnimated, setModelSelectorAnimated])
+  }, [
+    fetchPreferences,
+    getModels,
+    setSelectedModel,
+    modelSelectorAnimated,
+    setModelSelectorAnimated,
+  ])
 
   const handleSelectModel = (model: Model) => {
     setSelectedModel(model)
@@ -69,25 +79,32 @@ export function ModelSelector() {
   return (
     <DropDrawer open={open} onOpenChange={setOpen}>
       <DropDrawerTrigger asChild>
-        <Button
-          variant="outline"
-          className={cn(
-            'justify-between rounded-full',
-            shouldAnimate && 'animate-in fade-in duration-200'
-          )}
-        >
-          <Jan className="size-4 shrink-0" />
-          <span
-            className={
-              selectedModel?.model_display_name
-                ? 'truncate'
-                : 'truncate text-muted-foreground'
-            }
+        <div className="relative">
+          <Button
+            variant="outline"
+            className={cn(
+              'justify-between rounded-full',
+              shouldAnimate && 'animate-in fade-in duration-200'
+            )}
           >
-            {selectedModel?.model_display_name || 'Select a model'}
-          </span>
-          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
-        </Button>
+            <Jan className="size-4 shrink-0" />
+            <span
+              className={
+                selectedModel?.model_display_name
+                  ? 'truncate'
+                  : 'truncate text-muted-foreground'
+              }
+            >
+              {selectedModel?.model_display_name || 'Select a model'}
+            </span>
+            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+          </Button>
+          <img
+            src="/hat.png"
+            alt="Christmas tree"
+            className="size-9 object-contain absolute -top-3.5 -right-3 pointer-events-none select-none"
+          />
+        </div>
       </DropDrawerTrigger>
       <DropDrawerContent align="start" className="p-2 md:w-70">
         {!loading && (
