@@ -27,11 +27,17 @@ import {
 } from '@/lib/message-utils'
 import { convertToUIMessages } from '@/lib/utils'
 import { useChatSessions } from '@/stores/chat-session-store'
-
-// Scroll animation config (spring physics) - a tad slower than default
-const SCROLL_MASS = 1.35 // inertia, higher = slower (default: 1.25)
-const SCROLL_DAMPING = 0.72 // 0-1, higher = less bouncy (default: 0.7)
-const SCROLL_STIFFNESS = 0.045 // acceleration, lower = gentler (default: 0.05)
+import {
+  PRIVATE_CHAT_SESSION_ID,
+  TEMPORARY_CHAT_SESSION_ID,
+  SCROLL_ANIMATION,
+  MCP,
+  TOOL_STATE,
+  CHAT_STATUS,
+  CONTENT_TYPE,
+  SESSION_STORAGE_KEY,
+  SESSION_STORAGE_PREFIX,
+} from '@/constants'
 
 interface ThreadPageContentProps {
   conversationId?: string
@@ -67,7 +73,8 @@ export function ThreadPageContent({
   const getSessionData = useChatSessions((state) => state.getSessionData)
 
   const chatSessionId =
-    conversationId ?? (isPrivateChat ? 'private-chat' : 'temporary-chat')
+    conversationId ??
+    (isPrivateChat ? PRIVATE_CHAT_SESSION_ID : TEMPORARY_CHAT_SESSION_ID)
   // sessionData is a mutable ref-like object - direct mutations don't trigger re-renders (intentional)
   const sessionData = getSessionData(chatSessionId)
 
@@ -124,8 +131,8 @@ export function ThreadPageContent({
       const needFollowUp =
         !hadToolCalls &&
         !isAbort &&
-        message?.parts.some((e) => e.type === 'reasoning') &&
-        !message?.parts.some((e) => e.type === 'text' && e.text.length > 0)
+        message?.parts.some((e) => e.type === CONTENT_TYPE.REASONING) &&
+        !message?.parts.some((e) => e.type === CONTENT_TYPE.TEXT && e.text.length > 0)
       // After finishing a message, check if we need to resubmit for tool calls
       Promise.all(
         sessionData.tools.map(async (toolCall: any) => {
@@ -137,7 +144,7 @@ export function ThreadPageContent({
           const result = await mcpService.callTool(
             {
               toolName: toolCall.toolName,
-              serverName: 'Jan MCP Server',
+              serverName: MCP.SERVER_NAME,
               arguments: toolCall.input as any,
             },
             {
@@ -149,7 +156,7 @@ export function ThreadPageContent({
 
           if (result.error) {
             addToolOutput({
-              state: 'output-error',
+              state: TOOL_STATE.OUTPUT_ERROR,
               tool: toolCall.toolName,
               toolCallId: toolCall.toolCallId,
               errorText: `Error: ${result.error}`,
@@ -253,7 +260,7 @@ export function ThreadPageContent({
       const currentSession = useChatSessions.getState().sessions[chatSessionId]
       const currentStatus = currentSession?.status ?? status
 
-      if (message && currentStatus !== 'streaming' && currentStatus !== 'submitted') {
+      if (message && currentStatus !== CHAT_STATUS.STREAMING && currentStatus !== CHAT_STATUS.SUBMITTED) {
         sessionData.tools = []
         sendMessage({
           text: message.text || 'Sent with attachments',
@@ -263,7 +270,7 @@ export function ThreadPageContent({
         if (conversationId && !isPrivateChat) {
           moveConversationToTop(conversationId)
         }
-      } else if (currentStatus === 'streaming' || currentStatus === 'submitted') {
+      } else if (currentStatus === CHAT_STATUS.STREAMING || currentStatus === CHAT_STATUS.SUBMITTED) {
         stop()
       } else {
         // Stop pending tool calls when user clicks stop (not streaming but tools are running)
@@ -308,8 +315,8 @@ export function ThreadPageContent({
 
   useEffect(() => {
     const initialMessageKey = isPrivateChat
-      ? 'initial-message-temporary'
-      : `initial-message-${conversationId}`
+      ? SESSION_STORAGE_KEY.INITIAL_MESSAGE_TEMPORARY
+      : `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${conversationId}`
 
     const storedMessage = sessionStorage.getItem(initialMessageKey)
 
@@ -323,7 +330,7 @@ export function ThreadPageContent({
         sessionData.tools = []
 
         // Preload cached items if any
-        const initialItemsKey = `initial-items-${conversationId}`
+        const initialItemsKey = `${SESSION_STORAGE_PREFIX.INITIAL_ITEMS}${conversationId}`
         const cachedItems = sessionStorage.getItem(initialItemsKey)
         if (cachedItems) {
           const items = JSON.parse(cachedItems) as any[]
@@ -389,7 +396,7 @@ export function ThreadPageContent({
 
   // Auto-scroll reasoning container to bottom during streaming
   useEffect(() => {
-    if (status === 'streaming' && reasoningContainerRef.current) {
+    if (status === CHAT_STATUS.STREAMING && reasoningContainerRef.current) {
       reasoningContainerRef.current.scrollTop =
         reasoningContainerRef.current.scrollHeight
     }
@@ -408,9 +415,9 @@ export function ThreadPageContent({
           <div className="flex-1 relative">
             <Conversation
               className="absolute inset-0 text-start"
-              mass={SCROLL_MASS}
-              damping={SCROLL_DAMPING}
-              stiffness={SCROLL_STIFFNESS}
+              mass={SCROLL_ANIMATION.MASS}
+              damping={SCROLL_ANIMATION.DAMPING}
+              stiffness={SCROLL_ANIMATION.STIFFNESS}
             >
               <ConversationContent className="max-w-3xl mx-auto">
                 {messages.map((message, messageIndex) => (
@@ -424,7 +431,7 @@ export function ThreadPageContent({
                     onRegenerate={conversationId ? handleRegenerate : undefined}
                   />
                 ))}
-                {status === 'submitted' && <Loader />}
+                {status === CHAT_STATUS.SUBMITTED && <Loader />}
               </ConversationContent>
               <ConversationScrollButton />
             </Conversation>
@@ -434,7 +441,7 @@ export function ThreadPageContent({
           <div className="px-4 py-4 max-w-3xl mx-auto w-full">
             <ChatInput
               submit={handleSubmit}
-              status={sessionData.tools.length > 0 ? 'streaming' : status}
+              status={sessionData.tools.length > 0 ? CHAT_STATUS.STREAMING : status}
               conversationId={conversationId}
             />
           </div>

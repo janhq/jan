@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { JanMCPOAuthProvider } from './mcp-oauth-provider'
 import { fetchWithAuth } from '@/lib/api-client'
+import { MCP, CONTENT_TYPE } from '@/constants'
 
 declare const JAN_API_BASE_URL: string
 
@@ -121,7 +122,7 @@ export class StreamableHttpMCPClient implements ToolCallClient {
           name: tool.name,
           description: tool.description || '',
           inputSchema: (tool.inputSchema || {}) as Record<string, unknown>,
-          server: 'Jan MCP Server',
+          server: MCP.SERVER_NAME,
         }))
       } else {
         console.warn('No tools found in MCP server response')
@@ -261,7 +262,7 @@ export class StreamableHttpMCPClient implements ToolCallClient {
       if (toolResult.isError) {
         const errorText =
           Array.isArray(toolResult.content) && toolResult.content.length > 0
-            ? toolResult.content[0].type === 'text'
+            ? toolResult.content[0].type === CONTENT_TYPE.TEXT
               ? toolResult.content[0].text
               : 'Tool call failed'
             : 'Tool call failed'
@@ -270,7 +271,7 @@ export class StreamableHttpMCPClient implements ToolCallClient {
 
       const content = Array.isArray(toolResult.content)
         ? toolResult.content.map((item: any) => item)
-        : [{ type: 'text' as const, text: 'No content returned' }]
+        : [{ type: CONTENT_TYPE.TEXT, text: 'No content returned' }]
 
       console.log(`[MCP] Tool call succeeded:`, {
         toolName: payload.toolName,
@@ -339,5 +340,5 @@ export const createErrorResult = (
   text?: string
 ): MCPToolCallResult => ({
   error,
-  content: [{ type: 'text' as const, text: text || error }],
+  content: [{ type: CONTENT_TYPE.TEXT, text: text || error }],
 })

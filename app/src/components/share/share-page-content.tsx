@@ -18,15 +18,11 @@ import { useModels } from '@/stores/models-store'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { useConversations } from '@/stores/conversation-store'
+import { CHAT_STATUS, SCROLL_ANIMATION, SESSION_STORAGE_PREFIX } from '@/constants'
 
 interface SharePageContentProps {
   slug: string
 }
-
-// Scroll animation config (same as thread-page-content)
-const SCROLL_MASS = 1.35
-const SCROLL_DAMPING = 0.72
-const SCROLL_STIFFNESS = 0.045
 
 export function SharePageContent({ slug }: SharePageContentProps) {
   const [shareData, setShareData] = useState<PublicShareResponse | null>(null)
@@ -63,12 +59,12 @@ export function SharePageContent({ slug }: SharePageContentProps) {
 
       // Store the initial message in sessionStorage for the new conversation
       sessionStorage.setItem(
-        `initial-message-${conversation.id}`,
+        `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${conversation.id}`,
         JSON.stringify(message)
       )
       // Store the cached messages for preview
       sessionStorage.setItem(
-        `initial-items-${conversation.id}`,
+        `${SESSION_STORAGE_PREFIX.INITIAL_ITEMS}${conversation.id}`,
         JSON.stringify(shareData.snapshot.items)
       )
 
@@ -149,9 +145,9 @@ export function SharePageContent({ slug }: SharePageContentProps) {
             <div className="flex-1 relative">
               <Conversation
                 className="absolute inset-0 text-start"
-                mass={SCROLL_MASS}
-                damping={SCROLL_DAMPING}
-                stiffness={SCROLL_STIFFNESS}
+                mass={SCROLL_ANIMATION.MASS}
+                damping={SCROLL_ANIMATION.DAMPING}
+                stiffness={SCROLL_ANIMATION.STIFFNESS}
               >
                 <ConversationContent className="max-w-3xl mx-auto">
                   <div className="pt-8 pb-6 w-full flex justify-center px-4">
@@ -177,7 +173,7 @@ export function SharePageContent({ slug }: SharePageContentProps) {
                       message={message}
                       isFirstMessage={messageIndex === 0}
                       isLastMessage={messageIndex === messages.length - 1}
-                      status="ready"
+                      status={CHAT_STATUS.READY}
                       // No regenerate for shared conversations
                       onRegenerate={undefined}
                     />
@@ -191,7 +187,7 @@ export function SharePageContent({ slug }: SharePageContentProps) {
             <div className="px-4 py-4 max-w-3xl mx-auto w-full">
               <ChatInput
                 submit={handleSubmit}
-                status={isForking ? 'submitted' : 'ready'}
+                status={isForking ? CHAT_STATUS.SUBMITTED : CHAT_STATUS.READY}
               />
             </div>
           </div>

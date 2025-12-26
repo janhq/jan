@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import { LOCAL_STORAGE_KEY, THEME } from '@/constants'
 
 type Theme = 'dark' | 'light' | 'system'
 
@@ -14,7 +15,7 @@ type ThemeProviderState = {
 }
 
 const initialState: ThemeProviderState = {
-  theme: 'system',
+  theme: THEME.SYSTEM,
   setTheme: () => null,
 }
 
@@ -22,8 +23,8 @@ const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
 
 export function ThemeProvider({
   children,
-  defaultTheme = 'system',
-  storageKey = 'theme',
+  defaultTheme = THEME.SYSTEM,
+  storageKey = LOCAL_STORAGE_KEY.THEME,
   ...props
 }: ThemeProviderProps) {
   const [theme, setTheme] = useState<Theme>(
@@ -33,13 +34,13 @@ export function ThemeProvider({
   useEffect(() => {
     const root = window.document.documentElement
 
-    root.classList.remove('light', 'dark')
+    root.classList.remove(THEME.LIGHT, THEME.DARK)
 
-    if (theme === 'system') {
+    if (theme === THEME.SYSTEM) {
       const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
         .matches
-        ? 'dark'
-        : 'light'
+        ? THEME.DARK
+        : THEME.LIGHT
 
       root.classList.add(systemTheme)
       return

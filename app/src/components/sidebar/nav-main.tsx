@@ -3,19 +3,20 @@ import { useRouter } from '@tanstack/react-router'
 
 import { SidebarMenu, useSidebar } from '@/components/ui/sidebar'
 import { AnimatedMenuItem, type NavMainItem } from '@/components/sidebar/items'
+import { URL_PARAM, URL_PARAM_VALUE } from '@/constants'
 
 export function NavMain() {
   const router = useRouter()
 
   const handleNewProject = () => {
     const url = new URL(window.location.href)
-    url.searchParams.set('projects', 'create')
+    url.searchParams.set(URL_PARAM.PROJECTS, URL_PARAM_VALUE.CREATE)
     router.navigate({ to: url.pathname + url.search })
   }
 
   const handleSearch = () => {
     const url = new URL(window.location.href)
-    url.searchParams.set('search', 'open')
+    url.searchParams.set(URL_PARAM.SEARCH, URL_PARAM_VALUE.OPEN)
     router.navigate({ to: url.pathname + url.search })
   }
 

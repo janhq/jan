@@ -19,6 +19,7 @@ import {
 import { PersonalizationSettings } from './personalization-setting'
 import { SharesSettings } from './shares-settings'
 import { PrivacySettings } from './privacy-settings'
+import { URL_PARAM, SETTINGS_SECTION } from '@/constants'
 
 interface SettingsDialogProps {
   open: boolean
@@ -26,27 +27,27 @@ interface SettingsDialogProps {
 }
 
 type SettingsSection =
-  | 'general'
+  | typeof SETTINGS_SECTION.GENERAL
   // | 'apps-connectors'
-  | 'privacy'
-  | 'personalization'
-  | 'shares'
+  | typeof SETTINGS_SECTION.PRIVACY
+  | typeof SETTINGS_SECTION.PERSONALIZATION
+  | typeof SETTINGS_SECTION.SHARES
 
 const sections: Array<{
   id: SettingsSection
   label: string
   icon: LucideIcon
 }> = [
-  { id: 'general', label: 'General', icon: Settings2 },
-  { id: 'personalization', label: 'Personalization', icon: LeafIcon },
-  { id: 'shares', label: 'Share Links', icon: Share2Icon },
+  { id: SETTINGS_SECTION.GENERAL, label: 'General', icon: Settings2 },
+  { id: SETTINGS_SECTION.PERSONALIZATION, label: 'Personalization', icon: LeafIcon },
+  { id: SETTINGS_SECTION.SHARES, label: 'Share Links', icon: Share2Icon },
   // { id: 'apps-connectors', label: 'Connectors', icon: ShapesIcon },
-  { id: 'privacy', label: 'Privacy', icon: LockKeyhole },
+  { id: SETTINGS_SECTION.PRIVACY, label: 'Privacy', icon: LockKeyhole },
 ]
 
 export function SettingsDialog({
   open,
-  section = 'general',
+  section = SETTINGS_SECTION.GENERAL,
 }: SettingsDialogProps) {
   const router = useRouter()
   const [activeSection, setActiveSection] = useState<SettingsSection>(
@@ -55,28 +56,28 @@ export function SettingsDialog({
 
   const handleClose = () => {
     const url = new URL(window.location.href)
-    url.searchParams.delete('setting')
+    url.searchParams.delete(URL_PARAM.SETTING)
     router.navigate({ to: url.pathname + url.search })
   }
 
   const handleSectionChange = (newSection: SettingsSection) => {
     setActiveSection(newSection)
     const url = new URL(window.location.href)
-    url.searchParams.set('setting', newSection)
+    url.searchParams.set(URL_PARAM.SETTING, newSection)
     router.navigate({ to: url.pathname + url.search })
   }
 
   const renderContent = () => {
     switch (activeSection) {
-      case 'general':
+      case SETTINGS_SECTION.GENERAL:
         return <GeneralSettings />
       // case 'apps-connectors':
       //   return <AppsConnectorSettings />
-      case 'personalization':
+      case SETTINGS_SECTION.PERSONALIZATION:
         return <PersonalizationSettings />
-      case 'shares':
+      case SETTINGS_SECTION.SHARES:
         return <SharesSettings />
-      case 'privacy':
+      case SETTINGS_SECTION.PRIVACY:
         return <PrivacySettings />
       default:
         return <GeneralSettings />

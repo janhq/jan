@@ -2,15 +2,16 @@ import { toast } from 'sonner'
 import type { UIMessage } from '@ai-sdk/react'
 import { useNavigate } from '@tanstack/react-router'
 import { X } from 'lucide-react'
+import { CONTENT_TYPE, MESSAGE_ROLE } from '@/constants'
 
 // Helper to extract text content from assistant messages (searches backwards)
 function getLastAssistantContent(messages: UIMessage[]): string | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]
-    if (msg.role === 'assistant' && Array.isArray(msg.parts)) {
+    if (msg.role === MESSAGE_ROLE.ASSISTANT && Array.isArray(msg.parts)) {
       // Look for any text part with non-empty content
       for (const part of msg.parts) {
-        if (part.type === 'text' && 'text' in part) {
+        if (part.type === CONTENT_TYPE.TEXT && 'text' in part) {
           const text = (part as { text: string }).text.trim()
           if (text) {
             return text

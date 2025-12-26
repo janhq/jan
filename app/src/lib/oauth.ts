@@ -2,6 +2,8 @@
  * OAuth 2.0 PKCE (Proof Key for Code Exchange) utilities for Keycloak integration
  */
 
+import { LOCAL_STORAGE_KEY } from '@/constants'
+
 declare const VITE_AUTH_URL: string
 declare const VITE_AUTH_REALM: string
 declare const VITE_AUTH_CLIENT_ID: string
@@ -104,10 +106,10 @@ export function storeOAuthState(data: {
   codeVerifier: string
   redirectUrl?: string
 }) {
-  localStorage.setItem('oauth_state', data.state)
-  localStorage.setItem('oauth_code_verifier', data.codeVerifier)
+  localStorage.setItem(LOCAL_STORAGE_KEY.OAUTH_STATE, data.state)
+  localStorage.setItem(LOCAL_STORAGE_KEY.OAUTH_CODE_VERIFIER, data.codeVerifier)
   if (data.redirectUrl) {
-    localStorage.setItem('oauth_redirect_url', data.redirectUrl)
+    localStorage.setItem(LOCAL_STORAGE_KEY.OAUTH_REDIRECT_URL, data.redirectUrl)
   }
 }
 
@@ -122,9 +124,9 @@ export function retrieveOAuthState(state: string): {
   const decoded = decodeOAuthData(state)
   if (decoded && decoded.state) {
     // Clean up localStorage if it exists
-    localStorage.removeItem('oauth_state')
-    localStorage.removeItem('oauth_code_verifier')
-    localStorage.removeItem('oauth_redirect_url')
+    localStorage.removeItem(LOCAL_STORAGE_KEY.OAUTH_STATE)
+    localStorage.removeItem(LOCAL_STORAGE_KEY.OAUTH_CODE_VERIFIER)
+    localStorage.removeItem(LOCAL_STORAGE_KEY.OAUTH_REDIRECT_URL)
 
     return {
       codeVerifier: decoded.codeVerifier,
@@ -133,19 +135,19 @@ export function retrieveOAuthState(state: string): {
   }
 
   // Fallback to localStorage (for backward compatibility)
-  const storedState = localStorage.getItem('oauth_state')
-  const codeVerifier = localStorage.getItem('oauth_code_verifier')
+  const storedState = localStorage.getItem(LOCAL_STORAGE_KEY.OAUTH_STATE)
+  const codeVerifier = localStorage.getItem(LOCAL_STORAGE_KEY.OAUTH_CODE_VERIFIER)
 
   if (!storedState || !codeVerifier || storedState !== state) {
     return null
   }
 
-  const redirectUrl = localStorage.getItem('oauth_redirect_url') || undefined
+  const redirectUrl = localStorage.getItem(LOCAL_STORAGE_KEY.OAUTH_REDIRECT_URL) || undefined
 
   // Clean up
-  localStorage.removeItem('oauth_state')
-  localStorage.removeItem('oauth_code_verifier')
-  localStorage.removeItem('oauth_redirect_url')
+  localStorage.removeItem(LOCAL_STORAGE_KEY.OAUTH_STATE)
+  localStorage.removeItem(LOCAL_STORAGE_KEY.OAUTH_CODE_VERIFIER)
+  localStorage.removeItem(LOCAL_STORAGE_KEY.OAUTH_REDIRECT_URL)
 
   return { codeVerifier, redirectUrl }
 }

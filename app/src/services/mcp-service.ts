@@ -2,6 +2,7 @@ import { JanBrowserClient } from '@/lib/jan-browser-client'
 import { StreamableHttpMCPClient } from '@/lib/streamable-mcp-client'
 import { useBrowserConnection } from '@/stores/browser-connection-store'
 import { createJanMediaUrl, uploadMedia } from './media-upload-service'
+import { CONTENT_TYPE } from '@/constants'
 
 /**
  * MCP Service - Registry for managing multiple MCP clients
@@ -410,7 +411,7 @@ export const createErrorResult = (
   text?: string
 ): MCPToolCallResult => ({
   error,
-  content: [{ type: 'text' as const, text: text || error }],
+  content: [{ type: CONTENT_TYPE.TEXT, text: text || error }],
 })
 
 // Export singleton instance

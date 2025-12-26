@@ -7,6 +7,7 @@ import { useChatSessions } from '@/stores/chat-session-store'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ShareDialog } from '@/components/threads/share-dialog'
 import { useState } from 'react'
+import { PRIVATE_CHAT_SESSION_ID, URL_PARAM, URL_PARAM_VALUE } from '@/constants'
 
 interface NavActionsProps {
   conversationId?: string
@@ -28,7 +29,7 @@ export function NavActions({
   const handleLogin = () => {
     // Add modal=login search param to current route
     const url = new URL(window.location.href)
-    url.searchParams.set('modal', 'login')
+    url.searchParams.set(URL_PARAM.MODAL, URL_PARAM_VALUE.LOGIN)
     router.navigate({ to: url.pathname + url.search })
   }
 
@@ -87,7 +88,7 @@ export function NavActions({
           variant="destructive"
           className="rounded-full size-8 md:size-auto"
           onClick={() => {
-            removeSession('private-chat')
+            removeSession(PRIVATE_CHAT_SESSION_ID)
             setIsPrivateChat(false)
             router.navigate({ to: '/' })
           }}

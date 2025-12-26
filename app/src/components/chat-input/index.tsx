@@ -52,6 +52,7 @@ import {
 } from '@/components/ui/tooltip'
 import { useBrowserConnection } from '@/stores/browser-connection-store'
 import { useProfile } from '@/stores/profile-store'
+import { CHAT_STATUS, CONNECTION_STATE, SESSION_STORAGE_KEY, SESSION_STORAGE_PREFIX } from '@/constants'
 
 /**
  * Generates a meaningful title from message text.
@@ -145,7 +146,7 @@ const ChatInput = ({
   // Auto-focus when assistant finishes responding (desktop only)
   useEffect(() => {
     // Focus when status changes from 'streaming' to idle (assistant finished)
-    if (status !== 'streaming' && textareaRef.current && !isMobile) {
+    if (status !== CHAT_STATUS.STREAMING && textareaRef.current && !isMobile) {
       textareaRef.current.focus()
     }
   }, [status, isMobile])
@@ -215,7 +216,7 @@ const ChatInput = ({
 
   // Auto-disable browser capability when disconnected
   useEffect(() => {
-    if (browserConnectionState === 'disconnected' && browserEnabled) {
+    if (browserConnectionState === CONNECTION_STATE.DISCONNECTED && browserEnabled) {
       setBrowserEnabled(false)
     }
   }, [browserConnectionState, browserEnabled, setBrowserEnabled])
@@ -263,7 +264,7 @@ const ChatInput = ({
       if (initialConversation) {
         if (isPrivateChat) {
           sessionStorage.setItem(
-            `initial-message-temporary`,
+            SESSION_STORAGE_KEY.INITIAL_MESSAGE_TEMPORARY,
             JSON.stringify(normalizedMessage)
           )
           navigate({
@@ -288,7 +289,7 @@ const ChatInput = ({
           .then((conversation) => {
             // Store the initial message in sessionStorage for the new conversation
             sessionStorage.setItem(
-              `initial-message-${conversation.id}`,
+              `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${conversation.id}`,
               JSON.stringify(normalizedMessage)
             )
 
@@ -318,7 +319,7 @@ const ChatInput = ({
         className={cn(
           'w-full relative rounded-3xl p-[1.5px]',
           !initialConversation &&
-            (status === 'streaming' || status === 'submitted') &&
+            (status === CHAT_STATUS.STREAMING || status === CHAT_STATUS.SUBMITTED) &&
             'overflow-hidden outline-0'
         )}
       >
@@ -348,7 +349,7 @@ const ChatInput = ({
             <PromptInputBody>
               <PromptInputTextarea
                 ref={textareaRef}
-                disabled={status === 'streaming' || status === 'submitted'}
+                disabled={status === CHAT_STATUS.STREAMING || status === CHAT_STATUS.SUBMITTED}
               />
             </PromptInputBody>
             <PromptInputFooter>
@@ -375,7 +376,7 @@ const ChatInput = ({
                   deepResearchEnabled={deepResearchEnabled}
                   browserEnabled={browserEnabled}
                   reasoningEnabled={reasoningEnabled}
-                  disablePreferences={status === 'streaming'}
+                  disablePreferences={status === CHAT_STATUS.STREAMING}
                   toggleSearch={() => {
                     toggleSearch()
                     setBrowserEnabled(false)
@@ -409,7 +410,7 @@ const ChatInput = ({
                     <PromptInputButton
                       variant="outline"
                       className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
-                      disabled={status === 'streaming'}
+                      disabled={status === CHAT_STATUS.STREAMING}
                       onClick={toggleInstruct}
                     >
                       <LightbulbIcon className="text-primary size-4 group-hover:hidden" />
@@ -421,7 +422,7 @@ const ChatInput = ({
                   <PromptInputButton
                     variant="outline"
                     className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
-                    disabled={status === 'streaming'}
+                    disabled={status === CHAT_STATUS.STREAMING}
                     onClick={toggleSearch}
                   >
                     <GlobeIcon className="text-primary size-4 group-hover:hidden" />
@@ -433,7 +434,7 @@ const ChatInput = ({
                   <PromptInputButton
                     variant="outline"
                     className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
-                    disabled={status === 'streaming'}
+                    disabled={status === CHAT_STATUS.STREAMING}
                     onClick={toggleDeepResearch}
                   >
                     <MegaphoneIcon className="text-primary size-4 group-hover:hidden" />
@@ -447,17 +448,17 @@ const ChatInput = ({
                       <PromptInputButton
                         variant="outline"
                         className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
-                        disabled={status === 'streaming'}
+                        disabled={status === CHAT_STATUS.STREAMING}
                         onClick={toggleBrowser}
                       >
                         <div className="size-4 flex items-center justify-center group-hover:hidden">
-                          {browserConnectionState === 'error' && (
+                          {browserConnectionState === CONNECTION_STATE.ERROR && (
                             <div className="size-3 bg-red-400 rounded-full" />
                           )}
-                          {browserConnectionState === 'connecting' && (
+                          {browserConnectionState === CONNECTION_STATE.CONNECTING && (
                             <div className="size-3 animate-pulse bg-blue-400 rounded-full" />
                           )}
-                          {browserConnectionState === 'connected' && (
+                          {browserConnectionState === CONNECTION_STATE.CONNECTED && (
                             <div className="size-3 bg-green-400 rounded-full" />
                           )}
                         </div>
@@ -466,13 +467,13 @@ const ChatInput = ({
                       </PromptInputButton>
                     </TooltipTrigger>
                     <TooltipContent>
-                      {browserConnectionState === 'error' && (
+                      {browserConnectionState === CONNECTION_STATE.ERROR && (
                         <p>Connection error</p>
                       )}
-                      {browserConnectionState === 'connecting' && (
+                      {browserConnectionState === CONNECTION_STATE.CONNECTING && (
                         <p>Connecting...</p>
                       )}
-                      {browserConnectionState === 'connected' && (
+                      {browserConnectionState === CONNECTION_STATE.CONNECTED && (
                         <p>Ready to use</p>
                       )}
                     </TooltipContent>
@@ -482,7 +483,7 @@ const ChatInput = ({
                   <PromptInputButton
                     variant="outline"
                     className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
-                    disabled={status === 'streaming'}
+                    disabled={status === CHAT_STATUS.STREAMING}
                     onClick={() => setSelectedProjectId(null)}
                   >
                     <FolderIcon className="text-primary size-4 group-hover:hidden" />
@@ -501,7 +502,7 @@ const ChatInput = ({
                   status={status}
                   className="rounded-full"
                   variant={
-                    status === 'streaming' || status === 'submitted'
+                    status === CHAT_STATUS.STREAMING || status === CHAT_STATUS.SUBMITTED
                       ? 'destructive'
                       : 'default'
                   }
@@ -509,7 +510,7 @@ const ChatInput = ({
               </div>
             </PromptInputFooter>
           </PromptInput>
-          {(status === 'streaming' || status === 'submitted') && (
+          {(status === CHAT_STATUS.STREAMING || status === CHAT_STATUS.SUBMITTED) && (
             <div className="absolute inset-0 ">
               <BorderAnimate rx="10%" ry="10%">
                 <div
@@ -521,7 +522,7 @@ const ChatInput = ({
             </div>
           )}
         </PromptInputProvider>
-        {/* {status !== 'streaming' && (
+        {/* {status !== CHAT_STATUS.STREAMING && (
         <div className="absolute inset-0 scale-90 opacity-50 dark:opacity-25 blur-xl transition-all duration-100">
           <div className="bg-linear-to-r/increasing animate-hue-rotate absolute inset-x-0 bottom-0 top-6 from-pink-300 to-purple-300" />
         </div>

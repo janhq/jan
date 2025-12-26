@@ -3,6 +3,7 @@ import type { Chat, UIMessage } from '@ai-sdk/react'
 import type { ChatStatus } from 'ai'
 import { CustomChatTransport } from '@/lib/custom-chat-transport'
 import { showChatCompletionToast } from '@/components/ui/chat-completion-toast'
+import { CHAT_STATUS } from '@/constants'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type SessionData = {
@@ -38,7 +39,7 @@ interface ChatSessionState {
   clearSessions: () => void
 }
 
-const STREAMING_STATUSES: ChatStatus[] = ['submitted', 'streaming']
+const STREAMING_STATUSES: ChatStatus[] = [CHAT_STATUS.SUBMITTED, CHAT_STATUS.STREAMING]
 
 // Pure helper function for checking if a session is busy (for reactive use in components)
 export function isSessionBusy(session: ChatSession | undefined): boolean {
