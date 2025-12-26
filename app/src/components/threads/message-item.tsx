@@ -84,8 +84,15 @@ export const MessageItem = memo(
             )}
           </MessageContent>
 
-          {message.role === MESSAGE_ROLE.USER && isLastPart && !isStreaming && (
-            <MessageActions className="gap-0 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+          {message.role === MESSAGE_ROLE.USER && isLastPart && (
+            <MessageActions
+              className={cn(
+                'gap-0 justify-end transition-opacity',
+                status === CHAT_STATUS.STREAMING
+                  ? 'opacity-0 pointer-events-none'
+                  : 'opacity-0 group-hover:opacity-100'
+              )}
+            >
               {onRegenerate && (
                 <MessageAction onClick={handleRegenerate} label="Retry">
                   <RefreshCcwIcon className="text-muted-foreground size-3" />
@@ -101,8 +108,13 @@ export const MessageItem = memo(
             </MessageActions>
           )}
 
-          {message.role === MESSAGE_ROLE.ASSISTANT && isLastPart && !isStreaming && (
-            <MessageActions className="mt-1 gap-0">
+          {message.role === MESSAGE_ROLE.ASSISTANT && isLastPart && (
+            <MessageActions
+              className={cn(
+                'mt-1 gap-0 transition-opacity',
+                status === CHAT_STATUS.STREAMING && 'opacity-0 pointer-events-none'
+              )}
+            >
               <MessageAction onClick={() => handleCopy(part.text)} label="Copy">
                 {copiedMessageId === message.id ? (
                   <CheckIcon className="text-green-600 dark:text-green-400 size-3" />

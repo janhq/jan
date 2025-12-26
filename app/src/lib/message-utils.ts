@@ -20,16 +20,16 @@ export function findPrecedingUserMessageIndex(
 }
 
 /**
- * Find the index of the following assistant message after a user message
+ * Find the index of the preceding assistant message before a user message
  * @param messages - Array of UI messages
  * @param userIndex - Index of the user message
- * @returns Index of the following assistant message, or -1 if not found
+ * @returns Index of the preceding assistant message, or -1 if not found
  */
-export function findFollowingAssistantMessageIndex(
+export function findPrecedingAssistantMessageIndex(
   messages: UIMessage[],
   userIndex: number
 ): number {
-  for (let i = userIndex + 1; i < messages.length; i++) {
+  for (let i = userIndex - 1; i >= 0; i--) {
     if (messages[i].role === MESSAGE_ROLE.ASSISTANT) {
       return i
     }
