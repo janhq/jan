@@ -17,8 +17,9 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useProjects } from '@/stores/projects-store'
 import { Folder } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { ApiError } from '@/lib/api-client'
 
 const editProjectSchema = z.object({
   name: z.string().min(1, 'Project name is required'),
@@ -41,10 +42,11 @@ export function EditProject({
   onOpenChange,
 }: EditProjectProps) {
   const updateProject = useProjects((state) => state.updateProject)
+  const [serverError, setServerError] = useState<string | null>(null)
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isSubmitted },
     reset,
     setValue,
   } = useForm<EditProjectFormData>({
@@ -61,11 +63,13 @@ export function EditProject({
 
   const handleClose = () => {
     onOpenChange?.(false)
+    setServerError(null)
   }
 
   const onSubmit = async (data: EditProjectFormData) => {
     if (!project) return
 
+    setServerError(null)
     try {
       await updateProject(project.id, {
         name: data.name,
@@ -75,7 +79,11 @@ export function EditProject({
       handleClose()
       onSuccess?.()
     } catch (error) {
-      console.error('Failed to update project:', error)
+      if (error instanceof ApiError && error.isDuplicateProjectName()) {
+        setServerError(error.message)
+      } else {
+        console.error('Failed to update project:', error)
+      }
     }
   }
 
@@ -109,11 +117,15 @@ export function EditProject({
                       placeholder="Name"
                       autoComplete="off"
                       autoFocus={isMobile ? false : true}
-                      {...register('name')}
+                      {...register('name', {
+                        onChange: () => setServerError(null),
+                      })}
                     />
                   </InputGroup>
-                  {errors.name && (
-                    <FieldError>{errors.name.message}</FieldError>
+                  {isSubmitted && (errors.name || serverError) && (
+                    <FieldError>
+                      {errors.name?.message || serverError}
+                    </FieldError>
                   )}
                 </Field>
 

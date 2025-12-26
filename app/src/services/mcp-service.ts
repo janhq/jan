@@ -2,6 +2,7 @@ import { JanBrowserClient } from '@/lib/jan-browser-client'
 import { StreamableHttpMCPClient } from '@/lib/streamable-mcp-client'
 import { useBrowserConnection } from '@/stores/browser-connection-store'
 import { createJanMediaUrl, uploadMedia } from './media-upload-service'
+import { CONTENT_TYPE } from '@/constants'
 
 /**
  * MCP Service - Registry for managing multiple MCP clients
@@ -205,7 +206,11 @@ class MCPService {
    */
   async callTool(
     payload: CallToolPayload,
-    metadata?: { conversationId?: string; toolCallId?: string }
+    metadata?: {
+      conversationId?: string
+      toolCallId?: string
+      signal?: AbortSignal
+    }
   ): Promise<MCPToolCallResult> {
     try {
       await this.ensureInitialized()
@@ -251,12 +256,22 @@ class MCPService {
       console.log(
         `Routing tool call "${payload.toolName}" to client: ${targetClientKey}`
       )
+
+      // Check if already aborted before calling
+      if (metadata?.signal?.aborted) {
+        return createErrorResult('Tool call was cancelled')
+      }
+
       return await targetClient
         .callTool(payload, metadata)
         .then(async (toolResult) => {
           console.log(
-            `Tool "${payload.toolName}" executed successfully on client: ${targetClientKey}`
+            `Tool "${payload.toolName}" executed successfully on client: ${targetClientKey}`,
+            toolResult
           )
+          if (toolResult.error) {
+            return createErrorResult(toolResult.error)
+          }
 
           // Process content to upload images and convert to Jan media URLs
           const processedContent = await Promise.all(
@@ -396,7 +411,7 @@ export const createErrorResult = (
   text?: string
 ): MCPToolCallResult => ({
   error,
-  content: [{ type: 'text' as const, text: text || error }],
+  content: [{ type: CONTENT_TYPE.TEXT, text: text || error }],
 })
 
 // Export singleton instance

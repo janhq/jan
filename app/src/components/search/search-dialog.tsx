@@ -16,13 +16,11 @@ import {
 } from 'lucide-react'
 import { useConversations } from '@/stores/conversation-store'
 import { useProjects } from '@/stores/projects-store'
+import { LOCAL_STORAGE_KEY, QUERY_LIMIT, URL_PARAM } from '@/constants'
 
 interface SearchDialogProps {
   open: boolean
 }
-
-const RECENT_SEARCHES_KEY = 'recent-searches'
-const MAX_RECENT_SEARCHES = 5
 
 export function SearchDialog({ open }: SearchDialogProps) {
   const router = useRouter()
@@ -44,7 +42,7 @@ export function SearchDialog({ open }: SearchDialogProps) {
   const recentSearches = useMemo(() => {
     if (!open) return []
 
-    const stored = localStorage.getItem(RECENT_SEARCHES_KEY)
+    const stored = localStorage.getItem(LOCAL_STORAGE_KEY.RECENT_SEARCHES)
     if (!stored) return []
 
     try {
@@ -60,13 +58,13 @@ export function SearchDialog({ open }: SearchDialogProps) {
   const handleClose = () => {
     setSearchQuery('') // Reset search query when dialog closes
     const url = new URL(window.location.href)
-    url.searchParams.delete('search')
+    url.searchParams.delete(URL_PARAM.SEARCH)
     router.navigate({ to: url.pathname + url.search })
   }
 
   const handleSelectConversation = (conversationId: string) => {
     // Save to recent searches
-    const stored = localStorage.getItem(RECENT_SEARCHES_KEY)
+    const stored = localStorage.getItem(LOCAL_STORAGE_KEY.RECENT_SEARCHES)
     let conversationIds: string[] = []
 
     if (stored) {
@@ -81,10 +79,10 @@ export function SearchDialog({ open }: SearchDialogProps) {
     conversationIds = conversationIds.filter((id) => id !== conversationId)
     conversationIds.unshift(conversationId)
 
-    // Keep only MAX_RECENT_SEARCHES
-    conversationIds = conversationIds.slice(0, MAX_RECENT_SEARCHES)
+    // Keep only QUERY_LIMIT.MAX_RECENT_SEARCHES
+    conversationIds = conversationIds.slice(0, QUERY_LIMIT.MAX_RECENT_SEARCHES)
 
-    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(conversationIds))
+    localStorage.setItem(LOCAL_STORAGE_KEY.RECENT_SEARCHES, JSON.stringify(conversationIds))
 
     handleClose()
     router.navigate({ to: `/threads/${conversationId}` })

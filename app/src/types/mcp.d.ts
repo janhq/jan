@@ -29,12 +29,12 @@ interface CallToolPayload {
 }
 
 interface ToolCallClient {
-  async getTools(): Promise<MCPTool[]> 
+  async getTools(): Promise<MCPTool[]>
   async callTool(
     payload: CallToolPayload,
-    metadata?: { conversationId?: string; toolCallId?: string }
+    metadata?: { conversationId?: string; toolCallId?: string; signal?: AbortSignal }
   ): Promise<MCPToolCallResult>
   async disconnect(): Promise<void>
   async refreshTools(): Promise<void>
-  async isHealthy(): Promise<boolean> 
+  async isHealthy(): Promise<boolean>
 }

@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useTheme } from '@/components/themes/theme-provider'
+import { THEME } from '@/constants'
 
 export function ThemeToggle() {
   const { setTheme } = useTheme()
@@ -67,13 +68,13 @@ export function ThemeToggle() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => handleThemeChange('light')}>
+        <DropdownMenuItem onClick={() => handleThemeChange(THEME.LIGHT)}>
           Light
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleThemeChange('dark')}>
+        <DropdownMenuItem onClick={() => handleThemeChange(THEME.DARK)}>
           Dark
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleThemeChange('system')}>
+        <DropdownMenuItem onClick={() => handleThemeChange(THEME.SYSTEM)}>
           System
         </DropdownMenuItem>
       </DropdownMenuContent>

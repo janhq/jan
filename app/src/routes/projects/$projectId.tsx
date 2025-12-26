@@ -44,6 +44,7 @@ import {
 
 import { ProjectConversations } from '@/components/projects/project-conversations'
 import { useConversations } from '@/stores/conversation-store'
+import { CHAT_STATUS } from '@/constants'
 
 function ProjectPageContent() {
   const navigate = useNavigate()
@@ -131,7 +132,7 @@ function ProjectPageContent() {
 
   // Auto-scroll to bottom during streaming
   useEffect(() => {
-    if (status === 'streaming' && reasoningContainerRef.current) {
+    if (status === CHAT_STATUS.STREAMING && reasoningContainerRef.current) {
       reasoningContainerRef.current.scrollTop =
         reasoningContainerRef.current.scrollHeight
     }

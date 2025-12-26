@@ -13,6 +13,7 @@ import { SearchDialog } from '@/components/search/search-dialog'
 import { useAuth } from '@/stores/auth-store'
 import { ThemeProvider } from '@/components/themes/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
+import { LOCAL_STORAGE_KEY, THEME, URL_PARAM, URL_PARAM_VALUE, SETTINGS_SECTION } from '@/constants'
 
 function RootLayout() {
   const location = useLocation()
@@ -34,23 +35,23 @@ function RootLayout() {
 
   // Check if modals should be shown via search params
   const searchParams = new URLSearchParams(location.search)
-  const isLoginModal = searchParams.get('modal') === 'login'
-  const settingSection = searchParams.get('setting')
+  const isLoginModal = searchParams.get(URL_PARAM.MODAL) === URL_PARAM_VALUE.LOGIN
+  const settingSection = searchParams.get(URL_PARAM.SETTING)
   const isSettingsOpen = !!settingSection
-  const projectsSection = searchParams.get('projects')
+  const projectsSection = searchParams.get(URL_PARAM.PROJECTS)
   const isProjectsOpen = !!projectsSection
-  const searchSection = searchParams.get('search')
+  const searchSection = searchParams.get(URL_PARAM.SEARCH)
   const isSearchOpen = !!searchSection
 
   const handleCloseModal = () => {
     // Remove the modal search param by navigating without it
     const url = new URL(window.location.href)
-    url.searchParams.delete('modal')
+    url.searchParams.delete(URL_PARAM.MODAL)
     router.navigate({ to: url.pathname + url.search })
   }
 
   return (
-    <ThemeProvider defaultTheme="system" storageKey="theme">
+    <ThemeProvider defaultTheme={THEME.SYSTEM} storageKey={LOCAL_STORAGE_KEY.THEME}>
       {/* Main content - always rendered */}
       <Outlet />
 
@@ -70,7 +71,7 @@ function RootLayout() {
       {/* Settings Dialog */}
       <SettingsDialog
         open={isSettingsOpen}
-        section={settingSection || 'general'}
+        section={settingSection || SETTINGS_SECTION.GENERAL}
       />
 
       {/* Projects Dialog */}

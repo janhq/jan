@@ -18,6 +18,7 @@ import {
 import { useAuth } from '@/stores/auth-store'
 import { useRouter } from '@tanstack/react-router'
 import { getInitialsAvatar } from '@/lib/utils'
+import { URL_PARAM, SETTINGS_SECTION } from '@/constants'
 
 export function NavUser() {
   const { isMobile } = useSidebar()
@@ -30,9 +31,9 @@ export function NavUser() {
     return null
   }
 
-  const handleOpenSettings = (section: string = 'general') => {
+  const handleOpenSettings = (section: string = SETTINGS_SECTION.GENERAL) => {
     const url = new URL(window.location.href)
-    url.searchParams.set('setting', section)
+    url.searchParams.set(URL_PARAM.SETTING, section)
     router.navigate({ to: url.pathname + url.search })
   }
 
@@ -79,7 +80,7 @@ export function NavUser() {
             </DropDrawerLabel>
             <DropDrawerSeparator />
 
-            <DropDrawerItem onClick={() => handleOpenSettings('general')}>
+            <DropDrawerItem onClick={() => handleOpenSettings(SETTINGS_SECTION.GENERAL)}>
               <div className="flex gap-2 items-center justify-center">
                 <SettingsIcon className="text-muted-foreground" />
                 Setting

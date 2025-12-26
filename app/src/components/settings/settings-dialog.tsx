@@ -8,9 +8,18 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { GeneralSettings } from '@/components/settings/general-settings'
-import { Settings2, type LucideIcon, LeafIcon } from 'lucide-react'
+import {
+  Settings2,
+  type LucideIcon,
+  LeafIcon,
+  Share2Icon,
+  LockKeyhole,
+} from 'lucide-react'
 
 import { PersonalizationSettings } from './personalization-setting'
+import { SharesSettings } from './shares-settings'
+import { PrivacySettings } from './privacy-settings'
+import { URL_PARAM, SETTINGS_SECTION } from '@/constants'
 
 interface SettingsDialogProps {
   open: boolean
@@ -18,25 +27,27 @@ interface SettingsDialogProps {
 }
 
 type SettingsSection =
-  | 'general'
+  | typeof SETTINGS_SECTION.GENERAL
   // | 'apps-connectors'
-  // | 'privacy'
-  | 'personalization'
+  | typeof SETTINGS_SECTION.PRIVACY
+  | typeof SETTINGS_SECTION.PERSONALIZATION
+  | typeof SETTINGS_SECTION.SHARES
 
 const sections: Array<{
   id: SettingsSection
   label: string
   icon: LucideIcon
 }> = [
-  { id: 'general', label: 'General', icon: Settings2 },
-  { id: 'personalization', label: 'Personalization', icon: LeafIcon },
+  { id: SETTINGS_SECTION.GENERAL, label: 'General', icon: Settings2 },
+  { id: SETTINGS_SECTION.PERSONALIZATION, label: 'Personalization', icon: LeafIcon },
+  { id: SETTINGS_SECTION.SHARES, label: 'Share Links', icon: Share2Icon },
   // { id: 'apps-connectors', label: 'Connectors', icon: ShapesIcon },
-  // { id: 'privacy', label: 'Privacy', icon: LockKeyhole },
+  { id: SETTINGS_SECTION.PRIVACY, label: 'Privacy', icon: LockKeyhole },
 ]
 
 export function SettingsDialog({
   open,
-  section = 'general',
+  section = SETTINGS_SECTION.GENERAL,
 }: SettingsDialogProps) {
   const router = useRouter()
   const [activeSection, setActiveSection] = useState<SettingsSection>(
@@ -45,27 +56,29 @@ export function SettingsDialog({
 
   const handleClose = () => {
     const url = new URL(window.location.href)
-    url.searchParams.delete('setting')
+    url.searchParams.delete(URL_PARAM.SETTING)
     router.navigate({ to: url.pathname + url.search })
   }
 
   const handleSectionChange = (newSection: SettingsSection) => {
     setActiveSection(newSection)
     const url = new URL(window.location.href)
-    url.searchParams.set('setting', newSection)
+    url.searchParams.set(URL_PARAM.SETTING, newSection)
     router.navigate({ to: url.pathname + url.search })
   }
 
   const renderContent = () => {
     switch (activeSection) {
-      case 'general':
+      case SETTINGS_SECTION.GENERAL:
         return <GeneralSettings />
       // case 'apps-connectors':
       //   return <AppsConnectorSettings />
-      case 'personalization':
+      case SETTINGS_SECTION.PERSONALIZATION:
         return <PersonalizationSettings />
-      // case 'privacy':
-      //   return <PrivacySettings />
+      case SETTINGS_SECTION.SHARES:
+        return <SharesSettings />
+      case SETTINGS_SECTION.PRIVACY:
+        return <PrivacySettings />
       default:
         return <GeneralSettings />
     }
@@ -84,7 +97,7 @@ export function SettingsDialog({
 
         <div className="flex flex-col lg:flex-row max-h-screen lg:h-[500px]">
           {/* Sidebar - Mobile: Horizontal Scrollable Tabs */}
-          <div className="lg:w-60 lg:p-4 flex lg:flex-col justify-between shrink-0">
+          <div className="lg:w-48 lg:p-4 flex lg:flex-col justify-between shrink-0">
             <nav className="flex lg:flex-col gap-1 w-full whitespace-nowrap overflow-x-auto lg:overflow-x-visible p-4 lg:p-0 border-b lg:border-b-0">
               {sections.map((s) => (
                 <button

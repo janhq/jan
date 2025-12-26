@@ -1,36 +1,22 @@
-import { type LucideIcon } from 'lucide-react'
-
 import { MessageCirclePlusIcon, FolderPenIcon, Search } from 'lucide-react'
+import { useRouter } from '@tanstack/react-router'
 
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from '@/components/ui/sidebar'
-import { Link, useRouter } from '@tanstack/react-router'
-
-type NavMainItem = {
-  title: string
-  url: string
-  icon: LucideIcon
-  isActive?: boolean
-  badge?: string
-  onClick?: () => void
-}
+import { SidebarMenu, useSidebar } from '@/components/ui/sidebar'
+import { AnimatedMenuItem, type NavMainItem } from '@/components/sidebar/items'
+import { URL_PARAM, URL_PARAM_VALUE } from '@/constants'
 
 export function NavMain() {
   const router = useRouter()
 
   const handleNewProject = () => {
     const url = new URL(window.location.href)
-    url.searchParams.set('projects', 'create')
+    url.searchParams.set(URL_PARAM.PROJECTS, URL_PARAM_VALUE.CREATE)
     router.navigate({ to: url.pathname + url.search })
   }
 
   const handleSearch = () => {
     const url = new URL(window.location.href)
-    url.searchParams.set('search', 'open')
+    url.searchParams.set(URL_PARAM.SEARCH, URL_PARAM_VALUE.OPEN)
     router.navigate({ to: url.pathname + url.search })
   }
 
@@ -59,31 +45,14 @@ export function NavMain() {
 
   return (
     <SidebarMenu>
-      {navMain.map((item) => (
-        <SidebarMenuItem key={item.title}>
-          <SidebarMenuButton
-            asChild={!item.onClick}
-            isActive={item.isActive}
-            onClick={() => {
-              item.onClick?.()
-              if (isMobile) {
-                setOpenMobile(false)
-              }
-            }}
-          >
-            {item.onClick ? (
-              <>
-                <item.icon />
-                <span>{item.title}</span>
-              </>
-            ) : (
-              <Link to={item.url}>
-                <item.icon />
-                <span>{item.title}</span>
-              </Link>
-            )}
-          </SidebarMenuButton>
-        </SidebarMenuItem>
+      {navMain.map((item, index) => (
+        <AnimatedMenuItem
+          key={item.title}
+          item={item}
+          isMobile={isMobile}
+          setOpenMobile={setOpenMobile}
+          index={index}
+        />
       ))}
     </SidebarMenu>
   )

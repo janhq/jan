@@ -6,14 +6,17 @@ interface CapabilitiesState {
   deepResearchEnabled: boolean
   browserEnabled: boolean
   reasoningEnabled: boolean
+  imageGenerationEnabled: boolean
   setSearchEnabled: (enabled: boolean) => void
   setDeepResearchEnabled: (enabled: boolean) => void
   setBrowserEnabled: (enabled: boolean) => void
   setReasoningEnabled: (enabled: boolean) => void
+  setImageGenerationEnabled: (enabled: boolean) => void
   toggleSearch: () => void
   toggleDeepResearch: () => void
   toggleBrowser: () => void
   toggleReasoning: () => void
+  toggleImageGeneration: () => void
   hydrate: (preferences: Partial<Preferences>) => void
 }
 
@@ -24,6 +27,7 @@ export const useCapabilities = create<CapabilitiesState>()(
       browserEnabled: false,
       deepResearchEnabled: false,
       reasoningEnabled: false,
+      imageGenerationEnabled: false,
       setSearchEnabled: (enabled: boolean) => {
         set({ searchEnabled: enabled })
         updatePreferencesInBackground({ enable_search: enabled })
@@ -39,6 +43,9 @@ export const useCapabilities = create<CapabilitiesState>()(
       setReasoningEnabled: (enabled: boolean) => {
         set({ reasoningEnabled: enabled })
         updatePreferencesInBackground({ enable_thinking: enabled })
+      },
+      setImageGenerationEnabled: (enabled: boolean) => {
+        set({ imageGenerationEnabled: enabled })
       },
       toggleSearch: () =>
         set((state) => {
@@ -64,12 +71,19 @@ export const useCapabilities = create<CapabilitiesState>()(
           updatePreferencesInBackground({ enable_thinking: newValue })
           return { reasoningEnabled: newValue }
         }),
+      toggleImageGeneration: () =>
+        set((state) => {
+          const newValue = !state.imageGenerationEnabled
+          updatePreferencesInBackground({ enable_image_generation: newValue })
+          return { imageGenerationEnabled: newValue }
+        }),
       hydrate: (preferences: Partial<Preferences>) =>
         set({
           searchEnabled: preferences.enable_search ?? false,
           browserEnabled: preferences.enable_browser ?? false,
           deepResearchEnabled: preferences.enable_deep_research ?? false,
           reasoningEnabled: preferences.enable_thinking ?? false,
+          imageGenerationEnabled: preferences.enable_image_generation ?? false,
         }),
     }),
     {

@@ -12,6 +12,7 @@ import {
   ChromiumIcon,
   CircleCheck,
   GlobeIcon,
+  ImageIcon,
   Leaf,
   LightbulbIcon,
   MegaphoneIcon,
@@ -34,13 +35,17 @@ interface SettingChatInputProps {
   deepResearchEnabled: boolean
   browserEnabled: boolean
   reasoningEnabled: boolean
+  imageGenerationEnabled?: boolean
   toggleInstruct: () => void
   toggleBrowser: () => void
   toggleSearch: () => void
   toggleDeepResearch: () => void
+  toggleImageGeneration?: () => void
+  isBrowserSupported: boolean
   isSupportTools: boolean
   isSupportReasoningToggle: boolean
   isSupportDeepResearch: boolean
+  isSupportImageGeneration?: boolean
   disablePreferences: boolean
   selectedTone?: ToneOption
   onToneChange?: (tone: ToneOption) => void
@@ -61,21 +66,27 @@ export const SettingChatInput = ({
   deepResearchEnabled,
   browserEnabled,
   reasoningEnabled,
+  imageGenerationEnabled = false,
   toggleInstruct,
   toggleSearch,
   toggleDeepResearch,
   toggleBrowser,
+  toggleImageGeneration,
+  isBrowserSupported,
   isSupportTools,
   isSupportDeepResearch,
   isSupportReasoningToggle,
+  isSupportImageGeneration = false,
   selectedTone = 'Friendly',
   disablePreferences,
   onToneChange,
   children,
 }: SettingChatInputProps) => {
   const isMobileDevice = useIsMobileDevice()
+  const shouldShowBrowserControl = !isMobileDevice && isBrowserSupported
 
   const toggleBrowserAttempt = async () => {
+    if (!isBrowserSupported) return
     const browserUseAvailable = await isExtensionAvailable(EXTENSION_ID)
     if ((browserUseAvailable && !browserEnabled) || browserEnabled) {
       toggleBrowser()
@@ -154,7 +165,7 @@ export const SettingChatInput = ({
             </TooltipContent>
           )}
         </Tooltip>
-        {!isMobileDevice && (
+        {shouldShowBrowserControl && (
           <Tooltip>
             <TooltipTrigger asChild>
               <div>
@@ -236,6 +247,35 @@ export const SettingChatInput = ({
             </TooltipContent>
           )}
         </Tooltip>
+        {isSupportImageGeneration && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div>
+                <DropDrawerItem
+                  onSelect={(e) => e.preventDefault()}
+                  disabled={!isSupportImageGeneration || disablePreferences}
+                >
+                  <div className="flex gap-2 items-center justify-between w-full">
+                    <div className="flex gap-2 items-center w-full">
+                      <ImageIcon />
+                      <span>Create Image</span>
+                    </div>
+                    <Switch
+                      checked={imageGenerationEnabled}
+                      onCheckedChange={toggleImageGeneration}
+                      disabled={!isSupportImageGeneration || disablePreferences}
+                    />
+                  </div>
+                </DropDrawerItem>
+              </div>
+            </TooltipTrigger>
+            {!isSupportImageGeneration && (
+              <TooltipContent>
+                <p>This server doesn't support image generation</p>
+              </TooltipContent>
+            )}
+          </Tooltip>
+        )}
 
         {/* Temporary hide till we have connector */}
         {/* <DropDrawerSeparator />

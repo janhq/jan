@@ -14,13 +14,14 @@ import {
   type DetectionResult,
   type ToolSchema,
 } from '@janhq/mcp-web-client'
+import { CONNECTION_STATE } from '@/constants'
 
 declare const BROWSER_SERVER_NAME: string
 declare const EXTENSION_ID: string
 
 export class JanBrowserClient implements ToolCallClient {
   private client?: McpWebClient
-  private connectionState: ConnectionState = 'disconnected'
+  private connectionState: ConnectionState = CONNECTION_STATE.DISCONNECTED
   private detectionResult: DetectionResult | null = null
   private onStateChange?: (state: ConnectionState) => void
   private reconnectIntervalId?: ReturnType<typeof setInterval>
@@ -68,20 +69,40 @@ export class JanBrowserClient implements ToolCallClient {
   }
   async callTool(
     payload: CallToolPayload,
-    // @ts-expect-error unused parameter
-    metadata?: { conversationId?: string; toolCallId?: string }
+    metadata?: { conversationId?: string; toolCallId?: string; signal?: AbortSignal }
   ): Promise<MCPToolCallResult> {
     try {
+      // Check if already aborted
+      if (metadata?.signal?.aborted) {
+        return createErrorResult('Tool call was cancelled')
+      }
+
       if (!this.client?.isConnected()) {
         return createErrorResult(
           'Browser extension not connected',
           'Browser extension is not connected. Please click the Browser button to connect.'
         )
       }
-      const response = await this.client?.call(
+
+      // Create a promise that can be cancelled
+      const toolCallPromise = this.client?.call(
         payload.toolName,
         payload.arguments
       )
+
+      // If we have an abort signal, race the tool call with abort
+      let response
+      if (metadata?.signal) {
+        const abortPromise = new Promise<never>((_, reject) => {
+          metadata.signal?.addEventListener('abort', () => {
+            reject(new Error('Tool call was cancelled'))
+          })
+        })
+        response = await Promise.race([toolCallPromise, abortPromise])
+      } else {
+        response = await toolCallPromise
+      }
+
       const toolResult = toToolResult(response)
 
       return {
@@ -91,6 +112,12 @@ export class JanBrowserClient implements ToolCallClient {
         content: toolResult.content,
       }
     } catch (err) {
+      // Handle abort errors
+      if (err instanceof Error && err.message === 'Tool call was cancelled') {
+        console.log(`Browser tool call ${payload.toolName} was cancelled`)
+        return createErrorResult('Tool call was cancelled')
+      }
+
       let errorMessage: string
 
       if (err instanceof TimeoutError) {
@@ -115,7 +142,7 @@ export class JanBrowserClient implements ToolCallClient {
     await this.detectExtensionState()
 
     if (this.client?.isConnected()) {
-      this.updateConnectionState('connected')
+      this.updateConnectionState(CONNECTION_STATE.CONNECTED)
       return
     }
 
@@ -137,19 +164,19 @@ export class JanBrowserClient implements ToolCallClient {
 
     // Set up event handlers
     this.client.on('connect', () => {
-      this.updateConnectionState('connected')
+      this.updateConnectionState(CONNECTION_STATE.CONNECTED)
       console.log('Connected to browser extension MCP server')
     })
 
     this.client.on('disconnect', async () => {
-      this.updateConnectionState('disconnected')
+      this.updateConnectionState(CONNECTION_STATE.DISCONNECTED)
       // Immediately re-detect to check if extension still exists
       await this.detectExtensionState()
     })
 
     this.client.on('error', (error: Error) => {
       console.error('Browser extension error:', error)
-      this.updateConnectionState('error')
+      this.updateConnectionState(CONNECTION_STATE.ERROR)
     })
 
     this.client.on('stateChange', (state: ConnectionState) => {
@@ -223,7 +250,7 @@ export class JanBrowserClient implements ToolCallClient {
       this.client.disconnect()
       this.client = undefined
     }
-    this.updateConnectionState('disconnected')
+    this.updateConnectionState(CONNECTION_STATE.DISCONNECTED)
   }
 
   /**
@@ -239,7 +266,7 @@ export class JanBrowserClient implements ToolCallClient {
    */
   async isHealthy(): Promise<boolean> {
     return (
-      this.connectionState === 'connected' &&
+      this.connectionState === CONNECTION_STATE.CONNECTED &&
       (this.client?.isConnected() ?? false)
     )
   }

@@ -46,6 +46,7 @@ import {
   uploadMedia,
   createJanMediaUrl,
 } from '@/services/media-upload-service'
+import { CHAT_STATUS, UPLOAD_STATUS } from '@/constants'
 import {
   ArrowUp,
   Loader2Icon,
@@ -287,7 +288,7 @@ export function PromptInputProvider({
               type: 'file' as const,
               url: blobUrl,
               previewUrl: blobUrl,
-              uploadStatus: 'pending' as const,
+              uploadStatus: UPLOAD_STATUS.PENDING,
               mediaType: file.type,
               filename: file.name,
             }
@@ -416,7 +417,7 @@ export const usePromptInputAttachments = () => {
 export const usePromptInputIsUploading = () => {
   const attachments = usePromptInputAttachments()
   return attachments.files.some(
-    (f) => f.uploadStatus === 'pending' || f.uploadStatus === 'uploading'
+    (f) => f.uploadStatus === UPLOAD_STATUS.PENDING || f.uploadStatus === UPLOAD_STATUS.UPLOADING
   )
 }
 
@@ -425,7 +426,7 @@ export const usePromptInputIsUploading = () => {
  */
 export const usePromptInputHasFailedUploads = () => {
   const attachments = usePromptInputAttachments()
-  return attachments.files.some((f) => f.uploadStatus === 'failed')
+  return attachments.files.some((f) => f.uploadStatus === UPLOAD_STATUS.FAILED)
 }
 
 export type PromptInputAttachmentProps = HTMLAttributes<HTMLDivElement> & {
@@ -451,15 +452,15 @@ export function PromptInputAttachment({
 
   const attachmentLabel = filename || (isImage ? 'Image' : 'Attachment')
 
-  const isUploading = data.uploadStatus === 'uploading'
-  const isCompleted = data.uploadStatus === 'completed'
-  const isFailed = data.uploadStatus === 'failed'
+  const isUploading = data.uploadStatus === UPLOAD_STATUS.UPLOADING
+  const isCompleted = data.uploadStatus === UPLOAD_STATUS.COMPLETED
+  const isFailed = data.uploadStatus === UPLOAD_STATUS.FAILED
 
   // Retry failed upload
   const handleRetry = (e: React.MouseEvent) => {
     e.stopPropagation()
     attachments.updateFile(data.id, {
-      uploadStatus: 'pending',
+      uploadStatus: UPLOAD_STATUS.PENDING,
       uploadError: undefined,
     })
   }
@@ -816,7 +817,7 @@ export const PromptInput = ({
             type: 'file',
             url: blobUrl,
             previewUrl: blobUrl,
-            uploadStatus: 'pending',
+            uploadStatus: UPLOAD_STATUS.PENDING,
             mediaType: file.type,
             filename: file.name,
           })
@@ -952,7 +953,7 @@ export const PromptInput = ({
   useEffect(() => {
     const pendingFiles = files.filter(
       (f) =>
-        f.uploadStatus === 'pending' && !uploadingFilesRef.current.has(f.id)
+        f.uploadStatus === UPLOAD_STATUS.PENDING && !uploadingFilesRef.current.has(f.id)
     )
     if (pendingFiles.length === 0) return
 
@@ -964,7 +965,7 @@ export const PromptInput = ({
       abortControllersRef.current.set(file.id, abortController)
 
       // Mark as uploading in state
-      updateFile(file.id, { uploadStatus: 'uploading' })
+      updateFile(file.id, { uploadStatus: UPLOAD_STATUS.UPLOADING })
 
       // Start async upload (not awaited to avoid blocking)
       ;(async () => {
@@ -989,7 +990,7 @@ export const PromptInput = ({
           updateFile(file.id, {
             mediaId: response.id,
             url: janMediaUrl,
-            uploadStatus: 'completed',
+            uploadStatus: UPLOAD_STATUS.COMPLETED,
           })
         } catch (error) {
           if ((error as Error).name === 'AbortError') {
@@ -1046,7 +1047,7 @@ export const PromptInput = ({
 
     // Block submission if any files are still uploading or pending
     const hasIncompleteUploads = files.some(
-      (f) => f.uploadStatus === 'pending' || f.uploadStatus === 'uploading'
+      (f) => f.uploadStatus === UPLOAD_STATUS.PENDING || f.uploadStatus === UPLOAD_STATUS.UPLOADING
     )
     if (hasIncompleteUploads) {
       console.warn('Cannot submit while files are uploading')
@@ -1054,7 +1055,7 @@ export const PromptInput = ({
     }
 
     // Block submission if any files failed to upload
-    const hasFailedUploads = files.some((f) => f.uploadStatus === 'failed')
+    const hasFailedUploads = files.some((f) => f.uploadStatus === UPLOAD_STATUS.FAILED)
     if (hasFailedUploads) {
       console.warn(
         'Cannot submit with failed uploads. Please retry or remove the failed files.'
@@ -1083,7 +1084,11 @@ export const PromptInput = ({
     )
 
     try {
-      const result = onSubmit({ text, files: submittableFiles }, event)
+      const trimmedText = text.trim()
+      const result = onSubmit(
+        { text: trimmedText, files: submittableFiles },
+        event
+      )
 
       // Handle both sync and async onSubmit
       if (result instanceof Promise) {
@@ -1372,18 +1377,25 @@ export const PromptInputSubmit = ({
 }: PromptInputSubmitProps) => {
   const isUploading = usePromptInputIsUploading()
   const hasFailedUploads = usePromptInputHasFailedUploads()
+  const controller = useOptionalPromptInputController()
+  const attachments = usePromptInputAttachments()
 
   let Icon = <ArrowUp className="size-4" />
 
   if (isUploading) {
     Icon = <Loader2Icon className="size-4 animate-spin" />
-  } else if (status === 'submitted') {
-    Icon = <Loader2Icon className="size-4 animate-spin" />
-  } else if (status === 'streaming') {
+  } else if (status === CHAT_STATUS.SUBMITTED || status === CHAT_STATUS.STREAMING) {
     Icon = <SquareIcon className="size-4" />
   }
 
-  const isDisabled = disabled || isUploading || hasFailedUploads
+  const trimmedText = controller?.textInput.value?.trim() ?? ''
+  const hasContent = trimmedText.length > 0 || attachments.files.length > 0
+  // Keep stop-action clickable while streaming or submitted even when the input was cleared
+  const isDisabled =
+    disabled ||
+    isUploading ||
+    hasFailedUploads ||
+    (!hasContent && status !== CHAT_STATUS.STREAMING && status !== CHAT_STATUS.SUBMITTED)
 
   return (
     <InputGroupButton

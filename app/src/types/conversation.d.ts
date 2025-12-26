@@ -3,6 +3,7 @@ interface Conversation {
   object: string
   title: string
   created_at: number
+  updated_at: number
   project_id?: string
   active_branch?: string
   metadata: {
@@ -26,6 +27,7 @@ interface ConversationsResponse {
 interface CreateConversationPayload {
   title: string
   project_id?: string
+  items?: CreateItemRequest[]
   metadata: {
     model_id: string
     model_provider: string
@@ -64,6 +66,7 @@ interface ConversationItem {
   created_at: number
   branch?: string
   sequence_number?: number
+  type?: string
 }
 
 interface ToolCall {
@@ -139,6 +142,12 @@ interface DeleteItemResponse {
   old_main_backup: string // Backup name for old MAIN
   branch_created: boolean
   deleted: boolean
+}
+
+interface CreateItemRequest {
+  role: string
+  content: ConversationItemContent[]
+  type?: string
 }
 
 interface ActivateBranchResponse {

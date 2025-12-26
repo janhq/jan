@@ -1,21 +1,35 @@
-import { HatGlassesIcon, XIcon } from 'lucide-react'
+import { HatGlassesIcon, XIcon, Share2Icon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/stores/auth-store'
 import { useRouter } from '@tanstack/react-router'
 import { usePrivateChat } from '@/stores/private-chat-store'
+import { useChatSessions } from '@/stores/chat-session-store'
 import { motion, AnimatePresence } from 'framer-motion'
+import { ShareDialog } from '@/components/threads/share-dialog'
+import { useState } from 'react'
+import { PRIVATE_CHAT_SESSION_ID, URL_PARAM, URL_PARAM_VALUE } from '@/constants'
 
-export function NavActions() {
+interface NavActionsProps {
+  conversationId?: string
+  conversationTitle?: string
+}
+
+export function NavActions({
+  conversationId,
+  conversationTitle
+}: NavActionsProps = {}) {
   const isAuthenticated = useAuth((state) => state.isAuthenticated)
   const isGuest = useAuth((state) => state.isGuest)
   const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
   const setIsPrivateChat = usePrivateChat((state) => state.setIsPrivateChat)
+  const removeSession = useChatSessions((state) => state.removeSession)
   const router = useRouter()
+  const [shareDialogOpen, setShareDialogOpen] = useState(false)
 
   const handleLogin = () => {
     // Add modal=login search param to current route
     const url = new URL(window.location.href)
-    url.searchParams.set('modal', 'login')
+    url.searchParams.set(URL_PARAM.MODAL, URL_PARAM_VALUE.LOGIN)
     router.navigate({ to: url.pathname + url.search })
   }
 
@@ -57,11 +71,24 @@ export function NavActions() {
         )}
       </AnimatePresence>
 
+      {/* Share button - only show for persistent conversations */}
+      {conversationId && !isPrivateChat && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          onClick={() => setShareDialogOpen(true)}
+        >
+          <Share2Icon className="size-4 text-muted-foreground" />
+        </Button>
+      )}
+
       {isPrivateChat ? (
         <Button
           variant="destructive"
           className="rounded-full size-8 md:size-auto"
           onClick={() => {
+            removeSession(PRIVATE_CHAT_SESSION_ID)
             setIsPrivateChat(false)
             router.navigate({ to: '/' })
           }}
@@ -81,6 +108,16 @@ export function NavActions() {
         >
           <HatGlassesIcon className="text-muted-foreground" />
         </Button>
+      )}
+
+      {/* Share Dialog */}
+      {conversationId && (
+        <ShareDialog
+          open={shareDialogOpen}
+          onOpenChange={setShareDialogOpen}
+          conversationId={conversationId}
+          conversationTitle={conversationTitle}
+        />
       )}
     </>
   )

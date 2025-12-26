@@ -7,10 +7,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
-import {
-  isJanMediaUrl,
-  resolveJanMediaUrl,
-} from '@/services/media-upload-service'
+import { useResolvedMediaUrl } from '@/hooks/use-resolved-media-url'
 import type { ToolUIPart } from 'ai'
 import {
   CheckCircleIcon,
@@ -23,6 +20,7 @@ import {
 import type { ComponentProps, ReactNode } from 'react'
 import { isValidElement, useEffect, useState } from 'react'
 import { CodeBlock } from './code-block'
+import { TOOL_STATE } from '@/constants'
 
 export type ToolProps = ComponentProps<typeof Collapsible>
 
@@ -42,25 +40,25 @@ export type ToolHeaderProps = {
 
 const getStatusBadge = (status: ToolUIPart['state']) => {
   const labels: Record<ToolUIPart['state'], string> = {
-    'input-streaming': 'Pending',
-    'input-available': 'Running',
+    [TOOL_STATE.INPUT_STREAMING]: 'Pending',
+    [TOOL_STATE.INPUT_AVAILABLE]: 'Running',
     // @ts-expect-error state only available in AI SDK v6
-    'approval-requested': 'Awaiting Approval',
-    'approval-responded': 'Responded',
-    'output-available': 'Completed',
-    'output-error': 'Error',
-    'output-denied': 'Denied',
+    [TOOL_STATE.APPROVAL_REQUESTED]: 'Awaiting Approval',
+    [TOOL_STATE.APPROVAL_RESPONDED]: 'Responded',
+    [TOOL_STATE.OUTPUT_AVAILABLE]: 'Completed',
+    [TOOL_STATE.OUTPUT_ERROR]: 'Error',
+    [TOOL_STATE.OUTPUT_DENIED]: 'Denied',
   }
 
   const icons: Record<ToolUIPart['state'], ReactNode> = {
-    'input-streaming': <CircleIcon className="size-4" />,
-    'input-available': <ClockIcon className="size-4 animate-pulse" />,
+    [TOOL_STATE.INPUT_STREAMING]: <CircleIcon className="size-4" />,
+    [TOOL_STATE.INPUT_AVAILABLE]: <ClockIcon className="size-4 animate-pulse" />,
     // @ts-expect-error state only available in AI SDK v6
-    'approval-requested': <ClockIcon className="size-4 text-yellow-600" />,
-    'approval-responded': <CheckCircleIcon className="size-4 text-blue-600" />,
-    'output-available': <CheckCircleIcon className="size-4 text-green-600" />,
-    'output-error': <XCircleIcon className="size-4 text-red-600" />,
-    'output-denied': <XCircleIcon className="size-4 text-orange-600" />,
+    [TOOL_STATE.APPROVAL_REQUESTED]: <ClockIcon className="size-4 text-yellow-600" />,
+    [TOOL_STATE.APPROVAL_RESPONDED]: <CheckCircleIcon className="size-4 text-blue-600" />,
+    [TOOL_STATE.OUTPUT_AVAILABLE]: <CheckCircleIcon className="size-4 text-green-600" />,
+    [TOOL_STATE.OUTPUT_ERROR]: <XCircleIcon className="size-4 text-red-600" />,
+    [TOOL_STATE.OUTPUT_DENIED]: <XCircleIcon className="size-4 text-orange-600" />,
   }
 
   return (
@@ -129,28 +127,21 @@ type ToolImageProps = {
 }
 
 const ToolImage = ({ data, index }: ToolImageProps) => {
-  const [displayUrl, setDisplayUrl] = useState<string | undefined>(undefined)
-  const [isLoading, setIsLoading] = useState(false)
+  // Prepare the URL - convert base64 to data URL if needed
+  const [preparedUrl, setPreparedUrl] = useState<string | undefined>(undefined)
 
   useEffect(() => {
-    // Check if data is a jan media URL or base64
-    if (isJanMediaUrl(data)) {
-      setIsLoading(true)
-      resolveJanMediaUrl(data)
-        .then(setDisplayUrl)
-        .catch((err) => {
-          console.error('Failed to resolve jan media URL:', err)
-          setDisplayUrl(undefined)
-        })
-        .finally(() => setIsLoading(false))
-    } else if (data.startsWith('data:image')) {
-      // Already a data URL
-      setDisplayUrl(data)
+    if (data.startsWith('data:image') || data.startsWith('http')) {
+      // Already a data URL or HTTP URL
+      setPreparedUrl(data)
     } else {
       // Assume it's base64 encoded
-      setDisplayUrl(`data:image/png;base64,${data}`)
+      setPreparedUrl(`data:image/png;base64,${data}`)
     }
   }, [data])
+
+  // Resolve Jan media URL to displayable URL using shared hook
+  const { displayUrl, isLoading } = useResolvedMediaUrl(preparedUrl)
 
   if (isLoading) {
     return (

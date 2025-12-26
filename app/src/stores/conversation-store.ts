@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { conversationService } from '@/services/conversation-service'
 import type { UIMessage } from '@ai-sdk/react'
 import { convertToUIMessages } from '@/lib/utils'
+import { useChatSessions } from './chat-session-store'
+import { BRANCH } from '@/constants'
 
 let fetchPromise: Promise<void> | null = null
 
@@ -29,6 +31,7 @@ interface ConversationState {
   deleteConversation: (conversationId: string) => Promise<void>
   deleteAllConversations: () => Promise<void>
   clearConversations: () => void
+  moveConversationToTop: (conversationId: string) => void
   // Branch operations
   fetchBranches: (conversationId: string) => Promise<ConversationBranch[]>
   switchBranch: (conversationId: string, branchName: string) => Promise<void>
@@ -61,7 +64,7 @@ export const useConversations = create<ConversationState>((set, get) => ({
   loading: false,
   // Branch state
   branches: [],
-  activeBranch: 'MAIN',
+  activeBranch: BRANCH.MAIN,
   branchesLoading: false,
   getConversations: async () => {
     if (fetchPromise) {
@@ -143,6 +146,7 @@ export const useConversations = create<ConversationState>((set, get) => ({
   deleteConversation: async (conversationId: string) => {
     try {
       await conversationService.deleteConversation(conversationId)
+      useChatSessions.getState().removeSession(conversationId)
       set((state) => ({
         conversations: state.conversations.filter(
           (conv) => conv.id !== conversationId
@@ -157,6 +161,7 @@ export const useConversations = create<ConversationState>((set, get) => ({
   deleteAllConversations: async () => {
     try {
       await conversationService.deleteAllConversations()
+      useChatSessions.getState().clearSessions()
       set(() => ({
         conversations: [],
       }))
@@ -166,13 +171,36 @@ export const useConversations = create<ConversationState>((set, get) => ({
     }
   },
   clearConversations: () => {
+    useChatSessions.getState().clearSessions()
     set({
       conversations: [],
       loading: false,
       branches: [],
-      activeBranch: 'MAIN',
+      activeBranch: BRANCH.MAIN,
     })
     fetchPromise = null
+  },
+
+  moveConversationToTop: (conversationId: string) => {
+    set((state) => {
+      const conversation = state.conversations.find(
+        (conv) => conv.id === conversationId
+      )
+      if (!conversation) return state
+
+      const updatedConversation = {
+        ...conversation,
+        updated_at: Date.now(),
+      }
+
+      const otherConversations = state.conversations.filter(
+        (conv) => conv.id !== conversationId
+      )
+
+      return {
+        conversations: [updatedConversation, ...otherConversations],
+      }
+    })
   },
 
   // Branch operations
@@ -226,7 +254,7 @@ export const useConversations = create<ConversationState>((set, get) => ({
         branches: state.branches.filter((b) => b.name !== branchName),
         // If we deleted the active branch, switch to MAIN
         activeBranch:
-          state.activeBranch === branchName ? 'MAIN' : state.activeBranch,
+          state.activeBranch === branchName ? BRANCH.MAIN : state.activeBranch,
       }))
     } catch (err) {
       console.error('Error deleting branch:', err)

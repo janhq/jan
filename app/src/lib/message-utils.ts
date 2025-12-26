@@ -1,4 +1,5 @@
 import type { UIMessage } from 'ai'
+import { MESSAGE_ROLE } from '@/constants'
 
 /**
  * Find the index of the preceding user message before an assistant message
@@ -11,7 +12,25 @@ export function findPrecedingUserMessageIndex(
   assistantIndex: number
 ): number {
   for (let i = assistantIndex - 1; i >= 0; i--) {
-    if (messages[i].role === 'user') {
+    if (messages[i].role === MESSAGE_ROLE.USER) {
+      return i
+    }
+  }
+  return -1
+}
+
+/**
+ * Find the index of the preceding assistant message before a user message
+ * @param messages - Array of UI messages
+ * @param userIndex - Index of the user message
+ * @returns Index of the preceding assistant message, or -1 if not found
+ */
+export function findPrecedingAssistantMessageIndex(
+  messages: UIMessage[],
+  userIndex: number
+): number {
+  for (let i = userIndex - 1; i >= 0; i--) {
+    if (messages[i].role === MESSAGE_ROLE.ASSISTANT) {
       return i
     }
   }

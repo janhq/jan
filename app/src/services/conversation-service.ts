@@ -1,4 +1,5 @@
 import { fetchJsonWithAuth } from '@/lib/api-client'
+import { QUERY_ORDER, QUERY_LIMIT } from '@/constants'
 
 declare const JAN_API_BASE_URL: string
 
@@ -59,12 +60,25 @@ export const conversationService = {
     conversationId: string,
     branch?: string
   ): Promise<ConversationItemsResponse> => {
-    const params = new URLSearchParams({ limit: '100', order: 'asc' })
+    const params = new URLSearchParams({ limit: String(QUERY_LIMIT.ITEMS), order: QUERY_ORDER.ASC })
     if (branch) {
       params.set('branch', branch)
     }
     return fetchJsonWithAuth<ConversationItemsResponse>(
       `${JAN_API_BASE_URL}v1/conversations/${conversationId}/items?${params}`
+    )
+  },
+
+  createItems: async (
+    conversationId: string,
+    items: CreateItemRequest[]
+  ): Promise<ConversationItemsResponse> => {
+    return fetchJsonWithAuth<ConversationItemsResponse>(
+      `${JAN_API_BASE_URL}v1/conversations/${conversationId}/items`,
+      {
+        method: 'POST',
+        body: JSON.stringify(items),
+      }
     )
   },
 

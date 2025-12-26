@@ -1,22 +1,16 @@
-import { MoreHorizontal, Trash2, PencilLine } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from '@tanstack/react-router'
+import { MoreHorizontal, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { useNavigate, useParams } from '@tanstack/react-router'
 
 import {
   DropDrawer,
   DropDrawerContent,
   DropDrawerItem,
-  DropDrawerSeparator,
   DropDrawerTrigger,
 } from '@/components/ui/dropdrawer'
-import { ProjectsChatInput } from '@/components/chat-input/projects-chat-input'
 import {
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarMenu,
-  SidebarMenuAction,
-  SidebarMenuButton,
-  SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar'
 import {
@@ -32,13 +26,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 import { useConversations } from '@/stores/conversation-store'
+import { useChatSessions, isSessionBusy } from '@/stores/chat-session-store'
+import { AnimatedGroupLabel, AnimatedChatItem } from '@/components/sidebar/items'
 
-export function NavChats() {
+export function NavChats({ startIndex = 3 }: { startIndex?: number }) {
   const { isMobile, setOpenMobile } = useSidebar()
   const navigate = useNavigate()
   const params = useParams({ strict: false }) as { conversationId?: string }
   const allConversations = useConversations((state) => state.conversations)
-  const getConversations = useConversations((state) => state.getConversations)
   const deleteConversation = useConversations(
     (state) => state.deleteConversation
   )
@@ -48,6 +43,7 @@ export function NavChats() {
   const updateConversation = useConversations(
     (state) => state.updateConversation
   )
+  const sessions = useChatSessions((state) => state.sessions)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false)
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
@@ -59,10 +55,6 @@ export function NavChats() {
   const conversations = allConversations.filter(
     (conversation) => !conversation.project_id
   )
-
-  useEffect(() => {
-    getConversations()
-  }, [getConversations])
 
   const handleDeleteClick = (item: Conversation) => {
     setItemToDelete(item)
@@ -138,7 +130,7 @@ export function NavChats() {
   return (
     <>
       <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-        <SidebarGroupLabel className="text-muted-foreground  flex w-full items-center justify-between pr-0">
+        <AnimatedGroupLabel index={startIndex}>
           Chats
           <DropDrawer>
             <DropDrawerTrigger asChild>
@@ -162,65 +154,21 @@ export function NavChats() {
               </DropDrawerItem>
             </DropDrawerContent>
           </DropDrawer>
-        </SidebarGroupLabel>
+        </AnimatedGroupLabel>
         <SidebarMenu>
-          {conversations.map((item) => (
-            <SidebarMenuItem key={item.id}>
-              <SidebarMenuButton
-                asChild
-                isActive={params.conversationId === item.id}
-              >
-                <Link
-                  to="/threads/$conversationId"
-                  params={{ conversationId: item.id }}
-                  title={item.title}
-                  onClick={() => {
-                    if (isMobile) {
-                      setOpenMobile(false)
-                    }
-                  }}
-                >
-                  <span>{item.title}</span>
-                </Link>
-              </SidebarMenuButton>
-              <DropDrawer>
-                <DropDrawerTrigger asChild>
-                  <SidebarMenuAction showOnHover>
-                    <MoreHorizontal className="text-muted-foreground" />
-                    <span className="sr-only">More</span>
-                  </SidebarMenuAction>
-                </DropDrawerTrigger>
-                <DropDrawerContent
-                  className="md:w-56"
-                  side={isMobile ? 'bottom' : 'right'}
-                  align={isMobile ? 'end' : 'start'}
-                >
-                  <DropDrawerItem onClick={() => handleRenameClick(item)}>
-                    <div className="flex gap-2 items-center justify-center">
-                      <PencilLine />
-                      <span>Rename</span>
-                    </div>
-                  </DropDrawerItem>
-                  <ProjectsChatInput
-                    title="Move to Project"
-                    currentProjectId={item.project_id}
-                    onProjectSelect={(projectId) =>
-                      handleMoveToProject(item.id, projectId)
-                    }
-                  />
-                  <DropDrawerSeparator />
-                  <DropDrawerItem
-                    variant="destructive"
-                    onClick={() => handleDeleteClick(item)}
-                  >
-                    <div className="flex gap-2 items-center justify-center">
-                      <Trash2 className="text-destructive" />
-                      <span>Delete</span>
-                    </div>
-                  </DropDrawerItem>
-                </DropDrawerContent>
-              </DropDrawer>
-            </SidebarMenuItem>
+          {conversations.map((item, idx) => (
+            <AnimatedChatItem
+              key={item.id}
+              item={item}
+              isActive={params.conversationId === item.id}
+              isMobile={isMobile}
+              setOpenMobile={setOpenMobile}
+              isBusy={isSessionBusy(sessions[item.id])}
+              onRenameClick={handleRenameClick}
+              onDeleteClick={handleDeleteClick}
+              onMoveToProject={handleMoveToProject}
+              index={startIndex + 1 + idx}
+            />
           ))}
         </SidebarMenu>
       </SidebarGroup>
