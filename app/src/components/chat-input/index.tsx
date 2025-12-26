@@ -27,7 +27,7 @@ import { useCapabilities } from '@/stores/capabilities-store'
 import { useProjects } from '@/stores/projects-store'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useIsMobileDevice } from '@/hooks/use-is-mobile-device'
-import { toast } from 'sonner'
+import { toast } from '@/components/ui/sonner'
 import {
   FolderIcon,
   GlobeIcon,
@@ -286,56 +286,59 @@ const ChatInput = ({
       text: trimmedText,
     }
 
-    if (selectedModel) {
-      if (initialConversation) {
-        if (isPrivateChat) {
+    if (!selectedModel) {
+      toast.warning('Please select a model to start chatting.')
+      return
+    }
+
+    if (initialConversation) {
+      if (isPrivateChat) {
+        sessionStorage.setItem(
+          SESSION_STORAGE_KEY.INITIAL_MESSAGE_TEMPORARY,
+          JSON.stringify(normalizedMessage)
+        )
+        navigate({
+          to: '/threads/temporary',
+        })
+
+        return
+      }
+
+      const conversationPayload: CreateConversationPayload = {
+        title: generateThreadTitle(normalizedMessage.text),
+        ...(projectId && { project_id: String(projectId) }),
+        ...(selectedProjectId && { project_id: selectedProjectId }),
+        metadata: {
+          model_id: selectedModel.id,
+          model_provider: selectedModel.owned_by,
+          is_favorite: 'false',
+        },
+      }
+
+      createConversation(conversationPayload)
+        .then((conversation) => {
+          // Store the initial message in sessionStorage for the new conversation
           sessionStorage.setItem(
-            SESSION_STORAGE_KEY.INITIAL_MESSAGE_TEMPORARY,
+            `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${conversation.id}`,
             JSON.stringify(normalizedMessage)
           )
+
+          // Clear selected project after creating conversation
+          setSelectedProjectId(null)
+
+          // Redirect to the conversation detail page
           navigate({
-            to: '/threads/temporary',
+            to: '/threads/$conversationId',
+            params: { conversationId: conversation.id },
           })
 
           return
-        }
-
-        const conversationPayload: CreateConversationPayload = {
-          title: generateThreadTitle(normalizedMessage.text),
-          ...(projectId && { project_id: String(projectId) }),
-          ...(selectedProjectId && { project_id: selectedProjectId }),
-          metadata: {
-            model_id: selectedModel.id,
-            model_provider: selectedModel.owned_by,
-            is_favorite: 'false',
-          },
-        }
-
-        createConversation(conversationPayload)
-          .then((conversation) => {
-            // Store the initial message in sessionStorage for the new conversation
-            sessionStorage.setItem(
-              `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${conversation.id}`,
-              JSON.stringify(normalizedMessage)
-            )
-
-            // Clear selected project after creating conversation
-            setSelectedProjectId(null)
-
-            // Redirect to the conversation detail page
-            navigate({
-              to: '/threads/$conversationId',
-              params: { conversationId: conversation.id },
-            })
-
-            return
-          })
-          .catch((error) => {
-            console.error('Failed to create initial conversation:', error)
-          })
-      } else {
-        submit?.(normalizedMessage)
-      }
+        })
+        .catch((error) => {
+          console.error('Failed to create initial conversation:', error)
+        })
+    } else {
+      submit?.(normalizedMessage)
     }
   }
 
