@@ -22,6 +22,7 @@ import type { UIDataTypes, UIMessage, UITools } from 'ai'
 import { MessageItem } from './message-item'
 import {
   findPrecedingUserMessageIndex,
+  findPrecedingAssistantMessageIndex,
   buildIdMapping,
   resolveMessageId,
 } from '@/lib/message-utils'
@@ -37,6 +38,7 @@ import {
   CONTENT_TYPE,
   SESSION_STORAGE_KEY,
   SESSION_STORAGE_PREFIX,
+  MESSAGE_ROLE,
 } from '@/constants'
 
 interface ThreadPageContentProps {
@@ -212,47 +214,113 @@ export function ThreadPageContent({
 
   const regenerateMessage = useConversations((state) => state.regenerateMessage)
 
-  const handleRegenerate = async (messageId: string) => {
-    if (!conversationId) return
-    try {
-      const realId = resolveMessageId(messageId, sessionData.idMap)
-      const currentMessages = getCurrentMessages()
+  const executeRegenerate = useCallback(
+    async (realId: string, userIndex: number) => {
+      if (!conversationId) return
 
-      // Find the clicked assistant message index
-      const assistantIndex = currentMessages.findIndex(
-        (m) => m.id === messageId
-      )
-      if (assistantIndex === -1) return
-
-      // Find the preceding user message
-      const userIndex = findPrecedingUserMessageIndex(
-        currentMessages,
-        assistantIndex
-      )
-      if (userIndex === -1) return
-
-      // Call server to create branch (for persistence)
       const response = await regenerateMessage(conversationId, realId)
 
       if (response.branch_created && response.branch) {
-        // Truncate local messages to keep only messages up to and including the user message
+        const currentMessages = getCurrentMessages()
         const truncatedMessages = currentMessages.slice(0, userIndex + 1)
         setMessages(truncatedMessages)
 
-        // Now regenerate - AI SDK will regenerate response for the last user message
         setTimeout(() => regenerate(), 0)
 
-        // Fetch IDs in background for future operations
         getUIMessages(conversationId, response.branch)
           .then((branchMessages) => {
             buildIdMapping(truncatedMessages, branchMessages, sessionData.idMap)
           })
           .catch(console.error)
       }
-    } catch (error) {
-      console.error('Failed to regenerate:', error)
-    }
-  }
+    },
+    [conversationId, regenerateMessage, getCurrentMessages, setMessages, regenerate, getUIMessages, sessionData.idMap]
+  )
+
+  const handleRegenerateUserMessage = useCallback(
+    async (messageId: string, messageIndex: number) => {
+      const currentMessages = getCurrentMessages()
+      const realId = resolveMessageId(messageId, sessionData.idMap)
+      const hasMappedId = realId !== messageId
+
+      // Case 1: Has mapped backend ID - use it directly
+      if (hasMappedId) {
+        await executeRegenerate(realId, messageIndex)
+        return
+      }
+
+      // Case 2: No mapped ID - check if messageId IS a backend ID (from reload)
+      if (messageId.startsWith('msg_')) {
+        await executeRegenerate(messageId, messageIndex)
+        return
+      }
+
+      // Case 3: Temp ID with no mapping - try previous assistant message
+      const assistantIndex = findPrecedingAssistantMessageIndex(currentMessages, messageIndex)
+      if (assistantIndex !== -1) {
+        const assistantId = currentMessages[assistantIndex].id
+        const assistantRealId = resolveMessageId(assistantId, sessionData.idMap)
+        const assistantHasBackendId = assistantRealId !== assistantId || assistantId.startsWith('msg_')
+
+        if (assistantHasBackendId) {
+          const assistantBackendId = assistantRealId !== assistantId ? assistantRealId : assistantId
+          await executeRegenerate(assistantBackendId, messageIndex)
+          return
+        }
+      }
+
+      // Case 4: No backend IDs anywhere
+      // If user message is first message - regenerate locally
+      if (messageIndex === 0) {
+        const truncatedMessages = currentMessages.slice(0, messageIndex + 1)
+        setMessages(truncatedMessages)
+        setTimeout(() => regenerate(), 0)
+        return
+      }
+
+      // Case 5: Not first message but no backend IDs - abort (user might need to reload)
+    },
+    [getCurrentMessages, sessionData.idMap, executeRegenerate, setMessages, regenerate]
+  )
+
+  const handleRegenerateAssistantMessage = useCallback(
+    async (messageId: string, messageIndex: number) => {
+      const currentMessages = getCurrentMessages()
+      const realId = resolveMessageId(messageId, sessionData.idMap)
+      const userIndex = findPrecedingUserMessageIndex(currentMessages, messageIndex)
+
+      if (userIndex === -1) {
+        // No user message found -> cant regenerate -> abort
+        return
+      }
+
+      // Use the resolved ID directly (either mapped or original backend ID from reload)
+      await executeRegenerate(realId, userIndex)
+    },
+    [getCurrentMessages, sessionData.idMap, executeRegenerate]
+  )
+
+  const handleRegenerate = useCallback(
+    async (messageId: string) => {
+      if (!conversationId) return
+      try {
+        const currentMessages = getCurrentMessages()
+        const messageIndex = currentMessages.findIndex((m) => m.id === messageId)
+        if (messageIndex === -1) return
+
+        const message = currentMessages[messageIndex]
+
+        if (message.role === MESSAGE_ROLE.USER) {
+          await handleRegenerateUserMessage(messageId, messageIndex)
+        } else if (message.role === MESSAGE_ROLE.ASSISTANT) {
+          await handleRegenerateAssistantMessage(messageId, messageIndex)
+        }
+      } catch (error) {
+        console.error('Failed to regenerate:', error)
+      }
+    },
+    [conversationId, getCurrentMessages, handleRegenerateUserMessage, handleRegenerateAssistantMessage]
+  )
 
   const handleSubmit = useCallback(
     (message?: PromptInputMessage) => {
