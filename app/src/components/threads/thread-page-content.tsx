@@ -26,6 +26,7 @@ import {
   findPrecedingAssistantMessageIndex,
   buildIdMapping,
   resolveMessageId,
+  buildMessageContent,
 } from '@/lib/message-utils'
 import { convertToUIMessages } from '@/lib/utils'
 import { useChatSessions } from '@/stores/chat-session-store'
@@ -91,6 +92,7 @@ export function ThreadPageContent({
   )
 
   const getUIMessages = useConversations((state) => state.getUIMessages)
+  const createItems = useConversations((state) => state.createItems)
   const fetchingMessagesRef = useRef(false)
   const moveConversationToTop = useConversations(
     (state) => state.moveConversationToTop
@@ -114,6 +116,58 @@ export function ThreadPageContent({
       session?.chat.messages ?? state.getSessionData(chatSessionId).messages
     )
   }, [chatSessionId])
+
+  // Persist user message to server and map temp ID to backend ID
+  const createUserMessageItem = useCallback(
+    async (message: PromptInputMessage): Promise<string | null> => {
+      if (!conversationId || isPrivateChat) return null
+
+      const content = buildMessageContent(message)
+      if (content.length === 0) return null
+
+      // Capture index before async operation - message will be added here after sendMessage
+      const messageIndex = getCurrentMessages().length
+
+      // Skip if message at this index already has a backend ID or mapping
+      const existingMsg = getCurrentMessages()[messageIndex]
+      if (existingMsg) {
+        if (
+          existingMsg.id.startsWith('msg_') ||
+          sessionData.idMap.has(existingMsg.id)
+        ) {
+          return sessionData.idMap.get(existingMsg.id) ?? existingMsg.id
+        }
+      }
+
+      try {
+        const response = await createItems(conversationId, [
+          {
+            role: MESSAGE_ROLE.USER,
+            type: 'message',
+            content,
+          },
+        ])
+        const backendId = response.data?.[0]?.id ?? null
+
+        // Map temp ID to backend ID after sendMessage adds the message
+        if (backendId) {
+          setTimeout(() => {
+            const msg = getCurrentMessages()[messageIndex]
+            if (msg) {
+              sessionData.idMap.set(msg.id, backendId)
+            }
+          }, 0)
+        }
+
+        return backendId
+      } catch (error) {
+        console.error('Failed to create user message item:', error)
+        return null
+      }
+    },
+    [conversationId, isPrivateChat, createItems, getCurrentMessages, sessionData]
+  )
+
 
   // Check if we should follow up with tool calls (respects abort signal)
   const followUpMessage = ({
@@ -341,8 +395,29 @@ export function ThreadPageContent({
         return
       }
 
-      // Use the resolved ID directly (either mapped or original backend ID from reload)
-      await executeRegenerate(realId, userIndex)
+      // Check if assistant message has a valid backend ID
+      const hasBackendId = realId !== messageId || messageId.startsWith('msg_')
+
+      if (hasBackendId) {
+        // Use assistant's backend ID
+        await executeRegenerate(realId, userIndex)
+        return
+      }
+
+      // No backend ID for assistant (e.g., stopped mid-stream)
+      // Try using the preceding user message's backend ID
+      const userMessage = currentMessages[userIndex]
+      const userRealId = resolveMessageId(userMessage.id, sessionData.idMap)
+      const userHasBackendId =
+        userRealId !== userMessage.id || userMessage.id.startsWith('msg_')
+
+      if (userHasBackendId) {
+        const userBackendId =
+          userRealId !== userMessage.id ? userRealId : userMessage.id
+        await executeRegenerate(userBackendId, userIndex)
+      }
+
+      // No backend IDs - abort (cannot regenerate without server state)
     },
     [getCurrentMessages, sessionData.idMap, executeRegenerate]
   )
@@ -452,6 +527,10 @@ export function ThreadPageContent({
         }
 
         // Normal message flow
+
+        // Persist to server (fire-and-forget, ID mapping handled in onFinish)
+        createUserMessageItem(message)
+
         sendMessage({
           text: message.text || 'Sent with attachments',
           files: message.files,
@@ -485,7 +564,7 @@ export function ThreadPageContent({
       moveConversationToTop,
       imageGenerationEnabled,
       setMessages,
-      getCurrentMessages,
+      createUserMessageItem,
     ]
   )
 
@@ -553,7 +632,11 @@ export function ThreadPageContent({
           return
         }
 
-        // Send the message
+        
+
+        // Persist to server (fire-and-forget, ID mapping handled in onFinish)
+        createUserMessageItem(message)
+
         sendMessage({
           text: message.text,
           files: message.files,
@@ -573,6 +656,7 @@ export function ThreadPageContent({
     sessionData,
     setMessages,
     moveConversationToTop,
+    createUserMessageItem,
   ])
 
   // Fetch messages for old conversations (only for persistent conversations)
