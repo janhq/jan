@@ -7,12 +7,14 @@ import { usePrivateChat } from './stores/private-chat-store'
 import { HatGlassesIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
+import { SnowAnimation } from '@/components/snow-animation'
 
 function AppPageContent() {
   const isPrivateChat = usePrivateChat((state) => state.isPrivateChat)
 
   return (
     <>
+      <SnowAnimation />
       <AppSidebar />
       <SidebarInset>
         <NavHeader />
@@ -118,7 +120,7 @@ function AppPageContent() {
                   </motion.p>
                 </>
               ) : (
-                <>
+                <div className="flex items-center justify-center">
                   <motion.h2
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -127,7 +129,19 @@ function AppPageContent() {
                   >
                     How can I help you today?
                   </motion.h2>
-                </>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.5, delay: 0.2 }}
+                    className="mb-6"
+                  >
+                    <img
+                      src="/tree.png"
+                      alt="Christmas tree"
+                      className="size-10 object-contain"
+                    />
+                  </motion.div>
+                </div>
               )}
               <ChatInput initialConversation={true} />
             </div>
