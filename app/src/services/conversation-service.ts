@@ -77,7 +77,7 @@ export const conversationService = {
       `${JAN_API_BASE_URL}v1/conversations/${conversationId}/items`,
       {
         method: 'POST',
-        body: JSON.stringify(items),
+        body: JSON.stringify({ items }),
       }
     )
   },

@@ -1,5 +1,6 @@
 import type { UIMessage } from 'ai'
-import { MESSAGE_ROLE } from '@/constants'
+import type { PromptInputMessage } from '@/components/ai-elements/prompt-input'
+import { MESSAGE_ROLE, CONTENT_TYPE } from '@/constants'
 
 /**
  * Find the index of the preceding user message before an assistant message
@@ -71,4 +72,33 @@ export function resolveMessageId(
   idMap: Map<string, string>
 ): string {
   return idMap.get(tempId) ?? tempId
+}
+
+/**
+ * Build content array from a prompt message for server persistence
+ * @param message - The prompt input message
+ * @returns Array of conversation item content
+ */
+export function buildMessageContent(
+  message: PromptInputMessage
+): ConversationItemContent[] {
+  const content: ConversationItemContent[] = []
+
+  if (message.text) {
+    content.push({
+      type: CONTENT_TYPE.INPUT_TEXT,
+      input_text: message.text,
+    })
+  }
+
+  message.files?.forEach((file) => {
+    if (file.url) {
+      content.push({
+        type: 'image',
+        image: { url: file.url },
+      })
+    }
+  })
+
+  return content
 }

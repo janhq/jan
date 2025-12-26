@@ -21,6 +21,10 @@ interface ConversationState {
     conversationId: string,
     branch?: string
   ) => Promise<UIMessage[]>
+  createItems: (
+    conversationId: string,
+    items: CreateItemRequest[]
+  ) => Promise<ConversationItemsResponse>
   createConversation: (
     payload: CreateConversationPayload
   ) => Promise<Conversation>
@@ -105,6 +109,14 @@ export const useConversations = create<ConversationState>((set, get) => ({
       return convertToUIMessages(items)
     } catch (err) {
       console.error('Error fetching conversation items:', err)
+      throw err
+    }
+  },
+  createItems: async (conversationId: string, items: CreateItemRequest[]) => {
+    try {
+      return await conversationService.createItems(conversationId, items)
+    } catch (err) {
+      console.error('Error creating conversation items:', err)
       throw err
     }
   },
