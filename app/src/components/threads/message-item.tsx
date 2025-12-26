@@ -84,8 +84,13 @@ export const MessageItem = memo(
             )}
           </MessageContent>
 
-          {message.role === MESSAGE_ROLE.USER && isLastPart && (
+          {message.role === MESSAGE_ROLE.USER && isLastPart && !isStreaming && (
             <MessageActions className="gap-0 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+              {onRegenerate && (
+                <MessageAction onClick={handleRegenerate} label="Retry">
+                  <RefreshCcwIcon className="text-muted-foreground size-3" />
+                </MessageAction>
+              )}
               <MessageAction onClick={() => handleCopy(part.text)} label="Copy">
                 {copiedMessageId === message.id ? (
                   <CheckIcon className="text-green-600 dark:text-green-400 size-3" />

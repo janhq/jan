@@ -20,6 +20,24 @@ export function findPrecedingUserMessageIndex(
 }
 
 /**
+ * Find the index of the following assistant message after a user message
+ * @param messages - Array of UI messages
+ * @param userIndex - Index of the user message
+ * @returns Index of the following assistant message, or -1 if not found
+ */
+export function findFollowingAssistantMessageIndex(
+  messages: UIMessage[],
+  userIndex: number
+): number {
+  for (let i = userIndex + 1; i < messages.length; i++) {
+    if (messages[i].role === MESSAGE_ROLE.ASSISTANT) {
+      return i
+    }
+  }
+  return -1
+}
+
+/**
  * Build ID mapping between local (temp) IDs and backend (real) IDs
  * @param localMessages - Local UI messages
  * @param backendMessages - Messages from backend
