@@ -395,8 +395,29 @@ export function ThreadPageContent({
         return
       }
 
-      // Use the resolved ID directly (either mapped or original backend ID from reload)
-      await executeRegenerate(realId, userIndex)
+      // Check if assistant message has a valid backend ID
+      const hasBackendId = realId !== messageId || messageId.startsWith('msg_')
+
+      if (hasBackendId) {
+        // Use assistant's backend ID
+        await executeRegenerate(realId, userIndex)
+        return
+      }
+
+      // No backend ID for assistant (e.g., stopped mid-stream)
+      // Try using the preceding user message's backend ID
+      const userMessage = currentMessages[userIndex]
+      const userRealId = resolveMessageId(userMessage.id, sessionData.idMap)
+      const userHasBackendId =
+        userRealId !== userMessage.id || userMessage.id.startsWith('msg_')
+
+      if (userHasBackendId) {
+        const userBackendId =
+          userRealId !== userMessage.id ? userRealId : userMessage.id
+        await executeRegenerate(userBackendId, userIndex)
+      }
+
+      // No backend IDs - abort (cannot regenerate without server state)
     },
     [getCurrentMessages, sessionData.idMap, executeRegenerate]
   )
