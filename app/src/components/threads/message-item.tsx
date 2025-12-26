@@ -18,11 +18,6 @@ import {
   MessageAttachment,
 } from '@/components/ai-elements/message'
 import {
-  PromptInputHoverCard,
-  PromptInputHoverCardContent,
-} from '@/components/ai-elements/prompt-input'
-import { HoverCardTrigger } from '@/components/ui/hover-card'
-import {
   Reasoning,
   ReasoningTrigger,
   ReasoningContent,
@@ -34,7 +29,15 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import { CopyIcon, CheckIcon, RefreshCcwIcon, DownloadIcon } from 'lucide-react'
+import {
+  Dialog,
+  DialogTitle,
+  DialogOverlay,
+  DialogPortal,
+  DialogClose,
+} from '@/components/ui/dialog'
+import { CopyIcon, CheckIcon, RefreshCcwIcon, DownloadIcon, XIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { twMerge } from 'tailwind-merge'
 import { cn } from '@/lib/utils'
 
@@ -57,6 +60,10 @@ export const MessageItem = memo(
     onRegenerate,
   }: MessageItemProps) => {
     const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+    const [previewImage, setPreviewImage] = useState<{
+      url: string
+      filename?: string
+    } | null>(null)
 
     const handleCopy = (text: string) => {
       navigator.clipboard.writeText(text.trim())
@@ -66,6 +73,23 @@ export const MessageItem = memo(
 
     const handleRegenerate = () => {
       onRegenerate?.(message.id)
+    }
+
+    const handleDownload = async (url: string, filename?: string) => {
+      try {
+        const response = await fetch(url)
+        const blob = await response.blob()
+        const blobUrl = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = blobUrl
+        a.download = filename || 'generated-image.png'
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(blobUrl)
+        document.body.removeChild(a)
+      } catch (error) {
+        console.error('Failed to download image:', error)
+      }
     }
 
     const isStreaming = isLastMessage && status === CHAT_STATUS.STREAMING
@@ -145,42 +169,16 @@ export const MessageItem = memo(
       )
     }
 
-    const renderFilePart = (part: { filename?: string, url?: string, mediaType?: string }, partIndex: number) => {
+    const renderFilePart = (
+      part: { filename?: string; url?: string; mediaType?: string },
+      partIndex: number
+    ) => {
       const isAssistant = message.role === MESSAGE_ROLE.ASSISTANT
       const isImage = part.mediaType?.startsWith('image/')
       const isLastPart = partIndex === message.parts.length - 1
 
       // Resolve Jan media URL to displayable URL using shared hook
       const { displayUrl, isLoading } = useResolvedMediaUrl(part.url)
-
-      const handleDownload = async () => {
-        if (!displayUrl) return
-
-        try {
-          const response = await fetch(displayUrl)
-          const blob = await response.blob()
-          const url = window.URL.createObjectURL(blob)
-          const a = document.createElement('a')
-          a.href = url
-          a.download = part.filename || 'generated-image.png'
-          document.body.appendChild(a)
-          a.click()
-          window.URL.revokeObjectURL(url)
-          document.body.removeChild(a)
-        } catch (error) {
-          console.error('Failed to download image:', error)
-        }
-      }
-
-      const attachmentElement = (
-        <MessageAttachment
-          data={part as any}
-          key={part.filename || 'image'}
-          className={cn(
-            isAssistant && 'size-64' // Bigger for assistant (size-64 = 16rem = 256px vs size-24 = 6rem = 96px)
-          )}
-        />
-      )
 
       return (
         <Message
@@ -193,45 +191,44 @@ export const MessageItem = memo(
               isAssistant && 'ml-0 mr-auto' // Left-align for assistant
             )}
           >
-            {isImage && displayUrl ? (
-              <PromptInputHoverCard>
-                <HoverCardTrigger asChild>
-                  {attachmentElement}
-                </HoverCardTrigger>
-                <PromptInputHoverCardContent className="w-auto p-2">
-                  {isLoading ? (
-                    <div className="flex h-96 w-96 items-center justify-center">
-                      <div className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-                    </div>
-                  ) : (
-                    <div className="flex max-h-96 w-96 items-center justify-center overflow-hidden rounded-md border">
-                      <img
-                        alt={part.filename || 'Generated image'}
-                        className="max-h-full max-w-full object-contain"
-                        src={displayUrl}
-                      />
-                    </div>
-                  )}
-                </PromptInputHoverCardContent>
-              </PromptInputHoverCard>
-            ) : (
-              attachmentElement
-            )}
+            <MessageAttachment
+              data={part as any}
+              key={part.filename || 'image'}
+              className={cn(
+                isAssistant && 'size-64', // Bigger for assistant (size-64 = 16rem = 256px vs size-24 = 6rem = 96px)
+                isImage && !isLoading && displayUrl && 'cursor-pointer'
+              )}
+              onClick={() => {
+                if (isImage && displayUrl && !isLoading) {
+                  setPreviewImage({
+                    url: displayUrl,
+                    filename: part.filename,
+                  })
+                }
+              }}
+            />
           </MessageAttachments>
 
           {/* Message actions for assistant images */}
-          {message.role === MESSAGE_ROLE.ASSISTANT && isImage && displayUrl && isLastPart && (
-            <MessageActions
-              className={cn(
-                'gap-0 transition-opacity',
-                status === CHAT_STATUS.STREAMING && 'opacity-0 pointer-events-none'
-              )}
-            >
-              <MessageAction onClick={handleDownload} label="Download">
-                <DownloadIcon className="text-muted-foreground size-3" />
-              </MessageAction>
-            </MessageActions>
-          )}
+          {message.role === MESSAGE_ROLE.ASSISTANT &&
+            isImage &&
+            displayUrl &&
+            isLastPart && (
+              <MessageActions
+                className={cn(
+                  'gap-0 transition-opacity',
+                  status === CHAT_STATUS.STREAMING &&
+                    'opacity-0 pointer-events-none'
+                )}
+              >
+                <MessageAction
+                  onClick={() => handleDownload(displayUrl, part.filename)}
+                  label="Download"
+                >
+                  <DownloadIcon className="text-muted-foreground size-3" />
+                </MessageAction>
+              </MessageActions>
+            )}
         </Message>
       )
     }
@@ -308,20 +305,73 @@ export const MessageItem = memo(
     }
 
     return (
-      <div>
-        {message.parts.map((part, i) => {
-          switch (part.type) {
-            case CONTENT_TYPE.TEXT:
-              return renderTextPart(part, i)
-            case CONTENT_TYPE.FILE:
-              return renderFilePart(part, i)
-            case CONTENT_TYPE.REASONING:
-              return renderReasoningPart(part, i)
-            default:
-              return renderToolPart(part, i)
-          }
-        })}
-      </div>
+      <>
+        <div>
+          {message.parts.map((part, i) => {
+            switch (part.type) {
+              case CONTENT_TYPE.TEXT:
+                return renderTextPart(part, i)
+              case CONTENT_TYPE.FILE:
+                return renderFilePart(part, i)
+              case CONTENT_TYPE.REASONING:
+                return renderReasoningPart(part, i)
+              default:
+                return renderToolPart(part, i)
+            }
+          })}
+        </div>
+
+        {/* Image Preview Dialog */}
+        <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>
+          <DialogPortal>
+            <DialogOverlay
+              className="bg-black/90 backdrop-blur-md data-[state=open]:animate-none data-[state=closed]:animate-none"
+              onClick={() => setPreviewImage(null)}
+            />
+            <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+              <DialogTitle className="sr-only">
+                {previewImage?.filename || 'Image Preview'}
+              </DialogTitle>
+
+              {/* Action buttons */}
+              <div className="absolute top-4 right-4 z-10 flex gap-2 pointer-events-auto">
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className="rounded-full bg-background/80 backdrop-blur-sm hover:bg-background shadow-lg"
+                  onClick={() => {
+                    if (previewImage?.url) {
+                      handleDownload(previewImage.url, previewImage.filename)
+                    }
+                  }}
+                >
+                  <DownloadIcon className="size-4" />
+                  <span className="sr-only">Download</span>
+                </Button>
+                <DialogClose asChild>
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    className="rounded-full bg-background/80 backdrop-blur-sm hover:bg-background shadow-lg"
+                  >
+                    <XIcon className="size-4" />
+                    <span className="sr-only">Close</span>
+                  </Button>
+                </DialogClose>
+              </div>
+
+              {/* Image */}
+              {previewImage && (
+                <img
+                  src={previewImage.url}
+                  alt={previewImage.filename || 'Preview'}
+                  className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg pointer-events-auto"
+                />
+              )}
+            </div>
+          </DialogPortal>
+        </Dialog>
+      </>
     )
   },
   (prevProps, nextProps) => {
