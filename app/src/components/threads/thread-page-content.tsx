@@ -40,6 +40,9 @@ import {
   SESSION_STORAGE_PREFIX,
   MESSAGE_ROLE,
 } from '@/constants'
+import { ApiError } from '@/lib/api-client'
+import { useNavigate } from '@tanstack/react-router'
+import { toast } from '@/components/ui/sonner'
 
 interface ThreadPageContentProps {
   conversationId?: string
@@ -61,6 +64,15 @@ export function ThreadPageContent({
   )
   const enableThinking = useCapabilities((state) => state.reasoningEnabled)
   const [conversationTitle, setConversationTitle] = useState<string>('')
+  const navigate = useNavigate()
+  const hasRedirectedRef = useRef(false)
+
+  const handleConversationNotFound = useCallback(() => {
+    if (hasRedirectedRef.current) return
+    hasRedirectedRef.current = true
+    toast.error('Conversation not found.')
+    navigate({ to: '/' })
+  }, [navigate])
 
   const provider = useMemo(
     () => janProvider(conversationId, deepResearchEnabled, isPrivateChat, enableThinking),
@@ -370,6 +382,10 @@ export function ThreadPageContent({
           }
         })
         .catch((error) => {
+          if (error instanceof ApiError && error.status === 404) {
+            handleConversationNotFound()
+            return
+          }
           console.error('Failed to load conversation:', error)
         })
     }
@@ -453,6 +469,10 @@ export function ThreadPageContent({
           if (!initialMessageSentRef.current) setMessages(uiMessages)
         })
         .catch((error) => {
+          if (error instanceof ApiError && error.status === 404) {
+            handleConversationNotFound()
+            return
+          }
           console.error('Failed to load conversation items:', error)
         })
         .finally(() => {
