@@ -50,25 +50,45 @@ export const useCapabilities = create<CapabilitiesState>()(
       toggleSearch: () =>
         set((state) => {
           const newValue = !state.searchEnabled
-          updatePreferencesInBackground({ enable_search: newValue })
+          updatePreferencesInBackground({
+            enable_search: newValue,
+            enable_image_generation: newValue
+              ? false
+              : state.imageGenerationEnabled,
+          })
           return { searchEnabled: newValue }
         }),
       toggleDeepResearch: () =>
         set((state) => {
           const newValue = !state.deepResearchEnabled
-          updatePreferencesInBackground({ enable_deep_research: newValue })
+          updatePreferencesInBackground({
+            enable_deep_research: newValue,
+            enable_image_generation: newValue
+              ? false
+              : state.imageGenerationEnabled,
+          })
           return { deepResearchEnabled: newValue }
         }),
       toggleBrowser: () =>
         set((state) => {
           const newValue = !state.browserEnabled
-          updatePreferencesInBackground({ enable_browser: newValue })
+          updatePreferencesInBackground({
+            enable_browser: newValue,
+            enable_image_generation: newValue
+              ? false
+              : state.imageGenerationEnabled,
+          })
           return { browserEnabled: newValue }
         }),
       toggleReasoning: () =>
         set((state) => {
           const newValue = !state.reasoningEnabled
-          updatePreferencesInBackground({ enable_thinking: newValue })
+          updatePreferencesInBackground({
+            enable_thinking: newValue,
+            enable_image_generation: newValue
+              ? false
+              : state.imageGenerationEnabled,
+          })
           return { reasoningEnabled: newValue }
         }),
       toggleImageGeneration: () =>
@@ -115,7 +135,9 @@ async function updatePreferencesInBackground(
       const preferencesToUpdate = { ...pendingPreferences }
       pendingPreferences = {} // Reset pending preferences
 
-      await useProfile.getState().updatePreferences({ preferences: preferencesToUpdate })
+      await useProfile
+        .getState()
+        .updatePreferences({ preferences: preferencesToUpdate })
     } catch (error) {
       console.error('Failed to update preferences:', error)
     } finally {

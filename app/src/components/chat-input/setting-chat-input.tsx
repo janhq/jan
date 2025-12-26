@@ -240,7 +240,12 @@ export const SettingChatInput = ({
                       <span>Create Image</span>
                     </div>
                     <Switch
-                      checked={imageGenerationEnabled}
+                      checked={
+                        imageGenerationEnabled &&
+                        !deepResearchEnabled &&
+                        !browserEnabled &&
+                        !searchEnabled
+                      }
                       onCheckedChange={toggleImageGeneration}
                       disabled={!isSupportImageGeneration || disablePreferences}
                     />
