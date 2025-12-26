@@ -16,6 +16,7 @@ import { useModels } from '@/stores/models-store'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useConversations } from '@/stores/conversation-store'
 import { mcpService } from '@/services/mcp-service'
+import { imageGenerationService } from '@/services/image-generation-service'
 import { useCapabilities } from '@/stores/capabilities-store'
 import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIDataTypes, UIMessage, UITools } from 'ai'
@@ -54,16 +55,26 @@ export function ThreadPageContent({
   const models = useModels((state) => state.models)
   const setSelectedModel = useModels((state) => state.setSelectedModel)
   const getConversation = useConversations((state) => state.getConversation)
+  const [generatingImage, setGeneratingImage] = useState<boolean>(false)
   const initialMessageSentRef = useRef(false)
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
   const deepResearchEnabled = useCapabilities(
     (state) => state.deepResearchEnabled
   )
   const enableThinking = useCapabilities((state) => state.reasoningEnabled)
+  const imageGenerationEnabled = useCapabilities(
+    (state) => state.imageGenerationEnabled
+  )
   const [conversationTitle, setConversationTitle] = useState<string>('')
 
   const provider = useMemo(
-    () => janProvider(conversationId, deepResearchEnabled, isPrivateChat, enableThinking),
+    () =>
+      janProvider(
+        conversationId,
+        deepResearchEnabled,
+        isPrivateChat,
+        enableThinking
+      ),
     [conversationId, deepResearchEnabled, isPrivateChat, enableThinking]
   )
 
@@ -134,7 +145,9 @@ export function ThreadPageContent({
         !hadToolCalls &&
         !isAbort &&
         message?.parts.some((e) => e.type === CONTENT_TYPE.REASONING) &&
-        !message?.parts.some((e) => e.type === CONTENT_TYPE.TEXT && e.text.length > 0)
+        !message?.parts.some(
+          (e) => e.type === CONTENT_TYPE.TEXT && e.text.length > 0
+        )
       // After finishing a message, check if we need to resubmit for tool calls
       Promise.all(
         sessionData.tools.map(async (toolCall: any) => {
@@ -234,7 +247,15 @@ export function ThreadPageContent({
           .catch(console.error)
       }
     },
-    [conversationId, regenerateMessage, getCurrentMessages, setMessages, regenerate, getUIMessages, sessionData.idMap]
+    [
+      conversationId,
+      regenerateMessage,
+      getCurrentMessages,
+      setMessages,
+      regenerate,
+      getUIMessages,
+      sessionData.idMap,
+    ]
   )
 
   const handleRegenerateUserMessage = useCallback(
@@ -256,14 +277,19 @@ export function ThreadPageContent({
       }
 
       // Case 3: Temp ID with no mapping - try previous assistant message
-      const assistantIndex = findPrecedingAssistantMessageIndex(currentMessages, messageIndex)
+      const assistantIndex = findPrecedingAssistantMessageIndex(
+        currentMessages,
+        messageIndex
+      )
       if (assistantIndex !== -1) {
         const assistantId = currentMessages[assistantIndex].id
         const assistantRealId = resolveMessageId(assistantId, sessionData.idMap)
-        const assistantHasBackendId = assistantRealId !== assistantId || assistantId.startsWith('msg_')
+        const assistantHasBackendId =
+          assistantRealId !== assistantId || assistantId.startsWith('msg_')
 
         if (assistantHasBackendId) {
-          const assistantBackendId = assistantRealId !== assistantId ? assistantRealId : assistantId
+          const assistantBackendId =
+            assistantRealId !== assistantId ? assistantRealId : assistantId
           await executeRegenerate(assistantBackendId, messageIndex)
           return
         }
@@ -280,14 +306,23 @@ export function ThreadPageContent({
 
       // Case 5: Not first message but no backend IDs - abort (user might need to reload)
     },
-    [getCurrentMessages, sessionData.idMap, executeRegenerate, setMessages, regenerate]
+    [
+      getCurrentMessages,
+      sessionData.idMap,
+      executeRegenerate,
+      setMessages,
+      regenerate,
+    ]
   )
 
   const handleRegenerateAssistantMessage = useCallback(
     async (messageId: string, messageIndex: number) => {
       const currentMessages = getCurrentMessages()
       const realId = resolveMessageId(messageId, sessionData.idMap)
-      const userIndex = findPrecedingUserMessageIndex(currentMessages, messageIndex)
+      const userIndex = findPrecedingUserMessageIndex(
+        currentMessages,
+        messageIndex
+      )
 
       if (userIndex === -1) {
         // No user message found -> cant regenerate -> abort
@@ -305,7 +340,9 @@ export function ThreadPageContent({
       if (!conversationId) return
       try {
         const currentMessages = getCurrentMessages()
-        const messageIndex = currentMessages.findIndex((m) => m.id === messageId)
+        const messageIndex = currentMessages.findIndex(
+          (m) => m.id === messageId
+        )
         if (messageIndex === -1) return
 
         const message = currentMessages[messageIndex]
@@ -319,17 +356,90 @@ export function ThreadPageContent({
         console.error('Failed to regenerate:', error)
       }
     },
-    [conversationId, getCurrentMessages, handleRegenerateUserMessage, handleRegenerateAssistantMessage]
+    [
+      conversationId,
+      getCurrentMessages,
+      handleRegenerateUserMessage,
+      handleRegenerateAssistantMessage,
+    ]
   )
 
+  const generateImage = async (message: PromptInputMessage) => {
+    setGeneratingImage(true)
+    const prompt = message.text || ''
+
+    // Add user message to UI immediately
+    const tempUserId = `temp-user-${Date.now()}`
+    const userMessage: UIMessage = {
+      id: tempUserId,
+      role: MESSAGE_ROLE.USER,
+      parts: [{ type: CONTENT_TYPE.TEXT, text: prompt }],
+    }
+    setMessages([...getCurrentMessages(), userMessage])
+
+    try {
+      // Create user item in conversation
+
+      // Generate image
+      const imageResponse = await imageGenerationService.generateImage({
+        prompt,
+        n: 1,
+        size: '1024x1024',
+        response_format: 'url',
+        conversation_id: conversationId,
+        store: true,
+      })
+
+      // Create assistant message with image
+      const imageUrl = imageResponse.data[0]?.url
+      if (imageUrl) {
+        const tempAssistantId = `temp-assistant-${Date.now()}`
+        const assistantMessage: UIMessage = {
+          id: tempAssistantId,
+          role: MESSAGE_ROLE.ASSISTANT,
+          parts: [
+            {
+              type: CONTENT_TYPE.FILE,
+              url: imageUrl,
+              mediaType: 'image/png',
+            },
+          ],
+        }
+        setMessages([...getCurrentMessages(), assistantMessage])
+
+        // Move conversation to top
+        if (!isPrivateChat && conversationId) {
+          moveConversationToTop(conversationId)
+        }
+      }
+    } catch (error) {
+      console.error('Image generation failed:', error)
+      // TODO: Show error message to user
+    } finally {
+      setGeneratingImage(false)
+    }
+  }
+
   const handleSubmit = useCallback(
-    (message?: PromptInputMessage) => {
+    async (message?: PromptInputMessage) => {
       // Get the current session to check its status directly
       const currentSession = useChatSessions.getState().sessions[chatSessionId]
       const currentStatus = currentSession?.status ?? status
 
-      if (message && currentStatus !== CHAT_STATUS.STREAMING && currentStatus !== CHAT_STATUS.SUBMITTED) {
+      if (
+        message &&
+        currentStatus !== CHAT_STATUS.STREAMING &&
+        currentStatus !== CHAT_STATUS.SUBMITTED
+      ) {
         sessionData.tools = []
+
+        // Handle image generation mode
+        if (imageGenerationEnabled && conversationId) {
+          await generateImage(message)
+          return
+        }
+
+        // Normal message flow
         sendMessage({
           text: message.text || 'Sent with attachments',
           files: message.files,
@@ -338,7 +448,10 @@ export function ThreadPageContent({
         if (conversationId && !isPrivateChat) {
           moveConversationToTop(conversationId)
         }
-      } else if (currentStatus === CHAT_STATUS.STREAMING || currentStatus === CHAT_STATUS.SUBMITTED) {
+      } else if (
+        currentStatus === CHAT_STATUS.STREAMING ||
+        currentStatus === CHAT_STATUS.SUBMITTED
+      ) {
         stop()
       } else {
         // Stop pending tool calls when user clicks stop (not streaming but tools are running)
@@ -349,7 +462,19 @@ export function ThreadPageContent({
         }
       }
     },
-    [chatSessionId, sendMessage, sessionData, status, stop, conversationId, isPrivateChat, moveConversationToTop]
+    [
+      chatSessionId,
+      sendMessage,
+      sessionData,
+      status,
+      stop,
+      conversationId,
+      isPrivateChat,
+      moveConversationToTop,
+      imageGenerationEnabled,
+      setMessages,
+      getCurrentMessages,
+    ]
   )
 
   // Load conversation metadata (only for persistent conversations)
@@ -406,6 +531,12 @@ export function ThreadPageContent({
           sessionStorage.removeItem(initialItemsKey)
         }
 
+        if(imageGenerationEnabled && conversationId) {
+          // Handle image generation mode
+          generateImage(message)
+          return
+        }
+
         // Send the message
         sendMessage({
           text: message.text,
@@ -419,7 +550,14 @@ export function ThreadPageContent({
         console.error('Failed to parse initial message:', error)
       }
     }
-  }, [conversationId, isPrivateChat, sendMessage, sessionData, setMessages, moveConversationToTop])
+  }, [
+    conversationId,
+    isPrivateChat,
+    sendMessage,
+    sessionData,
+    setMessages,
+    moveConversationToTop,
+  ])
 
   // Fetch messages for old conversations (only for persistent conversations)
   useEffect(() => {
@@ -494,12 +632,16 @@ export function ThreadPageContent({
                     message={message}
                     isFirstMessage={messageIndex === 0}
                     isLastMessage={messageIndex === messages.length - 1}
-                    status={status}
+                    status={generatingImage ? CHAT_STATUS.STREAMING : status}
                     reasoningContainerRef={reasoningContainerRef}
                     onRegenerate={conversationId ? handleRegenerate : undefined}
                   />
                 ))}
-                {status === CHAT_STATUS.SUBMITTED && <Loader />}
+                {(generatingImage
+                  ? CHAT_STATUS.STREAMING
+                  : status === CHAT_STATUS.SUBMITTED) && (
+                  <Loader className="animate-spin" />
+                )}
               </ConversationContent>
               <ConversationScrollButton />
             </Conversation>
@@ -509,7 +651,13 @@ export function ThreadPageContent({
           <div className="px-4 py-4 max-w-3xl mx-auto w-full">
             <ChatInput
               submit={handleSubmit}
-              status={sessionData.tools.length > 0 ? CHAT_STATUS.STREAMING : status}
+              status={
+                sessionData.tools.length > 0
+                  ? CHAT_STATUS.STREAMING
+                  : generatingImage
+                    ? CHAT_STATUS.STREAMING
+                    : status
+              }
               conversationId={conversationId}
             />
           </div>

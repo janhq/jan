@@ -7,10 +7,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
-import {
-  isJanMediaUrl,
-  resolveJanMediaUrl,
-} from '@/services/media-upload-service'
+import { useResolvedMediaUrl } from '@/hooks/use-resolved-media-url'
 import type { ToolUIPart } from 'ai'
 import {
   CheckCircleIcon,
@@ -130,28 +127,21 @@ type ToolImageProps = {
 }
 
 const ToolImage = ({ data, index }: ToolImageProps) => {
-  const [displayUrl, setDisplayUrl] = useState<string | undefined>(undefined)
-  const [isLoading, setIsLoading] = useState(false)
+  // Prepare the URL - convert base64 to data URL if needed
+  const [preparedUrl, setPreparedUrl] = useState<string | undefined>(undefined)
 
   useEffect(() => {
-    // Check if data is a jan media URL or base64
-    if (isJanMediaUrl(data)) {
-      setIsLoading(true)
-      resolveJanMediaUrl(data)
-        .then(setDisplayUrl)
-        .catch((err) => {
-          console.error('Failed to resolve jan media URL:', err)
-          setDisplayUrl(undefined)
-        })
-        .finally(() => setIsLoading(false))
-    } else if (data.startsWith('data:image')) {
-      // Already a data URL
-      setDisplayUrl(data)
+    if (data.startsWith('data:image') || data.startsWith('http')) {
+      // Already a data URL or HTTP URL
+      setPreparedUrl(data)
     } else {
       // Assume it's base64 encoded
-      setDisplayUrl(`data:image/png;base64,${data}`)
+      setPreparedUrl(`data:image/png;base64,${data}`)
     }
   }, [data])
+
+  // Resolve Jan media URL to displayable URL using shared hook
+  const { displayUrl, isLoading } = useResolvedMediaUrl(preparedUrl)
 
   if (isLoading) {
     return (
