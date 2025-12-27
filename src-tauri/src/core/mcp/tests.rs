@@ -159,18 +159,14 @@ fn test_add_server_config_existing_servers() {
 fn test_add_server_config_missing_config_file() {
     let app = mock_app();
     let app_path = get_jan_data_folder_path(app.handle().clone());
+    let config_path = app_path.join("mcp_config_test_auto_create.json");
 
-    // Use unique test file name to avoid conflicts
-    let config_path = app_path.join("mcp_config_test_missing.json");
-
-    // Ensure the directory exists
+    // Ensure clean state
     if let Some(parent) = config_path.parent() {
         std::fs::create_dir_all(parent).ok();
     }
-
-    // Absolutely ensure the file doesn't exist before test
     if config_path.exists() {
-        std::fs::remove_file(&config_path).expect("Failed to remove existing test file");
+        std::fs::remove_file(&config_path).ok();
     }
 
     let server_value = serde_json::json!({
@@ -179,32 +175,28 @@ fn test_add_server_config_missing_config_file() {
         "active": false
     });
 
-    // Test with custom path to avoid conflicts
     let result = add_server_config_with_path(
         app.handle().clone(),
         "test".to_string(),
         server_value.clone(),
-        Some("mcp_config_test_missing.json"),
+        Some("mcp_config_test_auto_create.json"),
     );
 
-    // Should succeed with auto-creation
-    assert!(result.is_ok(), "Expected success with auto-created config file: {result:?}");
+    assert!(result.is_ok(), "failed to add server config: {result:?}");
+    assert!(config_path.exists());
 
-    // Verify the config file was created
-    assert!(config_path.exists(), "Config file should have been created");
-
-    // Verify the server was added correctly
+    // Verify content
     let config_content = std::fs::read_to_string(&config_path)
-        .expect("Failed to read config file");
+        .expect("failed to read config file");
     let config: serde_json::Value = serde_json::from_str(&config_content)
-        .expect("Failed to parse config");
+        .expect("failed to parse config");
 
     assert!(config["mcpServers"]["test"].is_object());
     assert_eq!(config["mcpServers"]["test"]["command"], "test");
     assert_eq!(config["mcpServers"]["test"]["active"], false);
 
-    // Clean up
-    std::fs::remove_file(&config_path).expect("Failed to remove config file");
+    // Cleanup
+    std::fs::remove_file(&config_path).ok();
 }
 
 #[cfg(not(target_os = "windows"))]
