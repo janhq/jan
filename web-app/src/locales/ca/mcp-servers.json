@@ -1,0 +1,65 @@
+{
+  "editServer": "Edita el servidor MCP",
+  "addServer": "Afegeix un servidor MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "S’està comprovant l’estat de l’extensió..."
+    },
+    "notInstalled": {
+      "title": "Jan completa tasques al teu navegador",
+      "description": "Instal·la l’extensió per donar accés al navegador a Jan",
+      "getExtension": "Instal·la l’extensió"
+    }
+  },
+  "serverName": "Nom del servidor",
+  "enterServerName": "Introdueix el nom del servidor",
+  "command": "Ordre",
+  "enterCommand": "Introdueix l’ordre (uvx o npx)",
+  "arguments": "Arguments",
+  "argument": "Argument {{index}}",
+  "envVars": "Variables d’entorn",
+  "key": "Clau",
+  "value": "Valor",
+  "save": "Desa",
+  "status": "Estat",
+  "connected": "Connectat",
+  "disconnected": "Desconnectat",
+  "deleteServer": {
+    "title": "Suprimeix el servidor MCP",
+    "description": "Segur que vols suprimir el servidor MCP {{serverName}}? Aquesta acció no es pot desfer.",
+    "delete": "Suprimeix",
+    "success": "El servidor MCP {{serverName}} s’ha suprimit correctament"
+  },
+  "editJson": {
+    "title": "Edita el JSON del servidor MCP: {{serverName}}",
+    "titleAll": "Edita el JSON de tots els servidors MCP",
+    "placeholder": "Introdueix la configuració JSON",
+    "errorParse": "No s’han pogut analitzar les dades inicials",
+    "errorPaste": "Format JSON no vàlid al contingut enganxat",
+    "errorFormat": "Format JSON no vàlid",
+    "errorServerName": "El nom del servidor és obligatori i no pot estar buit",
+    "errorMissingServerNameKey": "El JSON s’ha d’estructurar com {\"serverName\": {config}} - falta la clau del servidor",
+    "errorInvalidType": "Tipus \"{{type}}\" no vàlid per al servidor \"{{serverName}}\". El tipus ha de ser \"stdio\", \"http\" o \"sse\"",
+    "save": "Desa"
+  },
+  "checkParams": "Comprova els paràmetres segons el tutorial.",
+  "title": "Servidors MCP",
+  "experimental": "Experimental",
+  "editAllJson": "Edita el JSON de tots els servidors",
+  "findMore": "Troba més servidors MCP a",
+  "allowPermissions": "Permet tots els permisos de les eines MCP",
+  "allowPermissionsDesc": "Quan està activat, totes les crides a eines MCP s’aprovaran automàticament sense mostrar diàlegs de permís. Aquest ajust s’aplica a totes les converses, inclosos els xats nous.",
+  "noServers": "No s’han trobat servidors MCP",
+  "args": "Arguments",
+  "env": "Entorn",
+  "serverStatusActive": "El servidor {{serverKey}} s’ha activat correctament",
+  "serverStatusInactive": "El servidor {{serverKey}} s’ha desactivat correctament",
+  "runtimeSettings": {
+    "title": "Configuració del temps d’execució",
+    "description": "Configura com gestiona i reintenta Jan els servidors MCP.",
+    "toolCallTimeout": "Temps d’espera d’una trucada d’eina (segons)",
+    "toolCallTimeoutDesc": "Temps màxim d’espera d’una resposta d’una eina MCP abans de donar temps excedit."
+  },
+  "proactiveMode": "Mode proactiu d’ús del navegador",
+  "proactiveModeDesc": "Quan està activat, captura automàticament captures de pantalla del navegador per aportar context addicional a les tasques d’automatització. Requereix l’MCP Jan Browser amb visió i model d’ús d’eines."
+}
