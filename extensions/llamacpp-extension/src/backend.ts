@@ -22,7 +22,12 @@ export async function getLocalInstalledBackends(): Promise<
   { version: string; backend: string }[]
 > {
   const janDataFolderPath = await getJanDataFolderPath()
-  return await getLocalInstalledBackendsInternal(janDataFolderPath)
+  const backendDir = await joinPath([
+    janDataFolderPath,
+    'llamacpp',
+    'backends',
+  ])
+  return await getLocalInstalledBackendsInternal(backendDir)
 }
 /*
  * currently reads available backends in remote
