@@ -47,6 +47,9 @@ jobs:
       #   env:
       #     SECRETS: '${{ toJson(secrets) }}'
 
+      - name: Add headers
+        run: cp app/_headers app/dist/_headers
+
       - name: Install dependencies
         run: make config-yarn && yarn install && yarn build:core && make build-web-app-newui
         env:
