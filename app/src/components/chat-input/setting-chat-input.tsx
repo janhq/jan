@@ -15,7 +15,7 @@ import {
   ImageIcon,
   Leaf,
   LightbulbIcon,
-  MegaphoneIcon,
+  TelescopeIcon,
   SmileIcon,
   type LucideIcon,
 } from 'lucide-react'
@@ -212,7 +212,7 @@ export const SettingChatInput = ({
                 >
                   <div className="flex gap-2 items-center justify-between w-full">
                     <div className="flex gap-2 items-center w-full">
-                      <MegaphoneIcon />
+                      <TelescopeIcon />
                       <span>Deep Research</span>
                     </div>
                     <Switch

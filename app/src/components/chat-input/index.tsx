@@ -33,7 +33,7 @@ import {
   GlobeIcon,
   ImageIcon,
   LightbulbIcon,
-  MegaphoneIcon,
+  TelescopeIcon,
   Settings2,
   X,
 } from 'lucide-react'
@@ -53,7 +53,12 @@ import {
 } from '@/components/ui/tooltip'
 import { useBrowserConnection } from '@/stores/browser-connection-store'
 import { useProfile } from '@/stores/profile-store'
-import { CHAT_STATUS, CONNECTION_STATE, SESSION_STORAGE_KEY, SESSION_STORAGE_PREFIX } from '@/constants'
+import {
+  CHAT_STATUS,
+  CONNECTION_STATE,
+  SESSION_STORAGE_KEY,
+  SESSION_STORAGE_PREFIX,
+} from '@/constants'
 
 /**
  * Generates a meaningful title from message text.
@@ -235,7 +240,10 @@ const ChatInput = ({
 
   // Auto-disable browser capability when disconnected
   useEffect(() => {
-    if (browserConnectionState === CONNECTION_STATE.DISCONNECTED && browserEnabled) {
+    if (
+      browserConnectionState === CONNECTION_STATE.DISCONNECTED &&
+      browserEnabled
+    ) {
       setBrowserEnabled(false)
     }
   }, [browserConnectionState, browserEnabled, setBrowserEnabled])
@@ -263,7 +271,11 @@ const ChatInput = ({
     if (!isSupportImageGeneration && imageGenerationEnabled) {
       setImageGenerationEnabled(false)
     }
-  }, [isSupportImageGeneration, imageGenerationEnabled, setImageGenerationEnabled])
+  }, [
+    isSupportImageGeneration,
+    imageGenerationEnabled,
+    setImageGenerationEnabled,
+  ])
 
   const handleError = (err: {
     code: 'max_files' | 'max_file_size' | 'accept' | 'max_images'
@@ -349,7 +361,8 @@ const ChatInput = ({
         className={cn(
           'w-full relative rounded-3xl p-[1.5px]',
           !initialConversation &&
-            (status === CHAT_STATUS.STREAMING || status === CHAT_STATUS.SUBMITTED) &&
+            (status === CHAT_STATUS.STREAMING ||
+              status === CHAT_STATUS.SUBMITTED) &&
             'overflow-hidden outline-0'
         )}
       >
@@ -379,7 +392,10 @@ const ChatInput = ({
             <PromptInputBody>
               <PromptInputTextarea
                 ref={textareaRef}
-                disabled={status === CHAT_STATUS.STREAMING || status === CHAT_STATUS.SUBMITTED}
+                disabled={
+                  status === CHAT_STATUS.STREAMING ||
+                  status === CHAT_STATUS.SUBMITTED
+                }
               />
             </PromptInputBody>
             <PromptInputFooter>
@@ -470,18 +486,20 @@ const ChatInput = ({
                       <span className="text-primary">Think</span>
                     </PromptInputButton>
                   )}
-                {searchEnabled && !deepResearchEnabled && !imageGenerationEnabled && (
-                  <PromptInputButton
-                    variant="outline"
-                    className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
-                    disabled={status === CHAT_STATUS.STREAMING}
-                    onClick={toggleSearch}
-                  >
-                    <GlobeIcon className="text-primary size-4 group-hover:hidden" />
-                    <X className="text-primary size-4 hidden group-hover:block" />
-                    <span className="text-primary">Search</span>
-                  </PromptInputButton>
-                )}
+                {searchEnabled &&
+                  !deepResearchEnabled &&
+                  !imageGenerationEnabled && (
+                    <PromptInputButton
+                      variant="outline"
+                      className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                      disabled={status === CHAT_STATUS.STREAMING}
+                      onClick={toggleSearch}
+                    >
+                      <GlobeIcon className="text-primary size-4 group-hover:hidden" />
+                      <X className="text-primary size-4 hidden group-hover:block" />
+                      <span className="text-primary">Search</span>
+                    </PromptInputButton>
+                  )}
                 {deepResearchEnabled && !imageGenerationEnabled && (
                   <PromptInputButton
                     variant="outline"
@@ -489,63 +507,68 @@ const ChatInput = ({
                     disabled={status === CHAT_STATUS.STREAMING}
                     onClick={toggleDeepResearch}
                   >
-                    <MegaphoneIcon className="text-primary size-4 group-hover:hidden" />
+                    <TelescopeIcon className="text-primary size-4 group-hover:hidden" />
                     <X className="text-primary size-4 hidden group-hover:block" />
                     <span className="text-primary">Deep Research</span>
                   </PromptInputButton>
                 )}
-                {browserEnabled && shouldShowBrowserUI && !imageGenerationEnabled && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <PromptInputButton
-                        variant="outline"
-                        className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
-                        disabled={status === CHAT_STATUS.STREAMING}
-                        onClick={toggleBrowser}
-                      >
-                        <div className="size-4 flex items-center justify-center group-hover:hidden">
-                          {browserConnectionState === CONNECTION_STATE.ERROR && (
-                            <div className="size-3 bg-red-400 rounded-full" />
-                          )}
-                          {browserConnectionState === CONNECTION_STATE.CONNECTING && (
-                            <div className="size-3 animate-pulse bg-blue-400 rounded-full" />
-                          )}
-                          {browserConnectionState === CONNECTION_STATE.CONNECTED && (
-                            <div className="size-3 bg-green-400 rounded-full" />
-                          )}
-                        </div>
-                        <X className="text-primary size-4 hidden group-hover:block" />
-                        <span className="text-primary">Browse</span>
-                      </PromptInputButton>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {browserConnectionState === CONNECTION_STATE.ERROR && (
-                        <p>Connection error</p>
-                      )}
-                      {browserConnectionState === CONNECTION_STATE.CONNECTING && (
-                        <p>Connecting...</p>
-                      )}
-                      {browserConnectionState === CONNECTION_STATE.CONNECTED && (
-                        <p>Ready to use</p>
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-                {selectedProjectId && !isPrivateChat && !imageGenerationEnabled && (
-                  <PromptInputButton
-                    variant="outline"
-                    className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
-                    disabled={status === CHAT_STATUS.STREAMING}
-                    onClick={() => setSelectedProjectId(null)}
-                  >
-                    <FolderIcon className="text-primary size-4 group-hover:hidden" />
-                    <X className="text-primary size-4 hidden group-hover:block" />
-                    <span className="text-primary">
-                      {projects.find((p) => p.id === selectedProjectId)?.name ||
-                        'Project'}
-                    </span>
-                  </PromptInputButton>
-                )}
+                {browserEnabled &&
+                  shouldShowBrowserUI &&
+                  !imageGenerationEnabled && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <PromptInputButton
+                          variant="outline"
+                          className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                          disabled={status === CHAT_STATUS.STREAMING}
+                          onClick={toggleBrowser}
+                        >
+                          <div className="size-4 flex items-center justify-center group-hover:hidden">
+                            {browserConnectionState ===
+                              CONNECTION_STATE.ERROR && (
+                              <div className="size-3 bg-red-400 rounded-full" />
+                            )}
+                            {browserConnectionState ===
+                              CONNECTION_STATE.CONNECTING && (
+                              <div className="size-3 animate-pulse bg-blue-400 rounded-full" />
+                            )}
+                            {browserConnectionState ===
+                              CONNECTION_STATE.CONNECTED && (
+                              <div className="size-3 bg-green-400 rounded-full" />
+                            )}
+                          </div>
+                          <X className="text-primary size-4 hidden group-hover:block" />
+                          <span className="text-primary">Browse</span>
+                        </PromptInputButton>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {browserConnectionState === CONNECTION_STATE.ERROR && (
+                          <p>Connection error</p>
+                        )}
+                        {browserConnectionState ===
+                          CONNECTION_STATE.CONNECTING && <p>Connecting...</p>}
+                        {browserConnectionState ===
+                          CONNECTION_STATE.CONNECTED && <p>Ready to use</p>}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                {selectedProjectId &&
+                  !isPrivateChat &&
+                  !imageGenerationEnabled && (
+                    <PromptInputButton
+                      variant="outline"
+                      className="rounded-full group transition-all bg-primary/10 hover:bg-primary/10 border-0"
+                      disabled={status === CHAT_STATUS.STREAMING}
+                      onClick={() => setSelectedProjectId(null)}
+                    >
+                      <FolderIcon className="text-primary size-4 group-hover:hidden" />
+                      <X className="text-primary size-4 hidden group-hover:block" />
+                      <span className="text-primary">
+                        {projects.find((p) => p.id === selectedProjectId)
+                          ?.name || 'Project'}
+                      </span>
+                    </PromptInputButton>
+                  )}
                 {isSupportImageGeneration && imageGenerationEnabled && (
                   <PromptInputButton
                     variant="outline"
@@ -569,7 +592,8 @@ const ChatInput = ({
                   status={status}
                   className="rounded-full"
                   variant={
-                    status === CHAT_STATUS.STREAMING || status === CHAT_STATUS.SUBMITTED
+                    status === CHAT_STATUS.STREAMING ||
+                    status === CHAT_STATUS.SUBMITTED
                       ? 'destructive'
                       : 'default'
                   }
@@ -577,7 +601,8 @@ const ChatInput = ({
               </div>
             </PromptInputFooter>
           </PromptInput>
-          {(status === CHAT_STATUS.STREAMING || status === CHAT_STATUS.SUBMITTED) && (
+          {(status === CHAT_STATUS.STREAMING ||
+            status === CHAT_STATUS.SUBMITTED) && (
             <div className="absolute inset-0 ">
               <BorderAnimate rx="10%" ry="10%">
                 <div
