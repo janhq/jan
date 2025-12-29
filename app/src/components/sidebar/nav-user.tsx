@@ -13,7 +13,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from '@/components/ui/sidebar'
 import { useAuth } from '@/stores/auth-store'
 import { useRouter } from '@tanstack/react-router'
@@ -21,7 +20,6 @@ import { getInitialsAvatar } from '@/lib/utils'
 import { URL_PARAM, SETTINGS_SECTION } from '@/constants'
 
 export function NavUser() {
-  const { isMobile } = useSidebar()
   const user = useAuth((state) => state.user)
   const isGuest = useAuth((state) => state.isGuest)
   const logout = useAuth((state) => state.logout)
@@ -64,7 +62,7 @@ export function NavUser() {
           </DropDrawerTrigger>
           <DropDrawerContent
             className="md:w-56"
-            side={isMobile ? 'bottom' : 'right'}
+            side="top"
             align="end"
             sideOffset={4}
           >
@@ -80,7 +78,9 @@ export function NavUser() {
             </DropDrawerLabel>
             <DropDrawerSeparator />
 
-            <DropDrawerItem onClick={() => handleOpenSettings(SETTINGS_SECTION.GENERAL)}>
+            <DropDrawerItem
+              onClick={() => handleOpenSettings(SETTINGS_SECTION.GENERAL)}
+            >
               <div className="flex gap-2 items-center justify-center">
                 <SettingsIcon className="text-muted-foreground" />
                 Setting
