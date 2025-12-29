@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - prod-web
+    paths:
+    - "app/**"
+    - ".github/workflows/jan-server-web-newui-ci-prod.yml"
 
 jobs:
   build-and-deploy:
