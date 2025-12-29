@@ -50,9 +50,6 @@ jobs:
       #   env:
       #     SECRETS: '${{ toJson(secrets) }}'
 
-      - name: Add headers
-        run: cp app/_headers app/dist/_headers
-
       - name: Install dependencies
         run: make config-yarn && yarn install && yarn build:core && make build-web-app-newui
         env:
@@ -65,6 +62,9 @@ jobs:
           VITE_AUTH_CLIENT_ID: ${{ env.VITE_AUTH_CLIENT_ID }}
           VITE_OAUTH_REDIRECT_URI: ${{ env.VITE_OAUTH_REDIRECT_URI }}
           VITE_GA_ID: ${{ env.VITE_GA_ID }}
+      
+      - name: Add headers
+        run: cp app/_headers app/dist/_headers
 
       - name: Publish to Cloudflare Pages Production
         uses: cloudflare/pages-action@v1
