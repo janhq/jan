@@ -1,4 +1,4 @@
 /*
+  X-Frame-Options: SAMEORIGIN
   Permissions-Policy: interest-cohort=()
   Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://www.google-analytics.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.google-analytics.com https://*.googletagmanager.com; connect-src 'self' https://api.jan.ai https://auth.jan.ai https://*.google-analytics.com https://*.analytics.google.com; frame-src 'self' https://auth.jan.ai; frame-ancestors 'self' chrome-extension://mkciifcjehgnpaigoiaakdgabbpfppal;
