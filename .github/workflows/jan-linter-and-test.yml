@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - dev
     paths:
       - .github/workflows/jan-linter-and-test.yml
       - 'web/**'
@@ -20,7 +19,6 @@ on:
   pull_request:
     branches:
       - main
-      - dev
       - release/**
     paths:
       - .github/workflows/jan-linter-and-test.yml
