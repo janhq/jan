@@ -99,11 +99,6 @@ export function ModelSelector() {
             </span>
             <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
           </Button>
-          <img
-            src="/hat.png"
-            alt="Christmas tree"
-            className="size-9 object-contain absolute -top-3.5 -right-3 pointer-events-none select-none"
-          />
         </div>
       </DropDrawerTrigger>
       <DropDrawerContent align="start" className="p-2 md:w-70">
