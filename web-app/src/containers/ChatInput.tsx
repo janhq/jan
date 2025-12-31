@@ -88,8 +88,7 @@ type ChatInputProps = {
 const ChatInput = ({
   model,
   className,
-  initialMessage,
-  projectId,
+  initialMessage
 }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
