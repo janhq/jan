@@ -3,8 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { ExtensionManager } from '@/lib/extension'
 
-// Default browser extension ID from Chrome Web Store
-const DEFAULT_BROWSER_EXTENSION_ID = 'mkciifcjehgnpaigoiaakdgabbpfppal'
+declare const BROWSER_EXTENSION_ID: string
 
 type GeneralSettingState = {
   currentLanguage: Language
@@ -26,7 +25,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       spellCheckChatInput: true,
       tokenCounterCompact: true,
       huggingfaceToken: undefined,
-      browserExtensionId: DEFAULT_BROWSER_EXTENSION_ID,
+      browserExtensionId: BROWSER_EXTENSION_ID,
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setCurrentLanguage: (value) => set({ currentLanguage: value }),

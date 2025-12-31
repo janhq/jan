@@ -102,6 +102,27 @@ export type {
   AdvancedSettings,
 } from './shared/user-settings'
 
+// Re-export extension embedding utilities
+export {
+  isInIframe,
+  isEmbedded,
+  getExtensionIdFromUrl,
+  getExtensionIdFromStorage,
+  resolveExtensionId,
+  getExtensionEmbeddingInfo,
+  sendMessageToParent,
+  listenForParentMessages,
+  notifyParentReady,
+  requestExtensionIdFromParent,
+  buildEmbeddedUrl,
+} from './shared/extension-embedding'
+
+export type {
+  ExtensionEmbeddingInfo,
+  ExtensionMessageType,
+  ExtensionMessage,
+} from './shared/extension-embedding'
+
 // Extension registry for dynamic loading
 export const WEB_EXTENSIONS: WebExtensionRegistry = {
   'conversational-web': () => import('./conversational-web'),
