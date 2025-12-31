@@ -1,19 +1,19 @@
-import { ChevronsUpDown, LogOut, SettingsIcon } from 'lucide-react'
+import { ChevronsUpDown, LogOut, SettingsIcon, FlagIcon } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+
+declare const VITE_REPORT_ISSUE_URL: string
 import {
   DropDrawer,
   DropDrawerContent,
   DropDrawerItem,
   DropDrawerLabel,
-  DropDrawerSeparator,
   DropDrawerTrigger,
 } from '@/components/ui/dropdrawer'
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from '@/components/ui/sidebar'
 import { useAuth } from '@/stores/auth-store'
 import { useRouter } from '@tanstack/react-router'
@@ -21,7 +21,6 @@ import { getInitialsAvatar } from '@/lib/utils'
 import { URL_PARAM, SETTINGS_SECTION } from '@/constants'
 
 export function NavUser() {
-  const { isMobile } = useSidebar()
   const user = useAuth((state) => state.user)
   const isGuest = useAuth((state) => state.isGuest)
   const logout = useAuth((state) => state.logout)
@@ -64,7 +63,7 @@ export function NavUser() {
           </DropDrawerTrigger>
           <DropDrawerContent
             className="md:w-56"
-            side={isMobile ? 'bottom' : 'right'}
+            side="top"
             align="end"
             sideOffset={4}
           >
@@ -78,9 +77,9 @@ export function NavUser() {
                 </div>
               </div>
             </DropDrawerLabel>
-            <DropDrawerSeparator />
-
-            <DropDrawerItem onClick={() => handleOpenSettings(SETTINGS_SECTION.GENERAL)}>
+            <DropDrawerItem
+              onClick={() => handleOpenSettings(SETTINGS_SECTION.GENERAL)}
+            >
               <div className="flex gap-2 items-center justify-center">
                 <SettingsIcon className="text-muted-foreground" />
                 Setting
@@ -98,7 +97,17 @@ export function NavUser() {
                   Support
                 </div>
               </DropDrawerItem> */}
-            <DropDrawerSeparator />
+            <DropDrawerItem asChild>
+              <a
+                href={VITE_REPORT_ISSUE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex gap-2 items-center w-full"
+              >
+                <FlagIcon className="text-muted-foreground" />
+                Report Issue
+              </a>
+            </DropDrawerItem>
             <DropDrawerItem
               onClick={async () => {
                 await logout()

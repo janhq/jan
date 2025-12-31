@@ -28,9 +28,15 @@ export default defineConfig(({ mode }) => {
       VITE_OAUTH_REDIRECT_URI: JSON.stringify(
         env.VITE_OAUTH_REDIRECT_URI || 'http://localhost:3001/auth/callback'
       ),
+      VITE_REPORT_ISSUE_URL: JSON.stringify(env.VITE_REPORT_ISSUE_URL || '/'),
       BROWSER_SERVER_NAME: JSON.stringify('Jan Browser Extension'),
-      EXTENSION_ID: JSON.stringify(env.EXTENSION_ID || 'mkciifcjehgnpaigoiaakdgabbpfppal'),
-      CHROME_STORE_URL: JSON.stringify(env.CHROME_STORE_URL || 'https://chromewebstore.google.com/detail/jan-browser-mcp/mkciifcjehgnpaigoiaakdgabbpfppal'),
+      EXTENSION_ID: JSON.stringify(
+        env.EXTENSION_ID || 'mkciifcjehgnpaigoiaakdgabbpfppal'
+      ),
+      CHROME_STORE_URL: JSON.stringify(
+        env.CHROME_STORE_URL ||
+          'https://chromewebstore.google.com/detail/jan-browser-mcp/mkciifcjehgnpaigoiaakdgabbpfppal'
+      ),
     },
   }
 })
