@@ -47,4 +47,16 @@ export class DefaultRAGService implements RAGService {
       return []
     }
   }
+
+  async parseDocument(path: string, type?: string): Promise<string> {
+    try {
+      const ext = ExtensionManager.getInstance().get<RAGExtension>(ExtensionTypeEnum.RAG)
+      const parsed = await ext?.parseDocument?.(path, type)
+      return parsed ?? ''
+    } catch (e) {
+      console.debug('RAG parseDocument unavailable', e)
+    }
+
+    return ''
+  }
 }

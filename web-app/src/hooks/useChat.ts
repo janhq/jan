@@ -19,6 +19,7 @@ import {
   captureProactiveScreenshots,
 } from '@/lib/completion'
 import { CompletionMessagesBuilder } from '@/lib/messages'
+import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { renderInstructions } from '@/lib/instructionTemplate'
 import {
   ChatCompletionMessageToolCall,
@@ -41,10 +42,10 @@ import {
 import { useAssistant } from './useAssistant'
 import { useShallow } from 'zustand/shallow'
 import { TEMPORARY_CHAT_QUERY_ID, TEMPORARY_CHAT_ID } from '@/constants/chat'
-import { toast } from 'sonner'
 import { Attachment } from '@/types/attachment'
 import { MCPTool } from '@/types/completion'
 import { useMCPServers } from '@/hooks/useMCPServers'
+import { useAttachmentIngestionPrompt } from './useAttachmentIngestionPrompt'
 
 // Helper to create thread content with consistent structure
 const createThreadContent = (
@@ -75,6 +76,8 @@ const cancelFrame = (handle: number | undefined) => {
     clearTimeout(handle)
   }
 }
+
+const ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES = 512 * 1024
 
 // Helper to finalize and save a message
 const finalizeMessage = (
@@ -377,7 +380,31 @@ export const useChat = () => {
         .getActiveModels()
         .then((models) => setActiveModels(models || []))
     },
-    [updateLoadingModel, serviceHub]
+    [updateLoadingModel, serviceHub, setActiveModels]
+  )
+
+  const ensureModelLoaded = useCallback(
+    async (provider?: ProviderObject, modelId?: string | null) => {
+      if (!provider || !modelId) return false
+      try {
+        const active = await serviceHub.models().getActiveModels()
+        if (Array.isArray(active) && active.includes(modelId)) {
+          setActiveModels(active)
+          return true
+        }
+        updateLoadingModel(true)
+        await serviceHub.models().startModel(provider, modelId)
+        const refreshed = await serviceHub.models().getActiveModels()
+        setActiveModels(refreshed || [])
+        return refreshed?.includes(modelId) ?? false
+      } catch (err) {
+        console.warn('Failed to start model before attachment validation', err)
+        return false
+      } finally {
+        updateLoadingModel(false)
+      }
+    },
+    [serviceHub, setActiveModels, updateLoadingModel]
   )
 
   const increaseModelContextSize = useCallback(
@@ -475,124 +502,144 @@ export const useChat = () => {
       projectId?: string,
       updateAttachmentProcessing?: (
         fileName: string,
-        status: 'processing' | 'done' | 'error' | 'clear_docs' | 'clear_all'
+        status: 'processing' | 'done' | 'error' | 'clear_all',
+        updatedAttachment?: Partial<Attachment>
       ) => void,
       continueFromMessageId?: string
     ) => {
       const activeThread = await getCurrentThread(projectId)
       const selectedProvider = useModelProvider.getState().selectedProvider
+      let selectedModel = useModelProvider.getState().selectedModel
       let activeProvider = getProviderByName(selectedProvider)
 
       resetTokenSpeed()
       if (!activeThread || !activeProvider) return
 
-      // Separate images and documents
-      const fileAttachmentsFeatureEnabled =
-        PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
       const allAttachments = attachments ?? []
+      const parsePreference = useAttachments.getState().parseMode
+      const autoInlineContextRatio = useAttachments.getState().autoInlineContextRatio
+      const modelReady = await ensureModelLoaded(activeProvider, selectedModel?.id)
 
-      const images = allAttachments.filter((a) => a.type === 'image')
-      const documents = fileAttachmentsFeatureEnabled
-        ? allAttachments.filter((a) => a.type === 'document')
-        : []
+      const modelContextLength = (() => {
+        const ctx = selectedModel?.settings?.ctx_len?.controller_props?.value
+        if (typeof ctx === 'number') return ctx
+        if (typeof ctx === 'string') {
+          const parsed = parseInt(ctx, 10)
+          return Number.isFinite(parsed) ? parsed : undefined
+        }
+        return undefined
+      })()
 
-      // Process attachments BEFORE sending
-      const processedAttachments: Attachment[] = []
+      const rawContextThreshold =
+        typeof modelContextLength === 'number' && modelContextLength > 0
+          ? Math.floor(
+              modelContextLength *
+                (typeof autoInlineContextRatio === 'number'
+                  ? autoInlineContextRatio
+                  : 0.75)
+            )
+          : undefined
 
-      // 1) Images ingestion (placeholder/no-op for now)
-      // Track attachment ingestion; all must succeed before sending
+      const contextThreshold =
+        typeof rawContextThreshold === 'number' &&
+        Number.isFinite(rawContextThreshold) &&
+        rawContextThreshold > 0
+          ? rawContextThreshold
+          : undefined
 
-      if (images.length > 0) {
-        for (const img of images) {
-          try {
-            // Skip if already processed (ingested in ChatInput when thread existed)
-            if (img.processed && img.id) {
-              processedAttachments.push(img)
-              continue
-            }
+      const hasContextEstimate =
+        modelReady &&
+        typeof contextThreshold === 'number' &&
+        Number.isFinite(contextThreshold) &&
+        contextThreshold > 0
+      const docsNeedingPrompt = allAttachments.filter((doc) => {
+        if (doc.type !== 'document') return false
+        // Skip already processed/ingested documents to avoid repeated prompts
+        if (doc.processed || doc.injectionMode) return false
+        const preference = doc.parseMode ?? parsePreference
+        return preference === 'prompt' || (preference === 'auto' && !hasContextEstimate)
+      })
 
-            if (updateAttachmentProcessing) {
-              updateAttachmentProcessing(img.name, 'processing')
-            }
-            // Upload image, get id/URL
-            const res = await serviceHub
-              .uploads()
-              .ingestImage(activeThread.id, img)
-            processedAttachments.push({
-              ...img,
-              id: res.id,
-              processed: true,
-              processing: false,
-            })
-            if (updateAttachmentProcessing) {
-              updateAttachmentProcessing(img.name, 'done')
-            }
-          } catch (err) {
-            console.error(`Failed to ingest image ${img.name}:`, err)
-            if (updateAttachmentProcessing) {
-              updateAttachmentProcessing(img.name, 'error')
-            }
-            const desc = err instanceof Error ? err.message : String(err)
-            toast.error('Failed to ingest image attachment', {
-              description: desc,
-            })
-            return
+      // Map to store individual choices for each document
+      const docChoices = new Map<string, 'inline' | 'embeddings'>()
+
+      if (docsNeedingPrompt.length > 0) {
+        // Ask for each file individually
+        for (let i = 0; i < docsNeedingPrompt.length; i++) {
+          const doc = docsNeedingPrompt[i]
+          const choice = await useAttachmentIngestionPrompt
+            .getState()
+            .showPrompt(doc, ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES, i, docsNeedingPrompt.length)
+
+          if (!choice) return
+
+          // Store the choice for this specific document
+          if (doc.path) {
+            docChoices.set(doc.path, choice)
           }
         }
       }
 
-      if (documents.length > 0) {
+      const estimateTokens = async (text: string): Promise<number | undefined> => {
         try {
-          for (const doc of documents) {
-            // Skip if already processed (ingested in ChatInput when thread existed)
-            if (doc.processed && doc.id) {
-              processedAttachments.push(doc)
-              continue
-            }
-
-            // Update UI to show spinner on this file
-            if (updateAttachmentProcessing) {
-              updateAttachmentProcessing(doc.name, 'processing')
-            }
-
-            try {
-              const res = await serviceHub
-                .uploads()
-                .ingestFileAttachment(activeThread.id, doc)
-
-              // Add processed document with ID
-              processedAttachments.push({
-                ...doc,
-                id: res.id,
-                size: res.size ?? doc.size,
-                chunkCount: res.chunkCount ?? doc.chunkCount,
-                processing: false,
-                processed: true,
-              })
-
-              // Update UI to show done state
-              if (updateAttachmentProcessing) {
-                updateAttachmentProcessing(doc.name, 'done')
-              }
-            } catch (err) {
-              console.error(`Failed to ingest ${doc.name}:`, err)
-              if (updateAttachmentProcessing) {
-                updateAttachmentProcessing(doc.name, 'error')
-              }
-              throw err // Re-throw to handle in outer catch
-            }
+          if (!selectedModel?.id || !modelReady) return undefined
+          const tokenCount = await serviceHub
+            .models()
+            .getTokensCount(selectedModel.id, [
+              {
+                id: 'inline-attachment',
+                object: 'thread.message',
+                thread_id: activeThread.id,
+                role: 'user',
+                content: [
+                  {
+                    type: ContentType.Text,
+                    text: { value: text, annotations: [] },
+                  },
+                ],
+                status: MessageStatus.Ready,
+                created_at: Date.now(),
+                completed_at: Date.now(),
+              } as ThreadMessage,
+            ])
+          if (
+            typeof tokenCount !== 'number' ||
+            !Number.isFinite(tokenCount) ||
+            tokenCount <= 0
+          ) {
+            return undefined
           }
-          // Update thread since documents attached
-          useThreads.getState().updateThread(activeThread.id, {
-            metadata: { hasDocuments: true },
-          })
-        } catch (err) {
-          console.error('Failed to ingest documents:', err)
-          const desc = err instanceof Error ? err.message : String(err)
-          toast.error('Failed to index attachments', { description: desc })
-          // Don't continue with message send if ingestion failed
-          return
+          return tokenCount
+        } catch (e) {
+          console.debug('Failed to estimate tokens for attachment content', e)
+          return undefined
         }
+      }
+
+      let processedAttachments: Attachment[] = []
+      let hasEmbeddedDocuments = false
+      try {
+        const result = await processAttachmentsForSend({
+          attachments: allAttachments,
+          threadId: activeThread.id,
+          serviceHub,
+          selectedProvider,
+          contextThreshold,
+          estimateTokens,
+          parsePreference,
+          perFileChoices: docChoices.size > 0 ? docChoices : undefined,
+          updateAttachmentProcessing,
+        })
+        processedAttachments = result.processedAttachments
+        hasEmbeddedDocuments = result.hasEmbeddedDocuments
+      } catch {
+        return
+      }
+
+      if (hasEmbeddedDocuments) {
+        useThreads.getState().updateThread(activeThread.id, {
+          metadata: { hasDocuments: true },
+        })
       }
 
       // All attachments prepared successfully
@@ -612,9 +659,7 @@ export const useChat = () => {
       // All attachments (images + docs) ingested successfully.
       // Build the user content once; use it for both the outbound request
       // and persisting to the store so both are identical.
-      if (updateAttachmentProcessing) {
-        updateAttachmentProcessing('__CLEAR_ALL__', 'clear_all')
-      }
+      updateAttachmentProcessing?.('__CLEAR_ALL__', 'clear_all')
       const userContent = newUserThreadContent(
         activeThread.id,
         message,
@@ -625,7 +670,7 @@ export const useChat = () => {
       }
       updateThreadTimestamp(activeThread.id)
       usePrompt.getState().setPrompt('')
-      const selectedModel = useModelProvider.getState().selectedModel
+      selectedModel = useModelProvider.getState().selectedModel
 
       // If continuing, start with the previous content
       const accumulatedTextRef = {
@@ -634,11 +679,16 @@ export const useChat = () => {
       let currentAssistant: Assistant | undefined | null
 
       try {
-        if (selectedModel?.id) {
+        if (selectedModel?.id && !modelReady) {
           updateLoadingModel(true)
           await serviceHub.models().startModel(activeProvider, selectedModel.id)
           updateLoadingModel(false)
           // Refresh active models after starting
+          serviceHub
+            .models()
+            .getActiveModels()
+            .then((models) => setActiveModels(models || []))
+        } else if (selectedModel?.id) {
           serviceHub
             .models()
             .getActiveModels()
@@ -745,7 +795,7 @@ export const useChat = () => {
           }
         }
 
-        let assistantLoopSteps = 0
+        // let assistantLoopSteps = 0
 
         while (
           !isCompleted &&
@@ -758,7 +808,7 @@ export const useChat = () => {
           const modelConfig = activeProvider.models.find(
             (m) => m.id === selectedModel?.id
           )
-          assistantLoopSteps += 1
+          // assistantLoopSteps += 1
 
           const modelSettings = modelConfig?.settings
             ? Object.fromEntries(
@@ -947,12 +997,12 @@ export const useChat = () => {
           )
 
           isCompleted = !toolCalls.length
-          // Do not create agent loop if there is no need for it
-          // Check if assistant loop steps are within limits
-          if (assistantLoopSteps >= (currentAssistant?.tool_steps ?? 20)) {
-            // Stop the assistant tool call if it exceeds the maximum steps
-            availableTools = []
-          }
+          // // Do not create agent loop if there is no need for it
+          // // Check if assistant loop steps are within limits
+          // if (assistantLoopSteps >= (currentAssistant?.tool_steps ?? 20)) {
+          //   // Stop the assistant tool call if it exceeds the maximum steps
+          //   availableTools = []
+          // }
         }
 
         // IMPORTANT: Check if aborted AFTER the while loop exits
@@ -1090,6 +1140,7 @@ export const useChat = () => {
       updateTokenSpeed,
       showIncreaseContextSizeModal,
       increaseModelContextSize,
+      ensureModelLoaded,
       toggleOnContextShifting,
       setModelLoadError,
       serviceHub,

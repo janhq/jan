@@ -16,11 +16,10 @@ on:
         type: boolean
         description: 'If true, builds both .deb and .appimage but disables auto-updater'
         default: false
-
   pull_request:
     branches:
       - release/**
-      - dev
+      - main
     paths:
       - '.github/workflows/jan-tauri-build-nightly.yaml'
       - '.github/workflows/template-get-update-version.yml'
@@ -55,7 +54,7 @@ jobs:
           else
             if [ "${{ github.event_name }}" == "schedule" ]; then
               echo "::set-output name=public_provider::aws-s3"
-              echo "::set-output name=ref::refs/heads/dev"
+              echo "::set-output name=ref::refs/heads/main"
             elif [ "${{ github.event_name }}" == "push" ]; then
               echo "::set-output name=public_provider::aws-s3"
               echo "::set-output name=ref::${{ github.ref }}"

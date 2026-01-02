@@ -14,6 +14,32 @@ export interface TokenCountData {
   error?: string
 }
 
+type InlineFileContent = {
+  name?: string
+  content: string
+}
+
+const getInlineFileContents = (
+  metadata: ThreadMessage['metadata']
+): InlineFileContent[] => {
+  const inlineFileContents = (
+    metadata as { inline_file_contents?: unknown }
+  )?.inline_file_contents
+
+  if (!Array.isArray(inlineFileContents)) return []
+
+  return inlineFileContents.filter((file): file is InlineFileContent => {
+    if (!file || typeof file !== 'object') return false
+    const { content, name } = file as { content?: unknown; name?: unknown }
+
+    const hasContent = typeof content === 'string' && content.length > 0
+    const hasValidName =
+      typeof name === 'string' || typeof name === 'undefined'
+
+    return hasContent && hasValidName
+  })
+}
+
 export const useTokensCount = (
   messages: ThreadMessage[] = [],
   uploadedFiles?: Array<{
@@ -38,7 +64,10 @@ export const useTokensCount = (
   const { selectedModel, selectedProvider } = useModelProvider()
   const { prompt } = usePrompt()
 
-  // Create messages with current prompt for live calculation
+  // Create messages with current prompt for live calculation.
+  // This mirrors the payload sent to token counting by appending the draft
+  // user message (text plus any uploaded images) to the existing thread
+  // history so the model sees the full context that will be submitted.
   const messagesWithPrompt = useMemo(() => {
     const result = [...messages]
     if (prompt.trim() || (uploadedFiles && uploadedFiles.length > 0)) {
@@ -72,19 +101,34 @@ export const useTokensCount = (
         } as ThreadMessage)
       }
     }
-    return result.map((e) => ({
-      ...e,
-      content: e.content.map((c) => ({
-        ...c,
-        text:
-          c.type === 'text'
-            ? {
-                value: removeReasoningContent(c.text?.value ?? '.'),
-                annotations: [],
-              }
-            : c.text,
-      })),
-    }))
+    return result.map((e) => {
+      // Pull inline file contents stored on the message metadata
+      const inlineFileContents = getInlineFileContents(e.metadata)
+
+      const buildInlineText = (base: string) => {
+        if (!inlineFileContents.length) return base
+        const formatted = inlineFileContents
+          .map((f) => `File: ${f.name || 'attachment'}\n${f.content ?? ''}`)
+          .join('\n\n')
+        return base ? `${base}\n\n${formatted}` : formatted
+      }
+
+      return {
+        ...e,
+        content: e.content.map((c) => ({
+          ...c,
+          text:
+            c.type === 'text'
+              ? {
+                  value: removeReasoningContent(
+                    buildInlineText(c.text?.value ?? '.')
+                  ),
+                  annotations: [],
+                }
+              : c.text,
+        })),
+      }
+    })
   }, [messages, prompt, uploadedFiles])
 
   // Debounced calculation that includes current prompt

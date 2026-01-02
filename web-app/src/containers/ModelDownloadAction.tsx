@@ -10,6 +10,7 @@ import { CatalogModel } from '@/services/models/types'
 import { IconDownload } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo } from 'react'
+import { toast } from 'sonner'
 
 export const ModelDownloadAction = ({
   variant,
@@ -54,6 +55,101 @@ export const ModelDownloadAction = ({
     [navigate]
   )
 
+  const handleDownloadModel = useCallback(async () => {
+    const preflight = await serviceHub
+      .models()
+      .preflightArtifactAccess(variant.path, huggingfaceToken)
+
+    const repoPage = `https://huggingface.co/${model.model_name}`
+
+    if (!preflight.ok) {
+      if (preflight.reason === 'AUTH_REQUIRED') {
+        toast.error('Hugging Face token required', {
+          description:
+            'This model requires a Hugging Face access token. Add your token in Settings and retry.',
+          action: {
+            label: 'Open Settings',
+            onClick: () =>
+              navigate({
+                to: route.settings.general,
+                params: {},
+              }),
+          },
+        })
+        return
+      }
+
+      if (preflight.reason === 'LICENSE_NOT_ACCEPTED') {
+        toast.error('Accept model license on Hugging Face', {
+          description:
+            'You must accept the model’s license on its Hugging Face page before downloading.',
+          action: {
+            label: 'Open model page',
+            onClick: () => window.open(repoPage, '_blank'),
+          },
+        })
+        return
+      }
+
+      if (preflight.reason === 'RATE_LIMITED') {
+        toast.error('Rate limited by Hugging Face', {
+          description:
+            'You have been rate-limited. Adding a token can increase rate limits. Please try again later.',
+          action: {
+            label: 'Open Settings',
+            onClick: () =>
+              navigate({
+                to: route.settings.general,
+                params: {},
+              }),
+          },
+        })
+        return
+      }
+
+      if (preflight.reason === 'NOT_FOUND') {
+        toast.error('Model file not found', {
+          description:
+            'The requested model could not be found. Please verify the model URL',
+          action: {
+            label: 'Open model page',
+            onClick: () => window.open(repoPage, '_blank'),
+          },
+        })
+        return
+      }
+
+      toast.error('Unable to start download', {
+        description:
+          'Jan encountered an issue. Please check your connection and try again.',
+      })
+      return
+    }
+
+    addLocalDownloadingModel(variant.model_id)
+    serviceHub
+      .models()
+      .pullModelWithMetadata(
+        variant.model_id,
+        variant.path,
+        (
+          model.mmproj_models?.find(
+            (e) => e.model_id.toLowerCase() === 'mmproj-f16'
+          ) || model.mmproj_models?.[0]
+        )?.path,
+        huggingfaceToken
+      )
+  }, [
+    serviceHub,
+    variant.path,
+    variant.model_id,
+    huggingfaceToken,
+    model.model_name,
+    model.mmproj_models,
+    navigate,
+    addLocalDownloadingModel,
+  ])
+
   const isDownloading =
     localDownloadingModels.has(variant.model_id) ||
     downloadProcesses.some((e) => e.id === variant.model_id)
@@ -79,18 +175,17 @@ export const ModelDownloadAction = ({
 
   if (isDownloaded) {
     return (
-      <div
-        className="flex items-center justify-center rounded bg-main-view-fg/10"
+      <Button
+        variant="link"
+        size="sm"
+        className="p-0"
+        onClick={() => handleUseModel(variant.model_id)}
         title={t('hub:useModel')}
       >
-        <Button
-          variant="link"
-          size="sm"
-          onClick={() => handleUseModel(variant.model_id)}
-        >
-          {t('hub:use')}
-        </Button>
-      </div>
+        <div className="rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1">
+          {t('hub:newChat')}
+        </div>
+      </Button>
     )
   }
 
@@ -98,21 +193,7 @@ export const ModelDownloadAction = ({
     <div
       className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
       title={t('hub:downloadModel')}
-      onClick={() => {
-        addLocalDownloadingModel(variant.model_id)
-        serviceHub
-          .models()
-          .pullModelWithMetadata(
-            variant.model_id,
-            variant.path,
-            (
-              model.mmproj_models?.find(
-                (e) => e.model_id.toLowerCase() === 'mmproj-f16'
-              ) || model.mmproj_models?.[0]
-            )?.path,
-            huggingfaceToken
-          )
-      }}
+      onClick={handleDownloadModel}
     >
       <IconDownload size={16} className="text-main-view-fg/80" />
     </div>

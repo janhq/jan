@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - dev
     paths:
       - .github/workflows/jan-linter-and-test.yml
       - 'web/**'
@@ -20,7 +19,6 @@ on:
   pull_request:
     branches:
       - main
-      - dev
       - release/**
     paths:
       - .github/workflows/jan-linter-and-test.yml
@@ -183,6 +181,17 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
+      
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false 
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
 
       - name: Installing node
         uses: actions/setup-node@v3

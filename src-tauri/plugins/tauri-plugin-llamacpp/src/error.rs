@@ -19,6 +19,9 @@ pub enum ErrorCode {
     // --- Memory Errors ---
     OutOfMemory,
 
+    // --- Configuration Errors ---
+    InvalidArgument,
+
     // --- Internal Application Errors ---
     DeviceListParseFailed,
     IoError,
@@ -88,6 +91,9 @@ pub enum ServerError {
 
     #[error("Tauri error: {0}")]
     Tauri(#[from] tauri::Error),
+
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
 }
 
 // impl serialization for tauri
@@ -107,6 +113,11 @@ impl serde::Serialize for ServerError {
                 ErrorCode::InternalError,
                 "An internal application error occurred.".into(),
                 Some(e.to_string()),
+            ),
+            ServerError::InvalidArgument(msg) => LlamacppError::new(
+                ErrorCode::InvalidArgument,
+                "Invalid configuration argument provided.".into(),
+                Some(msg.clone()),
             ),
         };
         error_to_serialize.serialize(serializer)

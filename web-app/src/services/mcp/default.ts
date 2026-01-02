@@ -66,4 +66,8 @@ export class DefaultMCPService implements MCPService {
     console.log('deactivateMCPServer called with name:', name)
     // No-op - not implemented in default service
   }
+
+  async checkJanBrowserExtensionConnected(): Promise<boolean> {
+    return false
+  }
 }

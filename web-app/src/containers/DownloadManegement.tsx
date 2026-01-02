@@ -13,9 +13,12 @@ import { IconDownload, IconX } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useNavigate } from '@tanstack/react-router'
+import { route } from '@/constants/routes'
 
 export function DownloadManagement() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const { open: isLeftPanelOpen } = useLeftPanel()
   const [isPopoverOpen, setIsPopoverOpen] = useState(false)
   const serviceHub = useServiceHub()
@@ -159,6 +162,45 @@ export function DownloadManagement() {
       console.debug('onFileDownloadError', state)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
+
+      const anyState = state as unknown as { error?: string }
+      const err = anyState?.error || ''
+
+      if (err.includes('HTTP status 401')) {
+        toast.error('Hugging Face token required', {
+          id: 'download-failed',
+          description:
+            'This model requires a Hugging Face access token. Add your token in Settings and retry.',
+          action: {
+            label: 'Open Settings',
+            onClick: () => navigate({ to: route.settings.general }),
+          },
+        })
+        return
+      }
+
+      if (err.includes('HTTP status 403')) {
+        toast.error('Accept model license on Hugging Face', {
+          id: 'download-failed',
+          description:
+            'You must accept the model’s license on its Hugging Face page before downloading.',
+        })
+        return
+      }
+
+      if (err.includes('HTTP status 429')) {
+        toast.error('Rate limited by Hugging Face', {
+          id: 'download-failed',
+          description:
+            'You have been rate-limited. Adding a token can increase rate limits. Please try again later.',
+          action: {
+            label: 'Open Settings',
+            onClick: () => navigate({ to: route.settings.general }),
+          },
+        })
+        return
+      }
+
       toast.error(t('common:toast.downloadFailed.title'), {
         id: 'download-failed',
         description: t('common:toast.downloadFailed.description', {
@@ -166,7 +208,7 @@ export function DownloadManagement() {
         }),
       })
     },
-    [removeDownload, removeLocalDownloadingModel, t]
+    [removeDownload, removeLocalDownloadingModel, t, navigate]
   )
 
   const onModelValidationStarted = useCallback(

@@ -258,11 +258,11 @@ const LeftPanel = () => {
           isResizableContext && 'h-full w-full',
           // Small screen context: fixed positioning and styling
           isSmallScreen &&
-            'fixed h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))] bg-main-view z-50 md:border border-left-panel-fg/10 px-1 w-full md:w-48',
+          'fixed h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))] bg-main-view z-50 md:border border-left-panel-fg/10 px-1 w-full md:w-48',
           // Default context: original styling
           !isResizableContext &&
-            !isSmallScreen &&
-            'w-48 shrink-0 rounded-lg m-1.5 mr-0',
+          !isSmallScreen &&
+          'w-48 shrink-0 rounded-lg m-1.5 mr-0',
           // Visibility controls
           open
             ? 'opacity-100 visibility-visible'
@@ -428,6 +428,9 @@ const LeftPanel = () => {
                                 'rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/project-list transition-all cursor-pointer',
                                 isProjectActive && 'bg-left-panel-fg/10'
                               )}
+                              onContextMenu={(e) => {
+                                e.preventDefault()
+                              }}
                             >
                               <Link
                                 to="/project/$projectId"
@@ -601,7 +604,8 @@ const LeftPanel = () => {
                   </div>
                 )}
 
-                {Object.keys(threads).length === 0 && !searchTerm && (
+                {/* Show "No threads yet" when there are no threads at all OR when all threads are in projects */}
+                {(Object.keys(threads).length === 0 || (Object.keys(threads).length > 0 && unFavoritedThreads.length === 0 && favoritedThreads.length === 0)) && !searchTerm && (
                   <>
                     <div className="px-1 mt-2">
                       <div className="flex items-center gap-1 text-left-panel-fg/80">

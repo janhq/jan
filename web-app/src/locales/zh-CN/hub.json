@@ -1,7 +1,7 @@
 {
   "sortNewest": "最新",
   "sortMostDownloaded": "最多下载",
-  "use": "使用",
+  "newChat": "新对话",
   "download": "下载",
   "downloaded": "已下载",
   "loadingModels": "正在加载模型...",
@@ -13,19 +13,5 @@
   "useModel": "使用此模型",
   "downloadModel": "下载模型",
   "tools": "工具",
-  "searchPlaceholder": "在 Hugging Face 上搜索模型...",
-  "joyride": {
-    "recommendedModelTitle": "推荐模型",
-    "recommendedModelContent": "在一个地方浏览和下载来自不同提供商的强大 AI 模型。我们建议从 Jan-Nano 开始 - 这是一个针对函数调用、工具集成和研究功能进行优化的模型。它非常适合构建交互式 AI 代理。",
-    "downloadInProgressTitle": "下载进行中",
-    "downloadInProgressContent": "您的模型正在下载中。在此处跟踪进度 - 完成后即可使用。",
-    "downloadModelTitle": "下载模型",
-    "downloadModelContent": "单击“下载”按钮开始下载模型。",
-    "back": "返回",
-    "close": "关闭",
-    "lastWithDownload": "下载",
-    "last": "完成",
-    "next": "下一步",
-    "skip": "跳过"
-  }
+  "searchPlaceholder": "在 Hugging Face 上搜索模型..."
 }

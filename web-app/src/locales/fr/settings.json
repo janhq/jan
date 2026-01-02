@@ -267,6 +267,14 @@
     "featureTitle": "Fonctionnalité",
     "enable": "Activer les pièces jointes",
     "enableDesc": "Autorisez le téléchargement et l'indexation de documents pour la récupération.",
+    "parseMode": "Préférence d'analyse",
+    "parseModeDesc": "Choisissez comment les documents analysés sont ajoutés aux conversations.",
+    "parseModeAuto": "Auto",
+    "parseModeInline": "Inclure dans le chat",
+    "parseModeEmbeddings": "Ingestion en embeddings",
+    "parseModePrompt": "Demander à chaque fois",
+    "autoInlineThreshold": "Seuil d'inclusion auto",
+    "autoInlineThresholdDesc": "Part du contexte du modèle utilisée comme limite pour inclure les fichiers analysés sur les modèles locaux.",
     "limitsTitle": "Limites",
     "maxFile": "Taille de fichier max (Mo)",
     "maxFileDesc": "Taille maximale par fichier. Appliquée lors du téléchargement et du traitement.",
@@ -281,10 +289,10 @@
     "searchModeAnn": "ANN (sqlite-vec)",
     "searchModeLinear": "Linéaire",
     "chunkingTitle": "Découpage",
-    "chunkSize": "Taille du bloc (jetons)",
-    "chunkSizeDesc": "Nombre maximum approximatif de jetons par bloc pour les embeddings.",
-    "chunkOverlap": "Chevauchement (jetons)",
-    "chunkOverlapDesc": "Chevauchement de jetons entre les blocs consécutifs."
+    "chunkSize": "Taille du bloc (caractères)",
+    "chunkSizeDesc": "Nombre maximum approximatif de caractères par bloc pour les embeddings.",
+    "chunkOverlap": "Chevauchement (caractères)",
+    "chunkOverlapDesc": "Chevauchement de caractères entre les blocs consécutifs."
   },
   "dialogs": {
     "changeDataFolder": {

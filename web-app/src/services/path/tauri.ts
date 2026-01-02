@@ -40,8 +40,8 @@ export class TauriPathService extends DefaultPathService {
       return await basename(path)
     } catch (error) {
       console.error('Error getting basename in Tauri:', error)
-      const lastSlash = path.lastIndexOf('/')
-      return lastSlash >= 0 ? path.substring(lastSlash + 1) : path
+      const normalizedPath = path.replace(/\\/g, '/')
+      return normalizedPath.split('/').pop() || ''
     }
   }
 

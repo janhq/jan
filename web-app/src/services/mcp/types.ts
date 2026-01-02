@@ -34,4 +34,5 @@ export interface MCPService {
   // MCP Server lifecycle management
   activateMCPServer(name: string, config: MCPServerConfig): Promise<void>
   deactivateMCPServer(name: string): Promise<void>
+  checkJanBrowserExtensionConnected(): Promise<boolean>
 }

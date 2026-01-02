@@ -1,20 +1,37 @@
 use crate::RagError;
+use std::borrow::Cow;
 use std::fs;
-use std::io::{Read, Cursor};
-use zip::read::ZipArchive;
+use std::io::{Cursor, Read};
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use calamine::{open_workbook_auto, DataType, Reader as _};
+use chardetng::EncodingDetector;
+use csv as csv_crate;
+use html2text;
+use infer;
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use csv as csv_crate;
-use calamine::{Reader as _, open_workbook_auto, DataType};
-use html2text;
-use chardetng::EncodingDetector;
-use infer;
-use std::borrow::Cow;
+use zip::read::ZipArchive;
 
 pub fn parse_pdf(file_path: &str) -> Result<String, RagError> {
     let bytes = fs::read(file_path)?;
-    let text = pdf_extract::extract_text_from_mem(&bytes)
-        .map_err(|e| RagError::ParseError(format!("PDF parse error: {}", e)))?;
+    // pdf-extract can panic on some malformed PDFs; guard to avoid crashing the app
+    let text = match catch_unwind(AssertUnwindSafe(|| pdf_extract::extract_text_from_mem(&bytes))) {
+        Ok(Ok(t)) => t,
+        Ok(Err(e)) => return Err(RagError::ParseError(format!("PDF parse error: {}", e))),
+        Err(payload) => {
+            let reason = if let Some(s) = payload.downcast_ref::<&str>() {
+                *s
+            } else if let Some(s) = payload.downcast_ref::<String>() {
+                s.as_str()
+            } else {
+                "unknown parser panic"
+            };
+            return Err(RagError::ParseError(format!(
+                "PDF parsing failed unexpectedly: {}",
+                reason
+            )));
+        }
+    };
 
     // Validate that the PDF has extractable text (not image-based/scanned)
     // Count meaningful characters (excluding whitespace)

@@ -22,6 +22,33 @@ Jan is bringing the best of open-source AI in an easy-to-use product. Download a
 
 ## Installation
 
+<p align="center">
+  <table>
+    <tr>
+      <!-- Microsoft Store Badge -->
+      <td align="center" valign="middle">
+        <a href="https://apps.microsoft.com/detail/xpdcnfn5cpzlqb">
+          <img height="60"
+            width="200"
+               alt="Get it from Microsoft Store"
+               src="https://get.microsoft.com/images/en-us%20dark.svg"/>
+        </a>
+      </td>
+      <!-- Spacer -->
+      <td width="20"></td>
+      <!-- Flathub Official Badge -->
+      <td align="center" valign="middle">
+        <a href="https://flathub.org/apps/ai.jan.Jan">
+          <img height="60"
+            width="200"
+               alt="Get it on Flathub"
+               src="https://flathub.org/assets/badges/flathub-badge-en.svg"/>
+        </a>
+      </td>
+    </tr>
+  </table>
+</p>
+
 The easiest way to get started is by downloading one of the following versions for your respective operating system:
 
 <table>

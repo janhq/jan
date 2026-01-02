@@ -49,11 +49,11 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/shallow'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
+import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 
 type SearchParams = {
   repo: string
 }
-const defaultModelQuantizations = ['iq4_xs', 'q4_k_m']
 
 export const Route = createFileRoute(route.hub.index as any)({
   component: Hub,
@@ -456,7 +456,7 @@ function HubContent() {
                                       filteredModels[
                                         virtualItem.index
                                       ].quants.find((m) =>
-                                        defaultModelQuantizations.some((e) =>
+                                        DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
                                           m.model_id.toLowerCase().includes(e)
                                         )
                                       ) ??
@@ -468,13 +468,13 @@ function HubContent() {
                                 <ModelInfoHoverCard
                                   model={filteredModels[virtualItem.index]}
                                   defaultModelQuantizations={
-                                    defaultModelQuantizations
+                                    DEFAULT_MODEL_QUANTIZATIONS
                                   }
                                   variant={
                                     filteredModels[
                                       virtualItem.index
                                     ].quants.find((m) =>
-                                      defaultModelQuantizations.some((e) =>
+                                      DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
                                         m.model_id.toLowerCase().includes(e)
                                       )
                                     ) ??
@@ -676,7 +676,7 @@ function HubContent() {
                                             }
                                             variant={variant}
                                             defaultModelQuantizations={
-                                              defaultModelQuantizations
+                                              DEFAULT_MODEL_QUANTIZATIONS
                                             }
                                             modelSupportStatus={
                                               modelSupportStatus

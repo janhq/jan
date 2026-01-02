@@ -90,9 +90,16 @@ pub fn is_process_alive(pid: u32) -> bool {
     {
         use std::process::Command;
 
-        let output = Command::new("tasklist")
-            .args(&["/FI", &format!("PID eq {}", pid), "/NH"])
-            .output();
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+
+        let mut cmd = Command::new("tasklist");
+        cmd.args(&["/FI", &format!("PID eq {}", pid), "/NH"]);
+
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+        let output = cmd.output();
 
         if let Ok(output) = output {
             let output_str = String::from_utf8_lossy(&output.stdout);

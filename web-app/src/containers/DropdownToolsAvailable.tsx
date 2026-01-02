@@ -34,7 +34,9 @@ export default function DropdownToolsAvailable({
   initialMessage = false,
   onOpenChange,
 }: DropdownToolsAvailableProps) {
-  const tools = useAppState((state) => state.tools)
+  const allTools = useAppState((state) => state.tools)
+  // Filter out Jan Browser MCP tools
+  const tools = allTools.filter((tool) => tool.server !== 'Jan Browser MCP')
   const [isOpen, setIsOpen] = useState(false)
   const { t } = useTranslation()
 

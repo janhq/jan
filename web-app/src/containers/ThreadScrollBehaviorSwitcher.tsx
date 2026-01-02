@@ -438,7 +438,7 @@ function StickyScrollPreview({ placeholder }: { placeholder: string }) {
         timersRef.current.push(timer)
       })
     }
-  }, [step])
+  }, [step, MAX_ASSISTANTS])
 
   useEffect(() => {
     return () => {

@@ -1,17 +1,4 @@
 {
-  "joyride": {
-    "chooseProviderTitle": "選擇一個提供者",
-    "chooseProviderContent": "選擇您要使用的提供者，確保您有權存取其 API 金鑰。",
-    "getApiKeyTitle": "取得您的 API 金鑰",
-    "getApiKeyContent": "登入提供者的儀表板以尋找或產生您的 API 金鑰。",
-    "insertApiKeyTitle": "插入您的 API 金鑰",
-    "insertApiKeyContent": "在此處貼上您的 API 金鑰以連線並啟用提供者。",
-    "back": "返回",
-    "close": "關閉",
-    "last": "完成",
-    "next": "下一步",
-    "skip": "略過"
-  },
   "refreshModelsError": "提供者必須設定基本 URL 和 API 金鑰才能擷取模型。",
   "refreshModelsSuccess": "已從 {{provider}} 新增 {{count}} 個新模型。",
   "noNewModels": "找不到新模型。所有可用的模型都已新增。",

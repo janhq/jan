@@ -32,10 +32,14 @@ import {
   isBackendInstalled,
   getBackendExePath,
   getBackendDir,
-  mapOldBackendToNew,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
-import { getProxyConfig } from './util'
+import {
+  getProxyConfig,
+  buildEmbedBatches,
+  mergeEmbedResponses,
+  type EmbedBatchResult,
+} from './util'
 import { basename } from '@tauri-apps/api/path'
 import {
   loadLlamaModel,
@@ -44,105 +48,25 @@ import {
   isModelSupported,
   planModelLoadInternal,
   unloadLlamaModel,
+  LlamacppConfig,
+  ModelPlan,
+  DownloadItem,
+  ModelConfig,
+  EmbeddingResponse,
+  DeviceList,
+  SystemMemory,
+  mapOldBackendToNew,
+  findLatestVersionForBackend,
+  prioritizeBackends,
+  checkBackendForUpdates,
+  removeOldBackendVersions,
+  shouldMigrateBackend,
+  handleSettingUpdate,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 // Error message constant - matches web-app/src/utils/error.ts
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
-
-type LlamacppConfig = {
-  version_backend: string
-  auto_update_engine: boolean
-  auto_unload: boolean
-  timeout: number
-  llamacpp_env: string
-  memory_util: string
-  chat_template: string
-  n_gpu_layers: number
-  offload_mmproj: boolean
-  cpu_moe: boolean
-  n_cpu_moe: number
-  override_tensor_buffer_t: string
-  ctx_size: number
-  threads: number
-  threads_batch: number
-  n_predict: number
-  batch_size: number
-  ubatch_size: number
-  device: string
-  split_mode: string
-  main_gpu: number
-  flash_attn: string
-  cont_batching: boolean
-  no_mmap: boolean
-  mlock: boolean
-  no_kv_offload: boolean
-  cache_type_k: string
-  cache_type_v: string
-  defrag_thold: number
-  rope_scaling: string
-  rope_scale: number
-  rope_freq_base: number
-  rope_freq_scale: number
-  ctx_shift: boolean
-}
-
-type ModelPlan = {
-  gpuLayers: number
-  maxContextLength: number
-  noOffloadKVCache: boolean
-  offloadMmproj?: boolean
-  batchSize: number
-  mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
-}
-
-interface DownloadItem {
-  url: string
-  save_path: string
-  proxy?: Record<string, string | string[] | boolean>
-  sha256?: string
-  size?: number
-}
-
-interface ModelConfig {
-  model_path: string
-  mmproj_path?: string
-  name: string // user-friendly
-  // some model info that we cache upon import
-  size_bytes: number
-  sha256?: string
-  mmproj_sha256?: string
-  mmproj_size_bytes?: number
-}
-
-interface EmbeddingResponse {
-  model: string
-  object: string
-  usage: {
-    prompt_tokens: number
-    total_tokens: number
-  }
-  data: EmbeddingData[]
-}
-
-interface EmbeddingData {
-  embedding: number[]
-  index: number
-  object: string
-}
-
-interface DeviceList {
-  id: string
-  name: string
-  mem: number
-  free: number
-}
-
-interface SystemMemory {
-  totalVRAM: number
-  totalRAM: number
-  totalMemory: number
-}
 
 /**
  * Override the default app.log function to use Jan's logging system.
@@ -271,23 +195,6 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private findLatestVersionForBackend(
-    version_backends: { version: string; backend: string }[],
-    backendType: string
-  ): string | null {
-    const matchingBackends = version_backends.filter(
-      (vb) => mapOldBackendToNew(vb.backend) === backendType
-    )
-    if (matchingBackends.length === 0) {
-      return null
-    }
-
-    // Sort by version (newest first) and get the latest
-    matchingBackends.sort((a, b) => b.version.localeCompare(a.version))
-    // Return the full string including the original asset name, as this is used for download/path
-    return `${matchingBackends[0].version}/${matchingBackends[0].backend}`
-  }
-
   async configureBackends(): Promise<void> {
     if (this.isConfiguringBackends) {
       logger.info(
@@ -321,53 +228,48 @@ export default class llamacpp_extension extends AIEngine {
       // Get stored backend preference
       const storedBackendType = this.getStoredBackendType()
       let bestAvailableBackendString = ''
-      let effectiveStoredBackendType = storedBackendType
+
+      // Calculate the "best" backend first, as it's used for fallback and defaults
+      bestAvailableBackendString =
+        await this.determineBestBackend(version_backends)
 
       if (storedBackendType) {
-        // migration part
-        const mappedNewBackendType = mapOldBackendToNew(storedBackendType)
-        const isMigrationNeeded = mappedNewBackendType !== storedBackendType
+        // Delegate migration check to Rust
+        const migrationTarget = await shouldMigrateBackend(
+          storedBackendType,
+          version_backends
+        )
 
-        if (isMigrationNeeded) {
-          // Check if the new, mapped backend is available in the current version list (by its effective type)
-          const isNewTypeAvailable = version_backends.some(
-            (vb) => mapOldBackendToNew(vb.backend) === mappedNewBackendType
+        if (migrationTarget) {
+          logger.info(
+            `Migrating stored backend type preference from old '${storedBackendType}' to new common type: '${migrationTarget}'`
           )
-
-          if (isNewTypeAvailable) {
-            logger.info(
-              `Migrating stored backend type preference from old '${storedBackendType}' to new common type: '${mappedNewBackendType}'`
-            )
-            this.setStoredBackendType(mappedNewBackendType) // Update localStorage immediately
-            effectiveStoredBackendType = mappedNewBackendType
-          } else {
-            logger.warn(
-              `Migration from '${storedBackendType}' to '${mappedNewBackendType}' skipped: New type not available in supported backends. Using old preference for now.`
-            )
-          }
+          this.setStoredBackendType(migrationTarget)
         }
-        // Find the latest version of the stored backend type
-        const preferredBackendString = this.findLatestVersionForBackend(
+
+        const effectiveStoredBackendType = migrationTarget || storedBackendType
+
+        // Use the effective (migrated) type to find the latest version
+        const preferredBackendString = await findLatestVersionForBackend(
           version_backends,
           effectiveStoredBackendType
         )
+
         if (preferredBackendString) {
+          // Override bestAvailableBackendString with the user preference
+          // The returned string from Rust is "version/backend"
           bestAvailableBackendString = preferredBackendString
           logger.info(
             `Using stored backend preference: ${bestAvailableBackendString}`
           )
         } else {
           logger.warn(
-            `Stored backend type '${storedBackendType}' not available, falling back to best backend`
+            `Stored backend type '${effectiveStoredBackendType}' not available, falling back to best backend`
           )
           // Clear the invalid stored preference
           this.clearStoredBackendType()
-          bestAvailableBackendString =
-            await this.determineBestBackend(version_backends)
+          // bestAvailableBackendString remains as the priority one calculated earlier
         }
-      } else {
-        bestAvailableBackendString =
-          await this.determineBestBackend(version_backends)
       }
 
       let settings = structuredClone(SETTINGS)
@@ -399,7 +301,7 @@ export default class llamacpp_extension extends AIEngine {
 
         // Determine initial UI default based on priority:
         // 1. Saved setting (if valid and not original default)
-        // 2. Best available for stored backend type
+        // 2. Best available for stored backend type or automatic best
         // 3. Original default
         let initialUiDefault = originalDefaultBackendValue
 
@@ -407,16 +309,18 @@ export default class llamacpp_extension extends AIEngine {
           savedBackendSetting &&
           savedBackendSetting !== originalDefaultBackendValue
         ) {
-          initialUiDefault = savedBackendSetting
-          // Store the backend type from the saved setting only if different
-          const [, backendType] = savedBackendSetting.split('/')
-          if (backendType) {
+          const [savedVersion, savedBackend] = savedBackendSetting.split('/')
+          if (savedVersion && savedBackend) {
+            // Map saved backend to new format if needed
+            const normalizedBackend = await mapOldBackendToNew(savedBackend)
+            initialUiDefault = `${savedVersion}/${normalizedBackend}`
+
+            // Store the backend type from the saved setting only if different
             const currentStoredBackend = this.getStoredBackendType()
-            const effectiveBackendType = mapOldBackendToNew(backendType)
-            if (currentStoredBackend !== effectiveBackendType) {
-              this.setStoredBackendType(effectiveBackendType)
+            if (currentStoredBackend !== normalizedBackend) {
+              this.setStoredBackendType(normalizedBackend)
               logger.info(
-                `Stored backend type preference from saved setting: ${effectiveBackendType}`
+                `Stored backend type preference from saved setting: ${normalizedBackend}`
               )
             }
           }
@@ -426,11 +330,10 @@ export default class llamacpp_extension extends AIEngine {
           const [, backendType] = bestAvailableBackendString.split('/')
           if (backendType) {
             const currentStoredBackend = this.getStoredBackendType()
-            const effectiveBackendType = mapOldBackendToNew(backendType)
-            if (currentStoredBackend !== effectiveBackendType) {
-              this.setStoredBackendType(effectiveBackendType)
+            if (currentStoredBackend !== backendType) {
+              this.setStoredBackendType(backendType)
               logger.info(
-                `Stored backend type preference from best available: ${effectiveBackendType}`
+                `Stored backend type preference from best available: ${backendType}`
               )
             }
           }
@@ -536,7 +439,7 @@ export default class llamacpp_extension extends AIEngine {
   ): Promise<string> {
     if (version_backends.length === 0) return ''
 
-    // Check GPU memory availability
+    // Check GPU memory availability via system info
     let hasEnoughGpuMemory = false
     try {
       const sysInfo = await getSystemInfo()
@@ -552,90 +455,12 @@ export default class llamacpp_extension extends AIEngine {
       hasEnoughGpuMemory = false
     }
 
-    // Priority list for backend types (more specific/performant ones first)
-    // Vulkan will be conditionally prioritized based on GPU memory
-    const backendPriorities: string[] = hasEnoughGpuMemory
-      ? [
-          'cuda-cu13.0',
-          'cuda-cu12.0',
-          'cuda-cu11.7',
-          'vulkan',
-          'common_cpus', // NEW: Unified CPU backend
-          'avx512', // Old, for transition/local installed detection
-          'avx2', // Old, for transition
-          'avx', // Old, for transition
-          'noavx', // Old, for transition
-          'arm64',
-          'x64',
-        ]
-      : [
-          'cuda-cu13.0',
-          'cuda-cu12.0',
-          'cuda-cu11.7',
-          'common_cpus', // NEW: Unified CPU backend
-          'avx512', // Old, for transition
-          'avx2', // Old, for transition
-          'avx', // Old, for transition
-          'noavx', // Old, for transition
-          'arm64',
-          'x64',
-          'vulkan',
-        ]
-
-    // Helper to map backend string to a priority category
-    const getBackendCategory = (backendString: string): string | undefined => {
-      if (backendString.includes('cuda-13-common_cpus')) return 'cuda-cu13.0'
-      if (
-        backendString.includes('cuda-12-common_cpus') ||
-        backendString.includes('cu12.0')
-      )
-        return 'cuda-cu12.0'
-      if (
-        backendString.includes('cuda-11-common_cpus') ||
-        backendString.includes('cu11.7')
-      )
-        return 'cuda-cu11.7'
-      if (backendString.includes('vulkan')) return 'vulkan'
-      if (backendString.includes('common_cpus')) return 'common_cpus'
-      if (backendString.includes('avx512')) return 'avx512'
-      if (backendString.includes('avx2')) return 'avx2'
-      if (
-        backendString.includes('avx') &&
-        !backendString.includes('avx2') &&
-        !backendString.includes('avx512')
-      )
-        return 'avx'
-      if (backendString.includes('noavx')) return 'noavx'
-      if (backendString.endsWith('arm64')) return 'arm64'
-      if (backendString.endsWith('x64')) return 'x64'
-      return undefined
-    }
-
-    let foundBestBackend: { version: string; backend: string } | undefined
-    for (const priorityCategory of backendPriorities) {
-      const matchingBackends = version_backends.filter((vb) => {
-        const category = getBackendCategory(vb.backend)
-        return category === priorityCategory
-      })
-
-      if (matchingBackends.length > 0) {
-        foundBestBackend = matchingBackends[0]
-        logger.info(
-          `Determined best available backend: ${foundBestBackend.version}/${foundBestBackend.backend} (Category: "${priorityCategory}")`
-        )
-        break
-      }
-    }
-
-    if (foundBestBackend) {
-      return `${foundBestBackend.version}/${foundBestBackend.backend}`
-    } else {
-      // Fallback to newest version
-      logger.info(
-        `Fallback to: ${version_backends[0].version}/${version_backends[0].backend}`
-      )
-      return `${version_backends[0].version}/${version_backends[0].backend}`
-    }
+    // Use Rust logic to prioritize backends
+    const result = await prioritizeBackends(
+      version_backends,
+      hasEnoughGpuMemory
+    )
+    return result.backend_string
   }
 
   async updateBackend(
@@ -661,9 +486,11 @@ export default class llamacpp_extension extends AIEngine {
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
-      const effectiveBackendType = mapOldBackendToNew(backend)
+      // We ensure consistency by mapping the backend type, although targetBackendString should already be correct
+      const effectiveBackendType = await mapOldBackendToNew(backend)
       const currentStoredBackend = this.getStoredBackendType()
 
+      // Re-construct to be sure
       targetBackendString = `${version}/${effectiveBackendType}`
 
       // Update configuration
@@ -701,11 +528,19 @@ export default class llamacpp_extension extends AIEngine {
         })
       }
 
-      // Clean up old versions of the same backend type
+      // Clean up old versions of the same backend type using Rust command
+      const janDataFolderPath = await getJanDataFolderPath()
+      const backendsDir = await joinPath([
+        janDataFolderPath,
+        'llamacpp',
+        'backends',
+      ])
+
       if (IS_WINDOWS) {
         await new Promise((resolve) => setTimeout(resolve, 500))
       }
-      await this.removeOldBackend(version, backend)
+
+      await removeOldBackendVersions(backendsDir, version, backend)
 
       return { wasUpdated: true, newBackend: targetBackendString }
     } catch (error) {
@@ -742,69 +577,40 @@ export default class llamacpp_extension extends AIEngine {
       return await this.updateBackend(bestAvailableBackendString)
     }
 
-    // Parse current backend configuration
-    const [currentVersion, currentBackend] = (
-      this.config.version_backend || ''
-    ).split('/')
-    // Get the effective/migrated backend type
-    const currentEffectiveBackendType = mapOldBackendToNew(currentBackend)
-
-    if (!currentVersion || !currentBackend) {
-      logger.warn(
-        `Invalid current backend format: ${this.config.version_backend}`
-      )
-      return { wasUpdated: false, newBackend: this.config.version_backend }
-    }
-
-    // Find the latest version for the currently selected backend type
+    // Use Rust checkBackendForUpdates logic implicitly here by using the helpers
     const version_backends = await listSupportedBackends()
-    const targetBackendString = this.findLatestVersionForBackend(
-      version_backends,
-      currentEffectiveBackendType
+    const checkResult = await checkBackendForUpdates(
+      this.config.version_backend,
+      version_backends
     )
 
-    if (!targetBackendString) {
-      logger.warn(
-        `No available versions found for current backend type: ${currentEffectiveBackendType}`
+    if (checkResult.update_needed && checkResult.target_backend) {
+      logger.info(
+        `Auto-updating to new version: ${checkResult.new_version} (${checkResult.target_backend})`
       )
-      // Attempt to fall back to the absolute best available if the preferred type is gone.
-      const bestEffectiveType = mapOldBackendToNew(
+      return await this.updateBackend(checkResult.target_backend)
+    }
+
+    // If no update needed, check if we need to fall back (e.g. current backend not supported anymore)
+    // The Rust check_backend_for_updates handles finding the latest version for current type.
+    // If it returns no target_backend, it means current type is not found.
+    if (!checkResult.target_backend) {
+      const [currentVersion, currentBackend] =
+        this.config.version_backend.split('/')
+      const currentEffectiveType = await mapOldBackendToNew(currentBackend)
+      const bestEffectiveType = await mapOldBackendToNew(
         bestAvailableBackendString.split('/')[1]
       )
-      if (currentEffectiveBackendType !== bestEffectiveType) {
+
+      if (currentEffectiveType !== bestEffectiveType) {
         logger.info(
-          `Falling back to best available backend: ${bestAvailableBackendString}`
+          `Current backend type ${currentEffectiveType} not available, falling back to best available: ${bestAvailableBackendString}`
         )
         return await this.updateBackend(bestAvailableBackendString)
       }
-      return { wasUpdated: false, newBackend: this.config.version_backend }
     }
 
-    const [latestVersion, latestBackendName] = targetBackendString.split('/')
-
-    // Check if update is needed (compare versions AND effective backend types)
-    if (
-      currentVersion === latestVersion &&
-      currentEffectiveBackendType === mapOldBackendToNew(latestBackendName)
-    ) {
-      logger.info(
-        'Auto-update: Already using the latest version of the selected backend'
-      )
-      return { wasUpdated: false, newBackend: this.config.version_backend }
-    }
-
-    // Perform version update or migration for the same effective backend type
-    logger.info(
-      `Auto-updating/Migrating from ${this.config.version_backend} to ${targetBackendString} (preserving effective backend type: ${currentEffectiveBackendType})`
-    )
-    return await this.updateBackend(targetBackendString)
-  }
-
-  private parseBackendVersion(v: string): number {
-    // Remove any leading non‑digit characters (e.g. the "b")
-    const numeric = v.replace(/^[^\d]*/, '')
-    const n = Number(numeric)
-    return Number.isNaN(n) ? 0 : n
+    return { wasUpdated: false, newBackend: this.config.version_backend }
   }
 
   async checkBackendForUpdates(): Promise<{
@@ -812,107 +618,21 @@ export default class llamacpp_extension extends AIEngine {
     newVersion: string
     targetBackend?: string
   }> {
-    // Parse current backend configuration
-    const [currentVersion, currentBackend] = (
-      this.config.version_backend || ''
-    ).split('/')
-
-    if (!currentVersion || !currentBackend) {
-      logger.warn(
-        `Invalid current backend format: ${this.config.version_backend}`
-      )
-      return { updateNeeded: false, newVersion: '0' }
-    }
-
-    // Get the effective/migrated backend type for consistency with auto-update logic
-    const currentEffectiveBackendType = mapOldBackendToNew(currentBackend)
-
-    // Find the latest version for the currently selected backend type (using effective type)
-    const version_backends = await listSupportedBackends()
-    const targetBackendString = this.findLatestVersionForBackend(
-      version_backends,
-      currentEffectiveBackendType // Use the effective type
-    )
-
-    if (!targetBackendString) {
-      logger.warn(
-        `No available versions found for current backend type: ${currentEffectiveBackendType}`
-      )
-      return { updateNeeded: false, newVersion: '0' }
-    }
-
-    const [latestVersion, latestBackend] = targetBackendString.split('/')
-
-    // Check if update is needed (version comparison)
-    if (
-      this.parseBackendVersion(latestVersion) >
-      this.parseBackendVersion(currentVersion)
-    ) {
-      logger.info(
-        `New update available: ${latestVersion} -> ${targetBackendString}`
-      )
-      return {
-        updateNeeded: true,
-        newVersion: latestVersion,
-        targetBackend: targetBackendString,
-      }
-    } else {
-      logger.info(
-        `Already at latest version: ${currentVersion} = ${latestVersion}`
-      )
-      return { updateNeeded: false, newVersion: '0' }
-    }
-  }
-
-  private async removeOldBackend(
-    latestVersion: string,
-    backendType: string
-  ): Promise<void> {
     try {
-      const janDataFolderPath = await getJanDataFolderPath()
-      const backendsDir = await joinPath([
-        janDataFolderPath,
-        'llamacpp',
-        'backends',
-      ])
+      const version_backends = await listSupportedBackends()
+      const result = await checkBackendForUpdates(
+        this.config.version_backend,
+        version_backends
+      )
 
-      if (!(await fs.existsSync(backendsDir))) {
-        return
+      return {
+        updateNeeded: result.update_needed,
+        newVersion: result.new_version,
+        targetBackend: result.target_backend,
       }
-
-      const versionDirs = await fs.readdirSync(backendsDir)
-
-      for (const versionDir of versionDirs) {
-        const versionPath = await joinPath([backendsDir, versionDir])
-        const versionName = await basename(versionDir)
-
-        // Skip the latest version
-        if (versionName === latestVersion) {
-          continue
-        }
-
-        // Check if this version has the specific backend type we're interested in
-        const backendTypePath = await joinPath([versionPath, backendType])
-
-        if (await fs.existsSync(backendTypePath)) {
-          const isInstalled = await isBackendInstalled(backendType, versionName)
-          if (isInstalled) {
-            try {
-              await fs.rm(backendTypePath)
-              logger.info(
-                `Removed old version of ${backendType}: ${backendTypePath}`
-              )
-            } catch (e) {
-              logger.warn(
-                `Failed to remove old backend version: ${backendTypePath}`,
-                e
-              )
-            }
-          }
-        }
-      }
-    } catch (error) {
-      logger.error('Error during old backend version cleanup:', error)
+    } catch (e) {
+      logger.warn('Failed to check for updates via Rust command:', e)
+      return { updateNeeded: false, newVersion: '0' }
     }
   }
 
@@ -980,30 +700,27 @@ export default class llamacpp_extension extends AIEngine {
 
     if (key === 'version_backend') {
       const valueStr = value as string
-      const [version, backend] = valueStr.split('/')
+      // Async logic wrapped in IIFE since onSettingUpdate is void
+      ;(async () => {
+        try {
+          const currentStored = this.getStoredBackendType() || undefined
+          const result = await handleSettingUpdate(key, valueStr, currentStored)
 
-      // Store the backend type preference in localStorage only if it changed
-      if (backend) {
-        // Use the effective/migrated backend type for storage
-        const effectiveBackendType = mapOldBackendToNew(backend)
-        const currentStoredBackend = this.getStoredBackendType()
+          if (result.backend_type_updated && result.effective_backend_type) {
+            this.setStoredBackendType(result.effective_backend_type)
+            logger.info(
+              `Updated backend type preference to: ${result.effective_backend_type}`
+            )
+          }
 
-        // Compare with the effective type
-        if (currentStoredBackend !== effectiveBackendType) {
-          this.setStoredBackendType(effectiveBackendType)
-          logger.info(
-            `Updated backend type preference to: ${effectiveBackendType}`
-          )
+          if (result.version && result.backend) {
+            this.config.device = ''
+            await this.ensureBackendReady(result.backend, result.version)
+          }
+        } catch (e) {
+          logger.error('Error in onSettingUpdate async block:', e)
         }
-      }
-
-      // Reset device setting when backend changes
-      this.config.device = ''
-
-      const closure = async () => {
-        await this.ensureBackendReady(backend, version)
-      }
-      closure()
+      })()
     } else if (key === 'auto_unload') {
       this.autoUnload = value as boolean
     } else if (key === 'llamacpp_env') {
@@ -1037,6 +754,8 @@ export default class llamacpp_extension extends AIEngine {
       path,
     })
 
+    const isEmbedding = await this.resolveEmbeddingConfig(modelId, modelConfig)
+
     return {
       id: modelId,
       name: modelConfig.name ?? modelId,
@@ -1044,7 +763,69 @@ export default class llamacpp_extension extends AIEngine {
       providerId: this.provider,
       port: 0, // port is not known until the model is loaded
       sizeBytes: modelConfig.size_bytes ?? 0,
+      embedding: isEmbedding,
     } as modelInfo
+  }
+
+  /**
+   * Checks if embedding status is known. If not, reads GGUF, detects it,
+   * and updates the model.yml for future performance.
+   */
+  private async resolveEmbeddingConfig(
+    modelId: string,
+    modelConfig: ModelConfig
+  ): Promise<boolean> {
+    // Fast exit: if explicitly set in config, return it
+    if (typeof modelConfig.embedding === 'boolean') {
+      return modelConfig.embedding
+    }
+
+    // Migration logic: Detect from GGUF
+    let isEmbedding = false
+    try {
+      const janDataFolderPath = await getJanDataFolderPath()
+      const fullModelPath = await joinPath([
+        janDataFolderPath,
+        modelConfig.model_path,
+      ])
+
+      if (await fs.existsSync(fullModelPath)) {
+        const metadata = await readGgufMetadata(fullModelPath)
+        // Check for BERT-based architectures usually used for embeddings
+        // You can expand this list (e.g., 'nomic-bert', 'xlm-roberta')
+        const arch = metadata.metadata['general.architecture']
+        if (arch === 'bert' || arch === 'nomic-bert') {
+          isEmbedding = true
+        }
+      }
+    } catch (e) {
+      // If GGUF read fails, default to false but log it
+      logger.warn(`Failed to check metadata for ${modelId}`, e)
+      return false
+    }
+
+    // Persist the result back to model.yml so we don't read GGUF next time
+    try {
+      const configPath = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+        'model.yml',
+      ])
+
+      // Update the local object
+      modelConfig.embedding = isEmbedding
+
+      // Write to disk
+      await invoke<void>('write_yaml', {
+        data: modelConfig,
+        savePath: configPath,
+      })
+    } catch (e) {
+      logger.warn(`Failed to update config for ${modelId}`, e)
+    }
+
+    return isEmbedding
   }
 
   // Implement the required LocalProvider interface methods
@@ -1089,6 +870,10 @@ export default class llamacpp_extension extends AIEngine {
     for (const modelId of modelIds) {
       const path = await joinPath([modelsDir, modelId, 'model.yml'])
       const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
+      const isEmbedding = await this.resolveEmbeddingConfig(
+        modelId,
+        modelConfig
+      )
 
       const modelInfo = {
         id: modelId,
@@ -1097,6 +882,7 @@ export default class llamacpp_extension extends AIEngine {
         providerId: this.provider,
         port: 0, // port is not known until the model is loaded
         sizeBytes: modelConfig.size_bytes ?? 0,
+        embedding: isEmbedding,
       } as modelInfo
       modelInfos.push(modelInfo)
     }
@@ -1369,6 +1155,7 @@ export default class llamacpp_extension extends AIEngine {
           sha256:
             saveName === 'model.gguf' ? opts.modelSha256 : opts.mmprojSha256,
           size: saveName === 'model.gguf' ? opts.modelSize : opts.mmprojSize,
+          model_id: modelId,
         })
         return localPath
       }
@@ -1474,6 +1261,7 @@ export default class llamacpp_extension extends AIEngine {
     // Validate GGUF files
     const janDataFolderPath = await getJanDataFolderPath()
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
+    let isEmbedding = false
 
     try {
       // Validate main model file
@@ -1481,6 +1269,12 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(
         `Model GGUF validation successful: version ${modelMetadata.version}, tensors: ${modelMetadata.tensor_count}`
       )
+
+      // check if the model is an embedding model
+      const architecture = modelMetadata.metadata['general.architecture']
+      if (architecture === 'bert' || architecture === 'nomic-bert') {
+        isEmbedding = true
+      }
 
       // Validate mmproj file if present
       if (mmprojPath) {
@@ -1518,6 +1312,7 @@ export default class llamacpp_extension extends AIEngine {
       model_size_bytes: opts.modelSize,
       mmproj_sha256: opts.mmprojSha256,
       mmproj_size_bytes: opts.mmprojSize,
+      embedding: isEmbedding,
     } as ModelConfig
     await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
     await invoke<void>('write_yaml', {
@@ -1533,6 +1328,7 @@ export default class llamacpp_extension extends AIEngine {
       model_size_bytes: opts.modelSize,
       mmproj_sha256: opts.mmprojSha256,
       mmproj_size_bytes: opts.mmprojSize,
+      embedding: isEmbedding,
     })
   }
 
@@ -1671,7 +1467,7 @@ export default class llamacpp_extension extends AIEngine {
               return await this.findSessionByModel(modelId)
             } catch (e) {
               logger.warn(`Unable to find session for model "${modelId}": ${e}`)
-              return null // treat as “not‑eligible for unload”
+              return null
             }
           })
         )
@@ -1689,10 +1485,11 @@ export default class llamacpp_extension extends AIEngine {
         }
       }
     }
-    const args: string[] = []
+
     const envs: Record<string, string> = {}
     const cfg = { ...this.config, ...(overrideSettings ?? {}) }
     const [version, backend] = cfg.version_backend.split('/')
+
     if (!version || !backend) {
       throw new Error(
         'Initial setup for the backend failed due to a network issue. Please restart the app!'
@@ -1714,120 +1511,41 @@ export default class llamacpp_extension extends AIEngine {
     })
     const port = await this.getRandomPort()
 
-    // disable llama-server webui
-    // TODO: Determine what's the best course of action here.
-    // Hopefully, we would want all the fork to have same set of arguments
-    // Otherwise it would become impossible to maintain
-    // Keeping this for now
-    if (!backend.startsWith('ik')) args.push('--no-webui')
+    // Generate API key
     const api_key = await this.generateApiKey(modelId, String(port))
     envs['LLAMA_API_KEY'] = api_key
     envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
 
-    // set user envs
+    // Set user envs
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
 
-    // model option is required
-    // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
+    // Resolve model path
     const modelPath = await joinPath([
       janDataFolderPath,
       modelConfig.model_path,
     ])
-    args.push('--jinja')
-    args.push('-m', modelPath)
-    if (cfg.cpu_moe) args.push('--cpu-moe')
-    if (cfg.n_cpu_moe && cfg.n_cpu_moe > 0) {
-      args.push('--n-cpu-moe', String(cfg.n_cpu_moe))
-    }
-    // For overriding tensor buffer type, useful where
-    // massive MOE models can be made faster by keeping attention on the GPU
-    // and offloading the expert FFNs to the CPU.
-    // This is an expert level settings and should only be used by people
-    // who knows what they are doing.
-    // Takes a regex with matching tensor name as input
-    if (cfg.override_tensor_buffer_t)
-      args.push('--override-tensor', cfg.override_tensor_buffer_t)
-    // offload multimodal projector model to the GPU by default. if there is not enough memory
-    // turn this setting off will keep the projector model on the CPU but the image processing can
-    // take longer
-    if (cfg.offload_mmproj === false) args.push('--no-mmproj-offload')
-    args.push('-a', modelId)
-    args.push('--port', String(port))
+
+    // Resolve mmproj path if present
+    let mmprojPath: string | undefined = undefined
     if (modelConfig.mmproj_path) {
-      const mmprojPath = await joinPath([
-        janDataFolderPath,
-        modelConfig.mmproj_path,
-      ])
-      args.push('--mmproj', mmprojPath)
-    }
-    // Add remaining options from the interface
-    if (cfg.chat_template) args.push('--chat-template', cfg.chat_template)
-    const gpu_layers =
-      parseInt(String(cfg.n_gpu_layers)) >= 0 ? cfg.n_gpu_layers : 100
-    args.push('-ngl', String(gpu_layers))
-    if (cfg.threads > 0) args.push('--threads', String(cfg.threads))
-    if (cfg.threads_batch > 0)
-      args.push('--threads-batch', String(cfg.threads_batch))
-    if (cfg.batch_size > 0) args.push('--batch-size', String(cfg.batch_size))
-    if (cfg.ubatch_size > 0) args.push('--ubatch-size', String(cfg.ubatch_size))
-    if (cfg.device.length > 0) args.push('--device', cfg.device)
-    if (cfg.split_mode.length > 0 && cfg.split_mode != 'layer')
-      args.push('--split-mode', cfg.split_mode)
-    if (cfg.main_gpu !== undefined && cfg.main_gpu !== 0)
-      args.push('--main-gpu', String(cfg.main_gpu))
-    // Note: Older llama.cpp versions are no longer supported
-    if (
-      cfg.flash_attn !== undefined ||
-      (cfg.flash_attn !== 'auto' && // set argument only when the setting value is not auto
-        !backend.startsWith('ik')) // ik fork of llama.cpp doesn't support --flash-attn
-    ) {
-      args.push('--flash-attn', String(cfg.flash_attn)) //default: auto = ON when supported
-    } else if (backend.startsWith('ik') && cfg.flash_attn == 'on') {
-      args.push('-fa') // hoping the ik fork is still using the old fa arguments
+      mmprojPath = await joinPath([janDataFolderPath, modelConfig.mmproj_path])
     }
 
-    // Boolean flags
-    if (cfg.ctx_shift) args.push('--context-shift')
-    if (cfg.cont_batching) args.push('--cont-batching')
-    if (cfg.no_mmap) args.push('--no-mmap')
-    if (cfg.mlock) args.push('--mlock')
-    if (cfg.no_kv_offload) args.push('--no-kv-offload')
-    if (isEmbedding) {
-      args.push('--embedding')
-      args.push('--pooling', 'mean')
-    } else {
-      if (cfg.ctx_size > 0) args.push('--ctx-size', String(cfg.ctx_size))
-      if (cfg.n_predict > 0) args.push('--n-predict', String(cfg.n_predict))
-      if (cfg.cache_type_k && cfg.cache_type_k != 'f16')
-        args.push('--cache-type-k', cfg.cache_type_k)
-      if (
-        cfg.flash_attn !== 'on' &&
-        cfg.cache_type_v != 'f16' &&
-        cfg.cache_type_v != 'f32'
-      ) {
-        args.push('--cache-type-v', cfg.cache_type_v)
-      }
-      if (cfg.defrag_thold && cfg.defrag_thold != 0.1)
-        args.push('--defrag-thold', String(cfg.defrag_thold))
-
-      if (cfg.rope_scaling && cfg.rope_scaling != 'none')
-        args.push('--rope-scaling', cfg.rope_scaling)
-      if (cfg.rope_scale && cfg.rope_scale != 1)
-        args.push('--rope-scale', String(cfg.rope_scale))
-      if (cfg.rope_freq_base && cfg.rope_freq_base != 0)
-        args.push('--rope-freq-base', String(cfg.rope_freq_base))
-      if (cfg.rope_freq_scale && cfg.rope_freq_scale != 1)
-        args.push('--rope-freq-scale', String(cfg.rope_freq_scale))
-    }
-
-    logger.info('Calling Tauri command llama_load with args:', args)
+    logger.info(
+      'Calling Tauri command load_llama_model with config:',
+      JSON.stringify(cfg)
+    )
     const backendPath = await getBackendExePath(backend, version)
 
     try {
       const sInfo = await loadLlamaModel(
         backendPath,
-        args,
+        modelId,
+        modelPath,
+        port,
+        cfg,
         envs,
+        mmprojPath,
         isEmbedding,
         Number(this.timeout)
       )
@@ -2253,14 +1971,23 @@ export default class llamacpp_extension extends AIEngine {
       sInfo = await this.load('sentence-transformer-mini', undefined, true)
     }
 
-    const attemptRequest = async (session: SessionInfo) => {
+    const ubatchSize =
+      (this.config?.ubatch_size && this.config.ubatch_size > 0
+        ? this.config.ubatch_size
+        : 512) || 512
+    const batches = buildEmbedBatches(text, ubatchSize)
+
+    const attemptRequest = async (
+      session: SessionInfo,
+      batchInput: string[]
+    ) => {
       const baseUrl = `http://localhost:${session.port}/v1/embeddings`
       const headers = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.api_key}`,
       }
       const body = JSON.stringify({
-        input: text,
+        input: batchInput,
         model: session.model_id,
         encoding_format: 'float',
       })
@@ -2272,26 +1999,38 @@ export default class llamacpp_extension extends AIEngine {
       return response
     }
 
-    // First try with the existing session (may have been started without --embedding previously)
-    let response = await attemptRequest(sInfo)
+    const sendBatch = async (batchInput: string[]) => {
+      let response = await attemptRequest(sInfo as SessionInfo, batchInput)
 
-    // If embeddings endpoint is not available (501), reload with embedding mode and retry once
-    if (response.status === 501) {
-      try {
-        await this.unload('sentence-transformer-mini')
-      } catch {}
-      sInfo = await this.load('sentence-transformer-mini', undefined, true)
-      response = await attemptRequest(sInfo)
+      // If embeddings endpoint is not available (501), reload with embedding mode and retry once
+      if (response.status === 501) {
+        try {
+          await this.unload('sentence-transformer-mini')
+        } catch {}
+        sInfo = await this.load('sentence-transformer-mini', undefined, true)
+        response = await attemptRequest(sInfo as SessionInfo, batchInput)
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(
+          `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
+        )
+      }
+      const responseData = (await response.json()) as EmbedBatchResult
+      return responseData
     }
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null)
-      throw new Error(
-        `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
-      )
+    const batchResults: Array<{ result: EmbedBatchResult; offset: number }> = []
+    for (const { batch, offset } of batches) {
+      const result = await sendBatch(batch)
+      batchResults.push({ result, offset })
     }
-    const responseData = await response.json()
-    return responseData as EmbeddingResponse
+
+    return mergeEmbedResponses(
+      (sInfo as SessionInfo).model_id,
+      batchResults
+    ) as EmbeddingResponse
   }
 
   /**
@@ -2530,44 +2269,49 @@ export default class llamacpp_extension extends AIEngine {
       },
     }
 
-    let parseResponse = await fetch(`${baseUrl}/apply-template`, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(tokenizeRequest),
-    })
+    try {
+      let parseResponse = await fetch(`${baseUrl}/apply-template`, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(tokenizeRequest),
+      })
 
-    if (!parseResponse.ok) {
-      const errorData = await parseResponse.json().catch(() => null)
-      throw new Error(
-        `API request failed with status ${
-          parseResponse.status
-        }: ${JSON.stringify(errorData)}`
-      )
+      if (!parseResponse.ok) {
+        const errorData = await parseResponse.json().catch(() => null)
+        throw new Error(
+          `API request failed with status ${
+            parseResponse.status
+          }: ${JSON.stringify(errorData)}`
+        )
+      }
+
+      const parsedPrompt = await parseResponse.json()
+
+      const response = await fetch(`${baseUrl}/tokenize`, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          content: parsedPrompt.prompt,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(
+          `API request failed with status ${response.status}: ${JSON.stringify(
+            errorData
+          )}`
+        )
+      }
+
+      const dataTokens = await response.json()
+      const textTokens = dataTokens.tokens?.length || 0
+
+      return textTokens + imageTokens
+    } catch (e) {
+      console.warn(String(e))
     }
-
-    const parsedPrompt = await parseResponse.json()
-
-    const response = await fetch(`${baseUrl}/tokenize`, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify({
-        content: parsedPrompt.prompt,
-      }),
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null)
-      throw new Error(
-        `API request failed with status ${response.status}: ${JSON.stringify(
-          errorData
-        )}`
-      )
-    }
-
-    const dataTokens = await response.json()
-    const textTokens = dataTokens.tokens?.length || 0
-
-    return textTokens + imageTokens
+    return 0
   }
 
   private async calculateImageTokens(

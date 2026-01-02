@@ -85,6 +85,23 @@ export class CompletionMessagesBuilder {
   private toCompletionParamFromThread(
     msg: ThreadMessage
   ): ChatCompletionMessageParam {
+    const inlineFileContents = Array.isArray(
+      (msg.metadata as any)?.inline_file_contents
+    )
+      ? ((msg.metadata as any)?.inline_file_contents as Array<{
+          name?: string
+          content?: string
+        }>).filter((f) => f?.content)
+      : []
+
+    const buildInlineText = (base: string) => {
+      if (!inlineFileContents.length) return base
+      const formatted = inlineFileContents
+        .map((f) => `File: ${f.name || 'attachment'}\n${f.content ?? ''}`)
+        .join('\n\n')
+      return base ? `${base}\n\n${formatted}` : formatted
+    }
+
     if (msg.role === 'assistant') {
       return {
         role: 'assistant',
@@ -104,7 +121,10 @@ export class CompletionMessagesBuilder {
     if (Array.isArray(msg.content) && msg.content.length > 1) {
       const content = msg.content.map((part: ThreadContent) => {
         if (part.type === ContentType.Text) {
-          return { type: 'text' as const, text: part.text?.value ?? '' }
+          return {
+            type: 'text' as const,
+            text: buildInlineText(part.text?.value ?? ''),
+          }
         }
         if (part.type === ContentType.Image) {
           return {
@@ -122,7 +142,7 @@ export class CompletionMessagesBuilder {
     }
     // Single text part
     const text = msg?.content?.[0]?.text?.value ?? '.'
-    return { role: 'user', content: text }
+    return { role: 'user', content: buildInlineText(text) }
   }
 
   /**

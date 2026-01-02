@@ -1,3 +1,4 @@
+use super::commands::is_extension_not_connected_error;
 use super::helpers::{add_server_config, add_server_config_with_path, run_mcp_commands};
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::{AppState, SharedMcpServers};
@@ -227,4 +228,176 @@ fn test_bin_path_construction_windows() {
 
     let bun_path_str = bun_path.display().to_string();
     assert_eq!(bun_path_str, r"C:\Program Files\bin\bun.exe");
+}
+
+// ============================================================================
+// Shutdown Context Tests
+// ============================================================================
+
+use super::helpers::ShutdownContext;
+use std::time::Duration;
+
+#[test]
+fn test_shutdown_context_app_exit_timeouts() {
+    let context = ShutdownContext::AppExit;
+    assert_eq!(context.per_server_timeout(), Duration::from_millis(500));
+    assert_eq!(context.overall_timeout(), Duration::from_millis(1500));
+}
+
+#[test]
+fn test_shutdown_context_manual_restart_timeouts() {
+    let context = ShutdownContext::ManualRestart;
+    assert_eq!(context.per_server_timeout(), Duration::from_secs(2));
+    assert_eq!(context.overall_timeout(), Duration::from_secs(5));
+}
+
+#[test]
+fn test_shutdown_context_factory_reset_timeouts() {
+    let context = ShutdownContext::FactoryReset;
+    assert_eq!(context.per_server_timeout(), Duration::from_secs(5));
+    assert_eq!(context.overall_timeout(), Duration::from_secs(10));
+}
+
+#[test]
+fn test_shutdown_context_overall_greater_than_per_server() {
+    for context in [
+        ShutdownContext::AppExit,
+        ShutdownContext::ManualRestart,
+        ShutdownContext::FactoryReset,
+    ] {
+        assert!(
+            context.overall_timeout() > context.per_server_timeout(),
+            "Overall timeout should be greater than per-server timeout for {:?}",
+            context
+        );
+    }
+}
+
+#[test]
+fn test_shutdown_context_is_copy() {
+    let context = ShutdownContext::AppExit;
+    let copied = context;
+    assert!(matches!(context, ShutdownContext::AppExit));
+    assert!(matches!(copied, ShutdownContext::AppExit));
+}
+
+#[tokio::test]
+async fn test_background_cleanup_with_empty_state() {
+    use super::helpers::background_cleanup_mcp_servers;
+
+    let app = mock_app();
+    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
+    app.manage(AppState {
+        mcp_servers: servers_state.clone(),
+        ..Default::default()
+    });
+
+    let state = app.state::<AppState>();
+    background_cleanup_mcp_servers(app.handle(), &state).await;
+
+    let servers = state.mcp_servers.lock().await;
+    assert!(servers.is_empty());
+
+    let active = state.mcp_active_servers.lock().await;
+    assert!(active.is_empty());
+
+}
+
+#[tokio::test]
+async fn test_stop_mcp_servers_with_context_empty_servers() {
+    use super::helpers::{stop_mcp_servers_with_context, ShutdownContext};
+
+    let app = mock_app();
+    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
+    app.manage(AppState {
+        mcp_servers: servers_state.clone(),
+        ..Default::default()
+    });
+
+    let state = app.state::<AppState>();
+    let result =
+        stop_mcp_servers_with_context(app.handle(), &state, ShutdownContext::AppExit).await;
+
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_stop_mcp_servers_prevents_concurrent_shutdown() {
+    use super::helpers::{stop_mcp_servers_with_context, ShutdownContext};
+
+    let app = mock_app();
+    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
+    app.manage(AppState {
+        mcp_servers: servers_state.clone(),
+        ..Default::default()
+    });
+
+    let state = app.state::<AppState>();
+
+    {
+        let mut shutdown_flag = state.mcp_shutdown_in_progress.lock().await;
+        *shutdown_flag = true;
+    }
+
+    let result =
+        stop_mcp_servers_with_context(app.handle(), &state, ShutdownContext::AppExit).await;
+
+    assert!(result.is_ok());
+
+    {
+        let shutdown_flag = state.mcp_shutdown_in_progress.lock().await;
+        assert!(*shutdown_flag);
+    }
+}
+
+// ============================================================================
+// Extension Connection Error Detection Tests
+// ============================================================================
+
+#[test]
+fn test_extension_disconnected_error_detection() {
+    // Real error messages from Jan Browser MCP server when extension is not connected
+    let disconnected_errors = [
+        // Direct error messages from MCP server
+        "Browser extension not connected to bridge",
+        "Browser extension not responding to ping",
+        "extension not connected",
+        // Error with different casing (case insensitive)
+        "BROWSER EXTENSION NOT CONNECTED TO BRIDGE",
+        // Tool not found errors (older extension without ping tool)
+        "tool ping not found",
+        "Tool 'browser_snapshot' not found in available tools",
+        // Wrapped error messages
+        "Error: Browser extension not connected to bridge. Please retry.",
+        "[MCP] extension not connected - check browser",
+    ];
+
+    for msg in disconnected_errors {
+        assert!(
+            is_extension_not_connected_error(msg),
+            "Should detect as disconnected: {msg}"
+        );
+    }
+}
+
+#[test]
+fn test_extension_connected_response_detection() {
+    // Valid responses when extension IS connected - should NOT trigger error detection
+    let connected_responses = [
+        "pong",                          // Successful ping response
+        "Success",                       // Generic success
+        "Connected successfully",        // Connection confirmation
+        "",                              // Empty response (not an error)
+        "Screenshot captured",           // Successful browser_snapshot
+        "Page loaded",                   // Browser action success
+        "browser",                       // Single keyword (not an error pattern)
+        "tool",                          // Single keyword (not an error pattern)
+    ];
+
+    for msg in connected_responses {
+        assert!(
+            !is_extension_not_connected_error(msg),
+            "Should NOT detect as disconnected: {msg}"
+        );
+    }
 }

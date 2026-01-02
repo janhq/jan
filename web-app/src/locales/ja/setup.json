@@ -1,6 +1,13 @@
 {
   "welcome": "Janへようこそ",
-  "description": "始めるには、ローカルAIモデルをダウンロードするか、APIキーを使用してクラウドモデルに接続する必要があります",
+  "description": "開始するには、Jan Modelで素早く起動するか、独自のローカルまたはリモートプロバイダーを選択してください",
+  "descriptionWeb": "開始するには、APIキーを使用してクラウドモデルに接続する必要があります",
+  "quickStart": "Jan Modelでクイックスタート",
+  "quickStartDescription": "セットアップ不要",
+  "quickStartFailed": "エラーが発生しました。もう一度お試しください。",
+  "downloading": "Jan Modelをダウンロード中...",
+  "downloadingDescription": "モデルをダウンロードしていますのでお待ちください。数分かかる場合があります。",
+  "orDivider": "または",
   "localModel": "ローカルモデルをセットアップ",
   "remoteProvider": "リモートプロバイダーをセットアップ"
 }

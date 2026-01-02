@@ -1,7 +1,7 @@
 {
   "sortNewest": "Newest",
   "sortMostDownloaded": "Most downloaded",
-  "use": "Use",
+  "newChat": "New chat",
   "download": "Download",
   "downloaded": "Downloaded",
   "loadingModels": "Loading models...",
@@ -13,19 +13,5 @@
   "useModel": "Use this model",
   "downloadModel": "Download model",
   "tools": "Tools",
-  "searchPlaceholder": "Search for models on Hugging Face...",
-  "joyride": {
-    "recommendedModelTitle": "Recommended Model",
-    "recommendedModelContent": "Browse and download powerful AI models from various providers, all in one place. We suggest starting with Jan-Nano - a model optimized for function calling, tool integration, and research capabilities. It's ideal for building interactive AI agents.",
-    "downloadInProgressTitle": "Download in Progress",
-    "downloadInProgressContent": "Your model is now downloading. Track progress here - once finished, it will be ready to use.",
-    "downloadModelTitle": "Download Model",
-    "downloadModelContent": "Click the Download button to begin downloading the model.",
-    "back": "Back",
-    "close": "Close",
-    "lastWithDownload": "Download",
-    "last": "Finish",
-    "next": "Next",
-    "skip": "Skip"
-  }
+  "searchPlaceholder": "Search for models on Hugging Face..."
 }

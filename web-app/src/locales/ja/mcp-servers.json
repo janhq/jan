@@ -1,6 +1,16 @@
 {
   "editServer": "MCPサーバーを編集",
   "addServer": "MCPサーバーを追加",
+  "browserExtension": {
+    "connecting": {
+      "checking": "拡張機能の状態を確認中..."
+    },
+    "notInstalled": {
+      "title": "Janがブラウザでタスクを実行します",
+      "description": "拡張機能をインストールしてJanにブラウザアクセスを許可してください",
+      "getExtension": "拡張機能を取得"
+    }
+  },
   "serverName": "サーバー名",
   "enterServerName": "サーバー名を入力",
   "command": "コマンド",

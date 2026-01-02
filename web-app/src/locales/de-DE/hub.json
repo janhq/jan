@@ -1,7 +1,7 @@
 {
   "sortNewest": "Neueste",
   "sortMostDownloaded": "Meist heruntergeladen",
-  "use": "Nutzen",
+  "newChat": "Neuer Chat",
   "download": "Herunterladen",
   "downloaded": "Heruntergeladen",
   "loadingModels": "Lade Modelle...",
@@ -14,19 +14,5 @@
   "downloadModel": "Modell herunterladen",
   "tools": "Werkzeuge",
   "searchPlaceholder": "Suche nach Modellen auf Hugging Face...",
-  "editTheme": "Bearbeite Erscheinungsbild",
-  "joyride": {
-    "recommendedModelTitle": "Empfohlenes Modell",
-    "recommendedModelContent": "Durchsuche und lade leistungsstarke KI-Modelle verschiedener Anbieter an einem Ort herunter. Wir empfehlen mit Jan-Nano zu beginnen, einem Modell, das für Funktionsaufrufe, Werkzeug-Integration und Forschungsfunktionen optimiert ist. Es eignet sich ideal für die Entwicklung interaktiver KI-Agenten.",
-    "downloadInProgressTitle": "Download läuft",
-    "downloadInProgressContent": "Dein Modell wird jetzt heruntergeladen. Verfolge hier den Fortschritt. Sobald der Download abgeschlossen ist, ist es einsatzbereit.",
-    "downloadModelTitle": "Modell herunterladen",
-    "downloadModelContent": "Klicke auf den Download Button um das Herunterladen zu beginnen.",
-    "back": "Zurück",
-    "close": "Schließen",
-    "lastWithDownload": "Download",
-    "last": "Fertig",
-    "next": "Nächstes",
-    "skip": "Überspringen"
-  }
+  "editTheme": "Bearbeite Erscheinungsbild"
 }

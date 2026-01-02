@@ -1,7 +1,7 @@
 {
   "sortNewest": "Najnowsze",
   "sortMostDownloaded": "Najczęściej pobierane",
-  "use": "Użyj",
+  "newChat": "Nowy czat",
   "download": "Pobierz",
   "downloaded": "Pobrany",
   "loadingModels": "Wczytywanie modeli…",
@@ -13,19 +13,5 @@
   "useModel": "Użyj tego modelu",
   "downloadModel": "Pobierz model",
   "tools": "Narzędzia",
-  "searchPlaceholder": "Szukaj modeli na Hugging Face…",
-  "joyride": {
-    "recommendedModelTitle": "Polecany Model",
-    "recommendedModelContent": "Przeglądaj i pobieraj silne modele SI od różnych dostawców, wszystko w jednym miejscu. Warto zacząć od Jan-Nano - modelu zoptymalizowanego do wywoływania funkcji, integracji z narzędziami i możliwości badawczych. Jest on idealny do budowania interaktywnych agentów SI.",
-    "downloadInProgressTitle": "Trwa Pobieranie",
-    "downloadInProgressContent": "Twój model jest teraz pobierany. Tutaj możesz śledzić postęp. Po zakończeniu, model będzie gotowy do użytku.",
-    "downloadModelTitle": "Pobierz Model",
-    "downloadModelContent": "Kliknij na przycisk 'Pobierz' aby rozpocząć pobieranie modelu.",
-    "back": "Wstecz",
-    "close": "Zamknij",
-    "lastWithDownload": "Ostatni Pobrany",
-    "last": "Ostatni",
-    "next": "Dalej",
-    "skip": "Pomiń"
-  }
+  "searchPlaceholder": "Szukaj modeli na Hugging Face…"
 }

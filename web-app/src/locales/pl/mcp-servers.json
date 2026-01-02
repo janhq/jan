@@ -1,6 +1,16 @@
 {
   "editServer": "Edytuj Serwer MCP",
   "addServer": "Dodaj Serwer MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Sprawdzanie statusu rozszerzenia..."
+    },
+    "notInstalled": {
+      "title": "Jan wykonuje zadania w Twojej przeglądarce",
+      "description": "Zainstaluj rozszerzenie, aby dać Janowi dostęp do przeglądarki",
+      "getExtension": "Pobierz rozszerzenie"
+    }
+  },
   "serverName": "Nazwa Serwera",
   "enterServerName": "Wprowadź nazwę serwera",
   "command": "Polecenie",

@@ -1,6 +1,16 @@
 {
   "editServer": "Editar Servidor MCP",
   "addServer": "Adicionar Servidor MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Verificando status da extensão..."
+    },
+    "notInstalled": {
+      "title": "Jan completa tarefas no seu navegador",
+      "description": "Instale a extensão para dar ao Jan acesso ao navegador",
+      "getExtension": "Obter Extensão"
+    }
+  },
   "serverName": "Nome do Servidor",
   "enterServerName": "Digite o nome do servidor",
   "command": "Comando",

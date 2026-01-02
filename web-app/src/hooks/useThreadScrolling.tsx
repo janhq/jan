@@ -149,7 +149,7 @@ export const useThreadScrolling = (
       return () =>
         scrollContainer.removeEventListener('scroll', handleScroll)
     }
-  }, [handleScroll])
+  }, [handleScroll, scrollContainerRef])
 
   const checkScrollState = useCallback(() => {
     const scrollContainer = scrollContainerRef.current
@@ -161,7 +161,7 @@ export const useThreadScrolling = (
 
     setIsAtBottom(isBottom)
     setHasScrollbar(hasScroll)
-  }, [])
+  }, [scrollContainerRef])
 
   useEffect(() => {
     if (!scrollContainerRef.current) return
@@ -172,7 +172,7 @@ export const useThreadScrolling = (
       scrollToBottom(false)
       checkScrollState()
     }
-  }, [checkScrollState, scrollToBottom])
+  }, [checkScrollState, scrollToBottom, scrollContainerRef])
 
   const prevCountRef = useRef(messageCount)
   useEffect(() => {
@@ -220,7 +220,7 @@ export const useThreadScrolling = (
     }
 
     prevCountRef.current = messageCount
-  }, [isFlowScroll, lastMessageRole, messageCount])
+  }, [isFlowScroll, lastMessageRole, messageCount, getDOMElements, setPaddingHeight])
 
   useEffect(() => {
     const previouslyStreaming = wasStreamingRef.current
@@ -276,13 +276,13 @@ export const useThreadScrolling = (
     }
 
     wasStreamingRef.current = currentlyStreaming
-  }, [getDOMElements, isFlowScroll, streamingContent, threadId])
+  }, [getDOMElements, isFlowScroll, streamingContent, threadId, setPaddingHeight])
 
   useEffect(() => {
     if (isFlowScroll) return
     setPaddingHeight(0)
     originalPaddingRef.current = 0
-  }, [isFlowScroll])
+  }, [isFlowScroll, setPaddingHeight])
 
   useEffect(() => {
     if (!isStickyScroll) {

@@ -3,7 +3,7 @@ name: Jan Docs
 on:
   push:
     branches:
-      - dev
+      - main
     paths:
       - 'docs/**'
       - '.github/workflows/jan-docs.yml'
@@ -79,7 +79,7 @@ jobs:
               Preview URL: ${{ steps.deployCloudflarePages.outputs.url }}
 
       - name: Publish to Cloudflare Pages Production
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev') || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/release/'))
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/release/'))
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

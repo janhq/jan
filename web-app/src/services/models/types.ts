@@ -90,6 +90,20 @@ export interface ModelPlan {
   mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
 }
 
+export type PreflightReason =
+  | 'AUTH_REQUIRED'
+  | 'LICENSE_NOT_ACCEPTED'
+  | 'NOT_FOUND'
+  | 'RATE_LIMITED'
+  | 'NETWORK'
+  | 'UNKNOWN'
+
+export interface PreflightResult {
+  ok: boolean
+  status?: number
+  reason?: PreflightReason
+}
+
 export interface ModelsService {
   getModel(modelId: string): Promise<modelInfo | undefined>
   fetchModels(): Promise<modelInfo[]>
@@ -99,6 +113,10 @@ export interface ModelsService {
     hfToken?: string
   ): Promise<HuggingFaceRepo | null>
   convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel
+  preflightArtifactAccess(
+    url: string,
+    hfToken?: string
+  ): Promise<PreflightResult>
   updateModel(modelId: string, model: Partial<CoreModel>): Promise<void>
   pullModel(
     id: string,
@@ -113,7 +131,8 @@ export interface ModelsService {
     id: string,
     modelPath: string,
     mmprojPath?: string,
-    hfToken?: string
+    hfToken?: string,
+    skipVerification?: boolean
   ): Promise<void>
   abortDownload(id: string): Promise<void>
   deleteModel(id: string): Promise<void>

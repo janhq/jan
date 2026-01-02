@@ -27,6 +27,7 @@ async fn validate_downloaded_file(
     save_path: &Path,
     app: &tauri::AppHandle<impl Runtime>,
     cancel_token: &CancellationToken,
+    emit_event: bool,
 ) -> Result<(), String> {
     // Skip validation if no verification data is provided
     if item.sha256.is_none() && item.size.is_none() {
@@ -37,25 +38,27 @@ async fn validate_downloaded_file(
         return Ok(());
     }
 
-    // Extract model ID from save path for validation events
+    // Use model_id from item if available, otherwise extract from save path
     // Path structure: llamacpp/models/{modelId}/model.gguf or llamacpp/models/{modelId}/mmproj.gguf
-    let model_id = save_path
-        .parent() // get parent directory (modelId folder)
-        .and_then(|p| p.file_name())
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown");
+    let model_id = item.model_id.as_ref().map(|s| s.as_str()).unwrap_or_else(|| {
+        save_path
+            .parent() // get parent directory (modelId folder)
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+    });
 
-    // Emit validation started event
-    app.emit(
-        "onModelValidationStarted",
-        serde_json::json!({
-            "modelId": model_id,
-            "downloadType": "Model",
-        }),
-    )
-    .unwrap();
-
-    log::info!("Starting validation for model: {model_id}");
+    if emit_event {
+        app.emit(
+            "onModelValidationStarted",
+            serde_json::json!({
+                "modelId": model_id,
+                "downloadType": "Model",
+            }),
+        )
+        .unwrap();
+        log::info!("Starting validation for model: {model_id}");
+    }
 
     // Validate size if provided (fast check first)
     if let Some(expected_size) = &item.size {
@@ -392,12 +395,37 @@ pub async fn _download_files_internal(
                 let path_clone = downloaded_path.clone();
                 let cancel_token_clone = cancel_token.clone();
                 let validation_task = tokio::spawn(async move {
-                    validate_downloaded_file(&item_clone, &path_clone, &app_clone, &cancel_token_clone).await
+                    validate_downloaded_file(&item_clone, &path_clone, &app_clone, &cancel_token_clone, false).await
                 });
                 validation_tasks.push((validation_task, downloaded_path, item.clone()));
             }
             Err(e) => return Err(e),
         }
+    }
+
+    let model_id = items.iter()
+        .find_map(|item| item.model_id.as_ref())
+        .map(|s| s.as_str())
+        .or_else(|| {
+            items.first().and_then(|item| {
+                std::path::Path::new(&item.save_path)
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+            })
+        })
+        .unwrap_or("unknown");
+
+    if !validation_tasks.is_empty() && items.iter().any(|item| item.sha256.is_some() || item.size.is_some()) {
+        app.emit(
+            "onModelValidationStarted",
+            serde_json::json!({
+                "modelId": model_id,
+                "downloadType": "Model",
+            }),
+        )
+        .unwrap();
+        log::info!("Starting validation for model: {model_id}");
     }
 
     // Wait for all validations to complete

@@ -1,12 +1,12 @@
 {
   "autoDownload": "Automatic download new updates",
-  "checkForUpdates": "Check for Updates",
+  "checkForUpdates": "Check for updates",
   "checkForUpdatesDesc": "Check if a newer version of Jan is available.",
   "checkingForUpdates": "Checking for updates...",
   "noUpdateAvailable": "You're running the latest version",
   "devVersion": "Development version detected",
   "updateError": "Failed to check for updates",
-  "checkForBackendUpdates": "Check for Llamacpp Updates",
+  "checkForBackendUpdates": "Check for Llamacpp updates",
   "checkForBackendUpdatesDesc": "Check if a newer version of the Llamacpp backend is available.",
   "checkingForBackendUpdates": "Checking for Llamacpp updates...",
   "noBackendUpdateAvailable": "You're running the latest Llamacpp version",
@@ -104,10 +104,10 @@
     "threadScrollDesc": "Choose how the chat viewport should react when new messages arrive.",
     "threadScrollFlowTitle": "Flow scroll",
     "threadScrollFlowHint": "Keeps the viewport anchored to the latest message you send.",
-    
+
     "threadScrollStickyTitle": "Sticky scroll",
     "threadScrollStickyHint": "Automatically follows along as replies stream in real time.",
-    
+
     "tokenCounterCompact": "Compact Token Counter",
     "tokenCounterCompactDesc": "Show token counter inside chat input. When disabled, token counter appears below the input.",
     "codeBlockTitle": "Code Block",
@@ -269,6 +269,14 @@
     "featureTitle": "Feature",
     "enable": "Enable Attachments",
     "enableDesc": "Allow uploading and indexing documents for retrieval.",
+    "parseMode": "Parse preference",
+    "parseModeDesc": "Choose how parsed documents are added to conversations.",
+    "parseModeAuto": "Auto",
+    "parseModeInline": "Include in chat",
+    "parseModeEmbeddings": "Ingest as embeddings",
+    "parseModePrompt": "Ask every time",
+    "autoInlineThreshold": "Auto inline threshold",
+    "autoInlineThresholdDesc": "Fraction of the model context used as the cutoff for inlining parsed files on local models.",
     "limitsTitle": "Limits",
     "maxFile": "Max File Size (MB)",
     "maxFileDesc": "Maximum size per file. Enforced at upload and processing time.",
@@ -283,10 +291,10 @@
     "searchModeAnn": "ANN (sqlite-vec)",
     "searchModeLinear": "Linear",
     "chunkingTitle": "Chunking",
-    "chunkSize": "Chunk Size (tokens)",
-    "chunkSizeDesc": "Approximate max tokens per chunk for embeddings.",
-    "chunkOverlap": "Overlap (tokens)",
-    "chunkOverlapDesc": "Token overlap between consecutive chunks."
+    "chunkSize": "Chunk Size (characters)",
+    "chunkSizeDesc": "Approximate max characters per chunk for embeddings.",
+    "chunkOverlap": "Overlap (characters)",
+    "chunkOverlapDesc": "Character overlap between consecutive chunks."
   },
   "dialogs": {
     "changeDataFolder": {

@@ -106,3 +106,103 @@ export function getProxyConfig(): Record<
     throw error
   }
 }
+
+// --- Embedding batching helpers ---
+
+export type EmbedBatch = { batch: string[]; offset: number }
+export type EmbedUsage = { prompt_tokens?: number; total_tokens?: number }
+export type EmbedData = { embedding: number[]; index: number }
+
+export type EmbedBatchResult = {
+  data: EmbedData[]
+  usage?: EmbedUsage
+}
+
+// Embedding batching constants
+const DEFAULT_CHARS_PER_TOKEN = 3
+const UBATCH_SAFETY_MARGIN = 0.5
+
+export function estimateTokensFromText(text: string, charsPerToken = DEFAULT_CHARS_PER_TOKEN): number {
+  return Math.max(1, Math.ceil(text.length / Math.max(charsPerToken, 1)))
+}
+
+export function buildEmbedBatches(
+  inputs: string[],
+  ubatchSize: number,
+  charsPerToken = DEFAULT_CHARS_PER_TOKEN
+): EmbedBatch[] {
+  // Ensure ubatch_size is large enough for at least 1 token with safety margin
+  const minUbatchSize = Math.ceil(1 / UBATCH_SAFETY_MARGIN)
+  if (ubatchSize < minUbatchSize) {
+    throw new Error(
+      `ubatch_size (${ubatchSize}) is too small. Minimum required: ${minUbatchSize}`
+    )
+  }
+
+  const safeLimit = Math.floor(ubatchSize * UBATCH_SAFETY_MARGIN)
+
+  const batches: EmbedBatch[] = []
+  let current: string[] = []
+  let currentTokens = 0
+  let offset = 0
+
+  const push = () => {
+    if (current.length) {
+      batches.push({ batch: current, offset })
+      offset += current.length
+      current = []
+      currentTokens = 0
+    }
+  }
+
+  for (const text of inputs) {
+    const estTokens = estimateTokensFromText(text, charsPerToken)
+
+    // If single text exceeds safe limit, still allow it as single batch
+    // (ensure at least one text per batch)
+    if (estTokens > safeLimit) {
+      if (current.length) push()
+      batches.push({ batch: [text], offset })
+      offset += 1
+      continue
+    }
+
+    if (currentTokens + estTokens > safeLimit && current.length) {
+      push()
+    }
+
+    current.push(text)
+    currentTokens += estTokens
+  }
+
+  push()
+
+  // Validate that no batch is empty
+  if (batches.some(b => b.batch.length === 0)) {
+    throw new Error('Internal error: empty batch detected')
+  }
+
+  return batches
+}
+
+export function mergeEmbedResponses(
+  model: string,
+  batchResults: Array<{ result: EmbedBatchResult; offset: number }>
+) {
+  const aggregated = {
+    model,
+    object: 'list',
+    usage: { prompt_tokens: 0, total_tokens: 0 },
+    data: [] as EmbedData[],
+  }
+
+  for (const { result, offset } of batchResults) {
+    aggregated.usage.prompt_tokens += result.usage?.prompt_tokens ?? 0
+    aggregated.usage.total_tokens += result.usage?.total_tokens ?? 0
+    for (const item of result.data || []) {
+      aggregated.data.push({ ...item, index: item.index + offset })
+    }
+  }
+
+  return aggregated
+}

@@ -7,10 +7,9 @@ use rmcp::{
     RoleClient, ServiceError,
 };
 use tokio::sync::{Mutex, oneshot};
-use tokio::task::JoinHandle;
 
 /// Server handle type for managing the proxy server lifecycle
-pub type ServerHandle = JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
+pub type ServerHandle = tauri::async_runtime::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
 
 pub enum RunningServiceEnum {
     NoInit(RunningService<RoleClient, ()>),
@@ -23,12 +22,14 @@ pub struct AppState {
     pub app_token: Option<String>,
     pub mcp_servers: SharedMcpServers,
     pub download_manager: Arc<Mutex<DownloadManagerState>>,
-    pub mcp_restart_counts: Arc<Mutex<HashMap<String, u32>>>,
     pub mcp_active_servers: Arc<Mutex<HashMap<String, serde_json::Value>>>,
-    pub mcp_successfully_connected: Arc<Mutex<HashMap<String, bool>>>,
     pub server_handle: Arc<Mutex<Option<ServerHandle>>>,
     pub tool_call_cancellations: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
     pub mcp_settings: Arc<Mutex<McpSettings>>,
+    pub mcp_shutdown_in_progress: Arc<Mutex<bool>>,
+    pub mcp_monitoring_tasks: Arc<Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>>,
+    pub background_cleanup_handle: Arc<Mutex<Option<tauri::async_runtime::JoinHandle<()>>>>,
+    pub mcp_server_pids: Arc<Mutex<HashMap<String, u32>>>,
 }
 
 impl RunningServiceEnum {

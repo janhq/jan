@@ -1,16 +1,19 @@
 import { RAGExtension, MCPTool, MCPToolCallResult, ExtensionTypeEnum, VectorDBExtension, type AttachmentInput, type SettingComponentProps, AIEngine, type AttachmentFileInfo } from '@janhq/core'
 import './env.d'
 import { getRAGTools, RETRIEVE, LIST_ATTACHMENTS, GET_CHUNKS } from './tools'
+import * as ragApi from '@janhq/tauri-plugin-rag-api'
 
 export default class RagExtension extends RAGExtension {
   private config = {
     enabled: true,
     retrievalLimit: 3,
     retrievalThreshold: 0.3,
-    chunkSizeTokens: 512,
-    overlapTokens: 64,
+    chunkSizeChars: 512,
+    overlapChars: 64,
     searchMode: 'auto' as 'auto' | 'ann' | 'linear',
     maxFileSizeMB: 20,
+    parseMode: 'auto' as 'auto' | 'inline' | 'embeddings' | 'prompt',
+    autoInlineContextRatio: 0.75,
   }
 
   async onLoad(): Promise<void> {
@@ -20,9 +23,19 @@ export default class RagExtension extends RAGExtension {
     this.config.maxFileSizeMB = await this.getSetting('max_file_size_mb', this.config.maxFileSizeMB)
     this.config.retrievalLimit = await this.getSetting('retrieval_limit', this.config.retrievalLimit)
     this.config.retrievalThreshold = await this.getSetting('retrieval_threshold', this.config.retrievalThreshold)
-    this.config.chunkSizeTokens = await this.getSetting('chunk_size_tokens', this.config.chunkSizeTokens)
-    this.config.overlapTokens = await this.getSetting('overlap_tokens', this.config.overlapTokens)
+    // Prefer char-based keys; fall back to legacy token keys for backward compatibility
+    this.config.chunkSizeChars =
+      (await this.getSetting('chunk_size_chars', this.config.chunkSizeChars)) ||
+      (await this.getSetting('chunk_size_tokens', this.config.chunkSizeChars))
+    this.config.overlapChars =
+      (await this.getSetting('overlap_chars', this.config.overlapChars)) ||
+      (await this.getSetting('overlap_tokens', this.config.overlapChars))
     this.config.searchMode = await this.getSetting('search_mode', this.config.searchMode)
+    this.config.parseMode = await this.getSetting('parse_mode', this.config.parseMode)
+    this.config.autoInlineContextRatio = await this.getSetting(
+      'auto_inline_context_ratio',
+      this.config.autoInlineContextRatio
+    )
 
     // Check ANN availability on load
     try {
@@ -234,8 +247,8 @@ export default class RagExtension extends RAGExtension {
     // Load settings
     const s = this.config
     const maxSize = (s?.enabled === false ? 0 : s?.maxFileSizeMB) || undefined
-    const chunkSize = s?.chunkSizeTokens as number | undefined
-    const chunkOverlap = s?.overlapTokens as number | undefined
+    const chunkSize = s?.chunkSizeChars as number | undefined
+    const chunkOverlap = s?.overlapChars as number | undefined
 
     let totalChunks = 0
     const processedFiles: AttachmentFileInfo[] = []
@@ -267,39 +280,53 @@ export default class RagExtension extends RAGExtension {
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
-    switch (key) {
-      case 'enabled':
-        this.config.enabled = Boolean(value)
-        break
-      case 'max_file_size_mb':
-        this.config.maxFileSizeMB = Number(value)
-        break
-      case 'retrieval_limit':
-        this.config.retrievalLimit = Number(value)
-        break
-      case 'retrieval_threshold':
-        this.config.retrievalThreshold = Number(value)
-        break
-      case 'chunk_size_tokens':
-        this.config.chunkSizeTokens = Number(value)
-        break
-      case 'overlap_tokens':
-        this.config.overlapTokens = Number(value)
-        break
-      case 'search_mode':
-        this.config.searchMode = String(value) as 'auto' | 'ann' | 'linear'
-        break
-    }
+      switch (key) {
+        case 'enabled':
+          this.config.enabled = Boolean(value)
+          break
+        case 'max_file_size_mb':
+          this.config.maxFileSizeMB = Number(value)
+          break
+        case 'auto_inline_context_ratio':
+          this.config.autoInlineContextRatio = Number(value)
+          break
+        case 'retrieval_limit':
+          this.config.retrievalLimit = Number(value)
+          break
+        case 'retrieval_threshold':
+          this.config.retrievalThreshold = Number(value)
+          break
+        case 'chunk_size_chars':
+          this.config.chunkSizeChars = Number(value)
+          break
+        case 'overlap_chars':
+          this.config.overlapChars = Number(value)
+          break
+        case 'search_mode':
+          this.config.searchMode = String(value) as 'auto' | 'ann' | 'linear'
+          break
+        case 'parse_mode':
+          this.config.parseMode = String(value) as 'auto' | 'inline' | 'embeddings' | 'prompt'
+          break
+      }
+  }
+
+  async parseDocument(path: string, type?: string): Promise<string> {
+    return await ragApi.parseDocument(path, type || 'application/octet-stream')
   }
 
   // Locally implement embedding logic (previously in embeddings-extension)
   private async embedTexts(texts: string[]): Promise<number[][]> {
-    const llm = window.core?.extensionManager.getByName('@janhq/llamacpp-extension') as AIEngine & { embed?: (texts: string[]) => Promise<{ data: Array<{ embedding: number[]; index: number }> }> }
+    const llm = window.core?.extensionManager.getByName('@janhq/llamacpp-extension') as AIEngine & {
+      embed?: (texts: string[]) => Promise<{ data: Array<{ embedding: number[]; index: number }> }>
+    }
     if (!llm?.embed) throw new Error('llamacpp extension not available')
     const res = await llm.embed(texts)
     const data: Array<{ embedding: number[]; index: number }> = res?.data || []
     const out: number[][] = new Array(texts.length)
-    for (const item of data) out[item.index] = item.embedding
+    for (const item of data) {
+      out[item.index] = item.embedding
+    }
     return out
   }
 }

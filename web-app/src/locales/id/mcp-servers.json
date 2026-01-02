@@ -1,6 +1,16 @@
 {
   "editServer": "Edit Server MCP",
   "addServer": "Tambah Server MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Memeriksa status ekstensi..."
+    },
+    "notInstalled": {
+      "title": "Jan menyelesaikan tugas di browser Anda",
+      "description": "Instal ekstensi untuk memberikan Jan akses browser",
+      "getExtension": "Dapatkan Ekstensi"
+    }
+  },
   "serverName": "Nama Server",
   "enterServerName": "Masukkan nama server",
   "command": "Perintah",

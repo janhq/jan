@@ -1,12 +1,12 @@
 {
-  "title": "Tool Call Request",
-  "description": "The assistant wants to use the tool: <strong>{{toolName}}</strong>",
-  "securityNotice": "<strong>Security Notice:</strong> Malicious tools or conversation content could potentially trick the assistant into attempting harmful actions. Review each tool call carefully before approving.",
-  "deny": "Deny",
-  "allowOnce": "Allow Once",
-  "alwaysAllow": "Allow in thread",
-  "permissions": "Permissions",
-  "approve": "Approve",
-  "reject": "Reject",
-  "parameters": "Tool Parameters"
+  "title": "Žádost o volání nástroje",
+  "description": "Asistent chce použít nástroj: <strong>{{toolName}}</strong>",
+  "securityNotice": "<strong>Bezpečnostní upozornění:</strong> Škodlivé nástroje nebo obsah konverzace by mohly potenciálně oklamat asistenta k pokusu o škodlivé akce. Před schválením pečlivě zkontrolujte každé volání nástroje.",
+  "deny": "Zamítnout",
+  "allowOnce": "Povolit jednou",
+  "alwaysAllow": "Povolit ve vlákně",
+  "permissions": "Oprávnění",
+  "approve": "Schválit",
+  "reject": "Odmítnout",
+  "parameters": "Parametry nástroje"
 }

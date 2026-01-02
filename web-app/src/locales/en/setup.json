@@ -1,6 +1,13 @@
 {
   "welcome": "Welcome to Jan",
-  "description": "To get started, you'll need to either download a local AI model or connect to a cloud model using an API key",
+  "description": "To get started, quickly launch with Jan Model or choose to set up your own local or remote provider",
+  "descriptionWeb": "To get started, you'll need to connect to a cloud model using an API key",
+  "quickStart": "Quick start with Jan Model",
+  "quickStartDescription": "No setup needed",
+  "quickStartFailed": "Something went wrong. Please try again.",
+  "downloading": "Downloading Jan Model...",
+  "downloadingDescription": "Please wait while we download the model. This may take a few minutes.",
+  "orDivider": "or",
   "localModel": "Set up local model",
   "remoteProvider": "Set up remote provider"
 }

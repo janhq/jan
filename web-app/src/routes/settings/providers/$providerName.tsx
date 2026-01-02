@@ -8,7 +8,6 @@ import {
   createFileRoute,
   Link,
   useParams,
-  useSearch,
 } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Capabilities from '@/containers/Capabilities'
@@ -20,12 +19,9 @@ import { ImportVisionModelDialog } from '@/containers/dialogs/ImportVisionModelD
 import { ModelSetting } from '@/containers/ModelSetting'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
-import Joyride, { CallBackProps, STATUS } from 'react-joyride'
-import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { localStorageKey } from '@/constants/localStorage'
 import { Button } from '@/components/ui/button'
 import {
   IconFolderPlus,
@@ -60,27 +56,6 @@ function ProviderDetail() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const { setModelLoadError } = useModelLoad()
-  const steps = [
-    {
-      target: '.first-step-setup-remote-provider',
-      title: t('providers:joyride.chooseProviderTitle'),
-      disableBeacon: true,
-      content: t('providers:joyride.chooseProviderContent'),
-    },
-    {
-      target: '.second-step-setup-remote-provider',
-      title: t('providers:joyride.getApiKeyTitle'),
-      disableBeacon: true,
-      content: t('providers:joyride.getApiKeyContent'),
-    },
-    {
-      target: '.third-step-setup-remote-provider',
-      title: t('providers:joyride.insertApiKeyTitle'),
-      disableBeacon: true,
-      content: t('providers:joyride.insertApiKeyContent'),
-    },
-  ]
-  const { step } = useSearch({ from: Route.id })
   const [activeModels, setActiveModels] = useAppState(
     useShallow((state) => [state.activeModels, state.setActiveModels])
   )
@@ -94,7 +69,6 @@ function ProviderDetail() {
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
-  const isSetup = step === 'setup_remote_provider'
 
   // Check if llamacpp provider needs backend configuration
   const needsBackendConfig =
@@ -226,14 +200,6 @@ function ProviderDetail() {
 
   // Note: settingsChanged event is now handled globally in GlobalEventHandler
   // This ensures all screens receive the event intermediately
-
-  const handleJoyrideCallback = (data: CallBackProps) => {
-    const { status } = data
-
-    if (status === STATUS.FINISHED) {
-      localStorage.setItem(localStorageKey.setupCompleted, 'true')
-    }
-  }
 
   const handleRefreshModels = async () => {
     if (!provider || !provider.base_url) {
@@ -425,29 +391,6 @@ function ProviderDetail() {
 
   return (
     <>
-      <Joyride
-        run={IS_IOS || IS_ANDROID ? false : isSetup}
-        floaterProps={{
-          hideArrow: true,
-        }}
-        steps={steps}
-        tooltipComponent={CustomTooltipJoyRide}
-        spotlightPadding={0}
-        continuous={true}
-        showSkipButton={true}
-        hideCloseButton={true}
-        spotlightClicks={true}
-        disableOverlay={IS_LINUX}
-        disableOverlayClose={true}
-        callback={handleJoyrideCallback}
-        locale={{
-          back: t('providers:joyride.back'),
-          close: t('providers:joyride.close'),
-          last: t('providers:joyride.last'),
-          next: t('providers:joyride.next'),
-          skip: t('providers:joyride.skip'),
-        }}
-      />
       <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
         <HeaderPage>
           <h1 className="font-medium">{t('common:settings')}</h1>
@@ -466,8 +409,8 @@ function ProviderDetail() {
                 className={cn(
                   'flex flex-col gap-3',
                   provider &&
-                    provider.provider === 'llamacpp' &&
-                    'flex-col-reverse'
+                  provider.provider === 'llamacpp' &&
+                  'flex-col-reverse'
                 )}
               >
                 {/* Settings */}
@@ -477,7 +420,7 @@ function ProviderDetail() {
                     const actionComponent = (
                       <div className="mt-2">
                         {needsBackendConfig &&
-                        setting.key === 'version_backend' ? (
+                          setting.key === 'version_backend' ? (
                           <div className="flex items-center gap-1 text-sm text-main-view-fg/70">
                             <IconLoader size={16} className="animate-spin" />
                             <span>loading</span>
@@ -487,22 +430,20 @@ function ProviderDetail() {
                             controllerType={setting.controller_type}
                             controllerProps={setting.controller_props}
                             className={cn(
-                              setting.key === 'api-key' &&
-                                'third-step-setup-remote-provider',
                               setting.key === 'device' && 'hidden'
                             )}
                             onChange={(newValue) => {
                               if (provider) {
                                 const newSettings = [...provider.settings]
-                                // Handle different value types by forcing the type
-                                // Use type assertion to bypass type checking
+                                  // Handle different value types by forcing the type
+                                  // Use type assertion to bypass type checking
 
-                                ;(
-                                  newSettings[settingIndex]
-                                    .controller_props as {
-                                    value: string | boolean | number
-                                  }
-                                ).value = newValue
+                                  ; (
+                                    newSettings[settingIndex]
+                                      .controller_props as {
+                                        value: string | boolean | number
+                                      }
+                                  ).value = newValue
 
                                 // Create update object with updated settings
                                 const updateObj: Partial<ModelProvider> = {
@@ -533,8 +474,8 @@ function ProviderDetail() {
                                     (
                                       newSettings[deviceSettingIndex]
                                         .controller_props as {
-                                        value: string
-                                      }
+                                          value: string
+                                        }
                                     ).value = ''
                                   }
 
@@ -581,7 +522,7 @@ function ProviderDetail() {
                         className={cn(setting.key === 'device' && 'hidden')}
                         column={
                           setting.controller_type === 'input' &&
-                          setting.controller_props.type !== 'number'
+                            setting.controller_props.type !== 'number'
                             ? true
                             : false
                         }
@@ -598,10 +539,6 @@ function ProviderDetail() {
                                       {...props}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className={cn(
-                                        setting.key === 'api-key' &&
-                                          'second-step-setup-remote-provider'
-                                      )}
                                     />
                                   )
                                 },
@@ -628,9 +565,12 @@ function ProviderDetail() {
                                   <Button
                                     variant="link"
                                     size="sm"
-                                    className="p-0"
+                                    className={cn(
+                                      'p-0',
+                                      isCheckingBackendUpdate && 
+                                      'pointer-events-none'
+                                    )}
                                     onClick={handleCheckForBackendUpdate}
-                                    disabled={isCheckingBackendUpdate}
                                   >
                                     <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
                                       <IconRefresh
@@ -638,17 +578,17 @@ function ProviderDetail() {
                                         className={cn(
                                           'text-main-view-fg/50',
                                           isCheckingBackendUpdate &&
-                                            'animate-spin'
+                                          'animate-spin'
                                         )}
                                       />
                                       <span>
                                         {isCheckingBackendUpdate
                                           ? t(
-                                              'settings:checkingForBackendUpdates'
-                                            )
+                                            'settings:checkingForBackendUpdates'
+                                          )
                                           : t(
-                                              'settings:checkForBackendUpdates'
-                                            )}
+                                            'settings:checkForBackendUpdates'
+                                          )}
                                       </span>
                                     </div>
                                   </Button>
@@ -699,33 +639,33 @@ function ProviderDetail() {
                             {!predefinedProviders.some(
                               (p) => p.provider === provider.provider
                             ) && (
-                              <Button
-                                variant="link"
-                                size="sm"
-                                className="hover:no-underline"
-                                onClick={handleRefreshModels}
-                                disabled={refreshingModels}
-                              >
-                                <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-1.5 py-1 gap-1">
-                                  {refreshingModels ? (
-                                    <IconLoader
-                                      size={18}
-                                      className="text-main-view-fg/50 animate-spin"
-                                    />
-                                  ) : (
-                                    <IconRefresh
-                                      size={18}
-                                      className="text-main-view-fg/50"
-                                    />
-                                  )}
-                                  <span className="text-main-view-fg/70">
-                                    {refreshingModels
-                                      ? t('providers:refreshing')
-                                      : t('providers:refresh')}
-                                  </span>
-                                </div>
-                              </Button>
-                            )}
+                                <Button
+                                  variant="link"
+                                  size="sm"
+                                  className="hover:no-underline"
+                                  onClick={handleRefreshModels}
+                                  disabled={refreshingModels}
+                                >
+                                  <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-1.5 py-1 gap-1">
+                                    {refreshingModels ? (
+                                      <IconLoader
+                                        size={18}
+                                        className="text-main-view-fg/50 animate-spin"
+                                      />
+                                    ) : (
+                                      <IconRefresh
+                                        size={18}
+                                        className="text-main-view-fg/50"
+                                      />
+                                    )}
+                                    <span className="text-main-view-fg/70">
+                                      {refreshingModels
+                                        ? t('providers:refreshing')
+                                        : t('providers:refresh')}
+                                    </span>
+                                  </div>
+                                </Button>
+                              )}
                             <DialogAddModel provider={provider} />
                           </>
                         )}
@@ -795,8 +735,8 @@ function ProviderDetail() {
                                     (p) => p.provider === provider.provider
                                   ) &&
                                   Boolean(provider.api_key?.length))) && (
-                                <FavoriteModelAction model={model} />
-                              )}
+                                  <FavoriteModelAction model={model} />
+                                )}
                               <DialogDeleteModel
                                 provider={provider}
                                 modelId={model.id}

@@ -1,7 +1,7 @@
 {
   "sortNewest": "Terbaru",
   "sortMostDownloaded": "Paling Banyak Diunduh",
-  "use": "Gunakan",
+  "newChat": "Chat baru",
   "download": "Unduh",
   "downloaded": "Telah Diunduh",
   "loadingModels": "Memuat model...",
@@ -13,19 +13,5 @@
   "useModel": "Gunakan model ini",
   "downloadModel": "Unduh model",
   "tools": "Alat",
-  "searchPlaceholder": "Cari model di Hugging Face...",
-  "joyride": {
-    "recommendedModelTitle": "Model yang Direkomendasikan",
-    "recommendedModelContent": "Jelajahi dan unduh model AI yang kuat dari berbagai penyedia, semuanya di satu tempat. Kami sarankan memulai dengan Jan-Nano - model yang dioptimalkan untuk pemanggilan fungsi, integrasi alat, dan kemampuan penelitian. Ini ideal untuk membangun agen AI interaktif.",
-    "downloadInProgressTitle": "Unduhan Sedang Berlangsung",
-    "downloadInProgressContent": "Model Anda sedang diunduh. Lacak kemajuan di sini - setelah selesai, model akan siap digunakan.",
-    "downloadModelTitle": "Unduh Model",
-    "downloadModelContent": "Klik tombol Unduh untuk mulai mengunduh model.",
-    "back": "Kembali",
-    "close": "Tutup",
-    "lastWithDownload": "Unduh",
-    "last": "Selesai",
-    "next": "Berikutnya",
-    "skip": "Lewati"
-  }
+  "searchPlaceholder": "Cari model di Hugging Face..."
 }
