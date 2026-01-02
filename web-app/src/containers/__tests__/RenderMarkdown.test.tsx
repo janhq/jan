@@ -170,7 +170,8 @@ describe('RenderMarkdown', () => {
     const html = markdownContainer?.innerHTML || ''
     expect(html).not.toContain('<pre>')
     expect(html).toContain('<p>')
-    expect(html).toContain('<!DOCTYPE html>')
+    // Left and right brackets get escaped as &lt; and &gt; respectively
+    expect(html).toContain('&lt;!DOCTYPE html&gt;')
   })
   
   it('formats fenced code blocks correctly', () => {
