@@ -40,11 +40,13 @@ export function disableIndentedCodeBlockPlugin() {
       if (!node.lang && !node.meta && parent && typeof index === 'number') {
         const textNode: Text = {
           type: 'text',
-          value: node.value
+          value: node.value,
+          position: node.position
         }
         const paragraphNode: Paragraph = {
           type: 'paragraph',
-          children: [textNode]
+          children: [textNode],
+          position: node.position
         }
         parent.children[index] = paragraphNode
       }
