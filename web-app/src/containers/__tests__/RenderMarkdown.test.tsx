@@ -169,6 +169,8 @@ describe('RenderMarkdown', () => {
     const markdownContainer = document.querySelector('.markdown')
     const html = markdownContainer?.innerHTML || ''
     expect(html).not.toContain('<pre>')
+    expect(html).toContain('<p>')
+    expect(html).toContain('<!DOCTYPE html>')
   })
   
   it('formats fenced code blocks correctly', () => {
