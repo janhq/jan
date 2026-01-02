@@ -218,7 +218,6 @@ describe('RenderMarkdown', () => {
     const html = markdownContainer?.innerHTML || ''
     expect(html).toContain('<pre>')
   })
-})
   describe('LaTeX normalization - display math', () => {
     it('converts \\[...\\] to $$ display math', () => {
       const content = 'Here is math:\n\\[\nx^2 + y^2\n\\]\nDone'
