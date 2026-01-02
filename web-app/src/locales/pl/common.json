@@ -229,6 +229,16 @@
     },
     "messageMetadata": {
       "title": "Metadane Wiadomości"
+    },
+    "exportResponse": {
+      "title": "Eksportuj odpowiedź",
+      "description": "Wybierz format eksportu i zdecyduj, czy chcesz uwzględnić proces myślowy.",
+      "export": "Eksportuj",
+      "format": "Format",
+      "thinking": "Dołącz Proces Myślowy",
+      "includingThinkingDescription": "Dołącz proces rozumowania modelu do eksportu",
+      "cancel": "Anuluj",
+      "exporting": "Eksportowanie..."
     }
   },
   "projects": {
@@ -365,6 +375,15 @@
     "threadRemovedFromProject": {
       "title": "Wątek Usunięty",
       "description": "Wątek został pomyślnie usunięty z \"{{projectName}}\""
+    },
+    "markdownDownloaded": {
+      "title": "Plik Markdown został pomyślnie pobrany"
+    },
+    "pdfDownloaded": {
+      "title": "Plik PDF został pomyślnie pobrany"
+    },
+    "imageDownloaded": {
+      "title": "Plik obrazu został pomyślnie pobrany"
     }
   },
   "failedToLoadModels": "Nie udało się wczytać modeli",

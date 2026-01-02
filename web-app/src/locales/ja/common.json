@@ -234,6 +234,16 @@
     },
     "messageMetadata": {
       "title": "メッセージメタデータ"
+    },
+    "exportResponse": {
+      "title": "応答をエクスポート",
+      "description": "エクスポート形式を選択し、思考プロセスを含めるかどうかを選択します。",
+      "export": "エクスポート",
+      "format": "フォーマット",
+      "thinking": "思考プロセスを含める",
+      "includingThinkingDescription": "モデルの推論プロセスをエクスポートに含める",
+      "cancel": "キャンセル",
+      "exporting": "エクスポート中..."
     }
   },
   "projects": {
@@ -362,6 +372,15 @@
     "threadRemovedFromProject": {
       "title": "スレッドが削除されました",
       "description": "スレッドは「{{projectName}}」から正常に削除されました"
+    },
+    "markdownDownloaded": {
+      "title": "Markdownファイルが正常にダウンロードされました"
+    },
+    "pdfDownloaded": {
+      "title": "PDFファイルが正常にダウンロードされました"
+    },
+    "imageDownloaded": {
+      "title": "画像ファイルが正常にダウンロードされました"
     }
   }
 }

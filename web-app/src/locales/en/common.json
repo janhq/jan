@@ -237,6 +237,16 @@
     },
     "messageMetadata": {
       "title": "Message Metadata"
+    },
+    "exportResponse": {
+      "title": "Export Response",
+      "description": "Select an export format and choose whether to include the thinking process.",
+      "export": "Export",
+      "format": "Format",
+      "thinking": "Include Thinking Process",
+      "includingThinkingDescription": "Include the model's reasoning process in the export",
+      "cancel": "Cancel",
+      "exporting": "Exporting..."
     }
   },
   "projects": {
@@ -382,6 +392,15 @@
     "threadRemovedFromProject": {
       "title": "Thread Removed",
       "description": "Thread removed from \"{{projectName}}\" successfully"
+    },
+    "markdownDownloaded": {
+      "title": "Markdown file downloaded successfully"
+    },
+    "pdfDownloaded": {
+      "title": "PDF file downloaded successfully"
+    },
+    "imageDownloaded": {
+      "title": "Image file downloaded successfully"
     }
   }
 }

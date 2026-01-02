@@ -289,6 +289,16 @@
     },
     "messageMetadata": {
       "title": "訊息元資料"
+    },
+    "exportResponse": {
+      "title": "匯出回應",
+      "description": "選擇導出格式，並選擇是否包含思考過程。",
+      "export": "匯出",
+      "format": "格式",
+      "thinking": "包含思考流程",
+      "includingThinkingDescription": "在匯出中包含模型的推論過程",
+      "cancel": "取消",
+      "exporting": "正在匯出..."
     }
   },
   "toast": {
@@ -371,6 +381,15 @@
     "threadRemovedFromProject": {
       "title": "執行緒已移除",
       "description": "執行緒已成功從「{{projectName}}」中移除"
+    },
+    "markdownDownloaded": {
+      "title": "Markdown 檔案下載成功"
+    },
+    "pdfDownloaded": {
+      "title": "PDF 檔案下載成功"
+    },
+    "imageDownloaded": {
+      "title": "圖片檔案下載成功"
     }
   }
 }

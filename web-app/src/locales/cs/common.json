@@ -237,6 +237,16 @@
     },
     "messageMetadata": {
       "title": "Metadata zprávy"
+    },
+    "exportResponse": {
+      "title": "Exportovat odpověď",
+      "description": "Vyberte formát exportu a zvolte, zda chcete zahrnout myšlenkový proces.",
+      "export": "Exportovat",
+      "format": "Formát",
+      "thinking": "Zahrnout proces myšlení",
+      "includingThinkingDescription": "Zahrnout proces uvažování modelu do exportu",
+      "cancel": "Zrušit",
+      "exporting": "Exportování..."
     }
   },
   "projects": {
@@ -372,6 +382,15 @@
     "threadRemovedFromProject": {
       "title": "Vlákno odebráno",
       "description": "Vlákno bylo úspěšně odebráno z \"{{projectName}}\""
+    },
+    "markdownDownloaded": {
+      "title": "Soubor Markdown byl úspěšně stažen"
+    },
+    "pdfDownloaded": {
+      "title": "Soubor PDF byl úspěšně stažen"
+    },
+    "imageDownloaded": {
+      "title": "Obrázek byl úspěšně stažen"
     }
   }
 }

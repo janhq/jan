@@ -19,6 +19,7 @@ import {
   EditMessageDialog,
   MessageMetadataDialog,
   DeleteMessageDialog,
+  ExportResponseDialog,
 } from '@/containers/dialogs'
 import {
   Tooltip,
@@ -495,6 +496,7 @@ export const ThreadContent = memo(
                     <CopyButton text={item.content?.[0]?.text.value || ''} />
                     <DeleteMessageDialog onDelete={removeMessage} />
                     <MessageMetadataDialog metadata={item.metadata} />
+                    <ExportResponseDialog message={item} />
 
                     {item.isLastMessage && selectedModel && (
                       <Tooltip>
