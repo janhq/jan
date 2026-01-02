@@ -33,7 +33,7 @@ export function basenameNoExt(filePath: string): string {
  */
 export function disableIndentedCodeBlockPlugin() {
   return (tree: Node) => {
-    visit(tree, 'code', (node: Code, index, parent: Parent) => {
+    visit(tree, 'code', (node: Code, index, parent: Parent | undefined) => {
       // Convert indented code blocks (nodes without lang or meta property)
       // to plain text
       // Check if the parent exists so we can replace the node safely
