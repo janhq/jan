@@ -21,5 +21,21 @@ permissions = [
     "allow-estimate-kv-cache-size",
     "allow-get-model-size",
     "allow-is-model-supported",
-    "allow-plan-model-load"
+    "allow-plan-model-load",
+
+    # Backend management commands
+    "allow-map-old-backend-to-new",
+    "allow-get-local-installed-backends",
+    "allow-list-supported-backends",
+    "allow-determine-supported-backends",
+    "allow-get-supported-features",
+    "allow-is-cuda-installed",
+    "allow-find-latest-version-for-backend",
+    "allow-prioritize-backends",
+    "allow-parse-backend-version",
+    "allow-check-backend-for-updates",
+    "allow-remove-old-backend-versions",
+    "allow-validate-backend-string",
+    "allow-should-migrate-backend",
+    "allow-handle-setting-update"
 ]

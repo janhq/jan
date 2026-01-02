@@ -32,7 +32,6 @@ import {
   isBackendInstalled,
   getBackendExePath,
   getBackendDir,
-  mapOldBackendToNew,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 import {
@@ -56,6 +55,13 @@ import {
   EmbeddingResponse,
   DeviceList,
   SystemMemory,
+  mapOldBackendToNew,
+  findLatestVersionForBackend,
+  prioritizeBackends,
+  checkBackendForUpdates,
+  removeOldBackendVersions,
+  shouldMigrateBackend,
+  handleSettingUpdate,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
@@ -189,23 +195,6 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private findLatestVersionForBackend(
-    version_backends: { version: string; backend: string }[],
-    backendType: string
-  ): string | null {
-    const matchingBackends = version_backends.filter(
-      (vb) => mapOldBackendToNew(vb.backend) === backendType
-    )
-    if (matchingBackends.length === 0) {
-      return null
-    }
-
-    // Sort by version (newest first) and get the latest
-    matchingBackends.sort((a, b) => b.version.localeCompare(a.version))
-    // Return the full string including the original asset name, as this is used for download/path
-    return `${matchingBackends[0].version}/${matchingBackends[0].backend}`
-  }
-
   async configureBackends(): Promise<void> {
     if (this.isConfiguringBackends) {
       logger.info(
@@ -239,46 +228,37 @@ export default class llamacpp_extension extends AIEngine {
       // Get stored backend preference
       const storedBackendType = this.getStoredBackendType()
       let bestAvailableBackendString = ''
-      let effectiveStoredBackendType = storedBackendType
+
+      // Calculate the "best" backend first, as it's used for fallback and defaults
+      bestAvailableBackendString =
+        await this.determineBestBackend(version_backends)
 
       if (storedBackendType) {
-        // migration part
-        const mappedNewBackendType = mapOldBackendToNew(storedBackendType)
-        const isMigrationNeeded = mappedNewBackendType !== storedBackendType
+        // Delegate migration check to Rust
+        const migrationTarget = await shouldMigrateBackend(
+          storedBackendType,
+          version_backends
+        )
 
-        if (isMigrationNeeded) {
-          // Check if the new, mapped backend is available in the current version list (by its effective type)
-          const isNewTypeAvailable = version_backends.some(
-            (vb) => mapOldBackendToNew(vb.backend) === mappedNewBackendType
+        if (migrationTarget) {
+          logger.info(
+            `Migrating stored backend type preference from old '${storedBackendType}' to new common type: '${migrationTarget}'`
           )
-
-          if (isNewTypeAvailable) {
-            logger.info(
-              `Migrating stored backend type preference from old '${storedBackendType}' to new common type: '${mappedNewBackendType}'`
-            )
-            this.setStoredBackendType(mappedNewBackendType) // Update localStorage immediately
-            effectiveStoredBackendType = mappedNewBackendType
-          } else {
-            logger.warn(
-              `Migration from '${storedBackendType}' to '${mappedNewBackendType}' skipped: New type not available in supported backends. Using old preference for now.`
-            )
-            // Keep the original type if new type not available
-            effectiveStoredBackendType = storedBackendType
-          }
+          this.setStoredBackendType(migrationTarget)
         }
 
-        // Use effectiveStoredBackendType (which is now the migrated type)
-        const preferredBackendString = this.findLatestVersionForBackend(
+        const effectiveStoredBackendType = migrationTarget || storedBackendType
+
+        // Use the effective (migrated) type to find the latest version
+        const preferredBackendString = await findLatestVersionForBackend(
           version_backends,
-          effectiveStoredBackendType // Use the effective (migrated) type here
+          effectiveStoredBackendType
         )
 
         if (preferredBackendString) {
-          // The returned string has the original asset name, we need to normalize it
-          const [version, backend] = preferredBackendString.split('/')
-          const normalizedBackend = mapOldBackendToNew(backend)
-          bestAvailableBackendString = `${version}/${normalizedBackend}`
-
+          // Override bestAvailableBackendString with the user preference
+          // The returned string from Rust is "version/backend"
+          bestAvailableBackendString = preferredBackendString
           logger.info(
             `Using stored backend preference: ${bestAvailableBackendString}`
           )
@@ -288,12 +268,8 @@ export default class llamacpp_extension extends AIEngine {
           )
           // Clear the invalid stored preference
           this.clearStoredBackendType()
-          bestAvailableBackendString =
-            await this.determineBestBackend(version_backends)
+          // bestAvailableBackendString remains as the priority one calculated earlier
         }
-      } else {
-        bestAvailableBackendString =
-          await this.determineBestBackend(version_backends)
       }
 
       let settings = structuredClone(SETTINGS)
@@ -325,7 +301,7 @@ export default class llamacpp_extension extends AIEngine {
 
         // Determine initial UI default based on priority:
         // 1. Saved setting (if valid and not original default)
-        // 2. Best available for stored backend type
+        // 2. Best available for stored backend type or automatic best
         // 3. Original default
         let initialUiDefault = originalDefaultBackendValue
 
@@ -335,7 +311,8 @@ export default class llamacpp_extension extends AIEngine {
         ) {
           const [savedVersion, savedBackend] = savedBackendSetting.split('/')
           if (savedVersion && savedBackend) {
-            const normalizedBackend = mapOldBackendToNew(savedBackend)
+            // Map saved backend to new format if needed
+            const normalizedBackend = await mapOldBackendToNew(savedBackend)
             initialUiDefault = `${savedVersion}/${normalizedBackend}`
 
             // Store the backend type from the saved setting only if different
@@ -462,7 +439,7 @@ export default class llamacpp_extension extends AIEngine {
   ): Promise<string> {
     if (version_backends.length === 0) return ''
 
-    // Check GPU memory availability
+    // Check GPU memory availability via system info
     let hasEnoughGpuMemory = false
     try {
       const sysInfo = await getSystemInfo()
@@ -478,90 +455,12 @@ export default class llamacpp_extension extends AIEngine {
       hasEnoughGpuMemory = false
     }
 
-    // Priority list for backend types (more specific/performant ones first)
-    // Vulkan will be conditionally prioritized based on GPU memory
-    const backendPriorities: string[] = hasEnoughGpuMemory
-      ? [
-          'cuda-cu13.0',
-          'cuda-cu12.0',
-          'cuda-cu11.7',
-          'vulkan',
-          'common_cpus', // NEW: Unified CPU backend
-          'avx512', // Old, for transition/local installed detection
-          'avx2', // Old, for transition
-          'avx', // Old, for transition
-          'noavx', // Old, for transition
-          'arm64',
-          'x64',
-        ]
-      : [
-          'cuda-cu13.0',
-          'cuda-cu12.0',
-          'cuda-cu11.7',
-          'common_cpus', // NEW: Unified CPU backend
-          'avx512', // Old, for transition
-          'avx2', // Old, for transition
-          'avx', // Old, for transition
-          'noavx', // Old, for transition
-          'arm64',
-          'x64',
-          'vulkan',
-        ]
-
-    // Helper to map backend string to a priority category
-    const getBackendCategory = (backendString: string): string | undefined => {
-      if (backendString.includes('cuda-13-common_cpus')) return 'cuda-cu13.0'
-      if (
-        backendString.includes('cuda-12-common_cpus') ||
-        backendString.includes('cu12.0')
-      )
-        return 'cuda-cu12.0'
-      if (
-        backendString.includes('cuda-11-common_cpus') ||
-        backendString.includes('cu11.7')
-      )
-        return 'cuda-cu11.7'
-      if (backendString.includes('vulkan')) return 'vulkan'
-      if (backendString.includes('common_cpus')) return 'common_cpus'
-      if (backendString.includes('avx512')) return 'avx512'
-      if (backendString.includes('avx2')) return 'avx2'
-      if (
-        backendString.includes('avx') &&
-        !backendString.includes('avx2') &&
-        !backendString.includes('avx512')
-      )
-        return 'avx'
-      if (backendString.includes('noavx')) return 'noavx'
-      if (backendString.endsWith('arm64')) return 'arm64'
-      if (backendString.endsWith('x64')) return 'x64'
-      return undefined
-    }
-
-    let foundBestBackend: { version: string; backend: string } | undefined
-    for (const priorityCategory of backendPriorities) {
-      const matchingBackends = version_backends.filter((vb) => {
-        const category = getBackendCategory(vb.backend)
-        return category === priorityCategory
-      })
-
-      if (matchingBackends.length > 0) {
-        foundBestBackend = matchingBackends[0]
-        logger.info(
-          `Determined best available backend: ${foundBestBackend.version}/${foundBestBackend.backend} (Category: "${priorityCategory}")`
-        )
-        break
-      }
-    }
-
-    if (foundBestBackend) {
-      return `${foundBestBackend.version}/${foundBestBackend.backend}`
-    } else {
-      // Fallback to newest version
-      logger.info(
-        `Fallback to: ${version_backends[0].version}/${version_backends[0].backend}`
-      )
-      return `${version_backends[0].version}/${version_backends[0].backend}`
-    }
+    // Use Rust logic to prioritize backends
+    const result = await prioritizeBackends(
+      version_backends,
+      hasEnoughGpuMemory
+    )
+    return result.backend_string
   }
 
   async updateBackend(
@@ -587,9 +486,11 @@ export default class llamacpp_extension extends AIEngine {
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
-      const effectiveBackendType = mapOldBackendToNew(backend)
+      // We ensure consistency by mapping the backend type, although targetBackendString should already be correct
+      const effectiveBackendType = await mapOldBackendToNew(backend)
       const currentStoredBackend = this.getStoredBackendType()
 
+      // Re-construct to be sure
       targetBackendString = `${version}/${effectiveBackendType}`
 
       // Update configuration
@@ -627,11 +528,19 @@ export default class llamacpp_extension extends AIEngine {
         })
       }
 
-      // Clean up old versions of the same backend type
+      // Clean up old versions of the same backend type using Rust command
+      const janDataFolderPath = await getJanDataFolderPath()
+      const backendsDir = await joinPath([
+        janDataFolderPath,
+        'llamacpp',
+        'backends',
+      ])
+
       if (IS_WINDOWS) {
         await new Promise((resolve) => setTimeout(resolve, 500))
       }
-      await this.removeOldBackend(version, backend)
+
+      await removeOldBackendVersions(backendsDir, version, backend)
 
       return { wasUpdated: true, newBackend: targetBackendString }
     } catch (error) {
@@ -668,69 +577,40 @@ export default class llamacpp_extension extends AIEngine {
       return await this.updateBackend(bestAvailableBackendString)
     }
 
-    // Parse current backend configuration
-    const [currentVersion, currentBackend] = (
-      this.config.version_backend || ''
-    ).split('/')
-    // Get the effective/migrated backend type
-    const currentEffectiveBackendType = mapOldBackendToNew(currentBackend)
-
-    if (!currentVersion || !currentBackend) {
-      logger.warn(
-        `Invalid current backend format: ${this.config.version_backend}`
-      )
-      return { wasUpdated: false, newBackend: this.config.version_backend }
-    }
-
-    // Find the latest version for the currently selected backend type
+    // Use Rust checkBackendForUpdates logic implicitly here by using the helpers
     const version_backends = await listSupportedBackends()
-    const targetBackendString = this.findLatestVersionForBackend(
-      version_backends,
-      currentEffectiveBackendType
+    const checkResult = await checkBackendForUpdates(
+      this.config.version_backend,
+      version_backends
     )
 
-    if (!targetBackendString) {
-      logger.warn(
-        `No available versions found for current backend type: ${currentEffectiveBackendType}`
+    if (checkResult.update_needed && checkResult.target_backend) {
+      logger.info(
+        `Auto-updating to new version: ${checkResult.new_version} (${checkResult.target_backend})`
       )
-      // Attempt to fall back to the absolute best available if the preferred type is gone.
-      const bestEffectiveType = mapOldBackendToNew(
+      return await this.updateBackend(checkResult.target_backend)
+    }
+
+    // If no update needed, check if we need to fall back (e.g. current backend not supported anymore)
+    // The Rust check_backend_for_updates handles finding the latest version for current type.
+    // If it returns no target_backend, it means current type is not found.
+    if (!checkResult.target_backend) {
+      const [currentVersion, currentBackend] =
+        this.config.version_backend.split('/')
+      const currentEffectiveType = await mapOldBackendToNew(currentBackend)
+      const bestEffectiveType = await mapOldBackendToNew(
         bestAvailableBackendString.split('/')[1]
       )
-      if (currentEffectiveBackendType !== bestEffectiveType) {
+
+      if (currentEffectiveType !== bestEffectiveType) {
         logger.info(
-          `Falling back to best available backend: ${bestAvailableBackendString}`
+          `Current backend type ${currentEffectiveType} not available, falling back to best available: ${bestAvailableBackendString}`
         )
         return await this.updateBackend(bestAvailableBackendString)
       }
-      return { wasUpdated: false, newBackend: this.config.version_backend }
     }
 
-    const [latestVersion, latestBackendName] = targetBackendString.split('/')
-
-    // Check if update is needed (compare versions AND effective backend types)
-    if (
-      currentVersion === latestVersion &&
-      currentEffectiveBackendType === mapOldBackendToNew(latestBackendName)
-    ) {
-      logger.info(
-        'Auto-update: Already using the latest version of the selected backend'
-      )
-      return { wasUpdated: false, newBackend: this.config.version_backend }
-    }
-
-    // Perform version update or migration for the same effective backend type
-    logger.info(
-      `Auto-updating/Migrating from ${this.config.version_backend} to ${targetBackendString} (preserving effective backend type: ${currentEffectiveBackendType})`
-    )
-    return await this.updateBackend(targetBackendString)
-  }
-
-  private parseBackendVersion(v: string): number {
-    // Remove any leading non‑digit characters (e.g. the "b")
-    const numeric = v.replace(/^[^\d]*/, '')
-    const n = Number(numeric)
-    return Number.isNaN(n) ? 0 : n
+    return { wasUpdated: false, newBackend: this.config.version_backend }
   }
 
   async checkBackendForUpdates(): Promise<{
@@ -738,107 +618,21 @@ export default class llamacpp_extension extends AIEngine {
     newVersion: string
     targetBackend?: string
   }> {
-    // Parse current backend configuration
-    const [currentVersion, currentBackend] = (
-      this.config.version_backend || ''
-    ).split('/')
-
-    if (!currentVersion || !currentBackend) {
-      logger.warn(
-        `Invalid current backend format: ${this.config.version_backend}`
-      )
-      return { updateNeeded: false, newVersion: '0' }
-    }
-
-    // Get the effective/migrated backend type for consistency with auto-update logic
-    const currentEffectiveBackendType = mapOldBackendToNew(currentBackend)
-
-    // Find the latest version for the currently selected backend type (using effective type)
-    const version_backends = await listSupportedBackends()
-    const targetBackendString = this.findLatestVersionForBackend(
-      version_backends,
-      currentEffectiveBackendType // Use the effective type
-    )
-
-    if (!targetBackendString) {
-      logger.warn(
-        `No available versions found for current backend type: ${currentEffectiveBackendType}`
-      )
-      return { updateNeeded: false, newVersion: '0' }
-    }
-
-    const [latestVersion] = targetBackendString.split('/')
-
-    // Check if update is needed (version comparison)
-    if (
-      this.parseBackendVersion(latestVersion) >
-      this.parseBackendVersion(currentVersion)
-    ) {
-      logger.info(
-        `New update available: ${latestVersion} -> ${targetBackendString}`
-      )
-      return {
-        updateNeeded: true,
-        newVersion: latestVersion,
-        targetBackend: targetBackendString,
-      }
-    } else {
-      logger.info(
-        `Already at latest version: ${currentVersion} = ${latestVersion}`
-      )
-      return { updateNeeded: false, newVersion: '0' }
-    }
-  }
-
-  private async removeOldBackend(
-    latestVersion: string,
-    backendType: string
-  ): Promise<void> {
     try {
-      const janDataFolderPath = await getJanDataFolderPath()
-      const backendsDir = await joinPath([
-        janDataFolderPath,
-        'llamacpp',
-        'backends',
-      ])
+      const version_backends = await listSupportedBackends()
+      const result = await checkBackendForUpdates(
+        this.config.version_backend,
+        version_backends
+      )
 
-      if (!(await fs.existsSync(backendsDir))) {
-        return
+      return {
+        updateNeeded: result.update_needed,
+        newVersion: result.new_version,
+        targetBackend: result.target_backend,
       }
-
-      const versionDirs = await fs.readdirSync(backendsDir)
-
-      for (const versionDir of versionDirs) {
-        const versionPath = await joinPath([backendsDir, versionDir])
-        const versionName = await basename(versionDir)
-
-        // Skip the latest version
-        if (versionName === latestVersion) {
-          continue
-        }
-
-        // Check if this version has the specific backend type we're interested in
-        const backendTypePath = await joinPath([versionPath, backendType])
-
-        if (await fs.existsSync(backendTypePath)) {
-          const isInstalled = await isBackendInstalled(backendType, versionName)
-          if (isInstalled) {
-            try {
-              await fs.rm(backendTypePath)
-              logger.info(
-                `Removed old version of ${backendType}: ${backendTypePath}`
-              )
-            } catch (e) {
-              logger.warn(
-                `Failed to remove old backend version: ${backendTypePath}`,
-                e
-              )
-            }
-          }
-        }
-      }
-    } catch (error) {
-      logger.error('Error during old backend version cleanup:', error)
+    } catch (e) {
+      logger.warn('Failed to check for updates via Rust command:', e)
+      return { updateNeeded: false, newVersion: '0' }
     }
   }
 
@@ -906,30 +700,27 @@ export default class llamacpp_extension extends AIEngine {
 
     if (key === 'version_backend') {
       const valueStr = value as string
-      const [version, backend] = valueStr.split('/')
+      // Async logic wrapped in IIFE since onSettingUpdate is void
+      ;(async () => {
+        try {
+          const currentStored = this.getStoredBackendType() || undefined
+          const result = await handleSettingUpdate(key, valueStr, currentStored)
 
-      // Store the backend type preference in localStorage only if it changed
-      if (backend) {
-        // Use the effective/migrated backend type for storage
-        const effectiveBackendType = mapOldBackendToNew(backend)
-        const currentStoredBackend = this.getStoredBackendType()
+          if (result.backend_type_updated && result.effective_backend_type) {
+            this.setStoredBackendType(result.effective_backend_type)
+            logger.info(
+              `Updated backend type preference to: ${result.effective_backend_type}`
+            )
+          }
 
-        // Compare with the effective type
-        if (currentStoredBackend !== effectiveBackendType) {
-          this.setStoredBackendType(effectiveBackendType)
-          logger.info(
-            `Updated backend type preference to: ${effectiveBackendType}`
-          )
+          if (result.version && result.backend) {
+            this.config.device = ''
+            await this.ensureBackendReady(result.backend, result.version)
+          }
+        } catch (e) {
+          logger.error('Error in onSettingUpdate async block:', e)
         }
-      }
-
-      // Reset device setting when backend changes
-      this.config.device = ''
-
-      const closure = async () => {
-        await this.ensureBackendReady(backend, version)
-      }
-      closure()
+      })()
     } else if (key === 'auto_unload') {
       this.autoUnload = value as boolean
     } else if (key === 'llamacpp_env') {
