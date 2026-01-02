@@ -126,7 +126,7 @@ describe('RenderMarkdown', () => {
     })
   })
 
-  it('does not format indented text as code blocks', () => {
+  it('does not format 4-space indented text as code blocks', () => {
     const contentWithIndentedText = `Please explain this code block.
 
     <!DOCTYPE html>
