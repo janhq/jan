@@ -156,7 +156,7 @@ describe('RenderMarkdown', () => {
         </div>
         
         <footer>
-            <p>&copy; 2023 My Sample Website. All rights reserved.</p>
+            <p>&copy; ${new Date().getFullYear()} My Sample Website. All rights reserved.</p>
         </footer>
     </body>
     </html>
@@ -204,7 +204,7 @@ describe('RenderMarkdown', () => {
     </div>
     
     <footer>
-        <p>&copy; 2023 My Sample Website. All rights reserved.</p>
+        <p>&copy; ${new Date().getFullYear()} My Sample Website. All rights reserved.</p>
     </footer>
 </body>
 </html>
