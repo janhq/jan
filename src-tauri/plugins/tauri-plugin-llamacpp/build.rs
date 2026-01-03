@@ -17,7 +17,22 @@ const COMMANDS: &[&str] = &[
     "estimate_kv_cache_size",
     "get_model_size",
     "is_model_supported",
-    "plan_model_load"
+    "plan_model_load",
+    // backend management
+    "map_old_backend_to_new",
+    "get_local_installed_backends",
+    "list_supported_backends",
+    "determine_supported_backends",
+    "get_supported_features",
+    "is_cuda_installed",
+    "find_latest_version_for_backend",
+    "prioritize_backends",
+    "parse_backend_version",
+    "check_backend_for_updates",
+    "remove_old_backend_versions",
+    "validate_backend_string",
+    "should_migrate_backend",
+    "handle_setting_update",
 ];
 
 fn main() {
