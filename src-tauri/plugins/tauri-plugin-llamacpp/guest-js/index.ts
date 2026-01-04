@@ -5,6 +5,13 @@ import {
   UnloadResult,
   GgufMetadata,
   LlamacppConfig,
+  BackendVersion,
+  BackendFeatures,
+  SupportedFeatures,
+  GpuInfo,
+  BestBackendResult,
+  UpdateCheckResult,
+  SettingUpdateResult,
 } from './types'
 
 // Helpers
@@ -205,6 +212,160 @@ export async function planModelLoadInternal(
 // Cleanup commands
 export async function cleanupLlamaProcesses(): Promise<void> {
   return await invoke('plugin:llamacpp|cleanup_llama_processes')
+}
+
+// backend functions
+
+/*
+ * Helper function to map an old backend type string to its new, common equivalent.
+ * This is used for migrating stored user preferences.
+ */
+export async function mapOldBackendToNew(oldBackend: string): Promise<string> {
+  return await invoke<string>('plugin:llamacpp|map_old_backend_to_new', { oldBackend })
+}
+
+export async function getLocalInstalledBackendsInternal(
+  backendsDir: string
+): Promise<{ version: string; backend: string }[]> {
+  return await invoke<{ version: string; backend: string }[]>(
+    'plugin:llamacpp|get_local_installed_backends',
+    {
+      backendsDir,
+    }
+  )
+}
+
+export function normalizeFeatures(features: any): BackendFeatures {
+  return {
+    cuda11: features.cuda11 || false,
+    cuda12: features.cuda12 || false,
+    cuda13: features.cuda13 || false,
+    vulkan: features.vulkan || false,
+  }
+}
+
+export async function determineSupportedBackends(
+  osType: string,
+  arch: string,
+  features: BackendFeatures
+): Promise<string[]> {
+  return invoke<string[]>('plugin:llamacpp|determine_supported_backends', {
+    osType,
+    arch,
+    features,
+  })
+}
+
+export async function listSupportedBackendsFromRust(
+  remoteBackendVersions: BackendVersion[],
+  localBackendVersions: BackendVersion[]
+): Promise<BackendVersion[]> {
+  return invoke<BackendVersion[]>('plugin:llamacpp|list_supported_backends', {
+    remoteBackendVersions,
+    localBackendVersions,
+  })
+}
+
+export async function getSupportedFeaturesFromRust(
+  osType: string,
+  cpuExtensions: string[],
+  gpus: GpuInfo[]
+): Promise<SupportedFeatures> {
+  return invoke<SupportedFeatures>('plugin:llamacpp|get_supported_features', {
+    osType,
+    cpuExtensions,
+    gpus,
+  })
+}
+
+export async function isCudaInstalledFromRust(
+  backendDir: string,
+  version: string,
+  osType: string,
+  janDataFolderPath: string
+): Promise<boolean> {
+  return invoke<boolean>('plugin:llamacpp|is_cuda_installed', {
+    backendDir,
+    version,
+    osType,
+    janDataFolderPath,
+  })
+}
+
+export async function findLatestVersionForBackend(
+  versionBackends: BackendVersion[],
+  backendType: string
+): Promise<string | null> {
+  return invoke('plugin:llamacpp|find_latest_version_for_backend', {
+    versionBackends,
+    backendType,
+  })
+}
+
+export async function prioritizeBackends(
+  versionBackends: BackendVersion[],
+  hasEnoughGpuMemory: boolean
+): Promise<BestBackendResult> {
+  return invoke('plugin:llamacpp|prioritize_backends', {
+    versionBackends,
+    hasEnoughGpuMemory,
+  })
+}
+
+export async function parseBackendVersion(
+  versionString: string
+): Promise<number> {
+  return invoke('plugin:llamacpp|parse_backend_version', { versionString })
+}
+
+export async function checkBackendForUpdates(
+  currentBackendString: string,
+  versionBackends: BackendVersion[]
+): Promise<UpdateCheckResult> {
+  return invoke('plugin:llamacpp|check_backend_for_updates', {
+    currentBackendString,
+    versionBackends,
+  })
+}
+
+export async function removeOldBackendVersions(
+  backendsDir: string,
+  latestVersion: string,
+  backendType: string
+): Promise<string[]> {
+  return invoke('plugin:llamacpp|remove_old_backend_versions', {
+    backendsDir,
+    latestVersion,
+    backendType,
+  })
+}
+
+export async function validateBackendString(
+  backendString: string
+): Promise<[string, string]> {
+  return invoke('plugin:llamacpp|validate_backend_string', { backendString })
+}
+
+export async function shouldMigrateBackend(
+  storedBackendType: string,
+  versionBackends: BackendVersion[]
+): Promise<string | null> {
+  return invoke('plugin:llamacpp|should_migrate_backend', {
+    storedBackendType,
+    versionBackends,
+  })
+}
+
+export async function handleSettingUpdate(
+  key: string,
+  value: string,
+  currentStoredBackend?: string
+): Promise<SettingUpdateResult> {
+  return invoke('plugin:llamacpp|handle_setting_update', {
+    key,
+    value,
+    currentStoredBackend,
+  })
 }
 
 export * from './types'

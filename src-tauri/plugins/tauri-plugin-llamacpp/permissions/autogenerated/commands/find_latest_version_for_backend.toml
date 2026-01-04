@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-find-latest-version-for-backend"
+description = "Enables the find_latest_version_for_backend command without any pre-configured scope."
+commands.allow = ["find_latest_version_for_backend"]
+
+[[permission]]
+identifier = "deny-find-latest-version-for-backend"
+description = "Denies the find_latest_version_for_backend command without any pre-configured scope."
+commands.deny = ["find_latest_version_for_backend"]
