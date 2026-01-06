@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Jan",
+  "productName": "jan",
   "version": "0.6.599",
   "identifier": "jan.ai.app",
   "build": {
