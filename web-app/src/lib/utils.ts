@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import type { Node } from 'unist'
+import type { Node, Position } from 'unist'
 import type { Code, Paragraph, Parent, Text } from 'mdast'
 import { visit } from 'unist-util-visit'
 import { ExtensionManager } from './extension'
@@ -38,15 +38,16 @@ export function disableIndentedCodeBlockPlugin() {
       // to plain text
       // Check if the parent exists so we can replace the node safely
       if (!node.lang && !node.meta && parent && typeof index === 'number') {
+        const nodePosition: Position | undefined = node.position
         const textNode: Text = {
           type: 'text',
           value: node.value,
-          position: node.position
+          position: nodePosition
         }
         const paragraphNode: Paragraph = {
           type: 'paragraph',
           children: [textNode],
-          position: node.position
+          position: nodePosition
         }
         parent.children[index] = paragraphNode
       }
