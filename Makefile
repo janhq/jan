@@ -28,7 +28,7 @@ endif
 	yarn install
 	yarn build:tauri:plugin:api
 	yarn build:core
-	yarn build:extensions && yarn build:extensions-web
+	yarn build:extensions
 
 # Install required Rust targets for macOS universal builds
 install-rust-targets:

@@ -68,11 +68,11 @@ export default defineConfig(({ mode }) => {
       },
     },
     optimizeDeps: {
-      exclude: ['@jan/extensions-web'],
+      exclude: [],
     },
     build: {
       rollupOptions: {
-        external: ['@jan/extensions-web'],
+        external: [],
       },
     },
     define: {
