@@ -76,6 +76,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: {
+      JAN_API_BASE_URL: JSON.stringify(env.JAN_API_BASE_URL || 'https://api-dev.jan.ai/'),
       IS_TAURI: JSON.stringify(process.env.IS_TAURI),
       IS_DEV: JSON.stringify(process.env.IS_DEV),
       IS_WEB_APP: JSON.stringify(false),
@@ -98,6 +99,8 @@ export default defineConfig(({ mode }) => {
 
       VERSION: JSON.stringify(packageJson.version),
 
+      BROWSER_SERVER_NAME: JSON.stringify("Jan Browser Extension"),
+
       POSTHOG_KEY: JSON.stringify(env.POSTHOG_KEY),
       POSTHOG_HOST: JSON.stringify(env.POSTHOG_HOST),
       GA_MEASUREMENT_ID: JSON.stringify(env.GA_MEASUREMENT_ID),
@@ -115,7 +118,7 @@ export default defineConfig(({ mode }) => {
     clearScreen: false,
     // 2. tauri expects a fixed port, fail if that port is not available
     server: {
-      port: 1420,
+      port: 3000,
       strictPort: true,
       host: host || false,
       hmr: host

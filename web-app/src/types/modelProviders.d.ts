@@ -28,6 +28,7 @@ type Model = {
   id: string
   model?: string
   name?: string
+  providerId?: string
   displayName?: string
   version?: number | string
   description?: string

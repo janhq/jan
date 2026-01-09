@@ -19,6 +19,8 @@ import { toast } from 'sonner'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+import { SidebarInset } from '@/components/sidebar/sidebar'
+import { AppSidebar } from '@/components/sidebar/app-sidebar'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.model_providers as any)({
@@ -85,97 +87,102 @@ function ModelProviders() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <HeaderPage>
-        <h1 className="font-medium">{t('common:settings')}</h1>
-      </HeaderPage>
-      <div className="flex h-full w-full flex-col sm:flex-row">
-        <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            {/* Model Providers */}
-            <Card
-              header={
-                <div className="flex items-center justify-between w-full mb-6">
-                  <span className="text-main-view-fg font-medium text-base">
-                    {t('common:modelProviders')}
-                  </span>
-                  <AddProviderDialog onCreateProvider={createProvider}>
-                    <Button
-                      variant="link"
-                      size="sm"
-                      className="flex items-center gap-2"
-                    >
-                      <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1.5 py-1 gap-1 -mr-2">
-                        <IconCirclePlus size={16} />
-                        <span>{t('provider:addProvider')}</span>
-                      </div>
-                    </Button>
-                  </AddProviderDialog>
-                </div>
-              }
-            >
-              {providers.map((provider, index) => (
-                <CardItem
-                  key={index}
-                  title={
-                    <div className="flex items-center gap-3">
-                      <ProvidersAvatar provider={provider} />
-                      <div>
-                        <h3 className="font-medium">
-                          {getProviderTitle(provider.provider)}
-                        </h3>
-                        <p className="text-xs text-main-view-fg/70">
-                          {provider.models.length} Models
-                        </p>
-                      </div>
-                    </div>
-                  }
-                  actions={
-                    <div className="flex items-center gap-2">
-                      {provider.active && (
+    <>
+      <AppSidebar />
+      <SidebarInset>
+        <div className="flex flex-col h-full">
+          <HeaderPage>
+            <h1 className="font-medium">{t('common:settings')}</h1>
+          </HeaderPage>
+          <div className="flex h-full w-full flex-col sm:flex-row">
+            <SettingsMenu />
+            <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+              <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+                {/* Model Providers */}
+                <Card
+                  header={
+                    <div className="flex items-center justify-between w-full mb-6">
+                      <span className="text-main-view-fg font-medium text-base">
+                        {t('common:modelProviders')}
+                      </span>
+                      <AddProviderDialog onCreateProvider={createProvider}>
                         <Button
-                          variant="default"
+                          variant="link"
                           size="sm"
-                          className="h-6 w-6 p-0 bg-transparent hover:bg-main-view-fg/10 border-none shadow-none"
-                          onClick={() => {
-                            navigate({
-                              to: route.settings.providers,
-                              params: {
-                                providerName: provider.provider,
-                              },
-                            })
-                          }}
+                          className="flex items-center gap-2"
                         >
-                          <IconSettings
-                            className="text-main-view-fg/60"
-                            size={16}
-                          />
+                          <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1.5 py-1 gap-1 -mr-2">
+                            <IconCirclePlus size={16} />
+                            <span>{t('provider:addProvider')}</span>
+                          </div>
                         </Button>
-                      )}
-                      <Switch
-                        checked={provider.active}
-                        onCheckedChange={async (e) => {
-                          if (
-                            !e &&
-                            provider.provider.toLowerCase() === 'llamacpp'
-                          ) {
-                            await serviceHub.models().stopAllModels()
-                          }
-                          updateProvider(provider.provider, {
-                            ...provider,
-                            active: e,
-                          })
-                        }}
-                      />
+                      </AddProviderDialog>
                     </div>
                   }
-                />
-              ))}
-            </Card>
+                >
+                  {providers.map((provider, index) => (
+                    <CardItem
+                      key={index}
+                      title={
+                        <div className="flex items-center gap-3">
+                          <ProvidersAvatar provider={provider} />
+                          <div>
+                            <h3 className="font-medium">
+                              {getProviderTitle(provider.provider)}
+                            </h3>
+                            <p className="text-xs text-main-view-fg/70">
+                              {provider.models.length} Models
+                            </p>
+                          </div>
+                        </div>
+                      }
+                      actions={
+                        <div className="flex items-center gap-2">
+                          {provider.active && (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              className="h-6 w-6 p-0 bg-transparent hover:bg-main-view-fg/10 border-none shadow-none"
+                              onClick={() => {
+                                navigate({
+                                  to: route.settings.providers,
+                                  params: {
+                                    providerName: provider.provider,
+                                  },
+                                })
+                              }}
+                            >
+                              <IconSettings
+                                className="text-main-view-fg/60"
+                                size={16}
+                              />
+                            </Button>
+                          )}
+                          <Switch
+                            checked={provider.active}
+                            onCheckedChange={async (e) => {
+                              if (
+                                !e &&
+                                provider.provider.toLowerCase() === 'llamacpp'
+                              ) {
+                                await serviceHub.models().stopAllModels()
+                              }
+                              updateProvider(provider.provider, {
+                                ...provider,
+                                active: e,
+                              })
+                            }}
+                          />
+                        </div>
+                      }
+                    />
+                  ))}
+                </Card>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </SidebarInset>
+    </>
   )
 }

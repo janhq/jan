@@ -9,6 +9,8 @@ import { useAnalytic } from '@/hooks/useAnalytic'
 import posthog from 'posthog-js'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+import { SidebarInset } from '@/components/sidebar/sidebar'
+import { AppSidebar } from '@/components/sidebar/app-sidebar'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.privacy as any)({
@@ -20,14 +22,17 @@ function Privacy() {
   const { setProductAnalytic, productAnalytic } = useAnalytic()
 
   return (
-    <div className="flex flex-col h-full">
-      <HeaderPage>
-        <h1 className="font-medium">{t('common:settings')}</h1>
-      </HeaderPage>
-      <div className="flex h-full w-full">
-        <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+    <>
+        <AppSidebar />
+        <SidebarInset>
+          <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
+            <HeaderPage>
+              <h1 className="font-medium">{t('common:settings')}</h1>
+            </HeaderPage>
+            <div className="flex h-full w-full flex-col sm:flex-row">
+              <SettingsMenu />
+              <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+                <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {PlatformFeatures[PlatformFeature.ANALYTICS] && (
               <Card
               header={
@@ -86,9 +91,11 @@ function Privacy() {
               />
             </Card>
             )}
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-    </div>
+        </SidebarInset>
+    </>
   )
 }

@@ -23,6 +23,8 @@ import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 import { toast } from 'sonner'
 import { getModelToStart } from '@/utils/getModelToStart'
+import { SidebarInset } from '@/components/sidebar/sidebar'
+import { AppSidebar } from '@/components/sidebar/app-sidebar'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -237,192 +239,206 @@ function LocalAPIServerContent() {
   const isServerRunning = serverStatus !== 'stopped'
 
   return (
-    <div className="flex flex-col h-full">
-      <HeaderPage>
-        <h1 className="font-medium">{t('common:settings')}</h1>
-      </HeaderPage>
-      <div className="flex h-full w-full">
-        <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            {/* General Settings */}
-            <Card
-              header={
-                <div className="mb-3 flex w-full items-center border-b border-main-view-fg/4 pb-2">
-                  <div className="w-full space-y-2">
-                    <h1 className="text-base font-medium">
-                      {t('settings:localApiServer.title')}
-                    </h1>
-                    <p className="text-main-view-fg/70 mb-2">
-                      {t('settings:localApiServer.description')}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      onClick={toggleAPIServer}
-                      variant={isServerRunning ? 'destructive' : 'default'}
-                      size="sm"
-                      disabled={serverStatus === 'pending'} // Disable during any loading state
-                    >
-                      {getButtonText()}
-                    </Button>
-                  </div>
-                </div>
-              }
-            >
-              <CardItem
-                title={t('settings:localApiServer.runOnStartup')}
-                description={t('settings:localApiServer.runOnStartupDesc')}
-                actions={
-                  <Switch
-                    checked={enableOnStartup}
-                    onCheckedChange={(checked) => {
-                      if (!apiKey || apiKey.toString().trim().length === 0) {
-                        setShowApiKeyError(true)
-                        return
-                      }
-                      setEnableOnStartup(checked)
-                    }}
-                  />
-                }
-              />
-              <CardItem
-                title={t('settings:localApiServer.serverLogs')}
-                description={t('settings:localApiServer.serverLogsDesc')}
-                actions={
-                  <Button
-                    variant="link"
-                    size="sm"
-                    className="p-0"
-                    onClick={handleOpenLogs}
-                    title={t('settings:localApiServer.serverLogs')}
-                  >
-                    <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                      <IconLogs size={18} className="text-main-view-fg/50" />
-                      <span>{t('settings:localApiServer.openLogs')}</span>
-                    </div>
-                  </Button>
-                }
-              />
-
-              <CardItem
-                title={t('settings:localApiServer.swaggerDocs')}
-                description={t('settings:localApiServer.swaggerDocsDesc')}
-                actions={
-                  <a
-                    href={`http://${serverHost}:${serverPort}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button
-                      asChild
-                      variant="link"
-                      size="sm"
-                      className="p-0 text-main-view-fg/80"
-                      disabled={!isServerRunning}
-                      title={t('settings:localApiServer.swaggerDocs')}
-                    >
-                      <div
-                        className={cn(
-                          'cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1',
-                          !isServerRunning && 'opacity-50 cursor-not-allowed'
-                        )}
-                      >
-                        <span>{t('settings:localApiServer.openDocs')}</span>
+    <>
+      <AppSidebar />
+      <SidebarInset>
+        <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
+          <HeaderPage>
+            <h1 className="font-medium">{t('common:settings')}</h1>
+          </HeaderPage>
+          <div className="flex h-full w-full flex-col sm:flex-row">
+            <SettingsMenu />
+            <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+              <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+                {/* General Settings */}
+                <Card
+                  header={
+                    <div className="mb-3 flex w-full items-center border-b border-main-view-fg/4 pb-2">
+                      <div className="w-full space-y-2">
+                        <h1 className="text-base font-medium">
+                          {t('settings:localApiServer.title')}
+                        </h1>
+                        <p className="text-main-view-fg/70 mb-2">
+                          {t('settings:localApiServer.description')}
+                        </p>
                       </div>
-                    </Button>
-                  </a>
-                }
-              />
-            </Card>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          onClick={toggleAPIServer}
+                          variant={isServerRunning ? 'destructive' : 'default'}
+                          size="sm"
+                          disabled={serverStatus === 'pending'} // Disable during any loading state
+                        >
+                          {getButtonText()}
+                        </Button>
+                      </div>
+                    </div>
+                  }
+                >
+                  <CardItem
+                    title={t('settings:localApiServer.runOnStartup')}
+                    description={t('settings:localApiServer.runOnStartupDesc')}
+                    actions={
+                      <Switch
+                        checked={enableOnStartup}
+                        onCheckedChange={(checked) => {
+                          if (
+                            !apiKey ||
+                            apiKey.toString().trim().length === 0
+                          ) {
+                            setShowApiKeyError(true)
+                            return
+                          }
+                          setEnableOnStartup(checked)
+                        }}
+                      />
+                    }
+                  />
+                  <CardItem
+                    title={t('settings:localApiServer.serverLogs')}
+                    description={t('settings:localApiServer.serverLogsDesc')}
+                    actions={
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="p-0"
+                        onClick={handleOpenLogs}
+                        title={t('settings:localApiServer.serverLogs')}
+                      >
+                        <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                          <IconLogs
+                            size={18}
+                            className="text-main-view-fg/50"
+                          />
+                          <span>{t('settings:localApiServer.openLogs')}</span>
+                        </div>
+                      </Button>
+                    }
+                  />
 
-            {/* Server Configuration */}
-            <Card title={t('settings:localApiServer.serverConfiguration')}>
-              <CardItem
-                title={t('settings:localApiServer.serverHost')}
-                description={t('settings:localApiServer.serverHostDesc')}
-                actions={
-                  <ServerHostSwitcher isServerRunning={isServerRunning} />
-                }
-              />
-              <CardItem
-                title={t('settings:localApiServer.serverPort')}
-                description={t('settings:localApiServer.serverPortDesc')}
-                actions={<PortInput isServerRunning={isServerRunning} />}
-              />
-              <CardItem
-                title={t('settings:localApiServer.apiPrefix')}
-                description={t('settings:localApiServer.apiPrefixDesc')}
-                actions={<ApiPrefixInput isServerRunning={isServerRunning} />}
-              />
-              <CardItem
-                title={t('settings:localApiServer.apiKey')}
-                description={t('settings:localApiServer.apiKeyDesc')}
-                className={cn(
-                  'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2',
-                  isApiKeyEmpty && showApiKeyError && 'pb-6'
-                )}
-                classNameWrapperAction="w-full sm:w-auto"
-                actions={
-                  <ApiKeyInput
-                    isServerRunning={isServerRunning}
-                    showError={showApiKeyError}
-                    onValidationChange={handleApiKeyValidation}
+                  <CardItem
+                    title={t('settings:localApiServer.swaggerDocs')}
+                    description={t('settings:localApiServer.swaggerDocsDesc')}
+                    actions={
+                      <a
+                        href={`http://${serverHost}:${serverPort}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Button
+                          asChild
+                          variant="link"
+                          size="sm"
+                          className="p-0 text-main-view-fg/80"
+                          disabled={!isServerRunning}
+                          title={t('settings:localApiServer.swaggerDocs')}
+                        >
+                          <div
+                            className={cn(
+                              'cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1',
+                              !isServerRunning &&
+                                'opacity-50 cursor-not-allowed'
+                            )}
+                          >
+                            <span>{t('settings:localApiServer.openDocs')}</span>
+                          </div>
+                        </Button>
+                      </a>
+                    }
                   />
-                }
-              />
-              <CardItem
-                title={t('settings:localApiServer.trustedHosts')}
-                description={t('settings:localApiServer.trustedHostsDesc')}
-                className={cn(
-                  'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2'
-                )}
-                classNameWrapperAction="w-full sm:w-auto"
-                actions={
-                  <TrustedHostsInput isServerRunning={isServerRunning} />
-                }
-              />
-              <CardItem
-                title={t('settings:localApiServer.proxyTimeout')}
-                description={t('settings:localApiServer.proxyTimeoutDesc')}
-                actions={
-                  <ProxyTimeoutInput isServerRunning={isServerRunning} />
-                }
-              />
-            </Card>
+                </Card>
 
-            {/* Advanced Settings */}
-            <Card title={t('settings:localApiServer.advancedSettings')}>
-              <CardItem
-                title={t('settings:localApiServer.cors')}
-                description={t('settings:localApiServer.corsDesc')}
-                className={cn(
-                  isServerRunning && 'opacity-50 pointer-events-none'
-                )}
-                actions={
-                  <Switch
-                    checked={corsEnabled}
-                    onCheckedChange={setCorsEnabled}
+                {/* Server Configuration */}
+                <Card title={t('settings:localApiServer.serverConfiguration')}>
+                  <CardItem
+                    title={t('settings:localApiServer.serverHost')}
+                    description={t('settings:localApiServer.serverHostDesc')}
+                    actions={
+                      <ServerHostSwitcher isServerRunning={isServerRunning} />
+                    }
                   />
-                }
-              />
-              <CardItem
-                title={t('settings:localApiServer.verboseLogs')}
-                description={t('settings:localApiServer.verboseLogsDesc')}
-                className={cn(
-                  isServerRunning && 'opacity-50 pointer-events-none'
-                )}
-                actions={
-                  <Switch
-                    checked={verboseLogs}
-                    onCheckedChange={setVerboseLogs}
+                  <CardItem
+                    title={t('settings:localApiServer.serverPort')}
+                    description={t('settings:localApiServer.serverPortDesc')}
+                    actions={<PortInput isServerRunning={isServerRunning} />}
                   />
-                }
-              />
-            </Card>
+                  <CardItem
+                    title={t('settings:localApiServer.apiPrefix')}
+                    description={t('settings:localApiServer.apiPrefixDesc')}
+                    actions={
+                      <ApiPrefixInput isServerRunning={isServerRunning} />
+                    }
+                  />
+                  <CardItem
+                    title={t('settings:localApiServer.apiKey')}
+                    description={t('settings:localApiServer.apiKeyDesc')}
+                    className={cn(
+                      'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2',
+                      isApiKeyEmpty && showApiKeyError && 'pb-6'
+                    )}
+                    classNameWrapperAction="w-full sm:w-auto"
+                    actions={
+                      <ApiKeyInput
+                        isServerRunning={isServerRunning}
+                        showError={showApiKeyError}
+                        onValidationChange={handleApiKeyValidation}
+                      />
+                    }
+                  />
+                  <CardItem
+                    title={t('settings:localApiServer.trustedHosts')}
+                    description={t('settings:localApiServer.trustedHostsDesc')}
+                    className={cn(
+                      'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2'
+                    )}
+                    classNameWrapperAction="w-full sm:w-auto"
+                    actions={
+                      <TrustedHostsInput isServerRunning={isServerRunning} />
+                    }
+                  />
+                  <CardItem
+                    title={t('settings:localApiServer.proxyTimeout')}
+                    description={t('settings:localApiServer.proxyTimeoutDesc')}
+                    actions={
+                      <ProxyTimeoutInput isServerRunning={isServerRunning} />
+                    }
+                  />
+                </Card>
+
+                {/* Advanced Settings */}
+                <Card title={t('settings:localApiServer.advancedSettings')}>
+                  <CardItem
+                    title={t('settings:localApiServer.cors')}
+                    description={t('settings:localApiServer.corsDesc')}
+                    className={cn(
+                      isServerRunning && 'opacity-50 pointer-events-none'
+                    )}
+                    actions={
+                      <Switch
+                        checked={corsEnabled}
+                        onCheckedChange={setCorsEnabled}
+                      />
+                    }
+                  />
+                  <CardItem
+                    title={t('settings:localApiServer.verboseLogs')}
+                    description={t('settings:localApiServer.verboseLogsDesc')}
+                    className={cn(
+                      isServerRunning && 'opacity-50 pointer-events-none'
+                    )}
+                    actions={
+                      <Switch
+                        checked={verboseLogs}
+                        onCheckedChange={setVerboseLogs}
+                      />
+                    }
+                  />
+                </Card>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </SidebarInset>
+    </>
   )
 }

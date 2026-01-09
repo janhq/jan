@@ -18,6 +18,8 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 import { useAppState } from '@/hooks/useAppState'
+import { SidebarInset } from '@/components/sidebar/sidebar'
+import { AppSidebar } from '@/components/sidebar/app-sidebar'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hardware as any)({
@@ -128,180 +130,183 @@ function HardwareContent() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <HeaderPage>
-        <div className="flex items-center gap-2 justify-between w-full pr-3">
-          <h1 className="font-medium">{t('common:settings')}</h1>
-          <div
-            className="flex items-center gap-1 hover:bg-main-view-fg/8 px-1.5 py-0.5 rounded relative z-10 cursor-pointer"
-            onClick={handleClickSystemMonitor}
-          >
-            <IconDeviceDesktopAnalytics className="text-main-view-fg/50 size-5" />
-            <p>{t('settings:hardware.systemMonitor')}</p>
-          </div>
-        </div>
-      </HeaderPage>
-      <div className="flex h-full w-full">
-        <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-32">
-              <div className="text-main-view-fg/50">
-                Loading hardware information...
+    <>
+      <AppSidebar />
+      <SidebarInset>
+        <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
+          <HeaderPage>
+            <div className="flex items-center gap-2 justify-between w-full pr-3">
+              <h1 className="font-medium">{t('common:settings')}</h1>
+              <div
+                className="flex items-center gap-1 hover:bg-main-view-fg/8 px-1.5 py-0.5 rounded relative z-10 cursor-pointer"
+                onClick={handleClickSystemMonitor}
+              >
+                <IconDeviceDesktopAnalytics className="text-main-view-fg/50 size-5" />
+                <p>{t('settings:hardware.systemMonitor')}</p>
               </div>
             </div>
-          ) : (
-            <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-              {/* OS Information */}
-              <Card title={t('settings:hardware.os')}>
-                <CardItem
-                  title={t('settings:hardware.name')}
-                  actions={
-                    <span className="text-main-view-fg/80 capitalize">
-                      {hardwareData.os_type}
-                    </span>
-                  }
-                />
-                <CardItem
-                  title={t('settings:hardware.version')}
-                  actions={
-                    <span className="text-main-view-fg/80">
-                      {hardwareData.os_name}
-                    </span>
-                  }
-                />
-              </Card>
-
-              {/* CPU Information */}
-              <Card title={t('settings:hardware.cpu')}>
-                <CardItem
-                  title={t('settings:hardware.model')}
-                  actions={
-                    <span className="text-main-view-fg/80">
-                      {hardwareData.cpu?.name}
-                    </span>
-                  }
-                />
-                <CardItem
-                  title={t('settings:hardware.architecture')}
-                  actions={
-                    <span className="text-main-view-fg/80">
-                      {hardwareData.cpu?.arch}
-                    </span>
-                  }
-                />
-                <CardItem
-                  title={t('settings:hardware.cores')}
-                  actions={
-                    <span className="text-main-view-fg/80">
-                      {hardwareData.cpu?.core_count}
-                    </span>
-                  }
-                />
-                {hardwareData.cpu?.extensions?.join(', ').length > 0 && (
-                  <CardItem
-                    title={t('settings:hardware.instructions')}
-                    column={hardwareData.cpu?.extensions.length > 6}
-                    actions={
-                      <span className="text-main-view-fg/80 break-words">
-                        {hardwareData.cpu?.extensions?.join(', ')}
-                      </span>
-                    }
-                  />
-                )}
-                <CardItem
-                  title={t('settings:hardware.usage')}
-                  actions={
-                    <div className="flex items-center gap-2">
-                      {systemUsage.cpu > 0 && (
-                        <>
-                          <Progress
-                            value={systemUsage.cpu}
-                            className="h-2 w-10"
-                          />
-                          <span className="text-main-view-fg/80">
-                            {systemUsage.cpu?.toFixed(2)}%
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  }
-                />
-              </Card>
-
-              {/* RAM Information */}
-              <Card title={t('settings:hardware.memory')}>
-                <CardItem
-                  title={t('settings:hardware.totalRam')}
-                  actions={
-                    <span className="text-main-view-fg/80">
-                      {formatMegaBytes(hardwareData.total_memory)}
-                    </span>
-                  }
-                />
-                <CardItem
-                  title={t('settings:hardware.availableRam')}
-                  actions={
-                    <span className="text-main-view-fg/80">
-                      {formatMegaBytes(
-                        hardwareData.total_memory - systemUsage.used_memory
-                      )}
-                    </span>
-                  }
-                />
-                <CardItem
-                  title={t('settings:hardware.usage')}
-                  actions={
-                    <div className="flex items-center gap-2">
-                      {hardwareData.total_memory > 0 && (
-                        <>
-                          <Progress
-                            value={
-                              toNumber(
-                                systemUsage.used_memory /
-                                  hardwareData.total_memory
-                              ) * 100
-                            }
-                            className="h-2 w-10"
-                          />
-                          <span className="text-main-view-fg/80">
-                            {(
-                              toNumber(
-                                systemUsage.used_memory /
-                                  hardwareData.total_memory
-                              ) * 100
-                            ).toFixed(2)}
-                            %
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  }
-                />
-              </Card>
-
-              {/* Llamacpp Devices Information */}
-              {!IS_MACOS && llamacpp && (
-                <Card title="GPUs">
-                  {llamacppDevicesLoading ? (
-                    <CardItem title="Loading devices..." actions={<></>} />
-                  ) : llamacppDevicesError ? (
+          </HeaderPage>
+          <div className="flex h-full w-full flex-col sm:flex-row">
+            <SettingsMenu />
+            <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+              {isLoading ? (
+                <div className="flex items-center justify-center h-32">
+                  <div className="text-main-view-fg/50">
+                    Loading hardware information...
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+                  {/* OS Information */}
+                  <Card title={t('settings:hardware.os')}>
                     <CardItem
-                      title="Error loading devices"
+                      title={t('settings:hardware.name')}
                       actions={
-                        <span className="text-destructive text-sm">
-                          {llamacppDevicesError}
+                        <span className="text-main-view-fg/80 capitalize">
+                          {hardwareData.os_type}
                         </span>
                       }
                     />
-                  ) : llamacppDevices.length > 0 ? (
-                    llamacppDevices.map((device, index) => (
-                      <Card key={index}>
+                    <CardItem
+                      title={t('settings:hardware.version')}
+                      actions={
+                        <span className="text-main-view-fg/80">
+                          {hardwareData.os_name}
+                        </span>
+                      }
+                    />
+                  </Card>
+
+                  {/* CPU Information */}
+                  <Card title={t('settings:hardware.cpu')}>
+                    <CardItem
+                      title={t('settings:hardware.model')}
+                      actions={
+                        <span className="text-main-view-fg/80">
+                          {hardwareData.cpu?.name}
+                        </span>
+                      }
+                    />
+                    <CardItem
+                      title={t('settings:hardware.architecture')}
+                      actions={
+                        <span className="text-main-view-fg/80">
+                          {hardwareData.cpu?.arch}
+                        </span>
+                      }
+                    />
+                    <CardItem
+                      title={t('settings:hardware.cores')}
+                      actions={
+                        <span className="text-main-view-fg/80">
+                          {hardwareData.cpu?.core_count}
+                        </span>
+                      }
+                    />
+                    {hardwareData.cpu?.extensions?.join(', ').length > 0 && (
+                      <CardItem
+                        title={t('settings:hardware.instructions')}
+                        column={hardwareData.cpu?.extensions.length > 6}
+                        actions={
+                          <span className="text-main-view-fg/80 break-words">
+                            {hardwareData.cpu?.extensions?.join(', ')}
+                          </span>
+                        }
+                      />
+                    )}
+                    <CardItem
+                      title={t('settings:hardware.usage')}
+                      actions={
+                        <div className="flex items-center gap-2">
+                          {systemUsage.cpu > 0 && (
+                            <>
+                              <Progress
+                                value={systemUsage.cpu}
+                                className="h-2 w-10"
+                              />
+                              <span className="text-main-view-fg/80">
+                                {systemUsage.cpu?.toFixed(2)}%
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      }
+                    />
+                  </Card>
+
+                  {/* RAM Information */}
+                  <Card title={t('settings:hardware.memory')}>
+                    <CardItem
+                      title={t('settings:hardware.totalRam')}
+                      actions={
+                        <span className="text-main-view-fg/80">
+                          {formatMegaBytes(hardwareData.total_memory)}
+                        </span>
+                      }
+                    />
+                    <CardItem
+                      title={t('settings:hardware.availableRam')}
+                      actions={
+                        <span className="text-main-view-fg/80">
+                          {formatMegaBytes(
+                            hardwareData.total_memory - systemUsage.used_memory
+                          )}
+                        </span>
+                      }
+                    />
+                    <CardItem
+                      title={t('settings:hardware.usage')}
+                      actions={
+                        <div className="flex items-center gap-2">
+                          {hardwareData.total_memory > 0 && (
+                            <>
+                              <Progress
+                                value={
+                                  toNumber(
+                                    systemUsage.used_memory /
+                                      hardwareData.total_memory
+                                  ) * 100
+                                }
+                                className="h-2 w-10"
+                              />
+                              <span className="text-main-view-fg/80">
+                                {(
+                                  toNumber(
+                                    systemUsage.used_memory /
+                                      hardwareData.total_memory
+                                  ) * 100
+                                ).toFixed(2)}
+                                %
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      }
+                    />
+                  </Card>
+
+                  {/* Llamacpp Devices Information */}
+                  {!IS_MACOS && llamacpp && (
+                    <Card title="GPUs">
+                      {llamacppDevicesLoading ? (
+                        <CardItem title="Loading devices..." actions={<></>} />
+                      ) : llamacppDevicesError ? (
                         <CardItem
-                          title={device.name}
+                          title="Error loading devices"
                           actions={
-                            <div className="flex items-center gap-4">
-                              {/* <div className="flex flex-col items-end gap-1">
+                            <span className="text-destructive text-sm">
+                              {llamacppDevicesError}
+                            </span>
+                          }
+                        />
+                      ) : llamacppDevices.length > 0 ? (
+                        llamacppDevices.map((device, index) => (
+                          <Card key={index}>
+                            <CardItem
+                              title={device.name}
+                              actions={
+                                <div className="flex items-center gap-4">
+                                  {/* <div className="flex flex-col items-end gap-1">
                             <span className="text-main-view-fg/80 text-sm">
                               ID: {device.id}
                             </span>
@@ -310,47 +315,49 @@ function HardwareContent() {
                               {formatMegaBytes(device.free)} free
                             </span>
                           </div> */}
-                              <Switch
-                                checked={device.activated}
-                                onCheckedChange={() => {
-                                  toggleDevice(device.id)
-                                  serviceHub.models().stopAllModels()
+                                  <Switch
+                                    checked={device.activated}
+                                    onCheckedChange={() => {
+                                      toggleDevice(device.id)
+                                      serviceHub.models().stopAllModels()
 
-                                  // Refresh active models after stopping
-                                  serviceHub
-                                    .models()
-                                    .getActiveModels()
-                                    .then((models) =>
-                                      setActiveModels(models || [])
-                                    )
-                                }}
+                                      // Refresh active models after stopping
+                                      serviceHub
+                                        .models()
+                                        .getActiveModels()
+                                        .then((models) =>
+                                          setActiveModels(models || [])
+                                        )
+                                    }}
+                                  />
+                                </div>
+                              }
+                            />
+                            <div className="mt-3">
+                              <CardItem
+                                title={t('settings:hardware.vram')}
+                                actions={
+                                  <span className="text-main-view-fg/80">
+                                    {formatMegaBytes(device.free)}{' '}
+                                    {t('settings:hardware.freeOf')}{' '}
+                                    {formatMegaBytes(device.mem)}
+                                  </span>
+                                }
                               />
                             </div>
-                          }
-                        />
-                        <div className="mt-3">
-                          <CardItem
-                            title={t('settings:hardware.vram')}
-                            actions={
-                              <span className="text-main-view-fg/80">
-                                {formatMegaBytes(device.free)}{' '}
-                                {t('settings:hardware.freeOf')}{' '}
-                                {formatMegaBytes(device.mem)}
-                              </span>
-                            }
-                          />
-                        </div>
-                      </Card>
-                    ))
-                  ) : (
-                    <CardItem title="No devices found" actions={<></>} />
+                          </Card>
+                        ))
+                      ) : (
+                        <CardItem title="No devices found" actions={<></>} />
+                      )}
+                    </Card>
                   )}
-                </Card>
+                </div>
               )}
             </div>
-          )}
+          </div>
         </div>
-      </div>
-    </div>
+      </SidebarInset>
+    </>
   )
 }
