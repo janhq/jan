@@ -1,0 +1,54 @@
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('/fonts/StudioFeixenSans-Ultralight.otf') format('opentype');
+  font-weight: 200;
+}
+
+/* Studio Feixen Sans - Light */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('/fonts/StudioFeixenSans-Light.otf') format('opentype');
+  font-weight: 300;
+}
+
+/* Studio Feixen Sans - Book */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('/fonts/StudioFeixenSans-Book.otf') format('opentype');
+  font-weight: 350;
+}
+
+/* Studio Feixen Sans - Regular */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('/fonts/StudioFeixenSans-Regular.otf') format('opentype');
+  font-weight: 400;
+}
+
+/* Studio Feixen Sans - Medium */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('/fonts/StudioFeixenSans-Medium.otf') format('opentype');
+  font-weight: 500;
+}
+
+/* Studio Feixen Sans - Semibold */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('/fonts/StudioFeixenSans-Semibold.otf') format('opentype');
+  font-weight: 600;
+}
+
+/* Studio Feixen Sans - Bold */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('/fonts/StudioFeixenSans-Bold.otf') format('opentype');
+  font-weight: 700;
+}

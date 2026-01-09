@@ -29,6 +29,8 @@ type AppState = {
   errorMessage?: AppErrorMessage
   promptProgress?: PromptProgress
   activeModels: string[]
+  apiKey?: string
+  setApiKey: (key: string | undefined) => void
   cancelToolCall?: () => void
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
@@ -64,6 +66,8 @@ export const useAppState = create<AppState>()((set) => ({
   promptProgress: undefined,
   cancelToolCall: undefined,
   activeModels: [],
+  apiKey: undefined,
+  setApiKey: (key) => set({ apiKey: key }),
   updateStreamingContent: (content: ThreadMessage | undefined) => {
     const assistants = useAssistant.getState().assistants
     const currentAssistant = useAssistant.getState().currentAssistant

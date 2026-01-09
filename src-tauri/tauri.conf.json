@@ -5,7 +5,7 @@
   "identifier": "jan.ai.app",
   "build": {
     "frontendDist": "../web-app/dist",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:3000",
     "beforeDevCommand": "cross-env IS_TAURI=true IS_DEV=true yarn dev:web",
     "beforeBuildCommand": "cross-env IS_TAURI=true yarn build:web"
   },

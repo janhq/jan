@@ -1,6 +1,26 @@
 /**
- * Chat-related constants
+ * Chat session and status constants
  */
 
-export const TEMPORARY_CHAT_ID = 'temporary-chat'
-export const TEMPORARY_CHAT_QUERY_ID = 'temporary-chat'
+// Session IDs
+export const PRIVATE_CHAT_SESSION_ID = "private-chat";
+export const TEMPORARY_CHAT_SESSION_ID = "temporary-chat";
+
+// Remove
+export const TEMPORARY_CHAT_ID = "temporary-chat-session";
+export const TEMPORARY_CHAT_QUERY_ID = "temporary_chat";
+
+// Chat Status (matches ChatStatus type from 'ai' SDK)
+export const CHAT_STATUS = {
+  SUBMITTED: "submitted",
+  STREAMING: "streaming",
+  READY: "ready",
+  ERROR: "error",
+} as const;
+
+export type ChatStatusValue = (typeof CHAT_STATUS)[keyof typeof CHAT_STATUS];
+
+// Branch names
+export const BRANCH = {
+  MAIN: "MAIN",
+} as const;

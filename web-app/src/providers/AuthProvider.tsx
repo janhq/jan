@@ -70,17 +70,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
 
     const initializeAuth = async () => {
-      try {
-        const { getSharedAuthService } = await import('@jan/extensions-web')
-        const authService = getSharedAuthService()
-
-        await initializeAuthStore(authService)
-
-        setIsReady(true)
-      } catch (error) {
-        console.error('Failed to initialize auth service:', error)
-        setIsReady(true) // Still render to show error state
-      }
+      
     }
 
     initializeAuth()

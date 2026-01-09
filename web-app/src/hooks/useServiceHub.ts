@@ -6,7 +6,7 @@ interface ServiceState {
   setServiceHub: (serviceHub: ServiceHub) => void
 }
 
-const useServiceStore = create<ServiceState>()((set) => ({
+export const useServiceStore = create<ServiceState>()((set) => ({
   serviceHub: null,
   setServiceHub: (serviceHub: ServiceHub) => set({ serviceHub }),
 }))
