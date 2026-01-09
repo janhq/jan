@@ -2,9 +2,13 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "enables the default permissions",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "remote": {
-    "urls": ["http://*"]
+    "urls": [
+      "http://*"
+    ]
   },
   "permissions": [
     "core:default",
@@ -22,7 +26,6 @@
     "opener:allow-open-url",
     "store:default",
     "vector-db:default",
-    "rag:default",
     "hardware:default",
     "deep-link:default",
     "llamacpp:default",
@@ -47,7 +50,9 @@
     {
       "identifier": "opener:allow-open-url",
       "description": "opens the default permissions for the core module",
-      "windows": ["*"],
+      "windows": [
+        "*"
+      ],
       "allow": [
         {
           "url": "https://*"
