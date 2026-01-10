@@ -246,7 +246,7 @@ jobs:
         with:
           name: jan-windows-portable-${{ inputs.new_version }}
           path: |
-            ./src-tauri/target/release/*.exe
+            ./src-tauri/target/release/Jan*.exe
 
       ## Set output filename for windows
       - name: Set output filename for windows
