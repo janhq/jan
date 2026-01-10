@@ -22,6 +22,8 @@ jobs:
 
       - name: Update app version based on latest release tag with build number
         id: version_update
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Function to get the latest release tag
           get_latest_tag() {
@@ -29,7 +31,7 @@ jobs:
             local max_retries=3
             local tag
             while [ $retries -lt $max_retries ]; do
-              tag=$(curl -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
+              tag=$(curl -H "Authorization: token ${GITHUB_TOKEN}" -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
               if [ -n "$tag" ] && [ "$tag" != "null" ]; then
                 echo $tag
                 return

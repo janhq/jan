@@ -1,0 +1,28 @@
+name: Manual build portable (windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_ref:
+        description: "Code ref to build (e.g. refs/tags/v0.7.5 or refs/heads/release/v0.7.5)"
+        required: true
+        default: "refs/tags/v0.7.5"
+      version:
+        description: "Version to stamp into the app"
+        required: true
+        default: "0.7.5"
+      channel:
+        description: "stable/beta/nightly"
+        required: true
+        default: "stable"
+
+jobs:
+  build-windows-portable:
+    uses: janhq/jan/.github/workflows/template-tauri-build-windows-x64.yml@main
+    secrets: inherit
+    with:
+      ref: ${{ inputs.build_ref }}
+      public_provider: "none"
+      channel: ${{ inputs.channel }}
+      new_version: ${{ inputs.version }}
+      upload_url: ""
