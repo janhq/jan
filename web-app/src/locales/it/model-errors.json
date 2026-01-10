@@ -1,0 +1,7 @@
+{
+    "title": "Errore fuori contesto",
+    "description": "Questa chat sta raggiungendo il limite di memoria dell'IA, come una lavagna che si riempe. Possiamo espandere la finestra di memoria (chiamata dimensione del contesto) in modo che ricordi di più, ma potrebbe utilizzare più memoria del tuo computer. Possiamo anche troncare l'input, il che significa che dimenticherà parte della cronologia della chat per fare spazio ai nuovi messaggi.",
+    "increaseContextSizeDescription": "Vuoi aumentare la dimensione del contesto?",
+    "truncateInput": "Tronca l'input",
+    "increaseContextSize": "Aumenta la dimensione del contesto"
+}
