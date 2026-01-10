@@ -98,7 +98,7 @@
     "increaseContextSizeDescription": "您想要增加上下文大小吗？",
     "increaseContextSize": "增加上下文大小"
   },
-    "customAvatar": "自定义头像",
+  "customAvatar": "自定义头像",
   "editAssistant": "编辑助手",
   "jan": "Jan",
   "metadata": "元数据",
@@ -289,6 +289,16 @@
     },
     "messageMetadata": {
       "title": "消息元数据"
+    },
+    "exportResponse": {
+      "title": "导出回复",
+      "description": "选择导出格式，并选择是否包含思考过程。",
+      "export": "导出",
+      "format": "格式",
+      "thinking": "包含思考过程",
+      "includingThinkingDescription": "在导出中包含模型的推理过程",
+      "cancel": "取消",
+      "exporting": "正在导出..."
     }
   },
   "toast": {
@@ -371,6 +381,15 @@
     "threadRemovedFromProject": {
       "title": "线程已移除",
       "description": "线程已成功从\"{{projectName}}\"中移除"
+    },
+    "markdownDownloaded": {
+      "title": "Markdown 文件下载成功"
+    },
+    "pdfDownloaded": {
+      "title": "PDF 文件下载成功"
+    },
+    "imageDownloaded": {
+      "title": "图片文件下载成功"
     }
   }
 }

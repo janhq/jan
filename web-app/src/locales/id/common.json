@@ -235,6 +235,16 @@
     },
     "messageMetadata": {
       "title": "Metadata Pesan"
+    },
+    "exportResponse": {
+      "title": "Ekspor Respons",
+      "description": "Pilih format ekspor dan tunjukkan apakah Anda ingin menyertakan proses berpikir.",
+      "export": "Ekspor",
+      "format": "Format",
+      "thinking": "Sertakan Proses Berpikir",
+      "includingThinkingDescription": "Sertakan proses penalaran model dalam ekspor",
+      "cancel": "Batal",
+      "exporting": "Mengekspor..."
     }
   },
   "toast": {
@@ -317,6 +327,15 @@
     "threadRemovedFromProject": {
       "title": "Thread Dihapus",
       "description": "Thread berhasil dihapus dari \"{{projectName}}\""
+    },
+    "markdownDownloaded": {
+      "title": "File Markdown berhasil diunduh"
+    },
+    "pdfDownloaded": {
+      "title": "File PDF berhasil diunduh"
+    },
+    "imageDownloaded": {
+      "title": "File gambar berhasil diunduh"
     }
   },
   "projects": {

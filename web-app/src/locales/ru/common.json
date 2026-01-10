@@ -237,6 +237,16 @@
     },
     "messageMetadata": {
       "title": "Метаданные сообщения"
+    },
+    "exportResponse": {
+      "title": "Экспортировать ответ",
+      "description": "Выберите формат экспорта и укажите, следует ли включать описание процесса мышления.",
+      "export": "Экспорт",
+      "format": "Формат",
+      "thinking": "Включить ход рассуждений",
+      "includingThinkingDescription": "Включить процесс рассуждения модели в экспорт",
+      "cancel": "Отмена",
+      "exporting": "Идет экспорт..."
     }
   },
   "projects": {
@@ -382,6 +392,15 @@
     "threadRemovedFromProject": {
       "title": "Обсуждение удалено",
       "description": "Обсуждение успешно удалено из проекта \"{{projectName}}\""
+    },
+    "markdownDownloaded": {
+      "title": "Файл Markdown успешно загружен"
+    },
+    "pdfDownloaded": {
+      "title": "PDF-файл успешно загружен"
+    },
+    "imageDownloaded": {
+      "title": "Файл изображения успешно загружен"
     }
   }
 }

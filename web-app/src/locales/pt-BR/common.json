@@ -235,6 +235,16 @@
     },
     "messageMetadata": {
       "title": "Metadados da Mensagem"
+    },
+    "exportResponse": {
+      "title": "Exportar Resposta",
+      "description": "Selecione um formato de exportação e escolha se deseja incluir o processo de raciocínio.",
+      "export": "Exportar",
+      "format": "Formato",
+      "thinking": "Incluir Processo de Raciocínio",
+      "includingThinkingDescription": "Incluir o processo de raciocínio do modelo na exportação",
+      "cancel": "Cancelar",
+      "exporting": "Exportando..."
     }
   },
   "projects": {
@@ -370,6 +380,15 @@
     "threadRemovedFromProject": {
       "title": "Conversa Removida",
       "description": "Conversa removida de \"{{projectName}}\" com sucesso"
+    },
+    "markdownDownloaded": {
+      "title": "Arquivo Markdown baixado com sucesso"
+    },
+    "pdfDownloaded": {
+      "title": "Arquivo PDF baixado com sucesso"
+    },
+    "imageDownloaded": {
+      "title": "Arquivo de imagem baixado com sucesso"
     }
   },
   "attachmentInjectedIndicator": "Injetado no chat",
