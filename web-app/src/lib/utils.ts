@@ -25,6 +25,7 @@ export const sanitizeModelId = (modelId: string) => modelId
 export const getModelDisplayName = (modelId: string) => modelId
 export const getProviderTitle = (provider: string) => provider
 export const getProviderLogo = (provider: string) => ''
+export const basenameNoExt = (path: string) => path
 
 /**
  * Convert ConversationItems to UIMessage format
