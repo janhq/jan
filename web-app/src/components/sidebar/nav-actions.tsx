@@ -37,12 +37,15 @@ export function NavActions({
     router.navigate({ to: url.pathname + url.search });
   };
 
+  // Temporarily hide login button for guests
   if (!isAuthenticated || isGuest) {
-    return (
-      <Button size="sm" onClick={handleLogin}>
-        Log in
-      </Button>
-    );
+    // Temporary hide the login button
+    // return (
+    //   <Button size="sm" onClick={handleLogin}>
+    //     Log in
+    //   </Button>
+    // );
+    return null;
   }
 
   return (
