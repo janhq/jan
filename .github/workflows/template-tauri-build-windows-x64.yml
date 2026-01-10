@@ -270,10 +270,14 @@ jobs:
             PORTABLE_FILE_NAME="Jan_${{ inputs.new_version }}_x64-portable.exe"
           fi
           # go to ./src-tauri/target/release
-          cd ../../..
+          cd ../..
 
           # find the actual portable exe produced by the build
           PORTABLE_SRC=$(ls -1 Jan*.exe | head -n 1)
+          if [ -z "$PORTABLE_SRC" ] || [ ! -f "$PORTABLE_SRC" ]; then
+            echo "Error: portable exe matching 'Jan*.exe' not found in $(pwd)" >&2
+            exit 1
+          fi
           # copy to deterministic versioned filename
           cp "$PORTABLE_SRC" "$PORTABLE_FILE_NAME"
           echo "Portable exe: $PORTABLE_SRC -> $PORTABLE_FILE_NAME"
