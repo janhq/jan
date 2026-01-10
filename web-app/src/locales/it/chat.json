@@ -1,0 +1,12 @@
+{
+    "welcome": "Ciao, come stai?",
+    "description": "Come posso aiutarti oggi?",
+    "temporaryChat": "Chat Temporanea",
+    "temporaryChatDescription": "Inizia una conversazione temporanea che non verrà salvata nella cronologia delle chat.",
+    "status": {
+        "empty": "Nessuna Chat Trovata"
+    },
+    "sendMessage": "Invia Messaggio",
+    "newConversation": "Nuova Conversazione",
+    "clearHistory": "Cancella Cronologia"
+}
