@@ -17,6 +17,24 @@ use tokio::sync::Mutex;
     tauri::mobile_entry_point
 )]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    {
+        // Disable DMA-BUF renderer (fixes GBM buffer errors on NVIDIA)
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        
+        // Try Wayland first, fallback to X11 automatically if fails
+        // This allows Wayland users to use native Wayland,
+        // while NVIDIA/problematic systems auto-switch to X11
+        if std::env::var("GDK_BACKEND").is_err() {
+            std::env::set_var("GDK_BACKEND", "wayland,x11");
+        }
+        
+        // NVIDIA-specific optimization
+        if std::env::var("__GLX_VENDOR_LIBRARY_NAME").is_err() {
+            std::env::set_var("__GLX_VENDOR_LIBRARY_NAME", "nvidia");
+        }
+    }
+
     let mut builder = tauri::Builder::default();
     #[cfg(desktop)]
     {
