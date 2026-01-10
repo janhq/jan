@@ -106,9 +106,17 @@ function ProjectPageContent() {
     }
   };
 
-  const provider = janProvider();
+  const [provider, setProvider] = useState<any>(null);
 
-  const { status, sendMessage } = useChat(provider(selectedModel?.id), {
+  useEffect(() => {
+    if (!selectedModel) {
+      setProvider(null);
+      return;
+    }
+    janProvider(selectedModel).then((p) => setProvider(p(selectedModel.id)));
+  }, [selectedModel]);
+
+  const { status, sendMessage } = useChat(provider, {
     onFinish: () => {
       // After finishing a message
     },
