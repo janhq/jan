@@ -11,6 +11,8 @@ import { useCallback, useState } from 'react'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
+import { SidebarInset, SidebarProvider } from '@/components/sidebar/sidebar'
+import { AppSidebar } from '@/components/sidebar/app-sidebar'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.https_proxy as any)({
@@ -51,14 +53,18 @@ function HTTPSProxyContent() {
   )
 
   return (
-    <div className="flex flex-col h-full">
-      <HeaderPage>
-        <h1 className="font-medium">{t('common:settings')}</h1>
-      </HeaderPage>
-      <div className="flex h-full w-full">
-        <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+    <>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
+            <HeaderPage>
+              <h1 className="font-medium">{t('common:settings')}</h1>
+            </HeaderPage>
+            <div className="flex h-full w-full flex-col sm:flex-row">
+              <SettingsMenu />
+              <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+                <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Proxy Configuration */}
             <Card
               header={
@@ -150,9 +156,12 @@ function HTTPSProxyContent() {
                 }
               />
             </Card>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-    </div>
+        </SidebarInset>
+      </SidebarProvider>
+    </>
   )
 }

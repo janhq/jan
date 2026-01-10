@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { conversationService } from "@/services/conversation-service";
+import { conversationService } from "@/services/conversation";
 import type { UIMessage } from "@ai-sdk/react";
 import { convertToUIMessages } from "@/lib/utils";
 import { useChatSessions } from "./chat-session-store";

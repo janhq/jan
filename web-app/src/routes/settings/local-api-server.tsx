@@ -23,6 +23,8 @@ import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 import { toast } from 'sonner'
 import { getModelToStart } from '@/utils/getModelToStart'
+import { SidebarInset, SidebarProvider } from '@/components/sidebar/sidebar'
+import { AppSidebar } from '@/components/sidebar/app-sidebar'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -237,14 +239,18 @@ function LocalAPIServerContent() {
   const isServerRunning = serverStatus !== 'stopped'
 
   return (
-    <div className="flex flex-col h-full">
-      <HeaderPage>
-        <h1 className="font-medium">{t('common:settings')}</h1>
-      </HeaderPage>
-      <div className="flex h-full w-full">
-        <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+    <>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
+            <HeaderPage>
+              <h1 className="font-medium">{t('common:settings')}</h1>
+            </HeaderPage>
+            <div className="flex h-full w-full flex-col sm:flex-row">
+              <SettingsMenu />
+              <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+                <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* General Settings */}
             <Card
               header={
@@ -420,9 +426,12 @@ function LocalAPIServerContent() {
                 }
               />
             </Card>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-    </div>
+        </SidebarInset>
+      </SidebarProvider>
+    </>
   )
 }

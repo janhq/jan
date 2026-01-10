@@ -18,6 +18,8 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 import { useAppState } from '@/hooks/useAppState'
+import { SidebarInset, SidebarProvider } from '@/components/sidebar/sidebar'
+import { AppSidebar } from '@/components/sidebar/app-sidebar'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hardware as any)({
@@ -128,22 +130,26 @@ function HardwareContent() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <HeaderPage>
-        <div className="flex items-center gap-2 justify-between w-full pr-3">
-          <h1 className="font-medium">{t('common:settings')}</h1>
-          <div
-            className="flex items-center gap-1 hover:bg-main-view-fg/8 px-1.5 py-0.5 rounded relative z-10 cursor-pointer"
-            onClick={handleClickSystemMonitor}
-          >
-            <IconDeviceDesktopAnalytics className="text-main-view-fg/50 size-5" />
-            <p>{t('settings:hardware.systemMonitor')}</p>
-          </div>
-        </div>
-      </HeaderPage>
-      <div className="flex h-full w-full">
-        <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+    <>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
+            <HeaderPage>
+              <div className="flex items-center gap-2 justify-between w-full pr-3">
+                <h1 className="font-medium">{t('common:settings')}</h1>
+                <div
+                  className="flex items-center gap-1 hover:bg-main-view-fg/8 px-1.5 py-0.5 rounded relative z-10 cursor-pointer"
+                  onClick={handleClickSystemMonitor}
+                >
+                  <IconDeviceDesktopAnalytics className="text-main-view-fg/50 size-5" />
+                  <p>{t('settings:hardware.systemMonitor')}</p>
+                </div>
+              </div>
+            </HeaderPage>
+            <div className="flex h-full w-full flex-col sm:flex-row">
+              <SettingsMenu />
+              <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center h-32">
               <div className="text-main-view-fg/50">
@@ -347,10 +353,13 @@ function HardwareContent() {
                   )}
                 </Card>
               )}
+                </div>
+              )}
+              </div>
             </div>
-          )}
-        </div>
-      </div>
-    </div>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    </>
   )
 }

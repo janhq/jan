@@ -21,6 +21,8 @@ import { toast } from 'sonner'
 import { ChatWidthSwitcher } from '@/containers/ChatWidthSwitcher'
 import { TokenCounterCompactSwitcher } from '@/containers/TokenCounterCompactSwitcher'
 import { ThreadScrollBehaviorSwitcher } from '@/containers/ThreadScrollBehaviorSwitcher'
+import { SidebarInset, SidebarProvider } from '@/components/sidebar/sidebar'
+import { AppSidebar } from '@/components/sidebar/app-sidebar'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.interface as any)({
@@ -33,14 +35,18 @@ function InterfaceSettings() {
   const { resetCodeBlockStyle } = useCodeblock()
 
   return (
-    <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
-      <HeaderPage>
-        <h1 className="font-medium">{t('common:settings')}</h1>
-      </HeaderPage>
-      <div className="flex h-full w-full flex-col sm:flex-row">
-        <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+    <>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
+            <HeaderPage>
+              <h1 className="font-medium">{t('common:settings')}</h1>
+            </HeaderPage>
+            <div className="flex h-full w-full flex-col sm:flex-row">
+              <SettingsMenu />
+              <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+                <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Interface */}
             <Card title={t('settings:interface.title')}>
               <CardItem
@@ -171,9 +177,12 @@ function InterfaceSettings() {
                 }
               />
             </Card>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-    </div>
+        </SidebarInset>
+      </SidebarProvider>
+    </>
   )
 }

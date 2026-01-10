@@ -10,6 +10,8 @@ import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { PlatformFeature } from '@/lib/platform/types'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import { SidebarInset, SidebarProvider } from '@/components/sidebar/sidebar'
+import { AppSidebar } from '@/components/sidebar/app-sidebar'
 
 export const Route = createFileRoute('/settings/attachments')({
   component: AttachmentsSettings,
@@ -165,13 +167,17 @@ function AttachmentsSettings() {
 
   return (
     <PlatformGuard feature={PlatformFeature.FILE_ATTACHMENTS}>
-      <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
-        <HeaderPage>
-          <h1 className="font-medium">{t('common:settings')}</h1>
-        </HeaderPage>
-        <div className="flex h-full w-full flex-col sm:flex-row">
-          <SettingsMenu />
-          <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+      <>
+        <SidebarProvider>
+          <AppSidebar />
+          <SidebarInset>
+            <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
+              <HeaderPage>
+                <h1 className="font-medium">{t('common:settings')}</h1>
+              </HeaderPage>
+              <div className="flex h-full w-full flex-col sm:flex-row">
+                <SettingsMenu />
+                <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
             <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
               <Card title={t('common:attachments') || 'Attachments'}>
                 {defs.map((d) => {
@@ -245,10 +251,13 @@ function AttachmentsSettings() {
                   )
                 })}
               </Card>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      </div>
+          </SidebarInset>
+        </SidebarProvider>
+      </>
     </PlatformGuard>
   )
 }

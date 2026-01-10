@@ -14,6 +14,8 @@ import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform/types'
 import { Button } from '@/components/ui/button'
 import SettingsMenu from '@/containers/SettingsMenu'
+import { SidebarInset, SidebarProvider } from '@/components/sidebar/sidebar'
+import { AppSidebar } from '@/components/sidebar/app-sidebar'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.assistant as any)({
@@ -61,26 +63,30 @@ function AssistantContent() {
   }
 
   return (
-    <div className="flex h-full flex-col justify-center">
-      <HeaderPage>
-        <div className="flex items-center justify-between w-full mr-2">
-          <span>{t('assistants:title')}</span>
-          <Button
-            onClick={() => {
-              setEditingKey(null)
-              setOpen(true)
-            }}
-            size="sm"
-            className="relative z-50"
-          >
-            <IconCirclePlus size={16} />
-            Add Assistant
-          </Button>
-        </div>
-      </HeaderPage>
-      <div className="flex h-full w-full">
-        <SettingsMenu />
-        <div className="space-y-3 p-4">
+    <>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <div className="flex h-full flex-col justify-center pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
+            <HeaderPage>
+              <div className="flex items-center justify-between w-full mr-2">
+                <span>{t('assistants:title')}</span>
+                <Button
+                  onClick={() => {
+                    setEditingKey(null)
+                    setOpen(true)
+                  }}
+                  size="sm"
+                  className="relative z-50"
+                >
+                  <IconCirclePlus size={16} />
+                  Add Assistant
+                </Button>
+              </div>
+            </HeaderPage>
+            <div className="flex h-full w-full flex-col sm:flex-row">
+              <SettingsMenu />
+              <div className="space-y-3 p-4">
           {assistants
             .slice()
             .sort((a, b) => a.created_at - b.created_at)
@@ -129,22 +135,25 @@ function AssistantContent() {
                 </div>
               </div>
             ))}
-        </div>
-        <AddEditAssistant
-          open={open}
-          onOpenChange={setOpen}
-          editingKey={editingKey}
-          initialData={
-            editingKey ? assistants.find((a) => a.id === editingKey) : undefined
-          }
-          onSave={handleSave}
-        />
-        <DeleteAssistantDialog
-          open={deleteConfirmOpen}
-          onOpenChange={setDeleteConfirmOpen}
-          onConfirm={confirmDelete}
-        />
-      </div>
-    </div>
+              </div>
+              <AddEditAssistant
+                open={open}
+                onOpenChange={setOpen}
+                editingKey={editingKey}
+                initialData={
+                  editingKey ? assistants.find((a) => a.id === editingKey) : undefined
+                }
+                onSave={handleSave}
+              />
+              <DeleteAssistantDialog
+                open={deleteConfirmOpen}
+                onOpenChange={setDeleteConfirmOpen}
+                onConfirm={confirmDelete}
+              />
+            </div>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    </>
   )
 }

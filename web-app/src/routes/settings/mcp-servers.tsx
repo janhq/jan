@@ -31,6 +31,8 @@ import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
+import { SidebarInset, SidebarProvider } from '@/components/sidebar/sidebar'
+import { AppSidebar } from '@/components/sidebar/app-sidebar'
 
 // Function to mask sensitive values
 const maskSensitiveValue = (value: string) => {
@@ -372,14 +374,18 @@ function MCPServersDesktop() {
   }, [serviceHub, setConnectedServers])
 
   return (
-    <div className="flex flex-col h-full">
-      <HeaderPage>
-        <h1 className="font-medium">{t('common:settings')}</h1>
-      </HeaderPage>
-      <div className="flex h-full w-full">
-        <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+    <>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
+            <HeaderPage>
+              <h1 className="font-medium">{t('common:settings')}</h1>
+            </HeaderPage>
+            <div className="flex h-full w-full flex-col sm:flex-row">
+              <SettingsMenu />
+              <div className="p-4 w-full h-full overflow-y-auto">
+                <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             <Card
               header={
                 <div className="flex flex-col mb-4">
@@ -634,40 +640,43 @@ function MCPServersDesktop() {
                 </Card>
               ))
             )}
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Use the AddEditMCPServer component */}
-      <AddEditMCPServer
-        open={open}
-        onOpenChange={setOpen}
-        editingKey={editingKey}
-        initialData={currentConfig}
-        onSave={handleSaveServer}
-      />
+          {/* Use the AddEditMCPServer component */}
+          <AddEditMCPServer
+            open={open}
+            onOpenChange={setOpen}
+            editingKey={editingKey}
+            initialData={currentConfig}
+            onSave={handleSaveServer}
+          />
 
-      {/* Delete confirmation dialog */}
-      <DeleteMCPServerConfirm
-        open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
-        serverName={serverToDelete || ''}
-        onConfirm={handleConfirmDelete}
-      />
+          {/* Delete confirmation dialog */}
+          <DeleteMCPServerConfirm
+            open={deleteDialogOpen}
+            onOpenChange={setDeleteDialogOpen}
+            serverName={serverToDelete || ''}
+            onConfirm={handleConfirmDelete}
+          />
 
-      {/* JSON editor dialog */}
-      <EditJsonMCPserver
-        open={jsonEditorOpen}
-        onOpenChange={setJsonEditorOpen}
-        serverName={jsonServerName}
-        initialData={
-          jsonEditorData ?? {
-            mcpServers,
-            mcpSettings: settings,
-          }
-        }
-        onSave={handleSaveJson}
-      />
-    </div>
+          {/* JSON editor dialog */}
+          <EditJsonMCPserver
+            open={jsonEditorOpen}
+            onOpenChange={setJsonEditorOpen}
+            serverName={jsonServerName}
+            initialData={
+              jsonEditorData ?? {
+                mcpServers,
+                mcpSettings: settings,
+              }
+            }
+            onSave={handleSaveJson}
+          />
+        </SidebarInset>
+      </SidebarProvider>
+    </>
   )
 }

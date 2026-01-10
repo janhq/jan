@@ -1,121 +1,48 @@
-import { ChevronsUpDown, LogOut, SettingsIcon } from "lucide-react";
+import { BlocksIcon, SettingsIcon } from 'lucide-react'
 
-import { Avatar, AvatarFallback, AvatarImage } from "@janhq/interfaces/avatar";
-import {
-  DropDrawer,
-  DropDrawerContent,
-  DropDrawerItem,
-  DropDrawerLabel,
-  DropDrawerSeparator,
-  DropDrawerTrigger,
-} from "@janhq/interfaces/dropdrawer";
 import {
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/sidebar/sidebar";
-import { useAuth } from "@/stores/auth-store";
-import { useRouter } from "@tanstack/react-router";
-import { getInitialsAvatar } from "@/lib/utils";
-import { URL_PARAM, SETTINGS_SECTION } from "@/constants";
+  useSidebar,
+} from '@/components/sidebar/sidebar'
+import { useRouter } from '@tanstack/react-router'
+import { AnimatedMenuItem, NavMainItem } from './items'
+import { route } from '@/constants/routes'
 
 export function NavUser() {
-  const user = useAuth((state) => state.user);
-  const logout = useAuth((state) => state.logout);
-  const isGuest = useAuth((state) => state.isGuest);
-  const router = useRouter();
+  const router = useRouter()
+  const { isMobile, setOpenMobile } = useSidebar()
 
-  const handleOpenSettings = (section: string = SETTINGS_SECTION.GENERAL) => {
-    const url = new URL(window.location.href);
-    url.searchParams.set(URL_PARAM.SETTING, section);
-    router.navigate({ to: url.pathname + url.search });
-  };
+  const navFooterItems: NavMainItem[] = [
+    {
+      title: 'Models',
+      url: route.hub.index,
+      icon: BlocksIcon,
+      isActive: false,
+      onClick: () => router.navigate({ to: route.hub.index }),
+    },
+    {
+      title: 'Settings',
+      url: route.settings.general,
+      icon: SettingsIcon,
+      isActive: false,
+      onClick: () => router.navigate({ to: route.settings.general }),
+    },
+  ]
 
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        <DropDrawer>
-          <DropDrawerTrigger asChild>
-            <SidebarMenuButton
-              size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            >
-              <Avatar className="h-8 w-8 rounded-full">
-                <AvatarImage src={user?.avatar} alt={user?.name} />
-                <AvatarFallback className="bg-primary text-background font-medium">
-                  {user?.name && getInitialsAvatar(user?.name)}
-                </AvatarFallback>
-              </Avatar>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{user?.name?.startsWith("guest-") ? "Guest User" : user?.name}</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {/* temporary till we have manage billing */}
-                  {/* {user.pro ? 'Pro Plan' : 'Free Plan'} */}
-                </span>
-              </div>
-              <ChevronsUpDown className="ml-auto size-4" />
-            </SidebarMenuButton>
-          </DropDrawerTrigger>
-          <DropDrawerContent
-            className="md:w-56"
-            side="top"
-            align="end"
-            sideOffset={4}
-          >
-            <DropDrawerLabel className="lg:p-0 font-normal">
-              <div className="flex items-center gap-2 px-3 py-1.5 text-left text-sm">
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{user?.name?.startsWith("guest-") ? "Guest User" : user?.name}</span>
-                  <span className="truncate text-xs text-muted-foreground mt-1">
-                    {user?.email}
-                  </span>
-                </div>
-              </div>
-            </DropDrawerLabel>
-            <DropDrawerSeparator />
-
-            <DropDrawerItem
-              onClick={() => handleOpenSettings(SETTINGS_SECTION.GENERAL)}
-            >
-              <div className="flex gap-2 items-center justify-center">
-                <SettingsIcon className="text-muted-foreground" />
-                Setting
-              </div>
-            </DropDrawerItem>
-            {/* <DropDrawerItem>
-                <div className="flex gap-2 items-center justify-center">
-                  <CreditCard className="text-muted-foreground" />
-                  Manage Plan
-                </div>
-              </DropDrawerItem> */}
-            {/* <DropDrawerItem>
-                <div className="flex gap-2 items-center justify-center">
-                  <LifeBuoyIcon className="text-muted-foreground" />
-                  Support
-                </div>
-              </DropDrawerItem> */}
-            {!isGuest && (
-              <>
-                <DropDrawerSeparator />
-                <DropDrawerItem
-                  onClick={async () => {
-                    await logout();
-                    router.navigate({
-                      to: "/",
-                      replace: true,
-                    });
-                  }}
-                >
-                  <div className="flex gap-2 items-center justify-center">
-                    <LogOut className="text-muted-foreground ml-0.5" />
-                    Log out
-                  </div>
-                </DropDrawerItem>
-              </>
-            )}
-          </DropDrawerContent>
-        </DropDrawer>
+        {navFooterItems.map((item, index) => (
+          <AnimatedMenuItem
+            key={item.title}
+            item={item}
+            isMobile={isMobile}
+            setOpenMobile={setOpenMobile}
+            index={index}
+          />
+        ))}
       </SidebarMenuItem>
     </SidebarMenu>
-  );
+  )
 }
