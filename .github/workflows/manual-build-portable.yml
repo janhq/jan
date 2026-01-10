@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       build_ref:
-        description: "Code ref to build
+        description: "Code ref to build (e.g. refs/tags/v0.7.5 or refs/heads/release/v0.7.5)"
         required: true
         default: "refs/tags/v0.7.5"
       version:
@@ -18,11 +18,11 @@ on:
 
 jobs:
   build-windows-portable:
-    # IMPORTANT: this loads the template workflow from main (where your portable steps exist)
     uses: janhq/jan/.github/workflows/template-tauri-build-windows-x64.yml@main
     secrets: inherit
     with:
       ref: ${{ inputs.build_ref }}
-      public_provider: none
+      public_provider: "none"
       channel: ${{ inputs.channel }}
       new_version: ${{ inputs.version }}
+      upload_url: ""
