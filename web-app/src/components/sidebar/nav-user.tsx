@@ -22,6 +22,7 @@ import { URL_PARAM, SETTINGS_SECTION } from "@/constants";
 export function NavUser() {
   const user = useAuth((state) => state.user);
   const logout = useAuth((state) => state.logout);
+  const isGuest = useAuth((state) => state.isGuest);
   const router = useRouter();
 
   const handleOpenSettings = (section: string = SETTINGS_SECTION.GENERAL) => {
@@ -93,21 +94,25 @@ export function NavUser() {
                   Support
                 </div>
               </DropDrawerItem> */}
-            <DropDrawerSeparator />
-            <DropDrawerItem
-              onClick={async () => {
-                await logout();
-                router.navigate({
-                  to: "/",
-                  replace: true,
-                });
-              }}
-            >
-              <div className="flex gap-2 items-center justify-center">
-                <LogOut className="text-muted-foreground ml-0.5" />
-                Log out
-              </div>
-            </DropDrawerItem>
+            {!isGuest && (
+              <>
+                <DropDrawerSeparator />
+                <DropDrawerItem
+                  onClick={async () => {
+                    await logout();
+                    router.navigate({
+                      to: "/",
+                      replace: true,
+                    });
+                  }}
+                >
+                  <div className="flex gap-2 items-center justify-center">
+                    <LogOut className="text-muted-foreground ml-0.5" />
+                    Log out
+                  </div>
+                </DropDrawerItem>
+              </>
+            )}
           </DropDrawerContent>
         </DropDrawer>
       </SidebarMenuItem>
