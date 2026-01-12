@@ -244,12 +244,28 @@ jobs:
           path: |
             ./src-tauri/target/release/bundle/msi/*.msi
       
+            ## Prepare portable package with extensions
+      - name: Prepare portable package
+        shell: bash
+        run: |
+          # Create portable package directory
+          mkdir -p portable-package/extensions
+          
+          # Copy portable exe
+          cp src-tauri/target/release/Jan*.exe portable-package/
+          
+          # Copy pre-install extensions
+          cp -r src-tauri/resources/pre-install/*.tgz portable-package/extensions/ 2>/dev/null || echo "No extensions found"
+          
+          echo "Portable package contents:"
+          ls -la portable-package/
+          ls -la portable-package/extensions/
+
       - name: Upload Portable Artifact
         uses: actions/upload-artifact@v4
         with:
           name: jan-windows-portable-${{ inputs.new_version }}
-          path: |
-            ./src-tauri/target/release/Jan*.exe
+          path: portable-package/
 
       ## Set output filename for windows
       - name: Set output filename for windows
