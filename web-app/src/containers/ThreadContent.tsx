@@ -1,7 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ThreadMessage } from '@janhq/core'
 import { RenderMarkdown } from './RenderMarkdown'
-import React, { Fragment, memo, useCallback, useMemo, useState } from 'react'
+import React, {
+  Fragment,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   IconCopy,
   IconCopyCheck,
@@ -12,7 +20,6 @@ import {
 import { useAppState } from '@/hooks/useAppState'
 import { cn } from '@/lib/utils'
 import { useMessages } from '@/hooks/useMessages'
-import ThinkingBlock from '@/containers/ThinkingBlock'
 import ToolCallBlock from '@/containers/ToolCallBlock'
 import { useChat } from '@/hooks/useChat'
 import {
@@ -41,6 +48,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+
+import { twMerge } from 'tailwind-merge'
+import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from '@/ai-elements/reasoning'
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from '@/ai-elements/tool'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -96,9 +117,12 @@ export const ThreadContent = memo(
   ) => {
     const { t } = useTranslation()
     const selectedModel = useModelProvider((state) => state.selectedModel)
-    const [inlinePreview, setInlinePreview] = useState<
-      { name: string; content: string } | null
-    >(null)
+    const [inlinePreview, setInlinePreview] = useState<{
+      name: string
+      content: string
+    } | null>(null)
+
+    const reasoningContainerRef = useRef<HTMLDivElement>(null)
 
     // Use useMemo to stabilize the components prop
     const linkComponents = useMemo(
@@ -194,7 +218,8 @@ export const ThreadContent = memo(
         deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
         // Extract text content and any attachments
         const rawText =
-          toSendMessage.content?.find((c) => c.type === 'text')?.text?.value || ''
+          toSendMessage.content?.find((c) => c.type === 'text')?.text?.value ||
+          ''
         const { cleanPrompt: textContent } = extractFilesFromPrompt(rawText)
         const attachments = toSendMessage.content
           ?.filter((c) => (c.type === 'image_url' && c.image_url?.url) || false)
@@ -256,6 +281,13 @@ export const ThreadContent = memo(
       | { avatar?: React.ReactNode; name?: React.ReactNode }
       | undefined
 
+    // Auto-scroll reasoning container to bottom during streaming
+    useEffect(() => {
+      if (reasoningContainerRef.current) {
+        reasoningContainerRef.current.scrollTop =
+          reasoningContainerRef.current.scrollHeight
+      }
+    }, [item.content])
     return (
       <Fragment>
         {item.role === 'user' && (
@@ -439,40 +471,88 @@ export const ThreadContent = memo(
             )}
 
             {reasoningSegment && (
-              <ThinkingBlock
-                id={
-                  item.isLastMessage
-                    ? `${item.thread_id}-last-${reasoningSegment.slice(0, 50).replace(/\s/g, '').slice(-10)}`
-                    : `${item.thread_id}-${item.index ?? item.id}`
-                }
-                text={reasoningSegment}
-              />
+              <Reasoning
+                className="w-full text-muted-foreground"
+                isStreaming={!!item.streamingThread}
+                defaultOpen={!!item.streamingThread && item.isLastMessage}
+              >
+                <ReasoningTrigger />
+                <div className="relative">
+                  {!!item.streamingThread && (
+                    <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-background to-transparent pointer-events-none z-10" />
+                  )}
+                  <div
+                    ref={!!item.streamingThread ? reasoningContainerRef : null}
+                    className={twMerge(
+                      'w-full overflow-auto relative',
+                      !!item.streamingThread
+                        ? 'max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+                        : 'h-auto opacity-100'
+                    )}
+                  >
+                    <ReasoningContent isStreaming={!!item.streamingThread}>
+                      {reasoningSegment}
+                    </ReasoningContent>
+                  </div>
+                </div>
+              </Reasoning>
             )}
 
             <RenderMarkdown
               content={textSegment.replace('</think>', '')}
               components={linkComponents}
+              isStreaming={item.isLastMessage && isStreamingThisThread}
             />
 
             {isToolCalls && item.metadata?.tool_calls ? (
               <>
                 {(item.metadata.tool_calls as ToolCall[]).map((toolCall) => (
-                  <ToolCallBlock
-                    id={toolCall.tool?.id ?? 0}
-                    key={toolCall.tool?.id}
-                    name={
-                      (item.streamTools?.tool_calls?.function?.name ||
-                        toolCall.tool?.function?.name) ??
-                      ''
+                  <Tool
+                    key={toolCall.tool?.id ?? 0}
+                    state={
+                      toolCall.state === 'pending'
+                        ? 'input-available'
+                        : 'output-available'
                     }
-                    args={
-                      item.streamTools?.tool_calls?.function?.arguments ||
-                      toolCall.tool?.function?.arguments ||
-                      undefined
-                    }
-                    result={JSON.stringify(toolCall.response)}
-                    loading={toolCall.state === 'pending'}
-                  />
+                    // className={cn(hasContentBefore && isFirstTool && 'mt-4')}
+                  >
+                    <ToolHeader
+                      title={
+                        (item.streamTools?.tool_calls?.function?.name ||
+                          toolCall.tool?.function?.name) ??
+                        ''
+                      }
+                      type={
+                        `tool-${toolCall.tool?.function?.name}` as `tool-${string}`
+                      }
+                    />
+                    <ToolContent
+                      title={
+                        (item.streamTools?.tool_calls?.function?.name ||
+                          toolCall.tool?.function?.name) ??
+                        'Tool Details'
+                      }
+                    >
+                      <ToolInput
+                        input={
+                          item.streamTools?.tool_calls?.function?.arguments ||
+                          toolCall.tool?.function?.arguments ||
+                          undefined
+                        }
+                      />
+                      {!!toolCall.response && (
+                        <ToolOutput
+                          output={toolCall.response}
+                          errorText={
+                            (toolCall.response.parseError as boolean)
+                              ? toolCall.response
+                              : undefined
+                          }
+                          resolver={(input) => Promise.resolve(input)}
+                        />
+                      )}
+                    </ToolContent>
+                  </Tool>
                 ))}
               </>
             ) : null}

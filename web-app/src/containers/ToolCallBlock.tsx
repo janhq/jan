@@ -193,7 +193,6 @@ const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
               <>
                 <p className="mb-3">Arguments:</p>
                 <RenderMarkdown
-                  isWrapping={true}
                   content={'```json\n' + args + '\n```'}
                 />
               </>
