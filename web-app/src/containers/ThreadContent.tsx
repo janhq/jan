@@ -20,7 +20,6 @@ import {
 import { useAppState } from '@/hooks/useAppState'
 import { cn } from '@/lib/utils'
 import { useMessages } from '@/hooks/useMessages'
-import ToolCallBlock from '@/containers/ToolCallBlock'
 import { useChat } from '@/hooks/useChat'
 import {
   EditMessageDialog,
@@ -473,7 +472,7 @@ export const ThreadContent = memo(
             {reasoningSegment && (
               <Reasoning
                 className="w-full text-muted-foreground"
-                isStreaming={!!item.streamingThread}
+                isStreaming={!!item.streamingThread && !textSegment}
                 defaultOpen={!!item.streamingThread && item.isLastMessage}
               >
                 <ReasoningTrigger />
@@ -490,7 +489,7 @@ export const ThreadContent = memo(
                         : 'h-auto opacity-100'
                     )}
                   >
-                    <ReasoningContent isStreaming={!!item.streamingThread}>
+                    <ReasoningContent isStreaming={!!item.streamingThread && !textSegment}>
                       {reasoningSegment}
                     </ReasoningContent>
                   </div>
@@ -514,7 +513,6 @@ export const ThreadContent = memo(
                         ? 'input-available'
                         : 'output-available'
                     }
-                    // className={cn(hasContentBefore && isFirstTool && 'mt-4')}
                   >
                     <ToolHeader
                       title={

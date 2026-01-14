@@ -40,7 +40,6 @@ const lineNumberTransformer: ShikiTransformer = {
           "min-w-10",
           "mr-4",
           "text-right",
-          "select-none",
           "text-muted-foreground",
         ],
       },
@@ -102,7 +101,7 @@ export const CodeBlock = ({
     <CodeBlockContext.Provider value={{ code }}>
       <div
         className={cn(
-          "group relative w-full overflow-hidden rounded-md border border-main-view-fg/10 bg-background text-foreground",
+          "group relative w-full overflow-hidden bg-background text-foreground",
           className,
         )}
         {...props}
@@ -124,6 +123,7 @@ export const CodeBlock = ({
             </div>
           )}
         </div>
+        {/* <CodeBlockCopyButton className="absolute top-0 right-0"/> */}
       </div>
     </CodeBlockContext.Provider>
   );

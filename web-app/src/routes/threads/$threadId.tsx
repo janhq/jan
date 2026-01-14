@@ -1,5 +1,10 @@
 ﻿import { useEffect, useMemo, useRef } from 'react'
-import { createFileRoute, useParams, redirect, useNavigate } from '@tanstack/react-router'
+import {
+  createFileRoute,
+  useParams,
+  redirect,
+  useNavigate,
+} from '@tanstack/react-router'
 import cloneDeep from 'lodash.clonedeep'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -27,7 +32,11 @@ import { PromptProgress } from '@/components/PromptProgress'
 import { ThreadPadding } from '@/containers/ThreadPadding'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 import { IconInfoCircle } from '@tabler/icons-react'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 const CONVERSATION_NOT_FOUND_EVENT = 'conversation-not-found'
 
@@ -101,7 +110,6 @@ function ThreadDetail() {
   const thread = useThreads(useShallow((state) => state.threads[threadId]))
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
-
   // Listen for conversation not found events
   useEffect(() => {
     const handleConversationNotFound = (event: CustomEvent) => {
@@ -113,15 +121,21 @@ function ThreadDetail() {
         }
 
         toast.error(t('common:conversationNotAvailable'), {
-          description: t('common:conversationNotAvailableDescription')
+          description: t('common:conversationNotAvailableDescription'),
         })
         navigate({ to: '/', replace: true })
       }
     }
 
-    window.addEventListener(CONVERSATION_NOT_FOUND_EVENT, handleConversationNotFound as EventListener)
+    window.addEventListener(
+      CONVERSATION_NOT_FOUND_EVENT,
+      handleConversationNotFound as EventListener
+    )
     return () => {
-      window.removeEventListener(CONVERSATION_NOT_FOUND_EVENT, handleConversationNotFound as EventListener)
+      window.removeEventListener(
+        CONVERSATION_NOT_FOUND_EVENT,
+        handleConversationNotFound as EventListener
+      )
     }
   }, [threadId, navigate, t])
 
@@ -140,12 +154,15 @@ function ThreadDetail() {
       .fetchMessages(threadId)
       .then((fetchedMessages) => {
         if (fetchedMessages) {
-          const currentLocalMessages = useMessages.getState().getMessages(threadId)
+          const currentLocalMessages = useMessages
+            .getState()
+            .getMessages(threadId)
 
-          if (PlatformFeatures[PlatformFeature.FIRST_MESSAGE_PERSISTED_THREAD] &&
-              fetchedMessages.length === 0 &&
-              currentLocalMessages &&
-              currentLocalMessages.length > 0
+          if (
+            PlatformFeatures[PlatformFeature.FIRST_MESSAGE_PERSISTED_THREAD] &&
+            fetchedMessages.length === 0 &&
+            currentLocalMessages &&
+            currentLocalMessages.length > 0
           ) {
             return
           }
@@ -158,9 +175,10 @@ function ThreadDetail() {
             )
 
             if (localOnlyMessages.length > 0) {
-              const mergedMessages = [...fetchedMessages, ...localOnlyMessages].sort(
-                (a, b) => (a.created_at || 0) - (b.created_at || 0)
-              )
+              const mergedMessages = [
+                ...fetchedMessages,
+                ...localOnlyMessages,
+              ].sort((a, b) => (a.created_at || 0) - (b.created_at || 0))
               setMessages(threadId, mergedMessages)
               return
             }
@@ -290,7 +308,10 @@ function ThreadDetail() {
               data-test-id="thread-content-text"
             />
             {/* Persistent padding element for ChatGPT-style message positioning */}
-           <ThreadPadding threadId={threadId} scrollContainerRef={scrollContainerRef} />
+            <ThreadPadding
+              threadId={threadId}
+              scrollContainerRef={scrollContainerRef}
+            />
           </div>
         </div>
         <div
@@ -308,6 +329,7 @@ function ThreadDetail() {
             threadId={threadId}
             scrollContainerRef={scrollContainerRef}
           />
+          {/* <ConversationScrollButton /> */}
           <ChatInput model={threadModel} />
         </div>
       </div>

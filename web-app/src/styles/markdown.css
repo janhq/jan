@@ -188,7 +188,7 @@
   }
 
   /* Tables */
-  table {
+  /* table {
     border-collapse: collapse;
     margin-bottom: 1em;
     border-spacing: 0;
@@ -212,7 +212,7 @@
 
   tr:nth-child(even) {
     @apply bg-main-view-fg/5;
-  }
+  } */
 
   /* Links */
   a {
