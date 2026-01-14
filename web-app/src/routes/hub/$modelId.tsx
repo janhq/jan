@@ -315,7 +315,6 @@ function HubModelDetailContent() {
                 {modelData.description && (
                   <div className="text-main-view-fg/80 mb-4">
                     <RenderMarkdown
-                      enableRawHtml={true}
                       className="select-none reset-heading"
                       components={{
                         a: ({ ...props }) => (
@@ -528,7 +527,6 @@ function HubModelDetailContent() {
                   ) : readmeContent ? (
                     <div className="prose prose-invert max-w-none">
                       <RenderMarkdown
-                        enableRawHtml={true}
                         className="text-main-view-fg/80"
                         components={{
                           a: ({ ...props }) => (

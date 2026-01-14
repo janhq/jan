@@ -137,7 +137,7 @@ export const ToolContent = memo(
       )}
       {...props}
     >
-      <div className="ml-2 pl-4 border-l-2 border-dashed border-main-view-fg/10">
+      <div className="ml-2 pl-4 border-l-2 border-dotted border-main-view-fg/10">
         {children}
       </div>
     </CollapsibleContent>

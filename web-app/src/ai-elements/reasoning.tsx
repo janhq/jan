@@ -179,7 +179,7 @@ export const ReasoningContent = memo(
       )}
       {...props}
     >
-      <div className="ml-2 pl-4 border-l-2 border-dashed border-main-view-fg/10">
+      <div className="ml-2 pl-4 border-l-2 border-dotted border-main-view-fg/10">
         <Streamdown animate={true} animationDuration={500} {...props}>
           {children}
         </Streamdown>

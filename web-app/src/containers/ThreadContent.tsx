@@ -460,7 +460,7 @@ export const ThreadContent = memo(
                   <span className="text-main-view-fg font-medium">
                     {assistant?.name || 'Jan'}
                   </span>
-                  {item?.created_at && item?.created_at !== 0 && (
+                  {!!item?.created_at && item?.created_at !== 0 && (
                     <span className="text-xs mt-0.5">
                       {formatDate(item?.created_at)}
                     </span>
@@ -501,6 +501,7 @@ export const ThreadContent = memo(
               content={textSegment.replace('</think>', '')}
               components={linkComponents}
               isStreaming={item.isLastMessage && isStreamingThisThread}
+              messageId={item.id}
             />
 
             {isToolCalls && item.metadata?.tool_calls ? (

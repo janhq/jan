@@ -11,7 +11,7 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-editorialnew: 'PPEditorialNew', serif;
+  --font-editorialnew: 'StudioFeixenSans', sans-serif;
   --color-app: var(--app-bg);
   --color-left-panel-fg: var(--app-left-panel-fg);
   --color-main-view: var(--app-main-view);
@@ -62,7 +62,7 @@
 :root {
   /* Button */
   --radius: 0.625rem;
-  --font-size-base: 15px;
+  --font-size-base: 16px;
   --app-bg: '';
   --app-left-panel-fg: '';
   --app-main-view: '';

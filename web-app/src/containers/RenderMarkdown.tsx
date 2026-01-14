@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { defaultRehypePlugins, Streamdown } from 'streamdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
-import { useCodeblock } from '@/hooks/useCodeblock'
+import { AnimatedRunningCat } from '@/components/AnimatedRunningCat'
 
 interface MarkdownProps {
   content: string
@@ -13,6 +13,7 @@ interface MarkdownProps {
   components?: Components
   isUser?: boolean
   isStreaming?: boolean
+  messageId?: string
 }
 
 // Cache for normalized LaTeX content
@@ -76,6 +77,7 @@ function RenderMarkdownComponent({
   className,
   isUser,
   components,
+  messageId,
 }: MarkdownProps) {
   // const { codeBlockStyle, showLineNumbers } = useCodeblock()
 

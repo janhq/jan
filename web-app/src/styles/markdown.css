@@ -260,7 +260,8 @@
   }
 
   [data-streamdown="mermaid-block"] {
-    border-color: var(--border)
+    border-color: var(--border);
+    margin-bottom: 1em;
   }
 
   /* Streamdown caret styling */
