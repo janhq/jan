@@ -270,7 +270,7 @@ export const sendCompletion = async (
           thread_id: thread.id,
           tools: normalizeTools(usableTools),
           tool_choice: usableTools.length ? 'auto' : undefined,
-          stream: true,
+          stream,
           ...params,
         },
         abortController

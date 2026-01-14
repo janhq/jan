@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { defaultRehypePlugins, Streamdown } from 'streamdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
-import { AnimatedRunningCat } from '@/components/AnimatedRunningCat'
+import { MermaidError } from '@/components/MermaidError'
 
 interface MarkdownProps {
   content: string
@@ -106,6 +106,15 @@ function RenderMarkdownComponent({
           defaultRehypePlugins.harden,
         ]}
         components={components}
+        mermaid={
+          messageId
+            ? {
+                errorComponent: (props) => (
+                  <MermaidError messageId={messageId} {...props} />
+                ),
+              }
+            : {}
+        }
       >
         {normalizedContent}
       </Streamdown>
