@@ -85,8 +85,22 @@ xychart
     bar [5000, 6000, 7500, 8200, 9500, 10500, 11000, 10200, 9200, 8500, 7000, 6000]
     line [5000, 6000, 7500, 8200, 9500, 10500, 11000, 10200, 9200, 8500, 7000, 6000]
 
-Make sure no brackets in the chart title or x-axis or y-axis, string should be wrapped in double quotes. Remember line and bar are arrays and items should be wrapped in square brackets.
+Make sure no brackets in the chart title or x-axis or y-axis, string should be wrapped in double quotes, no text right to the close bracket. Remember line and bar are arrays and items should be wrapped in square brackets.
 Don't put any extra fields or syntax that is not part of mermaid syntax such as series or markers.
+
+If it's not xychart, just provide the corrected mermaid diagram, simplify to avoid syntax error, remove special characters that can cause error like bracket or quote.
+Example for TDChart:
+
+graph TD
+    A[Enter Chart Definition] --> B(Preview)
+    B --> C{decide}
+    C --> D[Keep]
+    C --> E[Edit Definition]
+    E --> B
+    D --> F[Save Image and Code]
+    F --> B
+There is no space and only 1 word after [], no bracket () or {} within []. No styles or links.
+REMEMBER: There should be no text right to the close bracket ].
 
 Return ONLY the corrected mermaid code block in the following format:
 \`\`\`mermaid
@@ -127,9 +141,13 @@ Do not include explanations or additional text.`
           mermaidMatch ? mermaidMatch[1].trim() : fixedContent.trim()
         ).replace('\"', '"')
 
-        // Replace the broken mermaid in the message content
+        // Replace only the exact broken mermaid diagram, not all mermaid blocks
+        const escapedChart = chart.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const exactPattern = new RegExp(
+          '```mermaid\\s*' + escapedChart + '\\s*```'
+        )
         const updatedContent = currentContent.replace(
-          /```mermaid\s*[\s\S]*?\s*```/,
+          exactPattern,
           `\`\`\`mermaid\n${fixedMermaid}\n\`\`\``
         )
         // Update the message with the fixed mermaid
@@ -162,7 +180,7 @@ Do not include explanations or additional text.`
       <img src="/images/jan-logo.png" alt="Jan Logo" className='h-12 w-12' />
       <p className="text-sm text-muted-foreground text-center">
         {isFixing
-          ? 'Meowing the diagram...'
+          ? 'Fixing the diagram...'
           : isStreaming
             ? 'Error detected, fixing soon...'
             : 'Diagram error detected'}

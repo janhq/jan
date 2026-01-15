@@ -92,12 +92,12 @@ const getStatusText = (status: ToolUIPart['state'], toolName: string) => {
   const hasError = status === 'output-error' || status === 'output-denied'
 
   if (isRunning) {
-    return `Running ${toolName}...`
+    return `Running ${toolName.replaceAll('_', ' ')}...`
   }
   if (hasError) {
     return `${toolName} failed`
   }
-  return `Used ${toolName.replace('_', ' ')}`
+  return `Used ${toolName.replaceAll('_', ' ')}`
 }
 
 export const ToolHeader = memo(
