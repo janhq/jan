@@ -1119,7 +1119,7 @@ const ChatInput = ({
       <div className="relative">
         <div
           className={cn(
-            'relative overflow-hidden p-[2px] rounded-lg',
+            'relative overflow-hidden p-[2px] rounded-3xl',
             Boolean(streamingContent) && 'opacity-70'
           )}
         >
@@ -1137,7 +1137,7 @@ const ChatInput = ({
 
           <div
             className={cn(
-              'relative z-20 px-0 pb-10 border border-main-view-fg/5 rounded-lg text-main-view-fg bg-main-view',
+              'relative z-20 px-0 pb-10 border border-border rounded-3xl text-main-view-fg bg-main-view',
               isFocused && 'ring-1 ring-main-view-fg/10',
               isDragOver && 'ring-2 ring-accent border-accent'
             )}
@@ -1165,7 +1165,7 @@ const ChatInput = ({
                               <TooltipTrigger asChild>
                                 <div
                                   className={cn(
-                                    'relative border border-main-view-fg/5 rounded-lg size-14 overflow-hidden bg-main-view/40',
+                                    'relative border border-main-view-fg/5 rounded-3xl size-14 overflow-hidden bg-main-view/40',
                                     'flex items-center justify-center'
                                   )}
                                 >
@@ -1566,6 +1566,7 @@ const ChatInput = ({
                   disabled={!prompt.trim() || ingestingAny}
                   data-test-id="send-message-button"
                   onClick={() => handleSendMessage(prompt)}
+                  className='rounded-full mr-0.5 text-black'
                 >
                   {streamingContent || ingestingAny ? (
                     <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />

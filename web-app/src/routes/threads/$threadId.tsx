@@ -316,7 +316,7 @@ function ThreadDetail() {
         </div>
         <div
           className={cn(
-            'mx-auto pt-2 pb-3 shrink-0 relative',
+            'mx-auto pt-2 pb-4 shrink-0 relative',
             // Responsive padding and width
             isMobile ? 'px-3' : 'px-2',
             // Width: mobile/small screens or non-compact always full, compact desktop uses constrained
