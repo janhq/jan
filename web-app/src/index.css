@@ -22,6 +22,10 @@
   --color-accent-fg: var(--app-accent-fg);
   --color-destructive: var(--app-destructive);
   --color-destructive-fg: var(--app-destructive-fg);
+  
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
 
   /* Font scale based on --font-size-base */
   --text-xs: calc(var(--font-size-base) * 0.75); /* ~12px */
@@ -73,6 +77,16 @@
   --app-accent-fg: '';
   --app-destructive: '';
   --app-destructive-fg: '';
+  
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --border: oklch(0.922 0 0);
+}
+
+.dark {
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --border: oklch(1 0 0 / 10%);
 }
 
 @layer base {
