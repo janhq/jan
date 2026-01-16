@@ -481,17 +481,15 @@ export const ThreadContent = memo(
                     <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-background to-transparent pointer-events-none z-10" />
                   )}
                   <div
-                    ref={!!item.streamingThread ? reasoningContainerRef : null}
+                    ref={item.streamingThread ? reasoningContainerRef : null}
                     className={twMerge(
                       'w-full overflow-auto relative',
-                      !!item.streamingThread
+                      item.streamingThread
                         ? 'max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
                         : 'h-auto opacity-100'
                     )}
                   >
-                    <ReasoningContent isStreaming={!!item.streamingThread && !textSegment}>
-                      {reasoningSegment}
-                    </ReasoningContent>
+                    <ReasoningContent>{reasoningSegment}</ReasoningContent>
                   </div>
                 </div>
               </Reasoning>

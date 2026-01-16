@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 /* eslint-disable react-refresh/only-export-components */
 import { useControllableState } from '@radix-ui/react-use-controllable-state'
 import {
@@ -165,12 +164,12 @@ export const ReasoningTrigger = memo(
 
 export type ReasoningContentProps = ComponentProps<
   typeof CollapsibleContent
-> & { isStreaming?: boolean } & {
+> & {
   children: string
 }
 
 export const ReasoningContent = memo(
-  ({ className, isStreaming, children, ...props }: ReasoningContentProps) => (
+  ({ className, children, ...props }: ReasoningContentProps) => (
     <CollapsibleContent
       className={cn(
         'mt-4 text-sm relative',

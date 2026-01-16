@@ -125,7 +125,7 @@ Do not include explanations or additional text.`
         ],
         abortController,
         [],
-        false,
+        false
       )
       // Extract the fixed mermaid code
       if (
@@ -137,9 +137,9 @@ Do not include explanations or additional text.`
 
         // Extract mermaid code from markdown code block
         const mermaidMatch = fixedContent.match(/```mermaid\s*([\s\S]*?)\s*```/)
-        const fixedMermaid = (
-          mermaidMatch ? mermaidMatch[1].trim() : fixedContent.trim()
-        ).replace('\"', '"')
+        const fixedMermaid = mermaidMatch
+          ? mermaidMatch[1].trim()
+          : fixedContent.trim()
 
         // Replace only the exact broken mermaid diagram, not all mermaid blocks
         const escapedChart = chart.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -177,7 +177,7 @@ Do not include explanations or additional text.`
   }
   return (
     <div className="flex flex-col items-center justify-center p-6 gap-3">
-      <img src="/images/jan-logo.png" alt="Jan Logo" className='h-12 w-12' />
+      <img src="/images/jan-logo.png" alt="Jan Logo" className="h-12 w-12" />
       <p className="text-sm text-muted-foreground text-center">
         {isFixing
           ? 'Fixing the diagram...'

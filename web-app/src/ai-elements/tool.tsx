@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 
 import { useControllableState } from '@radix-ui/react-use-controllable-state'
 import {
