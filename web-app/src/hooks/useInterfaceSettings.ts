@@ -13,7 +13,7 @@ import {
   isThreadScrollBehavior,
 } from '@/constants/threadScroll'
 
-export type FontSize = '14px' | '16px' | '18px' | '20px'
+export type FontSize = '14px' | '15px' | '16px' | '18px' | '20px'
 export type ChatWidth = 'full' | 'compact'
 
 interface InterfaceSettingsState {

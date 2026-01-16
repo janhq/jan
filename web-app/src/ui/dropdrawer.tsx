@@ -22,7 +22,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./dropdown-menu";
-import { useIsMobile } from "../hooks/use-mobile";
 import { cn } from "../lib/utils";
 
 const DropDrawerContext = React.createContext<{ isMobile: boolean }>({
@@ -45,14 +44,12 @@ function DropDrawer({
 }:
   | React.ComponentProps<typeof Drawer>
   | React.ComponentProps<typeof DropdownMenu>) {
-  const isMobile = useIsMobile();
-  const DropdownComponent = isMobile ? Drawer : DropdownMenu;
+  const DropdownComponent = DropdownMenu;
 
   return (
-    <DropDrawerContext.Provider value={{ isMobile }}>
+    <DropDrawerContext.Provider value={{ isMobile: false }}>
       <DropdownComponent
         data-slot="drop-drawer"
-        {...(isMobile && { autoFocus: true })}
         {...props}
       >
         {children}
