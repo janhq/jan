@@ -80,7 +80,7 @@
     "remark-gfm": "4.0.1",
     "remark-math": "6.0.0",
     "sonner": "2.0.5",
-    "streamdown": "npm:@janhq/streamdown@^1.1.6",
+    "streamdown": "npm:@janhq/streamdown@^2.0.2",
     "tailwindcss": "4.1.17",
     "token.js": "npm:token.js-fork@0.7.31",
     "tw-animate-css": "1.2.8",

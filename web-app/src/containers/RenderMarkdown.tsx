@@ -6,6 +6,7 @@ import { defaultRehypePlugins, Streamdown } from 'streamdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import { MermaidError } from '@/components/MermaidError'
+import { useCodeblock } from '@/hooks/useCodeblock'
 
 interface MarkdownProps {
   content: string
@@ -79,7 +80,7 @@ function RenderMarkdownComponent({
   components,
   messageId,
 }: MarkdownProps) {
-  // const { codeBlockStyle, showLineNumbers } = useCodeblock()
+  const { codeBlockStyle } = useCodeblock()
 
   // Memoize the normalized content to avoid reprocessing on every render
   const normalizedContent = useMemo(() => normalizeLatex(content), [content])
@@ -105,6 +106,7 @@ function RenderMarkdownComponent({
           defaultRehypePlugins.katex,
           defaultRehypePlugins.harden,
         ]}
+        shikiTheme={[codeBlockStyle, codeBlockStyle] as any}
         components={components}
         mermaid={
           messageId
