@@ -142,6 +142,10 @@ If things go sideways:
 3. Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH) `#🆘|jan-help` channel
 
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for our planned features and future direction.
+
 ## Contributing
 
 Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full spiel.
