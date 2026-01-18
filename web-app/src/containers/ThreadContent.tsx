@@ -10,17 +10,11 @@ import React, {
   useRef,
   useState,
 } from 'react'
-import {
-  IconCopy,
-  IconCopyCheck,
-  IconDatabase,
-  IconFileText,
-  IconRefresh,
-} from '@tabler/icons-react'
+import { IconDatabase, IconFileText, IconRefresh } from '@tabler/icons-react'
 import { useAppState } from '@/hooks/useAppState'
 import { cn } from '@/lib/utils'
 import { useMessages } from '@/hooks/useMessages'
-import { useChat } from '@/hooks/useChat'
+import type { ChatStatus } from 'ai'
 import {
   EditMessageDialog,
   MessageMetadataDialog,
@@ -30,6 +24,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
+  TooltipProvider
 } from '@/components/ui/tooltip'
 import { formatDate } from '@/utils/formatDate'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
@@ -39,7 +34,6 @@ import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { extractFilesFromPrompt } from '@/lib/fileMetadata'
-import { createImageAttachment } from '@/types/attachment'
 import {
   Dialog,
   DialogContent,
@@ -62,7 +56,7 @@ import {
   ToolOutput,
 } from '@/ai-elements/tool'
 import { CopyButton } from './CopyButton'
-
+import { parseReasoning } from '@/lib/messages'
 
 // Use memo to prevent unnecessary re-renders, but allow re-renders when props change
 export const ThreadContent = memo(
@@ -72,7 +66,6 @@ export const ThreadContent = memo(
       index?: number
       showAssistant?: boolean
       streamingThread?: string
-
       streamTools?: any
       contextOverflowModal?: React.ReactNode | null
       updateMessage?: (
@@ -80,6 +73,8 @@ export const ThreadContent = memo(
         message: string,
         imageUrls?: string[]
       ) => void
+      onRegenerate?: (messageId?: string) => void
+      chatStatus?: ChatStatus
     }
   ) => {
     const { t } = useTranslation()
@@ -134,83 +129,19 @@ export const ThreadContent = memo(
     }, [item.metadata])
 
     const { reasoningSegment, textSegment } = useMemo(() => {
-      // Check for thinking formats
-      const hasThinkTag = text.includes('<think>') && !text.includes('</think>')
-      const hasAnalysisChannel =
-        text.includes('<|channel|>analysis<|message|>') &&
-        !text.includes('<|start|>assistant<|channel|>final<|message|>')
-
-      if (hasThinkTag || hasAnalysisChannel)
-        return { reasoningSegment: text, textSegment: '' }
-
-      // Check for completed think tag format
-      const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/)
-      if (thinkMatch?.index !== undefined) {
-        const splitIndex = thinkMatch.index + thinkMatch[0].length
-        return {
-          reasoningSegment: text.slice(0, splitIndex),
-          textSegment: text.slice(splitIndex),
-        }
-      }
-
-      // Check for completed analysis channel format
-      const analysisMatch = text.match(
-        /<\|channel\|>analysis<\|message\|>([\s\S]*?)<\|start\|>assistant<\|channel\|>final<\|message\|>/
-      )
-      if (analysisMatch?.index !== undefined) {
-        const splitIndex = analysisMatch.index + analysisMatch[0].length
-        return {
-          reasoningSegment: text.slice(0, splitIndex),
-          textSegment: text.slice(splitIndex),
-        }
-      }
-
-      return { reasoningSegment: undefined, textSegment: text }
+      return parseReasoning(text)
     }, [text])
 
     const getMessages = useMessages((state) => state.getMessages)
     const deleteMessage = useMessages((state) => state.deleteMessage)
-    const sendMessage = useChat()
 
     const regenerate = useCallback(() => {
-      // Only regenerate assistant message is allowed
-      deleteMessage(item.thread_id, item.id)
-      const threadMessages = getMessages(item.thread_id)
-      let toSendMessage = threadMessages.pop()
-      while (toSendMessage && toSendMessage?.role !== 'user') {
-        deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
-        toSendMessage = threadMessages.pop()
+      // Use the onRegenerate prop from parent if available
+      if (item.onRegenerate) {
+        item.onRegenerate(item.id)
+        return
       }
-      if (toSendMessage) {
-        deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
-        // Extract text content and any attachments
-        const rawText =
-          toSendMessage.content?.find((c) => c.type === 'text')?.text?.value ||
-          ''
-        const { cleanPrompt: textContent } = extractFilesFromPrompt(rawText)
-        const attachments = toSendMessage.content
-          ?.filter((c) => (c.type === 'image_url' && c.image_url?.url) || false)
-          .map((c) => {
-            if (c.type === 'image_url' && c.image_url?.url) {
-              const url = c.image_url.url
-              const [mimeType, base64] = url
-                .replace('data:', '')
-                .split(';base64,')
-              return createImageAttachment({
-                name: 'image', // Original filename unavailable
-                mimeType,
-                size: 0,
-                base64: base64,
-                dataUrl: url,
-              })
-            }
-            return null
-          })
-          .filter((v) => v !== null)
-        // Keep embedded document metadata in the message for regenerate
-        sendMessage(textContent, true, attachments)
-      }
-    }, [deleteMessage, getMessages, item, sendMessage])
+    }, [item])
 
     const removeMessage = useCallback(() => {
       if (
@@ -256,349 +187,354 @@ export const ThreadContent = memo(
       }
     }, [item.content])
     return (
-      <Fragment>
-        {item.role === 'user' && (
-          <div className="w-full">
-            {/* Render text content in the message bubble */}
-            {cleanPrompt && (
-              <div className="flex justify-end w-full h-full text-start break-words whitespace-normal">
-                <div className="bg-main-view-fg/4 relative text-main-view-fg p-2 rounded-md inline-block max-w-[80%] ">
-                  <div className="select-text">
-                    <RenderMarkdown
-                      content={cleanPrompt}
-                      components={linkComponents}
-                      isUser
-                    />
+      <TooltipProvider>
+        <Fragment>
+          {item.role === 'user' && (
+            <div className="w-full">
+              {/* Render text content in the message bubble */}
+              {cleanPrompt && (
+                <div className="flex justify-end w-full h-full text-start break-words whitespace-normal">
+                  <div className="bg-main-view-fg/4 relative text-main-view-fg p-2 rounded-md inline-block max-w-[80%] ">
+                    <div className="select-text">
+                      <RenderMarkdown
+                        content={cleanPrompt}
+                        components={linkComponents}
+                        isUser
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Render document file attachments (extracted from message text) - below text */}
-            {attachedFiles.length > 0 && (
-              <div className="flex justify-end w-full mt-2 mb-2">
-                <div className="flex flex-wrap gap-2 max-w-[80%] justify-end">
-                  {attachedFiles.map((file, index) => {
-                    const inlineContent =
-                      file.injectionMode === 'inline'
-                        ? inlineFileContents.get(file.name) || undefined
-                        : undefined
-                    const indicator =
-                      file.injectionMode ||
-                      (inlineContent ? 'inline' : undefined)
-                    const canPreview = Boolean(
-                      indicator === 'inline' && inlineContent
-                    )
+              {/* Render document file attachments (extracted from message text) - below text */}
+              {attachedFiles.length > 0 && (
+                <div className="flex justify-end w-full mt-2 mb-2">
+                  <div className="flex flex-wrap gap-2 max-w-[80%] justify-end">
+                    {attachedFiles.map((file, index) => {
+                      const inlineContent =
+                        file.injectionMode === 'inline'
+                          ? inlineFileContents.get(file.name) || undefined
+                          : undefined
+                      const indicator =
+                        file.injectionMode ||
+                        (inlineContent ? 'inline' : undefined)
+                      const canPreview = Boolean(
+                        indicator === 'inline' && inlineContent
+                      )
 
-                    return (
-                      <div
-                        key={file.id || index}
-                        className="flex items-center gap-2 px-3 py-2 bg-main-view-fg/5 rounded-md border border-main-view-fg/10 text-xs"
-                      >
-                        {indicator && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span
-                                className="inline-flex items-center justify-center size-6 rounded-full bg-main-view/70 text-main-view-fg/80"
-                                aria-label={
-                                  indicator === 'inline'
-                                    ? t('common:attachmentInjectedIndicator')
-                                    : t('common:attachmentEmbeddedIndicator')
-                                }
-                              >
-                                {indicator === 'inline' ? (
-                                  <IconFileText size={14} />
-                                ) : (
-                                  <IconDatabase size={14} />
-                                )}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {indicator === 'inline'
-                                ? t('common:attachmentInjectedIndicator')
-                                : t('common:attachmentEmbeddedIndicator')}
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-
-                        <button
-                          type="button"
-                          disabled={!canPreview}
-                          onClick={() =>
-                            canPreview &&
-                            setInlinePreview({
-                              name: file.name,
-                              content: inlineContent!,
-                            })
-                          }
-                          className={cn(
-                            'text-main-view-fg text-left truncate max-w-48',
-                            canPreview && 'hover:underline'
-                          )}
-                          title={
-                            canPreview
-                              ? t('common:viewInjectedContent')
-                              : file.name
-                          }
+                      return (
+                        <div
+                          key={file.id || index}
+                          className="flex items-center gap-2 px-3 py-2 bg-main-view-fg/5 rounded-md border border-main-view-fg/10 text-xs"
                         >
-                          {file.name}
-                        </button>
+                          {indicator && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span
+                                  className="inline-flex items-center justify-center size-6 rounded-full bg-main-view/70 text-main-view-fg/80"
+                                  aria-label={
+                                    indicator === 'inline'
+                                      ? t('common:attachmentInjectedIndicator')
+                                      : t('common:attachmentEmbeddedIndicator')
+                                  }
+                                >
+                                  {indicator === 'inline' ? (
+                                    <IconFileText size={14} />
+                                  ) : (
+                                    <IconDatabase size={14} />
+                                  )}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {indicator === 'inline'
+                                  ? t('common:attachmentInjectedIndicator')
+                                  : t('common:attachmentEmbeddedIndicator')}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
 
-                        {file.type && (
-                          <span className="text-main-view-fg/40 text-[10px]">
-                            .{file.type}
-                          </span>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
+                          <button
+                            type="button"
+                            disabled={!canPreview}
+                            onClick={() =>
+                              canPreview &&
+                              setInlinePreview({
+                                name: file.name,
+                                content: inlineContent!,
+                              })
+                            }
+                            className={cn(
+                              'text-main-view-fg text-left truncate max-w-48',
+                              canPreview && 'hover:underline'
+                            )}
+                            title={
+                              canPreview
+                                ? t('common:viewInjectedContent')
+                                : file.name
+                            }
+                          >
+                            {file.name}
+                          </button>
 
-            {/* Render image attachments - below files */}
-            {item.content?.some(
-              (c) => (c.type === 'image_url' && c.image_url?.url) || false
-            ) && (
-              <div className="flex justify-end w-full mb-2">
-                <div className="flex flex-wrap gap-2 max-w-[80%] justify-end">
-                  {item.content
-                    ?.filter(
-                      (c) =>
-                        (c.type === 'image_url' && c.image_url?.url) || false
-                    )
-                    .map((contentPart, index) => {
-                      // Handle images
-                      if (
-                        contentPart.type === 'image_url' &&
-                        contentPart.image_url?.url
-                      ) {
-                        return (
-                          <div key={index} className="relative">
-                            <img
-                              src={contentPart.image_url.url}
-                              alt="Uploaded attachment"
-                              className="size-40 rounded-md object-cover border border-main-view-fg/10"
-                            />
-                          </div>
-                        )
-                      }
-                      return null
+                          {file.type && (
+                            <span className="text-main-view-fg/40 text-[10px]">
+                              .{file.type}
+                            </span>
+                          )}
+                        </div>
+                      )
                     })}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
-              <EditMessageDialog
-                message={cleanPrompt || ''}
-                imageUrls={
-                  item.content
-                    ?.filter((c) => c.type === 'image_url' && c.image_url?.url)
-                    .map((c) => c.image_url!.url)
-                    .filter((url): url is string => url !== undefined) || []
-                }
-                onSave={(message, imageUrls) => {
-                  if (item.updateMessage) {
-                    item.updateMessage(item, message, imageUrls)
+              {/* Render image attachments - below files */}
+              {item.content?.some(
+                (c) => (c.type === 'image_url' && c.image_url?.url) || false
+              ) && (
+                <div className="flex justify-end w-full mb-2">
+                  <div className="flex flex-wrap gap-2 max-w-[80%] justify-end">
+                    {item.content
+                      ?.filter(
+                        (c) =>
+                          (c.type === 'image_url' && c.image_url?.url) || false
+                      )
+                      .map((contentPart, index) => {
+                        // Handle images
+                        if (
+                          contentPart.type === 'image_url' &&
+                          contentPart.image_url?.url
+                        ) {
+                          return (
+                            <div key={index} className="relative">
+                              <img
+                                src={contentPart.image_url.url}
+                                alt="Uploaded attachment"
+                                className="size-40 rounded-md object-cover border border-main-view-fg/10"
+                              />
+                            </div>
+                          )
+                        }
+                        return null
+                      })}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
+                <EditMessageDialog
+                  message={cleanPrompt || ''}
+                  imageUrls={
+                    item.content
+                      ?.filter(
+                        (c) => c.type === 'image_url' && c.image_url?.url
+                      )
+                      .map((c) => c.image_url!.url)
+                      .filter((url): url is string => url !== undefined) || []
                   }
-                }}
-              />
-              <DeleteMessageDialog
-                onDelete={() => deleteMessage(item.thread_id, item.id)}
-              />
-            </div>
-          </div>
-        )}
-        {item.content?.[0]?.text && item.role !== 'user' && (
-          <>
-            {item.showAssistant && (
-              <div className="flex items-center gap-2 mb-3 text-main-view-fg/60">
-                {assistant?.avatar && (
-                  <div className="flex items-center gap-2 size-8 rounded-md justify-center border border-main-view-fg/10 bg-main-view-fg/5 p-1">
-                    <AvatarEmoji
-                      avatar={assistant?.avatar}
-                      imageClassName="w-6 h-6 object-contain"
-                      textClassName="text-base"
-                    />
-                  </div>
-                )}
-
-                <div className="flex flex-col">
-                  <span className="text-main-view-fg font-medium">
-                    {assistant?.name || 'Jan'}
-                  </span>
-                  {!!item?.created_at && item?.created_at !== 0 && (
-                    <span className="text-xs mt-0.5">
-                      {formatDate(item?.created_at)}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {reasoningSegment && (
-              <Reasoning
-                className="w-full text-muted-foreground"
-                isStreaming={!!item.streamingThread && !textSegment}
-                defaultOpen={!!item.streamingThread && item.isLastMessage}
-              >
-                <ReasoningTrigger />
-                <div className="relative">
-                  {!!item.streamingThread && (
-                    <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-background to-transparent pointer-events-none z-10" />
-                  )}
-                  <div
-                    ref={item.streamingThread ? reasoningContainerRef : null}
-                    className={twMerge(
-                      'w-full overflow-auto relative',
-                      item.streamingThread
-                        ? 'max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
-                        : 'h-auto opacity-100'
-                    )}
-                  >
-                    <ReasoningContent>{reasoningSegment}</ReasoningContent>
-                  </div>
-                </div>
-              </Reasoning>
-            )}
-
-            <RenderMarkdown
-              content={textSegment.replace('</think>', '')}
-              components={linkComponents}
-              isStreaming={item.isLastMessage && isStreamingThisThread}
-              messageId={item.id}
-            />
-
-            {isToolCalls && item.metadata?.tool_calls ? (
-              <>
-                {(item.metadata.tool_calls as ToolCall[]).map((toolCall) => (
-                  <Tool
-                    key={toolCall.tool?.id ?? 0}
-                    state={
-                      toolCall.state === 'pending'
-                        ? 'input-available'
-                        : 'output-available'
+                  onSave={(message, imageUrls) => {
+                    if (item.updateMessage) {
+                      item.updateMessage(item, message, imageUrls)
                     }
-                  >
-                    <ToolHeader
-                      title={
-                        (item.streamTools?.tool_calls?.function?.name ||
-                          toolCall.tool?.function?.name) ??
-                        ''
-                      }
-                      type={
-                        `tool-${toolCall.tool?.function?.name}` as `tool-${string}`
-                      }
-                    />
-                    <ToolContent
-                      title={
-                        (item.streamTools?.tool_calls?.function?.name ||
-                          toolCall.tool?.function?.name) ??
-                        'Tool Details'
+                  }}
+                />
+                <DeleteMessageDialog
+                  onDelete={() => deleteMessage(item.thread_id, item.id)}
+                />
+              </div>
+            </div>
+          )}
+          {item.content?.[0]?.text && item.role !== 'user' && (
+            <>
+              {item.showAssistant && (
+                <div className="flex items-center gap-2 mb-3 text-main-view-fg/60">
+                  {assistant?.avatar && (
+                    <div className="flex items-center gap-2 size-8 rounded-md justify-center border border-main-view-fg/10 bg-main-view-fg/5 p-1">
+                      <AvatarEmoji
+                        avatar={assistant?.avatar}
+                        imageClassName="w-6 h-6 object-contain"
+                        textClassName="text-base"
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex flex-col">
+                    <span className="text-main-view-fg font-medium">
+                      {assistant?.name || 'Jan'}
+                    </span>
+                    {!!item?.created_at && item?.created_at !== 0 && (
+                      <span className="text-xs mt-0.5">
+                        {formatDate(item?.created_at)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {reasoningSegment && (
+                <Reasoning
+                  className="w-full text-muted-foreground"
+                  isStreaming={!!item.streamingThread && !textSegment}
+                  defaultOpen={!!item.streamingThread && item.isLastMessage}
+                >
+                  <ReasoningTrigger />
+                  <div className="relative">
+                    {!!item.streamingThread && (
+                      <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-background to-transparent pointer-events-none z-10" />
+                    )}
+                    <div
+                      ref={item.streamingThread ? reasoningContainerRef : null}
+                      className={twMerge(
+                        'w-full overflow-auto relative',
+                        item.streamingThread
+                          ? 'max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+                          : 'h-auto opacity-100'
+                      )}
+                    >
+                      <ReasoningContent>{reasoningSegment}</ReasoningContent>
+                    </div>
+                  </div>
+                </Reasoning>
+              )}
+
+              <RenderMarkdown
+                content={textSegment.replace('</think>', '')}
+                components={linkComponents}
+                isStreaming={item.isLastMessage && isStreamingThisThread}
+                messageId={item.id}
+              />
+
+              {isToolCalls && item.metadata?.tool_calls ? (
+                <>
+                  {(item.metadata.tool_calls as ToolCall[]).map((toolCall) => (
+                    <Tool
+                      key={toolCall.tool?.id ?? 0}
+                      state={
+                        toolCall.state === 'pending'
+                          ? 'input-available'
+                          : 'output-available'
                       }
                     >
-                      <ToolInput
-                        input={
-                          item.streamTools?.tool_calls?.function?.arguments ||
-                          toolCall.tool?.function?.arguments ||
-                          undefined
+                      <ToolHeader
+                        title={
+                          (item.streamTools?.tool_calls?.function?.name ||
+                            toolCall.tool?.function?.name) ??
+                          ''
+                        }
+                        type={
+                          `tool-${toolCall.tool?.function?.name}` as `tool-${string}`
                         }
                       />
-                      {!!toolCall.response && (
-                        <ToolOutput
-                          output={toolCall.response}
-                          errorText={
-                            (toolCall.response.parseError as boolean)
-                              ? toolCall.response
-                              : undefined
+                      <ToolContent
+                        title={
+                          (item.streamTools?.tool_calls?.function?.name ||
+                            toolCall.tool?.function?.name) ??
+                          'Tool Details'
+                        }
+                      >
+                        <ToolInput
+                          input={
+                            item.streamTools?.tool_calls?.function?.arguments ||
+                            toolCall.tool?.function?.arguments ||
+                            undefined
                           }
-                          resolver={(input) => Promise.resolve(input)}
                         />
+                        {!!toolCall.response && (
+                          <ToolOutput
+                            output={toolCall.response}
+                            errorText={
+                              (toolCall.response.parseError as boolean)
+                                ? toolCall.response
+                                : undefined
+                            }
+                            resolver={(input) => Promise.resolve(input)}
+                          />
+                        )}
+                      </ToolContent>
+                    </Tool>
+                  ))}
+                </>
+              ) : null}
+
+              {!isToolCalls && (
+                <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">
+                  <div className={cn('flex items-center gap-2')}>
+                    <div
+                      className={cn(
+                        'flex items-center gap-2',
+                        item.isLastMessage && isStreamingThisThread && 'hidden'
                       )}
-                    </ToolContent>
-                  </Tool>
-                ))}
-              </>
-            ) : null}
+                    >
+                      <EditMessageDialog
+                        message={item.content?.[0]?.text.value || ''}
+                        onSave={(message) =>
+                          item.updateMessage &&
+                          item.updateMessage(item, message)
+                        }
+                      />
+                      <CopyButton text={item.content?.[0]?.text.value || ''} />
+                      <DeleteMessageDialog onDelete={removeMessage} />
+                      <MessageMetadataDialog metadata={item.metadata} />
 
-            {!isToolCalls && (
-              <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">
-                <div className={cn('flex items-center gap-2')}>
-                  <div
-                    className={cn(
-                      'flex items-center gap-2',
-                      item.isLastMessage && isStreamingThisThread && 'hidden'
-                    )}
-                  >
-                    <EditMessageDialog
-                      message={item.content?.[0]?.text.value || ''}
-                      onSave={(message) =>
-                        item.updateMessage && item.updateMessage(item, message)
-                      }
+                      {item.isLastMessage && selectedModel && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                              onClick={regenerate}
+                            >
+                              <IconRefresh size={16} />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{t('regenerate')}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+
+                    <TokenSpeedIndicator
+                      streaming={Boolean(
+                        item.isLastMessage && isStreamingThisThread
+                      )}
+                      metadata={item.metadata}
                     />
-                    <CopyButton text={item.content?.[0]?.text.value || ''} />
-                    <DeleteMessageDialog onDelete={removeMessage} />
-                    <MessageMetadataDialog metadata={item.metadata} />
-
-                    {item.isLastMessage && selectedModel && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                            onClick={regenerate}
-                          >
-                            <IconRefresh size={16} />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>{t('regenerate')}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
                   </div>
-
-                  <TokenSpeedIndicator
-                    streaming={Boolean(
-                      item.isLastMessage && isStreamingThisThread
-                    )}
-                    metadata={item.metadata}
-                  />
                 </div>
-              </div>
-            )}
-          </>
-        )}
+              )}
+            </>
+          )}
 
-        {item.type === 'image_url' && image && (
-          <div>
-            <img
-              src={image.url}
-              alt={image.detail || 'Thread image'}
-              className="max-w-full rounded-md"
-            />
-            {image.detail && <p className="text-sm mt-1">{image.detail}</p>}
-          </div>
-        )}
-        {item.contextOverflowModal && item.contextOverflowModal}
-
-        <Dialog
-          open={Boolean(inlinePreview)}
-          onOpenChange={(open) => {
-            if (!open) setInlinePreview(null)
-          }}
-        >
-          <DialogContent className="sm:max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>{t('common:injectedContentTitle')}</DialogTitle>
-              <DialogDescription>{inlinePreview?.name}</DialogDescription>
-            </DialogHeader>
-            <div className="max-h-[60vh] overflow-auto whitespace-pre-wrap text-sm font-mono bg-muted px-3 py-2 rounded-md">
-              {inlinePreview?.content}
+          {item.type === 'image_url' && image && (
+            <div>
+              <img
+                src={image.url}
+                alt={image.detail || 'Thread image'}
+                className="max-w-full rounded-md"
+              />
+              {image.detail && <p className="text-sm mt-1">{image.detail}</p>}
             </div>
-          </DialogContent>
-        </Dialog>
-      </Fragment>
+          )}
+          {item.contextOverflowModal && item.contextOverflowModal}
+
+          <Dialog
+            open={Boolean(inlinePreview)}
+            onOpenChange={(open) => {
+              if (!open) setInlinePreview(null)
+            }}
+          >
+            <DialogContent className="sm:max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>{t('common:injectedContentTitle')}</DialogTitle>
+                <DialogDescription>{inlinePreview?.name}</DialogDescription>
+              </DialogHeader>
+              <div className="max-h-[60vh] overflow-auto whitespace-pre-wrap text-sm font-mono bg-muted px-3 py-2 rounded-md">
+                {inlinePreview?.content}
+              </div>
+            </DialogContent>
+          </Dialog>
+        </Fragment>
+      </TooltipProvider>
     )
   }
 )

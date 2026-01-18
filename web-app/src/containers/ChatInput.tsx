@@ -38,6 +38,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAppState } from '@/hooks/useAppState'
 import { MovingBorder } from './MovingBorder'
 import { useChat } from '@/hooks/useChat'
+import type { ChatStatus } from 'ai'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
@@ -83,6 +84,9 @@ type ChatInputProps = {
   model?: ThreadModel
   initialMessage?: boolean
   projectId?: string
+  onSubmit?: (text: string, files?: Array<{ type: string; mediaType: string; url: string }>) => void
+  onStop?: () => void
+  chatStatus?: ChatStatus
 }
 
 const ChatInput = ({
@@ -90,6 +94,9 @@ const ChatInput = ({
   className,
   initialMessage,
   projectId,
+  onSubmit,
+  onStop,
+  chatStatus,
 }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
@@ -126,7 +133,7 @@ const ChatInput = ({
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
-  const sendMessage = useChat()
+  const legacySendMessage = useChat()
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
@@ -282,13 +289,28 @@ const ChatInput = ({
 
     setMessage('')
 
-    sendMessage(
-      prompt,
-      true,
-      attachments.length > 0 ? attachments : undefined,
-      projectId,
-      updateAttachmentProcessing
-    )
+    // Use onSubmit prop if available (AI SDK), otherwise fall back to legacy hook
+    if (onSubmit) {
+      // Build file parts for AI SDK
+      const files = attachments
+        .filter((att) => att.type === 'image' && att.dataUrl)
+        .map((att) => ({
+          type: 'file',
+          mediaType: att.mimeType ?? 'image/jpeg',
+          url: att.dataUrl!,
+        }))
+
+      onSubmit(prompt, files.length > 0 ? files : undefined)
+    } else {
+      // Fall back to legacy sendMessage for complex scenarios
+      legacySendMessage(
+        prompt,
+        true,
+        attachments.length > 0 ? attachments : undefined,
+        projectId,
+        updateAttachmentProcessing
+      )
+    }
   }
 
   useEffect(() => {
@@ -345,10 +367,15 @@ const ChatInput = ({
 
   const stopStreaming = useCallback(
     (threadId: string) => {
-      abortControllers[threadId]?.abort()
+      // Use onStop prop if available (AI SDK), otherwise use legacy abort
+      if (onStop) {
+        onStop()
+      } else {
+        abortControllers[threadId]?.abort()
+      }
       cancelToolCall?.()
     },
-    [abortControllers, cancelToolCall]
+    [abortControllers, cancelToolCall, onStop]
   )
 
   const fileInputRef = useRef<HTMLInputElement>(null)

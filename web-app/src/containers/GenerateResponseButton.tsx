@@ -15,7 +15,7 @@ export const GenerateResponseButton = ({
 }) => {
   const { t } = useTranslation()
   const deleteMessage = useMessages((state) => state.deleteMessage)
- const { messages } = useMessages(
+  const { messages } = useMessages(
     useShallow((state) => ({
       messages: state.messages[threadId],
     }))
