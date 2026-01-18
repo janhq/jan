@@ -1,11 +1,10 @@
-﻿import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createFileRoute,
   useParams,
   redirect,
   useNavigate,
 } from '@tanstack/react-router'
-import cloneDeep from 'lodash.clonedeep'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -14,22 +13,17 @@ import HeaderPage from '@/containers/HeaderPage'
 import { useThreads } from '@/hooks/useThreads'
 import ChatInput from '@/containers/ChatInput'
 import { useShallow } from 'zustand/react/shallow'
-import { ThreadContent } from '@/containers/ThreadContent'
-import { StreamingContent } from '@/containers/StreamingContent'
+import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
-import { ContentType, ThreadMessage } from '@janhq/core'
 import { useSmallScreen, useMobileScreen } from '@/hooks/useMediaQuery'
 import { useTools } from '@/hooks/useTools'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
-import ScrollToBottom from '@/containers/ScrollToBottom'
-import { PromptProgress } from '@/components/PromptProgress'
-import { ThreadPadding } from '@/containers/ThreadPadding'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 import { IconInfoCircle } from '@tabler/icons-react'
 import {
@@ -37,6 +31,24 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useChat } from '@/hooks/use-chat'
+import { createLanguageModel } from '@/lib/ai-model'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+} from '@/ai-elements/conversation'
+import { Loader } from 'lucide-react'
+import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
+import type { UIMessage, UIDataTypes, UITools } from 'ai'
+import { useChatSessions } from '@/stores/chat-session-store'
+import { convertThreadMessagesToUIMessages } from '@/lib/messages'
+
+const CHAT_STATUS = {
+  STREAMING: 'streaming',
+  SUBMITTED: 'submitted',
+} as const
 
 const CONVERSATION_NOT_FOUND_EVENT = 'conversation-not-found'
 
@@ -92,6 +104,7 @@ function ThreadDetail() {
   const { t } = useTranslation()
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
   const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
+  const currentAssistant = useAssistant((state) => state.currentAssistant)
   const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
 
@@ -100,15 +113,170 @@ function ThreadDetail() {
   const isMobile = useMobileScreen()
   useTools()
 
-  const { messages } = useMessages(
-    useShallow((state) => ({
-      messages: state.messages[threadId],
-    }))
+  // Session data for tool call tracking
+  const getSessionData = useChatSessions((state) => state.getSessionData)
+  const sessionData = getSessionData(threadId)
+
+  // AbortController for cancelling tool calls
+  const toolCallAbortController = useRef<AbortController | null>(null)
+
+  // Check if we should follow up with tool calls (respects abort signal)
+  const followUpMessage = useCallback(
+    ({
+      messages,
+    }: {
+      messages: UIMessage<unknown, UIDataTypes, UITools>[]
+    }) => {
+      if (
+        !toolCallAbortController.current ||
+        toolCallAbortController.current?.signal.aborted
+      ) {
+        return false
+      }
+      return lastAssistantMessageIsCompleteWithToolCalls({ messages })
+    },
+    []
   )
 
   // Subscribe directly to the thread data to ensure updates when model changes
   const thread = useThreads(useShallow((state) => state.threads[threadId]))
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  // Get model and provider for useChat
+  const selectedModel = useModelProvider((state) => state.selectedModel)
+  const selectedProvider = useModelProvider((state) => state.selectedProvider)
+  const getProviderByName = useModelProvider((state) => state.getProviderByName)
+
+  // Create language model for AI SDK (async)
+  const [languageModel, setLanguageModel] = useState<Awaited<
+    ReturnType<typeof createLanguageModel>
+  > | null>(null)
+
+  useEffect(() => {
+    const provider = getProviderByName(selectedProvider)
+    const modelId = selectedModel?.id ?? thread?.model?.id ?? ''
+    if (!modelId || !provider) {
+      setLanguageModel(null)
+      return
+    }
+
+    let cancelled = false
+    createLanguageModel(modelId, provider, provider)
+      .then((model) => {
+        if (!cancelled) {
+          setLanguageModel(model)
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to create language model:', error)
+        if (!cancelled) {
+          setLanguageModel(null)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    selectedModel?.id,
+    thread?.model?.id,
+    selectedProvider,
+    getProviderByName,
+  ])
+
+  // Handle onFinish - execute collected tool calls
+  const handleOnFinish = useCallback(() => {
+    // Create a new AbortController for tool calls
+    toolCallAbortController.current = new AbortController()
+    const signal = toolCallAbortController.current.signal
+
+    // Execute all collected tool calls
+    Promise.all(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sessionData.tools.map(async (toolCall: any) => {
+        // Check if already aborted before starting
+        if (signal.aborted) {
+          return
+        }
+
+        try {
+          const result = await serviceHub.mcp().callTool({
+            toolName: toolCall.toolName,
+            arguments: toolCall.input,
+          })
+
+          if (result.error) {
+            addToolOutput({
+              state: 'output-error',
+              tool: toolCall.toolName,
+              toolCallId: toolCall.toolCallId,
+              errorText: `Error: ${result.error}`,
+            })
+          } else {
+            addToolOutput({
+              tool: toolCall.toolName,
+              toolCallId: toolCall.toolCallId,
+              output: result.content,
+            })
+          }
+        } catch (error) {
+          // Ignore abort errors
+          if ((error as Error).name !== 'AbortError') {
+            console.error('Tool call error:', error)
+            addToolOutput({
+              state: 'output-error',
+              tool: toolCall.toolName,
+              toolCallId: toolCall.toolCallId,
+              errorText: `Error: ${(error as Error).message}`,
+            })
+          }
+        }
+      })
+    )
+      .catch((error) => {
+        // Ignore abort errors
+        if (error.name !== 'AbortError') {
+          console.error('Tool call error:', error)
+        }
+      })
+      .finally(() => {
+        sessionData.tools = []
+        toolCallAbortController.current = null
+      })
+  }, [sessionData, serviceHub])
+
+  // Handle onToolCall - collect tool calls during streaming
+  const handleOnToolCall = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ toolCall }: { toolCall: any }) => {
+      sessionData.tools.push(toolCall)
+      return
+    },
+    [sessionData]
+  )
+
+  // Use the AI SDK chat hook
+  const {
+    messages: chatMessages,
+    status,
+    sendMessage,
+    regenerate,
+    setMessages: setChatMessages,
+    stop,
+    addToolOutput,
+  } = useChat(languageModel, {
+    sessionId: threadId,
+    sessionTitle: thread?.title,
+    experimental_throttle: 50,
+    onFinish: handleOnFinish,
+    onToolCall: handleOnToolCall,
+    sendAutomaticallyWhen: followUpMessage,
+  })
+
+  // Use chatMessages directly from useChat
+  const messages = chatMessages ?? []
+
+  // Ref for reasoning container auto-scroll
+  const reasoningContainerRef = useRef<HTMLDivElement>(null)
 
   // Listen for conversation not found events
   useEffect(() => {
@@ -148,7 +316,17 @@ function ThreadDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId, assistants])
 
+  // Load messages on first mount
   useEffect(() => {
+    // Skip if chat already has messages (e.g., returning to a streaming conversation)
+    const existingSession = useChatSessions.getState().sessions[threadId]
+    if (
+      existingSession?.chat.messages.length > 0 ||
+      existingSession?.isStreaming
+    ) {
+      return
+    }
+
     serviceHub
       .messages()
       .fetchMessages(threadId)
@@ -167,7 +345,9 @@ function ThreadDetail() {
             return
           }
 
-          // Update the messages in the store
+          let messagesToSet = fetchedMessages
+
+          // Merge with local-only messages if needed
           if (currentLocalMessages && currentLocalMessages.length > 0) {
             const fetchedIds = new Set(fetchedMessages.map((m) => m.id))
             const localOnlyMessages = currentLocalMessages.filter(
@@ -175,16 +355,18 @@ function ThreadDetail() {
             )
 
             if (localOnlyMessages.length > 0) {
-              const mergedMessages = [
-                ...fetchedMessages,
-                ...localOnlyMessages,
-              ].sort((a, b) => (a.created_at || 0) - (b.created_at || 0))
-              setMessages(threadId, mergedMessages)
-              return
+              messagesToSet = [...fetchedMessages, ...localOnlyMessages].sort(
+                (a, b) => (a.created_at || 0) - (b.created_at || 0)
+              )
             }
           }
 
-          setMessages(threadId, fetchedMessages)
+          // Update the legacy store
+          setMessages(threadId, messagesToSet)
+
+          // Convert and set messages for AI SDK chat
+          const uiMessages = convertThreadMessagesToUIMessages(messagesToSet)
+          setChatMessages(uiMessages)
         }
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -198,46 +380,51 @@ function ThreadDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const updateMessage = (
-    item: ThreadMessage,
-    message: string,
-    imageUrls?: string[]
-  ) => {
-    const newMessages: ThreadMessage[] = messages.map((m) => {
-      if (m.id === item.id) {
-        const msg: ThreadMessage = cloneDeep(m)
-        const newContent = [
-          {
-            type: ContentType.Text,
-            text: {
-              value: message,
-              annotations: m.content[0].text?.annotations ?? [],
-            },
-          },
-        ]
-        // Add image content if imageUrls are provided
-        if (imageUrls && imageUrls.length > 0) {
-          imageUrls.forEach((url) => {
-            newContent.push({
-              type: 'image_url' as ContentType,
-              image_url: {
-                url: url,
-              },
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            } as any)
+  // Handle submit from ChatInput
+  const handleSubmit = useCallback(
+    (
+      text: string,
+      files?: Array<{ type: string; mediaType: string; url: string }>
+    ) => {
+      if (!languageModel) return
+
+      const parts: Array<
+        | { type: 'text'; text: string }
+        | { type: 'file'; mediaType: string; url: string }
+      > = [{ type: 'text', text }]
+
+      if (files) {
+        files.forEach((file) => {
+          parts.push({
+            type: 'file',
+            mediaType: file.mediaType,
+            url: file.url,
           })
-        }
-        msg.content = newContent
-        return msg
+        })
       }
-      return m
-    })
-    setMessages(threadId, newMessages)
-  }
+
+      sendMessage({ parts })
+    },
+    [languageModel, sendMessage]
+  )
+
+  // Handle regenerate from ThreadContent
+  const handleRegenerate = useCallback(
+    (messageId?: string) => {
+      if (!languageModel) return
+      regenerate(messageId ? { messageId } : undefined)
+    },
+    [languageModel, regenerate]
+  )
+
+  // Handle stop
+  const handleStop = useCallback(() => {
+    stop()
+  }, [stop])
 
   const threadModel = useMemo(() => thread?.model, [thread])
 
-  if (!messages || !threadModel) return null
+  if (!threadModel) return null
 
   return (
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
@@ -254,83 +441,69 @@ function ThreadDetail() {
           <div></div>
         </div>
       </HeaderPage>
-      <div className="flex flex-col h-[calc(100%-40px)]">
-        <div
-          ref={scrollContainerRef}
-          className={cn(
-            'flex flex-col h-full w-full overflow-auto pt-4 pb-3',
-            // Mobile-first responsive padding
-            isMobile ? 'px-3' : 'px-4'
-          )}
-        >
-          <div
-            className={cn(
-              'mx-auto flex max-w-full flex-col grow',
-              // Mobile-first width constraints
-              // Mobile and small screens always use full width, otherwise compact chat uses constrained width
-              isMobile || isSmallScreen || chatWidth !== 'compact'
-                ? 'w-full'
-                : 'w-full md:w-4/6'
-            )}
-          >
-            {messages &&
-              messages.map((item, index) => {
-                // Only pass isLastMessage to the last message in the array
+      <div className="flex flex-1 flex-col h-full overflow-hidden">
+        {/* Messages Area */}
+        <div className="flex-1 relative">
+          <Conversation className="absolute inset-0 text-start">
+            <ConversationContent
+              className={cn(
+                'mx-auto',
+                isMobile || isSmallScreen || chatWidth !== 'compact'
+                  ? 'w-full'
+                  : 'w-full md:w-4/5'
+              )}
+            >
+              {messages.map((message, index) => {
                 const isLastMessage = index === messages.length - 1
+                const isFirstMessage = index === 0
+                const showAssistant =
+                  message.role === 'assistant' &&
+                  (isFirstMessage || messages[index - 1]?.role !== 'assistant')
+
                 return (
-                  <div
-                    key={item.id}
-                    data-test-id={`message-${item.role}-${item.id}`}
-                    data-message-author-role={item.role}
-                    className="mb-4"
-                  >
-                    <ThreadContent
-                      {...item}
-                      isLastMessage={isLastMessage}
-                      showAssistant={
-                        item.role === 'assistant' &&
-                        (index === 0 ||
-                          messages[index - 1]?.role !== 'assistant' ||
-                          !(
-                            messages[index - 1]?.metadata &&
-                            'tool_calls' in (messages[index - 1].metadata ?? {})
-                          ))
-                      }
-                      index={index}
-                      updateMessage={updateMessage}
-                    />
-                  </div>
+                  <MessageItem
+                    key={message.id}
+                    message={message}
+                    isFirstMessage={isFirstMessage}
+                    isLastMessage={isLastMessage}
+                    status={status}
+                    reasoningContainerRef={reasoningContainerRef}
+                    onRegenerate={handleRegenerate}
+                    showAssistant={showAssistant}
+                    assistant={
+                      currentAssistant
+                        ? {
+                            avatar: currentAssistant.avatar,
+                            name: currentAssistant.name,
+                          }
+                        : undefined
+                    }
+                  />
                 )
               })}
-            <PromptProgress />
-            <StreamingContent
-              threadId={threadId}
-              data-test-id="thread-content-text"
-            />
-            {/* Persistent padding element for ChatGPT-style message positioning */}
-            <ThreadPadding
-              threadId={threadId}
-              scrollContainerRef={scrollContainerRef}
-            />
-          </div>
+              {status === CHAT_STATUS.SUBMITTED && (
+                <Loader className="animate-spin w-4 h-4" />
+              )}
+            </ConversationContent>
+            <ConversationScrollButton />
+          </Conversation>
         </div>
+
+        {/* Chat Input - Fixed at bottom */}
         <div
           className={cn(
-            'mx-auto pt-2 pb-4 shrink-0 relative',
-            // Responsive padding and width
-            isMobile ? 'px-3' : 'px-2',
-            // Width: mobile/small screens or non-compact always full, compact desktop uses constrained
+            'px-4 py-4 mx-auto w-full',
             isMobile || isSmallScreen || chatWidth !== 'compact'
-              ? 'w-full'
-              : 'w-full md:w-4/6'
+              ? 'max-w-full'
+              : 'w-full md:w-4/5'
           )}
         >
-          <ScrollToBottom
-            threadId={threadId}
-            scrollContainerRef={scrollContainerRef}
+          <ChatInput
+            model={threadModel}
+            onSubmit={handleSubmit}
+            onStop={handleStop}
+            chatStatus={status}
           />
-          {/* <ConversationScrollButton /> */}
-          <ChatInput model={threadModel} />
         </div>
       </div>
     </div>

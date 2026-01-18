@@ -52,6 +52,7 @@
     "@types/react-syntax-highlighter": "15.5.13",
     "@types/uuid": "10.0.0",
     "@uiw/react-textarea-code-editor": "3.1.1",
+    "ai": "5.0.108",
     "class-variance-authority": "0.7.1",
     "culori": "4.0.1",
     "emoji-picker-react": "4.12.2",
@@ -88,8 +89,10 @@
     "tw-animate-css": "1.2.8",
     "ulidx": "2.4.1",
     "unified": "11.0.5",
+    "use-stick-to-bottom": "^1.0.48",
     "uuid": "11.1.0",
     "vaul": "1.1.2",
+    "zod": "^4.1.13",
     "zustand": "5.0.3"
   },
   "devDependencies": {

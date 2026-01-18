@@ -8,7 +8,11 @@ import {
   type UIMessageChunk,
   type Tool,
   type CoreMessage,
+  type LanguageModelUsage,
 } from 'ai'
+
+export type TokenUsageCallback = (usage: LanguageModelUsage, messageId: string) => void
+export type StreamingTokenSpeedCallback = (tokenCount: number, elapsedMs: number) => void
 // import { mcpService } from "@/services/mcp-service";
 
 /**
@@ -141,18 +145,27 @@ function filterBase64FromMessages(messages: CoreMessage[]): CoreMessage[] {
 }
 
 export class CustomChatTransport implements ChatTransport<UIMessage> {
-  private model: LanguageModel
+  public model: LanguageModel
   private tools: Record<string, Tool> = {}
+  private onTokenUsage?: TokenUsageCallback
+  private onStreamingTokenSpeed?: StreamingTokenSpeedCallback
 
-  constructor(
-    model: LanguageModel,
-  ) {
+  constructor(model: LanguageModel, onTokenUsage?: TokenUsageCallback) {
     this.model = model
+    this.onTokenUsage = onTokenUsage
     // this.initializeTools();
   }
 
   updateModel(model: LanguageModel) {
     this.model = model
+  }
+
+  setOnTokenUsage(callback: TokenUsageCallback | undefined) {
+    this.onTokenUsage = callback
+  }
+
+  setOnStreamingTokenSpeed(callback: StreamingTokenSpeedCallback | undefined) {
+    this.onStreamingTokenSpeed = callback
   }
 
   /**
@@ -221,6 +234,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Always include tools if we have any loaded
     // Search tools (google_search, scrape) are always sent regardless of user toggle
     const hasTools = Object.keys(this.tools).length > 0
+
+    // Track stream timing and token count for token speed calculation
+    let streamStartTime: number | undefined
+    let textDeltaCount = 0
+
     const result = streamText({
       model: this.model,
       messages: messagesWithImageUrls,
@@ -233,6 +251,72 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     })
 
     return result.toUIMessageStream({
+      messageMetadata: ({ part }) => {
+        // Track stream start time on first text delta
+        if (part.type === 'text-delta') {
+          if (!streamStartTime) {
+            streamStartTime = Date.now()
+          }
+          // Count text deltas as a rough token approximation
+          // Each delta typically represents one token in streaming
+          textDeltaCount++
+
+          // Report streaming token speed in real-time
+          if (this.onStreamingTokenSpeed) {
+            const elapsedMs = Date.now() - streamStartTime
+            this.onStreamingTokenSpeed(textDeltaCount, elapsedMs)
+          }
+        }
+
+        // Add usage and token speed to metadata on finish
+        if (part.type === 'finish') {
+          const finishPart = part as {
+            type: 'finish'
+            totalUsage: LanguageModelUsage
+            finishReason: string
+            providerMetadata?: {
+              llamacpp?: {
+                promptTokens?: number | null
+                completionTokens?: number | null
+                tokensPerSecond?: number | null
+              }
+            }
+          }
+          const usage = finishPart.totalUsage
+          const llamacppMeta = finishPart.providerMetadata?.llamacpp
+          const durationMs = streamStartTime ? Date.now() - streamStartTime : 0
+          const durationSec = durationMs / 1000
+
+          // Use provider's outputTokens, or llama.cpp completionTokens, or fall back to text delta count
+          const outputTokens = usage?.outputTokens ?? llamacppMeta?.completionTokens ?? textDeltaCount
+          const inputTokens = usage?.inputTokens ?? llamacppMeta?.promptTokens
+
+          // Use llama.cpp's tokens per second if available, otherwise calculate from duration
+          let tokenSpeed: number
+          if (llamacppMeta?.tokensPerSecond != null) {
+            tokenSpeed = llamacppMeta.tokensPerSecond
+          } else if (durationSec > 0 && outputTokens > 0) {
+            tokenSpeed = outputTokens / durationSec
+          } else {
+            tokenSpeed = 0
+          }
+
+          return {
+            usage: {
+              inputTokens: inputTokens,
+              outputTokens: outputTokens,
+              totalTokens: usage?.totalTokens ?? (inputTokens ?? 0) + outputTokens,
+            },
+            tokenSpeed: {
+              tokenSpeed: Math.round(tokenSpeed * 10) / 10, // Round to 1 decimal
+              tokenCount: outputTokens,
+              durationMs,
+            },
+          }
+        }
+
+        return undefined
+      },
       onError: (error) => {
         // Note: By default, the AI SDK will return "An error occurred",
         // which is intentionally vague in case the error contains sensitive information like API keys.
@@ -247,6 +331,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           return error.message
         }
         return JSON.stringify(error)
+      },
+      onFinish: ({ responseMessage }) => {
+        // Call the token usage callback with usage data when stream completes
+        if (this.onTokenUsage && responseMessage) {
+          const metadata = responseMessage.metadata as Record<string, unknown> | undefined
+          const usage = metadata?.usage as LanguageModelUsage | undefined
+          if (usage) {
+            this.onTokenUsage(usage, responseMessage.id)
+          }
+        }
       },
     })
   }

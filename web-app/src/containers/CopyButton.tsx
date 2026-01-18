@@ -1,7 +1,6 @@
-import { useTranslation } from "@/i18n"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@radix-ui/react-tooltip"
-import { IconCopy, IconCopyCheck } from "@tabler/icons-react"
-import { useState } from "react"
+import { useTranslation } from '@/i18n'
+import { IconCopy, IconCopyCheck } from '@tabler/icons-react'
+import { useState } from 'react'
 
 export const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -24,14 +23,7 @@ export const CopyButton = ({ text }: { text: string }) => {
           <span className="opacity-100">{t('copied')}</span>
         </>
       ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <IconCopy size={16} />
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t('copy')}</p>
-          </TooltipContent>
-        </Tooltip>
+        <IconCopy size={16} />
       )}
     </button>
   )
