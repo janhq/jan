@@ -115,6 +115,8 @@ function ThreadDetail() {
   const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
   const addMessage = useMessages((state) => state.addMessage)
+  const getMessages = useMessages((state) => state.getMessages)
+  const deleteMessage = useMessages((state) => state.deleteMessage)
 
   const chatWidth = useInterfaceSettings((state) => state.chatWidth)
   const isSmallScreen = useSmallScreen()
@@ -516,13 +518,47 @@ function ThreadDetail() {
     [languageModel, sendMessage, threadId, addMessage]
   )
 
-  // Handle regenerate from ThreadContent
+  // Handle regenerate from any message (user or assistant)
+  // - For user messages: keeps the user message, deletes all after, regenerates assistant response
+  // - For assistant messages: deletes all after, regenerates that assistant response
   const handleRegenerate = useCallback(
     (messageId?: string) => {
-      if (!languageModel) return
+      if (!languageModel) {
+        console.warn('No language model available')
+        return
+      }
+
+      // If regenerating from a specific message, delete all messages after it
+      if (messageId) {
+        // Find the message in the current chat messages
+        const messageIndex = messages.findIndex((m) => m.id === messageId)
+        console.log('messageIndex:', messageIndex)
+
+        if (messageIndex !== -1) {
+          // Get all messages after the selected message
+          const messagesToDelete = messages.slice(messageIndex + 1)
+          console.log('messagesToDelete:', messagesToDelete.length)
+
+          // Delete from backend storage
+          if (messagesToDelete.length > 0) {
+            messagesToDelete.forEach((msg) => {
+              // Delete from persisted storage
+              const currentMessages = getMessages(threadId)
+              const persistedMsg = currentMessages.find((m) => m.id === msg.id)
+              if (persistedMsg) {
+                console.log('Deleting message:', msg.id)
+                deleteMessage(threadId, msg.id)
+              }
+            })
+          }
+        }
+      }
+
+      // Call the AI SDK regenerate function - it will handle truncating the UI messages
+      // and generating a new response from the selected message
       regenerate(messageId ? { messageId } : undefined)
     },
-    [languageModel, regenerate]
+    [languageModel, regenerate, threadId, getMessages, deleteMessage, messages]
   )
 
   // Handle stop

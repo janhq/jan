@@ -148,10 +148,7 @@ export default class llamacpp_extension extends AIEngine {
     this.memoryMode = this.config.memory_util || 'high'
 
     // This sets the base directory where model files for this provider are stored.
-    this.providerPath = await joinPath([
-      await getJanDataFolderPath(),
-      this.providerId,
-    ])
+    this.getProviderPath()
 
     // Set up validation event listeners to bridge Tauri events to frontend
     this.unlistenValidationStarted = await listen<{

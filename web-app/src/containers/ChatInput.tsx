@@ -86,6 +86,7 @@ import {
 } from '@/types/attachment'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
+import { threadId } from 'worker_threads'
 
 type ChatInputProps = {
   className?: string
@@ -93,7 +94,10 @@ type ChatInputProps = {
   model?: ThreadModel
   initialMessage?: boolean
   projectId?: string
-  onSubmit?: (text: string, files?: Array<{ type: string; mediaType: string; url: string }>) => void
+  onSubmit?: (
+    text: string,
+    files?: Array<{ type: string; mediaType: string; url: string }>
+  ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
 }
@@ -105,12 +109,12 @@ const ChatInput = ({
   projectId,
   onSubmit,
   onStop,
+  chatStatus,
 }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
   const serviceHub = useServiceHub()
-  const streamingContent = useAppState((state) => state.streamingContent)
   const abortControllers = useAppState((state) => state.abortControllers)
   const loadingModel = useAppState((state) => state.loadingModel)
   const updateLoadingModel = useAppState((state) => state.updateLoadingModel)
@@ -180,7 +184,10 @@ const ChatInput = ({
   // Derived: any document currently processing (ingestion in progress)
   const attachmentsKey = currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
   const attachments = useChatAttachments(
-    useCallback((state) => state.getAttachments(attachmentsKey), [attachmentsKey])
+    useCallback(
+      (state) => state.getAttachments(attachmentsKey),
+      [attachmentsKey]
+    )
   )
   const attachmentsKeyRef = useRef(attachmentsKey)
   const setAttachmentsForThread = useChatAttachments(
@@ -206,7 +213,10 @@ const ChatInput = ({
   const lastTransferredThreadId = useRef<string | null>(null)
 
   useEffect(() => {
-    if (currentThreadId && lastTransferredThreadId.current !== currentThreadId) {
+    if (
+      currentThreadId &&
+      lastTransferredThreadId.current !== currentThreadId
+    ) {
       transferAttachments(NEW_THREAD_ATTACHMENT_KEY, currentThreadId)
       lastTransferredThreadId.current = currentThreadId
     }
@@ -242,9 +252,10 @@ const ChatInput = ({
                   ...att,
                   ...updatedAttachment,
                   processing: status === 'processing',
-                  processed: status === 'done'
-                    ? true
-                    : updatedAttachment?.processed ?? att.processed,
+                  processed:
+                    status === 'done'
+                      ? true
+                      : (updatedAttachment?.processed ?? att.processed),
                 }
               : att
           )
@@ -278,7 +289,8 @@ const ChatInput = ({
   }, [selectedModel, selectedModel?.capabilities, selectedProvider, serviceHub])
 
   // Check if there are active MCP servers
-  const hasActiveMCPServers = tools.filter((tool) => tool.server !== 'Jan Browser MCP').length > 0
+  const hasActiveMCPServers =
+    tools.filter((tool) => tool.server !== 'Jan Browser MCP').length > 0
 
   // Get MCP extension and its custom component
   const extensionManager = ExtensionManager.getInstance()
@@ -347,13 +359,18 @@ const ChatInput = ({
         })
       } else {
         // Create a new thread and navigate to it
-        const assistant = assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
+        const assistant =
+          assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
 
         // Get project metadata if projectId is provided
-        let projectMetadata: { id: string; name: string; updated_at: number } | undefined
+        let projectMetadata:
+          | { id: string; name: string; updated_at: number }
+          | undefined
         if (projectId) {
           try {
-            const project = await serviceHub.projects().getProjectById(projectId)
+            const project = await serviceHub
+              .projects()
+              .getProjectById(projectId)
             if (project) {
               projectMetadata = {
                 id: project.id,
@@ -437,13 +454,13 @@ const ChatInput = ({
 
   // Focus when streaming content finishes
   useEffect(() => {
-    if (!streamingContent && textareaRef.current) {
+    if (chatStatus !== 'streaming' && textareaRef.current) {
       // Small delay to ensure UI has updated
       setTimeout(() => {
         textareaRef.current?.focus()
       }, 10)
     }
-  }, [streamingContent])
+  }, [chatStatus])
 
   const stopStreaming = useCallback(
     (threadId: string) => {
@@ -476,7 +493,10 @@ const ChatInput = ({
           setActiveModels(active || [])
           return active?.includes(selectedModel.id) ?? false
         } catch (err) {
-          console.warn('Failed to start model before attachment validation', err)
+          console.warn(
+            'Failed to start model before attachment validation',
+            err
+          )
           return false
         } finally {
           updateLoadingModel(false)
@@ -518,7 +538,10 @@ const ChatInput = ({
       const docsNeedingPrompt = docs.filter((doc) => {
         if (doc.processed || doc.injectionMode) return false
         const preference = doc.parseMode ?? parsePreference
-        return preference === 'prompt' || (preference === 'auto' && !hasContextEstimate)
+        return (
+          preference === 'prompt' ||
+          (preference === 'auto' && !hasContextEstimate)
+        )
       })
 
       // Map to store individual choices for each document
@@ -530,7 +553,12 @@ const ChatInput = ({
           const doc = docsNeedingPrompt[i]
           const choice = await useAttachmentIngestionPrompt
             .getState()
-            .showPrompt(doc, ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES, i, docsNeedingPrompt.length)
+            .showPrompt(
+              doc,
+              ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES,
+              i,
+              docsNeedingPrompt.length
+            )
 
           if (!choice) {
             // User cancelled - remove all pending docs
@@ -552,7 +580,9 @@ const ChatInput = ({
         }
       }
 
-      const estimateTokens = async (text: string): Promise<number | undefined> => {
+      const estimateTokens = async (
+        text: string
+      ): Promise<number | undefined> => {
         try {
           if (!selectedModel?.id || !modelReady) return undefined
           const tokenCount = await serviceHub
@@ -770,13 +800,16 @@ const ChatInput = ({
           ) as VectorDBExtension | undefined
 
           if (vectorDBExtension?.deleteFile) {
-            await vectorDBExtension.deleteFile(currentThreadId, attachmentToRemove.id)
+            await vectorDBExtension.deleteFile(
+              currentThreadId,
+              attachmentToRemove.id
+            )
           }
         }
       } catch (error) {
         console.error('Failed to delete attachment from backend:', error)
         toast.error('Failed to remove attachment', {
-          description: error instanceof Error ? error.message : String(error)
+          description: error instanceof Error ? error.message : String(error),
         })
         return
       }
@@ -916,11 +949,11 @@ const ChatInput = ({
                 prev.map((a) =>
                   a.name === img.name && a.type === 'image'
                     ? {
-                      ...a,
-                      processing: false,
-                      processed: true,
-                      id: result.id,
-                    }
+                        ...a,
+                        processing: false,
+                        processed: true,
+                        id: result.id,
+                      }
                     : a
                 )
               )
@@ -1227,10 +1260,10 @@ const ChatInput = ({
         <div
           className={cn(
             'relative overflow-hidden p-[2px] rounded-3xl',
-            Boolean(streamingContent) && 'opacity-70'
+            chatStatus === 'streaming' && 'opacity-70'
           )}
         >
-          {streamingContent && (
+          {chatStatus === 'streaming' && (
             <div className="absolute inset-0">
               <MovingBorder rx="10%" ry="10%">
                 <div
@@ -1346,14 +1379,16 @@ const ChatInput = ({
                               className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
                               onClick={() => handleRemoveAttachment(idx)}
                             >
-                              <IconX className="text-destructive-fg" size={16} />
+                              <IconX
+                                className="text-destructive-fg"
+                                size={16}
+                              />
                             </div>
                           )}
                         </div>
                       )
                     })}
                 </div>
-
               </div>
             )}
             <TextareaAutosize
@@ -1379,7 +1414,11 @@ const ChatInput = ({
                   // - Enter is pressed without Shift
                   // - The streaming content has finished
                   // - Prompt is not empty
-                  if (!streamingContent && prompt.trim() && !ingestingAny) {
+                  if (
+                    chatStatus !== 'streaming' &&
+                    prompt.trim() &&
+                    !ingestingAny
+                  ) {
                     handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
@@ -1407,7 +1446,7 @@ const ChatInput = ({
               <div
                 className={cn(
                   'px-1 flex items-center w-full gap-1',
-                  streamingContent && 'opacity-50 pointer-events-none'
+                  chatStatus === 'streaming' && 'opacity-50 pointer-events-none'
                 )}
               >
                 {/* Dropdown for attachments */}
@@ -1489,46 +1528,52 @@ const ChatInput = ({
                     </Tooltip>
                   </TooltipProvider>
                 )}
-                {selectedModel?.capabilities?.includes('tools') && hasJanBrowserMCPConfig && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div
-                          className={cn(
-                            "h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer",
-                            janBrowserMCPActive && "bg-accent/10",
-                            isJanBrowserMCPLoading && "opacity-70 cursor-not-allowed"
-                          )}
-                          onClick={isJanBrowserMCPLoading ? undefined : handleBrowseClick}
-                        >
-                          {isJanBrowserMCPLoading ? (
-                            <IconLoader2
-                              size={18}
-                              className="text-accent animate-spin"
-                            />
-                          ) : (
-                            <IconWorld
-                              size={18}
-                              className={cn(
-                                "text-main-view-fg/50",
-                                janBrowserMCPActive && "text-accent"
-                              )}
-                            />
-                          )}
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>
-                          {isJanBrowserMCPLoading
-                            ? 'Starting...'
-                            : janBrowserMCPActive
-                            ? 'Browse (Active)'
-                            : 'Browse'}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
+                {selectedModel?.capabilities?.includes('tools') &&
+                  hasJanBrowserMCPConfig && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div
+                            className={cn(
+                              'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer',
+                              janBrowserMCPActive && 'bg-accent/10',
+                              isJanBrowserMCPLoading &&
+                                'opacity-70 cursor-not-allowed'
+                            )}
+                            onClick={
+                              isJanBrowserMCPLoading
+                                ? undefined
+                                : handleBrowseClick
+                            }
+                          >
+                            {isJanBrowserMCPLoading ? (
+                              <IconLoader2
+                                size={18}
+                                className="text-accent animate-spin"
+                              />
+                            ) : (
+                              <IconWorld
+                                size={18}
+                                className={cn(
+                                  'text-main-view-fg/50',
+                                  janBrowserMCPActive && 'text-accent'
+                                )}
+                              />
+                            )}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>
+                            {isJanBrowserMCPLoading
+                              ? 'Starting...'
+                              : janBrowserMCPActive
+                                ? 'Browse (Active)'
+                                : 'Browse'}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
                 {selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
@@ -1580,8 +1625,8 @@ const ChatInput = ({
                                     <IconTool
                                       size={18}
                                       className={cn(
-                                        "text-main-view-fg/50",
-                                        toolsCount > 0 && "text-accent"
+                                        'text-main-view-fg/50',
+                                        toolsCount > 0 && 'text-accent'
                                       )}
                                     />
                                   </div>
@@ -1656,13 +1701,14 @@ const ChatInput = ({
                   </div>
                 )}
 
-              {streamingContent ? (
+              {chatStatus === 'streaming' ? (
                 <Button
                   variant="destructive"
                   size="icon"
-                  onClick={() =>
-                    stopStreaming(currentThreadId ?? streamingContent.thread_id)
-                  }
+                  className="rounded-full mr-0.5"
+                  onClick={() => {
+                    if (currentThreadId) stopStreaming(currentThreadId)
+                  }}
                 >
                   <IconPlayerStopFilled />
                 </Button>
@@ -1673,13 +1719,9 @@ const ChatInput = ({
                   disabled={!prompt.trim() || ingestingAny}
                   data-test-id="send-message-button"
                   onClick={() => handleSendMessage(prompt)}
-                  className='rounded-full mr-0.5 text-black'
+                  className="rounded-full mr-0.5 text-black"
                 >
-                  {streamingContent || ingestingAny ? (
-                    <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                  ) : (
-                    <ArrowRight className="text-primary-fg" />
-                  )}
+                  <ArrowRight className="text-primary-fg" />
                 </Button>
               )}
             </div>

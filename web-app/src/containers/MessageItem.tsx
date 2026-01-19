@@ -295,6 +295,16 @@ export const MessageItem = memo(
         {message.role === 'user' && (
           <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
             <CopyButton text={getFullTextContent()} />
+
+            {selectedModel && onRegenerate && (
+              <button
+                className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                onClick={handleRegenerate}
+                title="Regenerate from this message"
+              >
+                <IconRefresh size={16} />
+              </button>
+            )}
           </div>
         )}
 
@@ -306,10 +316,11 @@ export const MessageItem = memo(
             >
               <CopyButton text={getFullTextContent()} />
 
-              {isLastMessage && selectedModel && onRegenerate && (
+              {selectedModel && onRegenerate && !isStreaming && (
                 <button
                   className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
                   onClick={handleRegenerate}
+                  title="Regenerate from this message"
                 >
                   <IconRefresh size={16} />
                 </button>
