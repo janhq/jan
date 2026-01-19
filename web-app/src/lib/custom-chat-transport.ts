@@ -13,6 +13,7 @@ import {
 
 export type TokenUsageCallback = (usage: LanguageModelUsage, messageId: string) => void
 export type StreamingTokenSpeedCallback = (tokenCount: number, elapsedMs: number) => void
+export type OnFinishCallback = (params: { message: UIMessage; isAbort?: boolean }) => void
 // import { mcpService } from "@/services/mcp-service";
 
 /**
@@ -149,6 +150,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private tools: Record<string, Tool> = {}
   private onTokenUsage?: TokenUsageCallback
   private onStreamingTokenSpeed?: StreamingTokenSpeedCallback
+  private onFinishCallback?: OnFinishCallback
 
   constructor(model: LanguageModel, onTokenUsage?: TokenUsageCallback) {
     this.model = model
@@ -166,6 +168,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
   setOnStreamingTokenSpeed(callback: StreamingTokenSpeedCallback | undefined) {
     this.onStreamingTokenSpeed = callback
+  }
+
+  setOnFinish(callback: OnFinishCallback | undefined) {
+    this.onFinishCallback = callback
   }
 
   /**
@@ -340,6 +346,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           if (usage) {
             this.onTokenUsage(usage, responseMessage.id)
           }
+        }
+        // Call the onFinish callback from useChat hook
+        if (this.onFinishCallback && responseMessage) {
+          this.onFinishCallback({ message: responseMessage })
         }
       },
     })

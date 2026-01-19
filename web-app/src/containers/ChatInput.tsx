@@ -37,8 +37,17 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppState } from '@/hooks/useAppState'
 import { MovingBorder } from './MovingBorder'
-import { useChat } from '@/hooks/useChat'
 import type { ChatStatus } from 'ai'
+import { useRouter } from '@tanstack/react-router'
+import { route } from '@/constants/routes'
+import {
+  TEMPORARY_CHAT_ID,
+  TEMPORARY_CHAT_QUERY_ID,
+  SESSION_STORAGE_KEY,
+  SESSION_STORAGE_PREFIX,
+} from '@/constants/chat'
+import { defaultModel } from '@/lib/models'
+import { useAssistant } from '@/hooks/useAssistant'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
@@ -119,6 +128,10 @@ const ChatInput = ({
     (state) => state.tokenCounterCompact
   )
   useTools()
+  const router = useRouter()
+  const createThread = useThreads((state) => state.createThread)
+  const currentAssistant = useAssistant((state) => state.currentAssistant)
+  const assistants = useAssistant((state) => state.assistants)
 
   // Get current thread messages for token counting
   const threadMessages = useMessages(
@@ -132,7 +145,6 @@ const ChatInput = ({
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
-  const legacySendMessage = useChat()
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
@@ -288,7 +300,7 @@ const ChatInput = ({
 
     setMessage('')
 
-    // Use onSubmit prop if available (AI SDK), otherwise fall back to legacy hook
+    // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
       // Build file parts for AI SDK
       const files = attachments
@@ -300,15 +312,84 @@ const ChatInput = ({
         }))
 
       onSubmit(prompt, files.length > 0 ? files : undefined)
+      setPrompt('')
     } else {
-      // Fall back to legacy sendMessage for complex scenarios
-      legacySendMessage(
-        prompt,
-        true,
-        attachments.length > 0 ? attachments : undefined,
-        projectId,
-        updateAttachmentProcessing
+      // No onSubmit provided - create a new thread and navigate to it
+      // Store the initial message in sessionStorage for the thread page to read
+      const isTemporaryChat = window.location.search.includes(
+        `${TEMPORARY_CHAT_QUERY_ID}=true`
       )
+
+      // Build message payload with attachments
+      const files = attachments
+        .filter((att) => att.type === 'image' && att.dataUrl)
+        .map((att) => ({
+          type: 'file',
+          mediaType: att.mimeType ?? 'image/jpeg',
+          url: att.dataUrl!,
+        }))
+
+      const messagePayload = {
+        text: prompt,
+        files: files.length > 0 ? files : [],
+      }
+
+      if (isTemporaryChat) {
+        // For temporary chat, store message and navigate to temporary thread
+        sessionStorage.setItem(
+          SESSION_STORAGE_KEY.INITIAL_MESSAGE_TEMPORARY,
+          JSON.stringify(messagePayload)
+        )
+        sessionStorage.setItem('temp-chat-nav', 'true')
+        router.navigate({
+          to: route.threadsDetail,
+          params: { threadId: TEMPORARY_CHAT_ID },
+        })
+      } else {
+        // Create a new thread and navigate to it
+        const assistant = assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
+
+        // Get project metadata if projectId is provided
+        let projectMetadata: { id: string; name: string; updated_at: number } | undefined
+        if (projectId) {
+          try {
+            const project = await serviceHub.projects().getProjectById(projectId)
+            if (project) {
+              projectMetadata = {
+                id: project.id,
+                name: project.name,
+                updated_at: project.updated_at,
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to fetch project metadata:', e)
+          }
+        }
+
+        const newThread = await createThread(
+          {
+            id: selectedModel?.id ?? defaultModel(selectedProvider),
+            provider: selectedProvider,
+          },
+          prompt, // Use prompt as thread title
+          assistant,
+          projectMetadata
+        )
+
+        // Store the initial message for the new thread
+        sessionStorage.setItem(
+          `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${newThread.id}`,
+          JSON.stringify(messagePayload)
+        )
+
+        router.navigate({
+          to: route.threadsDetail,
+          params: { threadId: newThread.id },
+        })
+      }
+
+      setPrompt('')
+      clearAttachmentsForThread(attachmentsKey)
     }
   }
 

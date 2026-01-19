@@ -24,7 +24,12 @@ import { useSmallScreen, useMobileScreen } from '@/hooks/useMediaQuery'
 import { useTools } from '@/hooks/useTools'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
-import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
+import {
+  TEMPORARY_CHAT_ID,
+  TEMPORARY_CHAT_QUERY_ID,
+  SESSION_STORAGE_KEY,
+  SESSION_STORAGE_PREFIX,
+} from '@/constants/chat'
 import { IconInfoCircle } from '@tabler/icons-react'
 import {
   Tooltip,
@@ -44,6 +49,8 @@ import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage, UIDataTypes, UITools } from 'ai'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { convertThreadMessagesToUIMessages } from '@/lib/messages'
+import { newUserThreadContent, newAssistantThreadContent } from '@/lib/completion'
+import { createImageAttachment } from '@/types/attachment'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -107,6 +114,7 @@ function ThreadDetail() {
   const currentAssistant = useAssistant((state) => state.currentAssistant)
   const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
+  const addMessage = useMessages((state) => state.addMessage)
 
   const chatWidth = useInterfaceSettings((state) => state.chatWidth)
   const isSmallScreen = useSmallScreen()
@@ -183,66 +191,83 @@ function ThreadDetail() {
     getProviderByName,
   ])
 
-  // Handle onFinish - execute collected tool calls
-  const handleOnFinish = useCallback(() => {
-    // Create a new AbortController for tool calls
-    toolCallAbortController.current = new AbortController()
-    const signal = toolCallAbortController.current.signal
+  // Handle onFinish - persist assistant message and execute collected tool calls
+  const handleOnFinish = useCallback(
+    ({ message, isAbort }: { message: UIMessage; isAbort?: boolean }) => {
+      // Persist assistant message to backend (skip if aborted)
+      if (!isAbort && message.role === 'assistant') {
+        // Extract text content from the message parts
+        const textContent = message.parts
+          ?.filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+          .map((part) => part.text)
+          .join('') || ''
 
-    // Execute all collected tool calls
-    Promise.all(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      sessionData.tools.map(async (toolCall: any) => {
-        // Check if already aborted before starting
-        if (signal.aborted) {
-          return
+        if (textContent) {
+          const assistantMessage = newAssistantThreadContent(threadId, textContent)
+          addMessage(assistantMessage)
         }
+      }
 
-        try {
-          const result = await serviceHub.mcp().callTool({
-            toolName: toolCall.toolName,
-            arguments: toolCall.input,
-          })
+      // Create a new AbortController for tool calls
+      toolCallAbortController.current = new AbortController()
+      const signal = toolCallAbortController.current.signal
 
-          if (result.error) {
-            addToolOutput({
-              state: 'output-error',
-              tool: toolCall.toolName,
-              toolCallId: toolCall.toolCallId,
-              errorText: `Error: ${result.error}`,
-            })
-          } else {
-            addToolOutput({
-              tool: toolCall.toolName,
-              toolCallId: toolCall.toolCallId,
-              output: result.content,
-            })
+      // Execute all collected tool calls
+      Promise.all(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        sessionData.tools.map(async (toolCall: any) => {
+          // Check if already aborted before starting
+          if (signal.aborted) {
+            return
           }
-        } catch (error) {
+
+          try {
+            const result = await serviceHub.mcp().callTool({
+              toolName: toolCall.toolName,
+              arguments: toolCall.input,
+            })
+
+            if (result.error) {
+              addToolOutput({
+                state: 'output-error',
+                tool: toolCall.toolName,
+                toolCallId: toolCall.toolCallId,
+                errorText: `Error: ${result.error}`,
+              })
+            } else {
+              addToolOutput({
+                tool: toolCall.toolName,
+                toolCallId: toolCall.toolCallId,
+                output: result.content,
+              })
+            }
+          } catch (error) {
+            // Ignore abort errors
+            if ((error as Error).name !== 'AbortError') {
+              console.error('Tool call error:', error)
+              addToolOutput({
+                state: 'output-error',
+                tool: toolCall.toolName,
+                toolCallId: toolCall.toolCallId,
+                errorText: `Error: ${(error as Error).message}`,
+              })
+            }
+          }
+        })
+      )
+        .catch((error) => {
           // Ignore abort errors
-          if ((error as Error).name !== 'AbortError') {
+          if (error.name !== 'AbortError') {
             console.error('Tool call error:', error)
-            addToolOutput({
-              state: 'output-error',
-              tool: toolCall.toolName,
-              toolCallId: toolCall.toolCallId,
-              errorText: `Error: ${(error as Error).message}`,
-            })
           }
-        }
-      })
-    )
-      .catch((error) => {
-        // Ignore abort errors
-        if (error.name !== 'AbortError') {
-          console.error('Tool call error:', error)
-        }
-      })
-      .finally(() => {
-        sessionData.tools = []
-        toolCallAbortController.current = null
-      })
-  }, [sessionData, serviceHub])
+        })
+        .finally(() => {
+          sessionData.tools = []
+          toolCallAbortController.current = null
+        })
+    },
+    [sessionData, serviceHub, threadId, addMessage]
+  )
 
   // Handle onToolCall - collect tool calls during streaming
   const handleOnToolCall = useCallback(
@@ -380,6 +405,72 @@ function ThreadDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Check for and send initial message from sessionStorage
+  const initialMessageSentRef = useRef(false)
+  useEffect(() => {
+    // Prevent duplicate sends
+    if (initialMessageSentRef.current) return
+    if (!languageModel) return
+
+    const isTemporaryChat = threadId === TEMPORARY_CHAT_ID
+    const initialMessageKey = isTemporaryChat
+      ? SESSION_STORAGE_KEY.INITIAL_MESSAGE_TEMPORARY
+      : `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${threadId}`
+
+    const storedMessage = sessionStorage.getItem(initialMessageKey)
+
+    if (storedMessage) {
+      try {
+        const message = JSON.parse(storedMessage) as {
+          text: string
+          files?: Array<{ type: string; mediaType: string; url: string }>
+        }
+
+        // Clear the stored message immediately to prevent duplicate sends
+        sessionStorage.removeItem(initialMessageKey)
+        initialMessageSentRef.current = true
+
+        // Convert files to attachments for persistence
+        const attachments = message.files?.map((file) => {
+          const base64 = file.url.split(',')[1] || ''
+          return createImageAttachment({
+            name: `image-${Date.now()}`,
+            mimeType: file.mediaType,
+            dataUrl: file.url,
+            base64,
+            size: Math.ceil((base64.length * 3) / 4), // Estimate size from base64
+          })
+        })
+
+        // Create and persist the user message to the backend
+        const userMessage = newUserThreadContent(threadId, message.text, attachments)
+        addMessage(userMessage)
+
+        // Build message parts for AI SDK
+        const parts: Array<
+          | { type: 'text'; text: string }
+          | { type: 'file'; mediaType: string; url: string }
+        > = [{ type: 'text', text: message.text }]
+
+        if (message.files) {
+          message.files.forEach((file) => {
+            parts.push({
+              type: 'file',
+              mediaType: file.mediaType,
+              url: file.url,
+            })
+          })
+        }
+
+        // Send the message
+        sendMessage({ parts })
+      } catch (error) {
+        console.error('Failed to parse initial message:', error)
+        sessionStorage.removeItem(initialMessageKey)
+      }
+    }
+  }, [threadId, languageModel, sendMessage, addMessage])
+
   // Handle submit from ChatInput
   const handleSubmit = useCallback(
     (
@@ -388,6 +479,23 @@ function ThreadDetail() {
     ) => {
       if (!languageModel) return
 
+      // Convert files to attachments for persistence
+      const attachments = files?.map((file) => {
+        const base64 = file.url.split(',')[1] || ''
+        return createImageAttachment({
+          name: `image-${Date.now()}`,
+          mimeType: file.mediaType,
+          dataUrl: file.url,
+          base64,
+          size: Math.ceil((base64.length * 3) / 4),
+        })
+      })
+
+      // Persist user message to backend
+      const userMessage = newUserThreadContent(threadId, text, attachments)
+      addMessage(userMessage)
+
+      // Build parts for AI SDK
       const parts: Array<
         | { type: 'text'; text: string }
         | { type: 'file'; mediaType: string; url: string }
@@ -405,7 +513,7 @@ function ThreadDetail() {
 
       sendMessage({ parts })
     },
-    [languageModel, sendMessage]
+    [languageModel, sendMessage, threadId, addMessage]
   )
 
   // Handle regenerate from ThreadContent

@@ -20,7 +20,6 @@ import { CopyButton } from './CopyButton'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { IconRefresh } from '@tabler/icons-react'
-import { useTranslation } from '@/i18n/react-i18next-compat'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 
 const CHAT_STATUS = {
@@ -53,7 +52,6 @@ export type MessageItemProps = {
 export const MessageItem = memo(
   ({
     message,
-    isFirstMessage,
     isLastMessage,
     status,
     reasoningContainerRef,
@@ -61,7 +59,6 @@ export const MessageItem = memo(
     assistant,
     showAssistant,
   }: MessageItemProps) => {
-    const { t } = useTranslation()
     const selectedModel = useModelProvider((state) => state.selectedModel)
     const [previewImage, setPreviewImage] = useState<{
       url: string

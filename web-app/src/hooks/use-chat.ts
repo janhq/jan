@@ -86,6 +86,13 @@ export function useChat(model: LanguageModel | null, options?: CustomChatOptions
     }
   }, [onTokenUsage]);
 
+  // Update the onFinish callback when it changes
+  useEffect(() => {
+    if (transportRef.current) {
+      transportRef.current.setOnFinish(onFinish);
+    }
+  }, [onFinish]);
+
   // Set up streaming token speed callback to update global state
   const setTokenSpeed = useAppState((state) => state.setTokenSpeed);
   const resetTokenSpeed = useAppState((state) => state.resetTokenSpeed);

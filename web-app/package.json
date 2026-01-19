@@ -52,7 +52,7 @@
     "@types/react-syntax-highlighter": "15.5.13",
     "@types/uuid": "10.0.0",
     "@uiw/react-textarea-code-editor": "3.1.1",
-    "ai": "5.0.108",
+    "ai": "5.0.121",
     "class-variance-authority": "0.7.1",
     "culori": "4.0.1",
     "emoji-picker-react": "4.12.2",
