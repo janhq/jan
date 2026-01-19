@@ -19,12 +19,6 @@ import {
 import { CopyButton } from './CopyButton'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  TooltipProvider,
-} from '@/components/ui/tooltip'
 import { IconRefresh } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'

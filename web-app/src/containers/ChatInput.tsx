@@ -96,7 +96,6 @@ const ChatInput = ({
   projectId,
   onSubmit,
   onStop,
-  chatStatus,
 }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
