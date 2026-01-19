@@ -117,6 +117,7 @@ function ThreadDetail() {
   const addMessage = useMessages((state) => state.addMessage)
   const getMessages = useMessages((state) => state.getMessages)
   const deleteMessage = useMessages((state) => state.deleteMessage)
+  const currentThread = useRef<string | undefined>(undefined)
 
   const chatWidth = useInterfaceSettings((state) => state.chatWidth)
   const isSmallScreen = useSmallScreen()
@@ -349,7 +350,7 @@ function ThreadDetail() {
     const existingSession = useChatSessions.getState().sessions[threadId]
     if (
       existingSession?.chat.messages.length > 0 ||
-      existingSession?.isStreaming
+      existingSession?.isStreaming || currentThread.current === threadId
     ) {
       return
     }
@@ -394,6 +395,7 @@ function ThreadDetail() {
           // Convert and set messages for AI SDK chat
           const uiMessages = convertThreadMessagesToUIMessages(messagesToSet)
           setChatMessages(uiMessages)
+          currentThread.current = threadId
         }
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps

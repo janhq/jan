@@ -86,7 +86,6 @@ import {
 } from '@/types/attachment'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
-import { threadId } from 'worker_threads'
 
 type ChatInputProps = {
   className?: string
@@ -325,6 +324,7 @@ const ChatInput = ({
 
       onSubmit(prompt, files.length > 0 ? files : undefined)
       setPrompt('')
+      clearAttachmentsForThread(attachmentsKey)
     } else {
       // No onSubmit provided - create a new thread and navigate to it
       // Store the initial message in sessionStorage for the thread page to read
@@ -1305,7 +1305,7 @@ const ChatInput = ({
                               <TooltipTrigger asChild>
                                 <div
                                   className={cn(
-                                    'relative border border-main-view-fg/5 rounded-3xl size-14 overflow-hidden bg-main-view/40',
+                                    'relative border border-main-view-fg/5 rounded-xl size-14 overflow-hidden bg-main-view/40',
                                     'flex items-center justify-center'
                                   )}
                                 >
