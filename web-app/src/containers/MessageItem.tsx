@@ -333,6 +333,21 @@ export const MessageItem = memo(
             />
           </div>
         )}
+
+        {/* Image Preview Dialog */}
+        {previewImage && (
+          <div
+            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center cursor-pointer"
+            onClick={() => setPreviewImage(null)}
+          >
+            <img
+              src={previewImage.url}
+              alt={previewImage.filename || 'Preview'}
+              className="max-h-[90vh] max-w-[90vw] object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        )}
       </div>
     )
   },
