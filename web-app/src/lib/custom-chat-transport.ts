@@ -11,6 +11,70 @@ import {
   type LanguageModelUsage,
   jsonSchema,
 } from 'ai'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { invoke } from '@tauri-apps/api/core'
+import { SessionInfo } from '@janhq/core'
+import { useServiceStore } from '@/hooks/useServiceHub'
+
+/**
+ * Llama.cpp timings structure from the response
+ */
+interface LlamaCppTimings {
+  prompt_n?: number
+  predicted_n?: number
+  predicted_per_second?: number
+  prompt_per_second?: number
+}
+
+interface LlamaCppChunk {
+  timings?: LlamaCppTimings
+}
+
+/**
+ * Custom metadata extractor for llama.cpp that extracts timing information
+ * and converts it to token usage format
+ */
+const llamaCppMetadataExtractor = {
+  extractMetadata: async ({ parsedBody }: { parsedBody: unknown }) => {
+    const body = parsedBody as LlamaCppChunk
+    if (body?.timings) {
+      return {
+        llamacpp: {
+          promptTokens: body.timings.prompt_n ?? null,
+          completionTokens: body.timings.predicted_n ?? null,
+          tokensPerSecond: body.timings.predicted_per_second ?? null,
+          promptPerSecond: body.timings.prompt_per_second ?? null,
+        },
+      }
+    }
+    return undefined
+  },
+  createStreamExtractor: () => {
+    let lastTimings: LlamaCppTimings | undefined
+
+    return {
+      processChunk: (parsedChunk: unknown) => {
+        const chunk = parsedChunk as LlamaCppChunk
+        if (chunk?.timings) {
+          lastTimings = chunk.timings
+        }
+      },
+      buildMetadata: () => {
+        if (lastTimings) {
+          return {
+            llamacpp: {
+              promptTokens: lastTimings.prompt_n ?? null,
+              completionTokens: lastTimings.predicted_n ?? null,
+              tokensPerSecond: lastTimings.predicted_per_second ?? null,
+              promptPerSecond: lastTimings.prompt_per_second ?? null,
+            },
+          }
+        }
+        return undefined
+      },
+    }
+  },
+}
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -37,6 +101,9 @@ export type ServiceHub = {
     getTools(): Promise<
       Array<{ name: string; description: string; inputSchema: unknown }>
     >
+  }
+  models(): {
+    startModel(provider: ProviderObject, model: string): Promise<unknown>
   }
 }
 // import { mcpService } from "@/services/mcp-service";
@@ -171,21 +238,30 @@ function filterBase64FromMessages(messages: CoreMessage[]): CoreMessage[] {
 }
 
 export class CustomChatTransport implements ChatTransport<UIMessage> {
-  public model: LanguageModel
+  public model: LanguageModel | null
   private tools: Record<string, Tool> = {}
   private onTokenUsage?: TokenUsageCallback
   private onStreamingTokenSpeed?: StreamingTokenSpeedCallback
-  private serviceHub?: ServiceHub
   private hasDocuments = false
   private modelSupportsTools = false
   private ragFeatureAvailable = false
+  private systemMessage?: string
+  private modelId?: string
+  private provider?: ProviderObject
+  private serviceHub: ServiceHub | null
 
-  constructor(model: LanguageModel, serviceHub?: ServiceHub) {
-    this.model = model
-    this.serviceHub = serviceHub
-
+  constructor(
+    modelId: string | undefined,
+    provider: ProviderObject | undefined,
+    systemMessage?: string
+  ) {
+    this.model = null
+    this.modelId = modelId
+    this.provider = provider
+    this.systemMessage = systemMessage
+    this.serviceHub = useServiceStore.getState().serviceHub
     // Initialize tools asynchronously if serviceHub is provided
-    if (serviceHub) {
+    if (this.serviceHub) {
       // Fire and forget - load MCP tools in the background
       this.loadMCPTools().catch((error) => {
         console.warn('Failed to load MCP tools during initialization:', error)
@@ -218,8 +294,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
   }
 
-  updateModel(model: LanguageModel) {
-    this.model = model
+  updateModelMetadata(modelId: string, provider: ProviderObject) {
+    this.modelId = modelId
+    this.provider = provider
+    // Reset model so it gets recreated with new metadata on next sendMessages
+    this.model = null
+  }
+
+  updateSystemMessage(systemMessage: string | undefined) {
+    this.systemMessage = systemMessage
   }
 
   setOnStreamingTokenSpeed(callback: StreamingTokenSpeedCallback | undefined) {
@@ -263,7 +346,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const toolsRecord: Record<string, Tool> = {}
 
     // Load RAG tools if documents are available and model supports tools
-    if (this.hasDocuments && this.ragFeatureAvailable && this.modelSupportsTools) {
+    if (
+      this.hasDocuments &&
+      this.ragFeatureAvailable &&
+      this.modelSupportsTools
+    ) {
       try {
         const ragTools = await this.serviceHub.rag().getTools()
         if (Array.isArray(ragTools) && ragTools.length > 0) {
@@ -321,6 +408,78 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
+    // Initialize model if not already initialized
+    if (this.serviceHub && this.modelId && this.provider) {
+      try {
+        // Start the model (this will be a no-op for remote providers)
+        await this.serviceHub.models().startModel(this.provider, this.modelId)
+
+        // For llamacpp provider, get session info and recreate the model with actual URL and API key
+        if (this.provider.provider === 'llamacpp') {
+          // Get session info which includes port and api_key
+          const sessionInfo = await invoke<SessionInfo | null>(
+            'plugin:llamacpp|find_session_by_model',
+            { modelId: this.modelId }
+          )
+
+          if (!sessionInfo) {
+            throw new Error(
+              `No running session found for model: ${this.modelId}`
+            )
+          }
+
+          // Recreate the model with actual connection info
+          const openAICompatible = createOpenAICompatible({
+            name: 'llamacpp',
+            baseURL: `http://localhost:${sessionInfo.port}/v1`,
+            headers: {
+              Authorization: `Bearer ${sessionInfo.api_key}`,
+              Origin: 'tauri://localhost',
+            },
+            includeUsage: true,
+          })
+
+          // Update the model with the new instance that has correct URL and API key
+          this.model = openAICompatible.languageModel(this.modelId, {
+            metadataExtractor: llamaCppMetadataExtractor,
+          })
+        } else {
+          // For all other providers (OpenAI, Azure, Anthropic, etc.)
+          // Create OpenAI-compatible model with provider's base_url and api_key
+          const headers: Record<string, string> = {}
+
+          // Add custom headers if specified
+          if (this.provider.custom_header) {
+            this.provider.custom_header.forEach((customHeader) => {
+              headers[customHeader.header] = customHeader.value
+            })
+          }
+
+          // Add authorization header if api_key is present
+          if (this.provider.api_key) {
+            headers['Authorization'] = `Bearer ${this.provider.api_key}`
+          }
+
+          const openAICompatible = createOpenAICompatible({
+            name: this.provider.provider,
+            baseURL: this.provider.base_url || 'https://api.openai.com/v1',
+            headers,
+            includeUsage: true,
+          })
+
+          // Create the model instance
+          this.model = openAICompatible.languageModel(this.modelId)
+        }
+      } catch (error) {
+        console.error('Failed to start model:', error)
+        throw new Error(
+          `Failed to start model: ${error instanceof Error ? error.message : String(error)}`
+        )
+      }
+    } else {
+      throw new Error('ServiceHub not initialized or model/provider missing.')
+    }
+
     // Convert UI messages to model messages
     const modelMessages = convertToModelMessages(options.messages)
 
@@ -346,6 +505,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       experimental_download: passUrlsDirectly,
       tools: hasTools ? this.tools : undefined,
       toolChoice: 'auto',
+      system: this.systemMessage,
     })
 
     return result.toUIMessageStream({

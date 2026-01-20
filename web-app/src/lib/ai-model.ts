@@ -1,8 +1,5 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import type { LanguageModel } from 'ai'
-import { getServiceHub } from '@/hooks/useServiceHub'
-import { invoke } from '@tauri-apps/api/core'
-import { SessionInfo } from '@janhq/core'
 
 /**
  * Llama.cpp timings structure from the response
@@ -68,41 +65,27 @@ const llamaCppMetadataExtractor = {
  * Creates a LanguageModel instance for the AI SDK based on the provider configuration.
  * This allows using Jan's model providers with the AI SDK's useChat hook.
  *
- * For local llamacpp models, this will start the model and get the actual
- * port and api_key from the running session.
+ * Note: This function is synchronous and does not load the model or construct URLs.
+ * URL construction should happen elsewhere after the model is ready.
  */
-export async function createLanguageModel(
+export function createLanguageModel(
   modelId: string,
   provider?: ModelProvider | null,
   providerObject?: ProviderObject | null
-): Promise<LanguageModel> {
+): LanguageModel {
   if (!provider) {
     throw new Error('Provider configuration is required')
   }
 
-  const serviceHub = getServiceHub()
-
-  // For llamacpp provider, we need to start the model and get the session info
+  // For llamacpp provider, create a placeholder configuration
+  // The actual URL and authentication will be updated later when the model is loaded
   if (provider.provider === 'llamacpp' && providerObject) {
-    // Start the model if not already running
-    await serviceHub.models().startModel(providerObject, modelId)
-
-    // Get session info which includes port and api_key
-    const sessionInfo = await invoke<SessionInfo | null>(
-      'plugin:llamacpp|find_session_by_model',
-      { modelId }
-    )
-
-    if (!sessionInfo) {
-      throw new Error(`No running session found for model: ${modelId}`)
-    }
-
-    // Create provider with direct connection to llama.cpp server
+    // Create provider with placeholder connection info
     const openAICompatible = createOpenAICompatible({
       name: 'llamacpp',
-      baseURL: `http://localhost:${sessionInfo.port}/v1`,
+      baseURL: 'http://localhost:1337/v1', // Placeholder - will be updated when model loads
       headers: {
-        Authorization: `Bearer ${sessionInfo.api_key}`,
+        Authorization: 'Bearer placeholder', // Placeholder - will be updated when model loads
         Origin: 'tauri://localhost',
       },
       // Include usage data in streaming responses for token speed calculation

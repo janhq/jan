@@ -1,6 +1,5 @@
 import {
   CustomChatTransport,
-  type ServiceHub,
 } from '@/lib/custom-chat-transport'
 // import { useCapabilities } from "@/stores/capabilities-store";
 import {
@@ -11,7 +10,6 @@ import {
 } from '@ai-sdk/react'
 import {
   type ChatInit,
-  type LanguageModel,
   type LanguageModelUsage,
 } from 'ai'
 import { useEffect, useMemo, useRef, useCallback } from 'react'
@@ -22,7 +20,7 @@ type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
   Pick<UseChatOptions<UIMessage>, 'experimental_throttle' | 'resume'> & {
     sessionId?: string
     sessionTitle?: string
-    serviceHub?: ServiceHub
+    systemMessage?: string
     onTokenUsage?: (usage: LanguageModelUsage, messageId: string) => void;
   }
 
@@ -30,14 +28,13 @@ type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
 // It implements model switching and uses the custom chat transport,
 // making a nice reusable hook for chat functionality.
 export function useChat(
-  model: LanguageModel | null,
   options?: CustomChatOptions
 ) {
   const transportRef = useRef<CustomChatTransport | undefined>(undefined) // Using a ref here so we can update the model used in the transport without having to reload the page or recreate the transport
   const {
     sessionId,
     sessionTitle,
-    serviceHub,
+    systemMessage,
     onTokenUsage,
     ...chatInitOptions
   } = options ?? {}
@@ -45,14 +42,18 @@ export function useChat(
   const setSessionTitle = useChatSessions((state) => state.setSessionTitle)
   const updateStatus = useChatSessions((state) => state.updateStatus)
 
+  // Get serviceHub and model metadata from app state
+  const languageModelId = useAppState((state) => state.languageModelId)
+  const languageModelProvider = useAppState((state) => state.languageModelProvider)
+
   const existingSessionTransport = sessionId
     ? useChatSessions.getState().sessions[sessionId]?.transport
     : undefined
 
-  // Only create transport when model is available
-  if (model && transportRef.current?.model !== model) {
+  // Create transport immediately with modelId and provider
+  if (!transportRef.current) {
     transportRef.current =
-      existingSessionTransport ?? new CustomChatTransport(model, serviceHub)
+      existingSessionTransport ?? new CustomChatTransport(languageModelId, languageModelProvider, systemMessage)
   } else if (
     existingSessionTransport &&
     transportRef.current !== existingSessionTransport
@@ -60,11 +61,18 @@ export function useChat(
     transportRef.current = existingSessionTransport
   }
 
+  // Update model metadata when it changes
   useEffect(() => {
-    if (model && transportRef.current?.model !== model) {
-      transportRef.current!.updateModel(model)
+    if (languageModelId && languageModelProvider && transportRef.current) {
+      transportRef.current.updateModelMetadata(languageModelId, languageModelProvider)
     }
-  }, [model])
+  }, [languageModelId, languageModelProvider])
+
+  useEffect(() => {
+    if (transportRef.current) {
+      transportRef.current.updateSystemMessage(systemMessage)
+    }
+  }, [systemMessage])
 
   // Set up streaming token speed callback to update global state
   const setTokenSpeed = useAppState((state) => state.setTokenSpeed)
@@ -108,7 +116,7 @@ export function useChat(
       sessionTitle
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, ensureSession, model])
+  }, [sessionId, ensureSession, languageModelId, languageModelProvider])
 
   useEffect(() => {
     if (sessionId && sessionTitle) {

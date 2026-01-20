@@ -436,31 +436,35 @@ export const parseReasoning = (text: string) => {
 /**
  * Convert Jan's ThreadMessage format to AI SDK UIMessage format.
  * This is used to load existing messages into the AI SDK chat.
+ * Tool calls are now part of the content array and will be converted to tool parts.
  */
 export function convertThreadMessageToUIMessage(
   threadMessage: ThreadMessage
 ): UIMessage {
-  const reasoningParts: any[] = []
-  const toolParts: any[] = []
-  const textParts: any[] = []
-  const otherParts: any[] = []
+  const parts: any[] = []
 
-  // Process content array
+  // Process content array - preserve original order (including tool calls)
   for (const content of threadMessage.content || []) {
-    if (content.type === ContentType.Text && content.text?.value) {
-      // Check for reasoning content wrapped in <think> tags
+    if (content.type === 'reasoning' && content.text?.value) {
+      // Reasoning content - direct conversion
+      parts.push({
+        type: 'reasoning',
+        text: content.text.value,
+      })
+    } else if (content.type === 'text' && content.text?.value) {
+      // Text content - check if it contains old-format reasoning in <think> tags
       const { reasoningSegment, textSegment } = parseReasoning(
         content.text.value
       )
 
+      // BACKWARD COMPATIBILITY: Handle old format with <think> tags
       if (reasoningSegment) {
         // Extract reasoning text from <think> tags
-        // Handle both completed (<think>...</think>) and in-progress (<think>...) formats
         const completedMatch = reasoningSegment.match(
           /<think>([\s\S]*)<\/think>/
         )
         if (completedMatch) {
-          reasoningParts.push({
+          parts.push({
             type: 'reasoning',
             text: completedMatch[1],
           })
@@ -468,7 +472,7 @@ export function convertThreadMessageToUIMessage(
           // In-progress reasoning - extract content after <think> tag
           const inProgressMatch = reasoningSegment.match(/<think>([\s\S]*)/)
           if (inProgressMatch) {
-            reasoningParts.push({
+            parts.push({
               type: 'reasoning',
               text: inProgressMatch[1],
             })
@@ -480,22 +484,39 @@ export function convertThreadMessageToUIMessage(
         // Trim leading whitespace/newlines from the text segment
         const trimmedText = textSegment.trim()
         if (trimmedText) {
-          textParts.push({
+          parts.push({
             type: 'text',
             text: trimmedText,
           })
         }
+      } else if (!reasoningSegment) {
+        // No reasoning segment, just add the text as-is
+        parts.push({
+          type: 'text',
+          text: content.text.value,
+        })
       }
-    } else if (content.type === ContentType.Image && content.image_url?.url) {
-      otherParts.push({
+    } else if (content.type === 'image_url' && content.image_url?.url) {
+      parts.push({
         type: 'file',
         mediaType: 'image/jpeg',
         url: content.image_url.url,
       })
+    } else if (content.type === 'tool_call') {
+      // Handle tool call content items - direct conversion from flat structure
+      parts.push({
+        type: `tool-${content.tool_name}`,
+        toolInvocationId: content.tool_call_id,
+        toolName: content.tool_name,
+        input: content.input,
+        state: content.output ? 'result' : 'call',
+        output: content.output,
+      })
     }
   }
 
-  // Handle tool calls from metadata
+  // BACKWARD COMPATIBILITY: Handle tool calls from metadata (old format)
+  // New messages will have tool calls as separate messages with tool_call_id
   const toolCalls = (threadMessage.metadata as any)?.tool_calls
   if (Array.isArray(toolCalls)) {
     for (const tc of toolCalls) {
@@ -513,7 +534,7 @@ export function convertThreadMessageToUIMessage(
       }
 
       const toolName = tc.tool?.function?.name || tc.name
-      toolParts.push({
+      parts.push({
         type: `tool-${toolName}`,
         toolInvocationId: tc.tool?.id || tc.id,
         toolName: toolName,
@@ -526,9 +547,6 @@ export function convertThreadMessageToUIMessage(
       })
     }
   }
-
-  // Combine parts in the correct order: reasoning -> tool calls -> text -> other
-  const parts = [...reasoningParts, ...toolParts, ...textParts, ...otherParts]
 
   // Ensure at least one text part exists
   if (parts.length === 0) {
@@ -548,104 +566,93 @@ export function convertThreadMessageToUIMessage(
 
 /**
  * Convert an array of Jan's ThreadMessages to AI SDK UIMessage format.
+ * Tool calls are now part of the content array, so no special merging is needed.
  */
 export function convertThreadMessagesToUIMessages(
   threadMessages: ThreadMessage[]
 ): UIMessage[] {
-  return threadMessages.map(convertThreadMessageToUIMessage)
+  return threadMessages
+    .map(convertThreadMessageToUIMessage)
+    .filter((msg): msg is UIMessage => msg !== null)
 }
 
 /**
- * Extract combined content from UIMessage parts, including reasoning and text.
- * Reasoning content is wrapped in <think> tags.
+ * Extract content from UIMessage parts as separate ThreadContent items.
+ * This preserves the structure of multiple text/reasoning/tool call parts instead of combining them.
  *
  * @param message - The UIMessage to extract content from
- * @returns Combined content string with reasoning in <think> tags followed by text
+ * @returns Array of ThreadContent items (including tool calls)
  */
-export function extractCombinedContentFromUIMessage(message: UIMessage): string {
-  let combinedContent = ''
-
+export function extractContentPartsFromUIMessage(message: UIMessage): ThreadContent[] {
+  const content: ThreadContent[] = []
   const parts = (message.parts ?? []) as any[]
 
-  // First, extract reasoning parts and wrap in <think> tags
-  const reasoningParts = parts.filter((part) => part.type === 'reasoning')
-  if (reasoningParts.length > 0) {
-    const reasoningText = reasoningParts
-      .map((part) => part.reasoning ?? part.text ?? '')
-      .join('')
-    if (reasoningText) {
-      combinedContent = `<think>${reasoningText}</think>`
-    }
-  }
-
-  // Then, extract text parts
-  const textParts = parts.filter((part) => part.type === 'text')
-  if (textParts.length > 0) {
-    const textContent = textParts.map((part) => part.text).join('')
-    combinedContent += textContent
-  }
-
-  return combinedContent
-}
-
-/**
- * Extract and normalize tool calls from UIMessage parts for persistence.
- * Converts AI SDK tool invocation format to Jan's thread message metadata format.
- *
- * @param message - The UIMessage to extract tool calls from
- * @returns Array of tool calls in persistence format, or undefined if none exist
- */
-export function extractToolCallsFromUIMessage(message: UIMessage) {
-  const parts = (message.parts ?? []) as any[]
-
-  // Filter tool invocation parts that have output or result
-  const toolInvocations = parts.filter(
-    (part) => part.type.startsWith('tool-') && (part.output || part.result)
-  )
-
-  if (toolInvocations.length === 0) {
-    return undefined
-  }
-
-  return toolInvocations.map((part) => {
-    // Parse result content properly
-    let contentArray
-    const resultData = part.output || part.result
-
-    if (resultData) {
-      if (typeof resultData === 'string') {
-        // If result is a string, wrap it in the content array format
-        contentArray = [{ type: 'text', text: resultData }]
-      } else if (Array.isArray(resultData)) {
-        // If result is already an array, use it directly
-        contentArray = resultData
-      } else if (resultData.content) {
-        // If result has a content property, use that
-        contentArray = resultData.content
-      } else {
-        // Fallback: stringify the result
-        contentArray = [{ type: 'text', text: JSON.stringify(resultData) }]
+  for (const part of parts) {
+    if (part.type === 'reasoning') {
+      // Add reasoning content as separate item
+      const reasoningText = part.reasoning ?? part.text ?? ''
+      if (reasoningText) {
+        const reasoningContent = {
+          type: 'reasoning' as ContentType.Reasoning,
+          text: {
+            value: reasoningText,
+            annotations: [],
+          },
+        }
+        content.push(reasoningContent)
       }
+    } else if (part.type === 'text') {
+      // Add text content as separate item
+      const textContent = part.text ?? ''
+      if (textContent) {
+        content.push({
+          type: 'text' as ContentType.Text,
+          text: {
+            value: textContent,
+            annotations: [],
+          },
+        })
+      }
+    } else if (part.type === 'file' && part.mediaType) {
+      // Handle file parts (images)
+      const mediaType = part.mediaType as string
+      if (mediaType?.startsWith('image/')) {
+        content.push({
+          type: 'image_url' as ContentType.Image,
+          image_url: {
+            url: part.url,
+            detail: 'auto',
+          },
+        })
+      }
+    } else if (part.type.startsWith('tool-')) {
+      // Handle tool call parts - flatten structure to match parts format
+      const toolName = (part.type as string).replace('tool-', '')
+      const toolCallId = part.toolInvocationId || part.toolCallId
+      const input = part.input || part.args
+      const output = part.output || part.result
+
+      const toolCallContent = {
+        type: 'tool_call' as ContentType.ToolCall,
+        tool_call_id: toolCallId,
+        tool_name: toolName,
+        input: input,
+        output: output,
+      }
+      content.push(toolCallContent)
     }
+  }
 
-    const argsData = part.input || part.args
-
-    return {
-      tool: {
-        id: part.toolInvocationId || part.toolCallId,
-        type: 'function' as const,
-        function: {
-          name: (part.type as string).replace('tool-', ''),
-          arguments:
-            typeof argsData === 'string' ? argsData : JSON.stringify(argsData),
-        },
+  // If no content was extracted, add empty text
+  if (content.length === 0) {
+    content.push({
+      type: 'text' as ContentType.Text,
+      text: {
+        value: '',
+        annotations: [],
       },
-      response: contentArray
-        ? {
-            content: contentArray,
-          }
-        : undefined,
-      state: 'ready',
-    }
-  })
+    })
+  }
+
+  return content
 }

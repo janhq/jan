@@ -33,6 +33,8 @@ type AppState = {
   promptProgress?: PromptProgress
   activeModels: string[]
   languageModel: LanguageModel | null
+  languageModelId?: string
+  languageModelProvider?: ProviderObject
   cancelToolCall?: () => void
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
@@ -57,7 +59,11 @@ type AppState = {
   setErrorMessage: (error: AppErrorMessage | undefined) => void
   updatePromptProgress: (progress: PromptProgress | undefined) => void
   setActiveModels: (models: string[]) => void
-  setLanguageModel: (model: LanguageModel | null) => void
+  setLanguageModel: (
+    model: LanguageModel | null,
+    modelId?: string,
+    provider?: ProviderObject
+  ) => void
 }
 
 export const useAppState = create<AppState>()((set) => ({
@@ -74,6 +80,8 @@ export const useAppState = create<AppState>()((set) => ({
   cancelToolCall: undefined,
   activeModels: [],
   languageModel: null,
+  languageModelId: undefined,
+  languageModelProvider: undefined,
   updateStreamingContent: (content: ThreadMessage | undefined) => {
     const assistants = useAssistant.getState().assistants
     const currentAssistant = useAssistant.getState().currentAssistant
@@ -199,9 +207,11 @@ export const useAppState = create<AppState>()((set) => ({
       activeModels: models,
     }))
   },
-  setLanguageModel: (model) => {
+  setLanguageModel: (model, modelId, provider) => {
     set(() => ({
       languageModel: model,
+      languageModelId: modelId,
+      languageModelProvider: provider,
     }))
   },
 }))

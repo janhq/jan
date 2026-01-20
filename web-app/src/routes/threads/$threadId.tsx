@@ -20,8 +20,8 @@ import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
-import { createLanguageModel } from '@/lib/ai-model'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { renderInstructions } from '@/lib/instructionTemplate'
 import {
   Conversation,
   ConversationContent,
@@ -33,13 +33,10 @@ import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import {
   convertThreadMessagesToUIMessages,
-  extractCombinedContentFromUIMessage,
-  extractToolCallsFromUIMessage,
+  extractContentPartsFromUIMessage,
 } from '@/lib/messages'
-import {
-  newUserThreadContent,
-  newAssistantThreadContent,
-} from '@/lib/completion'
+import { newUserThreadContent } from '@/lib/completion'
+import { ThreadMessage, MessageStatus, ChatCompletionRole } from '@janhq/core'
 import { createImageAttachment } from '@/types/attachment'
 import {
   useChatAttachments,
@@ -67,6 +64,7 @@ function ThreadDetail() {
   const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
   const addMessage = useMessages((state) => state.addMessage)
+  const updateMessage = useMessages((state) => state.updateMessage)
   const deleteMessage = useMessages((state) => state.deleteMessage)
   const currentThread = useRef<string | undefined>(undefined)
 
@@ -112,12 +110,13 @@ function ThreadDetail() {
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
   const providers = useModelProvider((state) => state.providers)
 
-  // Get language model from appState
-  const languageModel = useAppState((state) => state.languageModel)
+  // Store model metadata in appState for the chat transport
   const setLanguageModel = useAppState((state) => state.setLanguageModel)
+  const languageModelId = useAppState((state) => state.languageModelId)
+  const languageModelProvider = useAppState((state) => state.languageModelProvider)
 
   useEffect(() => {
-    // Wait for providers to be loaded before attempting to create language model
+    // Wait for providers to be loaded before attempting to set model metadata
     if (providers.length === 0) {
       return
     }
@@ -125,34 +124,25 @@ function ThreadDetail() {
     const provider = getProviderByName(selectedProvider)
     const modelId = selectedModel?.id ?? thread?.model?.id ?? ''
     if (!modelId || !provider) {
-      setLanguageModel(null)
+      setLanguageModel(null, undefined, undefined)
       return
     }
 
-    let cancelled = false
-    createLanguageModel(modelId, provider, provider)
-      .then((model) => {
-        if (!cancelled) {
-          setLanguageModel(model)
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to create language model:', error)
-        if (!cancelled) {
-          setLanguageModel(null)
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
+    // Store model metadata (no need to create LanguageModel here)
+    setLanguageModel(null, modelId, provider)
   }, [
     selectedModel?.id,
     thread?.model?.id,
     selectedProvider,
     getProviderByName,
     providers.length,
+    setLanguageModel,
   ])
+
+  // Get system message from current assistant's instructions
+  const systemMessage = currentAssistant?.instructions
+    ? renderInstructions(currentAssistant.instructions)
+    : undefined
 
   // Use the AI SDK chat hook
   const {
@@ -164,27 +154,44 @@ function ThreadDetail() {
     stop,
     addToolOutput,
     updateRagToolsAvailability,
-  } = useChat(languageModel, {
+  } = useChat({
     sessionId: threadId,
     sessionTitle: thread?.title,
+    systemMessage,
     experimental_throttle: 50,
     onFinish: ({ message, isAbort }) => {
       // Persist assistant message to backend (skip if aborted)
       if (!isAbort && message.role === 'assistant') {
-        const combinedContent = extractCombinedContentFromUIMessage(message)
+        // Extract content parts (including tool calls) as separate items in the content array
+        // This preserves the natural ordering: text -> tool call -> text -> tool call, etc.
+        const contentParts = extractContentPartsFromUIMessage(message)
 
-        if (combinedContent) {
-          // Extract tool calls from UIMessage parts to preserve them
-          const toolCalls = extractToolCallsFromUIMessage(message)
-          const metadata = toolCalls ? { tool_calls: toolCalls } : {}
+        if (contentParts.length > 0) {
+          // Create assistant message with content parts (including tool calls)
+          const assistantMessage: ThreadMessage = {
+            type: 'text',
+            role: ChatCompletionRole.Assistant,
+            content: contentParts,
+            id: message.id,
+            object: 'thread.message',
+            thread_id: threadId,
+            status: MessageStatus.Ready,
+            created_at: Date.now(),
+            completed_at: Date.now(),
+            metadata: {},
+          }
 
-          const assistantMessage = newAssistantThreadContent(
-            threadId,
-            combinedContent,
-            metadata,
-            message.id
+          // Check if message with this ID already exists (onFinish can be called multiple times)
+          const existingMessages = useMessages.getState().getMessages(threadId)
+          const existingMessage = existingMessages.find(
+            (m) => m.id === message.id
           )
-          addMessage(assistantMessage)
+
+          if (existingMessage) {
+            updateMessage(assistantMessage)
+          } else {
+            addMessage(assistantMessage)
+          }
         }
       }
 
@@ -271,7 +278,6 @@ function ThreadDetail() {
       sessionData.tools.push(toolCall)
     },
     sendAutomaticallyWhen: followUpMessage,
-    serviceHub,
   })
 
   // Update RAG tools availability when documents or model changes
@@ -382,7 +388,7 @@ function ThreadDetail() {
   useEffect(() => {
     // Prevent duplicate sends
     if (initialMessageSentRef.current) return
-    if (!languageModel) return
+    if (!languageModelId || !languageModelProvider) return
 
     const initialMessageKey = `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${threadId}`
 
@@ -486,7 +492,8 @@ function ThreadDetail() {
     }
   }, [
     threadId,
-    languageModel,
+    languageModelId,
+    languageModelProvider,
     sendMessage,
     addMessage,
     getAttachments,
@@ -502,7 +509,7 @@ function ThreadDetail() {
       text: string,
       files?: Array<{ type: string; mediaType: string; url: string }>
     ) => {
-      if (!languageModel) return
+      if (!languageModelId || !languageModelProvider) return
 
       // Get all attachments from the store (includes both images and documents)
       const allAttachments = getAttachments(attachmentsKey)
@@ -584,7 +591,8 @@ function ThreadDetail() {
       clearAttachmentsForThread(attachmentsKey)
     },
     [
-      languageModel,
+      languageModelId,
+      languageModelProvider,
       sendMessage,
       threadId,
       addMessage,
@@ -600,7 +608,7 @@ function ThreadDetail() {
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
   // - For assistant messages: finds the closest preceding user message, deletes from there
   const handleRegenerate = (messageId?: string) => {
-    if (!languageModel) {
+    if (!languageModelId || !languageModelProvider) {
       console.warn('No language model available')
       return
     }
@@ -675,10 +683,10 @@ function ThreadDetail() {
               {chatMessages.map((message, index) => {
                 const isLastMessage = index === chatMessages.length - 1
                 const isFirstMessage = index === 0
-                const showAssistant =
-                  message.role === 'assistant' &&
-                  (isFirstMessage ||
-                    chatMessages[index - 1]?.role !== 'assistant')
+                // const showAssistant =
+                //   message.role === 'assistant' &&
+                //   (isFirstMessage ||
+                //     chatMessages[index - 1]?.role !== 'assistant')
 
                 return (
                   <MessageItem
@@ -689,15 +697,15 @@ function ThreadDetail() {
                     status={status}
                     reasoningContainerRef={reasoningContainerRef}
                     onRegenerate={handleRegenerate}
-                    showAssistant={showAssistant}
-                    assistant={
-                      currentAssistant
-                        ? {
-                            avatar: currentAssistant.avatar,
-                            name: currentAssistant.name,
-                          }
-                        : undefined
-                    }
+                    // showAssistant={showAssistant}
+                    // assistant={
+                    //   currentAssistant
+                    //     ? {
+                    //         avatar: currentAssistant.avatar,
+                    //         name: currentAssistant.name,
+                    //       }
+                    //     : undefined
+                    // }
                   />
                 )
               })}
