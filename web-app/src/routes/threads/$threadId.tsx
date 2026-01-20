@@ -27,7 +27,6 @@ import {
   ConversationContent,
   ConversationScrollButton,
 } from '@/ai-elements/conversation'
-import { Loader } from 'lucide-react'
 import { generateId, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
@@ -44,6 +43,7 @@ import {
 } from '@/hooks/useChatAttachments'
 import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachments } from '@/hooks/useAttachments'
+import { PromptProgress } from '@/components/PromptProgress'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -710,7 +710,7 @@ function ThreadDetail() {
                 )
               })}
               {status === CHAT_STATUS.SUBMITTED && (
-                <Loader className="animate-spin w-4 h-4" />
+                 <PromptProgress />
               )}
             </ConversationContent>
             <ConversationScrollButton />

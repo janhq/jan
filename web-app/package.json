@@ -18,6 +18,8 @@
     "build:serve:web": "yarn build:web && yarn serve:web"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.0",
+    "@ai-sdk/google": "^2.0.0",
     "@ai-sdk/openai-compatible": "^1.0.28",
     "@ai-sdk/react": "^2.0.109",
     "@dnd-kit/core": "6.3.1",

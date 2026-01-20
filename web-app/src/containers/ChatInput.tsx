@@ -454,7 +454,7 @@ const ChatInput = ({
 
   // Focus when streaming content finishes
   useEffect(() => {
-    if (chatStatus !== 'streaming' && textareaRef.current) {
+    if (chatStatus !== 'submitted' && textareaRef.current) {
       // Small delay to ensure UI has updated
       setTimeout(() => {
         textareaRef.current?.focus()
@@ -1254,16 +1254,18 @@ const ChatInput = ({
     // If hasMmproj is false or no images found, allow normal text pasting to continue
   }
 
+  const isStreaming = chatStatus === 'submitted' || chatStatus === 'streaming'
+
   return (
     <div className="relative">
       <div className="relative">
         <div
           className={cn(
             'relative overflow-hidden p-[2px] rounded-3xl',
-            chatStatus === 'streaming' && 'opacity-70'
+            isStreaming && 'opacity-70'
           )}
         >
-          {chatStatus === 'streaming' && (
+          {isStreaming && (
             <div className="absolute inset-0">
               <MovingBorder rx="10%" ry="10%">
                 <div
@@ -1415,7 +1417,7 @@ const ChatInput = ({
                   // - The streaming content has finished
                   // - Prompt is not empty
                   if (
-                    chatStatus !== 'streaming' &&
+                    !isStreaming &&
                     prompt.trim() &&
                     !ingestingAny
                   ) {
@@ -1446,7 +1448,7 @@ const ChatInput = ({
               <div
                 className={cn(
                   'px-1 flex items-center w-full gap-1',
-                  chatStatus === 'streaming' && 'opacity-50 pointer-events-none'
+                  isStreaming && 'opacity-50 pointer-events-none'
                 )}
               >
                 {/* Dropdown for attachments */}
@@ -1701,7 +1703,7 @@ const ChatInput = ({
                   </div>
                 )}
 
-              {chatStatus === 'streaming' ? (
+              {isStreaming ? (
                 <Button
                   variant="destructive"
                   size="icon"
