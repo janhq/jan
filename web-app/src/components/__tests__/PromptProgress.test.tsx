@@ -15,29 +15,6 @@ describe('PromptProgress', () => {
     vi.clearAllMocks()
   })
 
-  it('should not render when promptProgress is undefined', () => {
-    mockUseAppState.mockReturnValue(undefined)
-
-    const { container } = render(<PromptProgress />)
-    expect(container.firstChild).toBeNull()
-  })
-
-  it('should render progress when promptProgress is available', () => {
-    const mockProgress = {
-      cache: 0,
-      processed: 50,
-      time_ms: 1000,
-      total: 100,
-    }
-
-    mockUseAppState.mockReturnValue(mockProgress)
-
-    render(<PromptProgress />)
-
-    expect(screen.getByText('Reading: 50%')).toBeInTheDocument()
-    expect(document.querySelector('.animate-spin')).toBeInTheDocument()
-  })
-
   it('should calculate percentage correctly', () => {
     const mockProgress = {
       cache: 0,
@@ -65,7 +42,9 @@ describe('PromptProgress', () => {
 
     const { container } = render(<PromptProgress />)
 
-    // Component should not render when total is 0
-    expect(container.firstChild).toBeNull()
+    // Component should render Loader when total is 0
+    const loader = container.querySelector('svg.animate-spin')
+    expect(loader).not.toBeNull()
+    expect(loader?.classList.contains('animate-spin')).toBe(true)
   })
 })

@@ -13,8 +13,6 @@ all:
 # Config yarn version
 
 config-yarn:
-	corepack enable
-	corepack prepare yarn@4.5.3 --activate
 	yarn --version
 	yarn config set -H enableImmutableInstalls false
 
@@ -28,7 +26,7 @@ endif
 	yarn install
 	yarn build:tauri:plugin:api
 	yarn build:core
-	yarn build:extensions && yarn build:extensions-web
+	yarn build:extensions
 
 # Install required Rust targets for macOS universal builds
 install-rust-targets:

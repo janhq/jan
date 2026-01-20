@@ -22,7 +22,6 @@ RUN yarn --version
 WORKDIR /app
 
 # Copy source code
-COPY ./extensions-web ./extensions-web
 COPY ./web-app ./web-app
 COPY ./Makefile ./Makefile
 COPY ./.* /

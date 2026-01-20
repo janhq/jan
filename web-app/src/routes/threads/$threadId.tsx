@@ -338,15 +338,6 @@ function ThreadDetail() {
             .getState()
             .getMessages(threadId)
 
-          if (
-            PlatformFeatures[PlatformFeature.FIRST_MESSAGE_PERSISTED_THREAD] &&
-            fetchedMessages.length === 0 &&
-            currentLocalMessages &&
-            currentLocalMessages.length > 0
-          ) {
-            return
-          }
-
           let messagesToSet = fetchedMessages
 
           // Merge with local-only messages if needed

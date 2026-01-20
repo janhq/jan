@@ -26,9 +26,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
-import { AuthLoginButton } from '@/containers/auth/AuthLoginButton'
-import { UserProfileMenu } from '@/containers/auth/UserProfileMenu'
-import { useAuth } from '@/hooks/useAuth'
 
 import { useThreads } from '@/hooks/useThreads'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -81,7 +78,6 @@ const LeftPanel = () => {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
-  const { isAuthenticated } = useAuth()
   const projectsEnabled = PlatformFeatures[PlatformFeature.PROJECTS]
 
   const isSmallScreen = useSmallScreen()
@@ -353,20 +349,6 @@ const LeftPanel = () => {
             {mainMenus.map((menu) => {
               if (!menu.isEnabled) {
                 return null
-              }
-
-              // Handle authentication menu specially
-              if (menu.title === 'common:authentication') {
-                return (
-                  <div key={menu.title}>
-                    <div className="mx-1 my-2 border-t border-left-panel-fg/5" />
-                    {isAuthenticated ? (
-                      <UserProfileMenu />
-                    ) : (
-                      <AuthLoginButton />
-                    )}
-                  </div>
-                )
               }
 
               // Regular menu items must have route and icon
@@ -663,15 +645,6 @@ const LeftPanel = () => {
                 </Link>
               )
             })}
-
-            {PlatformFeatures[PlatformFeature.AUTHENTICATION] && (
-              <div className="space-y-1 shrink-0 py-1">
-                <div>
-                  <div className="mx-1 my-2 border-t border-left-panel-fg/5" />
-                  {isAuthenticated ? <UserProfileMenu /> : <AuthLoginButton />}
-                </div>
-              </div>
-            )}
 
             <DownloadManagement />
           </div>
