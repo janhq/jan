@@ -71,7 +71,7 @@ export default class RagExtension extends RAGExtension {
     )
   }
 
-  async checkANNAvailability(): Promise<boolean> {
+  async checkANNAvailability() {
     try {
       const vec = window.core?.extensionManager.get(
         ExtensionTypeEnum.VectorDB
@@ -308,7 +308,7 @@ export default class RagExtension extends RAGExtension {
         content: [{ type: 'text', text: JSON.stringify(payload) }],
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = e instanceof Error ? e.message : JSON.stringify(e)
       return {
         error: msg,
         content: [{ type: 'text', text: `Get chunks failed: ${msg}` }],

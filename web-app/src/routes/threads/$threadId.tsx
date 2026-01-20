@@ -1,13 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  createFileRoute,
-  useParams,
-  redirect,
-  useNavigate,
-} from '@tanstack/react-router'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { createFileRoute, useParams } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
-import { toast } from 'sonner'
-import { useTranslation } from '@/i18n/react-i18next-compat'
 
 import HeaderPage from '@/containers/HeaderPage'
 import { useThreads } from '@/hooks/useThreads'
@@ -22,20 +15,10 @@ import { useAssistant } from '@/hooks/useAssistant'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { useSmallScreen, useMobileScreen } from '@/hooks/useMediaQuery'
 import { useTools } from '@/hooks/useTools'
+import { useAppState } from '@/hooks/useAppState'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
-import {
-  TEMPORARY_CHAT_ID,
-  TEMPORARY_CHAT_QUERY_ID,
-  SESSION_STORAGE_KEY,
-  SESSION_STORAGE_PREFIX,
-} from '@/constants/chat'
-import { IconInfoCircle } from '@tabler/icons-react'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
 import { createLanguageModel } from '@/lib/ai-model'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -45,77 +28,45 @@ import {
   ConversationScrollButton,
 } from '@/ai-elements/conversation'
 import { Loader } from 'lucide-react'
-import { lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
-import type { UIMessage, UIDataTypes, UITools } from 'ai'
+import { generateId, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
+import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
-import { convertThreadMessagesToUIMessages } from '@/lib/messages'
-import { newUserThreadContent, newAssistantThreadContent } from '@/lib/completion'
+import {
+  convertThreadMessagesToUIMessages,
+  extractCombinedContentFromUIMessage,
+  extractToolCallsFromUIMessage,
+} from '@/lib/messages'
+import {
+  newUserThreadContent,
+  newAssistantThreadContent,
+} from '@/lib/completion'
 import { createImageAttachment } from '@/types/attachment'
+import {
+  useChatAttachments,
+  NEW_THREAD_ATTACHMENT_KEY,
+} from '@/hooks/useChatAttachments'
+import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
+import { useAttachments } from '@/hooks/useAttachments'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
   SUBMITTED: 'submitted',
 } as const
 
-const CONVERSATION_NOT_FOUND_EVENT = 'conversation-not-found'
-
-const TemporaryChatIndicator = ({ t }: { t: (key: string) => string }) => {
-  return (
-    <div className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-main-view-fg/5 text-main-view-fg/70 text-sm">
-      <span>{t('common:temporaryChat')}</span>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="relative z-20">
-            <IconInfoCircle
-              size={14}
-              className="text-main-view-fg/50 hover:text-main-view-fg/70 transition-colors cursor-pointer"
-            />
-          </div>
-        </TooltipTrigger>
-        <TooltipContent className="z-[9999]">
-          <p>{t('common:temporaryChatTooltip')}</p>
-        </TooltipContent>
-      </Tooltip>
-    </div>
-  )
-}
-
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
-  beforeLoad: ({ params }) => {
-    // Check if this is the temporary chat being accessed directly
-    if (params.threadId === TEMPORARY_CHAT_ID) {
-      // Check if we have the navigation flag in sessionStorage
-      const hasNavigationFlag = sessionStorage.getItem('temp-chat-nav')
-
-      if (!hasNavigationFlag) {
-        // Direct access - redirect to home with query parameter
-        throw redirect({
-          to: '/',
-          search: { [TEMPORARY_CHAT_QUERY_ID]: true },
-          replace: true,
-        })
-      }
-
-      // Clear the flag immediately after checking
-      sessionStorage.removeItem('temp-chat-nav')
-    }
-  },
   component: ThreadDetail,
 })
 
 function ThreadDetail() {
   const serviceHub = useServiceHub()
   const { threadId } = useParams({ from: Route.id })
-  const navigate = useNavigate()
-  const { t } = useTranslation()
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
   const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
   const currentAssistant = useAssistant((state) => state.currentAssistant)
   const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
   const addMessage = useMessages((state) => state.addMessage)
-  const getMessages = useMessages((state) => state.getMessages)
   const deleteMessage = useMessages((state) => state.deleteMessage)
   const currentThread = useRef<string | undefined>(undefined)
 
@@ -123,6 +74,13 @@ function ThreadDetail() {
   const isSmallScreen = useSmallScreen()
   const isMobile = useMobileScreen()
   useTools()
+
+  // Get attachments for this thread
+  const attachmentsKey = threadId ?? NEW_THREAD_ATTACHMENT_KEY
+  const getAttachments = useChatAttachments((state) => state.getAttachments)
+  const clearAttachmentsForThread = useChatAttachments(
+    (state) => state.clearAttachments
+  )
 
   // Session data for tool call tracking
   const getSessionData = useChatSessions((state) => state.getSessionData)
@@ -133,11 +91,7 @@ function ThreadDetail() {
 
   // Check if we should follow up with tool calls (respects abort signal)
   const followUpMessage = useCallback(
-    ({
-      messages,
-    }: {
-      messages: UIMessage<unknown, UIDataTypes, UITools>[]
-    }) => {
+    ({ messages }: { messages: UIMessage[] }) => {
       if (
         !toolCallAbortController.current ||
         toolCallAbortController.current?.signal.aborted
@@ -156,13 +110,18 @@ function ThreadDetail() {
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
+  const providers = useModelProvider((state) => state.providers)
 
-  // Create language model for AI SDK (async)
-  const [languageModel, setLanguageModel] = useState<Awaited<
-    ReturnType<typeof createLanguageModel>
-  > | null>(null)
+  // Get language model from appState
+  const languageModel = useAppState((state) => state.languageModel)
+  const setLanguageModel = useAppState((state) => state.setLanguageModel)
 
   useEffect(() => {
+    // Wait for providers to be loaded before attempting to create language model
+    if (providers.length === 0) {
+      return
+    }
+
     const provider = getProviderByName(selectedProvider)
     const modelId = selectedModel?.id ?? thread?.model?.id ?? ''
     if (!modelId || !provider) {
@@ -192,21 +151,39 @@ function ThreadDetail() {
     thread?.model?.id,
     selectedProvider,
     getProviderByName,
+    providers.length,
   ])
 
-  // Handle onFinish - persist assistant message and execute collected tool calls
-  const handleOnFinish = useCallback(
-    ({ message, isAbort }: { message: UIMessage; isAbort?: boolean }) => {
+  // Use the AI SDK chat hook
+  const {
+    messages: chatMessages,
+    status,
+    sendMessage,
+    regenerate,
+    setMessages: setChatMessages,
+    stop,
+    addToolOutput,
+    updateRagToolsAvailability,
+  } = useChat(languageModel, {
+    sessionId: threadId,
+    sessionTitle: thread?.title,
+    experimental_throttle: 50,
+    onFinish: ({ message, isAbort }) => {
       // Persist assistant message to backend (skip if aborted)
       if (!isAbort && message.role === 'assistant') {
-        // Extract text content from the message parts
-        const textContent = message.parts
-          ?.filter((part): part is { type: 'text'; text: string } => part.type === 'text')
-          .map((part) => part.text)
-          .join('') || ''
+        const combinedContent = extractCombinedContentFromUIMessage(message)
 
-        if (textContent) {
-          const assistantMessage = newAssistantThreadContent(threadId, textContent)
+        if (combinedContent) {
+          // Extract tool calls from UIMessage parts to preserve them
+          const toolCalls = extractToolCallsFromUIMessage(message)
+          const metadata = toolCalls ? { tool_calls: toolCalls } : {}
+
+          const assistantMessage = newAssistantThreadContent(
+            threadId,
+            combinedContent,
+            metadata,
+            message.id
+          )
           addMessage(assistantMessage)
         }
       }
@@ -214,6 +191,10 @@ function ThreadDetail() {
       // Create a new AbortController for tool calls
       toolCallAbortController.current = new AbortController()
       const signal = toolCallAbortController.current.signal
+
+      // Get cached tool names from store (initialized in useTools hook)
+      const ragToolNames = useAppState.getState().ragToolNames
+      const mcpToolNames = useAppState.getState().mcpToolNames
 
       // Execute all collected tool calls
       Promise.all(
@@ -225,10 +206,27 @@ function ThreadDetail() {
           }
 
           try {
-            const result = await serviceHub.mcp().callTool({
-              toolName: toolCall.toolName,
-              arguments: toolCall.input,
-            })
+            const toolName = toolCall.toolName
+            let result
+
+            // Route to the appropriate service based on tool name
+            if (ragToolNames.has(toolName)) {
+              result = await serviceHub.rag().callTool({
+                toolName,
+                arguments: toolCall.input,
+                threadId,
+              })
+            } else if (mcpToolNames.has(toolName)) {
+              result = await serviceHub.mcp().callTool({
+                toolName,
+                arguments: toolCall.input,
+              })
+            } else {
+              // Tool not found in either service
+              result = {
+                error: `Tool '${toolName}' not found in any service`,
+              }
+            }
 
             if (result.error) {
               addToolOutput({
@@ -269,71 +267,40 @@ function ThreadDetail() {
           toolCallAbortController.current = null
         })
     },
-    [sessionData, serviceHub, threadId, addMessage]
-  )
-
-  // Handle onToolCall - collect tool calls during streaming
-  const handleOnToolCall = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ({ toolCall }: { toolCall: any }) => {
+    onToolCall: ({ toolCall }) => {
       sessionData.tools.push(toolCall)
-      return
     },
-    [sessionData]
-  )
-
-  // Use the AI SDK chat hook
-  const {
-    messages: chatMessages,
-    status,
-    sendMessage,
-    regenerate,
-    setMessages: setChatMessages,
-    stop,
-    addToolOutput,
-  } = useChat(languageModel, {
-    sessionId: threadId,
-    sessionTitle: thread?.title,
-    experimental_throttle: 50,
-    onFinish: handleOnFinish,
-    onToolCall: handleOnToolCall,
     sendAutomaticallyWhen: followUpMessage,
+    serviceHub,
   })
 
-  // Use chatMessages directly from useChat
-  const messages = chatMessages ?? []
+  // Update RAG tools availability when documents or model changes
+  useEffect(() => {
+    // const hasDocuments = thread?.metadata?.hasDocuments ?? false
+    const ragFeatureAvailable = Boolean(
+      useAttachments.getState().enabled &&
+        PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
+    )
+    const modelSupportsTools =
+      selectedModel?.capabilities?.includes('tools') ?? false
+
+    updateRagToolsAvailability(true, modelSupportsTools, ragFeatureAvailable)
+  }, [
+    thread?.metadata?.hasDocuments,
+    selectedModel?.capabilities,
+    updateRagToolsAvailability,
+  ])
 
   // Ref for reasoning container auto-scroll
   const reasoningContainerRef = useRef<HTMLDivElement>(null)
 
-  // Listen for conversation not found events
+  // Auto-scroll reasoning container to bottom during streaming
   useEffect(() => {
-    const handleConversationNotFound = (event: CustomEvent) => {
-      const { threadId: notFoundThreadId } = event.detail
-      if (notFoundThreadId === threadId) {
-        // Skip error handling for temporary chat - it's expected to not exist on server
-        if (threadId === TEMPORARY_CHAT_ID) {
-          return
-        }
-
-        toast.error(t('common:conversationNotAvailable'), {
-          description: t('common:conversationNotAvailableDescription'),
-        })
-        navigate({ to: '/', replace: true })
-      }
+    if (status === 'streaming' && reasoningContainerRef.current) {
+      reasoningContainerRef.current.scrollTop =
+        reasoningContainerRef.current.scrollHeight
     }
-
-    window.addEventListener(
-      CONVERSATION_NOT_FOUND_EVENT,
-      handleConversationNotFound as EventListener
-    )
-    return () => {
-      window.removeEventListener(
-        CONVERSATION_NOT_FOUND_EVENT,
-        handleConversationNotFound as EventListener
-      )
-    }
-  }, [threadId, navigate, t])
+  }, [status, chatMessages])
 
   useEffect(() => {
     setCurrentThreadId(threadId)
@@ -350,7 +317,8 @@ function ThreadDetail() {
     const existingSession = useChatSessions.getState().sessions[threadId]
     if (
       existingSession?.chat.messages.length > 0 ||
-      existingSession?.isStreaming || currentThread.current === threadId
+      existingSession?.isStreaming ||
+      currentThread.current === threadId
     ) {
       return
     }
@@ -416,75 +384,131 @@ function ThreadDetail() {
     if (initialMessageSentRef.current) return
     if (!languageModel) return
 
-    const isTemporaryChat = threadId === TEMPORARY_CHAT_ID
-    const initialMessageKey = isTemporaryChat
-      ? SESSION_STORAGE_KEY.INITIAL_MESSAGE_TEMPORARY
-      : `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${threadId}`
+    const initialMessageKey = `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${threadId}`
 
     const storedMessage = sessionStorage.getItem(initialMessageKey)
 
     if (storedMessage) {
-      try {
-        const message = JSON.parse(storedMessage) as {
-          text: string
-          files?: Array<{ type: string; mediaType: string; url: string }>
-        }
+      // Mark as sent immediately to prevent duplicate sends
+      sessionStorage.removeItem(initialMessageKey)
+      initialMessageSentRef.current = true
 
-        // Clear the stored message immediately to prevent duplicate sends
-        sessionStorage.removeItem(initialMessageKey)
-        initialMessageSentRef.current = true
+      // Process message asynchronously
+      ;(async () => {
+        try {
+          const message = JSON.parse(storedMessage) as {
+            text: string
+            files?: Array<{ type: string; mediaType: string; url: string }>
+          }
 
-        // Convert files to attachments for persistence
-        const attachments = message.files?.map((file) => {
-          const base64 = file.url.split(',')[1] || ''
-          return createImageAttachment({
-            name: `image-${Date.now()}`,
-            mimeType: file.mediaType,
-            dataUrl: file.url,
-            base64,
-            size: Math.ceil((base64.length * 3) / 4), // Estimate size from base64
-          })
-        })
+          // Get all attachments from the store (includes both images and documents)
+          const allAttachments = getAttachments(attachmentsKey)
 
-        // Create and persist the user message to the backend
-        const userMessage = newUserThreadContent(threadId, message.text, attachments)
-        addMessage(userMessage)
-
-        // Build message parts for AI SDK
-        const parts: Array<
-          | { type: 'text'; text: string }
-          | { type: 'file'; mediaType: string; url: string }
-        > = [{ type: 'text', text: message.text }]
-
-        if (message.files) {
-          message.files.forEach((file) => {
-            parts.push({
-              type: 'file',
-              mediaType: file.mediaType,
-              url: file.url,
+          // Convert image files to attachments for persistence
+          const imageAttachments = message.files?.map((file) => {
+            const base64 = file.url.split(',')[1] || ''
+            return createImageAttachment({
+              name: `image-${Date.now()}`,
+              mimeType: file.mediaType,
+              dataUrl: file.url,
+              base64,
+              size: Math.ceil((base64.length * 3) / 4), // Estimate size from base64
             })
           })
-        }
 
-        // Send the message
-        sendMessage({ parts })
-      } catch (error) {
-        console.error('Failed to parse initial message:', error)
-        sessionStorage.removeItem(initialMessageKey)
-      }
+          // Combine image attachments with document attachments from the store
+          const combinedAttachments = [
+            ...(imageAttachments || []),
+            ...allAttachments.filter((a) => a.type === 'document'),
+          ]
+
+          // Process attachments (ingest images, parse/index documents)
+          let processedAttachments = combinedAttachments
+          if (combinedAttachments.length > 0) {
+            try {
+              const parsePreference = useAttachments.getState().parseMode
+              const result = await processAttachmentsForSend({
+                attachments: combinedAttachments,
+                threadId,
+                serviceHub,
+                selectedProvider,
+                parsePreference,
+              })
+              processedAttachments = result.processedAttachments
+
+              // Update thread metadata if documents were embedded
+              if (result.hasEmbeddedDocuments) {
+                useThreads.getState().updateThread(threadId, {
+                  metadata: { hasDocuments: true },
+                })
+              }
+            } catch (error) {
+              console.error('Failed to process attachments:', error)
+              // Don't send message if attachment processing failed
+              return
+            }
+          }
+          const messageId = generateId()
+          // Create and persist the user message to the backend with all processed attachments
+          const userMessage = newUserThreadContent(
+            threadId,
+            message.text,
+            processedAttachments,
+            messageId
+          )
+          addMessage(userMessage)
+
+          // Build message parts for AI SDK (only images are sent as file parts)
+          const parts: Array<
+            | { type: 'text'; text: string }
+            | { type: 'file'; mediaType: string; url: string }
+          > = [{ type: 'text', text: message.text }]
+
+          if (message.files) {
+            message.files.forEach((file) => {
+              parts.push({
+                type: 'file',
+                mediaType: file.mediaType,
+                url: file.url,
+              })
+            })
+          }
+
+          // Send the message
+          sendMessage({ parts, id: messageId })
+
+          // Clear attachments after sending
+          clearAttachmentsForThread(attachmentsKey)
+        } catch (error) {
+          console.error('Failed to parse initial message:', error)
+        }
+      })()
     }
-  }, [threadId, languageModel, sendMessage, addMessage])
+  }, [
+    threadId,
+    languageModel,
+    sendMessage,
+    addMessage,
+    getAttachments,
+    attachmentsKey,
+    clearAttachmentsForThread,
+    serviceHub,
+    selectedProvider,
+  ])
 
   // Handle submit from ChatInput
   const handleSubmit = useCallback(
-    (
+    async (
       text: string,
       files?: Array<{ type: string; mediaType: string; url: string }>
     ) => {
       if (!languageModel) return
 
-      // Convert files to attachments for persistence
-      const attachments = files?.map((file) => {
+      // Get all attachments from the store (includes both images and documents)
+      const allAttachments = getAttachments(attachmentsKey)
+
+      // Convert image files from ChatInput to attachments for persistence
+      const imageAttachments = files?.map((file) => {
         const base64 = file.url.split(',')[1] || ''
         return createImageAttachment({
           name: `image-${Date.now()}`,
@@ -495,11 +519,50 @@ function ThreadDetail() {
         })
       })
 
-      // Persist user message to backend
-      const userMessage = newUserThreadContent(threadId, text, attachments)
+      // Combine image attachments with document attachments from the store
+      const combinedAttachments = [
+        ...(imageAttachments || []),
+        ...allAttachments.filter((a) => a.type === 'document'),
+      ]
+
+      // Process attachments (ingest images, parse/index documents)
+      let processedAttachments = combinedAttachments
+      if (combinedAttachments.length > 0) {
+        try {
+          const parsePreference = useAttachments.getState().parseMode
+          const result = await processAttachmentsForSend({
+            attachments: combinedAttachments,
+            threadId,
+            serviceHub,
+            selectedProvider,
+            parsePreference,
+          })
+          processedAttachments = result.processedAttachments
+
+          // Update thread metadata if documents were embedded
+          if (result.hasEmbeddedDocuments) {
+            useThreads.getState().updateThread(threadId, {
+              metadata: { hasDocuments: true },
+            })
+          }
+        } catch (error) {
+          console.error('Failed to process attachments:', error)
+          // Don't send message if attachment processing failed
+          return
+        }
+      }
+
+      const messageId = generateId()
+      // Persist user message to backend with all processed attachments
+      const userMessage = newUserThreadContent(
+        threadId,
+        text,
+        processedAttachments,
+        messageId
+      )
       addMessage(userMessage)
 
-      // Build parts for AI SDK
+      // Build parts for AI SDK (only images are sent as file parts)
       const parts: Array<
         | { type: 'text'; text: string }
         | { type: 'file'; mediaType: string; url: string }
@@ -515,59 +578,73 @@ function ThreadDetail() {
         })
       }
 
-      sendMessage({ parts })
+      sendMessage({ parts, id: messageId })
+
+      // Clear attachments after sending
+      clearAttachmentsForThread(attachmentsKey)
     },
-    [languageModel, sendMessage, threadId, addMessage]
+    [
+      languageModel,
+      sendMessage,
+      threadId,
+      addMessage,
+      getAttachments,
+      attachmentsKey,
+      clearAttachmentsForThread,
+      serviceHub,
+      selectedProvider,
+    ]
   )
 
   // Handle regenerate from any message (user or assistant)
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
-  // - For assistant messages: deletes all after, regenerates that assistant response
-  const handleRegenerate = useCallback(
-    (messageId?: string) => {
-      if (!languageModel) {
-        console.warn('No language model available')
-        return
-      }
+  // - For assistant messages: finds the closest preceding user message, deletes from there
+  const handleRegenerate = (messageId?: string) => {
+    if (!languageModel) {
+      console.warn('No language model available')
+      return
+    }
 
-      // If regenerating from a specific message, delete all messages after it
-      if (messageId) {
-        // Find the message in the current chat messages
-        const messageIndex = messages.findIndex((m) => m.id === messageId)
-        console.log('messageIndex:', messageIndex)
+    const currentLocalMessages = useMessages.getState().getMessages(threadId)
 
-        if (messageIndex !== -1) {
-          // Get all messages after the selected message
-          const messagesToDelete = messages.slice(messageIndex + 1)
-          console.log('messagesToDelete:', messagesToDelete.length)
+    // If regenerating from a specific message, delete all messages after it
+    if (messageId) {
+      // Find the message in the current chat messages
+      const messageIndex = currentLocalMessages.findIndex(
+        (m) => m.id === messageId
+      )
 
-          // Delete from backend storage
-          if (messagesToDelete.length > 0) {
-            messagesToDelete.forEach((msg) => {
-              // Delete from persisted storage
-              const currentMessages = getMessages(threadId)
-              const persistedMsg = currentMessages.find((m) => m.id === msg.id)
-              if (persistedMsg) {
-                console.log('Deleting message:', msg.id)
-                deleteMessage(threadId, msg.id)
-              }
-            })
+      if (messageIndex !== -1) {
+        const selectedMessage = currentLocalMessages[messageIndex]
+
+        // If it's an assistant message, find the closest preceding user message
+        let deleteFromIndex = messageIndex
+        if (selectedMessage.role === 'assistant') {
+          // Look backwards to find the closest user message
+          for (let i = messageIndex - 1; i >= 0; i--) {
+            if (currentLocalMessages[i].role === 'user') {
+              deleteFromIndex = i
+              break
+            }
           }
         }
+
+        // Get all messages after the delete point
+        const messagesToDelete = currentLocalMessages.slice(deleteFromIndex + 1)
+
+        // Delete from backend storage
+        if (messagesToDelete.length > 0) {
+          messagesToDelete.forEach((msg) => {
+            deleteMessage(threadId, msg.id)
+          })
+        }
       }
+    }
 
-      // Call the AI SDK regenerate function - it will handle truncating the UI messages
-      // and generating a new response from the selected message
-      regenerate(messageId ? { messageId } : undefined)
-    },
-    [languageModel, regenerate, threadId, getMessages, deleteMessage, messages]
-  )
-
-  // Handle stop
-  const handleStop = useCallback(() => {
-    stop()
-  }, [stop])
-
+    // Call the AI SDK regenerate function - it will handle truncating the UI messages
+    // and generating a new response from the selected message
+    regenerate(messageId ? { messageId } : undefined)
+  }
   const threadModel = useMemo(() => thread?.model, [thread])
 
   if (!threadModel) return null
@@ -581,10 +658,6 @@ function ThreadDetail() {
               <DropdownAssistant />
             )}
           </div>
-          <div className="flex-1 flex justify-center">
-            {threadId === TEMPORARY_CHAT_ID && <TemporaryChatIndicator t={t} />}
-          </div>
-          <div></div>
         </div>
       </HeaderPage>
       <div className="flex flex-1 flex-col h-full overflow-hidden">
@@ -599,12 +672,13 @@ function ThreadDetail() {
                   : 'w-full md:w-4/5'
               )}
             >
-              {messages.map((message, index) => {
-                const isLastMessage = index === messages.length - 1
+              {chatMessages.map((message, index) => {
+                const isLastMessage = index === chatMessages.length - 1
                 const isFirstMessage = index === 0
                 const showAssistant =
                   message.role === 'assistant' &&
-                  (isFirstMessage || messages[index - 1]?.role !== 'assistant')
+                  (isFirstMessage ||
+                    chatMessages[index - 1]?.role !== 'assistant')
 
                 return (
                   <MessageItem
@@ -647,7 +721,7 @@ function ThreadDetail() {
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}
-            onStop={handleStop}
+            onStop={stop}
             chatStatus={status}
           />
         </div>

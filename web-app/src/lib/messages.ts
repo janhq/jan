@@ -440,8 +440,10 @@ export const parseReasoning = (text: string) => {
 export function convertThreadMessageToUIMessage(
   threadMessage: ThreadMessage
 ): UIMessage {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const parts: any[] = []
+  const reasoningParts: any[] = []
+  const toolParts: any[] = []
+  const textParts: any[] = []
+  const otherParts: any[] = []
 
   // Process content array
   for (const content of threadMessage.content || []) {
@@ -458,7 +460,7 @@ export function convertThreadMessageToUIMessage(
           /<think>([\s\S]*)<\/think>/
         )
         if (completedMatch) {
-          parts.push({
+          reasoningParts.push({
             type: 'reasoning',
             text: completedMatch[1],
           })
@@ -466,7 +468,7 @@ export function convertThreadMessageToUIMessage(
           // In-progress reasoning - extract content after <think> tag
           const inProgressMatch = reasoningSegment.match(/<think>([\s\S]*)/)
           if (inProgressMatch) {
-            parts.push({
+            reasoningParts.push({
               type: 'reasoning',
               text: inProgressMatch[1],
             })
@@ -478,14 +480,14 @@ export function convertThreadMessageToUIMessage(
         // Trim leading whitespace/newlines from the text segment
         const trimmedText = textSegment.trim()
         if (trimmedText) {
-          parts.push({
+          textParts.push({
             type: 'text',
             text: trimmedText,
           })
         }
       }
     } else if (content.type === ContentType.Image && content.image_url?.url) {
-      parts.push({
+      otherParts.push({
         type: 'file',
         mediaType: 'image/jpeg',
         url: content.image_url.url,
@@ -494,23 +496,39 @@ export function convertThreadMessageToUIMessage(
   }
 
   // Handle tool calls from metadata
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const toolCalls = (threadMessage.metadata as any)?.tool_calls
   if (Array.isArray(toolCalls)) {
     for (const tc of toolCalls) {
-      parts.push({
-        type: 'tool-invocation',
+      // Parse the result from the response.content array
+      let result
+      if (tc.response?.content) {
+        // Extract content from the response
+        if (tc.response.content.length === 1 && tc.response.content[0].type === 'text') {
+          // Single text content - return as string
+          result = tc.response.content[0].text
+        } else {
+          // Multiple content parts or non-text - return full content array
+          result = tc.response.content
+        }
+      }
+
+      const toolName = tc.tool?.function?.name || tc.name
+      toolParts.push({
+        type: `tool-${toolName}`,
         toolInvocationId: tc.tool?.id || tc.id,
-        toolName: tc.tool?.function?.name || tc.name,
-        args:
+        toolName: toolName,
+        input:
           typeof tc.tool?.function?.arguments === 'string'
             ? JSON.parse(tc.tool.function.arguments)
             : tc.tool?.function?.arguments || tc.args,
-        state: tc.state === 'completed' ? 'result' : 'call',
-        result: tc.response,
+        state: tc.state === 'ready' ? 'result' : tc.state === 'pending' ? 'call' : tc.state,
+        output: result,
       })
     }
   }
+
+  // Combine parts in the correct order: reasoning -> tool calls -> text -> other
+  const parts = [...reasoningParts, ...toolParts, ...textParts, ...otherParts]
 
   // Ensure at least one text part exists
   if (parts.length === 0) {
@@ -535,4 +553,99 @@ export function convertThreadMessagesToUIMessages(
   threadMessages: ThreadMessage[]
 ): UIMessage[] {
   return threadMessages.map(convertThreadMessageToUIMessage)
+}
+
+/**
+ * Extract combined content from UIMessage parts, including reasoning and text.
+ * Reasoning content is wrapped in <think> tags.
+ *
+ * @param message - The UIMessage to extract content from
+ * @returns Combined content string with reasoning in <think> tags followed by text
+ */
+export function extractCombinedContentFromUIMessage(message: UIMessage): string {
+  let combinedContent = ''
+
+  const parts = (message.parts ?? []) as any[]
+
+  // First, extract reasoning parts and wrap in <think> tags
+  const reasoningParts = parts.filter((part) => part.type === 'reasoning')
+  if (reasoningParts.length > 0) {
+    const reasoningText = reasoningParts
+      .map((part) => part.reasoning ?? part.text ?? '')
+      .join('')
+    if (reasoningText) {
+      combinedContent = `<think>${reasoningText}</think>`
+    }
+  }
+
+  // Then, extract text parts
+  const textParts = parts.filter((part) => part.type === 'text')
+  if (textParts.length > 0) {
+    const textContent = textParts.map((part) => part.text).join('')
+    combinedContent += textContent
+  }
+
+  return combinedContent
+}
+
+/**
+ * Extract and normalize tool calls from UIMessage parts for persistence.
+ * Converts AI SDK tool invocation format to Jan's thread message metadata format.
+ *
+ * @param message - The UIMessage to extract tool calls from
+ * @returns Array of tool calls in persistence format, or undefined if none exist
+ */
+export function extractToolCallsFromUIMessage(message: UIMessage) {
+  const parts = (message.parts ?? []) as any[]
+
+  // Filter tool invocation parts that have output or result
+  const toolInvocations = parts.filter(
+    (part) => part.type.startsWith('tool-') && (part.output || part.result)
+  )
+
+  if (toolInvocations.length === 0) {
+    return undefined
+  }
+
+  return toolInvocations.map((part) => {
+    // Parse result content properly
+    let contentArray
+    const resultData = part.output || part.result
+
+    if (resultData) {
+      if (typeof resultData === 'string') {
+        // If result is a string, wrap it in the content array format
+        contentArray = [{ type: 'text', text: resultData }]
+      } else if (Array.isArray(resultData)) {
+        // If result is already an array, use it directly
+        contentArray = resultData
+      } else if (resultData.content) {
+        // If result has a content property, use that
+        contentArray = resultData.content
+      } else {
+        // Fallback: stringify the result
+        contentArray = [{ type: 'text', text: JSON.stringify(resultData) }]
+      }
+    }
+
+    const argsData = part.input || part.args
+
+    return {
+      tool: {
+        id: part.toolInvocationId || part.toolCallId,
+        type: 'function' as const,
+        function: {
+          name: (part.type as string).replace('tool-', ''),
+          arguments:
+            typeof argsData === 'string' ? argsData : JSON.stringify(argsData),
+        },
+      },
+      response: contentArray
+        ? {
+            content: contentArray,
+          }
+        : undefined,
+      state: 'ready',
+    }
+  })
 }

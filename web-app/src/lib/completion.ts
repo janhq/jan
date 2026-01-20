@@ -59,7 +59,8 @@ export type ChatCompletionResponse =
 export const newUserThreadContent = (
   threadId: string,
   content: string,
-  attachments?: Attachment[]
+  attachments?: Attachment[],
+  id?: string
 ): ThreadMessage => {
   // Separate images and documents
   const images = attachments?.filter((a) => a.type === 'image') || []
@@ -110,7 +111,7 @@ export const newUserThreadContent = (
     type: 'text',
     role: ChatCompletionRole.User,
     content: contentParts,
-    id: ulid(),
+    id: id ?? ulid(),
     object: 'thread.message',
     thread_id: threadId,
     status: MessageStatus.Ready,
@@ -138,7 +139,8 @@ export const newUserThreadContent = (
 export const newAssistantThreadContent = (
   threadId: string,
   content: string,
-  metadata: Record<string, unknown> = {}
+  metadata: Record<string, unknown> = {},
+  id?: string,
 ): ThreadMessage => ({
   type: 'text',
   role: ChatCompletionRole.Assistant,
@@ -151,7 +153,7 @@ export const newAssistantThreadContent = (
       },
     },
   ],
-  id: ulid(),
+  id: id ?? ulid(),
   object: 'thread.message',
   thread_id: threadId,
   status: MessageStatus.Ready,

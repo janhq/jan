@@ -81,6 +81,7 @@ export const Tool = memo(
 
 export type ToolHeaderProps = {
   title?: string
+  state: ToolUIPart['state']
   type: ToolUIPart['type']
   className?: string
 }
@@ -100,8 +101,8 @@ const getStatusText = (status: ToolUIPart['state'], toolName: string) => {
 }
 
 export const ToolHeader = memo(
-  ({ className, title, type }: ToolHeaderProps) => {
-    const { isOpen, state } = useTool()
+  ({ className, title, state, type }: ToolHeaderProps) => {
+    const { isOpen } = useTool()
     const toolName = title ?? type.split('-').slice(1).join('-')
 
     return (
@@ -155,7 +156,7 @@ export const ToolInput = memo(
           Parameters
         </h4>
         <div className="rounded-md max-h-40 overflow-auto rounded-md border border-main-view-fg/10 ">
-          <CodeBlock code={input} language="json" />
+          <CodeBlock code={JSON.stringify(input, null, 2)} language="json" />
         </div>
       </div>
     )

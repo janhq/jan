@@ -19,8 +19,10 @@ import {
 import { CopyButton } from './CopyButton'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { IconRefresh } from '@tabler/icons-react'
+import { IconRefresh, IconPaperclip } from '@tabler/icons-react'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
+import { extractFilesFromPrompt, FileMetadata } from '@/lib/fileMetadata'
+import { useMemo } from 'react'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -31,11 +33,6 @@ const CONTENT_TYPE = {
   TEXT: 'text',
   FILE: 'file',
   REASONING: 'reasoning',
-} as const
-
-const TOOL_STATE = {
-  OUTPUT_AVAILABLE: 'output-available',
-  OUTPUT_ERROR: 'output-error',
 } as const
 
 export type MessageItemProps = {
@@ -71,6 +68,21 @@ export const MessageItem = memo(
 
     const isStreaming = isLastMessage && status === CHAT_STATUS.STREAMING
 
+    // Extract file metadata from message text (for user messages with attachments)
+    const attachedFiles = useMemo(() => {
+      if (message.role !== 'user') return []
+
+      const textParts = message.parts.filter(
+        (part): part is { type: 'text'; text: string } =>
+          part.type === CONTENT_TYPE.TEXT
+      )
+
+      if (textParts.length === 0) return []
+
+      const { files } = extractFilesFromPrompt(textParts[0].text)
+      return files
+    }, [message.parts, message.role])
+
     // Get full text content for copy button
     const getFullTextContent = useCallback(() => {
       return message.parts
@@ -92,14 +104,52 @@ export const MessageItem = memo(
 
       const isLastPart = partIndex === message.parts.length - 1
 
+      // For user messages, extract and clean the text from file metadata
+      const displayText =
+        message.role === 'user'
+          ? extractFilesFromPrompt(part.text).cleanPrompt
+          : part.text
+
+      if (
+        !displayText.trim() &&
+        message.role === 'user' &&
+        attachedFiles.length === 0
+      ) {
+        return null
+      }
+
       return (
         <div key={`${message.id}-${partIndex}`} className="w-full">
           {message.role === 'user' ? (
             <div className="flex justify-end w-full h-full text-start break-words whitespace-normal">
               <div className="bg-main-view-fg/4 relative text-main-view-fg p-2 rounded-md inline-block max-w-[80%]">
-                <div className="select-text whitespace-pre-wrap">
-                  {part.text}
-                </div>
+                {/* Show attached files if any */}
+                {attachedFiles.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {attachedFiles.map((file: FileMetadata, idx: number) => (
+                      <div
+                        key={`file-${idx}-${file.id}`}
+                        className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-main-view-fg/10 text-xs"
+                      >
+                        <IconPaperclip
+                          size={14}
+                          className="text-main-view-fg/50"
+                        />
+                        <span className="font-medium">{file.name}</span>
+                        {file.injectionMode && (
+                          <span className="text-main-view-fg/50">
+                            ({file.injectionMode})
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {displayText && (
+                  <div className="select-text whitespace-pre-wrap">
+                    {displayText}
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -202,40 +252,40 @@ export const MessageItem = memo(
     }
 
     const renderToolPart = (part: any, partIndex: number) => {
-      if (part.type !== 'tool-invocation') {
+      if (!part.type.startsWith('tool-') || !('state' in part)) {
         return null
       }
 
-      const toolName = part.toolName || 'Unknown Tool'
-      const state =
-        part.state === 'result'
-          ? TOOL_STATE.OUTPUT_AVAILABLE
-          : part.state === 'error'
-            ? TOOL_STATE.OUTPUT_ERROR
-            : 'input-available'
-
+      const toolName = part.type.split('-').slice(1).join('-')
       return (
-        <Tool key={`${message.id}-${partIndex}`} state={state} className="mb-4">
+        <Tool
+          key={`${message.id}-${partIndex}`}
+          state={part.state}
+          className="mb-4"
+        >
           <ToolHeader
             title={toolName}
             type={`tool-${toolName}` as `tool-${string}`}
+            state={part.state}
           />
           <ToolContent title={toolName}>
-            <ToolInput
-              input={
-                typeof part.args === 'string'
-                  ? part.args
-                  : JSON.stringify(part.args)
-              }
-            />
-            {part.state === 'result' && part.result && (
+            {part.input && (
+              <ToolInput
+                input={
+                  typeof part.input === 'string'
+                    ? part.input
+                    : JSON.stringify(part.input)
+                }
+              />
+            )}
+            {part.output && (
               <ToolOutput
-                output={part.result}
+                output={part.output}
                 resolver={(input) => Promise.resolve(input)}
                 errorText={undefined}
               />
             )}
-            {part.state === 'error' && (
+            {part.state === 'output-error' && (
               <ToolOutput
                 output={undefined}
                 errorText={part.error || 'Tool execution failed'}
@@ -296,7 +346,7 @@ export const MessageItem = memo(
           <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
             <CopyButton text={getFullTextContent()} />
 
-            {selectedModel && onRegenerate && (
+            {selectedModel && onRegenerate && status !== CHAT_STATUS.STREAMING && (
               <button
                 className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
                 onClick={handleRegenerate}
@@ -309,30 +359,37 @@ export const MessageItem = memo(
         )}
 
         {/* Message actions for assistant messages (non-tool) */}
-        {message.role === 'assistant' && !hasToolCalls && (
-          <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">
-            <div
-              className={cn('flex items-center gap-2', isStreaming && 'hidden')}
-            >
-              <CopyButton text={getFullTextContent()} />
+        {message.role === 'assistant' &&
+          !hasToolCalls &&
+          message.parts.some((p) => p.type === 'text') && (
+            <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">
+              <div
+                className={cn(
+                  'flex items-center gap-2',
+                  isStreaming && 'hidden'
+                )}
+              >
+                <CopyButton text={getFullTextContent()} />
 
-              {selectedModel && onRegenerate && !isStreaming && (
-                <button
-                  className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                  onClick={handleRegenerate}
-                  title="Regenerate from this message"
-                >
-                  <IconRefresh size={16} />
-                </button>
-              )}
+                {selectedModel && onRegenerate && !isStreaming && (
+                  <button
+                    className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                    onClick={handleRegenerate}
+                    title="Regenerate from this message"
+                  >
+                    <IconRefresh size={16} />
+                  </button>
+                )}
+              </div>
+
+              <TokenSpeedIndicator
+                streaming={isStreaming}
+                metadata={
+                  message.metadata as Record<string, unknown> | undefined
+                }
+              />
             </div>
-
-            <TokenSpeedIndicator
-              streaming={isStreaming}
-              metadata={message.metadata as Record<string, unknown> | undefined}
-            />
-          </div>
-        )}
+          )}
 
         {/* Image Preview Dialog */}
         {previewImage && (

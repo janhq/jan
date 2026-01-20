@@ -9,11 +9,36 @@ import {
   type Tool,
   type CoreMessage,
   type LanguageModelUsage,
+  jsonSchema,
 } from 'ai'
 
-export type TokenUsageCallback = (usage: LanguageModelUsage, messageId: string) => void
-export type StreamingTokenSpeedCallback = (tokenCount: number, elapsedMs: number) => void
-export type OnFinishCallback = (params: { message: UIMessage; isAbort?: boolean }) => void
+export type TokenUsageCallback = (
+  usage: LanguageModelUsage,
+  messageId: string
+) => void
+export type StreamingTokenSpeedCallback = (
+  tokenCount: number,
+  elapsedMs: number
+) => void
+export type OnFinishCallback = (params: {
+  message: UIMessage
+  isAbort?: boolean
+}) => void
+export type OnToolCallCallback = (params: {
+  toolCall: { toolCallId: string; toolName: string; input: unknown }
+}) => void
+export type ServiceHub = {
+  rag(): {
+    getTools(): Promise<
+      Array<{ name: string; description: string; inputSchema: unknown }>
+    >
+  }
+  mcp(): {
+    getTools(): Promise<
+      Array<{ name: string; description: string; inputSchema: unknown }>
+    >
+  }
+}
 // import { mcpService } from "@/services/mcp-service";
 
 /**
@@ -150,71 +175,141 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private tools: Record<string, Tool> = {}
   private onTokenUsage?: TokenUsageCallback
   private onStreamingTokenSpeed?: StreamingTokenSpeedCallback
-  private onFinishCallback?: OnFinishCallback
+  private serviceHub?: ServiceHub
+  private hasDocuments = false
+  private modelSupportsTools = false
+  private ragFeatureAvailable = false
 
-  constructor(model: LanguageModel, onTokenUsage?: TokenUsageCallback) {
+  constructor(model: LanguageModel, serviceHub?: ServiceHub) {
     this.model = model
-    this.onTokenUsage = onTokenUsage
-    // this.initializeTools();
+    this.serviceHub = serviceHub
+
+    // Initialize tools asynchronously if serviceHub is provided
+    if (serviceHub) {
+      // Fire and forget - load MCP tools in the background
+      this.loadMCPTools().catch((error) => {
+        console.warn('Failed to load MCP tools during initialization:', error)
+      })
+    }
+  }
+
+  /**
+   * Load MCP tools independently (can be called without RAG dependencies)
+   * @private
+   */
+  private async loadMCPTools() {
+    if (!this.serviceHub) return
+
+    try {
+      const mcpTools = await this.serviceHub.mcp().getTools()
+      if (Array.isArray(mcpTools) && mcpTools.length > 0) {
+        // Convert MCP tools to AI SDK format and merge with existing tools
+        mcpTools.forEach((tool) => {
+          this.tools[tool.name] = {
+            description: tool.description,
+            inputSchema: jsonSchema(
+              tool.inputSchema as Record<string, unknown>
+            ),
+          } as Tool
+        })
+      }
+    } catch (error) {
+      console.warn('Failed to load MCP tools:', error)
+    }
   }
 
   updateModel(model: LanguageModel) {
     this.model = model
   }
 
-  setOnTokenUsage(callback: TokenUsageCallback | undefined) {
-    this.onTokenUsage = callback
-  }
-
   setOnStreamingTokenSpeed(callback: StreamingTokenSpeedCallback | undefined) {
     this.onStreamingTokenSpeed = callback
   }
 
-  setOnFinish(callback: OnFinishCallback | undefined) {
-    this.onFinishCallback = callback
+  setOnTokenUsage(callback: TokenUsageCallback | undefined) {
+    this.onTokenUsage = callback
   }
 
   /**
-   * Initialize MCP tools and convert them to AI SDK format
-   * Search tools (google_search, scrape) are always included regardless of user toggle
+   * Update RAG tools availability based on thread metadata and model capabilities
+   * @param hasDocuments - Whether the thread has documents attached
+   * @param modelSupportsTools - Whether the current model supports tool calling
+   * @param ragFeatureAvailable - Whether RAG features are available on the platform
    */
-  // private async initializeTools() {
-  //   try {
-  //     // Always include "search" server for google_search and scrape tools
-  //     // Browser tools are conditional on user preference
-  //     const servers = this.enableImageTools
-  //       ? undefined
-  //       : ([
-  //           "search", // Always include search tools
-  //           this.enableBrowse ? "browse" : null,
-  //         ].filter(Boolean) as string[]);
-  //     const toolsResponse = await mcpService.getTools(servers);
-  //     const allowedImageTools = new Set(["generate_image", "edit_image"]);
-  //     const filteredTools = toolsResponse.data.filter((tool) =>
-  //       this.enableImageTools
-  //         ? allowedImageTools.has(tool.name)
-  //         : !allowedImageTools.has(tool.name),
-  //     );
+  async updateRagToolsAvailability(
+    hasDocuments: boolean,
+    modelSupportsTools: boolean,
+    ragFeatureAvailable: boolean
+  ) {
+    this.hasDocuments = hasDocuments
+    this.modelSupportsTools = modelSupportsTools
+    this.ragFeatureAvailable = ragFeatureAvailable
 
-  //     // Convert MCP tools to AI SDK CoreTool format
-  //     this.tools = filteredTools.reduce(
-  //       (acc, tool) => {
-  //         acc[tool.name] = {
-  //           description: tool.description,
-  //           inputSchema: jsonSchema(tool.inputSchema),
-  //           name: tool.name,
-  //         };
-  //         return acc;
-  //       },
-  //       {} as Record<string, Tool>,
-  //     );
+    // Update tools based on current state
+    await this.refreshTools()
+  }
 
-  //     console.log(`Initialized ${Object.keys(this.tools).length} MCP tools`);
-  //   } catch (error) {
-  //     console.error("Failed to initialize MCP tools:", error);
-  //     this.tools = {};
-  //   }
-  // }
+  /**
+   * Refresh tools based on current state
+   * Reloads both RAG and MCP tools and merges them
+   * @private
+   */
+  private async refreshTools() {
+    if (!this.serviceHub) {
+      this.tools = {}
+      return
+    }
+
+    const toolsRecord: Record<string, Tool> = {}
+
+    // Load RAG tools if documents are available and model supports tools
+    if (this.hasDocuments && this.ragFeatureAvailable && this.modelSupportsTools) {
+      try {
+        const ragTools = await this.serviceHub.rag().getTools()
+        if (Array.isArray(ragTools) && ragTools.length > 0) {
+          // Convert RAG tools to AI SDK format
+          ragTools.forEach((tool) => {
+            toolsRecord[tool.name] = {
+              description: tool.description,
+              inputSchema: jsonSchema(
+                tool.inputSchema as Record<string, unknown>
+              ),
+            } as Tool
+          })
+        }
+      } catch (error) {
+        console.warn('Failed to load RAG tools:', error)
+      }
+    }
+
+    // Always reload MCP tools (they don't depend on documents)
+    try {
+      const mcpTools = await this.serviceHub.mcp().getTools()
+      if (Array.isArray(mcpTools) && mcpTools.length > 0) {
+        // Convert MCP tools to AI SDK format
+        // MCP tools added after RAG tools, so they take precedence in case of name conflicts
+        mcpTools.forEach((tool) => {
+          toolsRecord[tool.name] = {
+            description: tool.description,
+            inputSchema: jsonSchema(
+              tool.inputSchema as Record<string, unknown>
+            ),
+          } as Tool
+        })
+      }
+    } catch (error) {
+      console.warn('Failed to load MCP tools:', error)
+    }
+
+    this.tools = toolsRecord
+  }
+
+  /**
+   * Get current tools
+   */
+  getTools(): Record<string, Tool> {
+    return this.tools
+  }
 
   async sendMessages(
     options: {
@@ -226,8 +321,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
-    // await this.initializeTools();
-
     // Convert UI messages to model messages
     const modelMessages = convertToModelMessages(options.messages)
 
@@ -237,8 +330,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Convert image parts to image_url format for the API
     const messagesWithImageUrls = convertToImageUrlFormat(filteredMessages)
 
-    // Always include tools if we have any loaded
-    // Search tools (google_search, scrape) are always sent regardless of user toggle
+    // Include tools if we have any loaded
     const hasTools = Object.keys(this.tools).length > 0
 
     // Track stream timing and token count for token speed calculation
@@ -294,7 +386,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           const durationSec = durationMs / 1000
 
           // Use provider's outputTokens, or llama.cpp completionTokens, or fall back to text delta count
-          const outputTokens = usage?.outputTokens ?? llamacppMeta?.completionTokens ?? textDeltaCount
+          const outputTokens =
+            usage?.outputTokens ??
+            llamacppMeta?.completionTokens ??
+            textDeltaCount
           const inputTokens = usage?.inputTokens ?? llamacppMeta?.promptTokens
 
           // Use llama.cpp's tokens per second if available, otherwise calculate from duration
@@ -311,7 +406,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             usage: {
               inputTokens: inputTokens,
               outputTokens: outputTokens,
-              totalTokens: usage?.totalTokens ?? (inputTokens ?? 0) + outputTokens,
+              totalTokens:
+                usage?.totalTokens ?? (inputTokens ?? 0) + outputTokens,
             },
             tokenSpeed: {
               tokenSpeed: Math.round(tokenSpeed * 10) / 10, // Round to 1 decimal
@@ -340,16 +436,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       },
       onFinish: ({ responseMessage }) => {
         // Call the token usage callback with usage data when stream completes
-        if (this.onTokenUsage && responseMessage) {
-          const metadata = responseMessage.metadata as Record<string, unknown> | undefined
+        if (responseMessage) {
+          const metadata = responseMessage.metadata as
+            | Record<string, unknown>
+            | undefined
           const usage = metadata?.usage as LanguageModelUsage | undefined
+          console.log(usage)
           if (usage) {
-            this.onTokenUsage(usage, responseMessage.id)
+            this.onTokenUsage?.(usage, responseMessage.id)
           }
-        }
-        // Call the onFinish callback from useChat hook
-        if (this.onFinishCallback && responseMessage) {
-          this.onFinishCallback({ message: responseMessage })
         }
       },
     })

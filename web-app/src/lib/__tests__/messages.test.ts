@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { CompletionMessagesBuilder } from '../messages'
+import {
+  CompletionMessagesBuilder,
+  extractToolCallsFromUIMessage,
+} from '../messages'
 import { ThreadMessage } from '@janhq/core'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
+import type { UIMessage } from '@ai-sdk/react'
 
 // Mock thread messages for testing
 const createMockThreadMessage = (
@@ -560,5 +564,241 @@ describe('CompletionMessagesBuilder', () => {
         content: '.',
       })
     })
+  })
+})
+
+describe('extractToolCallsFromUIMessage', () => {
+  it('should return undefined when message has no tool calls', () => {
+    const message: UIMessage = {
+      id: 'msg-123',
+      role: 'assistant',
+      parts: [{ type: 'text', text: 'Hello, how can I help?' }],
+    } as UIMessage
+
+    const result = extractToolCallsFromUIMessage(message)
+    expect(result).toBeUndefined()
+  })
+
+  it('should extract tool calls with string output', () => {
+    const message: UIMessage = {
+      id: 'msg-123',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-get_weather',
+          toolInvocationId: 'call_123',
+          toolName: 'get_weather',
+          input: { location: 'New York' },
+          output: 'The weather is 72°F and sunny',
+        },
+      ],
+    } as UIMessage
+
+    const result = extractToolCallsFromUIMessage(message)
+    expect(result).toHaveLength(1)
+    expect(result?.[0]).toEqual({
+      tool: {
+        id: 'call_123',
+        type: 'function',
+        function: {
+          name: 'get_weather',
+          arguments: JSON.stringify({ location: 'New York' }),
+        },
+      },
+      response: {
+        content: [{ type: 'text', text: 'The weather is 72°F and sunny' }],
+      },
+      state: 'ready',
+    })
+  })
+
+  it('should extract tool calls with array output', () => {
+    const message: UIMessage = {
+      id: 'msg-123',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-search',
+          toolInvocationId: 'call_456',
+          toolName: 'search',
+          input: { query: 'test' },
+          output: [
+            { type: 'text', text: 'Search result 1' },
+            { type: 'text', text: 'Search result 2' },
+          ],
+        },
+      ],
+    } as UIMessage
+
+    const result = extractToolCallsFromUIMessage(message)
+    expect(result).toHaveLength(1)
+    expect(result?.[0].response?.content).toEqual([
+      { type: 'text', text: 'Search result 1' },
+      { type: 'text', text: 'Search result 2' },
+    ])
+  })
+
+  it('should extract tool calls with object containing content property', () => {
+    const message: UIMessage = {
+      id: 'msg-123',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-analyze',
+          toolInvocationId: 'call_789',
+          toolName: 'analyze',
+          input: { data: 'sample' },
+          result: {
+            content: [{ type: 'text', text: 'Analysis complete' }],
+          },
+        },
+      ],
+    } as UIMessage
+
+    const result = extractToolCallsFromUIMessage(message)
+    expect(result).toHaveLength(1)
+    expect(result?.[0].response?.content).toEqual([
+      { type: 'text', text: 'Analysis complete' },
+    ])
+  })
+
+  it('should handle tool calls with complex object output (fallback to stringify)', () => {
+    const message: UIMessage = {
+      id: 'msg-123',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-complex',
+          toolInvocationId: 'call_999',
+          toolName: 'complex',
+          input: { param: 'value' },
+          output: { foo: 'bar', nested: { key: 'value' } },
+        },
+      ],
+    } as UIMessage
+
+    const result = extractToolCallsFromUIMessage(message)
+    expect(result).toHaveLength(1)
+    expect(result?.[0].response?.content).toEqual([
+      { type: 'text', text: JSON.stringify({ foo: 'bar', nested: { key: 'value' } }) },
+    ])
+  })
+
+  it('should handle tool calls with toolCallId instead of toolInvocationId', () => {
+    const message: UIMessage = {
+      id: 'msg-123',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-test',
+          toolCallId: 'call_alt',
+          toolName: 'test',
+          args: { key: 'value' },
+          output: 'Test result',
+        },
+      ],
+    } as UIMessage
+
+    const result = extractToolCallsFromUIMessage(message)
+    expect(result).toHaveLength(1)
+    expect(result?.[0].tool.id).toBe('call_alt')
+  })
+
+  it('should handle tool calls with args instead of input', () => {
+    const message: UIMessage = {
+      id: 'msg-123',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-test',
+          toolInvocationId: 'call_abc',
+          toolName: 'test',
+          args: { param: 'value' },
+          output: 'Result',
+        },
+      ],
+    } as UIMessage
+
+    const result = extractToolCallsFromUIMessage(message)
+    expect(result).toHaveLength(1)
+    expect(result?.[0].tool.function.arguments).toBe(
+      JSON.stringify({ param: 'value' })
+    )
+  })
+
+  it('should handle multiple tool calls', () => {
+    const message: UIMessage = {
+      id: 'msg-123',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-first',
+          toolInvocationId: 'call_1',
+          toolName: 'first',
+          input: { a: 1 },
+          output: 'First result',
+        },
+        { type: 'text', text: 'Some text between' },
+        {
+          type: 'tool-second',
+          toolInvocationId: 'call_2',
+          toolName: 'second',
+          input: { b: 2 },
+          output: 'Second result',
+        },
+      ],
+    } as UIMessage
+
+    const result = extractToolCallsFromUIMessage(message)
+    expect(result).toHaveLength(2)
+    expect(result?.[0].tool.function.name).toBe('first')
+    expect(result?.[1].tool.function.name).toBe('second')
+  })
+
+  it('should ignore tool parts without output or result', () => {
+    const message: UIMessage = {
+      id: 'msg-123',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-pending',
+          toolInvocationId: 'call_pending',
+          toolName: 'pending',
+          input: { data: 'test' },
+          // No output or result
+        },
+        {
+          type: 'tool-completed',
+          toolInvocationId: 'call_completed',
+          toolName: 'completed',
+          input: { data: 'test' },
+          output: 'Completed result',
+        },
+      ],
+    } as UIMessage
+
+    const result = extractToolCallsFromUIMessage(message)
+    expect(result).toHaveLength(1)
+    expect(result?.[0].tool.function.name).toBe('completed')
+  })
+
+  it('should handle string input arguments', () => {
+    const message: UIMessage = {
+      id: 'msg-123',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-test',
+          toolInvocationId: 'call_str',
+          toolName: 'test',
+          input: '{"key": "value"}',
+          output: 'Result',
+        },
+      ],
+    } as UIMessage
+
+    const result = extractToolCallsFromUIMessage(message)
+    expect(result).toHaveLength(1)
+    expect(result?.[0].tool.function.arguments).toBe('{"key": "value"}')
   })
 })
