@@ -13,6 +13,8 @@ all:
 # Config yarn version
 
 config-yarn:
+	corepack enable
+	corepack prepare yarn@4.5.3 --activate
 	yarn --version
 	yarn config set -H enableImmutableInstalls false
 
