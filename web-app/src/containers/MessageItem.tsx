@@ -299,7 +299,7 @@ export const MessageItem = memo(
 
     // Check if message has tool invocations
     const hasToolCalls = message.parts.some(
-      (part) => part.type === 'tool-invocation'
+      (part) => part.type.startsWith('tool')
     )
 
     return (

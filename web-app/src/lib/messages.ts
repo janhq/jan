@@ -57,9 +57,6 @@ export function convertUIMessageToThreadMessage(
           },
         })
       }
-    } else if (part.type === 'tool-invocation') {
-      // Tool calls are stored in metadata, not content
-      // We'll handle this below
     }
   }
 
@@ -76,7 +73,7 @@ export function convertUIMessageToThreadMessage(
 
   // Extract tool calls from parts
   const toolCalls = (uiMessage.parts as any[])
-    .filter((part) => part.type === 'tool-invocation')
+    .filter((part) => part.type.startsWith('tool'))
     .map((part) => {
       return {
         tool: {
