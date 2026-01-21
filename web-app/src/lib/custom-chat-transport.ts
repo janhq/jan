@@ -7,7 +7,6 @@ import {
   type LanguageModel,
   type UIMessageChunk,
   type Tool,
-  type CoreMessage,
   type LanguageModelUsage,
   jsonSchema,
 } from 'ai'
@@ -45,37 +44,6 @@ export type ServiceHub = {
   }
 }
 
-/**
- * Convert file parts to custom image_url format for the API.
- * The server expects: { type: "image_url", image_url: { url: "<image url>", detail: "auto" } }
- */
-function convertToImageUrlFormat(messages: CoreMessage[]): CoreMessage[] {
-  return messages.map((message) => {
-    if (message.role === 'user' && Array.isArray(message.content)) {
-      return {
-        ...message,
-        content: message.content.map((part) => {
-          // Convert image parts to image_url format
-          if (part.type === 'image' && 'image' in part) {
-            const imageData = part.image
-            // If it's a URL string
-            if (typeof imageData === 'string') {
-              return {
-                type: 'image_url',
-                image_url: {
-                  url: imageData,
-                  detail: 'auto',
-                },
-              }
-            }
-          }
-          return part
-        }),
-      }
-    }
-    return message
-  }) as CoreMessage[]
-}
 
 export class CustomChatTransport implements ChatTransport<UIMessage> {
   public model: LanguageModel | null
