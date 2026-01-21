@@ -33,7 +33,6 @@ import { Route as LocalApiServerLogsImport } from './routes/local-api-server/log
 import { Route as HubModelIdImport } from './routes/hub/$modelId'
 import { Route as SettingsProvidersIndexImport } from './routes/settings/providers/index'
 import { Route as SettingsProvidersProviderNameImport } from './routes/settings/providers/$providerName'
-import { Route as AuthGoogleCallbackImport } from './routes/auth.google.callback'
 
 // Create/Update Routes
 
@@ -169,12 +168,6 @@ const SettingsProvidersProviderNameRoute =
     path: '/settings/providers/$providerName',
     getParentRoute: () => rootRoute,
   } as any)
-
-const AuthGoogleCallbackRoute = AuthGoogleCallbackImport.update({
-  id: '/auth/google/callback',
-  path: '/auth/google/callback',
-  getParentRoute: () => rootRoute,
-} as any)
 
 // Populate the FileRoutesByPath interface
 
@@ -320,13 +313,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectIndexImport
       parentRoute: typeof rootRoute
     }
-    '/auth/google/callback': {
-      id: '/auth/google/callback'
-      path: '/auth/google/callback'
-      fullPath: '/auth/google/callback'
-      preLoaderRoute: typeof AuthGoogleCallbackImport
-      parentRoute: typeof rootRoute
-    }
     '/settings/providers/$providerName': {
       id: '/settings/providers/$providerName'
       path: '/settings/providers/$providerName'
@@ -367,7 +353,6 @@ export interface FileRoutesByFullPath {
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
   '/project': typeof ProjectIndexRoute
-  '/auth/google/callback': typeof AuthGoogleCallbackRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
 }
@@ -393,7 +378,6 @@ export interface FileRoutesByTo {
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
   '/project': typeof ProjectIndexRoute
-  '/auth/google/callback': typeof AuthGoogleCallbackRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
 }
@@ -420,7 +404,6 @@ export interface FileRoutesById {
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub/': typeof HubIndexRoute
   '/project/': typeof ProjectIndexRoute
-  '/auth/google/callback': typeof AuthGoogleCallbackRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers/': typeof SettingsProvidersIndexRoute
 }
@@ -448,7 +431,6 @@ export interface FileRouteTypes {
     | '/threads/$threadId'
     | '/hub'
     | '/project'
-    | '/auth/google/callback'
     | '/settings/providers/$providerName'
     | '/settings/providers'
   fileRoutesByTo: FileRoutesByTo
@@ -473,7 +455,6 @@ export interface FileRouteTypes {
     | '/threads/$threadId'
     | '/hub'
     | '/project'
-    | '/auth/google/callback'
     | '/settings/providers/$providerName'
     | '/settings/providers'
   id:
@@ -498,7 +479,6 @@ export interface FileRouteTypes {
     | '/threads/$threadId'
     | '/hub/'
     | '/project/'
-    | '/auth/google/callback'
     | '/settings/providers/$providerName'
     | '/settings/providers/'
   fileRoutesById: FileRoutesById
@@ -525,7 +505,6 @@ export interface RootRouteChildren {
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   HubIndexRoute: typeof HubIndexRoute
   ProjectIndexRoute: typeof ProjectIndexRoute
-  AuthGoogleCallbackRoute: typeof AuthGoogleCallbackRoute
   SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
   SettingsProvidersIndexRoute: typeof SettingsProvidersIndexRoute
 }
@@ -551,7 +530,6 @@ const rootRouteChildren: RootRouteChildren = {
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   HubIndexRoute: HubIndexRoute,
   ProjectIndexRoute: ProjectIndexRoute,
-  AuthGoogleCallbackRoute: AuthGoogleCallbackRoute,
   SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,
   SettingsProvidersIndexRoute: SettingsProvidersIndexRoute,
 }
@@ -586,7 +564,6 @@ export const routeTree = rootRoute
         "/threads/$threadId",
         "/hub/",
         "/project/",
-        "/auth/google/callback",
         "/settings/providers/$providerName",
         "/settings/providers/"
       ]
@@ -650,9 +627,6 @@ export const routeTree = rootRoute
     },
     "/project/": {
       "filePath": "project/index.tsx"
-    },
-    "/auth/google/callback": {
-      "filePath": "auth.google.callback.tsx"
     },
     "/settings/providers/$providerName": {
       "filePath": "settings/providers/$providerName.tsx"

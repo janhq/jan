@@ -1,5 +1,12 @@
 import { Assistant, AssistantExtension, fs, joinPath } from '@janhq/core'
+/**
+ * JanAssistantExtension is an AssistantExtension implementation that provides
+ * functionality for managing assistants.
+ */
 export default class JanAssistantExtension extends AssistantExtension {
+  /**
+   * Called when the extension is loaded.
+   */
   async onLoad() {
     if (!(await fs.existsSync('file://assistants'))) {
       await fs.mkdir('file://assistants')

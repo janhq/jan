@@ -199,44 +199,6 @@ class PlatformServiceHub implements ServiceHub {
         this.pathService = new pathModule.TauriPathService()
         this.coreService = new coreModule.MobileCoreService() // Mobile service with pre-loaded extensions
         this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
-      } else {
-        const [
-          themeModule,
-          appModule,
-          pathModule,
-          coreModule,
-          dialogModule,
-          eventsModule,
-          windowModule,
-          deepLinkModule,
-          providersModule,
-          mcpModule,
-          projectsModule,
-        ] = await Promise.all([
-          import('./theme/web'),
-          import('./app/web'),
-          import('./path/web'),
-          import('./core/web'),
-          import('./dialog/web'),
-          import('./events/web'),
-          import('./window/web'),
-          import('./deeplink/web'),
-          import('./providers/web'),
-          import('./mcp/web'),
-          import('./projects/web'),
-        ])
-
-        this.themeService = new themeModule.WebThemeService()
-        this.appService = new appModule.WebAppService()
-        this.pathService = new pathModule.WebPathService()
-        this.coreService = new coreModule.WebCoreService()
-        this.dialogService = new dialogModule.WebDialogService()
-        this.eventsService = new eventsModule.WebEventsService()
-        this.windowService = new windowModule.WebWindowService()
-        this.deepLinkService = new deepLinkModule.WebDeepLinkService()
-        this.providersService = new providersModule.WebProvidersService()
-        this.mcpService = new mcpModule.WebMCPService()
-        this.projectsService = new projectsModule.WebProjectsService()
       }
 
       this.initialized = true

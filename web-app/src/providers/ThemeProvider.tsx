@@ -8,7 +8,16 @@ import { isPlatformTauri } from '@/lib/platform/utils'
  * It first detects the OS theme preference and applies it accordingly
  */
 export function ThemeProvider() {
-  const { activeTheme, setIsDark, setTheme } = useTheme()
+  const { activeTheme, isDark, setIsDark, setTheme } = useTheme()
+
+  // Apply dark class to root element
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }, [isDark])
 
   // Detect OS theme on mount and apply it
   useEffect(() => {

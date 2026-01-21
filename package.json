@@ -5,8 +5,7 @@
   "workspaces": {
     "packages": [
       "core",
-      "web-app",
-      "extensions-web"
+      "web-app"
     ]
   },
   "scripts": {
@@ -21,10 +20,6 @@
     "test:coverage": "vitest run --coverage",
     "test:prepare": "yarn build:icon && yarn copy:assets:tauri && yarn build --no-bundle ",
     "dev:web": "yarn workspace @janhq/web-app dev",
-    "dev:web-app": "yarn build:extensions-web && yarn workspace @janhq/web-app install && yarn workspace @janhq/web-app dev:web",
-    "build:web-app": "yarn build:extensions-web && yarn workspace @janhq/web-app install && yarn workspace @janhq/web-app build:web",
-    "serve:web-app": "yarn workspace @janhq/web-app serve:web",
-    "build:serve:web-app": "yarn build:web-app && yarn serve:web-app",
     "dev:tauri": "yarn build:icon && yarn copy:assets:tauri && cross-env IS_CLEAN=true tauri dev",
     "dev:ios": "yarn copy:assets:mobile && RUSTC_WRAPPER= cross-env IS_IOS=true yarn tauri ios dev --features mobile",
     "dev:android": "yarn copy:assets:mobile && cross-env IS_ANDROID=true yarn tauri android dev --features mobile",
@@ -43,7 +38,6 @@
     "build:icon": "tauri icon ./src-tauri/icons/icon.png",
     "build:core": "cd core && yarn build && yarn pack",
     "build:web": "yarn workspace @janhq/web-app build",
-    "build:extensions-web": "yarn workspace @jan/extensions-web build",
     "build:extensions": "rimraf ./pre-install/*.tgz || true && yarn workspace @janhq/core build && cd extensions && yarn install && yarn workspaces foreach -Apt run build:publish",
     "prepare": "husky"
   },

@@ -30,7 +30,7 @@ describe('useCodeblock', () => {
   it('should initialize with default values', () => {
     const { result } = renderHook(() => useCodeblock())
 
-    expect(result.current.codeBlockStyle).toBe('vsc-dark-plus')
+    expect(result.current.codeBlockStyle).toBe('github-light')
     expect(result.current.showLineNumbers).toBe(true)
   })
 
@@ -77,7 +77,7 @@ describe('useCodeblock', () => {
       result.current.resetCodeBlockStyle()
     })
 
-    expect(result.current.codeBlockStyle).toBe('vsc-dark-plus')
+    expect(result.current.codeBlockStyle).toBe('github-light')
     expect(result.current.showLineNumbers).toBe(true)
   })
 

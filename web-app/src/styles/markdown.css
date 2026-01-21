@@ -124,21 +124,21 @@
 
   pre {
     font-family: monospace;
-    @apply bg-main-view-fg/6 text-main-view-fg;
+    @apply bg-main-view-fg/6 text-main-view-fg px-0!;
     overflow-x: auto;
-    border-radius: 8px;
+    /* border-radius: 8px; */
     margin-bottom: 8px;
   }
 
   pre code {
     background-color: transparent;
-    padding: 8px;
+    padding: 2px;
     @apply !text-sm;
     display: inline-block;
   }
 
   /* Tables */
-  table {
+  /* table {
     border-collapse: collapse;
     margin-bottom: 1em;
     border-spacing: 0;
@@ -162,7 +162,7 @@
 
   tr:nth-child(even) {
     @apply bg-main-view-fg/5;
-  }
+  } */
 
   /* Links */
   a {
@@ -208,6 +208,17 @@
     opacity: 0.2;
     margin: 2em 0;
   }
+
+  [data-streamdown="mermaid-block"] {
+    border-color: var(--border);
+    margin-bottom: 1em;
+  }
+
+  /* Streamdown caret styling */
+  & *:last-child::after {
+    color: oklch(0.556 0 0) !important;
+  }
+
 }
 [data-tool-call-block] + [data-tool-call-block] {
   margin-top: 16px;

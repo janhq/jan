@@ -1,55 +1,70 @@
-// Available styles from react-syntax-highlighter/prism
-// https://github.com/react-syntax-highlighter/react-syntax-highlighter/blob/master/AVAILABLE_STYLES_PRISM.MD
+// Available Shiki themes
+// https://shiki.style/themes
 
 const CODE_BLOCK_STYLES = [
   // Dark themes
-  'a11y-dark',
-  'atom-dark',
-  'darcula',
-  'dark',
+  'andromeeda',
+  'aurora-x',
+  'ayu-dark',
+  'catppuccin-frappe',
+  'catppuccin-macchiato',
+  'catppuccin-mocha',
+  'dark-plus',
   'dracula',
-  'duotone-dark',
-  'gruvbox-dark',
-  'material-dark',
-  'material-oceanic',
+  'dracula-soft',
+  'everforest-dark',
+  'github-dark',
+  'github-dark-default',
+  'github-dark-dimmed',
+  'github-dark-high-contrast',
+  'gruvbox-dark-hard',
+  'gruvbox-dark-medium',
+  'gruvbox-dark-soft',
+  'houston',
+  'kanagawa-dragon',
+  'kanagawa-wave',
+  'laserwave',
+  'material-theme',
+  'material-theme-darker',
+  'material-theme-ocean',
+  'material-theme-palenight',
+  'min-dark',
+  'monokai',
   'night-owl',
   'nord',
-  'okaidia',
-  'one-dark',
-  'shades-of-purple',
-  'solarized-dark-atom',
-  'synthwave84',
-  'twilight',
-  'vsc-dark-plus',
-  'xonokai',
+  'one-dark-pro',
+  'plastic',
+  'poimandres',
+  'red',
+  'rose-pine',
+  'rose-pine-moon',
+  'slack-dark',
+  'slack-ochin',
+  'solarized-dark',
+  'synthwave-84',
+  'tokyo-night',
+  'vesper',
+  'vitesse-black',
+  'vitesse-dark',
 
   // Light themes
-  'coldark-cold',
-  'coy',
-  'coy-without-shadows',
-  'duotone-light',
-  'ghcolors',
-  'gruvbox-light',
-  'material-light',
+  'catppuccin-latte',
+  'everforest-light',
+  'github-light',
+  'github-light-default',
+  'github-light-high-contrast',
+  'gruvbox-light-hard',
+  'gruvbox-light-medium',
+  'gruvbox-light-soft',
+  'kanagawa-lotus',
+  'light-plus',
+  'material-theme-lighter',
+  'min-light',
   'one-light',
-  'prism',
-  'solarizedlight',
-  'vs',
-
-  // Special themes
-  'cb',
-  'coldark-dark',
-  'duotone-earth',
-  'duotone-forest',
-  'duotone-sea',
-  'duotone-space',
-  'funky',
-  'holi-theme',
-  'hopscotch',
-  'lucario',
-  'pojoaque',
-  'tomorrow',
-  'z-touch',
+  'rose-pine-dawn',
+  'snazzy-light',
+  'solarized-light',
+  'vitesse-light',
 ]
 
 import { useCodeblock } from '@/hooks/useCodeblock'
@@ -67,41 +82,68 @@ import { Input } from '@/components/ui/input'
 
 // Function to format style names to be more readable
 function formatStyleName(style: string): string {
-  // Special cases for abbreviations and specific terms
-  const specialCases: Record<string, string> = {
-    a11y: 'Accessibility',
-    cb: 'CB',
-    vsc: 'VSCode',
-    vs: 'Visual Studio',
-    ghcolors: 'GitHub Colors',
-  }
-
-  // Direct mappings for compound names that need special formatting
+  // Direct mappings for Shiki theme names
   const directMappings: Record<string, string> = {
-    'solarized-dark-atom': 'Solarized Dark (Atom)',
-    'solarizedlight': 'Solarized Light',
-    'coy-without-shadows': 'Coy (Without Shadows)',
-    'gruvbox-dark': 'Gruvbox Dark',
-    'gruvbox-light': 'Gruvbox Light',
-    'material-dark': 'Material Dark',
-    'material-light': 'Material Light',
-    'material-oceanic': 'Material Oceanic',
+    'andromeeda': 'Andromeeda',
+    'aurora-x': 'Aurora X',
+    'ayu-dark': 'Ayu Dark',
+    'catppuccin-frappe': 'Catppuccin Frappé',
+    'catppuccin-latte': 'Catppuccin Latte',
+    'catppuccin-macchiato': 'Catppuccin Macchiato',
+    'catppuccin-mocha': 'Catppuccin Mocha',
+    'dark-plus': 'Dark Plus',
+    'dracula': 'Dracula',
+    'dracula-soft': 'Dracula Soft',
+    'everforest-dark': 'Everforest Dark',
+    'everforest-light': 'Everforest Light',
+    'github-dark': 'GitHub Dark',
+    'github-dark-default': 'GitHub Dark Default',
+    'github-dark-dimmed': 'GitHub Dark Dimmed',
+    'github-dark-high-contrast': 'GitHub Dark High Contrast',
+    'github-light': 'GitHub Light',
+    'github-light-default': 'GitHub Light Default',
+    'github-light-high-contrast': 'GitHub Light High Contrast',
+    'gruvbox-dark-hard': 'Gruvbox Dark Hard',
+    'gruvbox-dark-medium': 'Gruvbox Dark Medium',
+    'gruvbox-dark-soft': 'Gruvbox Dark Soft',
+    'gruvbox-light-hard': 'Gruvbox Light Hard',
+    'gruvbox-light-medium': 'Gruvbox Light Medium',
+    'gruvbox-light-soft': 'Gruvbox Light Soft',
+    'houston': 'Houston',
+    'kanagawa-dragon': 'Kanagawa Dragon',
+    'kanagawa-lotus': 'Kanagawa Lotus',
+    'kanagawa-wave': 'Kanagawa Wave',
+    'laserwave': 'LaserWave',
+    'light-plus': 'Light Plus',
+    'material-theme': 'Material Theme',
+    'material-theme-darker': 'Material Theme Darker',
+    'material-theme-lighter': 'Material Theme Lighter',
+    'material-theme-ocean': 'Material Theme Ocean',
+    'material-theme-palenight': 'Material Theme Palenight',
+    'min-dark': 'Min Dark',
+    'min-light': 'Min Light',
+    'monokai': 'Monokai',
     'night-owl': 'Night Owl',
-    'one-dark': 'One Dark',
+    'nord': 'Nord',
+    'one-dark-pro': 'One Dark Pro',
     'one-light': 'One Light',
-    'shades-of-purple': 'Shades of Purple',
-    'coldark-cold': 'Coldark Cold',
-    'coldark-dark': 'Coldark Dark',
-    'holi-theme': 'Holi Theme',
-    'synthwave84': 'Synthwave 84',
-    'vsc-dark-plus': 'VSCode Dark+',
-    'atom-dark': 'Atom Dark',
-    'duotone-dark': 'Duotone Dark',
-    'duotone-earth': 'Duotone Earth',
-    'duotone-forest': 'Duotone Forest',
-    'duotone-light': 'Duotone Light',
-    'duotone-sea': 'Duotone Sea',
-    'duotone-space': 'Duotone Space',
+    'plastic': 'Plastic',
+    'poimandres': 'Poimandres',
+    'red': 'Red',
+    'rose-pine': 'Rosé Pine',
+    'rose-pine-dawn': 'Rosé Pine Dawn',
+    'rose-pine-moon': 'Rosé Pine Moon',
+    'slack-dark': 'Slack Dark',
+    'slack-ochin': 'Slack Ochin',
+    'snazzy-light': 'Snazzy Light',
+    'solarized-dark': 'Solarized Dark',
+    'solarized-light': 'Solarized Light',
+    'synthwave-84': "Synthwave '84",
+    'tokyo-night': 'Tokyo Night',
+    'vesper': 'Vesper',
+    'vitesse-black': 'Vitesse Black',
+    'vitesse-dark': 'Vitesse Dark',
+    'vitesse-light': 'Vitesse Light',
   }
 
   // Check for direct mappings first
@@ -109,23 +151,10 @@ function formatStyleName(style: string): string {
     return directMappings[style]
   }
 
-  // Process other styles
+  // Fallback: capitalize each word
   return style
     .split('-')
-    .map((part) => {
-      // Check for special cases
-      if (specialCases[part]) {
-        return specialCases[part]
-      }
-
-      // Handle duotone prefix (fallback for any not in directMappings)
-      if (part.startsWith('duotone')) {
-        return 'Duotone ' + part.replace('duotone', '')
-      }
-
-      // Capitalize first letter of each word
-      return part.charAt(0).toUpperCase() + part.slice(1)
-    })
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
 }
 
@@ -137,10 +166,9 @@ export default function CodeBlockStyleSwitcher() {
     setCodeBlockStyle(style)
   }
 
-  // Extract styles by category
-  const darkThemes = CODE_BLOCK_STYLES.slice(1, 20)
-  const lightThemes = CODE_BLOCK_STYLES.slice(22, 33)
-  const specialThemes = CODE_BLOCK_STYLES.slice(35)
+  // Extract styles by category (44 dark themes, 17 light themes)
+  const darkThemes = CODE_BLOCK_STYLES.slice(0, 44)
+  const lightThemes = CODE_BLOCK_STYLES.slice(44)
 
   // Filter styles based on search query
   const filteredDarkThemes = darkThemes.filter((style) =>
@@ -151,10 +179,6 @@ export default function CodeBlockStyleSwitcher() {
     formatStyleName(style).toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  const filteredSpecialThemes = specialThemes.filter((style) =>
-    formatStyleName(style).toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -162,7 +186,7 @@ export default function CodeBlockStyleSwitcher() {
           title="Edit Code Block Style"
           className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
         >
-          {formatStyleName(codeBlockStyle || 'one-light')}
+          {formatStyleName(codeBlockStyle || 'github-light')}
         </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -236,35 +260,12 @@ export default function CodeBlockStyleSwitcher() {
           </>
         )}
 
-        {/* Special themes */}
-        {filteredSpecialThemes.length > 0 && (
-          <>
-            <DropdownMenuLabel className="font-medium text-xs px-2 pt-2 text-main-view-fg/60">
-              Special Themes
-            </DropdownMenuLabel>
-            {filteredSpecialThemes.map((style) => (
-              <DropdownMenuItem
-                key={style}
-                className={cn(
-                  'cursor-pointer my-0.5',
-                  codeBlockStyle === style && 'bg-main-view-fg/5'
-                )}
-                onClick={() => changeCodeBlockStyle(style)}
-              >
-                {formatStyleName(style)}
-              </DropdownMenuItem>
-            ))}
-          </>
-        )}
-
         {/* No results message */}
-        {filteredDarkThemes.length === 0 &&
-          filteredLightThemes.length === 0 &&
-          filteredSpecialThemes.length === 0 && (
-            <div className="px-2 py-4 text-center text-sm text-muted-foreground">
-              No styles found
-            </div>
-          )}
+        {filteredDarkThemes.length === 0 && filteredLightThemes.length === 0 && (
+          <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+            No styles found
+          </div>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

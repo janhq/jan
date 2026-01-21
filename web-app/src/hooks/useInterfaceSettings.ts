@@ -13,7 +13,7 @@ import {
   isThreadScrollBehavior,
 } from '@/constants/threadScroll'
 
-export type FontSize = '14px' | '15px' | '16px' | '18px'
+export type FontSize = '14px' | '15px' | '16px' | '18px' | '20px'
 export type ChatWidth = 'full' | 'compact'
 
 interface InterfaceSettingsState {
@@ -59,9 +59,9 @@ const getBrightness = ({ r, g, b }: RgbaColor) =>
 
 export const fontSizeOptions = [
   { label: 'Small', value: '14px' as FontSize },
-  { label: 'Medium', value: '15px' as FontSize },
-  { label: 'Large', value: '16px' as FontSize },
-  { label: 'Extra Large', value: '18px' as FontSize },
+  { label: 'Medium', value: '16px' as FontSize },
+  { label: 'Large', value: '18px' as FontSize },
+  { label: 'Extra Large', value: '20px' as FontSize },
 ]
 
 // Helper to determine if blur effects are supported
@@ -83,7 +83,7 @@ const getAlphaValue = () => {
 }
 
 // Default interface settings
-const defaultFontSize: FontSize = '15px'
+const defaultFontSize: FontSize = '16px'
 const defaultAppBgColor: RgbaColor = {
   r: 25,
   g: 25,
@@ -702,6 +702,11 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
         if (state) {
           if (!isThreadScrollBehavior(state.threadScrollBehavior)) {
             state.threadScrollBehavior = DEFAULT_THREAD_SCROLL_BEHAVIOR
+          }
+
+          // Migrate old font size value '15px' to '16px'
+          if (state.fontSize === '15px' as FontSize) {
+            state.fontSize = '16px'
           }
 
           // Apply font size from storage
