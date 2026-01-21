@@ -44,6 +44,7 @@ import {
 import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
+import { useToolAvailable } from '@/hooks/useToolAvailable'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -283,9 +284,14 @@ function ThreadDetail() {
     sendAutomaticallyWhen: followUpMessage,
   })
 
-  // Update RAG tools availability when documents or model changes
+  // Get disabled tools for this thread to trigger re-render when they change
+  const disabledTools = useToolAvailable((state) =>
+    state.getDisabledToolsForThread(threadId)
+  )
+
+  // Update RAG tools availability when documents, model, or tool availability changes
   useEffect(() => {
-    // const hasDocuments = thread?.metadata?.hasDocuments ?? false
+    const hasDocuments = Boolean(thread?.metadata?.hasDocuments)
     const ragFeatureAvailable = Boolean(
       useAttachments.getState().enabled &&
         PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
@@ -293,11 +299,12 @@ function ThreadDetail() {
     const modelSupportsTools =
       selectedModel?.capabilities?.includes('tools') ?? false
 
-    updateRagToolsAvailability(true, modelSupportsTools, ragFeatureAvailable)
+    updateRagToolsAvailability(hasDocuments, modelSupportsTools, ragFeatureAvailable)
   }, [
     thread?.metadata?.hasDocuments,
     selectedModel?.capabilities,
     updateRagToolsAvailability,
+    disabledTools, // Re-run when tools are enabled/disabled
   ])
 
   // Ref for reasoning container auto-scroll
