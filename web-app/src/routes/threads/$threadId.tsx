@@ -114,7 +114,9 @@ function ThreadDetail() {
   // Store model metadata in appState for the chat transport
   const setLanguageModel = useAppState((state) => state.setLanguageModel)
   const languageModelId = useAppState((state) => state.languageModelId)
-  const languageModelProvider = useAppState((state) => state.languageModelProvider)
+  const languageModelProvider = useAppState(
+    (state) => state.languageModelProvider
+  )
 
   useEffect(() => {
     // Wait for providers to be loaded before attempting to set model metadata
@@ -169,7 +171,10 @@ function ThreadDetail() {
 
         if (contentParts.length > 0) {
           // Extract metadata from the message (including usage and tokenSpeed)
-          const messageMetadata = (message.metadata || {}) as Record<string, unknown>
+          const messageMetadata = (message.metadata || {}) as Record<
+            string,
+            unknown
+          >
 
           // Create assistant message with content parts (including tool calls) and metadata
           const assistantMessage: ThreadMessage = {
@@ -299,7 +304,11 @@ function ThreadDetail() {
     const modelSupportsTools =
       selectedModel?.capabilities?.includes('tools') ?? false
 
-    updateRagToolsAvailability(hasDocuments, modelSupportsTools, ragFeatureAvailable)
+    updateRagToolsAvailability(
+      hasDocuments,
+      modelSupportsTools,
+      ragFeatureAvailable
+    )
   }, [
     thread?.metadata?.hasDocuments,
     selectedModel?.capabilities,
@@ -465,11 +474,16 @@ function ThreadDetail() {
           )
           addMessage(userMessage)
 
-          // Build message parts for AI SDK (only images are sent as file parts)
+          // Build parts for AI SDK (only images are sent as file parts)
           const parts: Array<
             | { type: 'text'; text: string }
             | { type: 'file'; mediaType: string; url: string }
-          > = [{ type: 'text', text: message.text }]
+          > = [
+            {
+              type: 'text',
+              text: userMessage.content[0].text?.value ?? message.text,
+            },
+          ]
 
           if (message.files) {
             message.files.forEach((file) => {
@@ -481,8 +495,11 @@ function ThreadDetail() {
             })
           }
 
-          // Send the message
-          sendMessage({ parts, id: messageId })
+          sendMessage({
+            parts,
+            id: messageId,
+            metadata: userMessage.metadata,
+          })
 
           // Clear attachments after sending
           clearAttachmentsForThread(attachmentsKey)
@@ -574,7 +591,7 @@ function ThreadDetail() {
       const parts: Array<
         | { type: 'text'; text: string }
         | { type: 'file'; mediaType: string; url: string }
-      > = [{ type: 'text', text }]
+      > = [{ type: 'text', text: userMessage.content[0].text?.value ?? text }]
 
       if (files) {
         files.forEach((file) => {
@@ -586,7 +603,11 @@ function ThreadDetail() {
         })
       }
 
-      sendMessage({ parts, id: messageId })
+      sendMessage({
+        parts,
+        id: messageId,
+        metadata: userMessage.metadata,
+      })
 
       // Clear attachments after sending
       clearAttachmentsForThread(attachmentsKey)
@@ -710,9 +731,7 @@ function ThreadDetail() {
                   />
                 )
               })}
-              {status === CHAT_STATUS.SUBMITTED && (
-                 <PromptProgress />
-              )}
+              {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>
