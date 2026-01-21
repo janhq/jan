@@ -298,8 +298,8 @@ export const MessageItem = memo(
     }
 
     // Check if message has tool invocations
-    const hasToolCalls = message.parts.some(
-      (part) => part.type.startsWith('tool')
+    const hasToolCalls = message.parts.some((part) =>
+      part.type.startsWith('tool')
     )
 
     return (
@@ -346,21 +346,22 @@ export const MessageItem = memo(
           <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
             <CopyButton text={getFullTextContent()} />
 
-            {selectedModel && onRegenerate && status !== CHAT_STATUS.STREAMING && (
-              <button
-                className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                onClick={handleRegenerate}
-                title="Regenerate from this message"
-              >
-                <IconRefresh size={16} />
-              </button>
-            )}
+            {selectedModel &&
+              onRegenerate &&
+              status !== CHAT_STATUS.STREAMING && (
+                <button
+                  className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                  onClick={handleRegenerate}
+                  title="Regenerate from this message"
+                >
+                  <IconRefresh size={16} />
+                </button>
+              )}
           </div>
         )}
 
         {/* Message actions for assistant messages (non-tool) */}
         {message.role === 'assistant' &&
-          !hasToolCalls &&
           message.parts.some((p) => p.type === 'text') && (
             <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">
               <div
