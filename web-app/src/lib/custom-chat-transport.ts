@@ -11,7 +11,9 @@ import {
   jsonSchema,
 } from 'ai'
 import { useServiceStore } from '@/hooks/useServiceHub'
+import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
+import { useModelProvider } from '@/hooks/useModelProvider'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -44,7 +46,6 @@ export type ServiceHub = {
   }
 }
 
-
 export class CustomChatTransport implements ChatTransport<UIMessage> {
   public model: LanguageModel | null
   private tools: Record<string, Tool> = {}
@@ -57,16 +58,19 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private modelId?: string
   private provider?: ProviderObject
   private serviceHub: ServiceHub | null
+  private threadId?: string
 
   constructor(
     modelId: string | undefined,
     provider: ProviderObject | undefined,
-    systemMessage?: string
+    systemMessage?: string,
+    threadId?: string
   ) {
     this.model = null
     this.modelId = modelId
     this.provider = provider
     this.systemMessage = systemMessage
+    this.threadId = threadId
     this.serviceHub = useServiceStore.getState().serviceHub
     // Tools will be loaded when updateRagToolsAvailability is called with model capabilities
   }
@@ -112,6 +116,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   /**
    * Refresh tools based on current state
    * Reloads both RAG and MCP tools and merges them
+   * Filters out disabled tools based on thread settings
    * @private
    */
   private async refreshTools() {
@@ -122,6 +127,19 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const toolsRecord: Record<string, Tool> = {}
 
+    // Get disabled tools for this thread
+    const getDisabledToolsForThread =
+      useToolAvailable.getState().getDisabledToolsForThread
+    const disabledToolKeys = this.threadId
+      ? getDisabledToolsForThread(this.threadId)
+      : []
+
+    // Helper to check if a tool is disabled
+    const isToolDisabled = (serverName: string, toolName: string): boolean => {
+      const toolKey = `${serverName}::${toolName}`
+      return disabledToolKeys.includes(toolKey)
+    }
+
     // Only load tools if model supports them
     if (this.modelSupportsTools) {
       // Load RAG tools if documents are available
@@ -129,14 +147,19 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         try {
           const ragTools = await this.serviceHub.rag().getTools()
           if (Array.isArray(ragTools) && ragTools.length > 0) {
-            // Convert RAG tools to AI SDK format
+            // Convert RAG tools to AI SDK format, filtering out disabled tools
             ragTools.forEach((tool) => {
-              toolsRecord[tool.name] = {
-                description: tool.description,
-                inputSchema: jsonSchema(
-                  tool.inputSchema as Record<string, unknown>
-                ),
-              } as Tool
+              // RAG tools use MCPTool interface with server field
+              const serverName =
+                (tool as { server?: string }).server || 'unknown'
+              if (!isToolDisabled(serverName, tool.name)) {
+                toolsRecord[tool.name] = {
+                  description: tool.description,
+                  inputSchema: jsonSchema(
+                    tool.inputSchema as Record<string, unknown>
+                  ),
+                } as Tool
+              }
             })
           }
         } catch (error) {
@@ -148,15 +171,19 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       try {
         const mcpTools = await this.serviceHub.mcp().getTools()
         if (Array.isArray(mcpTools) && mcpTools.length > 0) {
-          // Convert MCP tools to AI SDK format
+          // Convert MCP tools to AI SDK format, filtering out disabled tools
           // MCP tools added after RAG tools, so they take precedence in case of name conflicts
           mcpTools.forEach((tool) => {
-            toolsRecord[tool.name] = {
-              description: tool.description,
-              inputSchema: jsonSchema(
-                tool.inputSchema as Record<string, unknown>
-              ),
-            } as Tool
+            // MCP tools use MCPTool interface with server field
+            const serverName = (tool as { server?: string }).server || 'unknown'
+            if (!isToolDisabled(serverName, tool.name)) {
+              toolsRecord[tool.name] = {
+                description: tool.description,
+                inputSchema: jsonSchema(
+                  tool.inputSchema as Record<string, unknown>
+                ),
+              } as Tool
+            }
           })
         }
       } catch (error) {
@@ -174,6 +201,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return this.tools
   }
 
+  /**
+   * Force refresh tools from services
+   * Called when MCP server status changes or tools are updated
+   */
+  async forceRefreshTools() {
+    await this.refreshTools()
+  }
+
   async sendMessages(
     options: {
       chatId: string
@@ -187,11 +222,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Initialize model if not already initialized
     if (this.serviceHub && this.modelId && this.provider) {
       try {
+        const updatedProvider = useModelProvider
+          .getState()
+          .getProviderByName(this.provider.provider)
         // Start the model (this will be a no-op for remote providers)
-        await this.serviceHub.models().startModel(this.provider, this.modelId)
+        await this.serviceHub
+          .models()
+          .startModel(updatedProvider ?? this.provider, this.modelId)
 
         // Create the model using the factory
-        this.model = await ModelFactory.createModel(this.modelId, this.provider)
+        this.model = await ModelFactory.createModel(this.modelId, updatedProvider ?? this.provider)
       } catch (error) {
         console.error('Failed to start model:', error)
         throw new Error(
