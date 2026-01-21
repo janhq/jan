@@ -22,13 +22,21 @@ interface TokenSpeedIndicatorProps {
 
 export const TokenSpeedIndicator = memo(
   ({ metadata, streaming }: TokenSpeedIndicatorProps) => {
-    // Only re-render when the rounded token speed changes to prevent constant updates
-    const roundedTokenSpeed = useAppState((state) =>
+    // Get real-time token speed from global state during streaming
+    const streamingTokenSpeed = useAppState((state) =>
       state.tokenSpeed ? Math.round(state.tokenSpeed.tokenSpeed) : 0
     )
+    const streamingTokenCount = useAppState((state) =>
+      state.tokenSpeed?.tokenCount || 0
+    )
 
+    console.log(metadata)
+
+    // Fallback to persisted metadata when not streaming
     const persistedTokenSpeed =
       (metadata?.tokenSpeed as TokenSpeed)?.tokenSpeed || 0
+    const persistedTokenCount =
+      (metadata?.tokenSpeed as TokenSpeed)?.tokenCount || 0
     const usage = metadata?.usage as TokenUsage | undefined
 
     const nonStreamingAssistantParam =
@@ -41,29 +49,34 @@ export const TokenSpeedIndicator = memo(
 
     if (nonStreamingAssistantParam) return
 
+    // Use streaming data if available, otherwise fall back to metadata
     const displaySpeed = streaming
-      ? roundedTokenSpeed
+      ? streamingTokenSpeed
       : Math.round(toNumber(persistedTokenSpeed))
+
+    const displayTokenCount = streaming
+      ? streamingTokenCount
+      : (usage?.outputTokens ?? persistedTokenCount)
 
     // Hide the indicator if token speed is 0 and not streaming
     if (!streaming && displaySpeed === 0) return
 
+    // Show indicator during streaming OR when we have persisted data
+    const shouldShow = streaming || (displaySpeed > 0 && displayTokenCount > 0)
+
+    if (!shouldShow) return
+
     return (
       <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">
-        {!streaming &&
-          usage &&
-          usage.outputTokens != null &&
-          usage.outputTokens > 0 && (
-            <>
-              <div className="flex items-center gap-1">
-                <Gauge size={16} />
-                <span>{displaySpeed} tokens/sec</span>
-              </div>
-              <span className="text-main-view-fg/40">
-                ({usage.outputTokens} tokens)
-              </span>
-            </>
-          )}
+        <div className="flex items-center gap-1">
+          <Gauge size={16} />
+          <span>{displaySpeed} tokens/sec</span>
+        </div>
+        {displayTokenCount > 0 && (
+          <span className="text-main-view-fg/40">
+            ({displayTokenCount} tokens)
+          </span>
+        )}
       </div>
     )
   }
