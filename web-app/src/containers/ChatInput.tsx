@@ -173,6 +173,19 @@ const ChatInput = ({
     setDialogOpen: setExtensionDialogOpen,
   } = useJanBrowserExtension()
 
+  // Check if model supports browser feature (requires both vision and tools)
+  const modelSupportsBrowser = useMemo(() => {
+    const capabilities = selectedModel?.capabilities || []
+    return capabilities.includes('vision') && capabilities.includes('tools')
+  }, [selectedModel?.capabilities])
+
+  // Auto-disable browser feature when model doesn't support it
+  useEffect(() => {
+    if (janBrowserMCPActive && !modelSupportsBrowser) {
+      handleBrowseClick()
+    }
+  }, [janBrowserMCPActive, modelSupportsBrowser, handleBrowseClick])
+
   const attachmentsEnabled = useAttachments((s) => s.enabled)
   const parsePreference = useAttachments((s) => s.parseMode)
   const maxFileSizeMB = useAttachments((s) => s.maxFileSizeMB)
@@ -1530,15 +1543,14 @@ const ChatInput = ({
                     </Tooltip>
                   </TooltipProvider>
                 )}
-                {selectedModel?.capabilities?.includes('tools') &&
-                  hasJanBrowserMCPConfig && (
+                {hasJanBrowserMCPConfig && modelSupportsBrowser && (
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <div
                             className={cn(
                               'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer',
-                              janBrowserMCPActive && 'bg-accent/10',
+                              janBrowserMCPActive && 'bg-primary/10',
                               isJanBrowserMCPLoading &&
                                 'opacity-70 cursor-not-allowed'
                             )}
@@ -1551,14 +1563,14 @@ const ChatInput = ({
                             {isJanBrowserMCPLoading ? (
                               <IconLoader2
                                 size={18}
-                                className="text-accent animate-spin"
+                                className="text-primary animate-spin"
                               />
                             ) : (
                               <IconWorld
                                 size={18}
                                 className={cn(
                                   'text-main-view-fg/50',
-                                  janBrowserMCPActive && 'text-accent'
+                                  janBrowserMCPActive && 'text-primary'
                                 )}
                               />
                             )}
@@ -1621,14 +1633,14 @@ const ChatInput = ({
                                     className={cn(
                                       'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer',
                                       isOpen && 'bg-main-view-fg/10',
-                                      toolsCount > 0 && 'bg-accent/10'
+                                      toolsCount > 0 && 'bg-primary/10'
                                     )}
                                   >
                                     <IconTool
                                       size={18}
                                       className={cn(
                                         'text-main-view-fg/50',
-                                        toolsCount > 0 && 'text-accent'
+                                        toolsCount > 0 && 'text-primary'
                                       )}
                                     />
                                   </div>
