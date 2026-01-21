@@ -167,7 +167,10 @@ function ThreadDetail() {
         const contentParts = extractContentPartsFromUIMessage(message)
 
         if (contentParts.length > 0) {
-          // Create assistant message with content parts (including tool calls)
+          // Extract metadata from the message (including usage and tokenSpeed)
+          const messageMetadata = (message.metadata || {}) as Record<string, unknown>
+
+          // Create assistant message with content parts (including tool calls) and metadata
           const assistantMessage: ThreadMessage = {
             type: 'text',
             role: ChatCompletionRole.Assistant,
@@ -178,7 +181,7 @@ function ThreadDetail() {
             status: MessageStatus.Ready,
             created_at: Date.now(),
             completed_at: Date.now(),
-            metadata: {},
+            metadata: messageMetadata,
           }
 
           // Check if message with this ID already exists (onFinish can be called multiple times)

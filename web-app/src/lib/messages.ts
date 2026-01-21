@@ -558,6 +558,7 @@ export function convertThreadMessageToUIMessage(
     role: threadMessage.role as 'user' | 'assistant' | 'system',
     parts,
     createdAt: new Date(threadMessage.created_at || Date.now()),
+    metadata: threadMessage.metadata || {}
   } as UIMessage
 }
 
