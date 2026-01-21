@@ -393,136 +393,8 @@ function ThreadDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Check for and send initial message from sessionStorage
-  const initialMessageSentRef = useRef(false)
-  useEffect(() => {
-    // Prevent duplicate sends
-    if (initialMessageSentRef.current) return
-    if (!languageModelId || !languageModelProvider) return
-
-    const initialMessageKey = `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${threadId}`
-
-    const storedMessage = sessionStorage.getItem(initialMessageKey)
-
-    if (storedMessage) {
-      // Mark as sent immediately to prevent duplicate sends
-      sessionStorage.removeItem(initialMessageKey)
-      initialMessageSentRef.current = true
-
-      // Process message asynchronously
-      ;(async () => {
-        try {
-          const message = JSON.parse(storedMessage) as {
-            text: string
-            files?: Array<{ type: string; mediaType: string; url: string }>
-          }
-
-          // Get all attachments from the store (includes both images and documents)
-          const allAttachments = getAttachments(attachmentsKey)
-
-          // Convert image files to attachments for persistence
-          const imageAttachments = message.files?.map((file) => {
-            const base64 = file.url.split(',')[1] || ''
-            return createImageAttachment({
-              name: `image-${Date.now()}`,
-              mimeType: file.mediaType,
-              dataUrl: file.url,
-              base64,
-              size: Math.ceil((base64.length * 3) / 4), // Estimate size from base64
-            })
-          })
-
-          // Combine image attachments with document attachments from the store
-          const combinedAttachments = [
-            ...(imageAttachments || []),
-            ...allAttachments.filter((a) => a.type === 'document'),
-          ]
-
-          // Process attachments (ingest images, parse/index documents)
-          let processedAttachments = combinedAttachments
-          if (combinedAttachments.length > 0) {
-            try {
-              const parsePreference = useAttachments.getState().parseMode
-              const result = await processAttachmentsForSend({
-                attachments: combinedAttachments,
-                threadId,
-                serviceHub,
-                selectedProvider,
-                parsePreference,
-              })
-              processedAttachments = result.processedAttachments
-
-              // Update thread metadata if documents were embedded
-              if (result.hasEmbeddedDocuments) {
-                useThreads.getState().updateThread(threadId, {
-                  metadata: { hasDocuments: true },
-                })
-              }
-            } catch (error) {
-              console.error('Failed to process attachments:', error)
-              // Don't send message if attachment processing failed
-              return
-            }
-          }
-          const messageId = generateId()
-          // Create and persist the user message to the backend with all processed attachments
-          const userMessage = newUserThreadContent(
-            threadId,
-            message.text,
-            processedAttachments,
-            messageId
-          )
-          addMessage(userMessage)
-
-          // Build parts for AI SDK (only images are sent as file parts)
-          const parts: Array<
-            | { type: 'text'; text: string }
-            | { type: 'file'; mediaType: string; url: string }
-          > = [
-            {
-              type: 'text',
-              text: userMessage.content[0].text?.value ?? message.text,
-            },
-          ]
-
-          if (message.files) {
-            message.files.forEach((file) => {
-              parts.push({
-                type: 'file',
-                mediaType: file.mediaType,
-                url: file.url,
-              })
-            })
-          }
-
-          sendMessage({
-            parts,
-            id: messageId,
-            metadata: userMessage.metadata,
-          })
-
-          // Clear attachments after sending
-          clearAttachmentsForThread(attachmentsKey)
-        } catch (error) {
-          console.error('Failed to parse initial message:', error)
-        }
-      })()
-    }
-  }, [
-    threadId,
-    languageModelId,
-    languageModelProvider,
-    sendMessage,
-    addMessage,
-    getAttachments,
-    attachmentsKey,
-    clearAttachmentsForThread,
-    serviceHub,
-    selectedProvider,
-  ])
-
-  // Handle submit from ChatInput
-  const handleSubmit = useCallback(
+  // Consolidated function to process and send a message
+  const processAndSendMessage = useCallback(
     async (
       text: string,
       files?: Array<{ type: string; mediaType: string; url: string }>
@@ -532,7 +404,7 @@ function ThreadDetail() {
       // Get all attachments from the store (includes both images and documents)
       const allAttachments = getAttachments(attachmentsKey)
 
-      // Convert image files from ChatInput to attachments for persistence
+      // Convert image files to attachments for persistence
       const imageAttachments = files?.map((file) => {
         const base64 = file.url.split(',')[1] || ''
         return createImageAttachment({
@@ -540,7 +412,7 @@ function ThreadDetail() {
           mimeType: file.mediaType,
           dataUrl: file.url,
           base64,
-          size: Math.ceil((base64.length * 3) / 4),
+          size: Math.ceil((base64.length * 3) / 4), // Estimate size from base64
         })
       })
 
@@ -578,7 +450,7 @@ function ThreadDetail() {
       }
 
       const messageId = generateId()
-      // Persist user message to backend with all processed attachments
+      // Create and persist the user message to the backend with all processed attachments
       const userMessage = newUserThreadContent(
         threadId,
         text,
@@ -591,7 +463,12 @@ function ThreadDetail() {
       const parts: Array<
         | { type: 'text'; text: string }
         | { type: 'file'; mediaType: string; url: string }
-      > = [{ type: 'text', text: userMessage.content[0].text?.value ?? text }]
+      > = [
+        {
+          type: 'text',
+          text: userMessage.content[0].text?.value ?? text,
+        },
+      ]
 
       if (files) {
         files.forEach((file) => {
@@ -624,6 +501,54 @@ function ThreadDetail() {
       serviceHub,
       selectedProvider,
     ]
+  )
+
+  // Check for and send initial message from sessionStorage
+  const initialMessageSentRef = useRef(false)
+  useEffect(() => {
+    // Prevent duplicate sends
+    if (initialMessageSentRef.current) return
+    if (!languageModelId || !languageModelProvider) return
+
+    const initialMessageKey = `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${threadId}`
+
+    const storedMessage = sessionStorage.getItem(initialMessageKey)
+
+    if (storedMessage) {
+      // Mark as sent immediately to prevent duplicate sends
+      sessionStorage.removeItem(initialMessageKey)
+      initialMessageSentRef.current = true
+
+      // Process message asynchronously
+      ;(async () => {
+        try {
+          const message = JSON.parse(storedMessage) as {
+            text: string
+            files?: Array<{ type: string; mediaType: string; url: string }>
+          }
+
+          await processAndSendMessage(message.text, message.files)
+        } catch (error) {
+          console.error('Failed to parse initial message:', error)
+        }
+      })()
+    }
+  }, [
+    threadId,
+    languageModelId,
+    languageModelProvider,
+    processAndSendMessage,
+  ])
+
+  // Handle submit from ChatInput
+  const handleSubmit = useCallback(
+    async (
+      text: string,
+      files?: Array<{ type: string; mediaType: string; url: string }>
+    ) => {
+      await processAndSendMessage(text, files)
+    },
+    [processAndSendMessage]
   )
 
   // Handle regenerate from any message (user or assistant)
