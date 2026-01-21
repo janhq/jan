@@ -297,11 +297,6 @@ export const MessageItem = memo(
       )
     }
 
-    // Check if message has tool invocations
-    const hasToolCalls = message.parts.some((part) =>
-      part.type.startsWith('tool')
-    )
-
     return (
       <div className="w-full">
         {/* Show assistant header for assistant messages */}
