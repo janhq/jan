@@ -20,7 +20,6 @@ import { CodeBlockExample } from '@/containers/CodeBlockExample'
 import { toast } from 'sonner'
 import { ChatWidthSwitcher } from '@/containers/ChatWidthSwitcher'
 import { TokenCounterCompactSwitcher } from '@/containers/TokenCounterCompactSwitcher'
-import { ThreadScrollBehaviorSwitcher } from '@/containers/ThreadScrollBehaviorSwitcher'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.interface as any)({
@@ -122,15 +121,6 @@ function InterfaceSettings() {
                 description={t('settings:interface.tokenCounterCompactDesc')}
                 actions={<TokenCounterCompactSwitcher />}
               />
-            </Card>
-
-            {/* Scroll Behavior */}
-            <Card>
-              <CardItem
-                title={t('settings:interface.threadScrollTitle')}
-                description={t('settings:interface.threadScrollDesc')}
-              />
-              <ThreadScrollBehaviorSwitcher />
             </Card>
 
             {/* Codeblock */}
