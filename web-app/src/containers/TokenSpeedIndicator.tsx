@@ -30,8 +30,6 @@ export const TokenSpeedIndicator = memo(
       state.tokenSpeed?.tokenCount || 0
     )
 
-    console.log(metadata)
-
     // Fallback to persisted metadata when not streaming
     const persistedTokenSpeed =
       (metadata?.tokenSpeed as TokenSpeed)?.tokenSpeed || 0
