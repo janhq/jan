@@ -379,7 +379,7 @@ function SetupScreen() {
       <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center ">
         <div className="w-full lg:w-4/6 mx-auto">
           <div className="mb-8 text-left">
-            <h1 className="font-editorialnew text-main-view-fg text-4xl">
+            <h1 className="font-studio text-main-view-fg text-4xl">
               {t('setup:welcome')}
             </h1>
             {!isQuickStartAvailable && (
