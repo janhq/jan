@@ -46,7 +46,6 @@ import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
-import { useContextSizeApproval } from '@/hooks/useModelContextApproval'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle } from '@tabler/icons-react'
 
@@ -77,11 +76,6 @@ function ThreadDetail() {
   const isSmallScreen = useSmallScreen()
   const isMobile = useMobileScreen()
   useTools()
-
-  // Context size approval for out-of-context errors
-  const showApprovalModal = useContextSizeApproval(
-    (state) => state.showApprovalModal
-  )
 
   // Get attachments for this thread
   const attachmentsKey = threadId ?? NEW_THREAD_ATTACHMENT_KEY
@@ -606,12 +600,9 @@ function ThreadDetail() {
     regenerate(messageId ? { messageId } : undefined)
   }
 
-  // Handler for increasing context size or enabling context shift
+  // Handler for increasing context size
   const handleContextSizeIncrease = useCallback(async () => {
     if (!selectedModel) return
-
-    const result = await showApprovalModal()
-    if (!result) return
 
     const updateProvider = useModelProvider.getState().updateProvider
     const provider = getProviderByName(selectedProvider)
@@ -624,72 +615,41 @@ function ThreadDetail() {
 
     const model = provider.models[modelIndex]
 
-    if (result === 'ctx_len') {
-      // Increase context length by 50%
-      const currentCtxLen =
-        (model.settings?.ctx_len?.controller_props?.value as number) ?? 8192
-      const newCtxLen = Math.round(Math.max(8192, currentCtxLen) * 1.5)
+    // Increase context length by 50%
+    const currentCtxLen =
+      (model.settings?.ctx_len?.controller_props?.value as number) ?? 8192
+    const newCtxLen = Math.round(Math.max(8192, currentCtxLen) * 1.5)
 
-      const updatedModel = {
-        ...model,
-        settings: {
-          ...model.settings,
-          ctx_len: {
-            ...(model.settings?.ctx_len ?? {}),
-            controller_props: {
-              ...(model.settings?.ctx_len?.controller_props ?? {}),
-              value: newCtxLen,
-            },
+    const updatedModel = {
+      ...model,
+      settings: {
+        ...model.settings,
+        ctx_len: {
+          ...(model.settings?.ctx_len ?? {}),
+          controller_props: {
+            ...(model.settings?.ctx_len?.controller_props ?? {}),
+            value: newCtxLen,
           },
         },
-      }
-
-      const updatedModels = [...provider.models]
-      updatedModels[modelIndex] = updatedModel as Model
-
-      updateProvider(provider.provider, {
-        models: updatedModels,
-      })
-
-      await serviceHub.models().stopModel(selectedModel.id)
-
-      setTimeout(() => {
-        handleRegenerate()
-      }, 1000)
-    } else if (result === 'context_shift') {
-      // Enable context shift
-      const updatedModel = {
-        ...model,
-        settings: {
-          ...model.settings,
-          context_shift: {
-            ...(model.settings?.context_shift ?? {}),
-            controller_props: {
-              ...(model.settings?.context_shift?.controller_props ?? {}),
-              value: true,
-            },
-          },
-        },
-      }
-
-      const updatedModels = [...provider.models]
-      updatedModels[modelIndex] = updatedModel as Model
-
-      updateProvider(provider.provider, {
-        models: updatedModels,
-      })
-
-      await serviceHub.models().stopModel(selectedModel.id)
-
-      setTimeout(() => {
-        handleRegenerate()
-      }, 1000)
+      },
     }
+
+    const updatedModels = [...provider.models]
+    updatedModels[modelIndex] = updatedModel as Model
+
+    updateProvider(provider.provider, {
+      models: updatedModels,
+    })
+
+    await serviceHub.models().stopModel(selectedModel.id)
+
+    setTimeout(() => {
+      handleRegenerate()
+    }, 1000)
   }, [
     selectedModel,
     selectedProvider,
     getProviderByName,
-    showApprovalModal,
     serviceHub,
   ])
 
