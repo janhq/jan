@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import "katex/dist/katex.min.css";
 @import '@/styles/font.css';
 @import '@/styles/markdown.css';
 @source '../node_modules/streamdown/dist/**/*.js';
