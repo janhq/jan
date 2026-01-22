@@ -48,6 +48,7 @@ import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle } from '@tabler/icons-react'
+import { useToolApproval } from '@/hooks/useToolApproval'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -216,17 +217,33 @@ function ThreadDetail() {
       const ragToolNames = useAppState.getState().ragToolNames
       const mcpToolNames = useAppState.getState().mcpToolNames
 
-      // Execute all collected tool calls
-      Promise.all(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        sessionData.tools.map(async (toolCall: any) => {
+      // Process tool calls sequentially, requesting approval for each if needed
+      ;(async () => {
+        for (const toolCall of sessionData.tools) {
           // Check if already aborted before starting
           if (signal.aborted) {
-            return
+            break
           }
 
           try {
             const toolName = toolCall.toolName
+
+            // Request approval if needed (unless auto-approve is enabled)
+            const approved = await useToolApproval
+              .getState()
+              .showApprovalModal(toolName, threadId, toolCall.input)
+
+            if (!approved) {
+              // User denied the tool call
+              addToolOutput({
+                state: 'output-error',
+                tool: toolCall.toolName,
+                toolCallId: toolCall.toolCallId,
+                errorText: 'Tool execution denied by user',
+              })
+              continue
+            }
+
             let result
 
             // Route to the appropriate service based on tool name
@@ -274,18 +291,19 @@ function ThreadDetail() {
               })
             }
           }
-        })
-      )
-        .catch((error) => {
-          // Ignore abort errors
-          if (error.name !== 'AbortError') {
-            console.error('Tool call error:', error)
-          }
-        })
-        .finally(() => {
-          sessionData.tools = []
-          toolCallAbortController.current = null
-        })
+        }
+
+        // Clear tools after processing all
+        sessionData.tools = []
+        toolCallAbortController.current = null
+      })().catch((error) => {
+        // Ignore abort errors
+        if (error.name !== 'AbortError') {
+          console.error('Tool call error:', error)
+        }
+        sessionData.tools = []
+        toolCallAbortController.current = null
+      })
     },
     onToolCall: ({ toolCall }) => {
       sessionData.tools.push(toolCall)
@@ -683,11 +701,6 @@ function ThreadDetail() {
               {chatMessages.map((message, index) => {
                 const isLastMessage = index === chatMessages.length - 1
                 const isFirstMessage = index === 0
-                // const showAssistant =
-                //   message.role === 'assistant' &&
-                //   (isFirstMessage ||
-                //     chatMessages[index - 1]?.role !== 'assistant')
-
                 return (
                   <MessageItem
                     key={message.id}
@@ -697,15 +710,6 @@ function ThreadDetail() {
                     status={status}
                     reasoningContainerRef={reasoningContainerRef}
                     onRegenerate={handleRegenerate}
-                    // showAssistant={showAssistant}
-                    // assistant={
-                    //   currentAssistant
-                    //     ? {
-                    //         avatar: currentAssistant.avatar,
-                    //         name: currentAssistant.name,
-                    //       }
-                    //     : undefined
-                    // }
                   />
                 )
               })}
