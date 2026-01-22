@@ -59,7 +59,5 @@
     "description": "Configurez comment Jan gère et réessaye les serveurs MCP.",
     "toolCallTimeout": "Délai d'appel d'outil (secondes)",
     "toolCallTimeoutDesc": "Temps maximum d'attente pour une réponse d'outil MCP avant l'expiration du délai."
-  },
-  "proactiveMode": "Mode Proactif d'Utilisation du Navigateur",
-  "proactiveModeDesc": "Lorsqu'activé, capture automatiquement des captures d'écran du navigateur pour fournir un contexte supplémentaire pour les tâches d'automatisation du navigateur. Nécessite Jan Browser MCP avec un modèle de vision et d'utilisation d'outils."
+  }
 }

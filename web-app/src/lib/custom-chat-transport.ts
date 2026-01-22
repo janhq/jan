@@ -41,9 +41,6 @@ export type ServiceHub = {
       Array<{ name: string; description: string; inputSchema: unknown }>
     >
   }
-  models(): {
-    startModel(provider: ProviderObject, model: string): Promise<unknown>
-  }
 }
 
 export class CustomChatTransport implements ChatTransport<UIMessage> {
@@ -225,20 +222,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         const updatedProvider = useModelProvider
           .getState()
           .getProviderByName(this.provider.provider)
-        // Start the model (this will be a no-op for remote providers)
-        await this.serviceHub
-          .models()
-          .startModel(updatedProvider ?? this.provider, this.modelId)
 
         // Create the model using the factory
+        // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
         this.model = await ModelFactory.createModel(
           this.modelId,
           updatedProvider ?? this.provider
         )
       } catch (error) {
-        console.error('Failed to start model:', error)
+        console.error('Failed to create model:', error)
         throw new Error(
-          `Failed to start model: ${error instanceof Error ? error.message : String(error)}`
+          `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
         )
       }
     } else {

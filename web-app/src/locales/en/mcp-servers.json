@@ -59,7 +59,5 @@
     "description": "Configure how Jan manages and retries MCP servers.",
     "toolCallTimeout": "Tool call timeout (seconds)",
     "toolCallTimeoutDesc": "Maximum time to wait for an MCP tool response before timing out."
-  },
-  "proactiveMode": "Browser Use Proactive Mode",
-  "proactiveModeDesc": "When enabled, automatically captures browser screenshots to provide additional context for browser automation tasks. Requires Jan Browser MCP with vision and tool use model."
+  }
 }

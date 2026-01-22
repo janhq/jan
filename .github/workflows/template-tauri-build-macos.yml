@@ -173,6 +173,7 @@ jobs:
         run: |
           make build
         env:
+          NODE_OPTIONS: "--max-old-space-size=4196"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APP_PATH: '.'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}

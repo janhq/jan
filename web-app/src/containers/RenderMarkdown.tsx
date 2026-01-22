@@ -4,6 +4,11 @@ import { memo, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 // import 'katex/dist/katex.min.css'
 import { defaultRehypePlugins, Streamdown } from 'streamdown'
+import { cjk } from '@streamdown/cjk'
+import { code } from '@streamdown/code'
+import { math } from '@streamdown/math'
+import { mermaid } from '@streamdown/mermaid'
+
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
@@ -107,6 +112,12 @@ function RenderMarkdownComponent({
           defaultRehypePlugins.harden,
         ]}
         components={components}
+        plugins={{
+          code: code,
+          mermaid: mermaid,
+          math: math,
+          cjk: cjk,
+        }}
         mermaid={
           messageId
             ? {
