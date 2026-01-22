@@ -231,7 +231,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           .startModel(updatedProvider ?? this.provider, this.modelId)
 
         // Create the model using the factory
-        this.model = await ModelFactory.createModel(this.modelId, updatedProvider ?? this.provider)
+        this.model = await ModelFactory.createModel(
+          this.modelId,
+          updatedProvider ?? this.provider
+        )
       } catch (error) {
         console.error('Failed to start model:', error)
         throw new Error(
@@ -243,7 +246,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
 
     // Convert UI messages to model messages
-    const modelMessages = convertToModelMessages(options.messages)
+    const modelMessages = convertToModelMessages(
+      this.mapUserInlineAttachments(options.messages)
+    )
 
     // Include tools only if we have tools loaded AND model supports them
     const hasTools = Object.keys(this.tools).length > 0
@@ -264,7 +269,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     return result.toUIMessageStream({
       messageMetadata: ({ part }) => {
-
         // Track stream start time on first text delta
         if (part.type === 'text-delta') {
           if (!streamStartTime) {
@@ -373,5 +377,50 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // This function normally handles reconnecting to a stream on the backend, e.g. /api/chat
     // Since this project has no backend, we can't reconnect to a stream, so this is intentionally no-op.
     return null
+  }
+
+  /**
+   *  Map user messages to include inline attachments in the message parts
+   * @param messages
+   * @returns
+   */
+  mapUserInlineAttachments(messages: UIMessage[]): UIMessage[] {
+    return messages.map((message) => {
+      if (message.role === 'user') {
+        const metadata = message.metadata as
+          | { inline_file_contents?: Array<{ name?: string; content?: string }> }
+          | undefined
+        const inlineFileContents = Array.isArray(
+          metadata?.inline_file_contents
+        )
+          ? metadata.inline_file_contents.filter((f) => f?.content)
+          : []
+        // Tool messages have content as array of ToolResultPart
+        if (inlineFileContents.length > 0) {
+          const buildInlineText = (base: string) => {
+            if (!inlineFileContents.length) return base
+            const formatted = inlineFileContents
+              .map((f) => `File: ${f.name || 'attachment'}\n${f.content ?? ''}`)
+              .join('\n\n')
+            return base ? `${base}\n\n${formatted}` : formatted
+          }
+
+          if (message.parts.length > 0) {
+            const parts = message.parts.map((part) => {
+              if (part.type === 'text') {
+                return {
+                  type: 'text' as const,
+                  text: buildInlineText(part.text ?? ''),
+                }
+              }
+              return part
+            })
+            message.parts = parts
+          }
+        }
+      }
+
+      return message
+    })
   }
 }

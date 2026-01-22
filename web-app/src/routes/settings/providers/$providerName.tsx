@@ -31,7 +31,7 @@ import {
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { useCallback, useEffect, useState } from 'react'
-import { predefinedProviders } from '@/consts/providers'
+import { predefinedProviders } from '@/constants/providers'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { PlatformFeatures } from '@/lib/platform/const'
@@ -567,7 +567,7 @@ function ProviderDetail() {
                                     size="sm"
                                     className={cn(
                                       'p-0',
-                                      isCheckingBackendUpdate && 
+                                      isCheckingBackendUpdate &&
                                       'pointer-events-none'
                                     )}
                                     onClick={handleCheckForBackendUpdate}

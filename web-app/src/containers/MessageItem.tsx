@@ -298,7 +298,7 @@ export const MessageItem = memo(
     }
 
     return (
-      <div className="w-full">
+      <div className="w-full mb-4">
         {/* Show assistant header for assistant messages */}
         {message.role === 'assistant' && showAssistant && (
           <div className="flex items-center gap-2 mb-3 text-main-view-fg/60">
