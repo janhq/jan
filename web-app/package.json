@@ -83,6 +83,7 @@
     "remark-emoji": "5.0.1",
     "remark-gfm": "4.0.1",
     "remark-math": "6.0.0",
+    "shiki": "^3.19.0",
     "sonner": "2.0.5",
     "streamdown": "npm:@janhq/streamdown@^2.0.2",
     "tailwindcss": "4.1.17",

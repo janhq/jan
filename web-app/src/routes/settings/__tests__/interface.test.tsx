@@ -61,27 +61,10 @@ vi.mock('@/containers/ChatWidthSwitcher', () => ({
   ChatWidthSwitcher: () => <div data-testid="chat-width-switcher">Chat Width Switcher</div>,
 }))
 
-vi.mock('@/containers/CodeBlockStyleSwitcher', () => ({
-  default: () => <div data-testid="code-block-style-switcher">Code Block Style Switcher</div>,
-}))
-
-vi.mock('@/containers/LineNumbersSwitcher', () => ({
-  LineNumbersSwitcher: () => <div data-testid="line-numbers-switcher">Line Numbers Switcher</div>,
-}))
-
-vi.mock('@/containers/CodeBlockExample', () => ({
-  CodeBlockExample: () => <div data-testid="code-block-example">Code Block Example</div>,
-}))
 
 vi.mock('@/hooks/useInterfaceSettings', () => ({
   useInterfaceSettings: () => ({
     resetInterface: vi.fn(),
-  }),
-}))
-
-vi.mock('@/hooks/useCodeblock', () => ({
-  useCodeblock: () => ({
-    resetCodeBlockStyle: vi.fn(),
   }),
 }))
 
@@ -152,15 +135,6 @@ describe('Interface Settings Route', () => {
     render(<Component />)
 
     expect(screen.getByTestId('chat-width-switcher')).toBeInTheDocument()
-  })
-
-  it('should render code block controls', () => {
-    const Component = InterfaceRoute.component as React.ComponentType
-    render(<Component />)
-
-    expect(screen.getByTestId('code-block-style-switcher')).toBeInTheDocument()
-    expect(screen.getByTestId('code-block-example')).toBeInTheDocument()
-    expect(screen.getByTestId('line-numbers-switcher')).toBeInTheDocument()
   })
 
   it('should render reset interface button', () => {
