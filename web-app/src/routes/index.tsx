@@ -22,8 +22,6 @@ import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
 import { useMobileScreen } from '@/hooks/useMediaQuery'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 import { TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 
 export const Route = createFileRoute(route.home as any)({
@@ -88,9 +86,7 @@ function Index() {
     <div className="flex h-full flex-col justify-center pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          {PlatformFeatures[PlatformFeature.ASSISTANTS] && (
-            <DropdownAssistant />
-          )}
+          <DropdownAssistant />
         </div>
       </HeaderPage>
       <div
@@ -105,11 +101,7 @@ function Index() {
             isMobile ? 'w-full max-w-full' : 'w-full md:w-4/6'
           )}
         >
-          <div
-            className={cn(
-              'text-center mb-4',
-            )}
-          >
+          <div className={cn('text-center mb-4')}>
             <h1
               className={cn(
                 'text-main-view-fg/90 mt-2 font-studio font-medium',

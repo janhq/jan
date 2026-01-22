@@ -16,8 +16,6 @@ import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { useSmallScreen, useMobileScreen } from '@/hooks/useMediaQuery'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -319,10 +317,7 @@ function ThreadDetail() {
   // Update RAG tools availability when documents, model, or tool availability changes
   useEffect(() => {
     const hasDocuments = Boolean(thread?.metadata?.hasDocuments)
-    const ragFeatureAvailable = Boolean(
-      useAttachments.getState().enabled &&
-        PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
-    )
+    const ragFeatureAvailable = Boolean(useAttachments.getState().enabled)
     const modelSupportsTools =
       selectedModel?.capabilities?.includes('tools') ?? false
 
@@ -664,12 +659,7 @@ function ThreadDetail() {
     setTimeout(() => {
       handleRegenerate()
     }, 1000)
-  }, [
-    selectedModel,
-    selectedProvider,
-    getProviderByName,
-    serviceHub,
-  ])
+  }, [selectedModel, selectedProvider, getProviderByName, serviceHub])
 
   const threadModel = useMemo(() => thread?.model, [thread])
 
@@ -680,9 +670,7 @@ function ThreadDetail() {
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
           <div>
-            {PlatformFeatures[PlatformFeature.ASSISTANTS] && (
-              <DropdownAssistant />
-            )}
+            <DropdownAssistant />
           </div>
         </div>
       </HeaderPage>

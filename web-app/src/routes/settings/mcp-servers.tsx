@@ -27,8 +27,6 @@ import { useToolApproval } from '@/hooks/useToolApproval'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
-import { PlatformGuard } from '@/lib/platform/PlatformGuard'
-import { PlatformFeature } from '@/lib/platform'
 import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
 
@@ -93,16 +91,8 @@ const maskSensitiveUrl = (url: string) => {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.mcp_servers as any)({
-  component: MCPServers,
+  component: MCPServersDesktop,
 })
-
-function MCPServers() {
-  return (
-    <PlatformGuard feature={PlatformFeature.MCP_SERVERS_SETTINGS}>
-      <MCPServersDesktop />
-    </PlatformGuard>
-  )
-}
 
 function MCPServersDesktop() {
   const { t } = useTranslation()
@@ -221,7 +211,9 @@ function MCPServersDesktop() {
       }
 
       deleteServer(serverToDelete)
-      toast.success(t('mcp-servers:deleteServer.success', { serverName: serverToDelete }))
+      toast.success(
+        t('mcp-servers:deleteServer.success', { serverName: serverToDelete })
+      )
       setServerToDelete(null)
       syncServersAndRestart()
     }
@@ -247,7 +239,10 @@ function MCPServersDesktop() {
     data:
       | MCPServerConfig
       | Record<string, MCPServerConfig>
-      | { mcpServers?: Record<string, MCPServerConfig>; mcpSettings?: MCPSettings }
+      | {
+          mcpServers?: Record<string, MCPServerConfig>
+          mcpSettings?: MCPSettings
+        }
   ) => {
     if (jsonServerName) {
       try {
@@ -368,7 +363,6 @@ function MCPServersDesktop() {
     return () => {
       unlisten?.()
     }
-
   }, [serviceHub, setConnectedServers])
 
   return (
@@ -441,14 +435,18 @@ function MCPServersDesktop() {
               />
               <CardItem
                 title={t('mcp-servers:runtimeSettings.toolCallTimeout')}
-                description={t('mcp-servers:runtimeSettings.toolCallTimeoutDesc')}
+                description={t(
+                  'mcp-servers:runtimeSettings.toolCallTimeoutDesc'
+                )}
                 actions={
                   <Input
                     type="number"
                     min={1}
                     step={1}
                     value={settings.toolCallTimeoutSeconds}
-                    onChange={(event) => updateToolCallTimeout(event.target.value)}
+                    onChange={(event) =>
+                      updateToolCallTimeout(event.target.value)
+                    }
                     onBlur={() => {
                       void syncServers()
                     }}

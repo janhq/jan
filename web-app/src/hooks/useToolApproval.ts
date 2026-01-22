@@ -1,8 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 
 export type ToolApprovalModalProps = {
   toolName: string
@@ -34,7 +32,7 @@ export const useToolApproval = create<ToolApprovalState>()(
   persist(
     (set, get) => ({
       approvedTools: {},
-      allowAllMCPPermissions: PlatformFeatures[PlatformFeature.MCP_AUTO_APPROVE_TOOLS],
+      allowAllMCPPermissions: false,
       isModalOpen: false,
       modalProps: null,
 

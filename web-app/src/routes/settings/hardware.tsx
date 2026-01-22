@@ -15,22 +15,12 @@ import type { HardwareData, SystemUsage } from '@/services/hardware/types'
 import { formatMegaBytes } from '@/lib/utils'
 import { toNumber } from '@/utils/number'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { PlatformGuard } from '@/lib/platform/PlatformGuard'
-import { PlatformFeature } from '@/lib/platform'
 import { useAppState } from '@/hooks/useAppState'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hardware as any)({
-  component: Hardware,
+  component: HardwareContent,
 })
-
-function Hardware() {
-  return (
-    <PlatformGuard feature={PlatformFeature.HARDWARE_MONITORING}>
-      <HardwareContent />
-    </PlatformGuard>
-  )
-}
 
 function HardwareContent() {
   const { t } = useTranslation()

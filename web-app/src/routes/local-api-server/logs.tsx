@@ -5,21 +5,11 @@ import { useEffect, useState, useRef } from 'react'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { LogEntry } from '@/services/app/types'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { PlatformGuard } from '@/lib/platform/PlatformGuard'
-import { PlatformFeature } from '@/lib/platform'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.localApiServerlogs as any)({
-  component: LocalApiServerLogsGuarded,
+  component: LogsViewer,
 })
-
-function LocalApiServerLogsGuarded() {
-  return (
-    <PlatformGuard feature={PlatformFeature.LOCAL_API_SERVER}>
-      <LogsViewer />
-    </PlatformGuard>
-  )
-}
 
 const SERVER_LOG_TARGET = 'app_lib::core::server::proxy'
 const LOG_EVENT_NAME = 'log://log'

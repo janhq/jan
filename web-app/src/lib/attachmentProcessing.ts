@@ -1,14 +1,8 @@
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 import { ServiceHub } from '@/services'
 import { Attachment } from '@/types/attachment'
 import { toast } from 'sonner'
 
-type AttachmentProcessingStatus =
-  | 'processing'
-  | 'done'
-  | 'error'
-  | 'clear_all'
+type AttachmentProcessingStatus = 'processing' | 'done' | 'error' | 'clear_all'
 
 type AttachmentProcessingOptions = {
   attachments: Attachment[]
@@ -38,15 +32,13 @@ const formatAttachmentError = (err: unknown): string => {
   if (typeof err === 'string') return err
   if (Array.isArray(err)) {
     const parts = err.map((e) => formatAttachmentError(e)).filter(Boolean)
-    return parts.length ? Array.from(new Set(parts)).join('; ') : 'Unknown error'
+    return parts.length
+      ? Array.from(new Set(parts)).join('; ')
+      : 'Unknown error'
   }
   if (typeof err === 'object') {
     const obj = err as Record<string, unknown>
-    const candidates = [
-      obj.message,
-      obj.reason,
-      obj.detail,
-    ]
+    const candidates = [obj.message, obj.reason, obj.detail]
     for (const val of candidates) {
       if (typeof val === 'string' && val.trim().length > 0) {
         return val
@@ -90,7 +82,6 @@ export const processAttachmentsForSend = async (
     updateAttachmentProcessing,
   } = options
 
-  const fileAttachmentsFeatureEnabled = PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
   const processedAttachments: Attachment[] = []
   let hasEmbeddedDocuments = false
   const effectiveContextThreshold =
@@ -100,7 +91,9 @@ export const processAttachmentsForSend = async (
       ? contextThreshold
       : undefined
   const notifyUpdate = (
-    ...args: Parameters<NonNullable<AttachmentProcessingOptions['updateAttachmentProcessing']>>
+    ...args: Parameters<
+      NonNullable<AttachmentProcessingOptions['updateAttachmentProcessing']>
+    >
   ) => updateAttachmentProcessing?.(...args)
 
   // Images: ingest before sending
@@ -137,126 +130,124 @@ export const processAttachmentsForSend = async (
     }
   }
 
-  if (fileAttachmentsFeatureEnabled) {
-    const documents = attachments.filter((a) => a.type === 'document')
-    for (const doc of documents) {
-      try {
-        if (doc.processed && (doc.id || doc.injectionMode === 'inline')) {
-          hasEmbeddedDocuments = hasEmbeddedDocuments || doc.injectionMode !== 'inline'
-          processedAttachments.push(doc)
-          continue
+  const documents = attachments.filter((a) => a.type === 'document')
+  for (const doc of documents) {
+    try {
+      if (doc.processed && (doc.id || doc.injectionMode === 'inline')) {
+        hasEmbeddedDocuments =
+          hasEmbeddedDocuments || doc.injectionMode !== 'inline'
+        processedAttachments.push(doc)
+        continue
+      }
+
+      notifyUpdate(doc.name, 'processing')
+
+      const targetPreference = doc.parseMode ?? parsePreference
+      let targetMode: 'inline' | 'embeddings' =
+        targetPreference === 'inline' ? 'inline' : 'embeddings'
+      let parsedContent: string | undefined
+
+      const canInline = targetPreference !== 'embeddings' && !!doc.path
+
+      if (canInline) {
+        try {
+          parsedContent = await serviceHub
+            .rag()
+            .parseDocument?.(doc.path!, doc.fileType)
+        } catch (err) {
+          console.warn(`Failed to parse ${doc.name} for inline use`, err)
         }
+      }
 
-        notifyUpdate(doc.name, 'processing')
+      if (targetPreference === 'auto') {
+        // Check if user made a per-file choice for this document
+        const userChoice = perFileChoices?.get(doc.path || '')
+        targetMode = userChoice ?? autoFallbackMode ?? 'embeddings'
 
-        const targetPreference = doc.parseMode ?? parsePreference
-        let targetMode: 'inline' | 'embeddings' =
-          targetPreference === 'inline' ? 'inline' : 'embeddings'
-        let parsedContent: string | undefined
-
-        const canInline =
-          targetPreference !== 'embeddings' && !!doc.path
-
-        if (canInline) {
-          try {
-            parsedContent = await serviceHub.rag().parseDocument?.(doc.path!, doc.fileType)
-          } catch (err) {
-            console.warn(`Failed to parse ${doc.name} for inline use`, err)
-          }
-        }
-
-        if (targetPreference === 'auto') {
-          // Check if user made a per-file choice for this document
-          const userChoice = perFileChoices?.get(doc.path || '')
-          targetMode = userChoice ?? autoFallbackMode ?? 'embeddings'
-
-          // Only do auto-detection if no user choice was made
-          if (!userChoice && parsedContent && estimateTokens) {
-            const estimatedTokens = await estimateTokens(parsedContent)
-            const tokenCount =
-              typeof estimatedTokens === 'number' &&
-              Number.isFinite(estimatedTokens) &&
-              estimatedTokens > 0
-                ? estimatedTokens
-                : undefined
-            if (!effectiveContextThreshold) {
-              console.debug(
-                `Attachment ${doc.name}: no context threshold available; defaulting to ${targetMode}`
-              )
-            } else if (typeof tokenCount === 'number') {
-              targetMode =
-                tokenCount <= effectiveContextThreshold ? 'inline' : 'embeddings'
-            } else {
-              console.debug(
-                `Attachment ${doc.name}: token estimate unavailable or non-positive; defaulting to ${targetMode}`
-              )
-            }
-          } else if (!userChoice && !parsedContent) {
+        // Only do auto-detection if no user choice was made
+        if (!userChoice && parsedContent && estimateTokens) {
+          const estimatedTokens = await estimateTokens(parsedContent)
+          const tokenCount =
+            typeof estimatedTokens === 'number' &&
+            Number.isFinite(estimatedTokens) &&
+            estimatedTokens > 0
+              ? estimatedTokens
+              : undefined
+          if (!effectiveContextThreshold) {
             console.debug(
-              `Attachment ${doc.name}: parsed content unavailable for token estimation; defaulting to ${targetMode}`
+              `Attachment ${doc.name}: no context threshold available; defaulting to ${targetMode}`
             )
-          } else if (!userChoice) {
+          } else if (typeof tokenCount === 'number') {
+            targetMode =
+              tokenCount <= effectiveContextThreshold ? 'inline' : 'embeddings'
+          } else {
             console.debug(
-              `Attachment ${doc.name}: token estimator unavailable; defaulting to ${targetMode}`
+              `Attachment ${doc.name}: token estimate unavailable or non-positive; defaulting to ${targetMode}`
             )
           }
-        } else if (targetPreference === 'prompt') {
-          // Check if user made a per-file choice for this document
-          const userChoice = perFileChoices?.get(doc.path || '')
-          targetMode = userChoice ?? autoFallbackMode ?? 'embeddings'
+        } else if (!userChoice && !parsedContent) {
+          console.debug(
+            `Attachment ${doc.name}: parsed content unavailable for token estimation; defaulting to ${targetMode}`
+          )
+        } else if (!userChoice) {
+          console.debug(
+            `Attachment ${doc.name}: token estimator unavailable; defaulting to ${targetMode}`
+          )
         }
+      } else if (targetPreference === 'prompt') {
+        // Check if user made a per-file choice for this document
+        const userChoice = perFileChoices?.get(doc.path || '')
+        targetMode = userChoice ?? autoFallbackMode ?? 'embeddings'
+      }
 
-        if (targetMode === 'inline' && parsedContent) {
-          processedAttachments.push({
-            ...doc,
-            processing: false,
-            processed: true,
-            inlineContent: parsedContent,
-            injectionMode: 'inline',
-          })
-
-          notifyUpdate(doc.name, 'done', {
-            processing: false,
-            processed: true,
-            inlineContent: parsedContent,
-            injectionMode: 'inline',
-          })
-          continue
-        }
-
-        // Default: ingest as embeddings
-        notifyUpdate(doc.name, 'processing')
-
-        const res = await serviceHub
-          .uploads()
-          .ingestFileAttachment(threadId, doc)
-
+      if (targetMode === 'inline' && parsedContent) {
         processedAttachments.push({
           ...doc,
-          id: res.id,
-          size: res.size ?? doc.size,
-          chunkCount: res.chunkCount ?? doc.chunkCount,
           processing: false,
           processed: true,
-          injectionMode: 'embeddings',
+          inlineContent: parsedContent,
+          injectionMode: 'inline',
         })
-        hasEmbeddedDocuments = true
 
         notifyUpdate(doc.name, 'done', {
-          id: res.id,
-          size: res.size ?? doc.size,
-          chunkCount: res.chunkCount ?? doc.chunkCount,
           processing: false,
           processed: true,
-          injectionMode: 'embeddings',
+          inlineContent: parsedContent,
+          injectionMode: 'inline',
         })
-      } catch (err) {
-        console.error(`Failed to ingest ${doc.name}:`, err)
-        notifyUpdate(doc.name, 'error')
-        const desc = formatAttachmentError(err)
-        toast.error('Failed to index attachments', { description: desc })
-        throw err instanceof Error ? err : new Error(desc)
+        continue
       }
+
+      // Default: ingest as embeddings
+      notifyUpdate(doc.name, 'processing')
+
+      const res = await serviceHub.uploads().ingestFileAttachment(threadId, doc)
+
+      processedAttachments.push({
+        ...doc,
+        id: res.id,
+        size: res.size ?? doc.size,
+        chunkCount: res.chunkCount ?? doc.chunkCount,
+        processing: false,
+        processed: true,
+        injectionMode: 'embeddings',
+      })
+      hasEmbeddedDocuments = true
+
+      notifyUpdate(doc.name, 'done', {
+        id: res.id,
+        size: res.size ?? doc.size,
+        chunkCount: res.chunkCount ?? doc.chunkCount,
+        processing: false,
+        processed: true,
+        injectionMode: 'embeddings',
+      })
+    } catch (err) {
+      console.error(`Failed to ingest ${doc.name}:`, err)
+      notifyUpdate(doc.name, 'error')
+      const desc = formatAttachmentError(err)
+      toast.error('Failed to index attachments', { description: desc })
+      throw err instanceof Error ? err : new Error(desc)
     }
   }
 
