@@ -493,23 +493,6 @@ const LeftPanel = () => {
                   </div>
                 )}
 
-                {/* Show "No threads yet" when there are no threads at all OR when all threads are in projects */}
-                {(Object.keys(threads).length === 0 || (Object.keys(threads).length > 0 && unFavoritedThreads.length === 0 && favoritedThreads.length === 0)) && (
-                  <>
-                    <div className="px-1 mt-2">
-                      <div className="flex items-center gap-1 text-left-panel-fg/80">
-                        <IconMessage size={18} />
-                        <h6 className="font-medium text-base">
-                          {t('common:noThreadsYet')}
-                        </h6>
-                      </div>
-                      <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
-                        {t('common:noThreadsYetDesc')}
-                      </p>
-                    </div>
-                  </>
-                )}
-
                 <div className="flex flex-col">
                   <ThreadList threads={unFavoritedThreads} />
                 </div>
