@@ -23,7 +23,7 @@ const Download = () => {
             Installation Guide
           </a>
           <a
-            href="/changelog/"
+            href="/changelog"
             className="text-blue-600 dark:text-blue-400 cursor-pointer"
           >
             Changelog
