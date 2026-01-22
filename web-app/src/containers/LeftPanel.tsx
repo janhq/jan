@@ -8,7 +8,6 @@ import {
   IconSettings,
   IconStar,
   IconFolderPlus,
-  IconMessage,
   IconApps,
   IconSearch,
   IconFolder,
