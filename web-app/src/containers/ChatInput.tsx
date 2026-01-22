@@ -154,12 +154,6 @@ const ChatInput = ({
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
-  const hasActiveModels = useMemo(
-    () =>
-      activeModels.length > 0 &&
-      activeModels.some((e) => e === selectedModel?.id),
-    [activeModels, selectedModel?.id]
-  )
 
   // Jan Browser Extension hook
   const {
@@ -1694,7 +1688,6 @@ const ChatInput = ({
 
             <div className="flex items-center gap-2">
               {selectedProvider === 'llamacpp' &&
-                hasActiveModels &&
                 tokenCounterCompact &&
                 !initialMessage &&
                 (threadMessages?.length > 0 || prompt.trim().length > 0) && (
@@ -1762,7 +1755,6 @@ const ChatInput = ({
       )}
 
       {selectedProvider === 'llamacpp' &&
-        hasActiveModels &&
         !tokenCounterCompact &&
         !initialMessage &&
         (threadMessages?.length > 0 || prompt.trim().length > 0) && (
