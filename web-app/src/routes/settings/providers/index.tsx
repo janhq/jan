@@ -17,8 +17,6 @@ import { openAIProviderSettings } from '@/constants/providers'
 import cloneDeep from 'lodash/cloneDeep'
 import { toast } from 'sonner'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.model_providers as any)({
@@ -59,30 +57,6 @@ function ModelProviders() {
     },
     [providers, addProvider, t, navigate]
   )
-
-  // Check if model provider settings are enabled for this platform
-  if (!PlatformFeatures[PlatformFeature.MODEL_PROVIDER_SETTINGS]) {
-    return (
-      <div className="flex flex-col h-full">
-        <HeaderPage>
-          <h1 className="font-medium">{t('common:settings')}</h1>
-        </HeaderPage>
-        <div className="flex h-full w-full flex-col sm:flex-row">
-          <SettingsMenu />
-          <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto flex items-center justify-center">
-            <div className="text-center">
-              <h2 className="text-lg font-medium text-main-view-fg/80 mb-2">
-                {t('common:notAvailable')}
-              </h2>
-              <p className="text-main-view-fg/60">
-                Model provider settings are not available on the web platform.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="flex flex-col h-full">

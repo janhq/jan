@@ -2,8 +2,6 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { Assistant as CoreAssistant } from '@janhq/core'
 import { create } from 'zustand'
 import { localStorageKey } from '@/constants/localStorage'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 
 interface AssistantState {
   assistants: Assistant[]
@@ -50,16 +48,9 @@ export const defaultAssistant: Assistant = {
 
 // Platform-aware initial state
 const getInitialAssistantState = () => {
-  if (PlatformFeatures[PlatformFeature.ASSISTANTS]) {
-    return {
-      assistants: [defaultAssistant],
-      currentAssistant: defaultAssistant,
-    }
-  } else {
-    return {
-      assistants: [],
-      currentAssistant: null,
-    }
+  return {
+    assistants: [defaultAssistant],
+    currentAssistant: defaultAssistant,
   }
 }
 

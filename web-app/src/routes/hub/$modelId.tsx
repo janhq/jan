@@ -13,8 +13,6 @@ import {
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
-import { PlatformGuard } from '@/lib/platform/PlatformGuard'
-import { PlatformFeature } from '@/lib/platform'
 import { extractModelName, extractDescription } from '@/lib/models'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useEffect, useMemo, useCallback, useState } from 'react'
@@ -35,19 +33,11 @@ type SearchParams = {
 }
 
 export const Route = createFileRoute('/hub/$modelId')({
-  component: HubModelDetail,
+  component: HubModelDetailContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
     repo: search.repo as SearchParams['repo'],
   }),
 })
-
-function HubModelDetail() {
-  return (
-    <PlatformGuard feature={PlatformFeature.MODEL_HUB}>
-      <HubModelDetailContent />
-    </PlatformGuard>
-  )
-}
 
 function HubModelDetailContent() {
   const { t } = useTranslation()

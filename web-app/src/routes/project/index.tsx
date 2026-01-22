@@ -4,8 +4,6 @@ import { useState, useMemo } from 'react'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useThreads } from '@/hooks/useThreads'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { PlatformGuard } from '@/lib/platform/PlatformGuard'
-import { PlatformFeature } from '@/lib/platform/types'
 
 import HeaderPage from '@/containers/HeaderPage'
 import ThreadList from '@/containers/ThreadList'
@@ -26,16 +24,8 @@ import { Button } from '@/components/ui/button'
 import { formatDate } from '@/utils/formatDate'
 
 export const Route = createFileRoute('/project/')({
-  component: Project,
+  component: ProjectContent,
 })
-
-function Project() {
-  return (
-    <PlatformGuard feature={PlatformFeature.PROJECTS}>
-      <ProjectContent />
-    </PlatformGuard>
-  )
-}
 
 function ProjectContent() {
   const { t } = useTranslation()
@@ -274,9 +264,7 @@ function ProjectContent() {
 
                       {/* Thread List */}
                       {isExpanded && projectThreads.length > 0 && (
-                        <div 
-                          className="mt-3 pl-2 pr-2 max-h-[190px] overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-main-view-fg/20 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-main-view-fg/30"
-                        >
+                        <div className="mt-3 pl-2 pr-2 max-h-[190px] overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-main-view-fg/20 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-main-view-fg/30">
                           <ThreadList
                             threads={projectThreads}
                             variant="project"

@@ -4,21 +4,11 @@ import { route } from '@/constants/routes'
 import { useEffect, useState, useRef } from 'react'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { PlatformGuard } from '@/lib/platform/PlatformGuard'
-import { PlatformFeature } from '@/lib/platform'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.appLogs as any)({
-  component: LogsViewerGuarded,
+  component: LogsViewer,
 })
-
-function LogsViewerGuarded() {
-  return (
-    <PlatformGuard feature={PlatformFeature.SYSTEM_INTEGRATIONS}>
-      <LogsViewer />
-    </PlatformGuard>
-  )
-}
 
 // Define log entry type
 
@@ -88,7 +78,7 @@ function LogsViewer() {
       timeZone: 'UTC',
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit'
+      second: '2-digit',
     })
   }
 

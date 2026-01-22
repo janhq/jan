@@ -69,8 +69,6 @@ import {
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
 import { toast } from 'sonner'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
@@ -184,9 +182,7 @@ const ChatInput = ({
   const parsePreference = useAttachments((s) => s.parseMode)
   const maxFileSizeMB = useAttachments((s) => s.maxFileSizeMB)
   const autoInlineContextRatio = useAttachments((s) => s.autoInlineContextRatio)
-  // Determine whether to show the Attach documents button (simple gating)
-  const showAttachmentButton =
-    attachmentsEnabled && PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
+
   // Derived: any document currently processing (ingestion in progress)
   const attachmentsKey = currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
   const attachments = useChatAttachments(
@@ -682,10 +678,6 @@ const ChatInput = ({
     try {
       if (!attachmentsEnabled) {
         toast.info('Attachments are disabled in Settings')
-        return
-      }
-      if (!PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]) {
-        toast.info('File attachments are unavailable on this platform')
         return
       }
       const selection = await serviceHub.dialog().open({
@@ -1423,11 +1415,7 @@ const ChatInput = ({
                   // - Enter is pressed without Shift
                   // - The streaming content has finished
                   // - Prompt is not empty
-                  if (
-                    !isStreaming &&
-                    prompt.trim() &&
-                    !ingestingAny
-                  ) {
+                  if (!isStreaming && prompt.trim() && !ingestingAny) {
                     handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
@@ -1484,10 +1472,7 @@ const ChatInput = ({
                     {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
                     <DropdownMenuItem
                       onClick={handleAttachDocsIngest}
-                      disabled={
-                        !selectedModel?.capabilities?.includes('tools') &&
-                        !showAttachmentButton
-                      }
+                      disabled={!selectedModel?.capabilities?.includes('tools')}
                     >
                       {ingestingDocs ? (
                         <IconLoader2
@@ -1538,50 +1523,50 @@ const ChatInput = ({
                   </TooltipProvider>
                 )}
                 {hasJanBrowserMCPConfig && modelSupportsBrowser && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div
-                            className={cn(
-                              'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer',
-                              janBrowserMCPActive && 'bg-primary/10',
-                              isJanBrowserMCPLoading &&
-                                'opacity-70 cursor-not-allowed'
-                            )}
-                            onClick={
-                              isJanBrowserMCPLoading
-                                ? undefined
-                                : handleBrowseClick
-                            }
-                          >
-                            {isJanBrowserMCPLoading ? (
-                              <IconLoader2
-                                size={18}
-                                className="text-primary animate-spin"
-                              />
-                            ) : (
-                              <IconWorld
-                                size={18}
-                                className={cn(
-                                  'text-main-view-fg/50',
-                                  janBrowserMCPActive && 'text-primary'
-                                )}
-                              />
-                            )}
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>
-                            {isJanBrowserMCPLoading
-                              ? 'Starting...'
-                              : janBrowserMCPActive
-                                ? 'Browse (Active)'
-                                : 'Browse'}
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div
+                          className={cn(
+                            'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer',
+                            janBrowserMCPActive && 'bg-primary/10',
+                            isJanBrowserMCPLoading &&
+                              'opacity-70 cursor-not-allowed'
+                          )}
+                          onClick={
+                            isJanBrowserMCPLoading
+                              ? undefined
+                              : handleBrowseClick
+                          }
+                        >
+                          {isJanBrowserMCPLoading ? (
+                            <IconLoader2
+                              size={18}
+                              className="text-primary animate-spin"
+                            />
+                          ) : (
+                            <IconWorld
+                              size={18}
+                              className={cn(
+                                'text-main-view-fg/50',
+                                janBrowserMCPActive && 'text-primary'
+                              )}
+                            />
+                          )}
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>
+                          {isJanBrowserMCPLoading
+                            ? 'Starting...'
+                            : janBrowserMCPActive
+                              ? 'Browse (Active)'
+                              : 'Browse'}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
                 {selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (

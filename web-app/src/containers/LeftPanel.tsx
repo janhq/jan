@@ -22,8 +22,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 
 import { useThreads } from '@/hooks/useThreads'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -50,8 +48,7 @@ const mainMenus = [
     title: 'common:projects.title',
     icon: IconFolderPlus,
     route: route.project,
-    isEnabled:
-      PlatformFeatures[PlatformFeature.PROJECTS] && !(IS_IOS || IS_ANDROID),
+    isEnabled: true,
   },
 ]
 
@@ -60,7 +57,7 @@ const secondaryMenus = [
     title: 'common:hub',
     icon: IconApps,
     route: route.hub.index,
-    isEnabled: PlatformFeatures[PlatformFeature.MODEL_HUB],
+    isEnabled: true,
   },
   {
     title: 'common:settings',
@@ -75,7 +72,6 @@ const LeftPanel = () => {
   const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const projectsEnabled = PlatformFeatures[PlatformFeature.PROJECTS]
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
 
   const isSmallScreen = useSmallScreen()
@@ -171,7 +167,9 @@ const LeftPanel = () => {
   }, [allThreads])
 
   const unFavoritedThreads = useMemo(() => {
-    return allThreads.filter((t: Thread) => !t.isFavorite && !t.metadata?.project)
+    return allThreads.filter(
+      (t: Thread) => !t.isFavorite && !t.metadata?.project
+    )
   }, [allThreads])
 
   // Project handlers
@@ -230,11 +228,11 @@ const LeftPanel = () => {
           isResizableContext && 'h-full w-full',
           // Small screen context: fixed positioning and styling
           isSmallScreen &&
-          'fixed h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))] bg-main-view z-50 md:border border-left-panel-fg/10 px-1 w-full md:w-48',
+            'fixed h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))] bg-main-view z-50 md:border border-left-panel-fg/10 px-1 w-full md:w-48',
           // Default context: original styling
           !isResizableContext &&
-          !isSmallScreen &&
-          'w-48 shrink-0 rounded-lg m-1.5 mr-0',
+            !isSmallScreen &&
+            'w-48 shrink-0 rounded-lg m-1.5 mr-0',
           // Visibility controls
           open
             ? 'opacity-100 visibility-visible'
@@ -308,103 +306,98 @@ const LeftPanel = () => {
             })}
           </div>
 
-          {projectsEnabled &&
-            folders.length > 0 &&
-            !(IS_IOS || IS_ANDROID) && (
-              <div className="space-y-1 py-1">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
-                    {t('common:projects.title')}
-                  </span>
-                </div>
-                <div className="flex flex-col max-h-[140px] overflow-y-scroll">
-                  {folders
-                    .slice()
-                    .sort((a, b) => b.updated_at - a.updated_at)
-                    .map((folder) => {
-                      const ProjectItem = () => {
-                        const [openDropdown, setOpenDropdown] = useState(false)
-                        const isProjectActive =
-                          currentPath === `/project/${folder.id}`
+          {folders.length > 0 && !(IS_IOS || IS_ANDROID) && (
+            <div className="space-y-1 py-1">
+              <div className="flex items-center justify-between mb-2">
+                <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
+                  {t('common:projects.title')}
+                </span>
+              </div>
+              <div className="flex flex-col max-h-[140px] overflow-y-scroll">
+                {folders
+                  .slice()
+                  .sort((a, b) => b.updated_at - a.updated_at)
+                  .map((folder) => {
+                    const ProjectItem = () => {
+                      const [openDropdown, setOpenDropdown] = useState(false)
+                      const isProjectActive =
+                        currentPath === `/project/${folder.id}`
 
-                        return (
-                          <div key={folder.id} className="mb-1">
-                            <div
-                              className={cn(
-                                'rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/project-list transition-all cursor-pointer',
-                                isProjectActive && 'bg-left-panel-fg/10'
-                              )}
-                              onContextMenu={(e) => {
-                                e.preventDefault()
-                              }}
+                      return (
+                        <div key={folder.id} className="mb-1">
+                          <div
+                            className={cn(
+                              'rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/project-list transition-all cursor-pointer',
+                              isProjectActive && 'bg-left-panel-fg/10'
+                            )}
+                            onContextMenu={(e) => {
+                              e.preventDefault()
+                            }}
+                          >
+                            <Link
+                              to="/project/$projectId"
+                              params={{ projectId: folder.id }}
+                              onClick={() =>
+                                isSmallScreen && setLeftPanel(false)
+                              }
+                              className="py-1 pr-2 truncate flex items-center gap-2 flex-1"
                             >
-                              <Link
-                                to="/project/$projectId"
-                                params={{ projectId: folder.id }}
-                                onClick={() =>
-                                  isSmallScreen && setLeftPanel(false)
-                                }
-                                className="py-1 pr-2 truncate flex items-center gap-2 flex-1"
+                              <IconFolder
+                                size={16}
+                                className="text-left-panel-fg/70 shrink-0"
+                              />
+                              <span className="text-sm text-left-panel-fg/90 truncate">
+                                {folder.name}
+                              </span>
+                            </Link>
+                            <div className="flex items-center">
+                              <DropdownMenu
+                                open={openDropdown}
+                                onOpenChange={(open) => setOpenDropdown(open)}
                               >
-                                <IconFolder
-                                  size={16}
-                                  className="text-left-panel-fg/70 shrink-0"
-                                />
-                                <span className="text-sm text-left-panel-fg/90 truncate">
-                                  {folder.name}
-                                </span>
-                              </Link>
-                              <div className="flex items-center">
-                                <DropdownMenu
-                                  open={openDropdown}
-                                  onOpenChange={(open) => setOpenDropdown(open)}
-                                >
-                                  <DropdownMenuTrigger asChild>
-                                    <IconDots
-                                      size={14}
-                                      className="text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/project-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0"
-                                      onClick={(e) => {
-                                        e.preventDefault()
-                                        e.stopPropagation()
-                                      }}
-                                    />
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent
-                                    side="bottom"
-                                    align="end"
+                                <DropdownMenuTrigger asChild>
+                                  <IconDots
+                                    size={14}
+                                    className="text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/project-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0"
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      e.stopPropagation()
+                                    }}
+                                  />
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent side="bottom" align="end">
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setEditingProjectKey(folder.id)
+                                      setProjectDialogOpen(true)
+                                    }}
                                   >
-                                    <DropdownMenuItem
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        setEditingProjectKey(folder.id)
-                                        setProjectDialogOpen(true)
-                                      }}
-                                    >
-                                      <IconPencil size={16} />
-                                      <span>Edit</span>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        handleProjectDelete(folder.id)
-                                      }}
-                                    >
-                                      <IconTrash size={16} />
-                                      <span>Delete</span>
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
+                                    <IconPencil size={16} />
+                                    <span>Edit</span>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleProjectDelete(folder.id)
+                                    }}
+                                  >
+                                    <IconTrash size={16} />
+                                    <span>Delete</span>
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </div>
-                        )
-                      }
+                        </div>
+                      )
+                    }
 
-                      return <ProjectItem key={folder.id} />
-                    })}
-                </div>
+                    return <ProjectItem key={folder.id} />
+                  })}
               </div>
-            )}
+            </div>
+          )}
 
           <div className="flex flex-col h-full overflow-y-scroll w-[calc(100%+6px)]">
             <div className="flex flex-col w-full h-full overflow-y-auto overflow-x-hidden mb-3">
@@ -541,7 +534,7 @@ const LeftPanel = () => {
       </aside>
 
       {/* Project Dialogs */}
-      {projectsEnabled && (
+      {
         <>
           <AddProjectDialog
             open={projectDialogOpen}
@@ -563,10 +556,13 @@ const LeftPanel = () => {
             }
           />
         </>
-      )}
+      }
 
       {/* Search Dialog */}
-      <SearchDialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen} />
+      <SearchDialog
+        open={searchDialogOpen}
+        onOpenChange={setSearchDialogOpen}
+      />
     </>
   )
 }

@@ -7,8 +7,6 @@ import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import posthog from 'posthog-js'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.privacy as any)({
@@ -28,8 +26,7 @@ function Privacy() {
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            {PlatformFeatures[PlatformFeature.ANALYTICS] && (
-              <Card
+            <Card
               header={
                 <div className="flex items-center justify-between mb-4">
                   <h1 className="text-main-view-fg font-medium text-base">
@@ -85,7 +82,6 @@ function Privacy() {
                 }
               />
             </Card>
-            )}
           </div>
         </div>
       </div>

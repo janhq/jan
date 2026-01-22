@@ -5,12 +5,7 @@ import { route } from '@/constants/routes'
 import HeaderPage from './HeaderPage'
 import { isProd } from '@/lib/version'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import {
-  localStorageKey,
-  CACHE_EXPIRY_MS,
-} from '@/constants/localStorage'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform'
+import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
@@ -21,8 +16,6 @@ import {
   SETUP_SCREEN_QUANTIZATIONS,
 } from '@/constants/models'
 import { toast } from 'sonner'
-
-const isQuickStartAvailable = PlatformFeatures[PlatformFeature.LOCAL_INFERENCE]
 
 type CacheEntry = {
   status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
@@ -57,7 +50,9 @@ function saveCacheToStorage() {
   }
 }
 
-function getCachedSupport(modelId: string): 'RED' | 'YELLOW' | 'GREEN' | 'GREY' | null {
+function getCachedSupport(
+  modelId: string
+): 'RED' | 'YELLOW' | 'GREEN' | 'GREY' | null {
   const entry = modelSupportCache.get(modelId)
   if (!entry) return null
 
@@ -70,7 +65,10 @@ function getCachedSupport(modelId: string): 'RED' | 'YELLOW' | 'GREEN' | 'GREY' 
   return entry.status
 }
 
-function setCachedSupport(modelId: string, status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY') {
+function setCachedSupport(
+  modelId: string,
+  status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
+) {
   modelSupportCache.set(modelId, {
     status,
     timestamp: Date.now(),
@@ -106,8 +104,6 @@ function SetupScreen() {
   const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
 
   const fetchJanModel = useCallback(async () => {
-    if (!isQuickStartAvailable) return
-
     setMetadataFetchFailed(false)
     try {
       const repo = await serviceHub
@@ -115,7 +111,9 @@ function SetupScreen() {
         .fetchHuggingFaceRepo(JAN_MODEL_V2_HF_REPO)
 
       if (repo) {
-        const catalogModel = serviceHub.models().convertHfRepoToCatalogModel(repo)
+        const catalogModel = serviceHub
+          .models()
+          .convertHfRepoToCatalogModel(repo)
         setJanModelV2(catalogModel)
       } else {
         setMetadataFetchFailed(true)
@@ -155,9 +153,7 @@ function SetupScreen() {
         if (variant) {
           const cached = getCachedSupport(variant.model_id)
           if (cached) {
-            console.log(
-              `[SetupScreen] ${variant.model_id}: ${cached} (cached)`
-            )
+            console.log(`[SetupScreen] ${variant.model_id}: ${cached} (cached)`)
             variantSupportMap.set(variant.model_id, cached)
             continue
           }
@@ -294,19 +290,17 @@ function SetupScreen() {
 
     setQuickStartInitiated(true)
     addLocalDownloadingModel(defaultVariant.model_id)
-    serviceHub
-      .models()
-      .pullModelWithMetadata(
-        defaultVariant.model_id,
-        defaultVariant.path,
-        (
-          janModelV2.mmproj_models?.find(
-            (e) => e.model_id.toLowerCase() === 'mmproj-f16'
-          ) || janModelV2.mmproj_models?.[0]
-        )?.path,
-        undefined, // No HF token needed for public model
-        true // Skip verification for faster download
-      )
+    serviceHub.models().pullModelWithMetadata(
+      defaultVariant.model_id,
+      defaultVariant.path,
+      (
+        janModelV2.mmproj_models?.find(
+          (e) => e.model_id.toLowerCase() === 'mmproj-f16'
+        ) || janModelV2.mmproj_models?.[0]
+      )?.path,
+      undefined, // No HF token needed for public model
+      true // Skip verification for faster download
+    )
   }, [
     defaultVariant,
     janModelV2,
@@ -317,7 +311,12 @@ function SetupScreen() {
 
   // Process queued quick start when metadata becomes available
   useEffect(() => {
-    if (quickStartQueued && defaultVariant && janModelV2 && isSupportCheckComplete) {
+    if (
+      quickStartQueued &&
+      defaultVariant &&
+      janModelV2 &&
+      isSupportCheckComplete
+    ) {
       setQuickStartQueued(false)
       addLocalDownloadingModel(defaultVariant.model_id)
       serviceHub
@@ -334,7 +333,14 @@ function SetupScreen() {
           true
         )
     }
-  }, [quickStartQueued, defaultVariant, janModelV2, isSupportCheckComplete, addLocalDownloadingModel, serviceHub])
+  }, [
+    quickStartQueued,
+    defaultVariant,
+    janModelV2,
+    isSupportCheckComplete,
+    addLocalDownloadingModel,
+    serviceHub,
+  ])
 
   // Handle error when quick start is queued but metadata fetch fails
   useEffect(() => {
@@ -350,7 +356,12 @@ function SetupScreen() {
   }, [quickStartQueued, metadataFetchFailed, t])
 
   useEffect(() => {
-    if (quickStartInitiated && !quickStartQueued && !isDownloading && !isDownloaded) {
+    if (
+      quickStartInitiated &&
+      !quickStartQueued &&
+      !isDownloading &&
+      !isDownloaded
+    ) {
       setQuickStartInitiated(false)
     }
   }, [quickStartInitiated, quickStartQueued, isDownloading, isDownloaded])
@@ -382,126 +393,111 @@ function SetupScreen() {
             <h1 className="font-studio text-main-view-fg text-4xl">
               {t('setup:welcome')}
             </h1>
-            {!isQuickStartAvailable && (
-              <p className="text-main-view-fg/70 text-lg mt-2">
-                {t('setup:descriptionWeb')}
-              </p>
-            )}
           </div>
           <div className="flex gap-4 flex-col">
             {/* Quick Start Button - Highlighted */}
-            {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && (
-              <button
-                onClick={handleQuickStart}
-                disabled={
-                  quickStartInitiated ||
-                  isDownloading ||
-                  isDownloaded
-                }
-                className="w-full text-left"
-              >
-                <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-5 rounded-lg border-2 border-blue-500/50 hover:border-blue-500/70 transition-all hover:shadow-lg disabled:opacity-60 disabled:hover:border-blue-500/50">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0 w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
-                      {quickStartInitiated || isDownloading ? (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-6 w-6 text-white animate-spin"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            <button
+              onClick={handleQuickStart}
+              disabled={quickStartInitiated || isDownloading || isDownloaded}
+              className="w-full text-left"
+            >
+              <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-5 rounded-lg border-2 border-blue-500/50 hover:border-blue-500/70 transition-all hover:shadow-lg disabled:opacity-60 disabled:hover:border-blue-500/50">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+                    {quickStartInitiated || isDownloading ? (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-6 w-6 text-white animate-spin"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                        />
+                      </svg>
+                    ) : (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-6 w-6 text-white"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M13 10V3L4 14h7v7l9-11h-7z"
+                        />
+                      </svg>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <h1 className="text-main-view-fg font-semibold text-lg mb-1">
+                      {quickStartInitiated || isDownloading
+                        ? t('setup:downloading', {
+                            defaultValue: 'Downloading Jan Model...',
+                          })
+                        : t('setup:quickStart')}
+                    </h1>
+                    {quickStartInitiated || isDownloading ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-3">
+                          <Progress
+                            value={downloadProgress * 100}
+                            className="flex-1"
                           />
-                        </svg>
-                      ) : (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-6 w-6 text-white"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M13 10V3L4 14h7v7l9-11h-7z"
-                          />
-                        </svg>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <h1 className="text-main-view-fg font-semibold text-lg mb-1">
-                        {quickStartInitiated || isDownloading
-                          ? t('setup:downloading', {
-                              defaultValue: 'Downloading Jan Model...',
-                            })
-                          : t('setup:quickStart')}
-                      </h1>
-                      {quickStartInitiated || isDownloading ? (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-3">
-                            <Progress
-                              value={downloadProgress * 100}
-                              className="flex-1"
-                            />
-                            <span className="text-sm text-main-view-fg/70 font-medium min-w-[3rem] text-right">
-                              {Math.round(downloadProgress * 100)}%
-                            </span>
-                          </div>
-                          <p className="text-main-view-fg/70 text-xs">
-                            {t('setup:downloadingDescription', {
-                              defaultValue:
-                                'Please wait while we download the model. This may take a few minutes.',
-                            })}
-                          </p>
+                          <span className="text-sm text-main-view-fg/70 font-medium min-w-[3rem] text-right">
+                            {Math.round(downloadProgress * 100)}%
+                          </span>
                         </div>
-                      ) : (
-                        <p className="text-main-view-fg/70 text-sm">
-                          {t('setup:quickStartDescription')}
+                        <p className="text-main-view-fg/70 text-xs">
+                          {t('setup:downloadingDescription', {
+                            defaultValue:
+                              'Please wait while we download the model. This may take a few minutes.',
+                          })}
                         </p>
-                      )}
-                    </div>
+                      </div>
+                    ) : (
+                      <p className="text-main-view-fg/70 text-sm">
+                        {t('setup:quickStartDescription')}
+                      </p>
+                    )}
                   </div>
                 </div>
-              </button>
-            )}
+              </div>
+            </button>
 
             {/* "or" divider */}
-            {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && (
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-main-view-fg/10"></div>
-                <span className="text-main-view-fg/50 text-sm font-medium">
-                  {t('setup:orDivider')}
-                </span>
-                <div className="flex-1 h-px bg-main-view-fg/10"></div>
-              </div>
-            )}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-main-view-fg/10"></div>
+              <span className="text-main-view-fg/50 text-sm font-medium">
+                {t('setup:orDivider')}
+              </span>
+              <div className="flex-1 h-px bg-main-view-fg/10"></div>
+            </div>
 
             {/* Set up local model */}
-            {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && (
-              <Link
-                to={route.hub.index}
-                search={{
-                  ...(!isProd ? { step: 'setup_local_provider' } : {}),
-                }}
-              >
-                <Card
-                  header={
-                    <div>
-                      <h1 className="text-main-view-fg font-medium text-base">
-                        {t('setup:localModel')}
-                      </h1>
-                    </div>
-                  }
-                />
-              </Link>
-            )}
+            <Link
+              to={route.hub.index}
+              search={{
+                ...(!isProd ? { step: 'setup_local_provider' } : {}),
+              }}
+            >
+              <Card
+                header={
+                  <div>
+                    <h1 className="text-main-view-fg font-medium text-base">
+                      {t('setup:localModel')}
+                    </h1>
+                  </div>
+                }
+              />
+            </Link>
 
             {/* Set up remote provider */}
             <Link
