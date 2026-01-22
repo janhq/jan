@@ -1,6 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
-@import "katex/dist/katex.min.css";
+@import 'katex/dist/katex.min.css';
 @import '@/styles/font.css';
 @import '@/styles/markdown.css';
 @source '../node_modules/streamdown/dist/**/*.js';
@@ -12,7 +12,7 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-editorialnew: 'StudioFeixenSans', sans-serif;
+  --font-studio: 'StudioFeixenSans', sans-serif;
   --color-app: var(--app-bg);
   --color-left-panel-fg: var(--app-left-panel-fg);
   --color-main-view: var(--app-main-view);

@@ -107,31 +107,20 @@ function Index() {
         >
           <div
             className={cn(
-              'text-center',
-              // Adjust spacing for mobile
-              isMobile ? 'mb-6' : 'mb-8'
+              'text-center mb-4',
             )}
           >
             <h1
               className={cn(
-                'font-editorialnew text-main-view-fg',
-                // Responsive title size
-                isMobile ? 'text-2xl sm:text-3xl' : 'text-4xl'
-              )}
-            >
-              {isTemporaryChat ? t('chat:temporaryChat') : t('chat:welcome')}
-            </h1>
-            <p
-              className={cn(
-                'text-main-view-fg/70 mt-2',
+                'text-main-view-fg/90 mt-2 font-studio font-medium',
                 // Responsive description size
-                isMobile ? 'text-base' : 'text-lg'
+                isMobile ? 'text-base' : 'text-2xl'
               )}
             >
               {isTemporaryChat
                 ? t('chat:temporaryChatDescription')
                 : t('chat:description')}
-            </p>
+            </h1>
           </div>
           <div className="flex-1 shrink-0">
             <ChatInput
