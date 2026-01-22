@@ -57,14 +57,15 @@ export const useToolApproval = create<ToolApprovalState>()(
 
       showApprovalModal: (toolName: string, threadId: string, toolParameters?: object) => {
         return new Promise<boolean>((resolve) => {
-          // Auto-approve MCP tools when feature is enabled
-          if (PlatformFeatures[PlatformFeature.MCP_AUTO_APPROVE_TOOLS]) {
+          const state = get()
+
+          // Auto-approve if the user has enabled auto-approval setting
+          if (state.allowAllMCPPermissions) {
             resolve(true)
             return
           }
 
           // Check if tool is already approved for this thread
-          const state = get()
           if (state.isToolApproved(threadId, toolName)) {
             resolve(true)
             return

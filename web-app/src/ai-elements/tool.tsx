@@ -95,7 +95,7 @@ const getStatusText = (status: ToolUIPart['state'], toolName: string) => {
     return `Running ${toolName.replaceAll('_', ' ')}...`
   }
   if (hasError) {
-    return `${toolName} failed`
+    return `${toolName.replaceAll('_', ' ')} failed`
   }
   return `Used ${toolName.replaceAll('_', ' ')}`
 }

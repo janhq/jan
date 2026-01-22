@@ -382,11 +382,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return messages.map((message) => {
       if (message.role === 'user') {
         const metadata = message.metadata as
-          | { inline_file_contents?: Array<{ name?: string; content?: string }> }
+          | {
+              inline_file_contents?: Array<{ name?: string; content?: string }>
+            }
           | undefined
-        const inlineFileContents = Array.isArray(
-          metadata?.inline_file_contents
-        )
+        const inlineFileContents = Array.isArray(metadata?.inline_file_contents)
           ? metadata.inline_file_contents.filter((f) => f?.content)
           : []
         // Tool messages have content as array of ToolResultPart
