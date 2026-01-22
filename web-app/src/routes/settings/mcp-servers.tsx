@@ -456,28 +456,6 @@ function MCPServersDesktop() {
                   />
                 }
               />
-              <CardItem
-                title={
-                  <div className="flex items-center gap-2">
-                    <span>{t('mcp-servers:proactiveMode')}</span>
-                    <div className="text-xs bg-main-view-fg/10 border border-main-view-fg/20 text-main-view-fg/70 rounded-full py-0.5 px-2">
-                      <span>{t('mcp-servers:experimental')}</span>
-                    </div>
-                  </div>
-                }
-                description={t('mcp-servers:proactiveModeDesc')}
-                actions={
-                  <div className="flex-shrink-0 ml-4">
-                    <Switch
-                      checked={settings.proactiveMode}
-                      onCheckedChange={(checked) => {
-                        updateSettings({ proactiveMode: checked })
-                        void syncServers()
-                      }}
-                    />
-                  </div>
-                }
-              />
             </Card>
 
             {Object.keys(mcpServers).length === 0 ? (
