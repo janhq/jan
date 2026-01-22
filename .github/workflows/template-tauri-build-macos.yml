@@ -49,6 +49,8 @@ on:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
         required: false
+      JAN_SIGNING_KEY:
+        required: false
     outputs:
       MAC_UNIVERSAL_SIG:
         value: ${{ jobs.build-macos.outputs.MAC_UNIVERSAL_SIG }}
@@ -133,7 +135,11 @@ jobs:
 
           # Change app name for beta and nightly builds
           if [ "${{ inputs.channel }}" != "stable" ]; then
-            jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            if [[ "${{ inputs.channel }}" == "nightly" ]]; then
+              jq '.plugins.updater.endpoints = ["https://apps-nightly.jan.ai/update-check", "https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            else
+              jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            fi
             mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
 
             chmod +x .github/scripts/rename-tauri-app.sh
@@ -178,6 +184,7 @@ jobs:
           APPLE_API_KEY_PATH: /tmp/notary-key.p8
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
 
       # Publish app
 

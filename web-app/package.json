@@ -49,6 +49,7 @@
     "@tauri-apps/plugin-http": "2.5.0",
     "@tauri-apps/plugin-opener": "2.5.2",
     "@tauri-apps/plugin-os": "2.2.1",
+    "@tauri-apps/plugin-store": "^2.4.2",
     "@tauri-apps/plugin-updater": "2.8.1",
     "@types/react-syntax-highlighter": "15.5.13",
     "@types/uuid": "10.0.0",
