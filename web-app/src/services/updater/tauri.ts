@@ -19,6 +19,8 @@ const NONCE_SEED_KEY = 'nonce_seed'
 
 // Cache nonce seed in memory to avoid repeated store reads
 let cachedNonceSeed: string | null = null
+// Promise to prevent race conditions when multiple calls happen simultaneously
+let nonceSeedPromise: Promise<string> | null = null
 
 // Get or generate nonce seed for request signing (persisted in app data folder)
 async function getNonceSeed(): Promise<string> {
@@ -27,25 +29,38 @@ async function getNonceSeed(): Promise<string> {
     return cachedNonceSeed
   }
 
-  try {
-    const store = await load(STORE_NAME, { autoSave: true, defaults: {} })
-    let nonceSeed = await store.get<string>(NONCE_SEED_KEY)
-    
-    if (!nonceSeed) {
-      nonceSeed = crypto.randomUUID()
-      await store.set(NONCE_SEED_KEY, nonceSeed)
-      await store.save()
-    }
-    
-    cachedNonceSeed = nonceSeed
-    return nonceSeed
-  } catch (error) {
-    // Fallback to random seed if store fails
-    console.warn('Failed to access store for nonce seed, using temporary seed:', error)
-    const tempSeed = crypto.randomUUID()
-    cachedNonceSeed = tempSeed
-    return tempSeed
+  // Return existing promise if already loading
+  if (nonceSeedPromise) {
+    return nonceSeedPromise
   }
+
+  // Create new promise and cache it
+  nonceSeedPromise = (async () => {
+    try {
+      const store = await load(STORE_NAME, { autoSave: true, defaults: {} })
+      let nonceSeed = await store.get<string>(NONCE_SEED_KEY)
+      
+      if (!nonceSeed) {
+        nonceSeed = crypto.randomUUID()
+        await store.set(NONCE_SEED_KEY, nonceSeed)
+        await store.save()
+      }
+      
+      cachedNonceSeed = nonceSeed
+      return nonceSeed
+    } catch (error) {
+      // Fallback to random seed if store fails
+      console.warn('Failed to access store for nonce seed, using temporary seed:', error)
+      const tempSeed = crypto.randomUUID()
+      cachedNonceSeed = tempSeed
+      return tempSeed
+    } finally {
+      // Clear promise after completion
+      nonceSeedPromise = null
+    }
+  })()
+
+  return nonceSeedPromise
 }
 
 // Get current app version
