@@ -8,9 +8,7 @@ import {
   IconSettings,
   IconStar,
   IconFolderPlus,
-  IconMessage,
   IconApps,
-  IconX,
   IconSearch,
   IconFolder,
   IconPencil,
@@ -37,7 +35,7 @@ import { DownloadManagement } from '@/containers/DownloadManegement'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 import { useClickOutside } from '@/hooks/useClickOutside'
 
-import { DeleteAllThreadsDialog } from '@/containers/dialogs'
+import { DeleteAllThreadsDialog, SearchDialog } from '@/containers/dialogs'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { DeleteProjectDialog } from '@/containers/dialogs/DeleteProjectDialog'
 
@@ -77,15 +75,13 @@ const LeftPanel = () => {
   const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [searchTerm, setSearchTerm] = useState('')
   const projectsEnabled = PlatformFeatures[PlatformFeature.PROJECTS]
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false)
 
   const isSmallScreen = useSmallScreen()
   const prevScreenSizeRef = useRef<boolean | null>(null)
   const isInitialMountRef = useRef(true)
   const panelRef = useRef<HTMLElement>(null)
-  const searchContainerRef = useRef<HTMLDivElement>(null)
-  const searchContainerMacRef = useRef<HTMLDivElement>(null)
 
   // Determine if we're in a resizable context (large screen with panel open)
   const isResizableContext = !isSmallScreen && open
@@ -98,11 +94,7 @@ const LeftPanel = () => {
       }
     },
     null,
-    [
-      panelRef.current,
-      searchContainerRef.current,
-      searchContainerMacRef.current,
-    ]
+    [panelRef.current]
   )
 
   // Auto-collapse panel only when window is resized
@@ -168,26 +160,19 @@ const LeftPanel = () => {
     null
   )
 
-  const filteredThreads = useMemo(() => {
-    return getFilteredThreads(searchTerm)
+  const allThreads = useMemo(() => {
+    return getFilteredThreads('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getFilteredThreads, searchTerm, threads])
+  }, [getFilteredThreads, threads])
 
-  const filteredProjects = useMemo(() => {
-    if (!searchTerm) return folders
-    return folders.filter((folder) =>
-      folder.name.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  }, [folders, searchTerm])
-
-  // Memoize categorized threads based on filteredThreads
+  // Memoize categorized threads based on allThreads
   const favoritedThreads = useMemo(() => {
-    return filteredThreads.filter((t) => t.isFavorite)
-  }, [filteredThreads])
+    return allThreads.filter((t: Thread) => t.isFavorite)
+  }, [allThreads])
 
   const unFavoritedThreads = useMemo(() => {
-    return filteredThreads.filter((t) => !t.isFavorite && !t.metadata?.project)
-  }, [filteredThreads])
+    return allThreads.filter((t: Thread) => !t.isFavorite && !t.metadata?.project)
+  }, [allThreads])
 
   // Project handlers
   const handleProjectDelete = (id: string) => {
@@ -234,16 +219,7 @@ const LeftPanel = () => {
       {isSmallScreen && open && !IS_IOS && !IS_ANDROID && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur z-30"
-          onClick={(e) => {
-            // Don't close if clicking on search container or if currently searching
-            if (
-              searchContainerRef.current?.contains(e.target as Node) ||
-              searchContainerMacRef.current?.contains(e.target as Node)
-            ) {
-              return
-            }
-            setLeftPanel(false)
-          }}
+          onClick={() => setLeftPanel(false)}
         />
       )}
       <aside
@@ -279,72 +255,20 @@ const LeftPanel = () => {
               <IconLayoutSidebar size={18} className="text-left-panel-fg" />
             </div>
           </button>
-          {!IS_MACOS && (
-            <div
-              ref={searchContainerRef}
-              className={cn(
-                'relative top-1.5 mb-4 mt-1 z-50',
-                isResizableContext
-                  ? 'mx-2 w-[calc(100%-48px)]'
-                  : 'mx-1 w-[calc(100%-32px)]'
-              )}
-              data-ignore-outside-clicks
-            >
-              <IconSearch className="absolute size-4 top-1/2 left-2 -translate-y-1/2 text-left-panel-fg/50" />
-              <input
-                type="text"
-                placeholder={t('common:search')}
-                className="w-full pl-7 pr-8 py-1 bg-left-panel-fg/10 rounded-sm text-left-panel-fg focus:outline-none focus:ring-1 focus:ring-left-panel-fg/10"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              {searchTerm && (
-                <button
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-left-panel-fg/70 hover:text-left-panel-fg"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation() // prevent bubbling
-                    setSearchTerm('')
-                  }}
-                >
-                  <IconX size={14} />
-                </button>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="flex flex-col gap-y-1 overflow-hidden mt-0 !h-[calc(100%-42px)]">
           <div className="space-y-1 py-1">
-            {IS_MACOS && (
-              <div
-                ref={searchContainerMacRef}
-                className={cn('relative mb-2 mt-1 mx-1')}
-                data-ignore-outside-clicks
-              >
-                <IconSearch className="absolute size-4 top-1/2 left-2 -translate-y-1/2 text-left-panel-fg/50" />
-                <input
-                  type="text"
-                  placeholder={t('common:search')}
-                  className="w-full pl-7 pr-8 py-1 bg-left-panel-fg/10 rounded-sm text-left-panel-fg focus:outline-none focus:ring-1 focus:ring-left-panel-fg/10"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-                {searchTerm && (
-                  <button
-                    data-ignore-outside-clicks
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-left-panel-fg/70 hover:text-left-panel-fg"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation() // prevent bubbling
-                      setSearchTerm('')
-                    }}
-                  >
-                    <IconX size={14} />
-                  </button>
-                )}
-              </div>
-            )}
+            {/* Search button */}
+            <button
+              onClick={() => setSearchDialogOpen(true)}
+              className="flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded w-full"
+            >
+              <IconSearch size={18} className="text-left-panel-fg/70" />
+              <span className="font-medium text-left-panel-fg/90">
+                {t('common:search')}
+              </span>
+            </button>
 
             {mainMenus.map((menu) => {
               if (!menu.isEnabled) {
@@ -385,7 +309,7 @@ const LeftPanel = () => {
           </div>
 
           {projectsEnabled &&
-            filteredProjects.length > 0 &&
+            folders.length > 0 &&
             !(IS_IOS || IS_ANDROID) && (
               <div className="space-y-1 py-1">
                 <div className="flex items-center justify-between mb-2">
@@ -394,7 +318,7 @@ const LeftPanel = () => {
                   </span>
                 </div>
                 <div className="flex flex-col max-h-[140px] overflow-y-scroll">
-                  {filteredProjects
+                  {folders
                     .slice()
                     .sort((a, b) => b.updated_at - a.updated_at)
                     .map((folder) => {
@@ -568,41 +492,6 @@ const LeftPanel = () => {
                   </div>
                 )}
 
-                {filteredThreads.length === 0 && searchTerm.length > 0 && (
-                  <div className="px-1 mt-2">
-                    <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold mb-2">
-                      {t('common:recents')}
-                    </span>
-
-                    <div className="flex items-center gap-1 text-left-panel-fg/80">
-                      <IconSearch size={18} />
-                      <h6 className="font-medium text-base">
-                        {t('common:noResultsFound')}
-                      </h6>
-                    </div>
-                    <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
-                      {t('common:noResultsFoundDesc')}
-                    </p>
-                  </div>
-                )}
-
-                {/* Show "No threads yet" when there are no threads at all OR when all threads are in projects */}
-                {(Object.keys(threads).length === 0 || (Object.keys(threads).length > 0 && unFavoritedThreads.length === 0 && favoritedThreads.length === 0)) && !searchTerm && (
-                  <>
-                    <div className="px-1 mt-2">
-                      <div className="flex items-center gap-1 text-left-panel-fg/80">
-                        <IconMessage size={18} />
-                        <h6 className="font-medium text-base">
-                          {t('common:noThreadsYet')}
-                        </h6>
-                      </div>
-                      <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
-                        {t('common:noThreadsYetDesc')}
-                      </p>
-                    </div>
-                  </>
-                )}
-
                 <div className="flex flex-col">
                   <ThreadList threads={unFavoritedThreads} />
                 </div>
@@ -675,6 +564,9 @@ const LeftPanel = () => {
           />
         </>
       )}
+
+      {/* Search Dialog */}
+      <SearchDialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen} />
     </>
   )
 }

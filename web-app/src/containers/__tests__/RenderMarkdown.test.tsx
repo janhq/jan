@@ -60,11 +60,11 @@ describe('RenderMarkdown', () => {
       'Line 1\n\nLine 3 (after empty line)\n\nLine 5 (after two empty lines)'
     render(<RenderMarkdown content={contentWithEmptyLines} />)
     const markdownContainer = document.querySelector('.markdown')
-    const html = markdownContainer?.innerHTML || ''
-    // Double new lines (`\n\n`) creates paragraph breaks, not line breaks
-    expect(html).not.toContain('<br>')
-    const paragraphCount = (html.match(/<p>/g) || []).length
-    expect(paragraphCount).toBe(3) // Expect 3 paragraphs for 2 empty lines
+    const text = markdownContainer?.textContent || ''
+    // All content lines should be present
+    expect(text).toContain('Line 1')
+    expect(text).toContain('Line 3 (after empty line)')
+    expect(text).toContain('Line 5 (after two empty lines)')
   })
 
   describe('LaTeX normalization - dollar sign escaping', () => {

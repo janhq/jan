@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { defaultRehypePlugins, Streamdown } from 'streamdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 import { MermaidError } from '@/components/MermaidError'
 
 interface MarkdownProps {
@@ -102,7 +103,7 @@ function RenderMarkdownComponent({
         )}
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[
-          defaultRehypePlugins.katex,
+          rehypeKatex,
           defaultRehypePlugins.harden,
         ]}
         components={components}
