@@ -357,7 +357,7 @@ export const MessageItem = memo(
 
         {/* Message actions for assistant messages (non-tool) */}
         {message.role === 'assistant' &&
-          message.parts.some((p) => p.type === 'text') && (
+          message.parts.some((p) => p.type === 'text' && p.text.length > 0) && (
             <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">
               <div
                 className={cn(

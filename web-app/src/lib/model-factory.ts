@@ -106,7 +106,7 @@ export class ModelFactory {
 
     switch (providerName) {
       case 'llamacpp':
-        return this.createLlamaCppModel(modelId)
+        return this.createLlamaCppModel(modelId, provider)
 
       case 'anthropic':
         return this.createAnthropicModel(modelId, provider)
@@ -131,11 +131,29 @@ export class ModelFactory {
   }
 
   /**
-   * Create a llamacpp model by finding the running session
+   * Create a llamacpp model by starting the model and finding the running session
    */
   private static async createLlamaCppModel(
-    modelId: string
+    modelId: string,
+    provider?: ProviderObject
   ): Promise<LanguageModel> {
+    // Start the model first if provider is available
+    if (provider) {
+      try {
+        const { useServiceStore } = await import('@/hooks/useServiceHub')
+        const serviceHub = useServiceStore.getState().serviceHub
+
+        if (serviceHub) {
+          await serviceHub.models().startModel(provider, modelId)
+        }
+      } catch (error) {
+        console.error('Failed to start llamacpp model:', error)
+        throw new Error(
+          `Failed to start model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+        )
+      }
+    }
+
     // Get session info which includes port and api_key
     const sessionInfo = await invoke<SessionInfo | null>(
       'plugin:llamacpp|find_session_by_model',

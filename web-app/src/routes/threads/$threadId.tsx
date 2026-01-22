@@ -45,6 +45,10 @@ import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
+import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
+import { useContextSizeApproval } from '@/hooks/useModelContextApproval'
+import { Button } from '@/components/ui/button'
+import { IconAlertCircle } from '@tabler/icons-react'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -73,6 +77,11 @@ function ThreadDetail() {
   const isSmallScreen = useSmallScreen()
   const isMobile = useMobileScreen()
   useTools()
+
+  // Context size approval for out-of-context errors
+  const showApprovalModal = useContextSizeApproval(
+    (state) => state.showApprovalModal
+  )
 
   // Get attachments for this thread
   const attachmentsKey = threadId ?? NEW_THREAD_ATTACHMENT_KEY
@@ -151,6 +160,7 @@ function ThreadDetail() {
   const {
     messages: chatMessages,
     status,
+    error,
     sendMessage,
     regenerate,
     setMessages: setChatMessages,
@@ -533,12 +543,7 @@ function ThreadDetail() {
         }
       })()
     }
-  }, [
-    threadId,
-    languageModelId,
-    languageModelProvider,
-    processAndSendMessage,
-  ])
+  }, [threadId, languageModelId, languageModelProvider, processAndSendMessage])
 
   // Handle submit from ChatInput
   const handleSubmit = useCallback(
@@ -600,6 +605,94 @@ function ThreadDetail() {
     // and generating a new response from the selected message
     regenerate(messageId ? { messageId } : undefined)
   }
+
+  // Handler for increasing context size or enabling context shift
+  const handleContextSizeIncrease = useCallback(async () => {
+    if (!selectedModel) return
+
+    const result = await showApprovalModal()
+    if (!result) return
+
+    const updateProvider = useModelProvider.getState().updateProvider
+    const provider = getProviderByName(selectedProvider)
+    if (!provider) return
+
+    const modelIndex = provider.models.findIndex(
+      (m) => m.id === selectedModel.id
+    )
+    if (modelIndex === -1) return
+
+    const model = provider.models[modelIndex]
+
+    if (result === 'ctx_len') {
+      // Increase context length by 50%
+      const currentCtxLen =
+        (model.settings?.ctx_len?.controller_props?.value as number) ?? 8192
+      const newCtxLen = Math.round(Math.max(8192, currentCtxLen) * 1.5)
+
+      const updatedModel = {
+        ...model,
+        settings: {
+          ...model.settings,
+          ctx_len: {
+            ...(model.settings?.ctx_len ?? {}),
+            controller_props: {
+              ...(model.settings?.ctx_len?.controller_props ?? {}),
+              value: newCtxLen,
+            },
+          },
+        },
+      }
+
+      const updatedModels = [...provider.models]
+      updatedModels[modelIndex] = updatedModel as Model
+
+      updateProvider(provider.provider, {
+        models: updatedModels,
+      })
+
+      await serviceHub.models().stopModel(selectedModel.id)
+
+      setTimeout(() => {
+        handleRegenerate()
+      }, 1000)
+    } else if (result === 'context_shift') {
+      // Enable context shift
+      const updatedModel = {
+        ...model,
+        settings: {
+          ...model.settings,
+          context_shift: {
+            ...(model.settings?.context_shift ?? {}),
+            controller_props: {
+              ...(model.settings?.context_shift?.controller_props ?? {}),
+              value: true,
+            },
+          },
+        },
+      }
+
+      const updatedModels = [...provider.models]
+      updatedModels[modelIndex] = updatedModel as Model
+
+      updateProvider(provider.provider, {
+        models: updatedModels,
+      })
+
+      await serviceHub.models().stopModel(selectedModel.id)
+
+      setTimeout(() => {
+        handleRegenerate()
+      }, 1000)
+    }
+  }, [
+    selectedModel,
+    selectedProvider,
+    getProviderByName,
+    showApprovalModal,
+    serviceHub,
+  ])
+
   const threadModel = useMemo(() => thread?.model, [thread])
 
   if (!threadModel) return null
@@ -657,6 +750,36 @@ function ThreadDetail() {
                 )
               })}
               {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
+              {error && (
+                <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/50 bg-destructive/10">
+                  <div className="flex items-start gap-3">
+                    <IconAlertCircle className="size-5 text-destructive flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-destructive mb-1">
+                        Error generating response
+                      </p>
+                      <p className="text-sm text-main-view-fg/70">
+                        {error.message}
+                      </p>
+                      {(error.message.toLowerCase().includes('context') &&
+                        (error.message.toLowerCase().includes('size') ||
+                          error.message.toLowerCase().includes('length') ||
+                          error.message.toLowerCase().includes('limit'))) ||
+                      error.message === OUT_OF_CONTEXT_SIZE ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3"
+                          onClick={handleContextSizeIncrease}
+                        >
+                          <IconAlertCircle className="size-4 mr-2" />
+                          Increase Context Size
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              )}
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>
