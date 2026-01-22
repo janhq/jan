@@ -92,7 +92,8 @@ jobs:
       - name: Build app
         run: |
           make build
-        env:
+        env:  
+          NODE_OPTIONS: "--max-old-space-size=4196"
           APP_PATH: '.'
       
       - name: Upload Artifact
