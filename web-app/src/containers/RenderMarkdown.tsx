@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Components } from 'react-markdown'
 import { memo, useMemo } from 'react'
-import { cn } from '@/lib/utils'
+import { cn, disableIndentedCodeBlockPlugin } from '@/lib/utils'
 // import 'katex/dist/katex.min.css'
 import { defaultRehypePlugins, Streamdown } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
@@ -12,16 +12,7 @@ import { mermaid } from '@streamdown/mermaid'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import * as prismStyles from 'react-syntax-highlighter/dist/cjs/styles/prism'
-import { memo, useState, useMemo, useCallback } from 'react'
-import { disableIndentedsPlugin, getReadableLanguageName } from '@/lib/utils'
-import { cn } from '@/lib/utils'
-import { useCodeblock } from '@/hooks/useCodeblock'
 import 'katex/dist/katex.min.css'
-import { IconCopy, IconCopyCheck } from '@tabler/icons-react'
-import rehypeRaw from 'rehype-raw'
-import { useTranslation } from '@/i18n/react-i18next-compat'
 import { MermaidError } from '@/components/MermaidError'
 
 interface MarkdownProps {
@@ -100,44 +91,6 @@ function RenderMarkdownComponent({
   // Memoize the normalized content to avoid reprocessing on every render
   const normalizedContent = useMemo(() => normalizeLatex(content), [content])
 
-  // Stable remarkPlugins reference
-  const remarkPlugins = useMemo(() => {
-    return [remarkGfm, remarkMath, remarkEmoji, remarkBreaks, disableIndentedCodeBlockPlugin]
-  }, [])
-
-  // Stable rehypePlugins reference
-  const rehypePlugins = useMemo(() => {
-    return enableRawHtml ? [rehypeKatex, rehypeRaw] : [rehypeKatex]
-  }, [enableRawHtml])
-
-  // Memoized components with stable references
-  const markdownComponents: Components = useMemo(
-    () => ({
-      code: (props) => (
-        <CodeComponent
-          {...props}
-          isUser={isUser}
-          codeBlockStyle={codeBlockStyle}
-          showLineNumbers={showLineNumbers}
-          isWrapping={isWrapping}
-          onCopy={handleCopy}
-          copiedId={copiedId}
-        />
-      ),
-      // Add other optimized components if needed
-      ...components,
-    }),
-    [
-      isUser,
-      codeBlockStyle,
-      showLineNumbers,
-      isWrapping,
-      handleCopy,
-      copiedId,
-      components,
-    ]
-  )
-
   // Render the markdown content
   return (
     <div
@@ -154,7 +107,7 @@ function RenderMarkdownComponent({
           'size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
           className
         )}
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, remarkMath, disableIndentedCodeBlockPlugin]}
         rehypePlugins={[
           rehypeKatex,
           defaultRehypePlugins.harden,
