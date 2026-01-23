@@ -536,7 +536,7 @@ function MCPServersDesktop() {
                                 <div className="my-1 break-all">
                                   Headers:{' '}
                                   {Object.entries(config.headers)
-                                    .map(([key]) => `${key}=******}`)
+                                    .map(([key]) => `${key}=******`)
                                     .join(', ')}
                                 </div>
                               )}
