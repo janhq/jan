@@ -31,7 +31,7 @@ const FOOTER_MENUS: FooterMenu[] = [
       { name: 'Blog', href: '/blog' },
       { name: 'Docs', href: '/docs' },
       { name: 'Changelog', href: '/changelog' },
-      { name: 'API Reference', href: '/api-reference' },
+      { name: 'API Reference', href: '/docs/desktop/api-server' },
       { name: 'Jan Exam', href: '/', comingSoon: true },
     ],
   },
