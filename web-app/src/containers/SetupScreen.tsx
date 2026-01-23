@@ -1,9 +1,7 @@
-import { Card } from './Card'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { Link, useNavigate } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import HeaderPage from './HeaderPage'
-import { isProd } from '@/lib/version'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
@@ -12,10 +10,13 @@ import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
 import { Progress } from '@/components/ui/progress'
 import type { CatalogModel } from '@/services/models/types'
 import {
-  JAN_MODEL_V2_HF_REPO,
+  NEW_JAN_MODEL_HF_REPO,
   SETUP_SCREEN_QUANTIZATIONS,
 } from '@/constants/models'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { IconEye, IconSquareCheck} from '@tabler/icons-react'
+import { cn } from '@/lib/utils'
 
 type CacheEntry = {
   status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
@@ -81,20 +82,15 @@ loadCacheFromStorage()
 function SetupScreen() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { providers, getProviderByName } = useModelProvider()
-  const firstItemRemoteProvider =
-    providers.length > 0 ? providers[1]?.provider : 'openai'
-
-  // Check if setup tour has been completed
-  const isSetupCompleted =
-    localStorage.getItem(localStorageKey.setupCompleted) === 'true'
+  const { getProviderByName } = useModelProvider()
+  
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
   const serviceHub = useServiceHub()
   const llamaProvider = getProviderByName('llamacpp')
   const [quickStartInitiated, setQuickStartInitiated] = useState(false)
   const [quickStartQueued, setQuickStartQueued] = useState(false)
-  const [janModelV2, setJanModelV2] = useState<CatalogModel | null>(null)
+  const [janNewModel, setJanNewModel] = useState<CatalogModel | null>(null)
   const [supportedVariants, setSupportedVariants] = useState<
     Map<string, 'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
   >(new Map())
@@ -108,13 +104,13 @@ function SetupScreen() {
     try {
       const repo = await serviceHub
         .models()
-        .fetchHuggingFaceRepo(JAN_MODEL_V2_HF_REPO)
+        .fetchHuggingFaceRepo(NEW_JAN_MODEL_HF_REPO)
 
       if (repo) {
         const catalogModel = serviceHub
           .models()
           .convertHfRepoToCatalogModel(repo)
-        setJanModelV2(catalogModel)
+        setJanNewModel(catalogModel)
       } else {
         setMetadataFetchFailed(true)
       }
@@ -124,20 +120,20 @@ function SetupScreen() {
     }
   }, [serviceHub])
 
-  // Check model support for variants when janModelV2 is available
+  // Check model support for variants when janNewModel is available
   useEffect(() => {
     const checkModelSupport = async () => {
-      if (!janModelV2) return
+      if (!janNewModel) return
 
       if (
         supportCheckInProgress.current ||
-        checkedModelId.current === janModelV2.model_name
+        checkedModelId.current === janNewModel.model_name
       ) {
         return
       }
 
       supportCheckInProgress.current = true
-      checkedModelId.current = janModelV2.model_name
+      checkedModelId.current = janNewModel.model_name
       setIsSupportCheckComplete(false)
 
       const variantSupportMap = new Map<
@@ -146,7 +142,7 @@ function SetupScreen() {
       >()
 
       for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-        const variant = janModelV2.quants.find((quant) =>
+        const variant = janNewModel.quants.find((quant) =>
           quant.model_id.toLowerCase().includes(quantization)
         )
 
@@ -186,14 +182,15 @@ function SetupScreen() {
     }
 
     checkModelSupport()
-  }, [janModelV2, serviceHub])
+  }, [janNewModel, serviceHub])
 
   useEffect(() => {
     fetchJanModel()
   }, [fetchJanModel])
 
+
   const defaultVariant = useMemo(() => {
-    if (!janModelV2) return null
+    if (!janNewModel) return null
 
     const priorityOrder: Array<'GREEN' | 'YELLOW' | 'GREY'> = [
       'GREEN',
@@ -203,7 +200,7 @@ function SetupScreen() {
 
     for (const status of priorityOrder) {
       for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-        const variant = janModelV2.quants.find((quant) =>
+        const variant = janNewModel.quants.find((quant) =>
           quant.model_id.toLowerCase().includes(quantization)
         )
 
@@ -216,7 +213,7 @@ function SetupScreen() {
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
       if (quantization === 'q8_0') continue
 
-      const variant = janModelV2.quants.find((quant) =>
+      const variant = janNewModel.quants.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
       )
 
@@ -226,7 +223,7 @@ function SetupScreen() {
     }
 
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-      const variant = janModelV2.quants.find((quant) =>
+      const variant = janNewModel.quants.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
       )
 
@@ -236,14 +233,14 @@ function SetupScreen() {
     }
 
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-      const variant = janModelV2.quants.find((quant) =>
+      const variant = janNewModel.quants.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
       )
       if (variant) return variant
     }
 
-    return janModelV2.quants[0]
-  }, [janModelV2, supportedVariants])
+    return janNewModel.quants[0]
+  }, [janNewModel, supportedVariants])
 
   const downloadProcesses = useMemo(
     () =>
@@ -282,7 +279,7 @@ function SetupScreen() {
 
   const handleQuickStart = useCallback(() => {
     // If metadata is still loading, queue the download
-    if (!defaultVariant || !janModelV2 || !isSupportCheckComplete) {
+    if (!defaultVariant || !janNewModel || !isSupportCheckComplete) {
       setQuickStartQueued(true)
       setQuickStartInitiated(true)
       return
@@ -294,16 +291,16 @@ function SetupScreen() {
       defaultVariant.model_id,
       defaultVariant.path,
       (
-        janModelV2.mmproj_models?.find(
+        janNewModel.mmproj_models?.find(
           (e) => e.model_id.toLowerCase() === 'mmproj-f16'
-        ) || janModelV2.mmproj_models?.[0]
+        ) || janNewModel.mmproj_models?.[0]
       )?.path,
       undefined, // No HF token needed for public model
       true // Skip verification for faster download
     )
   }, [
     defaultVariant,
-    janModelV2,
+    janNewModel,
     isSupportCheckComplete,
     addLocalDownloadingModel,
     serviceHub,
@@ -314,7 +311,7 @@ function SetupScreen() {
     if (
       quickStartQueued &&
       defaultVariant &&
-      janModelV2 &&
+      janNewModel &&
       isSupportCheckComplete
     ) {
       setQuickStartQueued(false)
@@ -325,9 +322,9 @@ function SetupScreen() {
           defaultVariant.model_id,
           defaultVariant.path,
           (
-            janModelV2.mmproj_models?.find(
+            janNewModel.mmproj_models?.find(
               (e) => e.model_id.toLowerCase() === 'mmproj-f16'
-            ) || janModelV2.mmproj_models?.[0]
+            ) || janNewModel.mmproj_models?.[0]
           )?.path,
           undefined,
           true
@@ -336,7 +333,7 @@ function SetupScreen() {
   }, [
     quickStartQueued,
     defaultVariant,
-    janModelV2,
+    janNewModel,
     isSupportCheckComplete,
     addLocalDownloadingModel,
     serviceHub,
@@ -388,22 +385,23 @@ function SetupScreen() {
     <div className="flex h-full flex-col justify-center">
       <HeaderPage></HeaderPage>
       <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center ">
-        <div className="w-full lg:w-4/6 mx-auto">
-          <div className="mb-8 text-left">
-            <h1 className="font-studio text-main-view-fg text-4xl">
-              {t('setup:welcome')}
+        <div className="w-full mx-auto">
+          <div className="mb-4 text-center">
+            <h1 className="font-studio font-medium text-main-view-fg text-2xl">
+              {isDownloading ?  'Sit tight, Jan is getting ready...' : 'Welcome to Jan!'}
             </h1>
+            <p className='text-main-view-fg/70 w-full md:w-3/4 mx-auto mt-1'>{isDownloading ? 'Jan is getting ready to work on your device. This may take a few minutes.' : 'To get started, Jan needs to download a model to your device. This only takes a few minutes.'}</p>
           </div>
-          <div className="flex gap-4 flex-col">
+          <div className="flex gap-4 flex-col mt-6">
             {/* Quick Start Button - Highlighted */}
             <button
               onClick={handleQuickStart}
               disabled={quickStartInitiated || isDownloading || isDownloaded}
-              className="w-full text-left"
+              className="w-full text-left lg:w-2/3 mx-auto"
             >
-              <div className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-5 rounded-lg border-2 border-blue-500/50 hover:border-blue-500/70 transition-all hover:shadow-lg disabled:opacity-60 disabled:hover:border-blue-500/50">
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+              <div className={cn("bg-main-view-fg/2 p-3 rounded-lg border border-main-view-fg/10 transition-all hover:shadow-lg disabled:opacity-60", !isDownloading && ' flex justify-between items-start')}>
+                <div className="flex items-start gap-4">
+                  <div className="shrink-0 size-10 bg-main-view-fg/10 rounded-lg flex items-center justify-center">
                     {quickStartInitiated || isDownloading ? (
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -420,29 +418,12 @@ function SetupScreen() {
                         />
                       </svg>
                     ) : (
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        className="h-6 w-6 text-white"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M13 10V3L4 14h7v7l9-11h-7z"
-                        />
-                      </svg>
+                      <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
                     )}
                   </div>
                   <div className="flex-1">
-                    <h1 className="text-main-view-fg font-semibold text-lg mb-1">
-                      {quickStartInitiated || isDownloading
-                        ? t('setup:downloading', {
-                            defaultValue: 'Downloading Jan Model...',
-                          })
-                        : t('setup:quickStart')}
+                    <h1 className="text-main-view-fg font-semibold text-sm mb-1">
+                      <span>Jan V3</span> - <span className='text-xs text-main-view-fg/50'>{defaultVariant?.file_size}</span>
                     </h1>
                     {quickStartInitiated || isDownloading ? (
                       <div className="space-y-2">
@@ -455,68 +436,24 @@ function SetupScreen() {
                             {Math.round(downloadProgress * 100)}%
                           </span>
                         </div>
-                        <p className="text-main-view-fg/70 text-xs">
-                          {t('setup:downloadingDescription', {
-                            defaultValue:
-                              'Please wait while we download the model. This may take a few minutes.',
-                          })}
-                        </p>
                       </div>
                     ) : (
-                      <p className="text-main-view-fg/70 text-sm">
-                        {t('setup:quickStartDescription')}
-                      </p>
+                      <div className="text-main-view-fg/70 text-sm mt-1.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-main-view-fg/20 text-xs rounded-full mr-1">
+                          <IconSquareCheck size={12} />
+                          General
+                        </span>
+                        {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-main-view-fg/20 text-xs rounded-full">
+                        <IconEye size={12} />
+                          Vision
+                        </span>}
+                      </div>
                     )}
                   </div>
                 </div>
+                {!isDownloading && <Button>Download</Button>}
               </div>
             </button>
-
-            {/* "or" divider */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-main-view-fg/10"></div>
-              <span className="text-main-view-fg/50 text-sm font-medium">
-                {t('setup:orDivider')}
-              </span>
-              <div className="flex-1 h-px bg-main-view-fg/10"></div>
-            </div>
-
-            {/* Set up local model */}
-            <Link
-              to={route.hub.index}
-              search={{
-                ...(!isProd ? { step: 'setup_local_provider' } : {}),
-              }}
-            >
-              <Card
-                header={
-                  <div>
-                    <h1 className="text-main-view-fg font-medium text-base">
-                      {t('setup:localModel')}
-                    </h1>
-                  </div>
-                }
-              />
-            </Link>
-
-            {/* Set up remote provider */}
-            <Link
-              to={route.settings.providers}
-              params={{
-                providerName: firstItemRemoteProvider,
-              }}
-              search={{
-                ...(!isSetupCompleted ? { step: 'setup_remote_provider' } : {}),
-              }}
-            >
-              <Card
-                header={
-                  <h1 className="text-main-view-fg font-medium text-base">
-                    {t('setup:remoteProvider')}
-                  </h1>
-                }
-              />
-            </Link>
           </div>
         </div>
       </div>
