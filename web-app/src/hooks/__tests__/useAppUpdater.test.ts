@@ -264,6 +264,114 @@ describe('useAppUpdater', () => {
     })
   })
 
+  describe('periodic update checking', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('should set up periodic update check interval', async () => {
+      const mockUpdate = {
+        version: '1.2.0',
+        downloadAndInstall: vi.fn(),
+      }
+      mockUpdaterCheck.mockResolvedValue(mockUpdate)
+
+      const { result } = renderHook(() => useAppUpdater())
+
+      // Initial check happens immediately in DataProvider, not here
+      expect(mockUpdaterCheck).not.toHaveBeenCalled()
+
+      // Fast-forward 1 hour
+      await act(async () => {
+        vi.advanceTimersByTime(60 * 60 * 1000)
+        await Promise.resolve() // Allow pending promises to resolve
+      })
+
+      expect(mockUpdaterCheck).toHaveBeenCalledTimes(1)
+    })
+
+    it('should clean up periodic interval on unmount', () => {
+      const { unmount } = renderHook(() => useAppUpdater())
+
+      const clearIntervalSpy = vi.spyOn(global, 'clearInterval')
+
+      unmount()
+
+      expect(clearIntervalSpy).toHaveBeenCalled()
+    })
+
+    it('should not set up periodic check if AUTO_UPDATER_DISABLED is true', async () => {
+      Object.defineProperty(global, 'AUTO_UPDATER_DISABLED', {
+        value: true,
+        writable: true,
+      })
+
+      const { result } = renderHook(() => useAppUpdater())
+
+      await act(async () => {
+        vi.advanceTimersByTime(60 * 60 * 1000)
+        await vi.runAllTimersAsync()
+      })
+
+      expect(mockUpdaterCheck).not.toHaveBeenCalled()
+
+      // Reset
+      Object.defineProperty(global, 'AUTO_UPDATER_DISABLED', {
+        value: false,
+        writable: true,
+      })
+    })
+
+    it('should not set up periodic check in dev mode', async () => {
+      mockIsDev.mockReturnValue(true)
+
+      const { result } = renderHook(() => useAppUpdater())
+
+      await act(async () => {
+        vi.advanceTimersByTime(60 * 60 * 1000)
+        await vi.runAllTimersAsync()
+      })
+
+      expect(mockUpdaterCheck).not.toHaveBeenCalled()
+
+      mockIsDev.mockReturnValue(false)
+    })
+
+    it('should trigger multiple checks over multiple hours', async () => {
+      mockUpdaterCheck.mockResolvedValue(null)
+
+      const { result } = renderHook(() => useAppUpdater())
+
+      // First hour
+      await act(async () => {
+        vi.advanceTimersByTime(60 * 60 * 1000)
+        await Promise.resolve()
+      })
+
+      expect(mockUpdaterCheck).toHaveBeenCalledTimes(1)
+
+      // Second hour
+      await act(async () => {
+        vi.advanceTimersByTime(60 * 60 * 1000)
+        await Promise.resolve()
+      })
+
+      expect(mockUpdaterCheck).toHaveBeenCalledTimes(2)
+
+      // Third hour
+      await act(async () => {
+        vi.advanceTimersByTime(60 * 60 * 1000)
+        await Promise.resolve()
+      })
+
+      expect(mockUpdaterCheck).toHaveBeenCalledTimes(3)
+    })
+  })
+
   describe('downloadAndInstallUpdate', () => {
     it('should download and install update successfully', async () => {
       const mockDownloadAndInstall = vi.fn()

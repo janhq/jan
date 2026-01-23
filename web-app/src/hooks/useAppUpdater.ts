@@ -5,6 +5,9 @@ import type { UpdateInfo } from '@/services/updater/types'
 import { SystemEvent } from '@/types/events'
 import { getServiceHub } from '@/hooks/useServiceHub'
 
+// Check for updates every hour
+const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
+
 export interface UpdateState {
   isUpdateAvailable: boolean
   updateInfo: UpdateInfo | null
@@ -236,6 +239,25 @@ export const useAppUpdater = () => {
       })
     }
   }, [updateState.updateInfo])
+
+  // Set up periodic update checking (every hour)
+  useEffect(() => {
+    // Skip periodic checks if updater is disabled or in dev mode
+    if (AUTO_UPDATER_DISABLED || isDev()) {
+      return
+    }
+
+    // Set up periodic update checks
+    const intervalId = setInterval(() => {
+      console.log('Periodic update check triggered')
+      checkForUpdate()
+    }, UPDATE_CHECK_INTERVAL_MS)
+
+    // Cleanup interval on unmount
+    return () => {
+      clearInterval(intervalId)
+    }
+  }, [checkForUpdate])
 
   return {
     updateState,
