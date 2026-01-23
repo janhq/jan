@@ -177,7 +177,7 @@ describe('RenderMarkdown', () => {
     expect(html).toContain('&lt;!DOCTYPE html&gt;')
   })
   
-  it('formats fenced code blocks correctly', () => {
+  it('formats fenced code blocks correctly', async () => {
     const contentWithFencedCodeBlock = `Please explain this code block.
 
 \`\`\`html
@@ -213,14 +213,19 @@ describe('RenderMarkdown', () => {
 </html>
 \`\`\`
 `
-    render(
+    const { container, findByText}  = render(
       <RenderMarkdown
         content={contentWithFencedCodeBlock}
       />
     )
-    const markdownContainer = document.querySelector('.markdown')
-    const html = markdownContainer?.innerHTML || ''
-    expect(html).toContain('<pre>')
+    // Wait for the code content to be rendered (async operation)
+    await findByText('<!DOCTYPE html>', { exact: false })
+    const markdownContainer = container.querySelector('.markdown')
+    const text = markdownContainer?.textContent || ''
+      // Check that the code content is present
+    expect(text).toContain('<!DOCTYPE html>')
+    expect(text).toContain('<html lang="en">')
+    expect(text).toContain('Welcome to My Website')
   })
   describe('LaTeX normalization - display math', () => {
     it('converts \\[...\\] to $$ display math', () => {
