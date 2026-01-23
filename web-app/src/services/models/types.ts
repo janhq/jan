@@ -98,12 +98,6 @@ export type PreflightReason =
   | 'NETWORK'
   | 'UNKNOWN'
 
-export interface PreflightResult {
-  ok: boolean
-  status?: number
-  reason?: PreflightReason
-}
-
 export interface ModelsService {
   getModel(modelId: string): Promise<modelInfo | undefined>
   fetchModels(): Promise<modelInfo[]>
@@ -113,10 +107,6 @@ export interface ModelsService {
     hfToken?: string
   ): Promise<HuggingFaceRepo | null>
   convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel
-  preflightArtifactAccess(
-    url: string,
-    hfToken?: string
-  ): Promise<PreflightResult>
   updateModel(modelId: string, model: Partial<CoreModel>): Promise<void>
   pullModel(
     id: string,
