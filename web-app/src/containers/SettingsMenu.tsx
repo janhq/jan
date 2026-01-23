@@ -14,8 +14,6 @@ import { cn } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 
 const SettingsMenu = () => {
   const { t } = useTranslation()
@@ -30,14 +28,6 @@ const SettingsMenu = () => {
   // On web: exclude llamacpp provider as it's not available
   const activeProviders = providers.filter((provider) => {
     if (!provider.active) return false
-
-    // On web version, hide llamacpp provider
-    if (
-      !PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
-      provider.provider === 'llama.cpp'
-    ) {
-      return false
-    }
 
     return true
   })
@@ -77,7 +67,7 @@ const SettingsMenu = () => {
       title: 'common:attachments',
       route: route.settings.attachments,
       hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS],
+      isEnabled: true,
     },
     {
       title: 'common:interface',
@@ -89,55 +79,55 @@ const SettingsMenu = () => {
       title: 'common:privacy',
       route: route.settings.privacy,
       hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.ANALYTICS],
+      isEnabled: true,
     },
     {
       title: 'common:modelProviders',
       route: route.settings.model_providers,
       hasSubMenu: activeProviders.length > 0,
-      isEnabled: PlatformFeatures[PlatformFeature.MODEL_PROVIDER_SETTINGS],
+      isEnabled: true,
     },
     {
       title: 'common:assistants',
       route: route.settings.assistant,
       hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.ASSISTANTS],
+      isEnabled: true,
     },
     {
       title: 'common:keyboardShortcuts',
       route: route.settings.shortcuts,
       hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.SHORTCUT],
+      isEnabled: true,
     },
     {
       title: 'common:hardware',
       route: route.settings.hardware,
       hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.HARDWARE_MONITORING],
+      isEnabled: true,
     },
     {
       title: 'common:mcp-servers',
       route: route.settings.mcp_servers,
       hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.MCP_SERVERS_SETTINGS],
+      isEnabled: true,
     },
     {
       title: 'common:local_api_server',
       route: route.settings.local_api_server,
       hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.LOCAL_API_SERVER],
+      isEnabled: true,
     },
     {
       title: 'common:https_proxy',
       route: route.settings.https_proxy,
       hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.HTTPS_PROXY],
+      isEnabled: true,
     },
     {
       title: 'common:extensions',
       route: route.settings.extensions,
       hasSubMenu: false,
-      isEnabled: PlatformFeatures[PlatformFeature.EXTENSIONS_SETTINGS],
+      isEnabled: true,
     },
   ]
 

@@ -15,7 +15,6 @@ import { ToasterProvider } from '@/providers/ToasterProvider'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
-import { GoogleAnalyticsProvider } from '@/providers/GoogleAnalyticsProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
@@ -34,9 +33,6 @@ import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
-import { AuthProvider } from '@/providers/AuthProvider'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -112,17 +108,12 @@ const AppLayout = () => {
   return (
     <Fragment>
       <AnalyticProvider />
-      {PlatformFeatures[PlatformFeature.GOOGLE_ANALYTICS] && (
-        <GoogleAnalyticsProvider />
-      )}
       <KeyboardShortcutsProvider />
       <main className="relative h-svh text-sm antialiased select-none bg-app">
         {/* Fake absolute panel top to enable window drag */}
         <div className="absolute w-full h-10 z-10" data-tauri-drag-region />
         <DialogAppUpdater />
-        {PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] && (
-          <BackendUpdater />
-        )}
+        <BackendUpdater />
 
         {/* Use ResizablePanelGroup only on larger screens */}
         {!isSmallScreen && isLeftPanelOpen ? (
@@ -174,9 +165,7 @@ const AppLayout = () => {
           </div>
         )}
       </main>
-      {PlatformFeatures[PlatformFeature.ANALYTICS] && productAnalyticPrompt && (
-        <PromptAnalytic />
-      )}
+      {productAnalyticPrompt && <PromptAnalytic />}
     </Fragment>
   )
 }
@@ -241,11 +230,9 @@ function RootLayout() {
         <ToasterProvider />
         <TranslationProvider>
           <ExtensionProvider>
-            <AuthProvider>
-              <DataProvider />
-              <GlobalEventHandler />
-              {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
-            </AuthProvider>
+            <DataProvider />
+            <GlobalEventHandler />
+            {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
           </ExtensionProvider>
           {/* {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />} */}
           {/* <TanStackRouterDevtools position="bottom-right" /> */}

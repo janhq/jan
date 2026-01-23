@@ -20,10 +20,8 @@ import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
-import { predefinedProviders } from '@/consts/providers'
+import { predefinedProviders } from '@/constants/providers'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 
 type DropdownModelProviderProps = {
@@ -179,18 +177,6 @@ const DropdownModelProvider = ({
             await checkAndUpdateModelVisionCapability(lastUsed.model)
           }
         } else {
-          // For web-only builds, auto-select the first model from jan provider
-          if (PlatformFeatures[PlatformFeature.WEB_AUTO_MODEL_SELECTION]) {
-            const janProvider = providers.find(
-              (p) => p.provider === 'jan' && p.active && p.models.length > 0
-            )
-            if (janProvider && janProvider.models.length > 0) {
-              const firstModel = janProvider.models[0]
-              selectModelProvider(janProvider.provider, firstModel.id)
-              return
-            }
-          }
-
           // Fallback: auto-select first llamacpp model if available
           const llamacppProvider = providers.find(
             (p) => p.provider === 'llamacpp' && p.active && p.models.length > 0
@@ -201,23 +187,6 @@ const DropdownModelProvider = ({
             setLastUsedModel('llamacpp', firstModel.id)
           } else {
             selectModelProvider('', '')
-          }
-        }
-      } else {
-        // Get current state for web auto-selection check
-        const currentState = { selectedModel, selectedProvider }
-        if (
-          PlatformFeatures[PlatformFeature.WEB_AUTO_MODEL_SELECTION] &&
-          !currentState.selectedModel &&
-          !currentState.selectedProvider
-        ) {
-          // For web-only builds, auto-select the first model from jan provider only if nothing is selected
-          const janProvider = providers.find(
-            (p) => p.provider === 'jan' && p.active && p.models.length > 0
-          )
-          if (janProvider && janProvider.models.length > 0) {
-            const firstModel = janProvider.models[0]
-            selectModelProvider(janProvider.provider, firstModel.id)
           }
         }
       }
@@ -616,26 +585,23 @@ const DropdownModelProvider = ({
                             {getProviderTitle(providerInfo.provider)}
                           </span>
                         </div>
-                        {PlatformFeatures[
-                          PlatformFeature.MODEL_PROVIDER_SETTINGS
-                        ] && (
-                          <div
-                            className="size-6 cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              navigate({
-                                to: route.settings.providers,
-                                params: { providerName: providerInfo.provider },
-                              })
-                              setOpen(false)
-                            }}
-                          >
-                            <IconSettings
-                              size={16}
-                              className="text-main-view-fg/50"
-                            />
-                          </div>
-                        )}
+
+                        <div
+                          className="size-6 cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            navigate({
+                              to: route.settings.providers,
+                              params: { providerName: providerInfo.provider },
+                            })
+                            setOpen(false)
+                          }}
+                        >
+                          <IconSettings
+                            size={16}
+                            className="text-main-view-fg/50"
+                          />
+                        </div>
                       </div>
 
                       {/* Models for this provider */}

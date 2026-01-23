@@ -3,6 +3,7 @@ import { ThreadMessage } from '@janhq/core'
 import { MCPTool } from '@/types/completion'
 import { useAssistant } from './useAssistant'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
+import type { LanguageModel } from 'ai'
 
 export type PromptProgress = {
   cache: number
@@ -21,6 +22,8 @@ type AppState = {
   streamingContent?: ThreadMessage
   loadingModel?: boolean
   tools: MCPTool[]
+  ragToolNames: Set<string>
+  mcpToolNames: Set<string>
   serverStatus: 'running' | 'stopped' | 'pending'
   abortControllers: Record<string, AbortController>
   tokenSpeed?: TokenSpeed
@@ -29,6 +32,9 @@ type AppState = {
   errorMessage?: AppErrorMessage
   promptProgress?: PromptProgress
   activeModels: string[]
+  languageModel: LanguageModel | null
+  languageModelId?: string
+  languageModelProvider?: ProviderObject
   cancelToolCall?: () => void
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
@@ -37,6 +43,8 @@ type AppState = {
   ) => void
   updateLoadingModel: (loading: boolean) => void
   updateTools: (tools: MCPTool[]) => void
+  updateRagToolNames: (names: string[]) => void
+  updateMcpToolNames: (names: string[]) => void
   setAbortController: (threadId: string, controller: AbortController) => void
   updateTokenSpeed: (message: ThreadMessage, increment?: number) => void
   setTokenSpeed: (
@@ -51,12 +59,19 @@ type AppState = {
   setErrorMessage: (error: AppErrorMessage | undefined) => void
   updatePromptProgress: (progress: PromptProgress | undefined) => void
   setActiveModels: (models: string[]) => void
+  setLanguageModel: (
+    model: LanguageModel | null,
+    modelId?: string,
+    provider?: ProviderObject
+  ) => void
 }
 
 export const useAppState = create<AppState>()((set) => ({
   streamingContent: undefined,
   loadingModel: false,
   tools: [],
+  ragToolNames: new Set<string>(),
+  mcpToolNames: new Set<string>(),
   serverStatus: 'stopped',
   abortControllers: {},
   tokenSpeed: undefined,
@@ -64,6 +79,9 @@ export const useAppState = create<AppState>()((set) => ({
   promptProgress: undefined,
   cancelToolCall: undefined,
   activeModels: [],
+  languageModel: null,
+  languageModelId: undefined,
+  languageModelProvider: undefined,
   updateStreamingContent: (content: ThreadMessage | undefined) => {
     const assistants = useAssistant.getState().assistants
     const currentAssistant = useAssistant.getState().currentAssistant
@@ -94,6 +112,12 @@ export const useAppState = create<AppState>()((set) => ({
   },
   updateTools: (tools) => {
     set({ tools })
+  },
+  updateRagToolNames: (names) => {
+    set({ ragToolNames: new Set(names) })
+  },
+  updateMcpToolNames: (names) => {
+    set({ mcpToolNames: new Set(names) })
   },
   setServerStatus: (value) => set({ serverStatus: value }),
   setAbortController: (threadId, controller) => {
@@ -182,5 +206,12 @@ export const useAppState = create<AppState>()((set) => ({
     set(() => ({
       activeModels: models,
     }))
-  }
+  },
+  setLanguageModel: (model, modelId, provider) => {
+    set(() => ({
+      languageModel: model,
+      languageModelId: modelId,
+      languageModelProvider: provider,
+    }))
+  },
 }))

@@ -19,23 +19,13 @@ import { IconLogs } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
 import { useEffect, useState } from 'react'
-import { PlatformGuard } from '@/lib/platform/PlatformGuard'
-import { PlatformFeature } from '@/lib/platform'
 import { toast } from 'sonner'
 import { getModelToStart } from '@/utils/getModelToStart'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
-  component: LocalAPIServer,
+  component: LocalAPIServerContent,
 })
-
-function LocalAPIServer() {
-  return (
-    <PlatformGuard feature={PlatformFeature.LOCAL_API_SERVER}>
-      <LocalAPIServerContent />
-    </PlatformGuard>
-  )
-}
 
 function LocalAPIServerContent() {
   const { t } = useTranslation()

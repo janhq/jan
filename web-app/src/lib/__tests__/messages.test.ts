@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { CompletionMessagesBuilder } from '../messages'
+import {
+  CompletionMessagesBuilder,
+} from '../messages'
 import { ThreadMessage } from '@janhq/core'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 
@@ -562,3 +564,4 @@ describe('CompletionMessagesBuilder', () => {
     })
   })
 })
+

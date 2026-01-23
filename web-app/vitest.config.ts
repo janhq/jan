@@ -25,17 +25,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      // Provide a fallback for @jan/extensions-web when it doesn't exist (CICD desktop builds)
-      '@jan/extensions-web': (() => {
-        try {
-          // Try to resolve the actual package first
-          require.resolve('@jan/extensions-web')
-          return '@jan/extensions-web'
-        } catch {
-          // If package doesn't exist, use a mock
-          return path.resolve(__dirname, './src/test/mocks/extensions-web.ts')
-        }
-      })(),
     },
   },
   define: {

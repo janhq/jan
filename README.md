@@ -72,6 +72,10 @@ The easiest way to get started is by downloading one of the following versions f
     <td><b>Linux (AppImage)</b></td>
     <td><a href='https://app.jan.ai/download/latest/linux-amd64-appimage'>jan.AppImage</a></td>
   </tr>
+  <tr>
+    <td><b>Linux (Arm64)</b></td>
+    <td><a href='https://github.com/janhq/jan/issues/4543#issuecomment-3734911349'>How-to</a></td>
+  </tr>
 </table>
 
 
@@ -137,7 +141,7 @@ For detailed compatibility, check our [installation guides](https://jan.ai/docs/
 
 If things go sideways:
 
-1. Check our [troubleshooting docs](https://jan.ai/docs/troubleshooting)
+1. Check our [troubleshooting docs](https://www.jan.ai/docs/desktop/troubleshooting)
 2. Copy your error logs and system specs
 3. Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH) `#🆘|jan-help` channel
 

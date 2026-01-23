@@ -49,6 +49,8 @@ on:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
         required: false
+      JAN_SIGNING_KEY:
+        required: false
     outputs:
       WIN_SIG:
         value: ${{ jobs.build-windows-x64.outputs.WIN_SIG }}
@@ -56,6 +58,8 @@ on:
         value: ${{ jobs.build-windows-x64.outputs.FILE_NAME }}
       MSI_FILE_NAME:
         value: ${{ jobs.build-windows-x64.outputs.MSI_FILE_NAME }}
+      PORTABLE_FILE_NAME:
+        value: ${{ jobs.build-windows-x64.outputs.PORTABLE_FILE_NAME }}
 
 jobs:
   build-windows-x64:
@@ -64,6 +68,7 @@ jobs:
       WIN_SIG: ${{ steps.metadata.outputs.WIN_SIG }}
       FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
       MSI_FILE_NAME: ${{ steps.metadata.outputs.MSI_FILE_NAME }}
+      PORTABLE_FILE_NAME: ${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
     permissions:
       contents: write
     steps:
@@ -172,8 +177,11 @@ jobs:
 
           # Change app name for beta and nightly builds
           if [ "${{ inputs.channel }}" != "stable" ]; then
-            # Update updater endpoint
-            jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            if [[ "${{ inputs.channel }}" == "nightly" ]]; then
+              jq '.plugins.updater.endpoints = ["https://apps-nightly.jan.ai/update-check", "https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            else
+              jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            fi
             mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
             
             # Update product name
@@ -227,19 +235,27 @@ jobs:
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
 
-      - name: Upload Artifact
+      - name: Upload NSIS Installer Artifact
         uses: actions/upload-artifact@v4
         with:
           name: jan-windows-exe-${{ inputs.new_version }}
           path: |
             ./src-tauri/target/release/bundle/nsis/*.exe
-      - name: Upload Artifact
+      - name: Upload MSI Installer Artifact
         uses: actions/upload-artifact@v4
         with:
           name: jan-windows-msi-${{ inputs.new_version }}
           path: |
             ./src-tauri/target/release/bundle/msi/*.msi
+      
+      - name: Upload Portable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-windows-portable-${{ inputs.new_version }}
+          path: |
+            ./src-tauri/target/release/Jan*.exe
 
       ## Set output filename for windows
       - name: Set output filename for windows
@@ -251,16 +267,31 @@ jobs:
             WIN_SIG=$(cat Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig)
 
             MSI_FILE="Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64_en-US.msi"
+            PORTABLE_FILE_NAME="Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-portable.exe"
           else
             FILE_NAME=Jan_${{ inputs.new_version }}_x64-setup.exe
             WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
             
             MSI_FILE="Jan_${{ inputs.new_version }}_x64_en-US.msi"
+            PORTABLE_FILE_NAME="Jan_${{ inputs.new_version }}_x64-portable.exe"
           fi
+          # go to ./src-tauri/target/release
+          cd ../..
+
+          # find the actual portable exe produced by the build
+          PORTABLE_SRC=$(ls -1 Jan*.exe | head -n 1)
+          if [ -z "$PORTABLE_SRC" ] || [ ! -f "$PORTABLE_SRC" ]; then
+            echo "Error: portable exe matching 'Jan*.exe' not found in $(pwd)" >&2
+            exit 1
+          fi
+          # copy to deterministic versioned filename
+          cp "$PORTABLE_SRC" "$PORTABLE_FILE_NAME"
+          echo "Portable exe: $PORTABLE_SRC -> $PORTABLE_FILE_NAME"
 
           echo "::set-output name=WIN_SIG::$WIN_SIG"
           echo "::set-output name=FILE_NAME::$FILE_NAME"
           echo "::set-output name=MSI_FILE_NAME::$MSI_FILE"
+          echo "::set-output name=PORTABLE_FILE_NAME::$PORTABLE_FILE_NAME"
         id: metadata
 
       ## Upload to s3 for nightly and beta
@@ -288,4 +319,15 @@ jobs:
           upload_url: ${{ inputs.upload_url }}
           asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.FILE_NAME }}
           asset_name: ${{ steps.metadata.outputs.FILE_NAME }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload portable exe to release (github)
+        if: inputs.public_provider == 'github'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/release/${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
+          asset_name: ${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
           asset_content_type: application/octet-stream

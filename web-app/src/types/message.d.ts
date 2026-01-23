@@ -6,6 +6,6 @@ type ToolCall = {
       arguments?: object
     }
   }
-  response?: unknown
+  response?: MCPResponse
   state?: string
 }

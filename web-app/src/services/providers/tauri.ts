@@ -3,7 +3,7 @@
  */
 
 import { models as providerModels } from 'token.js'
-import { predefinedProviders } from '@/consts/providers'
+import { predefinedProviders } from '@/constants/providers'
 import { EngineManager, SettingComponentProps } from '@janhq/core'
 import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
