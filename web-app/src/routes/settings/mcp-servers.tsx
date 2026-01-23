@@ -30,13 +30,6 @@ import { useAppState } from '@/hooks/useAppState'
 import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
 
-// Function to mask sensitive values
-const maskSensitiveValue = (value: string) => {
-  if (!value) return value
-  if (value.length <= 8) return '*'.repeat(value.length)
-  return value.slice(0, 4) + '*'.repeat(value.length - 8) + value.slice(-4)
-}
-
 // Function to mask sensitive URL parameters
 const maskSensitiveUrl = (url: string) => {
   if (!url) return url
@@ -68,9 +61,9 @@ const maskSensitiveUrl = (url: string) => {
     // Mask sensitive parameters
     sensitiveParams.forEach((paramName) => {
       // Check both exact match and case-insensitive match
-      for (const [key, value] of params.entries()) {
+      for (const [key] of params.entries()) {
         if (key.toLowerCase() === paramName.toLowerCase()) {
-          params.set(key, maskSensitiveValue(value))
+          params.set(key, '******')
         }
       }
     })
@@ -84,8 +77,7 @@ const maskSensitiveUrl = (url: string) => {
     if (queryIndex === -1) return url
 
     const baseUrl = url.substring(0, queryIndex + 1)
-    const queryString = url.substring(queryIndex + 1)
-    return baseUrl + maskSensitiveValue(queryString)
+    return baseUrl + '******'
   }
 }
 
@@ -513,10 +505,7 @@ function MCPServersDesktop() {
                                 <div className="break-all">
                                   {t('mcp-servers:env')}:{' '}
                                   {Object.entries(config.env)
-                                    .map(
-                                      ([key, value]) =>
-                                        `${key}=${maskSensitiveValue(value)}`
-                                    )
+                                    .map(([key]) => `${key}=******`)
                                     .join(', ')}
                                 </div>
                               )}
@@ -547,10 +536,7 @@ function MCPServersDesktop() {
                                 <div className="my-1 break-all">
                                   Headers:{' '}
                                   {Object.entries(config.headers)
-                                    .map(
-                                      ([key, value]) =>
-                                        `${key}=${maskSensitiveValue(value)}`
-                                    )
+                                    .map(([key]) => `${key}=******`)
                                     .join(', ')}
                                 </div>
                               )}

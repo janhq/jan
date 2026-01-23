@@ -307,13 +307,13 @@ const LeftPanel = () => {
           </div>
 
           {folders.length > 0 && !(IS_IOS || IS_ANDROID) && (
-            <div className="space-y-1 py-1">
+            <div className="space-y-1 py-1 flex flex-col">
               <div className="flex items-center justify-between mb-2">
                 <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
                   {t('common:projects.title')}
                 </span>
               </div>
-              <div className="flex flex-col max-h-[140px] overflow-y-scroll">
+              <div className="flex flex-col max-h-[140px] overflow-y-auto">
                 {folders
                   .slice()
                   .sort((a, b) => b.updated_at - a.updated_at)

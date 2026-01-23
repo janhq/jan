@@ -24,7 +24,6 @@ import type {
   ModelValidationResult,
   ModelPlan,
 } from './types'
-import { PreflightResult } from './types'
 
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
@@ -103,37 +102,6 @@ export class DefaultModelsService implements ModelsService {
     } catch (error) {
       console.error('Error fetching HuggingFace repository:', error)
       return null
-    }
-  }
-
-  async preflightArtifactAccess(
-    url: string,
-    hfToken?: string
-  ): Promise<PreflightResult> {
-    try {
-      const resp = await fetch(url, {
-        method: 'HEAD',
-        headers: hfToken
-          ? {
-              Authorization: `Bearer ${hfToken}`,
-            }
-          : {},
-      })
-
-      if (resp.ok) {
-        return { ok: true, status: resp.status }
-      }
-
-      const status = resp.status
-      if (status === 401) return { ok: false, status, reason: 'AUTH_REQUIRED' }
-      if (status === 403)
-        return { ok: false, status, reason: 'LICENSE_NOT_ACCEPTED' }
-      if (status === 404) return { ok: false, status, reason: 'NOT_FOUND' }
-      if (status === 429) return { ok: false, status, reason: 'RATE_LIMITED' }
-      return { ok: false, status, reason: 'UNKNOWN' }
-    } catch (e) {
-      console.warn('Preflight artifact access failed:', e)
-      return { ok: false, reason: 'NETWORK' }
     }
   }
 
