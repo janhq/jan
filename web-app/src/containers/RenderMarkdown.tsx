@@ -118,6 +118,11 @@ function RenderMarkdownComponent({
           math: math,
           cjk: cjk,
         }}
+        controls={{
+          mermaid: {
+            fullscreen: false,
+          },
+        }}
         mermaid={
           messageId
             ? {
