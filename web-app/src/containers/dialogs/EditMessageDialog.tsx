@@ -16,7 +16,7 @@ import { IconPencil, IconX } from '@tabler/icons-react'
 interface EditMessageDialogProps {
   message: string
   imageUrls?: string[]
-  onSave: (message: string, imageUrls?: string[]) => void
+  onSave: (message: string) => void
   triggerElement?: React.ReactNode
 }
 
@@ -48,14 +48,9 @@ export function EditMessageDialog({
 
   const handleSave = () => {
     const hasTextChanged = draft !== message && draft.trim()
-    const hasImageChanged =
-      JSON.stringify(imageUrls || []) !== JSON.stringify(keptImages)
 
-    if (hasTextChanged || hasImageChanged) {
-      onSave(
-        draft.trim() || message,
-        keptImages.length > 0 ? keptImages : undefined
-      )
+    if (hasTextChanged) {
+      onSave(draft.trim() || message)
       setIsOpen(false)
     }
   }

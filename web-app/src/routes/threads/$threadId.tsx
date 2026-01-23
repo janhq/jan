@@ -615,7 +615,7 @@ function ThreadDetail() {
 
   // Handle edit message - updates the message and regenerates from it
   const handleEditMessage = useCallback(
-    (messageId: string, newText: string, _imageUrls?: string[]) => {
+    (messageId: string, newText: string) => {
       if (!languageModelId || !languageModelProvider) {
         console.warn('No language model available')
         return
@@ -735,7 +735,7 @@ function ThreadDetail() {
     setTimeout(() => {
       handleRegenerate()
     }, 1000)
-  }, [selectedModel, selectedProvider, getProviderByName, serviceHub])
+  }, [selectedModel, selectedProvider, getProviderByName, serviceHub, handleRegenerate])
 
   const threadModel = useMemo(() => thread?.model, [thread])
 

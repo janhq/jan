@@ -44,7 +44,7 @@ export type MessageItemProps = {
   status: ChatStatus
   reasoningContainerRef?: React.RefObject<HTMLDivElement | null>
   onRegenerate?: (messageId: string) => void
-  onEdit?: (messageId: string, newText: string, imageUrls?: string[]) => void
+  onEdit?: (messageId: string, newText: string) => void
   onDelete?: (messageId: string) => void
   assistant?: { avatar?: React.ReactNode; name?: string }
   showAssistant?: boolean
@@ -73,8 +73,8 @@ export const MessageItem = memo(
     }, [onRegenerate, message.id])
 
     const handleEdit = useCallback(
-      (newText: string, imageUrls?: string[]) => {
-        onEdit?.(message.id, newText, imageUrls)
+      (newText: string) => {
+        onEdit?.(message.id, newText)
       },
       [onEdit, message.id]
     )
