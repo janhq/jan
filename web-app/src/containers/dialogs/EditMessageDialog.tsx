@@ -12,11 +12,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { IconPencil, IconX } from '@tabler/icons-react'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 
 interface EditMessageDialogProps {
   message: string
@@ -73,26 +68,19 @@ export function EditMessageDialog({
   }
 
   const defaultTrigger = (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div
-          className="flex outline-0 items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              setIsOpen(true)
-            }
-          }}
-        >
-          <IconPencil size={16} />
-        </div>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>{t('edit')}</p>
-      </TooltipContent>
-    </Tooltip>
+    <div
+      className="flex outline-0 items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          setIsOpen(true)
+        }
+      }}
+    >
+      <IconPencil size={16} />
+    </div>
   )
 
   return (

@@ -20,6 +20,8 @@ import { CopyButton } from './CopyButton'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { IconRefresh, IconPaperclip } from '@tabler/icons-react'
+import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
+import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 import { extractFilesFromPrompt, FileMetadata } from '@/lib/fileMetadata'
 import { useMemo } from 'react'
@@ -42,6 +44,8 @@ export type MessageItemProps = {
   status: ChatStatus
   reasoningContainerRef?: React.RefObject<HTMLDivElement | null>
   onRegenerate?: (messageId: string) => void
+  onEdit?: (messageId: string, newText: string, imageUrls?: string[]) => void
+  onDelete?: (messageId: string) => void
   assistant?: { avatar?: React.ReactNode; name?: string }
   showAssistant?: boolean
 }
@@ -53,6 +57,8 @@ export const MessageItem = memo(
     status,
     reasoningContainerRef,
     onRegenerate,
+    onEdit,
+    onDelete,
     assistant,
     showAssistant,
   }: MessageItemProps) => {
@@ -65,6 +71,28 @@ export const MessageItem = memo(
     const handleRegenerate = useCallback(() => {
       onRegenerate?.(message.id)
     }, [onRegenerate, message.id])
+
+    const handleEdit = useCallback(
+      (newText: string, imageUrls?: string[]) => {
+        onEdit?.(message.id, newText, imageUrls)
+      },
+      [onEdit, message.id]
+    )
+
+    const handleDelete = useCallback(() => {
+      onDelete?.(message.id)
+    }, [onDelete, message.id])
+
+    // Get image URLs from file parts for the edit dialog
+    const imageUrls = useMemo(() => {
+      return message.parts
+        .filter((part) => {
+          if (part.type !== 'file') return false
+          const filePart = part as { type: 'file'; url?: string; mediaType?: string }
+          return filePart.url && filePart.mediaType?.startsWith('image/')
+        })
+        .map((part) => (part as { url: string }).url)
+    }, [message.parts])
 
     const isStreaming = isLastMessage && status === CHAT_STATUS.STREAMING
 
@@ -341,17 +369,17 @@ export const MessageItem = memo(
           <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
             <CopyButton text={getFullTextContent()} />
 
-            {selectedModel &&
-              onRegenerate &&
-              status !== CHAT_STATUS.STREAMING && (
-                <button
-                  className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                  onClick={handleRegenerate}
-                  title="Regenerate from this message"
-                >
-                  <IconRefresh size={16} />
-                </button>
-              )}
+            {onEdit && status !== CHAT_STATUS.STREAMING && (
+              <EditMessageDialog
+                message={getFullTextContent()}
+                imageUrls={imageUrls.length > 0 ? imageUrls : undefined}
+                onSave={handleEdit}
+              />
+            )}
+
+            {onDelete && status !== CHAT_STATUS.STREAMING && (
+              <DeleteMessageDialog onDelete={handleDelete} />
+            )}
           </div>
         )}
 
@@ -367,11 +395,22 @@ export const MessageItem = memo(
               >
                 <CopyButton text={getFullTextContent()} />
 
-                {selectedModel && onRegenerate && !isStreaming && (
+                {onEdit && !isStreaming && (
+                  <EditMessageDialog
+                    message={getFullTextContent()}
+                    onSave={handleEdit}
+                  />
+                )}
+
+                {onDelete && !isStreaming && (
+                  <DeleteMessageDialog onDelete={handleDelete} />
+                )}
+
+                {selectedModel && onRegenerate && !isStreaming && isLastMessage && (
                   <button
                     className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
                     onClick={handleRegenerate}
-                    title="Regenerate from this message"
+                    title="Regenerate response"
                   >
                     <IconRefresh size={16} />
                   </button>
