@@ -7,7 +7,6 @@ import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
-import { Progress } from '@/components/ui/progress'
 import type { CatalogModel } from '@/services/models/types'
 import {
   NEW_JAN_MODEL_HF_REPO,
@@ -262,13 +261,20 @@ function SetupScreen() {
     )
   }, [defaultVariant, localDownloadingModels, downloadProcesses])
 
-  const downloadProgress = useMemo(() => {
-    if (!defaultVariant) return 0
-    return (
-      downloadProcesses.find((e) => e.id === defaultVariant.model_id)
-        ?.progress || 0
-    )
+  const downloadedSize = useMemo(() => {
+    if (!defaultVariant) return { current: 0, total: 0 }
+    const process = downloadProcesses.find((e) => e.id === defaultVariant.model_id)
+    return {
+      current: process?.current || 0,
+      total: process?.total || 0,
+    }
   }, [defaultVariant, downloadProcesses])
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0'
+    const gb = bytes / (1024 * 1024 * 1024)
+    return gb.toFixed(1)
+  }
 
   const isDownloaded = useMemo(() => {
     if (!defaultVariant) return false
@@ -399,59 +405,56 @@ function SetupScreen() {
               disabled={quickStartInitiated || isDownloading || isDownloaded}
               className="w-full text-left lg:w-2/3 mx-auto"
             >
-              <div className={cn("bg-main-view-fg/2 p-3 rounded-lg border border-main-view-fg/10 transition-all hover:shadow-lg disabled:opacity-60", !isDownloading && ' flex justify-between items-start')}>
+              <div className={cn("bg-main-view-fg/2 p-3 rounded-lg border border-main-view-fg/10 transition-all hover:shadow-lg disabled:opacity-60 flex justify-between items-start")}>
                 <div className="flex items-start gap-4">
-                  <div className="shrink-0 size-10 bg-main-view-fg/10 rounded-lg flex items-center justify-center">
-                    {quickStartInitiated || isDownloading ? (
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        className="h-6 w-6 text-white animate-spin"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                        />
-                      </svg>
-                    ) : (
-                      <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
-                    )}
+                  <div className="shrink-0 size-12 bg-main-view-fg/10 rounded-lg flex items-center justify-center">
+                    <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
                   </div>
                   <div className="flex-1">
                     <h1 className="text-main-view-fg font-semibold text-sm mb-1">
-                      <span>Jan V3</span> - <span className='text-xs text-main-view-fg/50'>{defaultVariant?.file_size}</span>
+                      <span>Jan v3</span> <span className='text-xs text-main-view-fg/50'>· {defaultVariant?.file_size}</span>
                     </h1>
-                    {quickStartInitiated || isDownloading ? (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-3">
-                          <Progress
-                            value={downloadProgress * 100}
-                            className="flex-1"
-                          />
-                          <span className="text-sm text-main-view-fg/70 font-medium min-w-[3rem] text-right">
-                            {Math.round(downloadProgress * 100)}%
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-main-view-fg/70 text-sm mt-1.5">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-main-view-fg/20 text-xs rounded-full mr-1">
-                          <IconSquareCheck size={12} />
-                          General
-                        </span>
-                        {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-main-view-fg/20 text-xs rounded-full">
+                    <div className="text-main-view-fg/70 text-sm mt-1.5">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-main-view-fg/20 text-xs rounded-full mr-1">
+                        <IconSquareCheck size={12} />
+                        General
+                      </span>
+                      {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-main-view-fg/20 text-xs rounded-full">
                         <IconEye size={12} />
-                          Vision
-                        </span>}
-                      </div>
-                    )}
+                        Vision
+                      </span>}
+                    </div>
                   </div>
                 </div>
-                {!isDownloading && <Button>Download</Button>}
+                <div className="flex flex-col items-end gap-2">
+                  <Button disabled={quickStartInitiated || isDownloading}>
+                    {quickStartInitiated || isDownloading ? 'Downloading' : 'Download'}
+                  </Button>
+                  {(quickStartInitiated || isDownloading) && (
+                    <div className="flex items-center gap-1.5 text-xs text-main-view-fg/50">
+                      <svg
+                        className="size-3 animate-spin"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                      <span>{formatBytes(downloadedSize.current)} / {formatBytes(downloadedSize.total)}GB</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </button>
           </div>
