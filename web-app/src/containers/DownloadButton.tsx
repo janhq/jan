@@ -85,14 +85,13 @@ export function DownloadButtonPlaceholder({
   if (model.quants.length === 0) {
     return (
       <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          onClick={() => {
-            window.open(`https://huggingface.co/${model.model_name}`, '_blank')
-          }}
+        <a
+          href={`https://huggingface.co/${model.model_name}`}
+          target="_blank"
+          rel="noopener noreferrer"
         >
-          View on HuggingFace
-        </Button>
+          <Button size="sm">View on HuggingFace</Button>
+        </a>
       </div>
     )
   }
