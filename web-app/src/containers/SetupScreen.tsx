@@ -83,7 +83,7 @@ function SetupScreen() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { getProviderByName } = useModelProvider()
-  
+
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
   const serviceHub = useServiceHub()
@@ -98,6 +98,7 @@ function SetupScreen() {
   const supportCheckInProgress = useRef(false)
   const checkedModelId = useRef<string | null>(null)
   const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
+  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
 
   const fetchJanModel = useCallback(async () => {
     setMetadataFetchFailed(false)
@@ -118,7 +119,7 @@ function SetupScreen() {
       console.error('Error fetching Jan Model V2:', error)
       setMetadataFetchFailed(true)
     }
-  }, [serviceHub])
+  }, [serviceHub, huggingfaceToken])
 
   // Check model support for variants when janNewModel is available
   useEffect(() => {
@@ -285,8 +286,6 @@ function SetupScreen() {
       (m: { id: string }) => m.id === defaultVariant.model_id
     )
   }, [defaultVariant, llamaProvider])
-
-  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
 
   const handleQuickStart = useCallback(() => {
     // If metadata is still loading, queue the download
