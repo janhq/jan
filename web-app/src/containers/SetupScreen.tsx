@@ -14,8 +14,9 @@ import {
 } from '@/constants/models'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { IconEye, IconSquareCheck} from '@tabler/icons-react'
+import { IconEye, IconSquareCheck } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 
 type CacheEntry = {
   status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
@@ -82,7 +83,7 @@ function SetupScreen() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { getProviderByName } = useModelProvider()
-  
+
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
   const serviceHub = useServiceHub()
@@ -97,13 +98,14 @@ function SetupScreen() {
   const supportCheckInProgress = useRef(false)
   const checkedModelId = useRef<string | null>(null)
   const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
+  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
 
   const fetchJanModel = useCallback(async () => {
     setMetadataFetchFailed(false)
     try {
       const repo = await serviceHub
         .models()
-        .fetchHuggingFaceRepo(NEW_JAN_MODEL_HF_REPO)
+        .fetchHuggingFaceRepo(NEW_JAN_MODEL_HF_REPO, huggingfaceToken)
 
       if (repo) {
         const catalogModel = serviceHub
@@ -117,7 +119,7 @@ function SetupScreen() {
       console.error('Error fetching Jan Model V2:', error)
       setMetadataFetchFailed(true)
     }
-  }, [serviceHub])
+  }, [serviceHub, huggingfaceToken])
 
   // Check model support for variants when janNewModel is available
   useEffect(() => {
@@ -263,7 +265,9 @@ function SetupScreen() {
 
   const downloadedSize = useMemo(() => {
     if (!defaultVariant) return { current: 0, total: 0 }
-    const process = downloadProcesses.find((e) => e.id === defaultVariant.model_id)
+    const process = downloadProcesses.find(
+      (e) => e.id === defaultVariant.model_id
+    )
     return {
       current: process?.current || 0,
       total: process?.total || 0,
@@ -301,7 +305,7 @@ function SetupScreen() {
           (e) => e.model_id.toLowerCase() === 'mmproj-f16'
         ) || janNewModel.mmproj_models?.[0]
       )?.path,
-      undefined, // No HF token needed for public model
+      huggingfaceToken, // Use HF token from general settings
       true // Skip verification for faster download
     )
   }, [
@@ -310,6 +314,7 @@ function SetupScreen() {
     isSupportCheckComplete,
     addLocalDownloadingModel,
     serviceHub,
+    huggingfaceToken,
   ])
 
   // Process queued quick start when metadata becomes available

@@ -57,6 +57,8 @@ export const useAppUpdater = () => {
         return
       }
 
+      console.log('Checking for updates...')
+
       try {
         // Reset remindMeLater if requested (e.g., when called from settings)
         if (resetRemindMeLater) {
@@ -236,6 +238,7 @@ export const useAppUpdater = () => {
       })
     }
   }, [updateState.updateInfo])
+
 
   return {
     updateState,
