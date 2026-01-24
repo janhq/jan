@@ -1,7 +1,10 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import 'katex/dist/katex.min.css';
 @import '@/styles/font.css';
 @import '@/styles/markdown.css';
+@source '../node_modules/streamdown/dist/**/*.js';
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -9,7 +12,7 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-editorialnew: 'PPEditorialNew', serif;
+  --font-studio: 'StudioFeixenSans', sans-serif;
   --color-app: var(--app-bg);
   --color-left-panel-fg: var(--app-left-panel-fg);
   --color-main-view: var(--app-main-view);
@@ -20,6 +23,10 @@
   --color-accent-fg: var(--app-accent-fg);
   --color-destructive: var(--app-destructive);
   --color-destructive-fg: var(--app-destructive-fg);
+  
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
 
   /* Font scale based on --font-size-base */
   --text-xs: calc(var(--font-size-base) * 0.75); /* ~12px */
@@ -35,12 +42,32 @@
   --text-7xl: calc(var(--font-size-base) * 4.5); /* ~72px */
   --text-8xl: calc(var(--font-size-base) * 6); /* ~96px */
   --text-9xl: calc(var(--font-size-base) * 8); /* ~128px */
+
+  --muted-foreground: oklch(0.556 0 0);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-streamdown-caret: var(--streamdown-caret);
 }
 
 :root {
   /* Button */
   --radius: 0.625rem;
-  --font-size-base: 15px;
+  --font-size-base: 16px;
   --app-bg: '';
   --app-left-panel-fg: '';
   --app-main-view: '';
@@ -51,6 +78,16 @@
   --app-accent-fg: '';
   --app-destructive: '';
   --app-destructive-fg: '';
+  
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --border: oklch(0.922 0 0);
+}
+
+.dark {
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --border: oklch(1 0 0 / 10%);
 }
 
 @layer base {

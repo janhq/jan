@@ -99,7 +99,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        antivirus-tools: ['mcafee', 'default-windows-security', 'bit-defender']
+        antivirus-tools: ['mcafee', 'bit-defender']
     runs-on: windows-desktop-${{ matrix.antivirus-tools }}
     steps:
       - name: Getting the repo

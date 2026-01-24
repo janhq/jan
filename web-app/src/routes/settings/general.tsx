@@ -28,8 +28,6 @@ import { SystemEvent } from '@/types/events'
 import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 import { isRootDir } from '@/utils/path'
 const TOKEN_VALIDATION_TIMEOUT_MS = 10_000
 
@@ -182,39 +180,36 @@ function General() {
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* General */}
             <Card title={t('common:general')}>
-              {PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
+              <CardItem
+                title={t('settings:general.appVersion')}
+                actions={
+                  <span className="text-main-view-fg/80 font-medium">
+                    v{VERSION}
+                  </span>
+                }
+              />
+              {!AUTO_UPDATER_DISABLED && (
                 <CardItem
-                  title={t('settings:general.appVersion')}
+                  title={t('settings:general.checkForUpdates')}
+                  description={t('settings:general.checkForUpdatesDesc')}
+                  className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                   actions={
-                    <span className="text-main-view-fg/80 font-medium">
-                      v{VERSION}
-                    </span>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0"
+                      onClick={handleCheckForUpdate}
+                      disabled={isCheckingUpdate}
+                    >
+                      <div className="cursor-pointer rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                        {isCheckingUpdate
+                          ? t('settings:general.checkingForUpdates')
+                          : t('settings:general.checkForUpdates')}
+                      </div>
+                    </Button>
                   }
                 />
               )}
-              {!AUTO_UPDATER_DISABLED &&
-                PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
-                  <CardItem
-                    title={t('settings:general.checkForUpdates')}
-                    description={t('settings:general.checkForUpdatesDesc')}
-                    className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
-                    actions={
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="p-0"
-                        onClick={handleCheckForUpdate}
-                        disabled={isCheckingUpdate}
-                      >
-                        <div className="cursor-pointer rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                          {isCheckingUpdate
-                            ? t('settings:general.checkingForUpdates')
-                            : t('settings:general.checkForUpdates')}
-                        </div>
-                      </Button>
-                    }
-                  />
-                )}
               <CardItem
                 title={t('common:language')}
                 actions={<LanguageSwitcher />}
@@ -222,175 +217,163 @@ function General() {
             </Card>
 
             {/* Data folder - Desktop only */}
-            {PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
-              <Card title={t('common:dataFolder')}>
-                <CardItem
-                  title={t('settings:dataFolder.appData', {
-                    ns: 'settings',
-                  })}
-                  align="start"
-                  className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
-                  description={
-                    <>
-                      <span>
-                        {t('settings:dataFolder.appDataDesc', {
-                          ns: 'settings',
-                        })}
-                        &nbsp;
-                      </span>
-                      <div className="flex items-center gap-2 mt-1 ">
-                        <div className="">
-                          <span
-                            title={janDataFolder}
-                            className="bg-main-view-fg/10 text-xs px-1 py-0.5 rounded-sm text-main-view-fg/80 line-clamp-1 w-fit"
-                          >
-                            {janDataFolder}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() =>
-                            janDataFolder && copyToClipboard(janDataFolder)
-                          }
-                          className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1"
-                          title={
-                            isCopied
-                              ? t('settings:general.copied')
-                              : t('settings:general.copyPath')
-                          }
+            <Card title={t('common:dataFolder')}>
+              <CardItem
+                title={t('settings:dataFolder.appData', {
+                  ns: 'settings',
+                })}
+                align="start"
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
+                description={
+                  <>
+                    <span>
+                      {t('settings:dataFolder.appDataDesc', {
+                        ns: 'settings',
+                      })}
+                      &nbsp;
+                    </span>
+                    <div className="flex items-center gap-2 mt-1 ">
+                      <div className="">
+                        <span
+                          title={janDataFolder}
+                          className="bg-main-view-fg/10 text-xs px-1 py-0.5 rounded-sm text-main-view-fg/80 line-clamp-1 w-fit"
                         >
-                          {isCopied ? (
-                            <div className="flex items-center gap-1">
-                              <IconCopyCheck
-                                size={12}
-                                className="text-accent"
-                              />
-                              <span className="text-xs leading-0">
-                                {t('settings:general.copied')}
-                              </span>
-                            </div>
-                          ) : (
-                            <IconCopy
-                              size={12}
-                              className="text-main-view-fg/50"
-                            />
-                          )}
-                        </button>
+                          {janDataFolder}
+                        </span>
                       </div>
-                    </>
-                  }
-                  actions={
-                    <>
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="p-0"
-                        title={t('settings:dataFolder.appData')}
-                        onClick={handleDataFolderChange}
+                      <button
+                        onClick={() =>
+                          janDataFolder && copyToClipboard(janDataFolder)
+                        }
+                        className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1"
+                        title={
+                          isCopied
+                            ? t('settings:general.copied')
+                            : t('settings:general.copyPath')
+                        }
                       >
-                        <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                          <IconFolder
+                        {isCopied ? (
+                          <div className="flex items-center gap-1">
+                            <IconCopyCheck size={12} className="text-accent" />
+                            <span className="text-xs leading-0">
+                              {t('settings:general.copied')}
+                            </span>
+                          </div>
+                        ) : (
+                          <IconCopy
                             size={12}
                             className="text-main-view-fg/50"
                           />
-                          <span>{t('settings:general.changeLocation')}</span>
-                        </div>
-                      </Button>
-                      {selectedNewPath && (
-                        <ChangeDataFolderLocation
-                          currentPath={janDataFolder || ''}
-                          newPath={selectedNewPath}
-                          onConfirm={confirmDataFolderChange}
-                          open={isDialogOpen}
-                          onOpenChange={(open) => {
-                            setIsDialogOpen(open)
-                            if (!open) {
-                              setSelectedNewPath(null)
-                            }
-                          }}
-                        >
-                          <div />
-                        </ChangeDataFolderLocation>
-                      )}
-                    </>
-                  }
-                />
-                <CardItem
-                  title={t('settings:dataFolder.appLogs', {
-                    ns: 'settings',
-                  })}
-                  description={t('settings:dataFolder.appLogsDesc')}
-                  className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
-                  actions={
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="p-0"
-                        onClick={handleOpenLogs}
-                        title={t('settings:dataFolder.appLogs')}
-                      >
-                        <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                          <IconLogs
-                            size={12}
-                            className="text-main-view-fg/50"
-                          />
-                          <span>{t('settings:general.openLogs')}</span>
-                        </div>
-                      </Button>
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="p-0"
-                        onClick={async () => {
-                          if (janDataFolder) {
-                            try {
-                              const logsPath = `${janDataFolder}/logs`
-                              await serviceHub
-                                .opener()
-                                .revealItemInDir(logsPath)
-                            } catch (error) {
-                              console.error(
-                                'Failed to reveal logs folder:',
-                                error
-                              )
-                            }
+                        )}
+                      </button>
+                    </div>
+                  </>
+                }
+                actions={
+                  <>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0"
+                      title={t('settings:dataFolder.appData')}
+                      onClick={handleDataFolderChange}
+                    >
+                      <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                        <IconFolder
+                          size={12}
+                          className="text-main-view-fg/50"
+                        />
+                        <span>{t('settings:general.changeLocation')}</span>
+                      </div>
+                    </Button>
+                    {selectedNewPath && (
+                      <ChangeDataFolderLocation
+                        currentPath={janDataFolder || ''}
+                        newPath={selectedNewPath}
+                        onConfirm={confirmDataFolderChange}
+                        open={isDialogOpen}
+                        onOpenChange={(open) => {
+                          setIsDialogOpen(open)
+                          if (!open) {
+                            setSelectedNewPath(null)
                           }
                         }}
-                        title={t('settings:general.revealLogs')}
                       >
-                        <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                          <IconFolder
-                            size={12}
-                            className="text-main-view-fg/50"
-                          />
-                          <span>{openFileTitle()}</span>
-                        </div>
-                      </Button>
-                    </div>
-                  }
-                />
-              </Card>
-            )}
+                        <div />
+                      </ChangeDataFolderLocation>
+                    )}
+                  </>
+                }
+              />
+              <CardItem
+                title={t('settings:dataFolder.appLogs', {
+                  ns: 'settings',
+                })}
+                description={t('settings:dataFolder.appLogsDesc')}
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
+                actions={
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0"
+                      onClick={handleOpenLogs}
+                      title={t('settings:dataFolder.appLogs')}
+                    >
+                      <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                        <IconLogs size={12} className="text-main-view-fg/50" />
+                        <span>{t('settings:general.openLogs')}</span>
+                      </div>
+                    </Button>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0"
+                      onClick={async () => {
+                        if (janDataFolder) {
+                          try {
+                            const logsPath = `${janDataFolder}/logs`
+                            await serviceHub.opener().revealItemInDir(logsPath)
+                          } catch (error) {
+                            console.error(
+                              'Failed to reveal logs folder:',
+                              error
+                            )
+                          }
+                        }
+                      }}
+                      title={t('settings:general.revealLogs')}
+                    >
+                      <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                        <IconFolder
+                          size={12}
+                          className="text-main-view-fg/50"
+                        />
+                        <span>{openFileTitle()}</span>
+                      </div>
+                    </Button>
+                  </div>
+                }
+              />
+            </Card>
             {/* Advanced - Desktop only */}
-            {PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
-              <Card title="Advanced">
-                <CardItem
-                  title={t('settings:others.resetFactory', {
-                    ns: 'settings',
-                  })}
-                  description={t('settings:others.resetFactoryDesc', {
-                    ns: 'settings',
-                  })}
-                  actions={
-                    <FactoryResetDialog onReset={resetApp}>
-                      <Button variant="destructive" size="sm">
-                        {t('common:reset')}
-                      </Button>
-                    </FactoryResetDialog>
-                  }
-                />
-              </Card>
-            )}
+            <Card title="Advanced">
+              <CardItem
+                title={t('settings:others.resetFactory', {
+                  ns: 'settings',
+                })}
+                description={t('settings:others.resetFactoryDesc', {
+                  ns: 'settings',
+                })}
+                actions={
+                  <FactoryResetDialog onReset={resetApp}>
+                    <Button variant="destructive" size="sm">
+                      {t('common:reset')}
+                    </Button>
+                  </FactoryResetDialog>
+                }
+              />
+            </Card>
 
             {/* Other */}
             <Card title={t('common:others')}>
@@ -408,93 +391,91 @@ function General() {
                   />
                 }
               />
-              {PlatformFeatures[PlatformFeature.MODEL_HUB] && (
-                <CardItem
-                  title={t('settings:general.huggingfaceToken', {
-                    ns: 'settings',
-                  })}
-                  description={t('settings:general.huggingfaceTokenDesc', {
-                    ns: 'settings',
-                  })}
-                  actions={
-                    <div className="flex items-center gap-2">
-                      <Input
-                        id="hf-token"
-                        value={huggingfaceToken || ''}
-                        onChange={(e) => setHuggingfaceToken(e.target.value)}
-                        placeholder={'hf_xxx'}
-                        required
-                      />
-                      <Button
-                        variant={
-                          (huggingfaceToken || '').trim() ? 'default' : 'link'
-                        }
-                        className={
-                          (huggingfaceToken || '').trim()
-                            ? 'bg-green-600 text-white hover:bg-green-700'
-                            : ''
-                        }
-                        disabled={isValidatingToken}
-                        onClick={async () => {
-                          const token = (huggingfaceToken || '').trim()
-                          if (!token) {
-                            toast.error(
-                              'Please enter a Hugging Face token to validate'
-                            )
-                            return
-                          }
-                          setIsValidatingToken(true)
-                          const controller = new AbortController()
-                          const timeoutId = setTimeout(
-                            () => controller.abort(),
-                            TOKEN_VALIDATION_TIMEOUT_MS
+              <CardItem
+                title={t('settings:general.huggingfaceToken', {
+                  ns: 'settings',
+                })}
+                description={t('settings:general.huggingfaceTokenDesc', {
+                  ns: 'settings',
+                })}
+                actions={
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="hf-token"
+                      value={huggingfaceToken || ''}
+                      onChange={(e) => setHuggingfaceToken(e.target.value)}
+                      placeholder={'hf_xxx'}
+                      required
+                    />
+                    <Button
+                      variant={
+                        (huggingfaceToken || '').trim() ? 'default' : 'link'
+                      }
+                      className={
+                        (huggingfaceToken || '').trim()
+                          ? 'bg-green-600 text-white hover:bg-green-700'
+                          : ''
+                      }
+                      disabled={isValidatingToken}
+                      onClick={async () => {
+                        const token = (huggingfaceToken || '').trim()
+                        if (!token) {
+                          toast.error(
+                            'Please enter a Hugging Face token to validate'
                           )
-                          try {
-                            const resp = await fetch(
-                              'https://huggingface.co/api/whoami-v2',
-                              {
-                                headers: { Authorization: `Bearer ${token}` },
-                                signal: controller.signal,
-                              }
-                            )
-                            if (resp.ok) {
-                              const data = await resp.json()
-                              toast.success('Token is valid', {
-                                description: data?.name
-                                  ? `Signed in as ${data.name}`
-                                  : 'Your Hugging Face token is valid.',
-                              })
-                            } else {
-                              toast.error('Token invalid', {
-                                description:
-                                  'The provided Hugging Face token is invalid. Please check your token and try again.',
-                              })
+                          return
+                        }
+                        setIsValidatingToken(true)
+                        const controller = new AbortController()
+                        const timeoutId = setTimeout(
+                          () => controller.abort(),
+                          TOKEN_VALIDATION_TIMEOUT_MS
+                        )
+                        try {
+                          const resp = await fetch(
+                            'https://huggingface.co/api/whoami-v2',
+                            {
+                              headers: { Authorization: `Bearer ${token}` },
+                              signal: controller.signal,
                             }
-                          } catch (e) {
-                            const name = (e as { name?: string })?.name
-                            if (name === 'AbortError') {
-                              toast.error('Validation timed out', {
-                                description:
-                                  'The validation request timed out. Please check your network connection and try again.',
-                              })
-                            } else {
-                              toast.error('Validation failed', {
-                                description:
-                                  'A network error occurred while validating the token. Please check your internet connection.',
-                              })
-                            }
-                          } finally {
-                            clearTimeout(timeoutId)
-                            setIsValidatingToken(false)
+                          )
+                          if (resp.ok) {
+                            const data = await resp.json()
+                            toast.success('Token is valid', {
+                              description: data?.name
+                                ? `Signed in as ${data.name}`
+                                : 'Your Hugging Face token is valid.',
+                            })
+                          } else {
+                            toast.error('Token invalid', {
+                              description:
+                                'The provided Hugging Face token is invalid. Please check your token and try again.',
+                            })
                           }
-                        }}
-                      >
-                        Verify
-                      </Button>
-                    </div>
-                  }
-                />
-              )}
+                        } catch (e) {
+                          const name = (e as { name?: string })?.name
+                          if (name === 'AbortError') {
+                            toast.error('Validation timed out', {
+                              description:
+                                'The validation request timed out. Please check your network connection and try again.',
+                            })
+                          } else {
+                            toast.error('Validation failed', {
+                              description:
+                                'A network error occurred while validating the token. Please check your internet connection.',
+                            })
+                          }
+                        } finally {
+                          clearTimeout(timeoutId)
+                          setIsValidatingToken(false)
+                        }
+                      }}
+                    >
+                      Verify
+                    </Button>
+                  </div>
+                }
+              />
             </Card>
 
             {/* Resources */}

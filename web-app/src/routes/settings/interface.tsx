@@ -12,15 +12,11 @@ import { ColorPickerAppPrimaryColor } from '@/containers/ColorPickerAppPrimaryCo
 import { ColorPickerAppAccentColor } from '@/containers/ColorPickerAppAccentColor'
 import { ColorPickerAppDestructiveColor } from '@/containers/ColorPickerAppDestructiveColor'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
-import { useCodeblock } from '@/hooks/useCodeblock'
+
 import { Button } from '@/components/ui/button'
-import CodeBlockStyleSwitcher from '@/containers/CodeBlockStyleSwitcher'
-import { LineNumbersSwitcher } from '@/containers/LineNumbersSwitcher'
-import { CodeBlockExample } from '@/containers/CodeBlockExample'
 import { toast } from 'sonner'
 import { ChatWidthSwitcher } from '@/containers/ChatWidthSwitcher'
 import { TokenCounterCompactSwitcher } from '@/containers/TokenCounterCompactSwitcher'
-import { ThreadScrollBehaviorSwitcher } from '@/containers/ThreadScrollBehaviorSwitcher'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.interface as any)({
@@ -30,7 +26,6 @@ export const Route = createFileRoute(route.settings.interface as any)({
 function InterfaceSettings() {
   const { t } = useTranslation()
   const { resetInterface } = useInterfaceSettings()
-  const { resetCodeBlockStyle } = useCodeblock()
 
   return (
     <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
@@ -121,54 +116,6 @@ function InterfaceSettings() {
                 title={t('settings:interface.tokenCounterCompact')}
                 description={t('settings:interface.tokenCounterCompactDesc')}
                 actions={<TokenCounterCompactSwitcher />}
-              />
-            </Card>
-
-            {/* Scroll Behavior */}
-            <Card>
-              <CardItem
-                title={t('settings:interface.threadScrollTitle')}
-                description={t('settings:interface.threadScrollDesc')}
-              />
-              <ThreadScrollBehaviorSwitcher />
-            </Card>
-
-            {/* Codeblock */}
-            <Card>
-              <CardItem
-                title={t('settings:interface.codeBlockTitle')}
-                description={t('settings:interface.codeBlockDesc')}
-                actions={<CodeBlockStyleSwitcher />}
-              />
-              <CodeBlockExample />
-              <CardItem
-                title={t('settings:interface.showLineNumbers')}
-                description={t('settings:interface.showLineNumbersDesc')}
-                actions={<LineNumbersSwitcher />}
-              />
-              <CardItem
-                title={t('settings:interface.resetCodeBlockStyle')}
-                description={t('settings:interface.resetCodeBlockStyleDesc')}
-                actions={
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => {
-                      resetCodeBlockStyle()
-                      toast.success(
-                        t('settings:interface.resetCodeBlockSuccess'),
-                        {
-                          id: 'code-block-style',
-                          description: t(
-                            'settings:interface.resetCodeBlockSuccessDesc'
-                          ),
-                        }
-                      )
-                    }}
-                  >
-                    {t('common:reset')}
-                  </Button>
-                }
               />
             </Card>
           </div>

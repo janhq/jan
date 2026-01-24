@@ -4,8 +4,6 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn } from '@/lib/utils'
-import { PlatformGuard } from '@/lib/platform/PlatformGuard'
-import { PlatformFeature } from '@/lib/platform'
 import {
   useState,
   useMemo,
@@ -56,19 +54,11 @@ type SearchParams = {
 }
 
 export const Route = createFileRoute(route.hub.index as any)({
-  component: Hub,
+  component: HubContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
     repo: search.repo as SearchParams['repo'],
   }),
 })
-
-function Hub() {
-  return (
-    <PlatformGuard feature={PlatformFeature.MODEL_HUB}>
-      <HubContent />
-    </PlatformGuard>
-  )
-}
 
 function HubContent() {
   const parentRef = useRef(null)
@@ -495,7 +485,6 @@ function HubContent() {
                         >
                           <div className="line-clamp-2 mt-3 text-main-view-fg/60">
                             <RenderMarkdown
-                              enableRawHtml={true}
                               className="select-none reset-heading"
                               components={{
                                 a: ({ ...props }) => (

@@ -12,11 +12,6 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { IconTrash } from '@tabler/icons-react'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 
 interface DeleteMessageDialogProps {
   onDelete: () => void
@@ -39,26 +34,19 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
   }
 
   const trigger = (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div 
-          className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              setIsOpen(true)
-            }
-          }}
-        >
-          <IconTrash size={16} />
-        </div>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>{t('delete')}</p>
-      </TooltipContent>
-    </Tooltip>
+    <div
+      className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          setIsOpen(true)
+        }
+      }}
+    >
+      <IconTrash size={16} />
+    </div>
   )
 
   return (

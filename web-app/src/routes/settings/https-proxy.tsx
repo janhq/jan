@@ -9,21 +9,11 @@ import { Input } from '@/components/ui/input'
 import { EyeOff, Eye } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
-import { PlatformGuard } from '@/lib/platform/PlatformGuard'
-import { PlatformFeature } from '@/lib/platform'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.https_proxy as any)({
-  component: HTTPSProxy,
+  component: HTTPSProxyContent,
 })
-
-function HTTPSProxy() {
-  return (
-    <PlatformGuard feature={PlatformFeature.HTTPS_PROXY}>
-      <HTTPSProxyContent />
-    </PlatformGuard>
-  )
-}
 
 function HTTPSProxyContent() {
   const { t } = useTranslation()

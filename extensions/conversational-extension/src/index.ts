@@ -14,7 +14,7 @@ export default class JanConversationalExtension extends ConversationalExtension 
    * Called when the extension is loaded.
    */
   async onLoad() {
-    // this.queue.add(() => this.healthz())
+    // no-opt
   }
 
   /**

@@ -6,7 +6,7 @@ interface ServiceState {
   setServiceHub: (serviceHub: ServiceHub) => void
 }
 
-const useServiceStore = create<ServiceState>()((set) => ({
+export const useServiceStore = create<ServiceState>()((set) => ({
   serviceHub: null,
   setServiceHub: (serviceHub: ServiceHub) => set({ serviceHub }),
 }))
@@ -17,11 +17,11 @@ const useServiceStore = create<ServiceState>()((set) => ({
  */
 export const useServiceHub = (): ServiceHub => {
   const serviceHub = useServiceStore((state) => state.serviceHub)
-  
+
   if (!serviceHub) {
     throw new Error('ServiceHub not initialized. Make sure services are initialized before using this hook.')
   }
-  
+
   return serviceHub
 }
 
@@ -31,11 +31,11 @@ export const useServiceHub = (): ServiceHub => {
  */
 export const getServiceHub = (): ServiceHub => {
   const serviceHub = useServiceStore.getState().serviceHub
-  
+
   if (!serviceHub) {
     throw new Error('ServiceHub not initialized. Make sure services are initialized before accessing services.')
   }
-  
+
   return serviceHub
 }
 

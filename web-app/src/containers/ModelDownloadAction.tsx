@@ -10,7 +10,6 @@ import { CatalogModel } from '@/services/models/types'
 import { IconDownload } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo } from 'react'
-import { toast } from 'sonner'
 
 export const ModelDownloadAction = ({
   variant,
@@ -56,76 +55,6 @@ export const ModelDownloadAction = ({
   )
 
   const handleDownloadModel = useCallback(async () => {
-    const preflight = await serviceHub
-      .models()
-      .preflightArtifactAccess(variant.path, huggingfaceToken)
-
-    const repoPage = `https://huggingface.co/${model.model_name}`
-
-    if (!preflight.ok) {
-      if (preflight.reason === 'AUTH_REQUIRED') {
-        toast.error('Hugging Face token required', {
-          description:
-            'This model requires a Hugging Face access token. Add your token in Settings and retry.',
-          action: {
-            label: 'Open Settings',
-            onClick: () =>
-              navigate({
-                to: route.settings.general,
-                params: {},
-              }),
-          },
-        })
-        return
-      }
-
-      if (preflight.reason === 'LICENSE_NOT_ACCEPTED') {
-        toast.error('Accept model license on Hugging Face', {
-          description:
-            'You must accept the model’s license on its Hugging Face page before downloading.',
-          action: {
-            label: 'Open model page',
-            onClick: () => window.open(repoPage, '_blank'),
-          },
-        })
-        return
-      }
-
-      if (preflight.reason === 'RATE_LIMITED') {
-        toast.error('Rate limited by Hugging Face', {
-          description:
-            'You have been rate-limited. Adding a token can increase rate limits. Please try again later.',
-          action: {
-            label: 'Open Settings',
-            onClick: () =>
-              navigate({
-                to: route.settings.general,
-                params: {},
-              }),
-          },
-        })
-        return
-      }
-
-      if (preflight.reason === 'NOT_FOUND') {
-        toast.error('Model file not found', {
-          description:
-            'The requested model could not be found. Please verify the model URL',
-          action: {
-            label: 'Open model page',
-            onClick: () => window.open(repoPage, '_blank'),
-          },
-        })
-        return
-      }
-
-      toast.error('Unable to start download', {
-        description:
-          'Jan encountered an issue. Please check your connection and try again.',
-      })
-      return
-    }
-
     addLocalDownloadingModel(variant.model_id)
     serviceHub
       .models()
