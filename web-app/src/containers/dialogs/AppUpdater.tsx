@@ -12,12 +12,8 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 
 const DialogAppUpdater = () => {
   const { t } = useTranslation()
-  const {
-    updateState,
-    downloadAndInstallUpdate,
-    checkForUpdate,
-    setRemindMeLater,
-  } = useAppUpdater()
+  const { updateState, downloadAndInstallUpdate, setRemindMeLater } =
+    useAppUpdater()
   const [showReleaseNotes, setShowReleaseNotes] = useState(false)
 
   const handleUpdate = () => {
@@ -32,11 +28,6 @@ const DialogAppUpdater = () => {
       fetchLatestRelease(isBeta)
     }
   }, [fetchLatestRelease])
-
-  // Check for updates when component mounts
-  useEffect(() => {
-    checkForUpdate()
-  }, [checkForUpdate])
 
   const [appUpdateState, setAppUpdateState] = useState({
     remindMeLater: false,

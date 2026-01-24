@@ -99,6 +99,9 @@ export default defineConfig(({ mode }) => {
       AUTO_UPDATER_DISABLED: JSON.stringify(
         env.AUTO_UPDATER_DISABLED === 'true'
       ),
+      UPDATE_CHECK_INTERVAL_MS: JSON.stringify(
+        Number(env.UPDATE_CHECK_INTERVAL_MS) || 60 * 60 * 1000
+      ),
     },
 
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
