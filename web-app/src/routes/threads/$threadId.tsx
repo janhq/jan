@@ -33,7 +33,7 @@ import {
   extractContentPartsFromUIMessage,
 } from '@/lib/messages'
 import { newUserThreadContent } from '@/lib/completion'
-import { ThreadMessage, MessageStatus, ChatCompletionRole } from '@janhq/core'
+import { ThreadMessage, MessageStatus, ChatCompletionRole, ContentType } from '@janhq/core'
 import { createImageAttachment } from '@/types/attachment'
 import {
   useChatAttachments,
@@ -613,6 +613,82 @@ function ThreadDetail() {
     regenerate(messageId ? { messageId } : undefined)
   }
 
+  // Handle edit message - updates the message and regenerates from it
+  const handleEditMessage = useCallback(
+    (messageId: string, newText: string) => {
+      if (!languageModelId || !languageModelProvider) {
+        console.warn('No language model available')
+        return
+      }
+
+      const currentLocalMessages = useMessages.getState().getMessages(threadId)
+      const messageIndex = currentLocalMessages.findIndex(
+        (m) => m.id === messageId
+      )
+
+      if (messageIndex === -1) return
+
+      const originalMessage = currentLocalMessages[messageIndex]
+
+      // Update the message content
+      const updatedMessage = {
+        ...originalMessage,
+        content: [
+          {
+            type: ContentType.Text,
+            text: { value: newText, annotations: [] },
+          },
+        ],
+      }
+      updateMessage(updatedMessage)
+
+      // Update chat messages for UI
+      const updatedChatMessages = chatMessages.map((msg) => {
+        if (msg.id === messageId) {
+          return {
+            ...msg,
+            parts: [{ type: 'text' as const, text: newText }],
+          }
+        }
+        return msg
+      })
+      setChatMessages(updatedChatMessages)
+
+      // Delete all messages after this one and regenerate
+      const messagesToDelete = currentLocalMessages.slice(messageIndex + 1)
+      messagesToDelete.forEach((msg) => {
+        deleteMessage(threadId, msg.id)
+      })
+
+      // Regenerate from the edited message
+      regenerate({ messageId })
+    },
+    [
+      languageModelId,
+      languageModelProvider,
+      threadId,
+      updateMessage,
+      deleteMessage,
+      chatMessages,
+      setChatMessages,
+      regenerate,
+    ]
+  )
+
+  // Handle delete message
+  const handleDeleteMessage = useCallback(
+    (messageId: string) => {
+      deleteMessage(threadId, messageId)
+
+      // Update chat messages for UI
+      const updatedChatMessages = chatMessages.filter(
+        (msg) => msg.id !== messageId
+      )
+      setChatMessages(updatedChatMessages)
+    },
+    [threadId, deleteMessage, chatMessages, setChatMessages]
+  )
+
   // Handler for increasing context size
   const handleContextSizeIncrease = useCallback(async () => {
     if (!selectedModel) return
@@ -659,7 +735,7 @@ function ThreadDetail() {
     setTimeout(() => {
       handleRegenerate()
     }, 1000)
-  }, [selectedModel, selectedProvider, getProviderByName, serviceHub])
+  }, [selectedModel, selectedProvider, getProviderByName, serviceHub, handleRegenerate])
 
   const threadModel = useMemo(() => thread?.model, [thread])
 
@@ -698,6 +774,8 @@ function ThreadDetail() {
                     status={status}
                     reasoningContainerRef={reasoningContainerRef}
                     onRegenerate={handleRegenerate}
+                    onEdit={handleEditMessage}
+                    onDelete={handleDeleteMessage}
                   />
                 )
               })}
