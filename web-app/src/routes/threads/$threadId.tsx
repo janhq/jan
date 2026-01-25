@@ -788,7 +788,7 @@ function ThreadDetail() {
                       <p className="text-sm font-medium text-destructive mb-1">
                         Error generating response
                       </p>
-                      <p className="text-sm text-main-view-fg/70">
+                      <p className="text-sm text-main-view-fg/70 truncate">
                         {error.message}
                       </p>
                       {(error.message.toLowerCase().includes('context') &&
