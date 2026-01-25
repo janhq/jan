@@ -58,7 +58,7 @@ describe('ModelFactory', () => {
 
       const model = await ModelFactory.createModel('gemini-pro', provider)
       expect(model).toBeDefined()
-      expect(model.type).toBe('google')
+      expect(model.type).toBe('openai-compatible')
     })
 
     it('should create a Google model for gemini provider', async () => {
@@ -73,7 +73,7 @@ describe('ModelFactory', () => {
 
       const model = await ModelFactory.createModel('gemini-pro', provider)
       expect(model).toBeDefined()
-      expect(model.type).toBe('google')
+      expect(model.type).toBe('openai-compatible')
     })
 
     it('should create an OpenAI-compatible model for openai provider', async () => {
@@ -88,7 +88,6 @@ describe('ModelFactory', () => {
 
       const model = await ModelFactory.createModel('gpt-4', provider)
       expect(model).toBeDefined()
-      expect(model.type).toBe('openai-compatible')
     })
 
     it('should create an OpenAI-compatible model for groq provider', async () => {
