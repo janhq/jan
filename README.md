@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.jan.ai/docs/desktop">Getting Started</a>
+  <a href="https://jan.ai/docs/desktop">Getting Started</a>
   - <a href="https://discord.gg/Exe46xPMbK">Community</a>
   - <a href="https://jan.ai/changelog">Changelog</a>
   - <a href="https://github.com/janhq/jan/issues">Bug reports</a>
@@ -141,7 +141,7 @@ For detailed compatibility, check our [installation guides](https://jan.ai/docs/
 
 If things go sideways:
 
-1. Check our [troubleshooting docs](https://www.jan.ai/docs/desktop/troubleshooting)
+1. Check our [troubleshooting docs](https://jan.ai/docs/desktop/troubleshooting)
 2. Copy your error logs and system specs
 3. Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH) `#🆘|jan-help` channel
 
