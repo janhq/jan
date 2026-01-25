@@ -224,7 +224,7 @@ docs: update installation instructions
 
 If things go sideways:
 
-1. **Check our [troubleshooting docs](https://jan.ai/docs/troubleshooting)**
+1. **Check our [troubleshooting docs](https://www.jan.ai/docs/desktop/troubleshooting)**
 2. **Clear everything and start fresh:** `make clean` then `make dev`
 3. **Copy your error logs and system specs**
 4. **Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH)** `#🆘|jan-help` channel
