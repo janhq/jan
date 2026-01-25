@@ -44,7 +44,7 @@ export type ServiceHub = {
 }
 
 export class CustomChatTransport implements ChatTransport<UIMessage> {
-  public model: LanguageModel | null
+  public model: LanguageModel | null = null
   private tools: Record<string, Tool> = {}
   private onTokenUsage?: TokenUsageCallback
   private onStreamingTokenSpeed?: StreamingTokenSpeedCallback
@@ -52,31 +52,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private modelSupportsTools = false
   private ragFeatureAvailable = false
   private systemMessage?: string
-  private modelId?: string
-  private provider?: ProviderObject
   private serviceHub: ServiceHub | null
   private threadId?: string
 
   constructor(
-    modelId: string | undefined,
-    provider: ProviderObject | undefined,
     systemMessage?: string,
     threadId?: string
   ) {
-    this.model = null
-    this.modelId = modelId
-    this.provider = provider
     this.systemMessage = systemMessage
     this.threadId = threadId
     this.serviceHub = useServiceStore.getState().serviceHub
     // Tools will be loaded when updateRagToolsAvailability is called with model capabilities
-  }
-
-  updateModelMetadata(modelId: string, provider: ProviderObject) {
-    this.modelId = modelId
-    this.provider = provider
-    // Reset model so it gets recreated with new metadata on next sendMessages
-    this.model = null
   }
 
   updateSystemMessage(systemMessage: string | undefined) {
@@ -217,17 +203,20 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
     // Initialize model if not already initialized
-    if (this.serviceHub && this.modelId && this.provider) {
+    const modelId = useModelProvider.getState().selectedModel?.id
+    const providerId = useModelProvider.getState().selectedProvider
+    const provider = useModelProvider.getState().getProviderByName(providerId)
+    if (this.serviceHub && modelId && provider) {
       try {
         const updatedProvider = useModelProvider
           .getState()
-          .getProviderByName(this.provider.provider)
+          .getProviderByName(providerId)
 
         // Create the model using the factory
         // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
         this.model = await ModelFactory.createModel(
-          this.modelId,
-          updatedProvider ?? this.provider
+          modelId,
+          updatedProvider ?? provider
         )
       } catch (error) {
         console.error('Failed to create model:', error)
