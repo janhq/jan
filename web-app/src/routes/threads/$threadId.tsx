@@ -111,38 +111,6 @@ function ThreadDetail() {
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
-  const providers = useModelProvider((state) => state.providers)
-
-  // Store model metadata in appState for the chat transport
-  const setLanguageModel = useAppState((state) => state.setLanguageModel)
-  const languageModelId = useAppState((state) => state.languageModelId)
-  const languageModelProvider = useAppState(
-    (state) => state.languageModelProvider
-  )
-
-  useEffect(() => {
-    // Wait for providers to be loaded before attempting to set model metadata
-    if (providers.length === 0) {
-      return
-    }
-
-    const provider = getProviderByName(selectedProvider)
-    const modelId = selectedModel?.id ?? thread?.model?.id ?? ''
-    if (!modelId || !provider) {
-      setLanguageModel(null, undefined, undefined)
-      return
-    }
-
-    // Store model metadata (no need to create LanguageModel here)
-    setLanguageModel(null, modelId, provider)
-  }, [
-    selectedModel?.id,
-    thread?.model?.id,
-    selectedProvider,
-    getProviderByName,
-    providers.length,
-    setLanguageModel,
-  ])
 
   // Get system message from current assistant's instructions
   const systemMessage = currentAssistant?.instructions
@@ -416,8 +384,6 @@ function ThreadDetail() {
       text: string,
       files?: Array<{ type: string; mediaType: string; url: string }>
     ) => {
-      if (!languageModelId || !languageModelProvider) return
-
       // Get all attachments from the store (includes both images and documents)
       const allAttachments = getAttachments(attachmentsKey)
 
@@ -507,8 +473,6 @@ function ThreadDetail() {
       clearAttachmentsForThread(attachmentsKey)
     },
     [
-      languageModelId,
-      languageModelProvider,
       sendMessage,
       threadId,
       addMessage,
@@ -525,7 +489,6 @@ function ThreadDetail() {
   useEffect(() => {
     // Prevent duplicate sends
     if (initialMessageSentRef.current) return
-    if (!languageModelId || !languageModelProvider) return
 
     const initialMessageKey = `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${threadId}`
 
@@ -550,7 +513,7 @@ function ThreadDetail() {
         }
       })()
     }
-  }, [threadId, languageModelId, languageModelProvider, processAndSendMessage])
+  }, [threadId, processAndSendMessage])
 
   // Handle submit from ChatInput
   const handleSubmit = useCallback(
@@ -567,11 +530,6 @@ function ThreadDetail() {
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
   // - For assistant messages: finds the closest preceding user message, deletes from there
   const handleRegenerate = (messageId?: string) => {
-    if (!languageModelId || !languageModelProvider) {
-      console.warn('No language model available')
-      return
-    }
-
     const currentLocalMessages = useMessages.getState().getMessages(threadId)
 
     // If regenerating from a specific message, delete all messages after it
@@ -616,11 +574,7 @@ function ThreadDetail() {
   // Handle edit message - updates the message and regenerates from it
   const handleEditMessage = useCallback(
     (messageId: string, newText: string) => {
-      if (!languageModelId || !languageModelProvider) {
-        console.warn('No language model available')
-        return
-      }
-
+     
       const currentLocalMessages = useMessages.getState().getMessages(threadId)
       const messageIndex = currentLocalMessages.findIndex(
         (m) => m.id === messageId
@@ -664,8 +618,6 @@ function ThreadDetail() {
       regenerate({ messageId })
     },
     [
-      languageModelId,
-      languageModelProvider,
       threadId,
       updateMessage,
       deleteMessage,
