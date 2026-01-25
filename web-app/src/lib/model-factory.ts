@@ -9,7 +9,8 @@
  * - llamacpp: Local models via llama.cpp (requires running session)
  * - anthropic: Claude models via Anthropic API (@ai-sdk/anthropic v2.0)
  * - google/gemini: Gemini models via Google Generative AI API (@ai-sdk/google v2.0)
- * - OpenAI-compatible: OpenAI, Azure, Groq, Together, Fireworks, DeepSeek, Mistral, Cohere, etc.
+ * - openai: OpenAI models via OpenAI API (@ai-sdk/openai)
+ * - OpenAI-compatible: Azure, Groq, Together, Fireworks, DeepSeek, Mistral, Cohere, etc.
  *
  * Usage:
  * ```typescript
@@ -24,6 +25,7 @@
  */
 
 import { type LanguageModel } from 'ai'
+import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
@@ -116,6 +118,8 @@ export class ModelFactory {
         return this.createGoogleModel(modelId, provider)
 
       case 'openai':
+        return this.createOpenAIModel(modelId, provider)
+
       case 'azure':
       case 'groq':
       case 'together':
@@ -228,6 +232,31 @@ export class ModelFactory {
     })
 
     return google(modelId)
+  }
+
+  /**
+   * Create an OpenAI model using the official AI SDK
+   */
+  private static createOpenAIModel(
+    modelId: string,
+    provider: ProviderObject
+  ): LanguageModel {
+    const headers: Record<string, string> = {}
+
+    // Add custom headers if specified
+    if (provider.custom_header) {
+      provider.custom_header.forEach((customHeader) => {
+        headers[customHeader.header] = customHeader.value
+      })
+    }
+
+    const openai = createOpenAI({
+      apiKey: provider.api_key,
+      baseURL: provider.base_url,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+    })
+
+    return openai(modelId)
   }
 
   /**
