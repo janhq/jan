@@ -224,7 +224,7 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
-    base_url: 'https://api.mistral.ai',
+    base_url: 'https://api.mistral.ai/v1',
     explore_models_url:
       'https://docs.mistral.ai/getting-started/models/models_overview/',
     provider: 'mistral',
@@ -249,8 +249,8 @@ export const predefinedProviders = [
           'The base endpoint to use. See the [Mistral documentation](https://docs.mistral.ai/getting-started/models/models_overview/) for more information.',
         controller_type: 'input',
         controller_props: {
-          placeholder: 'https://api.mistral.ai',
-          value: 'https://api.mistral.ai',
+          placeholder: 'https://api.mistral.ai/v1',
+          value: 'https://api.mistral.ai/v1',
         },
       },
     ],
