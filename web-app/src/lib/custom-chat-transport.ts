@@ -252,11 +252,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     return result.toUIMessageStream({
       messageMetadata: ({ part }) => {
+        if (!streamStartTime) {
+          streamStartTime = Date.now()
+        }
         // Track stream start time on first text delta
         if (part.type === 'text-delta') {
-          if (!streamStartTime) {
-            streamStartTime = Date.now()
-          }
           // Count text deltas as a rough token approximation
           // Each delta typically represents one token in streaming
           textDeltaCount++
