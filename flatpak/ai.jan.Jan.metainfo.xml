@@ -103,6 +103,11 @@
   </keywords>
 
   <releases>
+    <release version="0.7.6" date="2026-01-27">
+    <description>
+      <p>Unified interface seamlessly integrated with the groundbreaking Jan V3 model, delivering an unparalleled AI experience</p>
+    </description>
+  </release>
     <release version="0.7.5" date="2025-12-08">
       <description>
         <p>Fixed Windows model import failure when base names differed</p>
