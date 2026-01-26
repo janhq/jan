@@ -433,7 +433,7 @@ const DropdownModelProvider = ({
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20"
+            className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-50"
           >
             {provider && (
               <div className="shrink-0">
