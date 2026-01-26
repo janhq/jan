@@ -223,7 +223,7 @@ const LeftPanel = () => {
       <aside
         ref={panelRef}
         className={cn(
-          'text-left-panel-fg overflow-hidden',
+          'text-left-panel-fg overflow-hidden relative',
           // Resizable context: full height and width, no margins
           isResizableContext && 'h-full w-full',
           // Small screen context: fixed positioning and styling
@@ -239,21 +239,33 @@ const LeftPanel = () => {
             : 'w-0 absolute -top-100 -left-100 visibility-hidden'
         )}
       >
-        <div className="relative h-10">
-          <button
-            className={cn(
-              'absolute top-1/2 -translate-y-1/2 z-20 right-0',
-              (IS_MACOS && isSmallScreen) || (IS_MACOS && !open)
-                ? 'pl-20 right-auto'
-                : ''
-            )}
-            onClick={() => setLeftPanel(!open)}
-          >
-            <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
-              <IconLayoutSidebar size={18} className="text-left-panel-fg" />
-            </div>
-          </button>
-        </div>
+        {IS_MACOS ? 
+          <div className="relative h-10">
+            <button
+              className={cn(
+                'absolute top-1/2 -translate-y-1/2 z-20 right-0',
+                (isSmallScreen) || (!open)
+                  ? 'pl-20 right-auto'
+                  : ''
+              )}
+              onClick={() => setLeftPanel(!open)}
+            >
+              <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
+                <IconLayoutSidebar size={18} className="text-left-panel-fg" />
+              </div>
+            </button>
+          </div> 
+          : 
+          <div className="absolute right-0 z-40 top-1.5">
+            <button
+              onClick={() => setLeftPanel(!open)}
+            >
+              <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
+                <IconLayoutSidebar size={18} className="text-left-panel-fg" />
+              </div>
+            </button>
+          </div>
+        }
 
         <div className="flex flex-col gap-y-1 overflow-hidden mt-0 !h-[calc(100%-42px)]">
           <div className="space-y-1 py-1">
