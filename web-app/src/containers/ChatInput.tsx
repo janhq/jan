@@ -46,6 +46,7 @@ import {
   SESSION_STORAGE_KEY,
   SESSION_STORAGE_PREFIX,
 } from '@/constants/chat'
+import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
@@ -84,6 +85,7 @@ import {
 } from '@/types/attachment'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
+import { PromptVisionModel } from '@/containers/PromptVisionModel'
 
 type ChatInputProps = {
   className?: string
@@ -121,6 +123,9 @@ const ChatInput = ({
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
+  const updateCurrentThreadModel = useThreads(
+    (state) => state.updateCurrentThreadModel
+  )
   const { t } = useTranslation()
   const spellCheckChatInput = useGeneralSetting(
     (state) => state.spellCheckChatInput
@@ -146,11 +151,16 @@ const ChatInput = ({
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
+  const selectModelProvider = useModelProvider(
+    (state) => state.selectModelProvider
+  )
+  const updateProvider = useModelProvider((state) => state.updateProvider)
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
+  const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
 
   // Jan Browser Extension hook
@@ -1022,7 +1032,8 @@ const ChatInput = ({
     }
   }
 
-  const handleImagePickerClick = async () => {
+  // Open the image picker dialog (extracted for reuse)
+  const openImagePicker = useCallback(async () => {
     if (isPlatformTauri()) {
       try {
         const selected = await serviceHub.dialog().open({
@@ -1088,7 +1099,60 @@ const ChatInput = ({
       // Fallback to input click for web
       fileInputRef.current?.click()
     }
+  }, [serviceHub, processImageFiles])
+
+  const handleImagePickerClick = async () => {
+    if (hasMmproj) {
+      await openImagePicker()
+      return
+    }
+
+    setShowVisionModelPrompt(true)
   }
+
+  const handleVisionModelDownloadComplete = useCallback(
+    (modelId: string) => {
+      setShowVisionModelPrompt(false)
+
+      try {
+        localStorage.setItem(
+          localStorageKey.lastUsedModel,
+          JSON.stringify({ provider: 'llamacpp', model: modelId })
+        )
+      } catch {
+        // Ignore localStorage errors
+      }
+
+      setTimeout(() => {
+        const provider = getProviderByName('llamacpp')
+        if (provider) {
+          const modelIndex = provider.models.findIndex((m) => m.id === modelId)
+          if (modelIndex !== -1) {
+            const model = provider.models[modelIndex]
+            const capabilities = model.capabilities || []
+
+            if (!capabilities.includes('vision')) {
+              const updatedModels = [...provider.models]
+              updatedModels[modelIndex] = {
+                ...model,
+                capabilities: [...capabilities, 'vision'],
+              }
+              updateProvider('llamacpp', { models: updatedModels })
+            }
+          }
+        }
+
+        selectModelProvider('llamacpp', modelId)
+        updateCurrentThreadModel({ id: modelId, provider: 'llamacpp' })
+      }, 500)
+    },
+    [
+      selectModelProvider,
+      getProviderByName,
+      updateProvider,
+      updateCurrentThreadModel,
+    ]
+  )
 
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault()
@@ -1454,11 +1518,8 @@ const ChatInput = ({
                     </div>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
-                    {/* Vision image attachment - show only for models with mmproj */}
-                    <DropdownMenuItem
-                      onClick={handleImagePickerClick}
-                      disabled={!hasMmproj}
-                    >
+                    {/* Vision image attachment - always enabled, prompts to download vision model if needed */}
+                    <DropdownMenuItem onClick={handleImagePickerClick}>
                       <IconPhoto size={18} className="text-main-view-fg/50" />
                       <span>Add Images</span>
                       <input
@@ -1765,6 +1826,13 @@ const ChatInput = ({
         onOpenChange={setExtensionDialogOpen}
         state={extensionDialogState}
         onCancel={handleExtensionDialogCancel}
+      />
+
+      {/* Vision Model Download Prompt */}
+      <PromptVisionModel
+        open={showVisionModelPrompt}
+        onClose={() => setShowVisionModelPrompt(false)}
+        onDownloadComplete={handleVisionModelDownloadComplete}
       />
     </div>
   )

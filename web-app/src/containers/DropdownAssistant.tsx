@@ -20,7 +20,9 @@ const DropdownAssistant = () => {
     updateAssistant,
     setCurrentAssistant,
   } = useAssistant()
-  const { updateCurrentThreadAssistant } = useThreads()
+  const updateCurrentThreadAssistant = useThreads(
+    (state) => state.updateCurrentThreadAssistant
+  )
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingAssistantId, setEditingAssistantId] = useState<string | null>(
