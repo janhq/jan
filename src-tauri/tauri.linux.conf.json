@@ -1,6 +1,6 @@
 {
   "bundle": {
-    "targets": ["deb", "appimage"],
+    "targets": ["rpm", "deb", "appimage"],
     "resources": ["resources/pre-install/**/*", "resources/LICENSE"],
     "externalBin": ["resources/bin/uv"],
     "linux": {
@@ -12,6 +12,9 @@
         "files": {
           "usr/bin/bun": "resources/bin/bun"
         }
+      },
+      "rpm": {
+        "files": {}
       }
     }
   }
