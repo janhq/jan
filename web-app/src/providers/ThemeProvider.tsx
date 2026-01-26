@@ -37,21 +37,6 @@ export function ThemeProvider() {
     // Add a delayed refresh to catch the correct OS theme
     const timeoutId = setTimeout(refreshTheme, 100)
 
-    // Listen for changes in OS theme preference
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-
-    const handleThemeChange = (e: MediaQueryListEvent) => {
-      // Only update if theme is set to auto
-      if (activeTheme === 'auto') {
-        setIsDark(e.matches)
-      } else {
-        setTheme(activeTheme)
-      }
-    }
-
-    // Add event listener for browser/web
-    mediaQuery.addEventListener('change', handleThemeChange)
-
     // Listen to Tauri native theme events (uses XDG Desktop Portal on Linux)
     let unlistenTauri: (() => void) | undefined
 
@@ -76,7 +61,6 @@ export function ThemeProvider() {
     // Clean up
     return () => {
       clearTimeout(timeoutId)
-      mediaQuery.removeEventListener('change', handleThemeChange)
       if (unlistenTauri) {
         unlistenTauri()
       }
