@@ -10,3 +10,6 @@ export const DEFAULT_MODEL_QUANTIZATIONS = ['iq4_xs', 'q4_k_m']
  * Includes Q8 for higher quality on capable systems
  */
 export const SETUP_SCREEN_QUANTIZATIONS = ['q8_0', 'q4_k_m', 'iq4_xs']
+
+export const JAN_V2_VL_MODEL_HF_REPO = 'janhq/Jan-v2-VL-high-gguf'
+export const JAN_V2_VL_QUANTIZATIONS = ['q4_k_m', 'q4_k_s', 'q4_0', 'q3_k_m']
