@@ -10,25 +10,14 @@ import HeaderPage from '@/containers/HeaderPage'
 import ThreadList from '@/containers/ThreadList'
 import DropdownAssistant from '@/containers/DropdownAssistant'
 
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformGuard } from '@/lib/platform/PlatformGuard'
-import { PlatformFeature } from '@/lib/platform/types'
 import { IconMessage } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 
 export const Route = createFileRoute('/project/$projectId')({
-  component: ProjectPage,
+  component: ProjectPageContent,
 })
-
-function ProjectPage() {
-  return (
-    <PlatformGuard feature={PlatformFeature.PROJECTS}>
-      <ProjectPageContent />
-    </PlatformGuard>
-  )
-}
 
 function ProjectPageContent() {
   const { t } = useTranslation()
@@ -68,9 +57,7 @@ function ProjectPageContent() {
     <div className="flex h-full flex-col">
       <HeaderPage>
         <div className="flex items-center justify-between w-full">
-          {PlatformFeatures[PlatformFeature.ASSISTANTS] && (
-            <DropdownAssistant />
-          )}
+          <DropdownAssistant />
         </div>
       </HeaderPage>
 

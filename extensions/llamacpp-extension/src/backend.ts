@@ -1,52 +1,18 @@
 import { getJanDataFolderPath, fs, joinPath, events } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { getProxyConfig, basenameNoExt } from './util'
-import { dirname, basename } from '@tauri-apps/api/path'
+import { dirname } from '@tauri-apps/api/path'
 import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
-
-/*
- * Helper function to map an old backend type string to its new, common equivalent.
- * This is used for migrating stored user preferences.
- */
-export function mapOldBackendToNew(oldBackend: string): string {
-  const isWindows = oldBackend.startsWith('win-')
-  const isLinux = oldBackend.startsWith('linux-')
-  const osPrefix = isWindows ? 'win-' : isLinux ? 'linux-' : ''
-
-  // Determine architecture suffix, defaulting to x64
-  const archSuffix = oldBackend.includes('-arm64') ? 'arm64' : 'x64'
-  const isX64 = archSuffix === 'x64'
-
-  // Handle GPU backends
-  if (oldBackend.includes('cuda-cu12.0')) {
-    // Migration from e.g., 'linux-avx2-cuda-cu12.0-x64' to 'linux-cuda-12-common_cpus-x64'
-    return `${osPrefix}cuda-12-common_cpus-${isX64 ? 'x64' : archSuffix}`
-  } else if (oldBackend.includes('cuda-cu11.7')) {
-    // Migration from e.g., 'win-noavx-cuda-cu11.7-x64' to 'win-cuda-11-common_cpus-x64'
-    return `${osPrefix}cuda-11-common_cpus-${isX64 ? 'x64' : archSuffix}`
-  } else if (oldBackend.includes('vulkan')) {
-    // If it's already the new name, return it
-    if (oldBackend.includes('vulkan-common_cpus')) return oldBackend
-
-    // Migration from e.g., 'linux-vulkan-x64' to 'linux-vulkan-common_cpus-x64'
-    return `${osPrefix}vulkan-common_cpus-${isX64 ? 'x64' : archSuffix}`
-  }
-
-  // Handle CPU-only backends (avx, avx2, avx512, noavx)
-  const isOldCpuBackend =
-    oldBackend.includes('avx512') ||
-    oldBackend.includes('avx2') ||
-    oldBackend.includes('avx-x64') || // Check for 'avx' but not as part of 'avx2' or 'avx512'
-    oldBackend.includes('noavx-x64')
-
-  if (isOldCpuBackend) {
-    // Migration from e.g., 'win-avx512-x64' to 'win-common_cpus-x64'
-    return `${osPrefix}common_cpus-${isX64 ? 'x64' : archSuffix}`
-  }
-
-  // Return original if it doesn't match a pattern that needs migration (e.g., macos/arm64 which are already 'common')
-  return oldBackend
-}
+import {
+  mapOldBackendToNew,
+  getLocalInstalledBackendsInternal,
+  normalizeFeatures,
+  determineSupportedBackends,
+  listSupportedBackendsFromRust,
+  BackendVersion,
+  getSupportedFeaturesFromRust,
+  isCudaInstalledFromRust,
+} from '@janhq/tauri-plugin-llamacpp-api'
 
 /*
  * Reads currently installed backends in janDataFolderPath
@@ -55,44 +21,14 @@ export function mapOldBackendToNew(oldBackend: string): string {
 export async function getLocalInstalledBackends(): Promise<
   { version: string; backend: string }[]
 > {
-  const local: Array<{ version: string; backend: string }> = []
   const janDataFolderPath = await getJanDataFolderPath()
-  const backendsDir = await joinPath([
+  const backendDir = await joinPath([
     janDataFolderPath,
     'llamacpp',
     'backends',
   ])
-  if (await fs.existsSync(backendsDir)) {
-    const versionDirs = await fs.readdirSync(backendsDir)
-
-    // If the folder does not exist we are done.
-    if (!versionDirs) {
-      return local
-    }
-    for (const version of versionDirs) {
-      const versionPath = await joinPath([backendsDir, version])
-      const versionName = await basename(versionPath)
-
-      // Check if versionPath is actually a directory before reading it
-      const versionStat = await fs.fileStat(versionPath)
-      if (!versionStat?.isDirectory) {
-        continue
-      }
-
-      const backendTypes = await fs.readdirSync(versionPath)
-
-      // Verify that the backend is really installed
-      for (const backendType of backendTypes) {
-        const backendName = await basename(backendType)
-        if (await isBackendInstalled(backendType, versionName)) {
-          local.push({ version: versionName, backend: backendName })
-        }
-      }
-    }
-  }
-  return local
+  return await getLocalInstalledBackendsInternal(backendDir)
 }
-
 /*
  * currently reads available backends in remote
  *
@@ -123,7 +59,7 @@ async function fetchRemoteSupportedBackends(
         remote.push({ version, backend })
         continue
       }
-      const mappedNew = mapOldBackendToNew(backend)
+      const mappedNew = await mapOldBackendToNew(backend)
       if (mappedNew !== backend && supportedBackends.includes(mappedNew)) {
         // Push the ORIGINAL backend name here, as this is the name of the file on the server.
         remote.push({ version, backend })
@@ -138,54 +74,23 @@ async function fetchRemoteSupportedBackends(
 // <Jan's data folder>/llamacpp/backends/<backend_version>/<backend_type>
 
 // what should be available to the user for selection?
-export async function listSupportedBackends(): Promise<
-  { version: string; backend: string }[]
-> {
+export async function listSupportedBackends(): Promise<BackendVersion[]> {
   const sysInfo = await getSystemInfo()
-  const os_type = sysInfo.os_type
+  const osType = sysInfo.os_type
   const arch = sysInfo.cpu.arch
 
-  const features = await _getSupportedFeatures()
-  const sysType = `${os_type}-${arch}`
-  let supportedBackends = []
+  const rawFeatures = await _getSupportedFeatures()
+  const features = normalizeFeatures(rawFeatures)
 
-  // NOTE: janhq's tags for llama.cpp builds are a bit different
-  // TODO: fetch versions from the server?
-  // TODO: select CUDA version based on driver version
-  if (sysType == 'windows-x86_64') {
-    supportedBackends.push('win-common_cpus-x64')
-    if (features.cuda11) {
-      supportedBackends.push('win-cuda-11-common_cpus-x64')
-    }
-    if (features.cuda12) {
-      supportedBackends.push('win-cuda-12-common_cpus-x64')
-    }
-    if (features.cuda13)
-      if (features.vulkan) supportedBackends.push('win-vulkan-common_cpus-x64')
-  }
-  // not available yet, placeholder for future
-  else if (sysType === 'windows-aarch64' || sysType === 'windows-arm64') {
-    supportedBackends.push('win-arm64')
-  } else if (sysType === 'linux-x86_64' || sysType === 'linux-x86') {
-    supportedBackends.push('linux-common_cpus-x64')
-    if (features.cuda11) {
-      supportedBackends.push('linux-cuda-11-common_cpus-x64')
-    }
-    if (features.cuda12) {
-      supportedBackends.push('linux-cuda-12-common_cpus-x64')
-    }
-    if (features.vulkan) supportedBackends.push('linux-vulkan-common_cpus-x64')
-  }
-  // not available yet, placeholder for future
-  else if (sysType === 'linux-aarch64' || sysType === 'linux-arm64') {
-    supportedBackends.push('linux-arm64')
-  } else if (sysType === 'macos-x86_64' || sysType === 'macos-x86') {
-    supportedBackends.push('macos-x64')
-  } else if (sysType === 'macos-aarch64' || sysType === 'macos-arm64') {
-    supportedBackends.push('macos-arm64')
-  }
-  // get latest backends from Github
-  let remoteBackendVersions = []
+  // Get supported backend names from Rust
+  const supportedBackends = await determineSupportedBackends(
+    osType,
+    arch,
+    features
+  )
+
+  // Get remote backends from Github
+  let remoteBackendVersions: BackendVersion[] = []
   try {
     remoteBackendVersions =
       await fetchRemoteSupportedBackends(supportedBackends)
@@ -197,23 +102,12 @@ export async function listSupportedBackends(): Promise<
 
   // Get locally installed versions
   const localBackendVersions = await getLocalInstalledBackends()
-  // Use a Map keyed by “${version}|${backend}” for O(1) deduplication.
-  const mergedMap = new Map<string, { version: string; backend: string }>()
-  for (const entry of remoteBackendVersions) {
-    mergedMap.set(`${entry.version}|${entry.backend}`, entry)
-  }
-  for (const entry of localBackendVersions) {
-    mergedMap.set(`${entry.version}|${entry.backend}`, entry)
-  }
 
-  const merged = Array.from(mergedMap.values())
-  // Sort newest version first; if versions tie, sort by backend name
-  merged.sort((a, b) => {
-    const versionCmp = b.version.localeCompare(a.version)
-    return versionCmp !== 0 ? versionCmp : a.backend.localeCompare(b.backend)
-  })
-
-  return merged
+  // Merge & sort via Rust
+  return listSupportedBackendsFromRust(
+    remoteBackendVersions,
+    localBackendVersions
+  )
 }
 
 export async function getBackendDir(
@@ -384,49 +278,11 @@ export async function downloadBackend(
 
 async function _getSupportedFeatures() {
   const sysInfo = await getSystemInfo()
-  const features = {
-    avx: sysInfo.cpu.extensions.includes('avx'),
-    avx2: sysInfo.cpu.extensions.includes('avx2'),
-    avx512: sysInfo.cpu.extensions.includes('avx512'),
-    cuda11: false,
-    cuda12: false,
-    cuda13: false,
-    vulkan: false,
-  }
-
-  // https://docs.nvidia.com/deploy/cuda-compatibility/#cuda-11-and-later-defaults-to-minor-version-compatibility
-  let minCuda11DriverVersion: string
-  let minCuda12DriverVersion: string
-  let minCuda13DriverVersion: string
-  if (sysInfo.os_type === 'linux') {
-    minCuda11DriverVersion = '450.80.02'
-    minCuda12DriverVersion = '525.60.13'
-    minCuda13DriverVersion = '580'
-  } else if (sysInfo.os_type === 'windows') {
-    minCuda11DriverVersion = '452.39'
-    minCuda12DriverVersion = '527.41'
-    minCuda13DriverVersion = '580'
-  }
-
-  // TODO: HIP and SYCL
-  for (const gpuInfo of sysInfo.gpus) {
-    const driverVersion = gpuInfo.driver_version
-
-    if (gpuInfo.nvidia_info?.compute_capability) {
-      if (compareVersions(driverVersion, minCuda11DriverVersion) >= 0)
-        features.cuda11 = true
-      if (compareVersions(driverVersion, minCuda12DriverVersion) >= 0)
-        features.cuda12 = true
-      if (compareVersions(driverVersion, minCuda13DriverVersion) >= 0) {
-        features.cuda13 = true
-      }
-    }
-    // Vulkan support check
-    if (gpuInfo.vulkan_info?.api_version) {
-      features.vulkan = true
-    }
-  }
-  return features
+  return await getSupportedFeaturesFromRust(
+    sysInfo.os_type,
+    sysInfo.cpu.extensions,
+    sysInfo.gpus
+  )
 }
 
 /**
@@ -463,67 +319,12 @@ async function _isCudaInstalled(
   version: string
 ): Promise<boolean> {
   const sysInfo = await getSystemInfo()
-  const os_type = sysInfo.os_type
-
-  const libnameLookup = {
-    'windows-11.7': `cudart64_110.dll`,
-    'windows-12.0': `cudart64_12.dll`,
-    'windows-13.0': `cudart64_13.dll`,
-    'linux-11.7': `libcudart.so.11.0`,
-    'linux-12.0': `libcudart.so.12`,
-    'linux-13.0': `libcudart.so.13`,
-  }
-
-  const key = `${os_type}-${version}`
-  if (!(key in libnameLookup)) {
-    return false
-  }
-
-  const libname = libnameLookup[key]
-
-  // Expected new location
-  const newPath = await joinPath([backendDir, 'build', 'bin', libname])
-  if (await fs.existsSync(newPath)) return true
-
-  // Old location (used by older builds)
   const janDataFolderPath = await getJanDataFolderPath()
-  const oldPath = await joinPath([
-    janDataFolderPath,
-    'llamacpp',
-    'lib',
-    libname,
-  ])
 
-  if (await fs.existsSync(oldPath)) {
-    // Ensure target directory exists
-    const targetDir = await joinPath([backendDir, 'build', 'bin'])
-    if (!(await fs.existsSync(targetDir))) {
-      await fs.mkdir(targetDir)
-    }
-
-    try {
-      // Move old lib to the correct new location
-      await fs.mv(oldPath, newPath)
-      console.log(`[CUDA] Migrated ${libname} from old path to new location.`)
-      return true
-    } catch (err) {
-      console.warn(`[CUDA] Failed to move old library:`, err)
-    }
-  }
-
-  return false
-}
-
-function compareVersions(a: string, b: string): number {
-  const aParts = a.split('.').map(Number)
-  const bParts = b.split('.').map(Number)
-  const len = Math.max(aParts.length, bParts.length)
-
-  for (let i = 0; i < len; i++) {
-    const x = aParts[i] || 0
-    const y = bParts[i] || 0
-    if (x > y) return 1
-    if (x < y) return -1
-  }
-  return 0
+  return isCudaInstalledFromRust(
+    backendDir,
+    version,
+    sysInfo.os_type,
+    janDataFolderPath
+  )
 }

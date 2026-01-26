@@ -8,9 +8,7 @@ import {
   IconSettings,
   IconStar,
   IconFolderPlus,
-  IconMessage,
   IconApps,
-  IconX,
   IconSearch,
   IconFolder,
   IconPencil,
@@ -24,11 +22,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
-import { AuthLoginButton } from '@/containers/auth/AuthLoginButton'
-import { UserProfileMenu } from '@/containers/auth/UserProfileMenu'
-import { useAuth } from '@/hooks/useAuth'
 
 import { useThreads } from '@/hooks/useThreads'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -40,7 +33,7 @@ import { DownloadManagement } from '@/containers/DownloadManegement'
 import { useSmallScreen } from '@/hooks/useMediaQuery'
 import { useClickOutside } from '@/hooks/useClickOutside'
 
-import { DeleteAllThreadsDialog } from '@/containers/dialogs'
+import { DeleteAllThreadsDialog, SearchDialog } from '@/containers/dialogs'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { DeleteProjectDialog } from '@/containers/dialogs/DeleteProjectDialog'
 
@@ -55,8 +48,7 @@ const mainMenus = [
     title: 'common:projects.title',
     icon: IconFolderPlus,
     route: route.project,
-    isEnabled:
-      PlatformFeatures[PlatformFeature.PROJECTS] && !(IS_IOS || IS_ANDROID),
+    isEnabled: true,
   },
 ]
 
@@ -65,7 +57,7 @@ const secondaryMenus = [
     title: 'common:hub',
     icon: IconApps,
     route: route.hub.index,
-    isEnabled: PlatformFeatures[PlatformFeature.MODEL_HUB],
+    isEnabled: true,
   },
   {
     title: 'common:settings',
@@ -80,16 +72,12 @@ const LeftPanel = () => {
   const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [searchTerm, setSearchTerm] = useState('')
-  const { isAuthenticated } = useAuth()
-  const projectsEnabled = PlatformFeatures[PlatformFeature.PROJECTS]
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false)
 
   const isSmallScreen = useSmallScreen()
   const prevScreenSizeRef = useRef<boolean | null>(null)
   const isInitialMountRef = useRef(true)
   const panelRef = useRef<HTMLElement>(null)
-  const searchContainerRef = useRef<HTMLDivElement>(null)
-  const searchContainerMacRef = useRef<HTMLDivElement>(null)
 
   // Determine if we're in a resizable context (large screen with panel open)
   const isResizableContext = !isSmallScreen && open
@@ -102,11 +90,7 @@ const LeftPanel = () => {
       }
     },
     null,
-    [
-      panelRef.current,
-      searchContainerRef.current,
-      searchContainerMacRef.current,
-    ]
+    [panelRef.current]
   )
 
   // Auto-collapse panel only when window is resized
@@ -172,26 +156,21 @@ const LeftPanel = () => {
     null
   )
 
-  const filteredThreads = useMemo(() => {
-    return getFilteredThreads(searchTerm)
+  const allThreads = useMemo(() => {
+    return getFilteredThreads('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getFilteredThreads, searchTerm, threads])
+  }, [getFilteredThreads, threads])
 
-  const filteredProjects = useMemo(() => {
-    if (!searchTerm) return folders
-    return folders.filter((folder) =>
-      folder.name.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  }, [folders, searchTerm])
-
-  // Memoize categorized threads based on filteredThreads
+  // Memoize categorized threads based on allThreads
   const favoritedThreads = useMemo(() => {
-    return filteredThreads.filter((t) => t.isFavorite)
-  }, [filteredThreads])
+    return allThreads.filter((t: Thread) => t.isFavorite)
+  }, [allThreads])
 
   const unFavoritedThreads = useMemo(() => {
-    return filteredThreads.filter((t) => !t.isFavorite && !t.metadata?.project)
-  }, [filteredThreads])
+    return allThreads.filter(
+      (t: Thread) => !t.isFavorite && !t.metadata?.project
+    )
+  }, [allThreads])
 
   // Project handlers
   const handleProjectDelete = (id: string) => {
@@ -238,135 +217,72 @@ const LeftPanel = () => {
       {isSmallScreen && open && !IS_IOS && !IS_ANDROID && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur z-30"
-          onClick={(e) => {
-            // Don't close if clicking on search container or if currently searching
-            if (
-              searchContainerRef.current?.contains(e.target as Node) ||
-              searchContainerMacRef.current?.contains(e.target as Node)
-            ) {
-              return
-            }
-            setLeftPanel(false)
-          }}
+          onClick={() => setLeftPanel(false)}
         />
       )}
       <aside
         ref={panelRef}
         className={cn(
-          'text-left-panel-fg overflow-hidden',
+          'text-left-panel-fg overflow-hidden relative',
           // Resizable context: full height and width, no margins
           isResizableContext && 'h-full w-full',
           // Small screen context: fixed positioning and styling
           isSmallScreen &&
-          'fixed h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))] bg-main-view z-50 md:border border-left-panel-fg/10 px-1 w-full md:w-48',
+            'fixed h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))] bg-main-view z-50 md:border border-left-panel-fg/10 px-1 w-full md:w-48',
           // Default context: original styling
           !isResizableContext &&
-          !isSmallScreen &&
-          'w-48 shrink-0 rounded-lg m-1.5 mr-0',
+            !isSmallScreen &&
+            'w-48 shrink-0 rounded-lg m-1.5 mr-0',
           // Visibility controls
           open
             ? 'opacity-100 visibility-visible'
             : 'w-0 absolute -top-100 -left-100 visibility-hidden'
         )}
       >
-        <div className="relative h-10">
-          <button
-            className={cn(
-              'absolute top-1/2 -translate-y-1/2 z-20 right-0',
-              (IS_MACOS && isSmallScreen) || (IS_MACOS && !open)
-                ? 'pl-20 right-auto'
-                : ''
-            )}
-            onClick={() => setLeftPanel(!open)}
-          >
-            <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
-              <IconLayoutSidebar size={18} className="text-left-panel-fg" />
-            </div>
-          </button>
-          {!IS_MACOS && (
-            <div
-              ref={searchContainerRef}
+        {IS_MACOS ? 
+          <div className="relative h-10">
+            <button
               className={cn(
-                'relative top-1.5 mb-4 mt-1 z-50',
-                isResizableContext
-                  ? 'mx-2 w-[calc(100%-48px)]'
-                  : 'mx-1 w-[calc(100%-32px)]'
+                'absolute top-1/2 -translate-y-1/2 z-20 right-0',
+                (isSmallScreen) || (!open)
+                  ? 'pl-20 right-auto'
+                  : ''
               )}
-              data-ignore-outside-clicks
+              onClick={() => setLeftPanel(!open)}
             >
-              <IconSearch className="absolute size-4 top-1/2 left-2 -translate-y-1/2 text-left-panel-fg/50" />
-              <input
-                type="text"
-                placeholder={t('common:search')}
-                className="w-full pl-7 pr-8 py-1 bg-left-panel-fg/10 rounded-sm text-left-panel-fg focus:outline-none focus:ring-1 focus:ring-left-panel-fg/10"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              {searchTerm && (
-                <button
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-left-panel-fg/70 hover:text-left-panel-fg"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation() // prevent bubbling
-                    setSearchTerm('')
-                  }}
-                >
-                  <IconX size={14} />
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+              <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
+                <IconLayoutSidebar size={18} className="text-left-panel-fg" />
+              </div>
+            </button>
+          </div> 
+          : 
+          <div className="absolute right-0 z-40 top-1.5">
+            <button
+              onClick={() => setLeftPanel(!open)}
+            >
+              <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
+                <IconLayoutSidebar size={18} className="text-left-panel-fg" />
+              </div>
+            </button>
+          </div>
+        }
 
         <div className="flex flex-col gap-y-1 overflow-hidden mt-0 !h-[calc(100%-42px)]">
           <div className="space-y-1 py-1">
-            {IS_MACOS && (
-              <div
-                ref={searchContainerMacRef}
-                className={cn('relative mb-2 mt-1 mx-1')}
-                data-ignore-outside-clicks
-              >
-                <IconSearch className="absolute size-4 top-1/2 left-2 -translate-y-1/2 text-left-panel-fg/50" />
-                <input
-                  type="text"
-                  placeholder={t('common:search')}
-                  className="w-full pl-7 pr-8 py-1 bg-left-panel-fg/10 rounded-sm text-left-panel-fg focus:outline-none focus:ring-1 focus:ring-left-panel-fg/10"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-                {searchTerm && (
-                  <button
-                    data-ignore-outside-clicks
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-left-panel-fg/70 hover:text-left-panel-fg"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation() // prevent bubbling
-                      setSearchTerm('')
-                    }}
-                  >
-                    <IconX size={14} />
-                  </button>
-                )}
-              </div>
-            )}
+            {/* Search button */}
+            <button
+              onClick={() => setSearchDialogOpen(true)}
+              className="flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded w-full"
+            >
+              <IconSearch size={18} className="text-left-panel-fg/70" />
+              <span className="font-medium text-left-panel-fg/90">
+                {t('common:search')}
+              </span>
+            </button>
 
             {mainMenus.map((menu) => {
               if (!menu.isEnabled) {
                 return null
-              }
-
-              // Handle authentication menu specially
-              if (menu.title === 'common:authentication') {
-                return (
-                  <div key={menu.title}>
-                    <div className="mx-1 my-2 border-t border-left-panel-fg/5" />
-                    {isAuthenticated ? (
-                      <UserProfileMenu />
-                    ) : (
-                      <AuthLoginButton />
-                    )}
-                  </div>
-                )
               }
 
               // Regular menu items must have route and icon
@@ -402,103 +318,98 @@ const LeftPanel = () => {
             })}
           </div>
 
-          {projectsEnabled &&
-            filteredProjects.length > 0 &&
-            !(IS_IOS || IS_ANDROID) && (
-              <div className="space-y-1 py-1">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
-                    {t('common:projects.title')}
-                  </span>
-                </div>
-                <div className="flex flex-col max-h-[140px] overflow-y-scroll">
-                  {filteredProjects
-                    .slice()
-                    .sort((a, b) => b.updated_at - a.updated_at)
-                    .map((folder) => {
-                      const ProjectItem = () => {
-                        const [openDropdown, setOpenDropdown] = useState(false)
-                        const isProjectActive =
-                          currentPath === `/project/${folder.id}`
+          {folders.length > 0 && !(IS_IOS || IS_ANDROID) && (
+            <div className="space-y-1 py-1 flex flex-col">
+              <div className="flex items-center justify-between mb-2">
+                <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
+                  {t('common:projects.title')}
+                </span>
+              </div>
+              <div className="flex flex-col max-h-[140px] overflow-y-auto">
+                {folders
+                  .slice()
+                  .sort((a, b) => b.updated_at - a.updated_at)
+                  .map((folder) => {
+                    const ProjectItem = () => {
+                      const [openDropdown, setOpenDropdown] = useState(false)
+                      const isProjectActive =
+                        currentPath === `/project/${folder.id}`
 
-                        return (
-                          <div key={folder.id} className="mb-1">
-                            <div
-                              className={cn(
-                                'rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/project-list transition-all cursor-pointer',
-                                isProjectActive && 'bg-left-panel-fg/10'
-                              )}
-                              onContextMenu={(e) => {
-                                e.preventDefault()
-                              }}
+                      return (
+                        <div key={folder.id} className="mb-1">
+                          <div
+                            className={cn(
+                              'rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/project-list transition-all cursor-pointer',
+                              isProjectActive && 'bg-left-panel-fg/10'
+                            )}
+                            onContextMenu={(e) => {
+                              e.preventDefault()
+                            }}
+                          >
+                            <Link
+                              to="/project/$projectId"
+                              params={{ projectId: folder.id }}
+                              onClick={() =>
+                                isSmallScreen && setLeftPanel(false)
+                              }
+                              className="py-1 pr-2 truncate flex items-center gap-2 flex-1"
                             >
-                              <Link
-                                to="/project/$projectId"
-                                params={{ projectId: folder.id }}
-                                onClick={() =>
-                                  isSmallScreen && setLeftPanel(false)
-                                }
-                                className="py-1 pr-2 truncate flex items-center gap-2 flex-1"
+                              <IconFolder
+                                size={16}
+                                className="text-left-panel-fg/70 shrink-0"
+                              />
+                              <span className="text-sm text-left-panel-fg/90 truncate">
+                                {folder.name}
+                              </span>
+                            </Link>
+                            <div className="flex items-center">
+                              <DropdownMenu
+                                open={openDropdown}
+                                onOpenChange={(open) => setOpenDropdown(open)}
                               >
-                                <IconFolder
-                                  size={16}
-                                  className="text-left-panel-fg/70 shrink-0"
-                                />
-                                <span className="text-sm text-left-panel-fg/90 truncate">
-                                  {folder.name}
-                                </span>
-                              </Link>
-                              <div className="flex items-center">
-                                <DropdownMenu
-                                  open={openDropdown}
-                                  onOpenChange={(open) => setOpenDropdown(open)}
-                                >
-                                  <DropdownMenuTrigger asChild>
-                                    <IconDots
-                                      size={14}
-                                      className="text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/project-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0"
-                                      onClick={(e) => {
-                                        e.preventDefault()
-                                        e.stopPropagation()
-                                      }}
-                                    />
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent
-                                    side="bottom"
-                                    align="end"
+                                <DropdownMenuTrigger asChild>
+                                  <IconDots
+                                    size={14}
+                                    className="text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/project-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0"
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      e.stopPropagation()
+                                    }}
+                                  />
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent side="bottom" align="end">
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setEditingProjectKey(folder.id)
+                                      setProjectDialogOpen(true)
+                                    }}
                                   >
-                                    <DropdownMenuItem
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        setEditingProjectKey(folder.id)
-                                        setProjectDialogOpen(true)
-                                      }}
-                                    >
-                                      <IconPencil size={16} />
-                                      <span>Edit</span>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        handleProjectDelete(folder.id)
-                                      }}
-                                    >
-                                      <IconTrash size={16} />
-                                      <span>Delete</span>
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
+                                    <IconPencil size={16} />
+                                    <span>Edit</span>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleProjectDelete(folder.id)
+                                    }}
+                                  >
+                                    <IconTrash size={16} />
+                                    <span>Delete</span>
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </div>
-                        )
-                      }
+                        </div>
+                      )
+                    }
 
-                      return <ProjectItem key={folder.id} />
-                    })}
-                </div>
+                    return <ProjectItem key={folder.id} />
+                  })}
               </div>
-            )}
+            </div>
+          )}
 
           <div className="flex flex-col h-full overflow-y-scroll w-[calc(100%+6px)]">
             <div className="flex flex-col w-full h-full overflow-y-auto overflow-x-hidden mb-3">
@@ -586,41 +497,6 @@ const LeftPanel = () => {
                   </div>
                 )}
 
-                {filteredThreads.length === 0 && searchTerm.length > 0 && (
-                  <div className="px-1 mt-2">
-                    <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold mb-2">
-                      {t('common:recents')}
-                    </span>
-
-                    <div className="flex items-center gap-1 text-left-panel-fg/80">
-                      <IconSearch size={18} />
-                      <h6 className="font-medium text-base">
-                        {t('common:noResultsFound')}
-                      </h6>
-                    </div>
-                    <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
-                      {t('common:noResultsFoundDesc')}
-                    </p>
-                  </div>
-                )}
-
-                {/* Show "No threads yet" when there are no threads at all OR when all threads are in projects */}
-                {(Object.keys(threads).length === 0 || (Object.keys(threads).length > 0 && unFavoritedThreads.length === 0 && favoritedThreads.length === 0)) && !searchTerm && (
-                  <>
-                    <div className="px-1 mt-2">
-                      <div className="flex items-center gap-1 text-left-panel-fg/80">
-                        <IconMessage size={18} />
-                        <h6 className="font-medium text-base">
-                          {t('common:noThreadsYet')}
-                        </h6>
-                      </div>
-                      <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
-                        {t('common:noThreadsYetDesc')}
-                      </p>
-                    </div>
-                  </>
-                )}
-
                 <div className="flex flex-col">
                   <ThreadList threads={unFavoritedThreads} />
                 </div>
@@ -664,22 +540,13 @@ const LeftPanel = () => {
               )
             })}
 
-            {PlatformFeatures[PlatformFeature.AUTHENTICATION] && (
-              <div className="space-y-1 shrink-0 py-1">
-                <div>
-                  <div className="mx-1 my-2 border-t border-left-panel-fg/5" />
-                  {isAuthenticated ? <UserProfileMenu /> : <AuthLoginButton />}
-                </div>
-              </div>
-            )}
-
             <DownloadManagement />
           </div>
         </div>
       </aside>
 
       {/* Project Dialogs */}
-      {projectsEnabled && (
+      {
         <>
           <AddProjectDialog
             open={projectDialogOpen}
@@ -701,7 +568,13 @@ const LeftPanel = () => {
             }
           />
         </>
-      )}
+      }
+
+      {/* Search Dialog */}
+      <SearchDialog
+        open={searchDialogOpen}
+        onOpenChange={setSearchDialogOpen}
+      />
     </>
   )
 }

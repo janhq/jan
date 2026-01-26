@@ -44,7 +44,7 @@ describe('useInterfaceSettings', () => {
   it('should initialize with default values', () => {
     const { result } = renderHook(() => useInterfaceSettings())
 
-    expect(result.current.fontSize).toBe('15px')
+    expect(result.current.fontSize).toBe('16px')
     expect(result.current.chatWidth).toBe('compact')
     expect(result.current.appBgColor).toEqual({
       r: 25,
@@ -172,7 +172,7 @@ describe('useInterfaceSettings', () => {
       result.current.resetInterface()
     })
 
-    expect(result.current.fontSize).toBe('15px')
+    expect(result.current.fontSize).toBe('16px')
     // Note: resetInterface doesn't reset chatWidth, only visual properties
     expect(result.current.chatWidth).toBe('full')
     expect(result.current.appBgColor).toEqual({
@@ -216,7 +216,7 @@ describe('useInterfaceSettings', () => {
       
       expect(document.documentElement.style.setProperty).toHaveBeenCalledWith(
         '--font-size-base',
-        '15px'
+        '16px'
       )
       expect(document.documentElement.style.setProperty).toHaveBeenCalledWith(
         '--app-bg',

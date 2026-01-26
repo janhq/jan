@@ -59,7 +59,5 @@
     "description": "Nakonfigurujte, jak Jan spravuje a opakuje pokusy se servery MCP.",
     "toolCallTimeout": "Časový limit volání nástroje (sekundy)",
     "toolCallTimeoutDesc": "Maximální doba čekání na odpověď nástroje MCP před vypršením časového limitu."
-  },
-  "proactiveMode": "Proaktivní režim používání prohlížeče",
-  "proactiveModeDesc": "Pokud je povoleno, automaticky zachytává snímky obrazovky prohlížeče, aby poskytl další kontext pro úlohy automatizace prohlížeče. Vyžaduje Jan Browser MCP s modelem pro vidění a použití nástrojů."
+  }
 }

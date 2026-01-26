@@ -1,14 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, act, waitFor } from '@testing-library/react'
-import { useAppUpdater, UpdateState } from '../useAppUpdater'
+import { renderHook, act } from '@testing-library/react'
+import { useAppUpdater } from '../useAppUpdater'
 
 // Mock dependencies
 vi.mock('@/lib/utils', () => ({
   isDev: vi.fn(() => false),
-}))
-
-vi.mock('@tauri-apps/plugin-updater', () => ({
-  check: vi.fn(),
 }))
 
 vi.mock('@janhq/core', () => ({
@@ -22,10 +18,6 @@ vi.mock('@janhq/core', () => ({
     onAppUpdateDownloadSuccess: 'onAppUpdateDownloadSuccess',
     onAppUpdateDownloadError: 'onAppUpdateDownloadError',
   },
-}))
-
-vi.mock('@tauri-apps/api/event', () => ({
-  emit: vi.fn(),
 }))
 
 vi.mock('@/types/events', () => ({
@@ -73,14 +65,11 @@ Object.defineProperty(global, 'AUTO_UPDATER_DISABLED', {
 })
 
 import { isDev } from '@/lib/utils'
-import { check } from '@tauri-apps/plugin-updater'
 import { events } from '@janhq/core'
-import { emit } from '@tauri-apps/api/event'
 
 describe('useAppUpdater', () => {
   const mockEvents = events as any
   const mockIsDev = isDev as any
-  const mockEmit = emit as any
   const mockRelaunch = window.core?.api?.relaunch as any
 
   beforeEach(() => {
@@ -263,6 +252,7 @@ describe('useAppUpdater', () => {
       })
     })
   })
+
 
   describe('downloadAndInstallUpdate', () => {
     it('should download and install update successfully', async () => {

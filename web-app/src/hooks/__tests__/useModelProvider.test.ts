@@ -229,4 +229,120 @@ describe('useModelProvider migrations', () => {
       { name: 'Off', value: 'off' },
     ])
   })
+
+  it('migrates Mistral provider base URL to add /v1 suffix', () => {
+    const persistApi = (useModelProvider as any).persist
+    const migrate = persistApi?.getOptions().migrate as
+      | ((state: unknown, version: number) => any)
+      | undefined
+
+    expect(migrate).toBeDefined()
+
+    const persistedState = {
+      providers: [
+        {
+          provider: 'mistral',
+          models: [],
+          base_url: 'https://api.mistral.ai',
+          settings: [
+            {
+              key: 'base-url',
+              controller_props: {
+                value: 'https://api.mistral.ai',
+                placeholder: 'https://api.mistral.ai',
+              },
+            },
+          ],
+        },
+      ],
+      selectedProvider: 'mistral',
+      selectedModel: null,
+      deletedModels: [],
+    }
+
+    const migratedState = migrate!(persistedState, 8)
+    const mistralProvider = migratedState.providers[0]
+    const baseUrlSetting = mistralProvider.settings.find(
+      (setting: any) => setting.key === 'base-url'
+    )
+
+    expect(mistralProvider.base_url).toBe('https://api.mistral.ai/v1')
+    expect(baseUrlSetting.controller_props.value).toBe('https://api.mistral.ai/v1')
+    expect(baseUrlSetting.controller_props.placeholder).toBe('https://api.mistral.ai/v1')
+  })
+
+  it('does not migrate Mistral provider base URL if already has /v1', () => {
+    const persistApi = (useModelProvider as any).persist
+    const migrate = persistApi?.getOptions().migrate as
+      | ((state: unknown, version: number) => any)
+      | undefined
+
+    expect(migrate).toBeDefined()
+
+    const persistedState = {
+      providers: [
+        {
+          provider: 'mistral',
+          models: [],
+          base_url: 'https://api.mistral.ai/v1',
+          settings: [
+            {
+              key: 'base-url',
+              controller_props: {
+                value: 'https://api.mistral.ai/v1',
+                placeholder: 'https://api.mistral.ai/v1',
+              },
+            },
+          ],
+        },
+      ],
+      selectedProvider: 'mistral',
+      selectedModel: null,
+      deletedModels: [],
+    }
+
+    const migratedState = migrate!(persistedState, 8)
+    const mistralProvider = migratedState.providers[0]
+    const baseUrlSetting = mistralProvider.settings.find(
+      (setting: any) => setting.key === 'base-url'
+    )
+
+    expect(mistralProvider.base_url).toBe('https://api.mistral.ai/v1')
+    expect(baseUrlSetting.controller_props.value).toBe('https://api.mistral.ai/v1')
+    expect(baseUrlSetting.controller_props.placeholder).toBe('https://api.mistral.ai/v1')
+  })
+
+  it('does not affect other providers during Mistral migration', () => {
+    const persistApi = (useModelProvider as any).persist
+    const migrate = persistApi?.getOptions().migrate as
+      | ((state: unknown, version: number) => any)
+      | undefined
+
+    expect(migrate).toBeDefined()
+
+    const persistedState = {
+      providers: [
+        {
+          provider: 'mistral',
+          models: [],
+          base_url: 'https://api.mistral.ai',
+          settings: [],
+        },
+        {
+          provider: 'openai',
+          models: [],
+          base_url: 'https://api.openai.com/v1',
+          settings: [],
+        },
+      ],
+      selectedProvider: 'mistral',
+      selectedModel: null,
+      deletedModels: [],
+    }
+
+    const migratedState = migrate!(persistedState, 8)
+
+    expect(migratedState.providers[0].base_url).toBe('https://api.mistral.ai/v1')
+    expect(migratedState.providers[1].base_url).toBe('https://api.openai.com/v1')
+  })
 })

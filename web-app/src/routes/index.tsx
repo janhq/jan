@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
-import { predefinedProviders } from '@/consts/providers'
+import { predefinedProviders } from '@/constants/providers'
 
 type SearchParams = {
   'model'?: {
@@ -22,8 +22,6 @@ import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
 import { useMobileScreen } from '@/hooks/useMediaQuery'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 import { TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 
 export const Route = createFileRoute(route.home as any)({
@@ -88,9 +86,7 @@ function Index() {
     <div className="flex h-full flex-col justify-center pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          {PlatformFeatures[PlatformFeature.ASSISTANTS] && (
-            <DropdownAssistant />
-          )}
+          <DropdownAssistant />
         </div>
       </HeaderPage>
       <div
@@ -105,33 +101,18 @@ function Index() {
             isMobile ? 'w-full max-w-full' : 'w-full md:w-4/6'
           )}
         >
-          <div
-            className={cn(
-              'text-center',
-              // Adjust spacing for mobile
-              isMobile ? 'mb-6' : 'mb-8'
-            )}
-          >
+          <div className={cn('text-center mb-4')}>
             <h1
               className={cn(
-                'font-editorialnew text-main-view-fg',
-                // Responsive title size
-                isMobile ? 'text-2xl sm:text-3xl' : 'text-4xl'
-              )}
-            >
-              {isTemporaryChat ? t('chat:temporaryChat') : t('chat:welcome')}
-            </h1>
-            <p
-              className={cn(
-                'text-main-view-fg/70 mt-2',
+                'text-main-view-fg/90 mt-2 font-studio font-medium',
                 // Responsive description size
-                isMobile ? 'text-base' : 'text-lg'
+                isMobile ? 'text-base' : 'text-2xl'
               )}
             >
               {isTemporaryChat
                 ? t('chat:temporaryChatDescription')
                 : t('chat:description')}
-            </p>
+            </h1>
           </div>
           <div className="flex-1 shrink-0">
             <ChatInput

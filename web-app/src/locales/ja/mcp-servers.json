@@ -59,7 +59,5 @@
     "description": "JanがMCPサーバーを管理し再試行する方法を設定します。",
     "toolCallTimeout": "ツール呼び出しタイムアウト（秒）",
     "toolCallTimeoutDesc": "MCPツールの応答を待機する最大時間（タイムアウトまで）。"
-  },
-  "proactiveMode": "ブラウザ使用プロアクティブモード",
-  "proactiveModeDesc": "有効にすると、ブラウザの自動化タスクに追加のコンテキストを提供するために、ブラウザのスクリーンショットを自動的にキャプチャします。VisionとToolを使用するモデルを備えたJan Browser MCPが必要です。"
+  }
 }

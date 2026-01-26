@@ -138,7 +138,9 @@ export enum ErrorCode {
  */
 export enum ContentType {
   Text = 'text',
+  Reasoning = 'reasoning',
   Image = 'image_url',
+  ToolCall = 'tool_call',
 }
 
 /**
@@ -165,8 +167,15 @@ export type ImageContentValue = {
  */
 export type ThreadContent = {
   type: ContentType
+  // For text and reasoning content
   text?: ContentValue
+  // For image content
   image_url?: ImageContentValue
+  // For tool call content
+  tool_call_id?: string
+  tool_name?: string
+  input?: unknown
+  output?: unknown
 }
 
 export interface Attachment {

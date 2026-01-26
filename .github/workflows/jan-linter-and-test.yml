@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - dev
     paths:
       - .github/workflows/jan-linter-and-test.yml
       - 'web/**'
@@ -20,7 +19,6 @@ on:
   pull_request:
     branches:
       - main
-      - dev
       - release/**
     paths:
       - .github/workflows/jan-linter-and-test.yml
@@ -101,7 +99,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        antivirus-tools: ['mcafee', 'default-windows-security', 'bit-defender']
+        antivirus-tools: ['mcafee', 'bit-defender']
     runs-on: windows-desktop-${{ matrix.antivirus-tools }}
     steps:
       - name: Getting the repo

@@ -12,16 +12,11 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { IconPencil, IconX } from '@tabler/icons-react'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 
 interface EditMessageDialogProps {
   message: string
   imageUrls?: string[]
-  onSave: (message: string, imageUrls?: string[]) => void
+  onSave: (message: string) => void
   triggerElement?: React.ReactNode
 }
 
@@ -53,14 +48,9 @@ export function EditMessageDialog({
 
   const handleSave = () => {
     const hasTextChanged = draft !== message && draft.trim()
-    const hasImageChanged =
-      JSON.stringify(imageUrls || []) !== JSON.stringify(keptImages)
 
-    if (hasTextChanged || hasImageChanged) {
-      onSave(
-        draft.trim() || message,
-        keptImages.length > 0 ? keptImages : undefined
-      )
+    if (hasTextChanged) {
+      onSave(draft.trim() || message)
       setIsOpen(false)
     }
   }
@@ -73,26 +63,19 @@ export function EditMessageDialog({
   }
 
   const defaultTrigger = (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div
-          className="flex outline-0 items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              setIsOpen(true)
-            }
-          }}
-        >
-          <IconPencil size={16} />
-        </div>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>{t('edit')}</p>
-      </TooltipContent>
-    </Tooltip>
+    <div
+      className="flex outline-0 items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          setIsOpen(true)
+        }
+      }}
+    >
+      <IconPencil size={16} />
+    </div>
   )
 
   return (

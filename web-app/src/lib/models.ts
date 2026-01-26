@@ -21,8 +21,7 @@ export const getModelCapabilities = (
   providerName: string,
   modelId: string
 ): string[] => {
-  const providerConfig =
-    models[providerName as unknown as keyof typeof models]
+  const providerConfig = models[providerName as unknown as keyof typeof models]
 
   const supportsToolCalls = Array.isArray(
     providerConfig?.supportsToolCalls as unknown

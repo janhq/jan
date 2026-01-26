@@ -67,14 +67,6 @@ export default defineConfig(({ mode }) => {
         '@janhq/conversational-extension': path.resolve(__dirname, '../extensions/conversational-extension/src/index.ts'),
       },
     },
-    optimizeDeps: {
-      exclude: ['@jan/extensions-web'],
-    },
-    build: {
-      rollupOptions: {
-        external: ['@jan/extensions-web'],
-      },
-    },
     define: {
       IS_TAURI: JSON.stringify(process.env.IS_TAURI),
       IS_DEV: JSON.stringify(process.env.IS_DEV),
@@ -106,6 +98,9 @@ export default defineConfig(({ mode }) => {
       ),
       AUTO_UPDATER_DISABLED: JSON.stringify(
         env.AUTO_UPDATER_DISABLED === 'true'
+      ),
+      UPDATE_CHECK_INTERVAL_MS: JSON.stringify(
+        Number(env.UPDATE_CHECK_INTERVAL_MS) || 60 * 60 * 1000
       ),
     },
 

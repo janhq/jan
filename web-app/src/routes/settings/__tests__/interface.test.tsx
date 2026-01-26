@@ -61,33 +61,10 @@ vi.mock('@/containers/ChatWidthSwitcher', () => ({
   ChatWidthSwitcher: () => <div data-testid="chat-width-switcher">Chat Width Switcher</div>,
 }))
 
-vi.mock('@/containers/ThreadScrollBehaviorSwitcher', () => ({
-  ThreadScrollBehaviorSwitcher: () => (
-    <div data-testid="thread-scroll-switcher">Thread Scroll Switcher</div>
-  ),
-}))
-
-vi.mock('@/containers/CodeBlockStyleSwitcher', () => ({
-  default: () => <div data-testid="code-block-style-switcher">Code Block Style Switcher</div>,
-}))
-
-vi.mock('@/containers/LineNumbersSwitcher', () => ({
-  LineNumbersSwitcher: () => <div data-testid="line-numbers-switcher">Line Numbers Switcher</div>,
-}))
-
-vi.mock('@/containers/CodeBlockExample', () => ({
-  CodeBlockExample: () => <div data-testid="code-block-example">Code Block Example</div>,
-}))
 
 vi.mock('@/hooks/useInterfaceSettings', () => ({
   useInterfaceSettings: () => ({
     resetInterface: vi.fn(),
-  }),
-}))
-
-vi.mock('@/hooks/useCodeblock', () => ({
-  useCodeblock: () => ({
-    resetCodeBlockStyle: vi.fn(),
   }),
 }))
 
@@ -158,16 +135,6 @@ describe('Interface Settings Route', () => {
     render(<Component />)
 
     expect(screen.getByTestId('chat-width-switcher')).toBeInTheDocument()
-    expect(screen.getByTestId('thread-scroll-switcher')).toBeInTheDocument()
-  })
-
-  it('should render code block controls', () => {
-    const Component = InterfaceRoute.component as React.ComponentType
-    render(<Component />)
-
-    expect(screen.getByTestId('code-block-style-switcher')).toBeInTheDocument()
-    expect(screen.getByTestId('code-block-example')).toBeInTheDocument()
-    expect(screen.getByTestId('line-numbers-switcher')).toBeInTheDocument()
   })
 
   it('should render reset interface button', () => {
@@ -184,7 +151,7 @@ describe('Interface Settings Route', () => {
 
     const resetButtons = screen.getAllByTestId('button')
     expect(resetButtons.length).toBeGreaterThan(0)
-    
+
     // Check that buttons are clickable
     resetButtons.forEach(button => {
       expect(button).toBeInTheDocument()
@@ -197,7 +164,7 @@ describe('Interface Settings Route', () => {
 
     const resetButtons = screen.getAllByTestId('button')
     expect(resetButtons.length).toBeGreaterThan(0)
-    
+
     // Verify buttons can be clicked without errors
     resetButtons.forEach(button => {
       fireEvent.click(button)
@@ -211,7 +178,7 @@ describe('Interface Settings Route', () => {
 
     const cardItems = screen.getAllByTestId('card-item')
     expect(cardItems.length).toBeGreaterThan(0)
-    
+
     // Check that cards have proper structure
     const cards = screen.getAllByTestId('card')
     expect(cards.length).toBeGreaterThan(0)
@@ -222,13 +189,13 @@ describe('Interface Settings Route', () => {
     render(<Component />)
 
     const cardItems = screen.getAllByTestId('card-item')
-    
+
     // Check that some card items have responsive classes
-    const responsiveItems = cardItems.filter(item => 
-      item.className?.includes('flex-col') || 
+    const responsiveItems = cardItems.filter(item =>
+      item.className?.includes('flex-col') ||
       item.className?.includes('sm:flex-row')
     )
-    
+
     expect(responsiveItems.length).toBeGreaterThan(0)
   })
 
@@ -238,7 +205,7 @@ describe('Interface Settings Route', () => {
 
     const headerPage = screen.getByTestId('header-page')
     expect(headerPage).toBeInTheDocument()
-    
+
     const settingsMenu = screen.getByTestId('settings-menu')
     expect(settingsMenu).toBeInTheDocument()
   })

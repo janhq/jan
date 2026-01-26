@@ -27,17 +27,8 @@ import { useToolApproval } from '@/hooks/useToolApproval'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
-import { PlatformGuard } from '@/lib/platform/PlatformGuard'
-import { PlatformFeature } from '@/lib/platform'
 import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
-
-// Function to mask sensitive values
-const maskSensitiveValue = (value: string) => {
-  if (!value) return value
-  if (value.length <= 8) return '*'.repeat(value.length)
-  return value.slice(0, 4) + '*'.repeat(value.length - 8) + value.slice(-4)
-}
 
 // Function to mask sensitive URL parameters
 const maskSensitiveUrl = (url: string) => {
@@ -70,9 +61,9 @@ const maskSensitiveUrl = (url: string) => {
     // Mask sensitive parameters
     sensitiveParams.forEach((paramName) => {
       // Check both exact match and case-insensitive match
-      for (const [key, value] of params.entries()) {
+      for (const [key] of params.entries()) {
         if (key.toLowerCase() === paramName.toLowerCase()) {
-          params.set(key, maskSensitiveValue(value))
+          params.set(key, '******')
         }
       }
     })
@@ -86,23 +77,14 @@ const maskSensitiveUrl = (url: string) => {
     if (queryIndex === -1) return url
 
     const baseUrl = url.substring(0, queryIndex + 1)
-    const queryString = url.substring(queryIndex + 1)
-    return baseUrl + maskSensitiveValue(queryString)
+    return baseUrl + '******'
   }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.mcp_servers as any)({
-  component: MCPServers,
+  component: MCPServersDesktop,
 })
-
-function MCPServers() {
-  return (
-    <PlatformGuard feature={PlatformFeature.MCP_SERVERS_SETTINGS}>
-      <MCPServersDesktop />
-    </PlatformGuard>
-  )
-}
 
 function MCPServersDesktop() {
   const { t } = useTranslation()
@@ -221,7 +203,9 @@ function MCPServersDesktop() {
       }
 
       deleteServer(serverToDelete)
-      toast.success(t('mcp-servers:deleteServer.success', { serverName: serverToDelete }))
+      toast.success(
+        t('mcp-servers:deleteServer.success', { serverName: serverToDelete })
+      )
       setServerToDelete(null)
       syncServersAndRestart()
     }
@@ -247,7 +231,10 @@ function MCPServersDesktop() {
     data:
       | MCPServerConfig
       | Record<string, MCPServerConfig>
-      | { mcpServers?: Record<string, MCPServerConfig>; mcpSettings?: MCPSettings }
+      | {
+          mcpServers?: Record<string, MCPServerConfig>
+          mcpSettings?: MCPSettings
+        }
   ) => {
     if (jsonServerName) {
       try {
@@ -368,7 +355,6 @@ function MCPServersDesktop() {
     return () => {
       unlisten?.()
     }
-
   }, [serviceHub, setConnectedServers])
 
   return (
@@ -441,41 +427,23 @@ function MCPServersDesktop() {
               />
               <CardItem
                 title={t('mcp-servers:runtimeSettings.toolCallTimeout')}
-                description={t('mcp-servers:runtimeSettings.toolCallTimeoutDesc')}
+                description={t(
+                  'mcp-servers:runtimeSettings.toolCallTimeoutDesc'
+                )}
                 actions={
                   <Input
                     type="number"
                     min={1}
                     step={1}
                     value={settings.toolCallTimeoutSeconds}
-                    onChange={(event) => updateToolCallTimeout(event.target.value)}
+                    onChange={(event) =>
+                      updateToolCallTimeout(event.target.value)
+                    }
                     onBlur={() => {
                       void syncServers()
                     }}
                     className="w-28"
                   />
-                }
-              />
-              <CardItem
-                title={
-                  <div className="flex items-center gap-2">
-                    <span>{t('mcp-servers:proactiveMode')}</span>
-                    <div className="text-xs bg-main-view-fg/10 border border-main-view-fg/20 text-main-view-fg/70 rounded-full py-0.5 px-2">
-                      <span>{t('mcp-servers:experimental')}</span>
-                    </div>
-                  </div>
-                }
-                description={t('mcp-servers:proactiveModeDesc')}
-                actions={
-                  <div className="flex-shrink-0 ml-4">
-                    <Switch
-                      checked={settings.proactiveMode}
-                      onCheckedChange={(checked) => {
-                        updateSettings({ proactiveMode: checked })
-                        void syncServers()
-                      }}
-                    />
-                  </div>
                 }
               />
             </Card>
@@ -537,10 +505,7 @@ function MCPServersDesktop() {
                                 <div className="break-all">
                                   {t('mcp-servers:env')}:{' '}
                                   {Object.entries(config.env)
-                                    .map(
-                                      ([key, value]) =>
-                                        `${key}=${maskSensitiveValue(value)}`
-                                    )
+                                    .map(([key]) => `${key}=******`)
                                     .join(', ')}
                                 </div>
                               )}
@@ -571,10 +536,7 @@ function MCPServersDesktop() {
                                 <div className="my-1 break-all">
                                   Headers:{' '}
                                   {Object.entries(config.headers)
-                                    .map(
-                                      ([key, value]) =>
-                                        `${key}=${maskSensitiveValue(value)}`
-                                    )
+                                    .map(([key]) => `${key}=******`)
                                     .join(', ')}
                                 </div>
                               )}

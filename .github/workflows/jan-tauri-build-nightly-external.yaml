@@ -3,7 +3,7 @@ name: Tauri Builder - Nightly / External PRs
 on:
   pull_request:
     branches:
-      - dev
+      - main
     paths:
       - '.github/workflows/jan-tauri-build-nightly-external.yaml'
       - '.github/workflows/template-tauri-build-*-external.yml'

@@ -3,6 +3,8 @@ use tauri::{
     Manager, Runtime,
 };
 
+mod args;
+mod backend;
 pub mod cleanup;
 mod commands;
 mod device;
@@ -10,7 +12,6 @@ mod error;
 mod gguf;
 mod path;
 mod process;
-mod args;
 pub mod state;
 pub use cleanup::cleanup_llama_processes;
 pub use state::LLamaBackendSession;
@@ -37,7 +38,22 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             gguf::commands::estimate_kv_cache_size,
             gguf::commands::get_model_size,
             gguf::commands::is_model_supported,
-            gguf::model_planner::plan_model_load
+            gguf::model_planner::plan_model_load,
+            // Backend management
+            backend::map_old_backend_to_new,
+            backend::get_local_installed_backends,
+            backend::list_supported_backends,
+            backend::determine_supported_backends,
+            backend::get_supported_features,
+            backend::is_cuda_installed,
+            backend::find_latest_version_for_backend,
+            backend::prioritize_backends,
+            backend::parse_backend_version,
+            backend::check_backend_for_updates,
+            backend::remove_old_backend_versions,
+            backend::validate_backend_string,
+            backend::should_migrate_backend,
+            backend::handle_setting_update
         ])
         .setup(|app, _api| {
             // Initialize and manage the plugin state

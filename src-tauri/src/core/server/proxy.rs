@@ -16,14 +16,14 @@ use crate::core::state::ServerHandle;
 
 /// Configuration for the proxy server
 #[derive(Clone)]
-struct ProxyConfig {
-    prefix: String,
-    proxy_api_key: String,
-    trusted_hosts: Vec<Vec<String>>,
+pub struct ProxyConfig {
+    pub prefix: String,
+    pub proxy_api_key: String,
+    pub trusted_hosts: Vec<Vec<String>>,
 }
 
 /// Determines the final destination path based on the original request path
-fn get_destination_path(original_path: &str, prefix: &str) -> String {
+pub fn get_destination_path(original_path: &str, prefix: &str) -> String {
     remove_prefix(original_path, prefix)
 }
 
@@ -95,9 +95,7 @@ async fn proxy_request(
         };
 
         if !is_trusted {
-            log::warn!(
-                "CORS preflight: Host '{host}' not trusted for path '{request_path}'"
-            );
+            log::warn!("CORS preflight: Host '{host}' not trusted for path '{request_path}'");
             return Ok(Response::builder()
                 .status(StatusCode::FORBIDDEN)
                 .body(Body::from("Host not allowed"))
@@ -153,9 +151,7 @@ async fn proxy_request(
         };
 
         if !headers_valid {
-            log::warn!(
-                "CORS preflight: Some requested headers not allowed: {requested_headers}"
-            );
+            log::warn!("CORS preflight: Some requested headers not allowed: {requested_headers}");
             return Ok(Response::builder()
                 .status(StatusCode::FORBIDDEN)
                 .body(Body::from("Headers not allowed"))
@@ -180,9 +176,7 @@ async fn proxy_request(
             response = response.header("Access-Control-Allow-Origin", "*");
         }
 
-        log::debug!(
-            "CORS preflight response: host_trusted={is_trusted}, origin='{origin}'"
-        );
+        log::debug!("CORS preflight response: host_trusted={is_trusted}, origin='{origin}'");
         return Ok(response.body(Body::empty()).unwrap());
     }
 
@@ -277,9 +271,7 @@ async fn proxy_request(
                 .unwrap());
         }
     } else if is_whitelisted_path {
-        log::debug!(
-            "Bypassing authorization check for whitelisted path: {path}"
-        );
+        log::debug!("Bypassing authorization check for whitelisted path: {path}");
     }
 
     if path.contains("/configs") {
@@ -302,8 +294,10 @@ async fn proxy_request(
     match (method.clone(), destination_path.as_str()) {
         (hyper::Method::POST, "/chat/completions")
         | (hyper::Method::POST, "/completions")
-        | (hyper::Method::POST, "/embeddings") => {
-            log::debug!(
+        | (hyper::Method::POST, "/embeddings")
+        | (hyper::Method::POST, "/messages")
+        | (hyper::Method::POST, "/messages/count_tokens") => {
+            log::info!(
                 "Handling POST request to {destination_path} requiring model lookup in body",
             );
             let body_bytes = match hyper::body::to_bytes(body).await {
@@ -331,9 +325,7 @@ async fn proxy_request(
                         let sessions_guard = sessions.lock().await;
 
                         if sessions_guard.is_empty() {
-                            log::warn!(
-                                "Request for model '{model_id}' but no models are running."
-                            );
+                            log::warn!("Request for model '{model_id}' but no models are running.");
                             let mut error_response =
                                 Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
                             error_response = add_cors_headers_with_host_and_origin(
@@ -388,9 +380,7 @@ async fn proxy_request(
                     }
                 }
                 Err(e) => {
-                    log::warn!(
-                        "Failed to parse POST body for {destination_path} as JSON: {e}"
-                    );
+                    log::warn!("Failed to parse POST body for {destination_path} as JSON: {e}");
                     let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
                     error_response = add_cors_headers_with_host_and_origin(
                         error_response,
@@ -564,8 +554,9 @@ async fn proxy_request(
                 .unwrap());
         }
     };
+    log::info!("Proxying request to model server at port {port}, path: {destination_path}");
 
-    let upstream_url = format!("http://127.0.0.1:{port}{destination_path}");
+    let upstream_url = format!("http://127.0.0.1:{port}/v1{destination_path}");
 
     let mut outbound_req = client.request(method.clone(), &upstream_url);
 

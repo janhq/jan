@@ -19,6 +19,9 @@ vi.mock('@/hooks/useServiceHub', () => ({
     mcp: () => ({
       getTools: mockGetTools,
     }),
+    rag: () => ({
+      getToolNames: vi.fn(() => Promise.resolve([])),
+    }),
     events: () => ({
       listen: mockListen,
     }),

@@ -129,6 +129,7 @@ vi.mock('@/containers/auth/UserProfileMenu', () => ({
 // Mock the dialogs
 vi.mock('@/containers/dialogs', () => ({
   DeleteAllThreadsDialog: () => <div data-testid="delete-all-threads-dialog">Dialog</div>,
+  SearchDialog: ({ open }: { open: boolean }) => open ? <div data-testid="search-dialog">SearchDialog</div> : null,
 }))
 
 // Mock the store
@@ -175,11 +176,11 @@ describe('LeftPanel', () => {
       toggle: vi.fn(),
       close: vi.fn(),
     })
-    
+
     render(<LeftPanel />)
-    
+
     // Check that the panel is rendered (it should contain some basic elements)
-    expect(screen.getByPlaceholderText('common:search')).toBeDefined()
+    expect(screen.getByText('common:search')).toBeDefined()
   })
 
   it('should hide panel when closed', () => {
@@ -214,19 +215,18 @@ describe('LeftPanel', () => {
     // Note: assistants and hub may be filtered by platform features
   })
 
-  it('should render search input', () => {
+  it('should render search button', () => {
     vi.mocked(useLeftPanel).mockReturnValue({
       open: true,
       setLeftPanel: vi.fn(),
       toggle: vi.fn(),
       close: vi.fn(),
     })
-    
+
     render(<LeftPanel />)
-    
-    const searchInput = screen.getByPlaceholderText('common:search')
-    expect(searchInput).toBeDefined()
-    expect(searchInput).toHaveAttribute('type', 'text')
+
+    const searchButton = screen.getByText('common:search')
+    expect(searchButton).toBeDefined()
   })
 
   it('should render download management component', () => {
@@ -249,13 +249,13 @@ describe('LeftPanel', () => {
       toggle: vi.fn(),
       close: vi.fn(),
     })
-    
+
     render(<LeftPanel />)
-    
+
     // Check that basic structure exists
-    const searchInput = screen.getByPlaceholderText('common:search')
-    expect(searchInput).toBeDefined()
-    
+    const searchButton = screen.getByText('common:search')
+    expect(searchButton).toBeDefined()
+
     const downloadComponent = screen.getByTestId('download-management')
     expect(downloadComponent).toBeDefined()
   })
