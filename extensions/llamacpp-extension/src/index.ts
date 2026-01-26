@@ -872,6 +872,11 @@ export default class llamacpp_extension extends AIEngine {
         modelConfig
       )
 
+      const capabilities: string[] = []
+      if (modelConfig.mmproj_path) {
+        capabilities.push('vision')
+      }
+
       const modelInfo = {
         id: modelId,
         name: modelConfig.name ?? modelId,
@@ -880,6 +885,7 @@ export default class llamacpp_extension extends AIEngine {
         port: 0, // port is not known until the model is loaded
         sizeBytes: modelConfig.size_bytes ?? 0,
         embedding: isEmbedding,
+        capabilities: capabilities.length > 0 ? capabilities : undefined,
       } as modelInfo
       modelInfos.push(modelInfo)
     }

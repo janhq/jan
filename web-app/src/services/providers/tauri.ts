@@ -69,15 +69,14 @@ export class TauriProvidersService extends DefaultProvidersService {
             models.map(async (model) => {
               let capabilities: string[] = []
 
-              // Check for capabilities
-              if ('capabilities' in model) {
-                capabilities = model.capabilities as string[]
-              } else {
-                // Try to check tool support, but don't let failures block the model
+              if ('capabilities' in model && Array.isArray(model.capabilities)) {
+                capabilities = [...(model.capabilities as string[])]
+              }
+              if (!capabilities.includes(ModelCapabilities.TOOLS)) {
                 try {
                   const toolSupported = await value.isToolSupported(model.id)
                   if (toolSupported) {
-                    capabilities = [ModelCapabilities.TOOLS]
+                    capabilities.push(ModelCapabilities.TOOLS)
                   }
                 } catch (error) {
                   console.warn(

@@ -181,7 +181,7 @@ export function PromptVisionModel({
     serviceHub.models().pullModelWithMetadata(
       defaultVariant.model_id,
       defaultVariant.path,
-      undefined,
+      janV2VLModel.mmproj_models?.[0]?.path,
       huggingfaceToken,
       true
     )
