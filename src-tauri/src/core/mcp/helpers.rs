@@ -24,6 +24,31 @@ use crate::core::{
 };
 use jan_utils::{can_override_npx, can_override_uvx};
 
+fn load_or_create_mcp_config(config_path: &std::path::Path) -> Result<serde_json::Value, String> {
+    if config_path.exists() {
+        let content = std::fs::read_to_string(config_path)
+            .map_err(|e| format!("Failed to read config file: {e}"))?;
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse config: {e}"))
+    } else {
+        log::info!("MCP config file not found, creating default at {:?}", config_path);
+        let default = serde_json::json!({"mcpServers": {}, "mcpSettings": {}});
+        
+        if let Some(parent) = config_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create config directory: {e}"))?;
+        }
+        
+        std::fs::write(
+            config_path,
+            serde_json::to_string_pretty(&default)
+                .map_err(|e| format!("Failed to serialize config: {e}"))?,
+        )
+        .map_err(|e| format!("Failed to write config file: {e}"))?;
+        
+        Ok(default)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum ShutdownContext {
     AppExit,      // User closing app - be fast
@@ -62,17 +87,10 @@ pub async fn run_mcp_commands<R: Runtime>(
     app: &AppHandle<R>,
     servers_state: SharedMcpServers,
 ) -> Result<(), String> {
-    let app_path = get_jan_data_folder_path(app.clone());
-    let app_path_str = app_path.to_str().unwrap().to_string();
-    log::trace!(
-        "Load MCP configs from {}",
-        app_path_str.clone() + "/mcp_config.json"
-    );
-    let config_content = std::fs::read_to_string(app_path_str + "/mcp_config.json")
-        .map_err(|e| format!("Failed to read config file: {e}"))?;
-
-    let mcp_servers: serde_json::Value = serde_json::from_str(&config_content)
-        .map_err(|e| format!("Failed to parse config: {e}"))?;
+    let config_path = get_jan_data_folder_path(app.clone()).join("mcp_config.json");
+    log::trace!("Load MCP configs from {}", config_path.display());
+    
+    let mcp_servers = load_or_create_mcp_config(&config_path)?;
 
     // Update runtime MCP settings from config
     {
@@ -1002,14 +1020,10 @@ pub fn add_server_config_with_path<R: Runtime>(
     server_value: Value,
     config_filename: Option<&str>,
 ) -> Result<(), String> {
-    let config_filename = config_filename.unwrap_or("mcp_config.json");
-    let config_path = get_jan_data_folder_path(app_handle).join(config_filename);
-
-    let mut config: Value = serde_json::from_str(
-        &std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("Failed to read config file: {e}"))?,
-    )
-    .map_err(|e| format!("Failed to parse config: {e}"))?;
+    let config_path = get_jan_data_folder_path(app_handle).join(
+        config_filename.unwrap_or("mcp_config.json")
+    );
+    let mut config = load_or_create_mcp_config(&config_path)?;
 
     config
         .as_object_mut()
@@ -1029,3 +1043,4 @@ pub fn add_server_config_with_path<R: Runtime>(
 
     Ok(())
 }
+
