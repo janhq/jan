@@ -574,7 +574,7 @@ function ThreadDetail() {
   // Handle edit message - updates the message and regenerates from it
   const handleEditMessage = useCallback(
     (messageId: string, newText: string) => {
-     
+
       const currentLocalMessages = useMessages.getState().getMessages(threadId)
       const messageIndex = currentLocalMessages.findIndex(
         (m) => m.id === messageId
@@ -607,6 +607,9 @@ function ThreadDetail() {
         return msg
       })
       setChatMessages(updatedChatMessages)
+
+      // Only regenerate if the edited message is from the user
+      if(updatedMessage.role === 'assistant') return
 
       // Delete all messages after this one and regenerate
       const messagesToDelete = currentLocalMessages.slice(messageIndex + 1)
