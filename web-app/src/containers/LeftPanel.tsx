@@ -267,7 +267,7 @@ const LeftPanel = () => {
           </div>
         }
 
-        <div className={cn("flex flex-col gap-y-1 overflow-hidden mt-0", !IS_MACOS ? "h-[calc(100%-42px)]!" : "h-full")}>
+        <div className={cn("flex flex-col gap-y-1 overflow-hidden mt-0", IS_MACOS ? "h-[calc(100%-42px)]!" : "h-full")}>
           <div className="space-y-1 py-1">
             {/* Search button */}
             <button
