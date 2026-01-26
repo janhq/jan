@@ -102,6 +102,9 @@ function RenderMarkdownComponent({
       <Streamdown
         animate={true}
         animationDuration={500}
+        linkSafety={{
+          enabled: false,
+        }}
         className={cn(
           'size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
           className
