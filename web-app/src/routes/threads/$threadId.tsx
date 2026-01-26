@@ -132,7 +132,7 @@ function ThreadDetail() {
     sessionId: threadId,
     sessionTitle: thread?.title,
     systemMessage,
-    experimental_throttle: 100,
+    experimental_throttle: 50,
     onFinish: ({ message, isAbort }) => {
       // Persist assistant message to backend (skip if aborted)
       if (!isAbort && message.role === 'assistant') {
