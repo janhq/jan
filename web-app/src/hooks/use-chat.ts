@@ -121,7 +121,7 @@ export function useChat(
     ...(chat
       ? { chat }
       : { transport: transportRef.current, ...chatInitOptions }),
-    // experimental_throttle,
+    experimental_throttle: options?.experimental_throttle,
     resume: false,
   })
 
