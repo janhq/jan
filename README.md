@@ -90,6 +90,25 @@ Download from [jan.ai](https://jan.ai/) or [GitHub Releases](https://github.com/
 - **Model Context Protocol**: MCP integration for agentic capabilities
 - **Privacy First**: Everything runs locally when you want it to
 
+## Supported Languages
+
+Jan is available in multiple languages thanks to our community:
+
+- **English** 🇺🇸
+- **Italiano** 🇮🇹 (New!)
+- **Français** 🇫🇷
+- **Deutsch** 🇩🇪
+- **Español** 🇪🇸
+- **Português (Brasil)** 🇧🇷
+- **Polski** 🇵🇱
+- **Tiếng Việt** 🇻🇳
+- **日本語** 🇯🇵
+- **Русский** 🇷🇺
+- **简体中文** 🇨🇳
+- **繁體中文** 🇭🇰
+- **Bahasa Indonesia** 🇮🇩
+- **Čeština** 🇨🇿
+
 ## Build from Source
 
 For those who enjoy the scenic route:
