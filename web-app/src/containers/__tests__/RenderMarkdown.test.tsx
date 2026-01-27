@@ -129,6 +129,104 @@ describe('RenderMarkdown', () => {
     })
   })
 
+  it('does not format 4-space indented text as code blocks', () => {
+    const contentWithIndentedText = `Please explain this code block.
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <body>
+        <header>
+            <h1>Welcome to My Website</h1>
+            <p>A sample HTML document showcasing various HTML elements</p>
+        </header>
+        
+        <nav>
+            <a href="#home">Home</a>
+            <a href="#about">About</a>
+            <a href="#services">Services</a>
+            <a href="#contact">Contact</a>
+        </nav>
+        
+        <div class="container">
+            <section id="home">
+                <h2>Home</h2>
+                <div class="card">
+                    <p>This is a sample HTML document that demonstrates various HTML elements and their structure.</p>
+                    <p>HTML (HyperText Markup Language) is the standard markup language for creating web pages.</p>
+                </div>
+            </section>
+            
+        </div>
+        
+        <footer>
+            <p>&copy; ${new Date().getFullYear()} My Sample Website. All rights reserved.</p>
+        </footer>
+    </body>
+    </html>
+    `
+    render(
+      <RenderMarkdown
+        content={contentWithIndentedText}
+      />
+    )
+    const markdownContainer = document.querySelector('.markdown')
+    const html = markdownContainer?.innerHTML || ''
+    expect(html).not.toContain('<pre>')
+    expect(html).toContain('<p>')
+    // Left and right brackets get escaped as &lt; and &gt; respectively
+    expect(html).toContain('&lt;!DOCTYPE html&gt;')
+  })
+  
+  it('formats fenced code blocks correctly', async () => {
+    const contentWithFencedCodeBlock = `Please explain this code block.
+
+\`\`\`html
+<!DOCTYPE html>
+<html lang="en">
+<body>
+    <header>
+        <h1>Welcome to My Website</h1>
+        <p>A sample HTML document showcasing various HTML elements</p>
+    </header>
+    
+    <nav>
+        <a href="#home">Home</a>
+        <a href="#about">About</a>
+        <a href="#services">Services</a>
+        <a href="#contact">Contact</a>
+    </nav>
+    
+    <div class="container">
+        <section id="home">
+            <h2>Home</h2>
+            <div class="card">
+                <p>This is a sample HTML document that demonstrates various HTML elements and their structure.</p>
+                <p>HTML (HyperText Markup Language) is the standard markup language for creating web pages.</p>
+            </div>
+        </section>
+    </div>
+    
+    <footer>
+        <p>&copy; ${new Date().getFullYear()} My Sample Website. All rights reserved.</p>
+    </footer>
+</body>
+</html>
+\`\`\`
+`
+    const { container, findByText}  = render(
+      <RenderMarkdown
+        content={contentWithFencedCodeBlock}
+      />
+    )
+    // Wait for the code content to be rendered (async operation)
+    await findByText('<!DOCTYPE html>', { exact: false })
+    const markdownContainer = container.querySelector('.markdown')
+    const text = markdownContainer?.textContent || ''
+      // Check that the code content is present
+    expect(text).toContain('<!DOCTYPE html>')
+    expect(text).toContain('<html lang="en">')
+    expect(text).toContain('Welcome to My Website')
+  })
   describe('LaTeX normalization - display math', () => {
     it('converts \\[...\\] to $$ display math', () => {
       const content = 'Here is math:\n\\[\nx^2 + y^2\n\\]\nDone'
