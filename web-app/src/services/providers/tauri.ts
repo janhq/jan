@@ -47,7 +47,7 @@ export class TauriProvidersService extends DefaultProvidersService {
 
       const runtimeProviders: ModelProvider[] = []
       for (const [providerName, value] of EngineManager.instance().engines) {
-        const models = await value.list().then(list => list.filter(e => !e.embedding)) ?? []
+        const models = await value.list() ?? [] 
         const provider: ModelProvider = {
           active: false,
           persist: true,
@@ -88,12 +88,18 @@ export class TauriProvidersService extends DefaultProvidersService {
                 }
               }
 
+              // Add embeddings capability for embedding models
+              if (model.embedding && !capabilities.includes(ModelCapabilities.EMBEDDINGS)) {
+                capabilities = [...capabilities, ModelCapabilities.EMBEDDINGS]
+              }
+
               return {
                 id: model.id,
                 model: model.id,
                 name: model.name,
                 description: model.description,
                 capabilities,
+                embedding: model.embedding, // Preserve embedding flag for filtering in UI
                 provider: providerName,
                 settings: Object.values(modelSettings).reduce(
                   (acc, setting) => {
