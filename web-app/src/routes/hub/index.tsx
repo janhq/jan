@@ -17,6 +17,8 @@ import { Card, CardItem } from '@/containers/Card'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { extractModelName, extractDescription } from '@/lib/models'
 import {
+  IconChevronDown,
+  IconChevronUp,
   IconDownload,
   IconFileCode,
   IconEye,
@@ -571,29 +573,36 @@ function HubContent() {
                                   </div>
                                 )}
                               </div>
-                              {filteredModels[virtualItem.index].quants.length >
-                                1 && (
-                                <div className="flex items-center gap-2 hub-show-variants-step">
-                                  <Switch
-                                    checked={
-                                      !!expandedModels[
-                                        filteredModels[virtualItem.index]
-                                          .model_name
-                                      ]
-                                    }
-                                    onCheckedChange={() =>
-                                      toggleModelExpansion(
-                                        filteredModels[virtualItem.index]
-                                          .model_name
-                                      )
-                                    }
-                                  />
-                                  <p className="text-main-view-fg/70">
-                                    {t('hub:showVariants')}
-                                  </p>
-                                </div>
-                              )}
                             </div>
+                            {filteredModels[virtualItem.index].quants.length >
+                              1 && (
+                              <button
+                                className="flex items-center gap-1 hub-show-variants-step ml-auto"
+                                onClick={() =>
+                                  toggleModelExpansion(
+                                    filteredModels[virtualItem.index]
+                                      .model_name
+                                  )
+                                }
+                              >
+                                <span className="text-main-view-fg/80">
+                                  {t('hub:showVariants')}
+                                </span>
+                                {expandedModels[
+                                  filteredModels[virtualItem.index].model_name
+                                ] ? (
+                                  <IconChevronUp
+                                    size={18}
+                                    className="text-main-view-fg/50"
+                                  />
+                                ) : (
+                                  <IconChevronDown
+                                    size={18}
+                                    className="text-main-view-fg/50"
+                                  />
+                                )}
+                              </button>
+                            )}
                           </div>
                           {expandedModels[
                             filteredModels[virtualItem.index].model_name
