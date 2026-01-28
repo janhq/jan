@@ -262,6 +262,9 @@ const DropdownModelProvider = ({
       if (!provider.active) return
 
       provider.models.forEach((modelItem) => {
+        // Skip embedding models - they can't be used for chat
+        if (modelItem.embedding) return
+
         // Skip models that require API key but don't have one (except llamacpp)
         if (
           provider &&
