@@ -243,22 +243,24 @@ async fn proxy_request(
     }
 
     if !is_whitelisted_path && !config.proxy_api_key.is_empty() {
-        if let Some(authorization) = parts.headers.get(hyper::header::AUTHORIZATION) {
-            let auth_str = authorization.to_str().unwrap_or("");
+        // Check Authorization header (Bearer token)
+        let auth_valid = parts
+            .headers
+            .get(hyper::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|auth_str| auth_str.strip_prefix("Bearer "))
+            .map(|token| token == config.proxy_api_key)
+            .unwrap_or(false);
 
-            if auth_str.strip_prefix("Bearer ") != Some(config.proxy_api_key.as_str()) {
-                let mut error_response = Response::builder().status(StatusCode::UNAUTHORIZED);
-                error_response = add_cors_headers_with_host_and_origin(
-                    error_response,
-                    &host_header,
-                    &origin_header,
-                    &config.trusted_hosts,
-                );
-                return Ok(error_response
-                    .body(Body::from("Invalid or missing authorization token"))
-                    .unwrap());
-            }
-        } else {
+        // Check X-Api-Key header
+        let api_key_valid = parts
+            .headers
+            .get("X-Api-Key")
+            .and_then(|v| v.to_str().ok())
+            .map(|key| key == config.proxy_api_key)
+            .unwrap_or(false);
+
+        if !auth_valid && !api_key_valid {
             let mut error_response = Response::builder().status(StatusCode::UNAUTHORIZED);
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,
@@ -267,7 +269,7 @@ async fn proxy_request(
                 &config.trusted_hosts,
             );
             return Ok(error_response
-                .body(Body::from("Missing authorization header"))
+                .body(Body::from("Invalid or missing authorization token"))
                 .unwrap());
         }
     } else if is_whitelisted_path {

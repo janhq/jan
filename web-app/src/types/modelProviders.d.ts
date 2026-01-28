@@ -34,6 +34,8 @@ type Model = {
   format?: string
   capabilities?: string[]
   settings?: Record<string, ProviderSetting>
+  /** Whether this model is an embedding model (e.g., BERT-based) */
+  embedding?: boolean
 }
 
 /**

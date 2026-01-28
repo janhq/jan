@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Components } from 'react-markdown'
 import { memo, useMemo } from 'react'
-import { cn } from '@/lib/utils'
+import { cn, disableIndentedCodeBlockPlugin } from '@/lib/utils'
 // import 'katex/dist/katex.min.css'
 import { defaultRehypePlugins, Streamdown } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
@@ -12,6 +12,7 @@ import { mermaid } from '@streamdown/mermaid'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import { MermaidError } from '@/components/MermaidError'
 
 interface MarkdownProps {
@@ -109,7 +110,7 @@ function RenderMarkdownComponent({
           'size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
           className
         )}
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, remarkMath, disableIndentedCodeBlockPlugin]}
         rehypePlugins={[
           rehypeKatex,
           defaultRehypePlugins.harden,
