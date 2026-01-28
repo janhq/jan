@@ -4,6 +4,10 @@
   <metadata_license>FSFAP</metadata_license>
   <project_license>Apache-2.0</project_license>
   <developer_name>Menlo Research Pte. Ltd.</developer_name>
+  <url type="homepage">https://jan.ai/</url>
+  <url type="bugtracker">https://github.com/janhq/jan/issues</url>
+  <url type="vcs-browser">https://github.com/janhq/jan</url>
+
 
   <name>Jan</name>
   <icon type="stock">ai.jan.Jan</icon>

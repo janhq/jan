@@ -1107,7 +1107,9 @@ const ChatInput = ({
       return
     }
 
-    setShowVisionModelPrompt(true)
+    if (selectedProvider === 'llamacpp') {
+      setShowVisionModelPrompt(true)
+    }
   }
 
   const handleVisionModelDownloadComplete = useCallback(
@@ -1518,8 +1520,10 @@ const ChatInput = ({
                     </div>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
-                    {/* Vision image attachment - always enabled, prompts to download vision model if needed */}
-                    <DropdownMenuItem onClick={handleImagePickerClick}>
+                    <DropdownMenuItem
+                      onClick={handleImagePickerClick}
+                      disabled={selectedProvider !== 'llamacpp' && !hasMmproj}
+                    >
                       <IconPhoto size={18} className="text-main-view-fg/50" />
                       <span>Add Images</span>
                       <input

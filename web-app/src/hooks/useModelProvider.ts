@@ -100,10 +100,16 @@ export const useModelProvider = create<ModelProviderState>()(
                       .join(getServiceHub().path().sep()) === model.id
                 )?.settings || model.settings
               const existingModel = models.find((m) => m.id === model.id)
+              const mergedCapabilities = [
+                ...(model.capabilities || []),
+                ...(existingModel?.capabilities || []).filter(
+                  (cap) => !(model.capabilities || []).includes(cap)
+                ),
+              ]
               return {
                 ...model,
                 settings: settings,
-                capabilities: existingModel?.capabilities || model.capabilities,
+                capabilities: mergedCapabilities.length > 0 ? mergedCapabilities : undefined,
                 displayName: existingModel?.displayName || model.displayName,
               }
             })
