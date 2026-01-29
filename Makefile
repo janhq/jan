@@ -118,6 +118,18 @@ endif
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --manifest-path src-tauri/utils/Cargo.toml
 
+# Build MLX server (macOS Apple Silicon only)
+build-mlx-server:
+ifeq ($(shell uname -s),Darwin)
+	@echo "Building MLX server for Apple Silicon..."
+# 	cd mlx-server && swift build -c release
+	cd mlx-server && xcodebuild build -scheme mlx-server -destination 'platform=OS X'
+# 	-configuration Release
+	@echo "MLX server built successfully"
+else
+	@echo "Skipping MLX server build (macOS only)"
+endif
+
 # Build
 build: install-and-build install-rust-targets
 	yarn build

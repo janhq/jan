@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-unload-mlx-model"
+description = "Enables the unload_mlx_model command without any pre-configured scope."
+commands.allow = ["unload_mlx_model"]
+
+[[permission]]
+identifier = "deny-unload-mlx-model"
+description = "Denies the unload_mlx_model command without any pre-configured scope."
+commands.deny = ["unload_mlx_model"]

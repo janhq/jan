@@ -41,6 +41,7 @@ dependencies = [
  "tauri-plugin-http",
  "tauri-plugin-llamacpp",
  "tauri-plugin-log",
+ "tauri-plugin-mlx",
  "tauri-plugin-opener",
  "tauri-plugin-os",
  "tauri-plugin-rag",
@@ -6309,6 +6310,21 @@ dependencies = [
  "tauri-plugin",
  "thiserror 2.0.17",
  "time",
+]
+
+[[package]]
+name = "tauri-plugin-mlx"
+version = "0.6.599"
+dependencies = [
+ "jan-utils",
+ "log",
+ "nix",
+ "serde",
+ "sysinfo",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.17",
+ "tokio",
 ]
 
 [[package]]

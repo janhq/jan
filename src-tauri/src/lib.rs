@@ -41,6 +41,11 @@ pub fn run() {
         app_builder = app_builder.plugin(tauri_plugin_deep_link::init());
     }
 
+    #[cfg(feature = "mlx")]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_mlx::init());
+    }
+
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         app_builder = app_builder.plugin(tauri_plugin_hardware::init());
@@ -328,6 +333,17 @@ pub fn run() {
                     } else {
                         log::info!("Llama processes cleaned up successfully");
                     }
+
+                    #[cfg(feature = "mlx")]
+                    {
+                        use tauri_plugin_mlx::cleanup_mlx_processes;
+                        if let Err(e) = cleanup_mlx_processes(app_handle.clone()).await {
+                            log::warn!("Failed to cleanup MLX processes: {}", e);
+                        } else {
+                            log::info!("MLX processes cleaned up successfully");
+                        }
+                    }
+
                     log::info!("App cleanup completed");
                 });
             });

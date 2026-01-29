@@ -125,7 +125,7 @@ export interface ModelsService {
     skipVerification?: boolean
   ): Promise<void>
   abortDownload(id: string): Promise<void>
-  deleteModel(id: string): Promise<void>
+  deleteModel(id: string, provider?: string): Promise<void>
   getActiveModels(provider?: string): Promise<string[]>
   stopModel(model: string, provider?: string): Promise<UnloadResult | undefined>
   stopAllModels(): Promise<void>

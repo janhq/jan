@@ -55,10 +55,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private serviceHub: ServiceHub | null
   private threadId?: string
 
-  constructor(
-    systemMessage?: string,
-    threadId?: string
-  ) {
+  constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
     this.threadId = threadId
     this.serviceHub = useServiceStore.getState().serviceHub
@@ -248,17 +245,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     return result.toUIMessageStream({
       messageMetadata: ({ part }) => {
-        if (!streamStartTime) {
+        // Track stream start time on start
+        if (part.type === 'start' && !streamStartTime) {
           streamStartTime = Date.now()
         }
-        // Track stream start time on first text delta
         if (part.type === 'text-delta') {
           // Count text deltas as a rough token approximation
           // Each delta typically represents one token in streaming
           textDeltaCount++
 
           // Report streaming token speed in real-time
-          if (this.onStreamingTokenSpeed) {
+          if (this.onStreamingTokenSpeed && streamStartTime) {
             const elapsedMs = Date.now() - streamStartTime
             this.onStreamingTokenSpeed(textDeltaCount, elapsedMs)
           }
@@ -279,22 +276,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             }
           }
           const usage = finishPart.totalUsage
-          const llamacppMeta = finishPart.providerMetadata?.llamacpp
           const durationMs = streamStartTime ? Date.now() - streamStartTime : 0
           const durationSec = durationMs / 1000
 
           // Use provider's outputTokens, or llama.cpp completionTokens, or fall back to text delta count
           const outputTokens =
             usage?.outputTokens ??
-            llamacppMeta?.completionTokens ??
             textDeltaCount
-          const inputTokens = usage?.inputTokens ?? llamacppMeta?.promptTokens
+          const inputTokens = usage?.inputTokens
 
           // Use llama.cpp's tokens per second if available, otherwise calculate from duration
           let tokenSpeed: number
-          if (llamacppMeta?.tokensPerSecond != null) {
-            tokenSpeed = llamacppMeta.tokensPerSecond
-          } else if (durationSec > 0 && outputTokens > 0) {
+          if (durationSec > 0 && outputTokens > 0) {
             tokenSpeed = outputTokens / durationSec
           } else {
             tokenSpeed = 0

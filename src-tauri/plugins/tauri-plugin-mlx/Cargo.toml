@@ -1,0 +1,27 @@
+[package]
+name = "tauri-plugin-mlx"
+version = "0.6.599"
+authors = ["Jan <service@jan.ai>"]
+description = "Tauri plugin for managing MLX-Swift server processes and model loading on Apple Silicon"
+license = "MIT"
+repository = "https://github.com/janhq/jan"
+edition = "2021"
+rust-version = "1.77.2"
+exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
+links = "tauri-plugin-mlx"
+
+[dependencies]
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+sysinfo = "0.34.2"
+tauri = { version = "2.5.0", default-features = false, features = [] }
+thiserror = "2.0.12"
+tokio = { version = "1", features = ["full"] }
+jan-utils = { path = "../../utils" }
+
+# Unix-specific dependencies (macOS)
+[target.'cfg(unix)'.dependencies]
+nix = { version = "=0.30.1", features = ["signal", "process"] }
+
+[build-dependencies]
+tauri-plugin = { version = "2.3.1", features = ["build"] }

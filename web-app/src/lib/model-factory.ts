@@ -7,6 +7,7 @@
  *
  * Supported Providers:
  * - llamacpp: Local models via llama.cpp (requires running session)
+ * - mlx: Local models via MLX-Swift on Apple Silicon (requires running session)
  * - anthropic: Claude models via Anthropic API (@ai-sdk/anthropic v2.0)
  * - google/gemini: Gemini models via Google Generative AI API (@ai-sdk/google v2.0)
  * - openai: OpenAI models via OpenAI API (@ai-sdk/openai)
@@ -30,6 +31,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
+import { fetch } from '@tauri-apps/plugin-http'
 
 /**
  * Llama.cpp timings structure from the response
@@ -109,6 +111,9 @@ export class ModelFactory {
       case 'llamacpp':
         return this.createLlamaCppModel(modelId, provider)
 
+      case 'mlx':
+        return this.createMlxModel(modelId, provider)
+
       case 'anthropic':
         return this.createAnthropicModel(modelId, provider)
 
@@ -173,6 +178,59 @@ export class ModelFactory {
         Origin: 'tauri://localhost',
       },
       includeUsage: true,
+      fetch: fetch,
+    })
+
+    return openAICompatible.languageModel(modelId, {
+      metadataExtractor: llamaCppMetadataExtractor,
+    })
+  }
+
+  /**
+   * Create an MLX model by starting the model and finding the running session.
+   * MLX uses the same OpenAI-compatible API pattern as llamacpp.
+   */
+  private static async createMlxModel(
+    modelId: string,
+    provider?: ProviderObject
+  ): Promise<LanguageModel> {
+    // Start the model first if provider is available
+    if (provider) {
+      try {
+        const { useServiceStore } = await import('@/hooks/useServiceHub')
+        const serviceHub = useServiceStore.getState().serviceHub
+
+        if (serviceHub) {
+          await serviceHub.models().startModel(provider, modelId)
+        }
+      } catch (error) {
+        console.error('Failed to start MLX model:', error)
+        throw new Error(
+          `Failed to start model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+        )
+      }
+    }
+
+    // Get session info which includes port and api_key
+    const sessionInfo = await invoke<SessionInfo | null>(
+      'plugin:mlx|find_mlx_session_by_model',
+      { modelId }
+    )
+
+    if (!sessionInfo) {
+      throw new Error(`No running MLX session found for model: ${modelId}`)
+    }
+
+    // Create OpenAI-compatible client for MLX server
+    const openAICompatible = createOpenAICompatible({
+      name: 'mlx',
+      baseURL: `http://localhost:${sessionInfo.port}/v1`,
+      headers: {
+        Authorization: `Bearer ${sessionInfo.api_key}`,
+        Origin: 'tauri://localhost',
+      },
+      includeUsage: true,
+      fetch: fetch,
     })
 
     return openAICompatible.languageModel(modelId, {

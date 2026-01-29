@@ -282,8 +282,8 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
-  async deleteModel(id: string): Promise<void> {
-    return this.getEngine()?.delete(id)
+  async deleteModel(id: string, provider?: string): Promise<void> {
+    return this.getEngine(provider)?.delete(id)
   }
 
   async getActiveModels(provider?: string): Promise<string[]> {

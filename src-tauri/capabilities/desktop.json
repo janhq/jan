@@ -27,6 +27,7 @@
     "vector-db:default",
     "rag:default",
     "llamacpp:default",
+    "mlx:default",
     "deep-link:default",
     "hardware:default",
     {

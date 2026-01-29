@@ -26,6 +26,7 @@
     "hardware:default",
     "deep-link:default",
     "llamacpp:default",
+    "mlx:default",
     "updater:default",
     "updater:allow-check",
     {

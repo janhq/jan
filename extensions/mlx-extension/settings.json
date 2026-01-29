@@ -1,0 +1,33 @@
+[
+  {
+    "key": "ctx_size",
+    "title": "Context Size",
+    "description": "Context window size for MLX inference",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 4096,
+      "placeholder": "4096",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "auto_unload",
+    "title": "Auto unload model",
+    "description": "Automatically unload other models when loading a new one",
+    "controllerType": "checkbox",
+    "controllerProps": { "value": true }
+  },
+  {
+    "key": "timeout",
+    "title": "Timeout (seconds)",
+    "description": "Maximum time to wait for model to load",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 600,
+      "placeholder": "600",
+      "type": "number",
+      "textAlign": "right"
+    }
+  }
+]

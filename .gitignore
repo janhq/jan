@@ -63,3 +63,5 @@ src-tauri/resources/
 test-data
 llm-docs
 .claude/agents
+mlx-server/.build
+mlx-server/.swiftpm
