@@ -17,10 +17,12 @@ pub const DEFAULT_MCP_CONFIG: &str = r#"{
       "official": true
     },
     "exa": {
-      "command": "npx",
-      "args": ["-y", "exa-mcp-server"],
-      "env": { "EXA_API_KEY": "YOUR_EXA_API_KEY_HERE" },
-      "active": false
+      "type": "http",
+      "url": "https://mcp.exa.ai/mcp",
+      "command": "",
+      "args": [],
+      "env": {},
+      "active": true
     },
     "browsermcp": {
       "command": "npx",
