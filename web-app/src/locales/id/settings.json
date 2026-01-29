@@ -98,8 +98,6 @@
     "resetToDefaultDesc": "Setel ulang semua pengaturan tampilan ke default.",
     "resetInterfaceSuccess": "Tampilan berhasil diatur ulang",
     "resetInterfaceSuccessDesc": "Semua pengaturan tampilan telah dikembalikan ke default.",
-    "chatWidth": "Lebar Obrolan",
-    "chatWidthDesc": "Sesuaikan lebar tampilan obrolan.",
     "tokenCounterCompact": "Penghitung Token Ringkas",
     "tokenCounterCompactDesc": "Tampilkan penghitung token di dalam input obrolan. Saat dinonaktifkan, penghitung token muncul di bawah input.",
     "codeBlockTitle": "Blok Kode",

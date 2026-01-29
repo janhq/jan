@@ -160,7 +160,7 @@ export default function DropdownToolsAvailable({
       <DropDrawerContent
         side="top"
         align="start"
-        className="bg-main-view !overflow-hidden"
+        className="overflow-hidden!"
         onClick={(e) => e.stopPropagation()}
       >
         <DropDrawerLabel className="flex items-center gap-2 sticky -top-1 z-10 px-4 pl-2 py-1">
@@ -173,14 +173,13 @@ export default function DropdownToolsAvailable({
               <DropDrawerSub
                 id={`server-${serverName}`}
                 key={serverName}
-                title={serverName}
               >
-                <DropDrawerSubTrigger className="py-2 hover:bg-main-view-fg/5 hover:backdrop-blur-2xl rounded-sm px-2 mx-auto w-full">
+                <DropDrawerSubTrigger className="py-2 hover:backdrop-blur-2xl rounded-sm px-2 mx-auto w-full">
                   <div className="flex items-center justify-between w-full">
-                    <span className="text-sm text-main-view-fg/80">
+                    <span className="text-sm">
                       {serverName}
                     </span>
-                    <span className="text-xs text-main-view-fg/50 inline-flex items-center mr-1 border border-main-view-fg/20 px-1 rounded-sm">
+                    <span className="text-xs text-muted-foreground inline-flex items-center mr-1 border px-1 rounded-sm">
                       {
                         serverTools.filter((tool) => isToolChecked(tool.server, tool.name))
                           .length
@@ -191,8 +190,8 @@ export default function DropdownToolsAvailable({
                 <DropDrawerSubContent className="max-w-64 max-h-70 w-full overflow-hidden">
                   <DropDrawerGroup>
                     {serverTools.length > 1 && (
-                      <div className="sticky top-0 z-10 bg-main-view border-b border-main-view-fg/10 px-4 md:px-2 pr-2 py-1.5 flex items-center justify-between">
-                        <span className="text-xs font-medium text-main-view-fg/70">
+                      <div className="sticky top-0 z-10  border-b px-4 md:px-2 pr-2 py-1.5 flex items-center justify-between">
+                        <span className="text-xs font-medium">
                           All Tools
                         </span>
                         <div
@@ -212,7 +211,7 @@ export default function DropdownToolsAvailable({
                         </div>
                       </div>
                     )}
-                    <div className="max-h-56 overflow-y-auto">
+                    <div className="max-h-56 overflow-y-auto p-1">
                       {serverTools.map((tool) => {
                         const isChecked = isToolChecked(tool.server, tool.name)
                         return (
@@ -242,7 +241,7 @@ export default function DropdownToolsAvailable({
                           >
                             <div className="overflow-hidden flex flex-col items-start w-full">
                               <span
-                                className="text-sm font-medium text-main-view-fg truncate block w-full"
+                                className="text-sm font-medium truncate block w-full"
                                 title={tool.name}
                               >
                                 {tool.name}
@@ -250,7 +249,7 @@ export default function DropdownToolsAvailable({
 
                               {tool.description && (
                                 <p
-                                  className="text-xs text-main-view-fg/70 mt-1 line-clamp-1"
+                                  className="text-xs text-muted-foreground mt-1 line-clamp-1"
                                   title={tool.description}
                                 >
                                   {tool.description}

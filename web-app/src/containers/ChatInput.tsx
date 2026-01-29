@@ -1,5 +1,3 @@
-'use client'
-
 import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
@@ -9,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import {
@@ -28,8 +25,8 @@ import {
   IconX,
   IconPaperclip,
   IconLoader2,
-  IconCheck,
   IconWorld,
+  IconBrandChrome,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -49,8 +46,6 @@ import {
 import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
-import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
@@ -102,7 +97,6 @@ type ChatInputProps = {
 }
 
 const ChatInput = ({
-  model,
   className,
   initialMessage,
   projectId,
@@ -115,7 +109,6 @@ const ChatInput = ({
   const [rows, setRows] = useState(1)
   const serviceHub = useServiceHub()
   const abortControllers = useAppState((state) => state.abortControllers)
-  const loadingModel = useAppState((state) => state.loadingModel)
   const updateLoadingModel = useAppState((state) => state.updateLoadingModel)
   const tools = useAppState((state) => state.tools)
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
@@ -1106,10 +1099,7 @@ const ChatInput = ({
       await openImagePicker()
       return
     }
-
-    if (selectedProvider === 'llamacpp') {
-      setShowVisionModelPrompt(true)
-    }
+    setShowVisionModelPrompt(true)
   }
 
   const handleVisionModelDownloadComplete = useCallback(
@@ -1326,7 +1316,7 @@ const ChatInput = ({
       <div className="relative">
         <div
           className={cn(
-            'relative overflow-hidden p-[2px] rounded-3xl',
+            'relative overflow-hidden p-0.5 rounded-3xl',
             isStreaming && 'opacity-70'
           )}
         >
@@ -1344,9 +1334,9 @@ const ChatInput = ({
 
           <div
             className={cn(
-              'relative z-20 px-0 pb-10 border border-border rounded-3xl text-main-view-fg bg-main-view',
-              isFocused && 'ring-1 ring-main-view-fg/10',
-              isDragOver && 'ring-2 ring-accent border-accent'
+              'relative z-20 px-0 pb-10 border rounded-3xl border-input dark:bg-input/30',
+              isFocused && 'ring-1 ring-ring/50',
+              isDragOver && 'ring-2 ring-ring/50 border-primary'
             )}
             data-drop-zone={hasMmproj ? 'true' : undefined}
             onDragEnter={hasMmproj ? handleDragEnter : undefined}
@@ -1367,78 +1357,55 @@ const ChatInput = ({
                           key={`${att.type}-${idx}-${att.name}`}
                           className="relative"
                         >
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div
+                                className={cn(
+                                  'relative border rounded-xl size-14 overflow-hidden',
+                                  'flex items-center justify-center'
+                                )}
+                              >
+                                {/* Inner content by state */}
+                                {isImage && att.dataUrl ? (
+                                  <img
+                                    className="object-cover w-full h-full"
+                                    src={att.dataUrl}
+                                    alt={`${att.name}`}
+                                  />
+                                ) : (
+                                  <div className="flex flex-col items-center justify-center text-muted-foreground">
+                                    <IconPaperclip size={18} />
+                                    {ext && (
+                                      <span className="text-[10px] leading-none mt-0.5 uppercase opacity-70">
+                                        .{ext}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <div className="text-xs">
                                 <div
-                                  className={cn(
-                                    'relative border border-main-view-fg/5 rounded-xl size-14 overflow-hidden bg-main-view/40',
-                                    'flex items-center justify-center'
-                                  )}
+                                  className="font-medium truncate max-w-52"
+                                  title={att.name}
                                 >
-                                  {/* Inner content by state */}
-                                  {isImage && att.dataUrl ? (
-                                    <img
-                                      className="object-cover w-full h-full"
-                                      src={att.dataUrl}
-                                      alt={`${att.name}`}
-                                    />
-                                  ) : (
-                                    <div className="flex flex-col items-center justify-center text-main-view-fg/70">
-                                      <IconPaperclip size={18} />
-                                      {ext && (
-                                        <span className="text-[10px] leading-none mt-0.5 uppercase opacity-70">
-                                          .{ext}
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  {/* Overlay spinner when processing */}
-                                  {att.processing && (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-black/10">
-                                      <IconLoader2
-                                        size={18}
-                                        className="text-main-view-fg/80 animate-spin"
-                                      />
-                                    </div>
-                                  )}
-
-                                  {/* Overlay success check when processed */}
-                                  {att.processed && !att.processing && (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-black/5">
-                                      <div className="bg-green-600/90 rounded-full p-1">
-                                        <IconCheck
-                                          size={14}
-                                          className="text-white"
-                                        />
-                                      </div>
-                                    </div>
-                                  )}
+                                  {att.name}
                                 </div>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <div className="text-xs">
-                                  <div
-                                    className="font-medium truncate max-w-52"
-                                    title={att.name}
-                                  >
-                                    {att.name}
-                                  </div>
-                                  <div className="opacity-70">
-                                    {isImage
-                                      ? att.mimeType || 'image'
-                                      : ext
-                                        ? `.${ext}`
-                                        : 'document'}
-                                    {att.size
-                                      ? ` · ${formatBytes(att.size)}`
-                                      : ''}
-                                  </div>
+                                <div className="opacity-70">
+                                  {isImage
+                                    ? att.mimeType || 'image'
+                                    : ext
+                                      ? `.${ext}`
+                                      : 'document'}
+                                  {att.size
+                                    ? ` · ${formatBytes(att.size)}`
+                                    : ''}
                                 </div>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
 
                           {/* Remove button disabled while processing - outside overflow-hidden container */}
                           {!att.processing && (
@@ -1495,7 +1462,7 @@ const ChatInput = ({
               data-gramm_editor={spellCheckChatInput}
               data-gramm_grammarly={spellCheckChatInput}
               className={cn(
-                'bg-transparent pt-4 w-full flex-shrink-0 border-none resize-none outline-0 px-4',
+                'bg-transparent pt-4 w-full shrink-0 border-none resize-none outline-0 px-4',
                 rows < maxRows && 'scrollbar-hide',
                 className
               )}
@@ -1515,16 +1482,14 @@ const ChatInput = ({
                 {/* Dropdown for attachments */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <div className="size-7 flex items-center justify-center rounded-full bg-main-view-fg/4 hover:bg-main-view-fg/4 transition-all duration-200 ease-in-out gap-1 mr-2 cursor-pointer">
-                      <PlusIcon size={18} className="text-main-view-fg/50" />
-                    </div>
+                    <Button variant="secondary" size="icon-sm" className='rounded-full mr-2 mb-1'>
+                      <PlusIcon size={18} className="text-muted-foreground" />
+                    </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
-                    <DropdownMenuItem
-                      onClick={handleImagePickerClick}
-                      disabled={selectedProvider !== 'llamacpp' && !hasMmproj}
-                    >
-                      <IconPhoto size={18} className="text-main-view-fg/50" />
+                    {/* Vision image attachment - always enabled, prompts to download vision model if needed */}
+                    <DropdownMenuItem onClick={handleImagePickerClick}>
+                      <IconPhoto size={18} className="text-muted-foreground" />
                       <span>Add Images</span>
                       <input
                         type="file"
@@ -1542,12 +1507,12 @@ const ChatInput = ({
                       {ingestingDocs ? (
                         <IconLoader2
                           size={18}
-                          className="text-main-view-fg/50 animate-spin"
+                          className="text-muted-foreground animate-spin"
                         />
                       ) : (
                         <IconPaperclip
                           size={18}
-                          className="text-main-view-fg/50"
+                          className="text-muted-foreground"
                         />
                       )}
                       <span>
@@ -1558,80 +1523,75 @@ const ChatInput = ({
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                {model?.provider === 'llamacpp' && loadingModel ? (
+                {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
                 ) : (
                   <DropdownModelProvider
                     model={model}
                     useLastUsedModel={initialMessage}
                   />
-                )}
-                {/* Microphone - always available - Temp Hide */}
-                {/* <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                <IconMicrophone size={18} className="text-main-view-fg/50" />
-              </div> */}
-                {selectedModel?.capabilities?.includes('embeddings') && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                          <IconCodeCircle2
-                            size={18}
-                            className="text-main-view-fg/50"
-                          />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('embeddings')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
+                )} */}
                 {hasJanBrowserMCPConfig && modelSupportsBrowser && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div
-                          className={cn(
-                            'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer',
-                            janBrowserMCPActive && 'bg-primary/10',
-                            isJanBrowserMCPLoading &&
-                              'opacity-70 cursor-not-allowed'
-                          )}
-                          onClick={
-                            isJanBrowserMCPLoading
-                              ? undefined
-                              : handleBrowseClick
-                          }
-                        >
-                          {isJanBrowserMCPLoading ? (
-                            <IconLoader2
-                              size={18}
-                              className="text-primary animate-spin"
-                            />
-                          ) : (
-                            <IconWorld
-                              size={18}
-                              className={cn(
-                                'text-main-view-fg/50',
-                                janBrowserMCPActive && 'text-primary'
-                              )}
-                            />
-                          )}
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>
-                          {isJanBrowserMCPLoading
-                            ? 'Starting...'
-                            : janBrowserMCPActive
-                              ? 'Browse (Active)'
-                              : 'Browse'}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        disabled={isJanBrowserMCPLoading}
+                        className={cn(janBrowserMCPActive && "text-primary")}
+                        onClick={
+                          isJanBrowserMCPLoading
+                            ? undefined
+                            : handleBrowseClick
+                        }
+                      >
+                        {isJanBrowserMCPLoading ? (
+                          <IconLoader2
+                            size={18}
+                            className="text-primary animate-spin"
+                          />
+                        ) : (
+                          <IconBrandChrome
+                            size={18}
+                            className={cn(
+                              'text-muted-foreground',
+                              janBrowserMCPActive && 'text-primary'
+                            )}
+                          />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {isJanBrowserMCPLoading
+                          ? 'Starting...'
+                          : janBrowserMCPActive
+                            ? 'Browse (Active)'
+                            : 'Browse'}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
                 )}
+
+                {selectedModel?.capabilities?.includes('embeddings') && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                          variant="ghost"
+                          size="icon-xs"
+                        >
+                        <IconCodeCircle2
+                          size={18}
+                          className="text-muted-foreground"
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{t('embeddings')}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
                 {selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
@@ -1647,91 +1607,86 @@ const ChatInput = ({
                     />
                   ) : (
                     // Use default tools dropdown
-                    <TooltipProvider>
-                      <Tooltip
-                        open={tooltipToolsAvailable}
-                        onOpenChange={setTooltipToolsAvailable}
+                    <Tooltip
+                      open={tooltipToolsAvailable}
+                      onOpenChange={setTooltipToolsAvailable}
+                    >
+                      <TooltipTrigger
+                        asChild
+                        disabled={dropdownToolsAvailable}
                       >
-                        <TooltipTrigger
-                          asChild
-                          disabled={dropdownToolsAvailable}
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={(e) => {
+                            setDropdownToolsAvailable(false)
+                            e.stopPropagation()
+                          }}
                         >
-                          <div
-                            onClick={(e) => {
-                              setDropdownToolsAvailable(false)
-                              e.stopPropagation()
+                          <DropdownToolsAvailable
+                            initialMessage={initialMessage}
+                            onOpenChange={(isOpen) => {
+                              setDropdownToolsAvailable(isOpen)
+                              if (isOpen) {
+                                setTooltipToolsAvailable(false)
+                              }
                             }}
                           >
-                            <DropdownToolsAvailable
-                              initialMessage={initialMessage}
-                              onOpenChange={(isOpen) => {
-                                setDropdownToolsAvailable(isOpen)
-                                if (isOpen) {
-                                  setTooltipToolsAvailable(false)
-                                }
-                              }}
-                            >
-                              {(isOpen, toolsCount) => {
-                                return (
-                                  <div
+                            {() => {
+                              return (
+                                <div
+                                  className={cn(
+                                    'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer',
+                                  )}
+                                >
+                                  <IconTool
+                                    size={18}
                                     className={cn(
-                                      'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer',
-                                      isOpen && 'bg-main-view-fg/10',
-                                      toolsCount > 0 && 'bg-primary/10'
+                                      'text-muted-foreground',
                                     )}
-                                  >
-                                    <IconTool
-                                      size={18}
-                                      className={cn(
-                                        'text-main-view-fg/50',
-                                        toolsCount > 0 && 'text-primary'
-                                      )}
-                                    />
-                                  </div>
-                                )
-                              }}
-                            </DropdownToolsAvailable>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>{t('tools')}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                                  />
+                                </div>
+                              )
+                            }}
+                          </DropdownToolsAvailable>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('tools')}</p>
+                      </TooltipContent>
+                    </Tooltip>
                   ))}
+
                 {selectedModel?.capabilities?.includes('web_search') && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                          <IconWorld
-                            size={18}
-                            className="text-main-view-fg/50"
-                          />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Web Search</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon-xs">
+                        <IconWorld
+                          size={18}
+                          className="text-muted-foreground"
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Web Search</p>
+                    </TooltipContent>
+                  </Tooltip>
                 )}
+
                 {selectedModel?.capabilities?.includes('reasoning') && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                          <IconAtom
-                            size={18}
-                            className="text-main-view-fg/50"
-                          />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('reasoning')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon-xs">
+                        <IconAtom
+                          size={18}
+                          className="text-muted-foreground"
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{t('reasoning')}</p>
+                    </TooltipContent>
+                  </Tooltip>
                 )}
               </div>
             </div>
@@ -1761,8 +1716,8 @@ const ChatInput = ({
               {isStreaming ? (
                 <Button
                   variant="destructive"
-                  size="icon"
-                  className="rounded-full mr-0.5"
+                  size="icon-sm"
+                  className="rounded-full mr-1 mb-1"
                   onClick={() => {
                     if (currentThreadId) stopStreaming(currentThreadId)
                   }}
@@ -1771,12 +1726,12 @@ const ChatInput = ({
                 </Button>
               ) : (
                 <Button
-                  variant={!prompt.trim() ? null : 'default'}
-                  size="icon"
+                  variant="default"
+                  size="icon-sm"
                   disabled={!prompt.trim() || ingestingAny}
                   data-test-id="send-message-button"
                   onClick={() => handleSendMessage(prompt)}
-                  className="rounded-full mr-0.5 text-black"
+                  className="rounded-full mr-1 mb-1"
                 >
                   <ArrowRight className="text-primary-fg" />
                 </Button>
@@ -1787,11 +1742,11 @@ const ChatInput = ({
       </div>
 
       {message && (
-        <div className="bg-main-view-fg/2 -mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-destructive transition-all duration-200 ease-in-out">
+        <div className="-mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-destructive transition-all duration-200 ease-in-out">
           <div className="flex items-center gap-1 justify-between">
             {message}
             <IconX
-              className="size-3 text-main-view-fg/30 cursor-pointer"
+              className="size-3 text-muted-foreground cursor-pointer"
               onClick={() => {
                 setMessage('')
                 // Reset file input to allow re-uploading the same file
@@ -1811,7 +1766,6 @@ const ChatInput = ({
           <div className="flex-1 w-full flex justify-start px-2">
             <TokenCounter
               messages={threadMessages || []}
-              compact={false}
               uploadedFiles={attachments
                 .filter((a) => a.type === 'image' && a.dataUrl)
                 .map((a) => ({

@@ -16,27 +16,16 @@ type SearchParams = {
     id: string
     provider: string
   }
-  'temporary-chat'?: boolean
 }
-import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
-import { useMobileScreen } from '@/hooks/useMediaQuery'
-import { TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
+import DropdownModelProvider from '@/containers/DropdownModelProvider'
 
 export const Route = createFileRoute(route.home as any)({
   component: Index,
   validateSearch: (search: Record<string, unknown>): SearchParams => {
     const result: SearchParams = {
       model: search.model as SearchParams['model'],
-    }
-
-    // Only include temporary-chat if it's explicitly true
-    if (
-      search[TEMPORARY_CHAT_QUERY_ID] === 'true' ||
-      search[TEMPORARY_CHAT_QUERY_ID] === true
-    ) {
-      result['temporary-chat'] = true
     }
 
     return result
@@ -48,9 +37,7 @@ function Index() {
   const { providers } = useModelProvider()
   const search = useSearch({ from: route.home as any })
   const selectedModel = search.model
-  const isTemporaryChat = search['temporary-chat']
   const { setCurrentThreadId } = useThreads()
-  const isMobile = useMobileScreen()
   useTools()
 
   // Conditional to check if there are any valid providers
@@ -83,35 +70,29 @@ function Index() {
   }
 
   return (
-    <div className="flex h-full flex-col justify-center pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
+    <div className="flex h-full flex-col justify-center">
       <HeaderPage>
-        <div className="flex items-center justify-between w-full pr-2">
-          <DropdownAssistant />
+        <div className="flex items-center gap-2 w-full">
+          <DropdownModelProvider />
         </div>
       </HeaderPage>
       <div
         className={cn(
-          'h-full overflow-y-auto inline-flex flex-col gap-2 justify-center px-3 sm:px-4 md:px-8 py-4 md:py-0'
+          'h-full overflow-y-auto inline-flex flex-col gap-2 justify-center px-3'
         )}
       >
         <div
           className={cn(
-            'mx-auto',
-            // Full width on mobile, constrained on desktop
-            isMobile ? 'w-full max-w-full' : 'w-full md:w-4/6'
+            'mx-auto w-full md:w-4/5 xl:w-4/6 -mt-20',
           )}
         >
           <div className={cn('text-center mb-4')}>
             <h1
               className={cn(
-                'text-main-view-fg/90 mt-2 font-studio font-medium',
-                // Responsive description size
-                isMobile ? 'text-base' : 'text-2xl'
+                'text-2xl mt-2 font-studio font-medium',
               )}
             >
-              {isTemporaryChat
-                ? t('chat:temporaryChatDescription')
-                : t('chat:description')}
+              {t('chat:description')}
             </h1>
           </div>
           <div className="flex-1 shrink-0">

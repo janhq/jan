@@ -75,6 +75,8 @@
     "newLineDesc": "Insert a new line.",
     "shiftEnter": "Shift + Enter",
     "navigation": "Navigation",
+    "search": "Search",
+    "searchDesc": "Open the search dialog.",
     "goToSettings": "Go to Settings",
     "goToSettingsDesc": "Open settings."
   },
@@ -98,8 +100,6 @@
     "resetToDefaultDesc": "Reset all interface settings to default.",
     "resetInterfaceSuccess": "Interface reset successfully",
     "resetInterfaceSuccessDesc": "All interface settings have been restored to default.",
-    "chatWidth": "Chat Layout Width",
-    "chatWidthDesc": "Pick a chat width preset that fits your workspace.",
     "threadScrollTitle": "Thread Scroll Behavior",
     "threadScrollDesc": "Choose how the chat viewport should react when new messages arrive.",
     "threadScrollFlowTitle": "Flow scroll",

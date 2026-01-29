@@ -41,19 +41,21 @@ function HTTPSProxyContent() {
   )
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <h1 className="font-medium">{t('common:settings')}</h1>
+        <div className="flex items-center gap-2 w-full">
+          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+        </div>
       </HeaderPage>
-      <div className="flex h-full w-full">
+      <div className="flex h-[calc(100%-60px)]">
         <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+        <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Proxy Configuration */}
             <Card
               header={
                 <div className="flex items-center justify-between">
-                  <h1 className="text-main-view-fg font-medium text-base mb-2">
+                  <h1 className="text-foreground font-studio font-medium text-base mb-2">
                     {t('settings:httpsProxy.proxy')}
                   </h1>
                   <Switch
@@ -101,7 +103,7 @@ function HTTPSProxyContent() {
                         <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
                           <button
                             onClick={() => setShowPassword(!showPassword)}
-                            className="p-1 rounded hover:bg-main-view-fg/5 text-main-view-fg/70"
+                            className="p-1 rounded hover:bg-foreground/5 text-foreground/70"
                           >
                             {showPassword ? (
                               <EyeOff size={16} />

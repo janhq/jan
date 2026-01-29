@@ -26,7 +26,7 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
   })
 
   return (
-    <div className="flex gap-1">
+    <div className="flex gap-0.5">
       {filteredCapabilities.map((capability: string, capIndex: number) => {
         let icon = null
 
@@ -58,7 +58,10 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className={badgeClass} title={capability}>
+                    <span
+                      className="flex items-center gap-1 size-5 hover:bg-secondary rounded text-muted-foreground justify-center last:mr-1 transition-all"
+                      title={capability}
+                    >
                       {icon}
                       {isEmbedding && <span>Embedding</span>}
                     </span>

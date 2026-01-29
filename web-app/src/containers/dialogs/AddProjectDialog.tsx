@@ -71,7 +71,6 @@ export default function AddProjectDialog({
     } else {
       toast.success(t('projects.addProjectDialog.createSuccess', { projectName: trimmedName }))
     }
-
     setName('')
   }
 
@@ -86,7 +85,7 @@ export default function AddProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>
             {editingKey ? t('projects.addProjectDialog.editTitle') : t('projects.addProjectDialog.createTitle')}
@@ -94,9 +93,6 @@ export default function AddProjectDialog({
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium text-main-view-fg/80">
-              {t('projects.addProjectDialog.nameLabel')}
-            </label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -112,7 +108,7 @@ export default function AddProjectDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="link" onClick={handleCancel}>
+          <Button variant="ghost" onClick={handleCancel}>
             {t('cancel')}
           </Button>
           <Button onClick={handleSave} disabled={Boolean(isButtonDisabled)}>

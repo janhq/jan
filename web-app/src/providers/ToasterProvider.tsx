@@ -8,11 +8,10 @@ export function ToasterProvider() {
       offset={{ top: 8, right: 8 }}
       toastOptions={{
         style: {
-          background: 'var(--app-main-view-fg)',
-          padding: '0.5rem 0.8rem',
+          background: 'var(--background)',
+          padding: '1rem 0.8rem',
           alignItems: 'start',
-          borderColor:
-            'color-mix(in oklch, var(--app-main-view) 5%, transparent)',
+          borderColor: 'var(--border)',
           userSelect: 'none',
           WebkitUserSelect: 'none',
           MozUserSelect: 'none',
@@ -20,8 +19,8 @@ export function ToasterProvider() {
         },
         classNames: {
           toast: 'toast select-none',
-          title: '!text-main-view/90 select-none',
-          description: '!text-main-view/70 select-none',
+          title: 'text-foreground! select-none',
+          description: 'text-muted-foreground! select-none',
         },
       }}
     />

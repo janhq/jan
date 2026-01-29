@@ -81,11 +81,10 @@ describe('DropdownMenu Components', () => {
           </DropdownMenuContent>
         </DropdownMenu>
       )
-      
+
       const trigger = screen.getByRole('button', { name: 'Open Menu' })
       expect(trigger).toBeInTheDocument()
       expect(trigger).toHaveAttribute('data-slot', 'dropdown-menu-trigger')
-      expect(trigger).toHaveClass('outline-none')
     })
 
     it('opens dropdown menu when clicked', async () => {
@@ -112,7 +111,7 @@ describe('DropdownMenu Components', () => {
   describe('DropdownMenuContent', () => {
     it('renders DropdownMenuContent with correct styling and data-slot', async () => {
       const user = userEvent.setup()
-      
+
       render(
         <DropdownMenu>
           <DropdownMenuTrigger>Open</DropdownMenuTrigger>
@@ -121,14 +120,14 @@ describe('DropdownMenu Components', () => {
           </DropdownMenuContent>
         </DropdownMenu>
       )
-      
+
       await user.click(screen.getByRole('button'))
-      
+
       await waitFor(() => {
         const content = document.querySelector('[data-slot="dropdown-menu-content"]')
         expect(content).toBeInTheDocument()
-        expect(content).toHaveClass('bg-main-view')
-        expect(content).toHaveClass('text-main-view-fg')
+        expect(content).toHaveClass('bg-popover')
+        expect(content).toHaveClass('text-popover-foreground')
       })
     })
 
@@ -522,7 +521,7 @@ describe('DropdownMenu Components', () => {
   describe('DropdownMenuSeparator', () => {
     it('renders DropdownMenuSeparator with correct styling and data-slot', async () => {
       const user = userEvent.setup()
-      
+
       render(
         <DropdownMenu>
           <DropdownMenuTrigger>Open</DropdownMenuTrigger>
@@ -533,14 +532,14 @@ describe('DropdownMenu Components', () => {
           </DropdownMenuContent>
         </DropdownMenu>
       )
-      
+
       await user.click(screen.getByRole('button'))
-      
+
       await waitFor(() => {
         const separator = document.querySelector('[data-slot="dropdown-menu-separator"]')
         expect(separator).toBeInTheDocument()
         expect(separator).toHaveClass('h-px')
-        expect(separator).toHaveClass('bg-main-view-fg/5')
+        expect(separator).toHaveClass('bg-border')
       })
     })
 
@@ -733,7 +732,7 @@ describe('DropdownMenu Components', () => {
   describe('DropdownMenuSubContent', () => {
     it('renders DropdownMenuSubContent with correct styling and data-slot', async () => {
       const user = userEvent.setup()
-      
+
       render(
         <DropdownMenu>
           <DropdownMenuTrigger>Open</DropdownMenuTrigger>
@@ -747,22 +746,22 @@ describe('DropdownMenu Components', () => {
           </DropdownMenuContent>
         </DropdownMenu>
       )
-      
+
       await user.click(screen.getByRole('button'))
-      
+
       await waitFor(() => {
         const subTrigger = screen.getByText('Sub Menu')
         expect(subTrigger).toBeInTheDocument()
       })
-      
+
       // Hover over sub trigger to open sub content
       await user.hover(screen.getByText('Sub Menu'))
-      
+
       await waitFor(() => {
         const subContent = document.querySelector('[data-slot="dropdown-menu-sub-content"]')
         expect(subContent).toBeInTheDocument()
-        expect(subContent).toHaveClass('bg-main-view')
-        expect(subContent).toHaveClass('text-main-view-fg')
+        expect(subContent).toHaveClass('bg-popover')
+        expect(subContent).toHaveClass('text-popover-foreground')
       })
     })
 

@@ -31,21 +31,12 @@ export function DeleteProjectDialog({
   const threads = useThreads((state) => state.threads)
   const { deleteFolderWithThreads } = useThreadManagement()
 
-  // Calculate thread stats for this project
-  const { threadCount, starredThreadCount } = useMemo(() => {
-    if (!projectId) return { threadCount: 0, starredThreadCount: 0 }
+  const threadCount = useMemo(() => {
+    if (!projectId) return 0
 
-    const projectThreads = Object.values(threads).filter(
+    return Object.values(threads).filter(
       (thread) => thread.metadata?.project?.id === projectId
-    )
-    const starredCount = projectThreads.filter(
-      (thread) => thread.isFavorite
     ).length
-
-    return {
-      threadCount: projectThreads.length,
-      starredThreadCount: starredCount,
-    }
   }, [projectId, threads])
 
   const handleConfirm = async () => {
@@ -71,13 +62,11 @@ export function DeleteProjectDialog({
     }
   }
 
-  const hasStarredThreads = starredThreadCount > 0
   const hasThreads = threadCount > 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-md"
         onOpenAutoFocus={(e) => {
           e.preventDefault()
           deleteButtonRef.current?.focus()
@@ -85,34 +74,16 @@ export function DeleteProjectDialog({
       >
         <DialogHeader>
           <DialogTitle>{t('projects.deleteProjectDialog.title')}</DialogTitle>
-          <DialogDescription className="space-y-2">
-            {hasStarredThreads ? (
-              <>
-                <p className="text-red-600 dark:text-red-400 font-semibold">
-                  {t('projects.deleteProjectDialog.starredWarning')}
-                </p>
-                <p className="font-medium">
-                  {t('projects.deleteProjectDialog.permanentDeleteWarning')}
-                </p>
-              </>
-            ) : hasThreads ? (
-              <p>
-                {t('projects.deleteProjectDialog.permanentDelete')}
-              </p>
+          <DialogDescription>
+            {hasThreads ? (
+              <p>{t('projects.deleteProjectDialog.permanentDelete')}</p>
             ) : (
-              <p>
-                {t('projects.deleteProjectDialog.deleteEmptyProject', { projectName })}
-              </p>
-            )}
-            {hasThreads && (
-              <p className="text-sm text-muted-foreground mt-3">
-                {t('projects.deleteProjectDialog.saveThreadsAdvice')}
-              </p>
+              <p>{t('projects.deleteProjectDialog.deleteEmptyProject', { projectName })}</p>
             )}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="link" onClick={() => onOpenChange(false)}>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
             {t('cancel')}
           </Button>
           <Button

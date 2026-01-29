@@ -22,6 +22,9 @@ export const PlatformShortcuts: ShortcutMap = {
   // Go to settings - different per platform to avoid browser "preferences" conflict
   [ShortcutAction.GO_TO_SETTINGS]: { key: ',', usePlatformMetaKey: true },
 
+  // Search - opens search dialog
+  [ShortcutAction.SEARCH]: { key: 'k', usePlatformMetaKey: true },
+
   // Zoom shortcuts - same on both platforms (standard shortcuts)
   [ShortcutAction.ZOOM_IN]: {
     key: '+',

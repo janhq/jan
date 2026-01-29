@@ -10,10 +10,7 @@ import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
-import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
-import { useSmallScreen, useMobileScreen } from '@/hooks/useMediaQuery'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
@@ -24,7 +21,7 @@ import {
   Conversation,
   ConversationContent,
   ConversationScrollButton,
-} from '@/ai-elements/conversation'
+} from '@/components/ai-elements/conversation'
 import { generateId, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
@@ -47,6 +44,7 @@ import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
+import DropdownModelProvider from '@/containers/DropdownModelProvider'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -71,9 +69,6 @@ function ThreadDetail() {
   const deleteMessage = useMessages((state) => state.deleteMessage)
   const currentThread = useRef<string | undefined>(undefined)
 
-  const chatWidth = useInterfaceSettings((state) => state.chatWidth)
-  const isSmallScreen = useSmallScreen()
-  const isMobile = useMobileScreen()
   useTools()
 
   // Get attachments for this thread
@@ -700,9 +695,7 @@ function ThreadDetail() {
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          <div>
-            <DropdownAssistant />
-          </div>
+          <DropdownModelProvider model={threadModel} />
         </div>
       </HeaderPage>
       <div className="flex flex-1 flex-col h-full overflow-hidden">
@@ -711,10 +704,7 @@ function ThreadDetail() {
           <Conversation className="absolute inset-0 text-start">
             <ConversationContent
               className={cn(
-                'mx-auto',
-                isMobile || isSmallScreen || chatWidth !== 'compact'
-                  ? 'w-full'
-                  : 'w-full md:w-4/5'
+                'mx-auto w-full md:w-4/5 xl:w-4/6',
               )}
             >
               {chatMessages.map((message, index) => {
@@ -736,14 +726,14 @@ function ThreadDetail() {
               })}
               {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
               {error && (
-                <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/50 bg-destructive/10">
+                <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
                   <div className="flex items-start gap-3">
-                    <IconAlertCircle className="size-5 text-destructive flex-shrink-0 mt-0.5" />
+                    <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
                     <div className="flex-1">
                       <p className="text-sm font-medium text-destructive mb-1">
                         Error generating response
                       </p>
-                      <p className="text-sm text-main-view-fg/70">
+                      <p className="text-sm text-muted-foreground">
                         {error.message}
                       </p>
                       {(error.message.toLowerCase().includes('context') &&
@@ -771,14 +761,7 @@ function ThreadDetail() {
         </div>
 
         {/* Chat Input - Fixed at bottom */}
-        <div
-          className={cn(
-            'px-4 py-4 mx-auto w-full',
-            isMobile || isSmallScreen || chatWidth !== 'compact'
-              ? 'max-w-full'
-              : 'w-full md:w-4/5'
-          )}
-        >
+        <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}

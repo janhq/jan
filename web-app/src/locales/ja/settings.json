@@ -98,8 +98,6 @@
     "resetToDefaultDesc": "すべての外観設定をデフォルトにリセットします。",
     "resetInterfaceSuccess": "外観が正常にリセットされました",
     "resetInterfaceSuccessDesc": "すべての外観設定がデフォルトに復元されました。",
-    "chatWidth": "チャットの幅",
-    "chatWidthDesc": "チャットビューの幅をカスタマイズします。",
     "tokenCounterCompact": "コンパクトなトークンカウンター",
     "tokenCounterCompactDesc": "チャット入力内にトークンカウンターを表示します。無効にすると、トークンカウンターは入力の下に表示されます。",
     "codeBlockTitle": "コードブロック",

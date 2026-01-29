@@ -71,8 +71,8 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {trigger || (
-          <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
-            <IconPlus size={18} className="text-main-view-fg/50" />
+          <div className="size-6 cursor-pointer flex items-center justify-center rounded transition-all duration-200 ease-in-out">
+            <IconPlus size={18} className="text-muted-foreground" />
           </div>
         )}
       </DialogTrigger>
@@ -116,12 +116,12 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
 
         {/* Explore models link */}
         {provider.explore_models_url && (
-          <div className="text-sm text-main-view-fg/70">
+          <div className="text-sm text-muted-foreground">
             <a
               href={provider.explore_models_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 hover:underline text-primary"
+              className="flex items-center gap-1 hover:underline"
             >
               <span>
                 {t('providers:addModel.exploreModels', {

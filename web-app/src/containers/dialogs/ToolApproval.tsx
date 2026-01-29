@@ -45,12 +45,12 @@ export default function ToolApproval() {
       <DialogContent showCloseButton={false}>
         <DialogHeader>
           <div className="flex items-start gap-3">
-            <div className="shrink-0">
+            <div className="shrink-0 text-muted-foreground">
               <AlertTriangle className="size-4" />
             </div>
             <div>
               <DialogTitle>{t('tools:toolApproval.title')}</DialogTitle>
-              <DialogDescription className="mt-1 text-main-view-fg/70">
+              <DialogDescription className="mt-1 text-muted-foreground">
                 {t('tools:toolApproval.description')}{' '}
                 <span className="font-semibold">{toolName}</span>.&nbsp;
                 <span className="text-sm">
@@ -62,27 +62,28 @@ export default function ToolApproval() {
         </DialogHeader>
 
         {toolParameters && Object.keys(toolParameters).length > 0 && (
-          <div className="bg-main-view-fg/4 p-2 border border-main-view-fg/5 rounded-lg overflow-x-scroll">
-            <h4 className="text-sm font-medium text-main-view-fg mb-2">
+          <div className="bg-background p-2 border rounded-lg overflow-x-scroll">
+            <h4 className="text-sm font-medium mb-2">
               {t('tools:toolApproval.parameters')}
             </h4>
-            <div className="relative bg-main-view-fg/6 rounded-md p-2 text-sm font-mono border border-main-view-fg/5 overflow-x-auto">
-              <pre className="text-main-view-fg/80 whitespace-pre-wrap">
+            <div className="relative bg-secondary rounded-md p-2 text-sm font-mono border overflow-x-auto">
+              <pre className="whitespace-pre-wrap">
                 {JSON.stringify(toolParameters, null, 2)}
               </pre>
             </div>
           </div>
         )}
 
-        <div className="bg-main-view-fg/1 p-2 border border-main-view-fg/5 rounded-lg">
-          <p className="text-sm text-main-view-fg/70 leading-relaxed">
+        <div className="p-2 border bg-secondary rounded-lg">
+          <p className="text-xs text-muted-foreground leading-relaxed">
             {t('tools:toolApproval.securityNotice')}
           </p>
         </div>
 
         <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-between">
           <Button
-            variant="link"
+            variant="ghost"
+            size="sm"
             onClick={handleDeny}
             className="flex-1 text-right sm:flex-none"
           >
@@ -90,14 +91,15 @@ export default function ToolApproval() {
           </Button>
           <div className="flex flex-col sm:flex-row gap-2 items-center">
             <Button
-              variant="link"
+              variant="ghost"
+              size="sm"
               onClick={handleAllowOnce}
-              className="border border-main-view-fg/20"
             >
               {t('tools:toolApproval.allowOnce')}
             </Button>
             <Button
               variant="default"
+              size="sm"
               onClick={handleAllow}
               autoFocus
               className="capitalize"

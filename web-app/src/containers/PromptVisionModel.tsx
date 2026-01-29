@@ -191,27 +191,28 @@ export function PromptVisionModel({
   if (isLoading) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 p-4 shadow-lg bg-main-view w-4/5 md:w-100 border border-main-view-fg/8 rounded-lg">
+    <div className="fixed bottom-4 right-4 z-50 p-4 shadow-lg bg-background w-4/5 md:w-100 border rounded-lg">
       <div className="flex items-center gap-2">
         <img src="/images/jan-logo.png" alt="Jan" className="size-5" />
-        <h2 className="font-medium text-main-view-fg/80">
+        <h2 className="font-medium">
           Jan V2 VL Model
-          <span className="text-main-view-fg/50"> (~5GB)</span>
+          <span className="text-muted-foreground"> (~5GB)</span>
         </h2>
       </div>
-      <p className="mt-2 text-sm text-main-view-fg/70">
+      <p className="mt-2 text-sm text-muted-foreground">
         Add vision capabilities to chat with images. Download Jan V2 VL, our
         recommended vision model.
       </p>
       <div className="mt-4 flex justify-end space-x-2">
         <Button
-          variant="link"
-          className="text-main-view-fg/70"
+          variant="ghost"
+          size="sm"
           onClick={onClose}
         >
           {isDownloading ? 'Close' : 'Cancel'}
         </Button>
         <Button
+          size="sm"
           onClick={handleDownload}
           disabled={!defaultVariant || isDownloading}
         >

@@ -59,31 +59,31 @@ function ModelProviders() {
   )
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <h1 className="font-medium">{t('common:settings')}</h1>
+        <div className="flex items-center gap-2 w-full">
+          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+        </div>
       </HeaderPage>
-      <div className="flex h-full w-full flex-col sm:flex-row">
+      <div className="flex h-[calc(100%-60px)]">
         <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+        <div className="p-4 pt-0 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Model Providers */}
             <Card
               header={
                 <div className="flex items-center justify-between w-full mb-6">
-                  <span className="text-main-view-fg font-medium text-base">
+                  <span className="font-medium text-base font-studio text-foreground">
                     {t('common:modelProviders')}
                   </span>
                   <AddProviderDialog onCreateProvider={createProvider}>
                     <Button
-                      variant="link"
+                      variant="secondary"
                       size="sm"
                       className="flex items-center gap-2"
                     >
-                      <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1.5 py-1 gap-1 -mr-2">
-                        <IconCirclePlus size={16} />
-                        <span>{t('provider:addProvider')}</span>
-                      </div>
+                      <IconCirclePlus size={16} />
+                      <span>{t('provider:addProvider')}</span>
                     </Button>
                   </AddProviderDialog>
                 </div>
@@ -99,7 +99,7 @@ function ModelProviders() {
                         <h3 className="font-medium">
                           {getProviderTitle(provider.provider)}
                         </h3>
-                        <p className="text-xs text-main-view-fg/70">
+                        <p className="text-xs text-muted-foreground mt-1">
                           {provider.models.length} Models
                         </p>
                       </div>
@@ -109,9 +109,8 @@ function ModelProviders() {
                     <div className="flex items-center gap-2">
                       {provider.active && (
                         <Button
-                          variant="default"
-                          size="sm"
-                          className="h-6 w-6 p-0 bg-transparent hover:bg-main-view-fg/10 border-none shadow-none"
+                          variant="ghost"
+                          size="icon-xs"
                           onClick={() => {
                             navigate({
                               to: route.settings.providers,
@@ -122,7 +121,7 @@ function ModelProviders() {
                           }}
                         >
                           <IconSettings
-                            className="text-main-view-fg/60"
+                            className="text-muted-foreground"
                             size={16}
                           />
                         </Button>

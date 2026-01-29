@@ -46,11 +46,14 @@ export function DynamicControllerSetting({
         placeholder={controllerProps.placeholder}
         value={
           typeof controllerProps.value === 'number'
-            ? controllerProps.value.toString()
+            ? controllerProps.value
             : (controllerProps.value as string) || ''
         }
         inputActions={controllerProps.input_actions}
         className={className}
+        min={controllerProps.min}
+        max={controllerProps.max}
+        step={controllerProps.step}
         onChange={(newValue) => onChange(newValue)}
       />
     )

@@ -54,15 +54,15 @@ const BackendUpdater = () => {
       {backendUpdateState.isUpdateAvailable && (
         <div
           className={cn(
-            'fixed z-50 min-w-[300px] bottom-3 right-3 bg-main-view text-main-view-fg flex items-center justify-center border border-main-view-fg/10 rounded-lg shadow-md'
+            'fixed z-50 bottom-3 right-3 bg-background flex items-center border rounded-lg shadow-md'
           )}
         >
-          <div className="px-0 py-4">
+          <div className="px-2 py-4">
             <div className="px-4">
               <div className="flex items-start gap-2">
                 <IconDownload
                   size={20}
-                  className="shrink-0 text-main-view-fg/60 mt-1"
+                  className="shrink-0 text-muted-foreground mt-1"
                 />
                 <div>
                   <div className="text-base font-medium">
@@ -70,7 +70,7 @@ const BackendUpdater = () => {
                       version: updateState.updateInfo?.newVersion,
                     })}
                   </div>
-                  <div className="mt-1 text-main-view-fg/70 font-normal mb-2">
+                  <div className="mt-1 text-muted-foreground font-normal mb-2">
                     {t('settings:backendUpdater.backendUpdateAvailable')}
                   </div>
                 </div>
@@ -79,15 +79,16 @@ const BackendUpdater = () => {
 
             <div className="pt-3 px-4">
               <div className="flex gap-x-4 w-full items-center justify-end">
-                <div className="flex gap-x-5">
+                <div className="flex gap-x-2">
                   <Button
-                    variant="link"
-                    className="px-0 text-main-view-fg/70 remind-me-later"
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setRemindMeLater(true)}
                   >
                     {t('settings:backendUpdater.remindMeLater')}
                   </Button>
                   <Button
+                    size="sm"
                     onClick={handleUpdate}
                     disabled={updateState.isUpdating}
                   >

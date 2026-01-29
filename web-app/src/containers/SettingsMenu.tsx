@@ -5,8 +5,6 @@ import { useState, useEffect } from 'react'
 import {
   IconChevronDown,
   IconChevronRight,
-  IconMenu2,
-  IconX,
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
@@ -17,8 +15,7 @@ import ProvidersAvatar from '@/containers/ProvidersAvatar'
 
 const SettingsMenu = () => {
   const { t } = useTranslation()
-  const [expandedProviders, setExpandedProviders] = useState(false)
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [expandedProviders, setExpandedProviders] = useState(true)
   const matches = useMatches()
   const navigate = useNavigate()
 
@@ -123,45 +120,25 @@ const SettingsMenu = () => {
       hasSubMenu: false,
       isEnabled: true,
     },
-    {
-      title: 'common:extensions',
-      route: route.settings.extensions,
-      hasSubMenu: false,
-      isEnabled: true,
-    },
+    // Hide Extension settings for now
+    // {
+    //   title: 'common:extensions',
+    //   route: route.settings.extensions,
+    //   hasSubMenu: false,
+    //   isEnabled: true,
+    // },
   ]
 
   const toggleProvidersExpansion = () => {
     setExpandedProviders(!expandedProviders)
   }
 
-  const toggleMenu = () => {
-    setIsMenuOpen(!isMenuOpen)
-  }
-
   return (
     <>
-      <button
-        className="fixed top-[calc(10px+env(safe-area-inset-top))] right-4 sm:hidden size-5 cursor-pointer items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-main-view-fg/10 z-20"
-        onClick={toggleMenu}
-        aria-label="Toggle settings menu"
-      >
-        {isMenuOpen ? (
-          <IconX size={18} className="text-main-view-fg relative z-20" />
-        ) : (
-          <IconMenu2 size={18} className="text-main-view-fg relative z-20" />
-        )}
-      </button>
       <div
-        className={cn(
-          'h-full w-44 shrink-0 px-1.5 pt-3 border-r border-main-view-fg/5 bg-main-view',
-          'sm:flex',
-          isMenuOpen
-            ? 'flex fixed sm:hidden top-[calc(10px+env(safe-area-inset-top))] z-10 m-1 h-[calc(100%-8px)] border-r-0 border-l bg-main-view right-0 py-8 rounded-tr-lg rounded-br-lg'
-            : 'hidden'
-        )}
+        className='h-full w-54 shrink-0 px-1.5 flex'
       >
-        <div className="flex flex-col gap-1 w-full text-main-view-fg/90 font-medium">
+        <div className="flex flex-col gap-1 w-full font-medium">
           {menuSettings.map((menu) => {
             if (!menu.isEnabled) {
               return null
@@ -170,10 +147,10 @@ const SettingsMenu = () => {
               <div key={menu.title}>
                 <Link
                   to={menu.route}
-                  className="block px-2 gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded [&.active]:bg-main-view-fg/5"
+                  className="block px-2 gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm [&.active]:bg-secondary/80"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-main-view-fg/80">
+                    <span>
                       {t(menu.title)}
                     </span>
                     {menu.hasSubMenu && (
@@ -183,7 +160,7 @@ const SettingsMenu = () => {
                           e.stopPropagation()
                           toggleProvidersExpansion()
                         }}
-                        className="text-main-view-fg/60 hover:text-main-view-fg/80"
+                        className="text-muted-foreground/60 hover:text-muted-foreground/80"
                       >
                         {expandedProviders ? (
                           <IconChevronDown size={16} />
@@ -211,8 +188,8 @@ const SettingsMenu = () => {
                         <div key={provider.provider}>
                           <div
                             className={cn(
-                              'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded [&.active]:bg-main-view-fg/5 text-main-view-fg/80',
-                              isActive && 'bg-main-view-fg/5',
+                              'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm [&.active]:bg-secondary/80 text-foreground',
+                              isActive && 'bg-secondary',
                               // hidden for llama.cpp provider for setup remote provider
                               provider.provider === 'llama.cpp' &&
                                 stepSetupRemoteProvider &&

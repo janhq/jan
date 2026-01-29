@@ -94,7 +94,7 @@ export const ModelDownloadAction = ({
       <>
         <div className="flex items-center gap-2 w-20">
           <Progress value={downloadProgress * 100} />
-          <span className="text-xs text-center text-main-view-fg/70">
+          <span className="text-xs text-center text-muted-foreground">
             {Math.round(downloadProgress * 100)}%
           </span>
         </div>
@@ -105,26 +105,23 @@ export const ModelDownloadAction = ({
   if (isDownloaded) {
     return (
       <Button
-        variant="link"
+        variant="default"
         size="sm"
-        className="p-0"
         onClick={() => handleUseModel(variant.model_id)}
         title={t('hub:useModel')}
       >
-        <div className="rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1">
-          {t('hub:newChat')}
-        </div>
+        {t('hub:newChat')}
       </Button>
     )
   }
 
   return (
     <div
-      className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+      className="size-6 cursor-pointer flex items-center justify-center rounded transition-all duration-200 ease-in-out"
       title={t('hub:downloadModel')}
       onClick={handleDownloadModel}
     >
-      <IconDownload size={16} className="text-main-view-fg/80" />
+      <IconDownload size={16} className="text-muted-foreground" />
     </div>
   )
 }

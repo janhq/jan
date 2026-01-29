@@ -7,6 +7,8 @@ import {
 import { useTheme } from '@/hooks/useTheme'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { ChevronsUpDown } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 export function ThemeSwitcher() {
   const { t } = useTranslation()
@@ -22,21 +24,20 @@ export function ThemeSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <span
-          title={t('common:editTheme')}
-          className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
-        >
-          {themeOptions.find((item) => item.value === activeTheme)?.label ||
-            t('common:auto')}
-        </span>
+        <Button variant="outline" size="sm" className="w-full justify-between" title={t('common:editTheme')}>
+          {themeOptions.find(
+            (item: { value: string; label: string }) => item.value === activeTheme
+          )?.label || t('common:auto')}
+          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
+        </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-24">
+      <DropdownMenuContent align="end">
         {themeOptions.map((item) => (
           <DropdownMenuItem
             key={item.value}
             className={cn(
               'cursor-pointer my-0.5',
-              activeTheme === item.value && 'bg-main-view-fg/5'
+              activeTheme === item.value && 'bg-secondary-foreground/8'
             )}
             onClick={() => setTheme(item.value as 'auto' | 'light' | 'dark')}
           >
