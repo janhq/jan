@@ -87,12 +87,14 @@ export default function JanBrowserExtensionDialog({
 
             <DialogFooter className="flex gap-2 sm:justify-end">
               <Button
-                variant="outline"
+                variant="ghost"
+                size="sm"
                 onClick={handleCancel}
               >
                 {t('common:cancel')}
               </Button>
               <Button
+                size="sm"
                 onClick={handleOpenChromeStore}
                 className="gap-2"
               >

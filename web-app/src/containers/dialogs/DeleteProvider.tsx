@@ -86,7 +86,7 @@ const DeleteProvider = ({ provider }: Props) => {
 
             <DialogFooter className="mt-2">
               <DialogClose asChild>
-                <Button variant="link" size="sm" className="hover:no-underline">
+                <Button variant="ghost" size="sm" className="hover:no-underline">
                   {t('providers:deleteProvider.cancel')}
                 </Button>
               </DialogClose>

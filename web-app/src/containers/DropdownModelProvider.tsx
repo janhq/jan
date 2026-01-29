@@ -547,7 +547,7 @@ const DropdownModelProvider = ({
                                 provider={searchableModel.provider}
                               />
                             </div>
-                            <span className="text-sm">
+                            <span className="text-sm truncate">
                               {getModelDisplayName(searchableModel.model)}
                             </span>
                             <div className="flex-1"></div>

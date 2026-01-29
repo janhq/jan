@@ -70,7 +70,7 @@ export function MessageMetadataDialog({
                   backgroundColor: 'transparent',
                   fontFamily: 'monospace',
                 }}
-                className="w-full h-full !text-sm "
+                className="w-full h-full text-sm!"
               />
             </div>
           </div>

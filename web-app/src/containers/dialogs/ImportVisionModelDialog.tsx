@@ -533,6 +533,7 @@ export const ImportVisionModelDialog = ({
         <div className="flex gap-2 pt-4 justify-end">
           <Button
             variant="ghost"
+            size="sm"
             onClick={() => handleOpenChange(false)}
             disabled={importing}
           >
@@ -540,6 +541,7 @@ export const ImportVisionModelDialog = ({
           </Button>
           <Button
             onClick={handleImport}
+            size="sm"
             disabled={
               importing ||
               !modelFile ||

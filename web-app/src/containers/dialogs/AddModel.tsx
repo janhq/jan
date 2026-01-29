@@ -135,6 +135,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
         <DialogFooter>
           <Button
             variant="default"
+            size="sm"
             onClick={handleSubmit}
             disabled={!modelId.trim()}
           >

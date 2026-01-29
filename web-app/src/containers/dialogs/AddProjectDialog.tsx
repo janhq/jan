@@ -108,10 +108,10 @@ export default function AddProjectDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={handleCancel}>
+          <Button size="sm" variant="ghost" onClick={handleCancel}>
             {t('cancel')}
           </Button>
-          <Button onClick={handleSave} disabled={Boolean(isButtonDisabled)}>
+          <Button size="sm" onClick={handleSave} disabled={Boolean(isButtonDisabled)}>
             {editingKey ? t('projects.addProjectDialog.updateButton') : t('projects.addProjectDialog.createButton')}
           </Button>
         </DialogFooter>

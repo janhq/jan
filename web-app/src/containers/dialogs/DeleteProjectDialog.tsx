@@ -83,11 +83,12 @@ export function DeleteProjectDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
             {t('cancel')}
           </Button>
           <Button
             ref={deleteButtonRef}
+            size="sm"
             variant="destructive"
             onClick={handleConfirm}
             onKeyDown={handleKeyDown}

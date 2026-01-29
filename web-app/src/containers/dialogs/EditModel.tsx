@@ -276,7 +276,7 @@ export const DialogEditModel = ({
           <Button
             onClick={handleSaveChanges}
             disabled={!hasUnsavedChanges() || isLoading}
-            className="px-4 py-2"
+            size="sm"
           >
             {isLoading ? (
               <>
