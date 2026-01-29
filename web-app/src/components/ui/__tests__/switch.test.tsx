@@ -28,7 +28,7 @@ describe('Switch', () => {
     render(<Switch />)
 
     const thumb = document.querySelector('[data-slot="switch-thumb"]')
-    expect(thumb).toHaveClass('bg-foreground', 'pointer-events-none', 'block', 'size-4', 'rounded-full', 'ring-0', 'transition-transform')
+    expect(thumb).toHaveClass('bg-background', 'pointer-events-none', 'block', 'size-4', 'rounded-full', 'ring-0', 'transition-transform')
   })
 
   it('renders with custom className', () => {
@@ -187,6 +187,6 @@ describe('Switch', () => {
     render(<Switch checked={false} />)
 
     const switchElement = document.querySelector('[data-slot="switch"]')
-    expect(switchElement).toHaveClass('data-[state=unchecked]:bg-background')
+    expect(switchElement).toHaveClass('data-[state=unchecked]:bg-input')
   })
 })
