@@ -93,7 +93,7 @@ export const ModelDownloadAction = ({
     return (
       <>
         <div className="flex items-center gap-2 w-20">
-          <Progress value={downloadProgress * 100} />
+          <Progress className="border" value={downloadProgress * 100} />
           <span className="text-xs text-center text-muted-foreground">
             {Math.round(downloadProgress * 100)}%
           </span>
