@@ -114,7 +114,7 @@ export function RenameThreadDialog({
               </Button>
             </DialogClose>
             <Button
-              disabled={!title.trim()}
+              disabled={!title.trim() || title.trim() === plainTitleForRename}
               onClick={handleRename}
               size="sm"
               className="w-full sm:w-auto"
