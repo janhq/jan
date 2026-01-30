@@ -50,19 +50,18 @@ export function RenameThreadDialog({
   }
 
   useEffect(() => {
-    if (isOpen && inputRef.current) {
+    if (isOpen) {
+      setTitle(plainTitleForRename || t('common:newThread'))
       setTimeout(() => {
         inputRef.current?.focus()
         inputRef.current?.select()
       }, 100)
     }
-  }, [isOpen])
+  }, [isOpen, plainTitleForRename, t])
 
   const handleOpenChange = (open: boolean) => {
     setOpenSafe(open)
-    if (open) {
-      setTitle(plainTitleForRename || t('common:newThread'))
-    } else {
+    if (!open) {
       onDropdownClose?.()
     }
   }
