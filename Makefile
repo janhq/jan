@@ -10,16 +10,8 @@ REPORT_PORTAL_DESCRIPTION ?= "Jan App report"
 all:
 	@echo "Specify a target to run"
 
-# Config yarn version
-
-config-yarn:
-	corepack enable
-	corepack prepare yarn@4.5.3 --activate
-	yarn --version
-	yarn config set -H enableImmutableInstalls false
-
 # Installs yarn dependencies and builds core and extensions
-install-and-build: config-yarn
+install-and-build:
 ifeq ($(OS),Windows_NT)
 	echo "skip"
 else ifeq ($(shell uname -s),Linux)
@@ -63,7 +55,7 @@ dev: install-and-build
 	yarn dev
 
 # Web application targets
-install-web-app: config-yarn
+install-web-app:
 	yarn install
 
 dev-web-app: install-web-app
