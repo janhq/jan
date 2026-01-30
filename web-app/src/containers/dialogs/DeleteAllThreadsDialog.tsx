@@ -78,7 +78,7 @@ export function DeleteAllThreadsDialog({
           <DialogDescription>
             {t('common:dialogs.deleteAllThreads.description')}
           </DialogDescription>
-          <DialogFooter className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
               <Button variant="ghost" size="sm" className="w-full sm:w-auto">
                 {t('common:cancel')}
