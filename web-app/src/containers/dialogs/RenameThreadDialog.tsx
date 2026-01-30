@@ -107,7 +107,7 @@ export function RenameThreadDialog({
             placeholder={t('common:threadTitle')}
             aria-label={t('common:threadTitle')}
           />
-          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <DialogFooter className="mt-2 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
               <Button variant="ghost" size="sm" className="w-full sm:w-auto">
                 {t('common:cancel')}
