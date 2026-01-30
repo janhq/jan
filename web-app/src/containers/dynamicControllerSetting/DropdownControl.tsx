@@ -6,6 +6,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { ChevronsUpDown } from 'lucide-react'
 
 // Dropdown component
 type DropdownControlProps = {
@@ -25,8 +27,11 @@ export function DropdownControl({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-3 py-1 rounded-sm font-medium cursor-pointer">
-        {isSelected}
+      <DropdownMenuTrigger >
+        <Button variant="outline" size="sm" className="w-full justify-between">
+          {isSelected}
+          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="max-h-70">
         {options.map((option, optionIndex) => (
@@ -36,7 +41,7 @@ export function DropdownControl({
             className={cn(
               'flex items-center justify-between my-1',
               isSelected === option.name
-                ? 'bg-main-view-fg/6 hover:bg-main-view-fg/6'
+                ? 'bg-secondary/60 hover:bg-secondary/40'
                 : ''
             )}
           >

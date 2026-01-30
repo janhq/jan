@@ -90,7 +90,7 @@ export function EditMessageDialog({
                 {keptImages.map((imageUrl, index) => (
                   <div
                     key={index}
-                    className="relative border border-main-view-fg/5 rounded-lg size-14"
+                    className="relative border rounded-lg size-14"
                   >
                     <img
                       className="object-cover w-full h-full rounded-lg"
@@ -123,7 +123,7 @@ export function EditMessageDialog({
           />
           <DialogFooter className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
-              <Button variant="link" size="sm" className="w-full sm:w-auto">
+              <Button variant="ghost" size="sm" className="w-full sm:w-auto">
                 {t('common:cancel')}
               </Button>
             </DialogClose>

@@ -113,8 +113,8 @@ describe('HoverCard Components', () => {
       )
 
       const content = screen.getByTestId('hover-card-content')
-      expect(content.className).toContain('bg-main-view')
-      expect(content.className).toContain('text-main-view-fg/70')
+      expect(content.className).toContain('bg-popover')
+      expect(content.className).toContain('text-popover-foreground')
       expect(content.className).toContain('rounded-md')
       expect(content.className).toContain('border')
       expect(content.className).toContain('shadow-md')
@@ -128,7 +128,7 @@ describe('HoverCard Components', () => {
       )
 
       const content = screen.getByTestId('hover-card-content')
-      expect(content.className).toContain('bg-main-view')
+      expect(content.className).toContain('bg-popover')
       expect(content.className).toContain('my-custom-class')
     })
 

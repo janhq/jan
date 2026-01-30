@@ -180,8 +180,8 @@ export const DialogEditModel = ({
   return (
     <Dialog open={isOpen} onOpenChange={handleDialogChange}>
       <DialogTrigger asChild>
-        <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
-          <IconPencil size={18} className="text-main-view-fg/50" />
+        <div className="size-6 cursor-pointer flex items-center justify-center rounded transition-all duration-200 ease-in-out">
+          <IconPencil size={18} className="text-muted-foreground" />
         </div>
       </DialogTrigger>
       <DialogContent onKeyDown={handleKeyDown}>
@@ -210,20 +210,20 @@ export const DialogEditModel = ({
             className="w-full"
             disabled={isLoading}
           />
-          <p className="text-xs text-main-view-fg/60 mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             This is the name that will be shown in the interface. The original model file remains unchanged.
           </p>
         </div>
 
         {/* Warning Banner */}
-        <div className="bg-main-view-fg/5 border border-main-view-fg/10 rounded-md p-3">
+        <div className="bg-secondary border  rounded-md p-3">
           <div className="flex items-start space-x-3">
-            <IconAlertTriangle className="size-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-            <div className="text-sm text-main-view-fg/80">
-              <p className="font-medium mb-1 text-base">
+            <IconAlertTriangle className="size-5 text-yellow-600 mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <p className="font-medium mb-1">
                 {t('providers:editModel.warning.title')}
               </p>
-              <p className="text-main-view-fg/70">
+              <p className="text-muted-foreground">
                 {t('providers:editModel.warning.description')}
               </p>
             </div>
@@ -237,7 +237,7 @@ export const DialogEditModel = ({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <IconTool className="size-4 text-main-view-fg/70" />
+                <IconTool className="size-4 text-muted-foreground" />
                 <span className="text-sm">
                   {t('providers:editModel.tools')}
                 </span>
@@ -254,7 +254,7 @@ export const DialogEditModel = ({
 
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <IconEye className="size-4 text-main-view-fg/70" />
+                <IconEye className="size-4 text-muted-foreground" />
                 <span className="text-sm">
                   {t('providers:editModel.vision')}
                 </span>
@@ -276,7 +276,7 @@ export const DialogEditModel = ({
           <Button
             onClick={handleSaveChanges}
             disabled={!hasUnsavedChanges() || isLoading}
-            className="px-4 py-2"
+            size="sm"
           >
             {isLoading ? (
               <>

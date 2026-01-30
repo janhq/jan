@@ -98,8 +98,6 @@
     "resetToDefaultDesc": "Obnovit všechna nastavení rozhraní na výchozí.",
     "resetInterfaceSuccess": "Rozhraní úspěšně obnoveno",
     "resetInterfaceSuccessDesc": "Všechna nastavení rozhraní byla obnovena na výchozí.",
-    "chatWidth": "Šířka rozložení chatu",
-    "chatWidthDesc": "Vyberte předvolbu šířky chatu, která vyhovuje vašemu pracovnímu prostoru.",
     "threadScrollTitle": "Chování rolování vlákna",
     "threadScrollDesc": "Vyberte, jak má viewport chatu reagovat při příchodu nových zpráv.",
     "threadScrollFlowTitle": "Plynulé rolování",

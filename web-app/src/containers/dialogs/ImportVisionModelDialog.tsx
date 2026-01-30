@@ -5,7 +5,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -299,16 +298,16 @@ export const ImportVisionModelDialog = ({
 
         <div className="space-y-6">
           {/* Vision Model Toggle Card */}
-          <div className="border border-main-view-fg/10 rounded-lg p-4 space-y-3 bg-main-view-fg/5">
+          <div className="border  rounded-lg p-4 space-y-3">
             <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0 mt-0.5">
-                <IconEye size={20} className="text-accent" />
+              <div className="shrink-0 mt-0.5">
+                <IconEye size={20} className="text-muted-foreground" />
               </div>
               <div className="flex-1">
-                <h3 className="font-medium text-main-view-fg">
+                <h3 className="font-medium">
                   Vision Model Support
                 </h3>
-                <p className="text-sm text-main-view-fg/70">
+                <p className="text-sm text-muted-foreground leading-normal">
                   Enable if your model supports image understanding (requires
                   MMPROJ file)
                 </p>
@@ -330,14 +329,14 @@ export const ImportVisionModelDialog = ({
           </div>
 
           {/* Model Name Preview */}
-          {modelName && (
-            <div className="bg-main-view-fg/5 rounded-lg p-3">
+          {modelName && !validationError && (
+            <div className=" rounded-lg p-3">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-main-view-fg/80">
+                <span className="text-sm font-medium text-muted-foreground">
                   Model will be saved as:
                 </span>
               </div>
-              <p className="text-base font-mono mt-1 text-main-view-fg">
+              <p className="text-sm font-mono mt-1">
                 {modelName}
               </p>
             </div>
@@ -346,19 +345,19 @@ export const ImportVisionModelDialog = ({
           {/* File Selection Area */}
           <div className="space-y-4">
             {/* Model File Selection */}
-            <div className="border border-main-view-fg/10 rounded-lg p-4 space-y-3 bg-main-view-fg/5">
+            <div className="border  rounded-lg p-4 space-y-3">
               <div className="flex items-center gap-2">
-                <h3 className="font-medium text-main-view-fg">
+                <h3 className="font-medium">
                   Model File (GGUF)
                 </h3>
-                <span className="text-xs bg-main-view-fg/10 text-main-view-fg/70 px-2 py-1 rounded">
+                <span className="text-xs bg-secondary px-2 py-1 rounded-sm">
                   Required
                 </span>
               </div>
 
               {modelFile ? (
                 <div className="space-y-2">
-                  <div className="bg-accent/10 border border-accent/20 rounded-lg p-3">
+                  <div className="bg-accent/10 border rounded-lg p-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         {isValidating ? (
@@ -374,16 +373,15 @@ export const ImportVisionModelDialog = ({
                         ) : (
                           <IconCheck size={16} className="text-accent" />
                         )}
-                        <span className="text-sm font-medium text-main-view-fg">
+                        <span className="text-sm font-medium">
                           {modelFile.split(/[\\/]/).pop()}
                         </span>
                       </div>
                       <Button
-                        variant="link"
+                        variant="secondary"
                         size="sm"
                         onClick={() => handleFileSelect('model')}
                         disabled={importing || isValidating}
-                        className="text-accent hover:text-accent/80"
                       >
                         Change
                       </Button>
@@ -396,7 +394,7 @@ export const ImportVisionModelDialog = ({
                       <div className="flex items-start gap-2">
                         <IconAlertTriangle
                           size={16}
-                          className="text-destructive mt-0.5 flex-shrink-0"
+                          className="text-destructive mt-0.5 shrink-0"
                         />
                         <div>
                           <p className="text-sm font-medium text-destructive">
@@ -431,7 +429,7 @@ export const ImportVisionModelDialog = ({
                   variant="link"
                   onClick={() => handleFileSelect('model')}
                   disabled={importing}
-                  className="w-full h-12 border border-dashed border-main-view-fg/10 bg-main-view text-main-view-fg/50 hover:text-main-view-fg"
+                  className="w-full h-12 border border-dashed text-muted-foreground"
                 >
                   Select GGUF File
                 </Button>
@@ -440,17 +438,17 @@ export const ImportVisionModelDialog = ({
 
             {/* MMPROJ File Selection - only show if vision model is enabled */}
             {isVisionModel && (
-              <div className="border border-main-view-fg/10 rounded-lg p-4 space-y-3 bg-main-view-fg/5">
+              <div className="border rounded-lg p-4 space-y-3">
                 <div className="flex items-center gap-2">
-                  <h3 className="font-medium text-main-view-fg">MMPROJ File</h3>
-                  <span className="text-xs bg-accent/10 text-accent px-2 py-1 rounded">
+                  <h3 className="font-medium">MMPROJ File</h3>
+                  <span className="text-xs bg-secondary px-2 py-1 rounded-sm">
                     Required for Vision
                   </span>
                 </div>
 
                 {mmProjFile ? (
                   <div className="space-y-2">
-                    <div className="bg-accent/10 border border-accent/20 rounded-lg p-3">
+                    <div className="bg-accent/10 border rounded-lg p-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           {isValidatingMmproj ? (
@@ -466,16 +464,15 @@ export const ImportVisionModelDialog = ({
                           ) : (
                             <IconCheck size={16} className="text-accent" />
                           )}
-                          <span className="text-sm font-medium text-main-view-fg">
+                          <span className="text-sm font-medium">
                             {mmProjFile.split(/[\\/]/).pop()}
                           </span>
                         </div>
                         <Button
-                          variant="link"
+                          variant="secondary"
                           size="sm"
                           onClick={() => handleFileSelect('mmproj')}
                           disabled={importing || isValidatingMmproj}
-                          className="text-accent hover:text-accent/80"
                         >
                           Change
                         </Button>
@@ -488,7 +485,7 @@ export const ImportVisionModelDialog = ({
                         <div className="flex items-start gap-2">
                           <IconAlertTriangle
                             size={16}
-                            className="text-destructive mt-0.5 flex-shrink-0"
+                            className="text-destructive mt-0.5 shrink-0"
                           />
                           <div>
                             <p className="text-sm font-medium text-destructive">
@@ -523,7 +520,7 @@ export const ImportVisionModelDialog = ({
                     variant="link"
                     onClick={() => handleFileSelect('mmproj')}
                     disabled={importing}
-                    className="w-full h-12 border border-dashed border-main-view-fg/10 bg-main-view text-main-view-fg/50 hover:text-main-view-fg"
+                    className="w-full h-12 border border-dashed text-muted-foreground"
                   >
                     Select MMPROJ File
                   </Button>
@@ -533,17 +530,18 @@ export const ImportVisionModelDialog = ({
           </div>
         </div>
 
-        <DialogFooter className="flex gap-2 pt-4">
+        <div className="flex gap-2 pt-4 justify-end">
           <Button
-            variant="link"
+            variant="ghost"
+            size="sm"
             onClick={() => handleOpenChange(false)}
             disabled={importing}
-            className="flex-1"
           >
             Cancel
           </Button>
           <Button
             onClick={handleImport}
+            size="sm"
             disabled={
               importing ||
               !modelFile ||
@@ -554,16 +552,15 @@ export const ImportVisionModelDialog = ({
               mmprojValidationError !== null ||
               isValidatingMmproj
             }
-            className="flex-1"
           >
-            {importing && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {importing && <IconLoader2 className="mr-2 size-4 animate-spin" />}
             {importing ? (
               'Importing...'
             ) : (
               <>Import {isVisionModel ? 'Vision ' : ''}Model</>
             )}
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   )

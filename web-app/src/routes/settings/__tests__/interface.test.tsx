@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Route as InterfaceRoute } from '../interface'
 
@@ -11,14 +11,6 @@ vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="header-page">{children}</div>
   ),
-}))
-
-vi.mock('@/containers/ColorPickerAppBgColor', () => ({
-  ColorPickerAppBgColor: () => <div data-testid="color-picker-bg">Color Picker BG</div>,
-}))
-
-vi.mock('@/containers/ColorPickerAppMainView', () => ({
-  ColorPickerAppMainView: () => <div data-testid="color-picker-main-view">Color Picker Main View</div>,
 }))
 
 vi.mock('@/containers/Card', () => ({
@@ -45,22 +37,9 @@ vi.mock('@/containers/FontSizeSwitcher', () => ({
   FontSizeSwitcher: () => <div data-testid="font-size-switcher">Font Size Switcher</div>,
 }))
 
-vi.mock('@/containers/ColorPickerAppPrimaryColor', () => ({
-  ColorPickerAppPrimaryColor: () => <div data-testid="color-picker-primary">Color Picker Primary</div>,
+vi.mock('@/containers/AccentColorPicker', () => ({
+  AccentColorPicker: () => <div data-testid="accent-color-picker">Accent Color Picker</div>,
 }))
-
-vi.mock('@/containers/ColorPickerAppAccentColor', () => ({
-  ColorPickerAppAccentColor: () => <div data-testid="color-picker-accent">Color Picker Accent</div>,
-}))
-
-vi.mock('@/containers/ColorPickerAppDestructiveColor', () => ({
-  ColorPickerAppDestructiveColor: () => <div data-testid="color-picker-destructive">Color Picker Destructive</div>,
-}))
-
-vi.mock('@/containers/ChatWidthSwitcher', () => ({
-  ChatWidthSwitcher: () => <div data-testid="chat-width-switcher">Chat Width Switcher</div>,
-}))
-
 
 vi.mock('@/hooks/useInterfaceSettings', () => ({
   useInterfaceSettings: () => ({
@@ -123,18 +102,7 @@ describe('Interface Settings Route', () => {
 
     expect(screen.getByTestId('theme-switcher')).toBeInTheDocument()
     expect(screen.getByTestId('font-size-switcher')).toBeInTheDocument()
-    expect(screen.getByTestId('color-picker-bg')).toBeInTheDocument()
-    expect(screen.getByTestId('color-picker-main-view')).toBeInTheDocument()
-    expect(screen.getByTestId('color-picker-primary')).toBeInTheDocument()
-    expect(screen.getByTestId('color-picker-accent')).toBeInTheDocument()
-    expect(screen.getByTestId('color-picker-destructive')).toBeInTheDocument()
-  })
-
-  it('should render chat width controls', () => {
-    const Component = InterfaceRoute.component as React.ComponentType
-    render(<Component />)
-
-    expect(screen.getByTestId('chat-width-switcher')).toBeInTheDocument()
+    expect(screen.getByTestId('accent-color-picker')).toBeInTheDocument()
   })
 
   it('should render reset interface button', () => {

@@ -21,13 +21,11 @@ import { useAppState } from '@/hooks/useAppState'
 type ModelSettingProps = {
   provider: ProviderObject
   model: Model
-  smallIcon?: boolean
 }
 
 export function ModelSetting({
   model,
   provider,
-  smallIcon,
 }: ModelSettingProps) {
   const { updateProvider } = useModelProvider()
   const { t } = useTranslation()
@@ -264,38 +262,33 @@ export function ModelSetting({
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <div
-          className={cn(
-            'size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out',
-            smallIcon && 'size-5'
-          )}
-        >
-          <IconSettings size={18} className="text-main-view-fg/50" />
-        </div>
+        <Button variant="ghost" size="icon-xs">
+          <IconSettings size={18} className="text-muted-foreground" />
+        </Button>
       </SheetTrigger>
-      <SheetContent className="h-[calc(100%-8px)] top-1 right-1 rounded-e-md overflow-y-auto">
+      <SheetContent className="overflow-y-auto">
         <SheetHeader>
           <SheetTitle>
             {t('common:modelSettings.title', {
               modelId: getModelDisplayName(model),
             })}
           </SheetTitle>
-          <SheetDescription>
+          <SheetDescription className='text-xs leading-normal'>
             {t('common:modelSettings.description')}
           </SheetDescription>
 
           {/* Model Load Planning Section - Only show for llamacpp provider */}
           {provider.provider === 'llamacpp' && (
-            <div className="pb-4 border-b border-main-view-fg/10 my-4">
+            <div className="pb-4 border-b mt-4">
               <div>
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="font-medium">Optimize Settings</h3>
-                    <div className="text-xs bg-main-view-fg/10 border border-main-view-fg/20 text-main-view-fg/70 rounded-full py-0.5 px-2">
+                    <div className="text-xs bg-secondary border text-muted-foreground rounded-full py-0.5 px-2">
                       <span>{t('mcp-servers:experimental')}</span>
                     </div>
                   </div>
-                  <p className="text-main-view-fg/70 text-xs mb-3">
+                  <p className="text-muted-foreground leading-normal text-xs mb-3">
                     Analyze your system and model, then apply optimal loading
                     settings automatically
                   </p>
@@ -320,25 +313,21 @@ export function ModelSetting({
           )}
         </SheetHeader>
 
-        <div className="px-4 space-y-6">
+        <div className="px-4 space-y-8 pb-4">
           {Object.entries(model.settings || {}).map(([key, value]) => {
             const config = value as ProviderSetting
-
             return (
               <div key={key} className="space-y-2">
                 <div
                   className={cn(
-                    'flex items-start justify-between gap-8 last:mb-2',
+                    'flex items-start justify-between gap-8',
                     (key === 'chat_template' ||
                       key === 'override_tensor_buffer_t') &&
                       'flex-col gap-1 w-full'
                   )}
                 >
-                  <div className="space-y-1 mb-2">
-                    <h3 className="font-medium">{config.title}</h3>
-                    <p className="text-main-view-fg/70 text-xs">
-                      {config.description}
-                    </p>
+                  <div className="mb-1 truncate">
+                    <span title={config.title} className="font-medium">{config.title}</span>
                   </div>
                   <DynamicControllerSetting
                     key={config.key}
@@ -352,6 +341,9 @@ export function ModelSetting({
                     onChange={(newValue) => handleSettingChange(key, newValue)}
                   />
                 </div>
+                <p className="text-muted-foreground leading-normal text-xs">
+                  {config.description}
+                </p>
               </div>
             )
           })}

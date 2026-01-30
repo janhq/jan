@@ -26,7 +26,7 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
   })
 
   return (
-    <div className="flex gap-1">
+    <div className="flex gap-0.5">
       {filteredCapabilities.map((capability: string, capIndex: number) => {
         let icon = null
 
@@ -39,7 +39,7 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
           icon = <IconTool className="size-3.5" />
         } else if (capability === 'reasoning') {
           icon = <IconAtom className="size-3.5" />
-        } else if (capability === 'embeddings') {
+        } else if (capability === 'embeddings' || isEmbedding) {
           icon = <IconCodeCircle2 className="size-3.5" />
         } else if (capability === 'web_search') {
           icon = <IconWorld className="size-3.5" />
@@ -47,18 +47,16 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
           icon = null
         }
 
-        // Special badge style for embedding models
-        const badgeClass = isEmbedding
-          ? 'flex items-center gap-1 px-1.5 h-5 bg-amber-500/10 border border-amber-500/20 rounded text-amber-600 dark:text-amber-400 justify-center last:mr-1 hover:bg-amber-500/20 transition-all text-[10px] font-medium'
-          : 'flex items-center gap-1 size-5 bg-main-view-fg/5 rounded text-main-view-fg/50 justify-center last:mr-1 hover:text-main-view-fg transition-all'
-
         return (
           <Fragment key={`capability-${capIndex}`}>
             {icon && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className={badgeClass} title={capability}>
+                    <span
+                      className="flex items-center gap-1 size-5 hover:bg-secondary rounded text-muted-foreground justify-center last:mr-1 transition-all"
+                      title={capability}
+                    >
                       {icon}
                       {isEmbedding && <span>Embedding</span>}
                     </span>

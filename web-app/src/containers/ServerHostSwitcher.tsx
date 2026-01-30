@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,6 +8,7 @@ import {
 
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { cn } from '@/lib/utils'
+import { ChevronsUpDown } from 'lucide-react'
 
 const hostOptions = [
   { value: '127.0.0.1', label: '127.0.0.1' },
@@ -26,12 +28,10 @@ export function ServerHostSwitcher({
         asChild
         className={cn(isServerRunning && 'opacity-50 pointer-events-none')}
       >
-        <span
-          title="Edit Server Host"
-          className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
-        >
+        <Button variant="outline" size="sm" className="w-full justify-between" title="Edit Server Host">
           {serverHost}
-        </span>
+          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-24">
         {hostOptions.map((item) => (
@@ -39,7 +39,7 @@ export function ServerHostSwitcher({
             key={item.value}
             className={cn(
               'cursor-pointer my-0.5',
-              serverHost === item.value && 'bg-main-view-fg/5'
+              serverHost === item.value && 'bg-seconday'
             )}
             onClick={() => setServerHost(item.value as '127.0.0.1' | '0.0.0.0')}
           >

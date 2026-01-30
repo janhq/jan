@@ -98,8 +98,6 @@
     "resetToDefaultDesc": "Đặt lại tất cả cài đặt giao diện về mặc định.",
     "resetInterfaceSuccess": "Giao diện đã được đặt lại thành công",
     "resetInterfaceSuccessDesc": "Tất cả cài đặt giao diện đã được khôi phục về mặc định.",
-    "chatWidth": "Chiều rộng trò chuyện",
-    "chatWidthDesc": "Tùy chỉnh chiều rộng của chế độ xem trò chuyện.",
     "tokenCounterCompact": "Bộ đếm token nhỏ gọn",
     "tokenCounterCompactDesc": "Hiển thị bộ đếm token bên trong ô nhập trò chuyện. Khi tắt, bộ đếm token sẽ xuất hiện bên dưới ô nhập.",
     "codeBlockTitle": "Khối mã",
