@@ -50,19 +50,18 @@ export function RenameThreadDialog({
   }
 
   useEffect(() => {
-    if (isOpen && inputRef.current) {
+    if (isOpen) {
+      setTitle(plainTitleForRename || t('common:newThread'))
       setTimeout(() => {
         inputRef.current?.focus()
         inputRef.current?.select()
       }, 100)
     }
-  }, [isOpen])
+  }, [isOpen, plainTitleForRename, t])
 
   const handleOpenChange = (open: boolean) => {
     setOpenSafe(open)
-    if (open) {
-      setTitle(plainTitleForRename || t('common:newThread'))
-    } else {
+    if (!open) {
       onDropdownClose?.()
     }
   }
@@ -108,14 +107,14 @@ export function RenameThreadDialog({
             placeholder={t('common:threadTitle')}
             aria-label={t('common:threadTitle')}
           />
-          <DialogFooter className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <DialogFooter className="mt-2 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
               <Button variant="ghost" size="sm" className="w-full sm:w-auto">
                 {t('common:cancel')}
               </Button>
             </DialogClose>
             <Button
-              disabled={!title.trim()}
+              disabled={!title.trim() || title.trim() === plainTitleForRename}
               onClick={handleRename}
               size="sm"
               className="w-full sm:w-auto"
