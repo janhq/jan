@@ -71,10 +71,14 @@ mod tests {
             prefix: "/v1".to_string(),
             proxy_api_key: "test-key".to_string(),
             trusted_hosts: vec![vec!["localhost".to_string()]],
+            host: "localhost".to_string(),
+            port: 1337,
         };
         assert_eq!(config.prefix, "/v1");
         assert_eq!(config.proxy_api_key, "test-key");
         assert_eq!(config.trusted_hosts.len(), 1);
+        assert_eq!(config.host, "localhost");
+        assert_eq!(config.port, 1337);
     }
 
     #[test]
@@ -83,10 +87,14 @@ mod tests {
             prefix: "".to_string(),
             proxy_api_key: "".to_string(),
             trusted_hosts: vec![],
+            host: "127.0.0.1".to_string(),
+            port: 8080,
         };
         assert_eq!(config.prefix, "");
         assert_eq!(config.proxy_api_key, "");
         assert_eq!(config.trusted_hosts.len(), 0);
+        assert_eq!(config.host, "127.0.0.1");
+        assert_eq!(config.port, 8080);
     }
 
     #[test]
