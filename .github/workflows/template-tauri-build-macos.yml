@@ -169,6 +169,13 @@ jobs:
           p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
           p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
 
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
       - name: Build app
         run: |
           make build
