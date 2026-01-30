@@ -54,6 +54,13 @@ jobs:
           rm -rf ~/jan
           make clean
 
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
       - name: Install dependencies
         run: |
           make lint
