@@ -1,0 +1,62 @@
+{
+    "refreshModelsError": "Il provider deve avere l'URL di base e la chiave API configurati per recuperare i modelli.",
+    "refreshModelsSuccess": "Aggiunti {{count}} nuovi modelli da {{provider}}.",
+    "noNewModels": "Nessun nuovo modello trovato. Tutti i modelli disponibili sono già stati aggiunti.",
+    "refreshModelsFailed": "Impossibile recuperare i modelli da {{provider}}. Controlla la tua chiave API e l'URL di base.",
+    "models": "Modelli",
+    "refreshing": "Aggiornamento...",
+    "refresh": "Aggiorna",
+    "import": "Importa",
+    "importModelSuccess": "Il modello {{provider}} è stato importato con successo.",
+    "importModelError": "Impossibile importare il modello:",
+    "stop": "Ferma",
+    "start": "Avvia",
+    "noModelFound": "Nessun modello trovato",
+    "noModelFoundDesc": "I modelli disponibili saranno elencati qui. Se non hai ancora modelli, visita l'Hub per scaricarli.",
+    "configuration": "Configurazione",
+    "apiEndpoint": "Endpoint API",
+    "testConnection": "Testa Connessione",
+    "addModel": {
+        "title": "Aggiungi Nuovo Modello",
+        "description": "Aggiungi un nuovo modello al provider {{provider}}.",
+        "modelId": "ID Modello",
+        "enterModelId": "Inserisci ID modello",
+        "exploreModels": "Vedi elenco modelli da {{provider}}",
+        "addModel": "Aggiungi Modello",
+        "modelExists": "Il modello esiste già",
+        "modelExistsDesc": "Scegli un ID modello diverso."
+    },
+    "deleteModel": {
+        "title": "Elimina Modello: {{modelId}}",
+        "description": "Sei sicuro di voler eliminare questo modello? Questa azione non può essere annullata.",
+        "success": "Il modello {{modelId}} è stato eliminato permanentemente.",
+        "cancel": "Annulla",
+        "delete": "Elimina"
+    },
+    "deleteProvider": {
+        "title": "Elimina Provider",
+        "description": "Elimina questo provider e tutti i suoi modelli. Questa azione non può essere annullata.",
+        "success": "Il provider {{provider}} è stato eliminato permanentemente.",
+        "confirmTitle": "Elimina Provider: {{provider}}",
+        "confirmDescription": "Sei sicuro di voler eliminare questo provider? Questa azione non può essere annullata.",
+        "cancel": "Annulla",
+        "delete": "Elimina"
+    },
+    "editModel": {
+        "title": "Modifica Modello: {{modelId}}",
+        "description": "Configura le capacità del modello attivando le opzioni seguenti.",
+        "capabilities": "Capacità",
+        "tools": "Strumenti",
+        "vision": "Visione",
+        "proactive": "Proattivo (Sperimentale)",
+        "embeddings": "Embeddings",
+        "notAvailable": "Non ancora disponibile",
+        "warning": {
+            "title": "Procedi con Cautela",
+            "description": "La modifica delle capacità del modello può influire sulle prestazioni e sulla funzionalità. Impostazioni errate potrebbero causare comportamenti imprevisti o errori."
+        }
+    },
+    "addProvider": "Aggiungi Provider",
+    "addOpenAIProvider": "Aggiungi Provider OpenAI",
+    "enterNameForProvider": "Inserisci il nome del provider"
+}
