@@ -147,7 +147,7 @@ const SettingsMenu = () => {
               <div key={menu.title}>
                 <Link
                   to={menu.route}
-                  className="block px-2 gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm [&.active]:bg-secondary/80"
+                  className="block px-2 gap-1.5 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary py-1 w-full rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
                 >
                   <div className="flex items-center justify-between">
                     <span>

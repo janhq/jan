@@ -74,7 +74,7 @@ export const ACCENT_COLORS = [
     value: 'pink',
     thumb: '#D55EF3',
     primary: '#D55EF3',
-    sidebar: { light: '#E9C4F3', dark: '#4D075F' },
+    sidebar: { light: '#FFDAE9', dark: '#4D075F' },
   },
   {
     name: 'Rose',
