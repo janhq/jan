@@ -1,5 +1,4 @@
 import { Button } from '@/components/ui/button'
-import { useTranslation } from '@/i18n'
 import { IconCopy, IconCopyCheck } from '@tabler/icons-react'
 import { useState } from 'react'
 
