@@ -99,7 +99,7 @@ export function DataProvider() {
     // Only check for updates if the auto updater is not disabled
     // App might be distributed via other package managers
     // or methods that handle updates differently
-    if (AUTO_UPDATER_DISABLED || isDev()) {
+    if (isDev()) {
       return
     }
 
