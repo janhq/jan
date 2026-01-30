@@ -92,6 +92,11 @@ function Shortcuts() {
                 actions={<ShortcutLabel action={ShortcutAction.NEW_CHAT} />}
               />
               <CardItem
+                title={t('settings:shortcuts.newProject')}
+                description={t('settings:shortcuts.newProjectDesc')}
+                actions={<ShortcutLabel action={ShortcutAction.NEW_PROJECT} />}
+              />
+              <CardItem
                 title={t('settings:shortcuts.toggleSidebar')}
                 description={t('settings:shortcuts.toggleSidebarDesc')}
                 actions={<ShortcutLabel action={ShortcutAction.TOGGLE_SIDEBAR} />}

@@ -11,7 +11,7 @@ import { useTranslation } from "@/i18n/react-i18next-compat"
 
 import { Link, useNavigate } from "@tanstack/react-router"
 import { PlatformMetaKey } from "@/containers/PlatformMetaKey"
-import React, { useRef, useState } from "react"
+import React, { useRef } from "react"
 import { SearchIcon, type SearchIconHandle } from "@/components/animated-icon/search"
 import { FolderPlusIcon, type FolderPlusIconHandle } from "@/components/animated-icon/folder-plus"
 import { MessageCircleIcon, type MessageCircleIconHandle } from "@/components/animated-icon/message-circle"
@@ -21,6 +21,7 @@ import AddProjectDialog from "@/containers/dialogs/AddProjectDialog"
 import { SearchDialog } from "@/containers/dialogs/SearchDialog"
 import { useThreadManagement } from "@/hooks/useThreadManagement"
 import { useSearchDialog } from "@/hooks/useSearchDialog"
+import { useProjectDialog } from "@/hooks/useProjectDialog"
 
 type AnimatedIconHandle = SearchIconHandle | FolderPlusIconHandle | MessageCircleIconHandle | SettingsIconHandle | BlocksIconHandle
 
@@ -42,9 +43,9 @@ const getNavMainItems = (onNewProject: () => void, onSearch: () => void): NavMai
     url: route.home,
     animatedIcon: MessageCircleIcon,
     shortcut: (
-      <KbdGroup className="ml-auto scale-90">
-        <Kbd><PlatformMetaKey /></Kbd>
-        <Kbd>N</Kbd>
+      <KbdGroup className="ml-auto scale-90 gap-0">
+        <Kbd className="bg-transparent size-3 min-w-3"><PlatformMetaKey /></Kbd>
+        <Kbd className="bg-transparent size-3 min-w-3">N</Kbd>
       </KbdGroup>
     ),
   },
@@ -52,15 +53,21 @@ const getNavMainItems = (onNewProject: () => void, onSearch: () => void): NavMai
     title: "common:projects.new",
     animatedIcon: FolderPlusIcon,
     onClick: onNewProject,
+    shortcut: (
+      <KbdGroup className="ml-auto scale-90 gap-0">
+        <Kbd className="bg-transparent size-3 min-w-3"><PlatformMetaKey /></Kbd>
+        <Kbd className="bg-transparent size-3 min-w-3">P</Kbd>
+      </KbdGroup>
+    ),
   },
   {
     title: "common:search",
     animatedIcon: SearchIcon,
     onClick: onSearch,
     shortcut: (
-      <KbdGroup className="ml-auto scale-90">
-        <Kbd><PlatformMetaKey /></Kbd>
-        <Kbd>K</Kbd>
+      <KbdGroup className="ml-auto scale-90 gap-0">
+        <Kbd className="bg-transparent size-3 min-w-3"><PlatformMetaKey /></Kbd>
+        <Kbd className="bg-transparent size-3 min-w-3">K</Kbd>
       </KbdGroup>
     ),
   },
@@ -116,9 +123,9 @@ function NavMainItemWithAnimatedIcon({
 export function NavMain() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [projectDialogOpen, setProjectDialogOpen] = useState(false)
   const { addFolder } = useThreadManagement()
   const { open: searchOpen, setOpen: setSearchOpen } = useSearchDialog()
+  const { open: projectDialogOpen, setOpen: setProjectDialogOpen } = useProjectDialog()
 
   const navMainItems = getNavMainItems(
     () => setProjectDialogOpen(true),

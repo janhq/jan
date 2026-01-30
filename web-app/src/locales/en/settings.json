@@ -61,6 +61,8 @@
     "application": "Application",
     "newChat": "New Chat",
     "newChatDesc": "Create a new chat.",
+    "newProject": "New Project",
+    "newProjectDesc": "Open the create project dialog.",
     "toggleSidebar": "Toggle Sidebar",
     "toggleSidebarDesc": "Show or hide the sidebar.",
     "zoomIn": "Zoom In",

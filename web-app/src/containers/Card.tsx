@@ -72,7 +72,7 @@ export function CardItem({
 
 export function Card({ title, children, header }: CardProps) {
   return (
-    <div className="bg-secondary dark:bg-secondary/30 p-4 rounded-lg text-muted-foreground w-full">
+    <div className="bg-card p-4 rounded-lg text-muted-foreground w-full">
       {title && (
         <h1 className="text-foreground font-studio font-medium text-base mb-4">
           {title}
