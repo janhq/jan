@@ -129,7 +129,7 @@ export function InputControl({
             className="p-1 rounded  text-muted-foreground"
           >
             {isCopied ? (
-              <CopyCheck className="text-accent" size={16} />
+              <CopyCheck className="text-primary" size={16} />
             ) : (
               <Copy size={16} />
             )}

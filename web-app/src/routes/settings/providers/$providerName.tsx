@@ -756,10 +756,10 @@ function ProviderDetail() {
                     title={
                       <div className="flex items-center gap-2">
                         <div className="flex items-center gap-2 animate-pulse">
-                          <div className="bg-accent/20 flex gap-2 text-accent px-2 py-1 rounded-full text-xs">
+                          <div className="flex gap-2 px-2 py-1 rounded-full text-xs">
                             <IconLoader
                               size={16}
-                              className="animate-spin text-accent"
+                              className="animate-spin"
                             />
                             Importing...
                           </div>

@@ -33,7 +33,7 @@ export function MessageMetadataDialog({
     <Tooltip>
       <TooltipTrigger asChild>
         <div 
-          className="outline-0 focus:outline-0 flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+          className="outline-0 focus:outline-0 flex items-center gap-1 transition-colors cursor-pointer group relative"
           role="button"
           tabIndex={0}
           onKeyDown={(e) => {

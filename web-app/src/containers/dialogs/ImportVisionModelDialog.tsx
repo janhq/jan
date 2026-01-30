@@ -357,13 +357,13 @@ export const ImportVisionModelDialog = ({
 
               {modelFile ? (
                 <div className="space-y-2">
-                  <div className="bg-accent/10 border rounded-lg p-3">
+                  <div className="border rounded-lg p-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         {isValidating ? (
                           <IconLoader2
                             size={16}
-                            className="text-accent animate-spin"
+                            className="animate-spin"
                           />
                         ) : validationError ? (
                           <IconAlertTriangle
@@ -371,7 +371,7 @@ export const ImportVisionModelDialog = ({
                             className="text-destructive"
                           />
                         ) : (
-                          <IconCheck size={16} className="text-accent" />
+                          <IconCheck size={16}  />
                         )}
                         <span className="text-sm font-medium">
                           {modelFile.split(/[\\/]/).pop()}
@@ -454,7 +454,7 @@ export const ImportVisionModelDialog = ({
                           {isValidatingMmproj ? (
                             <IconLoader2
                               size={16}
-                              className="text-accent animate-spin"
+                              className="animate-spin"
                             />
                           ) : mmprojValidationError ? (
                             <IconAlertTriangle
@@ -462,7 +462,7 @@ export const ImportVisionModelDialog = ({
                               className="text-destructive"
                             />
                           ) : (
-                            <IconCheck size={16} className="text-accent" />
+                            <IconCheck size={16} />
                           )}
                           <span className="text-sm font-medium">
                             {mmProjFile.split(/[\\/]/).pop()}
