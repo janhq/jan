@@ -34,8 +34,9 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
   }
 
   const trigger = (
-    <div
-      className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+    <Button
+      variant="ghost"
+      size="icon-xs"
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -46,7 +47,7 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
       }}
     >
       <IconTrash size={16} />
-    </div>
+    </Button>
   )
 
   return (
