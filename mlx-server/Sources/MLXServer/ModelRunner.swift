@@ -2,13 +2,13 @@ import Foundation
 import MLX
 import MLXLLM
 import MLXLMCommon
-import MLXRandom
 import MLXVLM
 
 /// Manages loading and running inference with MLX models
 actor ModelRunner {
     private var container: ModelContainer?
     private var modelId: String = ""
+    private var promptCache: [String: PromptCache] = [:]
 
     var isLoaded: Bool {
         container != nil
@@ -18,9 +18,50 @@ actor ModelRunner {
         modelId
     }
 
+    /// Clear the prompt cache when loading a new model
+    private func clearPromptCache() {
+        promptCache.removeAll()
+        log("[mlx] Prompt cache cleared")
+    }
+
+    /// Warm up the model by running a short generation to initialize GPU kernels
+    func warmUp() async throws {
+        guard let container = container else {
+            throw MLXServerError.modelNotLoaded
+        }
+        log("[mlx] Running warm-up generation...")
+
+        let warmUpMessages = [ChatMessage(role: "user", content: "Hello")]
+        let warmUpParameters = GenerateParameters(
+            maxTokens: 1,
+            temperature: 0.1,
+            topP: 0.9,
+            repetitionPenalty: 1.0
+        )
+
+        let warmUpInput = UserInput(
+            chat: buildChat(from: warmUpMessages),
+            processing: .init(resize: .init(width: 1024, height: 1024)),
+            tools: nil
+        )
+
+        try await container.perform { context in
+            let input = try await context.processor.prepare(input: warmUpInput)
+
+            for try await _ in try MLXLMCommon.generate(
+                input: input, parameters: warmUpParameters, context: context
+            ) {
+                // Consume the stream - we only need one token to warm up
+                break
+            }
+        }
+
+        log("[mlx] Warm-up complete")
+    }
+
     /// Load a model from the given path, trying LLM first then VLM
     func load(modelPath: String, modelId: String) async throws {
-        print("[mlx] Loading model from: \(modelPath)")
+        log("[mlx] Loading model from: \(modelPath)")
 
         let modelURL = URL(fileURLWithPath: modelPath)
         let modelDir = modelURL.deletingLastPathComponent()
@@ -31,26 +72,29 @@ actor ModelRunner {
             self.container = try await LLMModelFactory.shared.loadContainer(
                 configuration: configuration
             ) { progress in
-                print("[mlx] Loading progress: \(Int(progress.fractionCompleted * 100))%")
+                log("[mlx] Loading progress: \(Int(progress.fractionCompleted * 100))%")
             }
-            print("[mlx] Model loaded as LLM: \(modelId)")
+            log("[mlx] Model loaded as LLM: \(modelId)")
         } catch {
-            print("[mlx] LLM loading failed (\(error.localizedDescription)), trying VLM factory...")
+            log("[mlx] LLM loading failed (\(error.localizedDescription)), trying VLM factory...")
             do {
                 self.container = try await VLMModelFactory.shared.loadContainer(
                     configuration: configuration
                 ) { progress in
-                    print("[mlx] Loading progress: \(Int(progress.fractionCompleted * 100))%")
+                    log("[mlx] Loading progress: \(Int(progress.fractionCompleted * 100))%")
                 }
-                print("[mlx] Model loaded as VLM: \(modelId)")
+                log("[mlx] Model loaded as VLM: \(modelId)")
             } catch {
-                print("[mlx] Error: Failed to load model with both LLM and VLM factories: \(error.localizedDescription)")
+                log("[mlx] Error: Failed to load model with both LLM and VLM factories: \(error.localizedDescription)")
                 throw error
             }
         }
 
         self.modelId = modelId
-        print("[mlx] Model ready: \(modelId)")
+        log("[mlx] Model ready: \(modelId)")
+
+        // Clear prompt cache when loading a new model
+        clearPromptCache()
     }
 
     /// Build Chat.Message array from ChatMessages, including images and videos
@@ -72,7 +116,7 @@ actor ModelRunner {
 
             let images: [UserInput.Image] = (message.images ?? []).compactMap { urlString in
                 guard let url = URL(string: urlString) else {
-                    print("[mlx] Warning: Invalid image URL: \(urlString)")
+                    log("[mlx] Warning: Invalid image URL: \(urlString)")
                     return nil
                 }
                 return .url(url)
@@ -80,17 +124,17 @@ actor ModelRunner {
 
             let videos: [UserInput.Video] = (message.videos ?? []).compactMap { urlString in
                 guard let url = URL(string: urlString) else {
-                    print("[mlx] Warning: Invalid video URL: \(urlString)")
+                    log("[mlx] Warning: Invalid video URL: \(urlString)")
                     return nil
                 }
                 return .url(url)
             }
 
             if !images.isEmpty {
-                print("[mlx] Message has \(images.count) image(s)")
+                log("[mlx] Message has \(images.count) image(s)")
             }
             if !videos.isEmpty {
-                print("[mlx] Message has \(videos.count) video(s)")
+                log("[mlx] Message has \(videos.count) video(s)")
             }
 
             return Chat.Message(
@@ -104,8 +148,36 @@ actor ModelRunner {
         let specs = tools.map { tool in
             tool.toSendable() as! [String: any Sendable]
         }
-        print("[mlx] Tools provided: \(specs.count)")
+        log("[mlx] Tools provided: \(specs.count)")
         return specs
+    }
+
+    /// Build GenerateParameters from individual parameters
+    private nonisolated func buildGenerateParameters(
+        temperature: Float,
+        topP: Float,
+        maxTokens: Int,
+        repetitionPenalty: Float
+    ) -> GenerateParameters {
+        GenerateParameters(
+            maxTokens: maxTokens,
+            temperature: temperature,
+            topP: topP,
+            repetitionPenalty: repetitionPenalty
+        )
+    }
+
+    /// Get or create a prompt cache for the current model
+    private func getPromptCache(context: ModelContext, parameters: GenerateParameters) -> PromptCache {
+        if let existingCache = promptCache[modelId] {
+            return existingCache
+        }
+        // Create new cache with the model's KV cache structure
+        let modelCache = context.model.newCache(parameters: parameters)
+        let newCache = PromptCache(cache: modelCache)
+        promptCache[modelId] = newCache
+        log("[mlx] Created new prompt cache with \(modelCache.count) KV layers for model: \(modelId)")
+        return newCache
     }
 
     /// Generate a chat completion (non-streaming)
@@ -119,21 +191,19 @@ actor ModelRunner {
         tools: [AnyCodable]? = nil
     ) async throws -> (String, [ToolCallInfo], UsageInfo) {
         guard let container = container else {
-            print("[mlx] Error: generate() called but no model is loaded")
+            log("[mlx] Error: generate() called but no model is loaded")
             throw MLXServerError.modelNotLoaded
         }
 
-        print("[mlx] Generate: \(messages.count) messages, temp=\(temperature), topP=\(topP), maxTokens=\(maxTokens)")
+        log("[mlx] Generate: \(messages.count) messages, temp=\(temperature), topP=\(topP), maxTokens=\(maxTokens)")
 
         let chat = buildChat(from: messages)
         let toolSpecs = buildToolSpecs(from: tools)
-
-        let generateParameters = GenerateParameters(
-            maxTokens: maxTokens,
-            temperature: temperature,
-            topP: topP,
-            repetitionPenalty: repetitionPenalty
+        let generateParameters = buildGenerateParameters(
+            temperature: temperature, topP: topP,
+            maxTokens: maxTokens, repetitionPenalty: repetitionPenalty
         )
+
         let userInput = UserInput(
             chat: chat,
             processing: .init(resize: .init(width: 1024, height: 1024)),
@@ -141,8 +211,22 @@ actor ModelRunner {
         )
 
         let result: (String, [ToolCallInfo], UsageInfo) = try await container.perform { context in
-            let input = try await context.processor.prepare(input: userInput)
-            let promptTokenCount = input.text.tokens.size
+            let fullInput = try await context.processor.prepare(input: userInput)
+            let fullTokens = fullInput.text.tokens
+            let promptTokenCount = fullTokens.size
+
+            // Get or create prompt cache
+            let cache = await getPromptCache(context: context, parameters: generateParameters)
+
+            // Determine if we can use cached prefix
+            let lmInput: LMInput
+            if let suffix = cache.getUncachedSuffix(prompt: fullTokens) {
+                lmInput = LMInput(text: LMInput.Text(tokens: suffix))
+                log("[mlx] Using cached prefix, processing \(suffix.size) new tokens")
+            } else {
+                lmInput = fullInput
+                log("[mlx] Cache miss, processing all \(fullTokens.size) tokens")
+            }
 
             var output = ""
             var completionTokenCount = 0
@@ -151,7 +235,7 @@ actor ModelRunner {
 
             do {
                 for await generation in try MLXLMCommon.generate(
-                    input: input, parameters: generateParameters, context: context
+                    input: lmInput, cache: cache.cache, parameters: generateParameters, context: context
                 ) {
                     switch generation {
                     case .chunk(let chunk):
@@ -163,16 +247,18 @@ actor ModelRunner {
                         for s in stop where output.hasSuffix(s) {
                             output = String(output.dropLast(s.count))
                             hitStop = true
-                            print("[mlx] Hit stop sequence: \"\(s)\"")
+                            log("[mlx] Hit stop sequence: \"\(s)\"")
                             break
                         }
                         if hitStop { break }
 
                     case .info(let info):
                         completionInfo = info
-                        print("[mlx] Generation info: \(info.promptTokenCount) prompt tokens, \(info.generationTokenCount) generated tokens")
-                        print("[mlx]   Prompt: \(String(format: "%.1f", info.promptTokensPerSecond)) tokens/sec")
-                        print("[mlx]   Generation: \(String(format: "%.1f", info.tokensPerSecond)) tokens/sec")
+                        // Note: info.promptTokenCount is the tokens processed in this call (may be less due to caching)
+                        // We report the full promptTokenCount in usage for accurate tracking
+                        log("[mlx] Generation info: \(info.promptTokenCount) processed prompt tokens, \(info.generationTokenCount) generated tokens")
+                        log("[mlx]   Prompt: \(String(format: "%.1f", info.promptTokensPerSecond)) tokens/sec")
+                        log("[mlx]   Generation: \(String(format: "%.1f", info.tokensPerSecond)) tokens/sec")
 
                     case .toolCall(let toolCall):
                         let argsData = try JSONSerialization.data(
@@ -189,20 +275,21 @@ actor ModelRunner {
                             )
                         )
                         collectedToolCalls.append(info)
-                        print("[mlx] Tool call: \(toolCall.function.name)(\(argsString))")
+                        log("[mlx] Tool call: \(toolCall.function.name)(\(argsString))")
                     }
                 }
             } catch {
-                print("[mlx] Error during generation: \(error.localizedDescription)")
+                log("[mlx] Error during generation: \(error.localizedDescription)")
                 throw error
             }
 
             let usage: UsageInfo
             if let info = completionInfo {
+                // Use full prompt token count for accurate usage tracking (info.promptTokenCount may be smaller due to caching)
                 usage = UsageInfo(
-                    prompt_tokens: info.promptTokenCount,
+                    prompt_tokens: promptTokenCount,
                     completion_tokens: info.generationTokenCount,
-                    total_tokens: info.promptTokenCount + info.generationTokenCount
+                    total_tokens: promptTokenCount + info.generationTokenCount
                 )
             } else {
                 usage = UsageInfo(
@@ -212,7 +299,7 @@ actor ModelRunner {
                 )
             }
 
-            print("[mlx] Generate complete: \(output.count) chars, \(collectedToolCalls.count) tool call(s)")
+            log("[mlx] Generate complete: \(output.count) chars, \(collectedToolCalls.count) tool call(s)")
             return (output, collectedToolCalls, usage)
         }
 
@@ -232,12 +319,12 @@ actor ModelRunner {
         AsyncThrowingStream { continuation in
             Task {
                 guard let container = self.container else {
-                    print("[mlx] Error: generateStream() called but no model is loaded")
+                    log("[mlx] Error: generateStream() called but no model is loaded")
                     continuation.finish(throwing: MLXServerError.modelNotLoaded)
                     return
                 }
 
-                print("[mlx] Stream generate: \(messages.count) messages, temp=\(temperature), topP=\(topP), maxTokens=\(maxTokens)")
+                log("[mlx] Stream generate: \(messages.count) messages, temp=\(temperature), topP=\(topP), maxTokens=\(maxTokens)")
 
                 let chat = self.buildChat(from: messages)
                 let toolSpecs = self.buildToolSpecs(from: tools)
@@ -250,14 +337,26 @@ actor ModelRunner {
 
                 do {
                     try await container.perform { context in
-                        let generateParameters = GenerateParameters(
-                            maxTokens: maxTokens,
-                            temperature: temperature,
-                            topP: topP,
-                            repetitionPenalty: repetitionPenalty
+                        let generateParameters = self.buildGenerateParameters(
+                            temperature: temperature, topP: topP,
+                            maxTokens: maxTokens, repetitionPenalty: repetitionPenalty
                         )
 
-                        let input = try await context.processor.prepare(input: userInput)
+                        let fullInput = try await context.processor.prepare(input: userInput)
+                        let fullTokens = fullInput.text.tokens
+
+                        // Get or create prompt cache
+                        let cache = await self.getPromptCache(context: context, parameters: generateParameters)
+
+                        // Determine if we can use cached prefix
+                        let lmInput: LMInput
+                        if let suffix = cache.getUncachedSuffix(prompt: fullTokens) {
+                            lmInput = LMInput(text: LMInput.Text(tokens: suffix))
+                            log("[mlx] Stream using cached prefix, processing \(suffix.size) new tokens")
+                        } else {
+                            lmInput = fullInput
+                            log("[mlx] Stream cache miss, processing all \(fullTokens.size) tokens")
+                        }
 
                         var completionTokenCount = 0
                         var accumulated = ""
@@ -265,7 +364,7 @@ actor ModelRunner {
 
                         do {
                             for await generation in try MLXLMCommon.generate(
-                                input: input, parameters: generateParameters, context: context
+                                input: lmInput, cache: cache.cache, parameters: generateParameters, context: context
                             ) {
                                 switch generation {
                                 case .chunk(let chunk):
@@ -278,23 +377,25 @@ actor ModelRunner {
                                     var hitStop = false
                                     for s in stop where accumulated.hasSuffix(s) {
                                         hitStop = true
-                                        print("[mlx] Hit stop sequence: \"\(s)\"")
+                                        log("[mlx] Hit stop sequence: \"\(s)\"")
                                         break
                                     }
                                     if hitStop { break }
 
                                 case .info(let info):
-                                    print("[mlx] Stream generation info: \(info.promptTokenCount) prompt tokens, \(info.generationTokenCount) generated tokens")
-                                    print("[mlx]   Prompt: \(String(format: "%.1f", info.promptTokensPerSecond)) tokens/sec")
-                                    print("[mlx]   Generation: \(String(format: "%.1f", info.tokensPerSecond)) tokens/sec")
+                                    log("[mlx] Stream generation info: \(info.promptTokenCount) processed prompt tokens, \(info.generationTokenCount) generated tokens")
+                                    log("[mlx]   Prompt: \(String(format: "%.1f", info.promptTokensPerSecond)) tokens/sec")
+                                    log("[mlx]   Generation: \(String(format: "%.1f", info.tokensPerSecond)) tokens/sec")
 
+                                    // Use full prompt token count for accurate usage tracking
+                                    let promptTokenCount = fullTokens.size
                                     let usage = UsageInfo(
-                                        prompt_tokens: info.promptTokenCount,
+                                        prompt_tokens: promptTokenCount,
                                         completion_tokens: info.generationTokenCount,
-                                        total_tokens: info.promptTokenCount + info.generationTokenCount
+                                        total_tokens: promptTokenCount + info.generationTokenCount
                                     )
                                     let timings = TimingsInfo(
-                                        prompt_n: info.promptTokenCount,
+                                        prompt_n: promptTokenCount,
                                         predicted_n: info.generationTokenCount,
                                         predicted_per_second: info.tokensPerSecond,
                                         prompt_per_second: info.promptTokensPerSecond
@@ -316,22 +417,22 @@ actor ModelRunner {
                                             arguments: argsString
                                         )
                                     )
-                                    print("[mlx] Stream tool call: \(toolCall.function.name)(\(argsString))")
+                                    log("[mlx] Stream tool call: \(toolCall.function.name)(\(argsString))")
                                     continuation.yield(.toolCall(info))
                                 }
                             }
                         } catch {
-                            print("[mlx] Error during stream generation: \(error.localizedDescription)")
+                            log("[mlx] Error during stream generation: \(error.localizedDescription)")
                             throw error
                         }
 
                         // If no .info was received, send done with fallback usage
                         // The .info case already yields .done, so only send if we haven't
-                        print("[mlx] Stream complete: \(accumulated.count) chars")
+                        log("[mlx] Stream complete: \(accumulated.count) chars")
                         continuation.finish()
                     }
                 } catch {
-                    print("[mlx] Error in stream: \(error.localizedDescription)")
+                    log("[mlx] Error in stream: \(error.localizedDescription)")
                     continuation.finish(throwing: error)
                 }
             }

@@ -24,7 +24,6 @@ export function normalizeMlxConfig(config: any): MlxConfig {
 }
 
 export async function loadMlxModel(
-  binaryPath: string,
   modelId: string,
   modelPath: string,
   port: number,
@@ -35,7 +34,6 @@ export async function loadMlxModel(
 ): Promise<SessionInfo> {
   const config = normalizeMlxConfig(cfg)
   return await invoke('plugin:mlx|load_mlx_model', {
-    binaryPath,
     modelId,
     modelPath,
     port,

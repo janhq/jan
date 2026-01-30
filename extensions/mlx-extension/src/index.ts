@@ -300,9 +300,6 @@ export default class mlx_extension extends AIEngine {
       ])
     }
 
-    // Resolve the MLX server binary path
-    const mlxServerPath = await this.getMlxServerBinaryPath()
-
     const mlxConfig: MlxConfig = {
       ctx_size: cfg.ctx_size ?? 4096,
       n_predict: cfg.n_predict ?? 0,
@@ -319,7 +316,6 @@ export default class mlx_extension extends AIEngine {
 
     try {
       const sInfo = await loadMlxModel(
-        mlxServerPath,
         modelId,
         modelPath,
         port,
@@ -333,26 +329,6 @@ export default class mlx_extension extends AIEngine {
       logger.error('Error loading MLX model:', error)
       throw error
     }
-  }
-
-  private async getMlxServerBinaryPath(): Promise<string> {
-    const janDataFolderPath = await getJanDataFolderPath()
-    // Look for the MLX server binary in the Jan data folder
-    const binaryPath = await joinPath([
-      janDataFolderPath,
-      'mlx',
-      'mlx-server',
-    ])
-
-    if (await fs.existsSync(binaryPath)) {
-      return binaryPath
-    }
-
-    // Fallback: check in the app resources
-    throw new Error(
-      'MLX server binary not found. Please ensure mlx-server is installed at ' +
-        binaryPath
-    )
   }
 
   override async unload(modelId: string): Promise<UnloadResult> {

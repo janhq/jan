@@ -27,7 +27,11 @@
 
 import { type LanguageModel } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import {
+  createOpenAICompatible,
+  MetadataExtractor,
+  OpenAICompatibleChatLanguageModel,
+} from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
@@ -47,16 +51,18 @@ interface LlamaCppChunk {
   timings?: LlamaCppTimings
 }
 
+
 /**
- * Custom metadata extractor for llama.cpp that extracts timing information
- * and converts it to token usage format
+ * Custom metadata extractor for MLX that extracts timing information
+ * and converts it to token usage format. MLX uses the same timing structure
+ * as llama.cpp.
  */
-const llamaCppMetadataExtractor = {
+const providerMetadataExtractor: MetadataExtractor = {
   extractMetadata: async ({ parsedBody }: { parsedBody: unknown }) => {
     const body = parsedBody as LlamaCppChunk
     if (body?.timings) {
       return {
-        llamacpp: {
+        providerMetadata: {
           promptTokens: body.timings.prompt_n ?? null,
           completionTokens: body.timings.predicted_n ?? null,
           tokensPerSecond: body.timings.predicted_per_second ?? null,
@@ -79,7 +85,7 @@ const llamaCppMetadataExtractor = {
       buildMetadata: () => {
         if (lastTimings) {
           return {
-            llamacpp: {
+            providerMetadata: {
               promptTokens: lastTimings.prompt_n ?? null,
               completionTokens: lastTimings.predicted_n ?? null,
               tokensPerSecond: lastTimings.predicted_per_second ?? null,
@@ -182,7 +188,7 @@ export class ModelFactory {
     })
 
     return openAICompatible.languageModel(modelId, {
-      metadataExtractor: llamaCppMetadataExtractor,
+      metadataExtractor: providerMetadataExtractor,
     })
   }
 
@@ -221,23 +227,22 @@ export class ModelFactory {
       throw new Error(`No running MLX session found for model: ${modelId}`)
     }
 
-    // Create OpenAI-compatible client for MLX server
-    const openAICompatible = createOpenAICompatible({
-      name: 'mlx',
-      baseURL: `http://localhost:${sessionInfo.port}/v1`,
-      headers: {
+    const model = new OpenAICompatibleChatLanguageModel(modelId, {
+      provider: 'mlx',
+      headers: () => ({
         Authorization: `Bearer ${sessionInfo.api_key}`,
         Origin: 'tauri://localhost',
+      }),
+      url: ({ path }) => {
+        const url = new URL(`http://localhost:${sessionInfo.port}/v1/${path}`)
+
+        return url.toString()
       },
-      includeUsage: true,
       fetch: fetch,
+      metadataExtractor: providerMetadataExtractor,
     })
-
-    return openAICompatible.languageModel(modelId, {
-      metadataExtractor: llamaCppMetadataExtractor,
-    })
+    return model
   }
-
   /**
    * Create an Anthropic model using the official AI SDK
    */

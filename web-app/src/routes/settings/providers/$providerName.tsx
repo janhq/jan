@@ -707,38 +707,42 @@ function ProviderDetail() {
                               provider={provider}
                               modelId={model.id}
                             />
-                            {provider && provider.provider === 'llamacpp' && (
-                              <div className="ml-2">
-                                {activeModels.some(
-                                  (activeModel) => activeModel === model.id
-                                ) ? (
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    onClick={() => handleStopModel(model.id)}
-                                  >
-                                    {t('providers:stop')}
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    size="sm"
-                                    disabled={loadingModels.includes(model.id)}
-                                    onClick={() => handleStartModel(model.id)}
-                                  >
-                                    {loadingModels.includes(model.id) ? (
-                                      <div className="flex items-center gap-2">
-                                        <IconLoader
-                                          size={16}
-                                          className="animate-spin"
-                                        />
-                                      </div>
-                                    ) : (
-                                      t('providers:start')
-                                    )}
-                                  </Button>
-                                )}
-                              </div>
-                            )}
+                            {provider &&
+                              (provider.provider === 'llamacpp' ||
+                                provider.provider === 'mlx') && (
+                                <div className="ml-2">
+                                  {activeModels.some(
+                                    (activeModel) => activeModel === model.id
+                                  ) ? (
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={() => handleStopModel(model.id)}
+                                    >
+                                      {t('providers:stop')}
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      disabled={loadingModels.includes(
+                                        model.id
+                                      )}
+                                      onClick={() => handleStartModel(model.id)}
+                                    >
+                                      {loadingModels.includes(model.id) ? (
+                                        <div className="flex items-center gap-2">
+                                          <IconLoader
+                                            size={16}
+                                            className="animate-spin"
+                                          />
+                                        </div>
+                                      ) : (
+                                        t('providers:start')
+                                      )}
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
                           </div>
                         }
                       />

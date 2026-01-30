@@ -243,6 +243,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       system: this.systemMessage,
     })
 
+    var tokensPerSecond = 0
+
     return result.toUIMessageStream({
       messageMetadata: ({ part }) => {
         // Track stream start time on start
@@ -261,34 +263,31 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           }
         }
 
+        if (part.type === 'finish-step') {
+          tokensPerSecond =
+            (part.providerMetadata?.providerMetadata
+              ?.tokensPerSecond as number) || 0
+        }
+
         // Add usage and token speed to metadata on finish
         if (part.type === 'finish') {
           const finishPart = part as {
             type: 'finish'
             totalUsage: LanguageModelUsage
             finishReason: string
-            providerMetadata?: {
-              llamacpp?: {
-                promptTokens?: number | null
-                completionTokens?: number | null
-                tokensPerSecond?: number | null
-              }
-            }
           }
           const usage = finishPart.totalUsage
           const durationMs = streamStartTime ? Date.now() - streamStartTime : 0
           const durationSec = durationMs / 1000
 
           // Use provider's outputTokens, or llama.cpp completionTokens, or fall back to text delta count
-          const outputTokens =
-            usage?.outputTokens ??
-            textDeltaCount
+          const outputTokens = usage?.outputTokens ?? textDeltaCount
           const inputTokens = usage?.inputTokens
 
           // Use llama.cpp's tokens per second if available, otherwise calculate from duration
           let tokenSpeed: number
           if (durationSec > 0 && outputTokens > 0) {
-            tokenSpeed = outputTokens / durationSec
+            tokenSpeed = tokensPerSecond > 0 ? tokensPerSecond : outputTokens / durationSec
           } else {
             tokenSpeed = 0
           }

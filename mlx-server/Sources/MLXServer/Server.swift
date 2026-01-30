@@ -68,7 +68,7 @@ struct MLXHTTPServer {
             let isStreaming = chatRequest.stream ?? false
             let tools = chatRequest.tools
 
-            print("[mlx] Request: model=\(chatRequest.model), messages=\(chatRequest.messages.count), stream=\(isStreaming), tools=\(tools?.count ?? 0)")
+            log("[mlx] Request: model=\(chatRequest.model), messages=\(chatRequest.messages.count), stream=\(isStreaming), tools=\(tools?.count ?? 0)")
 
             if isStreaming {
                 return try await self.handleStreamingRequest(
@@ -137,7 +137,7 @@ struct MLXHTTPServer {
             usage: usage
         )
 
-        print("[mlx] Response: \(text.count) chars, \(toolCalls.count) tool call(s), finish=\(finishReason)")
+        log("[mlx] Response: \(text.count) chars, \(toolCalls.count) tool call(s), finish=\(finishReason)")
 
         return try Response(
             status: .ok,
@@ -187,11 +187,9 @@ struct MLXHTTPServer {
                     ]
                 )
                 if let data = try? encodeJSONData(initialChunk) {
-                    var buffer = ByteBufferAllocator().buffer(capacity: data.count + 8)
-                    buffer.writeString("data: ")
-                    buffer.writeBytes(data)
-                    buffer.writeString("\n\n")
-                    continuation.yield(buffer)
+                    continuation.yield(buildSSEFrame(data))
+                } else {
+                    log("[mlx] Warning: Failed to encode initial chunk")
                 }
 
                 do {
@@ -212,12 +210,7 @@ struct MLXHTTPServer {
                                 ]
                             )
                             if let data = try? encodeJSONData(chunk) {
-                                var buffer = ByteBufferAllocator().buffer(
-                                    capacity: data.count + 8)
-                                buffer.writeString("data: ")
-                                buffer.writeBytes(data)
-                                buffer.writeString("\n\n")
-                                continuation.yield(buffer)
+                                continuation.yield(buildSSEFrame(data))
                             }
 
                         case .toolCall(let toolCallInfo):
@@ -249,12 +242,7 @@ struct MLXHTTPServer {
                                 ]
                             )
                             if let data = try? encodeJSONData(chunk) {
-                                var buffer = ByteBufferAllocator().buffer(
-                                    capacity: data.count + 8)
-                                buffer.writeString("data: ")
-                                buffer.writeBytes(data)
-                                buffer.writeString("\n\n")
-                                continuation.yield(buffer)
+                                continuation.yield(buildSSEFrame(data))
                             }
 
                         case .done(let usage, let timings, let hasToolCalls):
@@ -276,12 +264,7 @@ struct MLXHTTPServer {
                                 timings: timings
                             )
                             if let data = try? encodeJSONData(finalChunk) {
-                                var buffer = ByteBufferAllocator().buffer(
-                                    capacity: data.count + 8)
-                                buffer.writeString("data: ")
-                                buffer.writeBytes(data)
-                                buffer.writeString("\n\n")
-                                continuation.yield(buffer)
+                                continuation.yield(buildSSEFrame(data))
                             }
 
                             // Send [DONE]
@@ -291,7 +274,7 @@ struct MLXHTTPServer {
                         }
                     }
                 } catch {
-                    print("[mlx] Error in SSE stream: \(error.localizedDescription)")
+                    log("[mlx] Error in SSE stream: \(error.localizedDescription)")
                     // Send error as SSE event
                     var buffer = ByteBufferAllocator().buffer(capacity: 256)
                     buffer.writeString(
@@ -317,8 +300,16 @@ struct MLXHTTPServer {
 
 // MARK: - JSON Encoding Helpers
 
+/// Shared JSON encoder for consistent encoding and better performance
+private let jsonEncoder: JSONEncoder = {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .secondsSince1970
+    encoder.keyEncodingStrategy = .convertToSnakeCase
+    return encoder
+}()
+
 private func encodeJSON<T: Encodable>(_ value: T) throws -> Response {
-    let data = try JSONEncoder().encode(value)
+    let data = try jsonEncoder.encode(value)
     var buffer = ByteBufferAllocator().buffer(capacity: data.count)
     buffer.writeBytes(data)
     return Response(
@@ -329,12 +320,24 @@ private func encodeJSON<T: Encodable>(_ value: T) throws -> Response {
 }
 
 private func encodeJSONBuffer<T: Encodable>(_ value: T) throws -> ByteBuffer {
-    let data = try JSONEncoder().encode(value)
+    let data = try jsonEncoder.encode(value)
     var buffer = ByteBufferAllocator().buffer(capacity: data.count)
     buffer.writeBytes(data)
     return buffer
 }
 
 private func encodeJSONData<T: Encodable>(_ value: T) throws -> Data {
-    try JSONEncoder().encode(value)
+    try jsonEncoder.encode(value)
+}
+
+/// Reusable buffer allocator for SSE responses to reduce allocations
+private let sseBufferAllocator = ByteBufferAllocator()
+
+/// Builds an SSE data frame with the given JSON data
+private func buildSSEFrame(_ data: Data) -> ByteBuffer {
+    var buffer = sseBufferAllocator.buffer(capacity: data.count + 8)
+    buffer.writeString("data: ")
+    buffer.writeBytes(data)
+    buffer.writeString("\n\n")
+    return buffer
 }

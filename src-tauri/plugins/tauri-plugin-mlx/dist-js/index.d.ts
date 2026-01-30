@@ -1,7 +1,7 @@
 import { SessionInfo, UnloadResult, MlxConfig } from './types';
 export { SessionInfo, UnloadResult, MlxConfig } from './types';
 export declare function normalizeMlxConfig(config: any): MlxConfig;
-export declare function loadMlxModel(binaryPath: string, modelId: string, modelPath: string, port: number, cfg: MlxConfig, envs: Record<string, string>, isEmbedding?: boolean, timeout?: number): Promise<SessionInfo>;
+export declare function loadMlxModel(modelId: string, modelPath: string, port: number, cfg: MlxConfig, envs: Record<string, string>, isEmbedding?: boolean, timeout?: number): Promise<SessionInfo>;
 export declare function unloadMlxModel(pid: number): Promise<UnloadResult>;
 export declare function isMlxProcessRunning(pid: number): Promise<boolean>;
 export declare function getMlxRandomPort(): Promise<number>;

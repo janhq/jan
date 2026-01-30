@@ -19,10 +19,9 @@ function normalizeMlxConfig(config) {
         chat_template: asString(config.chat_template),
     };
 }
-async function loadMlxModel(binaryPath, modelId, modelPath, port, cfg, envs, isEmbedding = false, timeout = 600) {
+async function loadMlxModel(modelId, modelPath, port, cfg, envs, isEmbedding = false, timeout = 600) {
     const config = normalizeMlxConfig(cfg);
     return await invoke('plugin:mlx|load_mlx_model', {
-        binaryPath,
         modelId,
         modelPath,
         port,

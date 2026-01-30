@@ -29,10 +29,10 @@ struct MLXServerCommand: AsyncParsableCommand {
 
     func run() async throws {
         // Print startup info
-        print("[mlx] MLX-Swift Server starting...")
-        print("[mlx] Model path: \(model)")
-        print("[mlx] Port: \(port)")
-        print("[mlx] Context size: \(ctxSize)")
+        log("[mlx] MLX-Swift Server starting...")
+        log("[mlx] Model path: \(model)")
+        log("[mlx] Port: \(port)")
+        log("[mlx] Context size: \(ctxSize)")
 
         // Extract model ID from path
         let modelURL = URL(fileURLWithPath: model)
@@ -44,8 +44,17 @@ struct MLXServerCommand: AsyncParsableCommand {
         do {
             try await modelRunner.load(modelPath: model, modelId: modelId)
         } catch {
-            print("[mlx] Failed to load model: \(error)")
+            log("[mlx] Failed to load model: \(error)")
             throw error
+        }
+
+        // Warm up the model to initialize GPU kernels and optimize performance
+        log("[mlx] Warming up model...")
+        do {
+            try await modelRunner.warmUp()
+            log("[mlx] Model warm-up complete")
+        } catch {
+            log("[mlx] Warning: Model warm-up failed (\(error.localizedDescription)), continuing anyway...")
         }
 
         // Set up the HTTP server
@@ -59,8 +68,8 @@ struct MLXServerCommand: AsyncParsableCommand {
         let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: port)))
 
         // Print readiness signal (monitored by Tauri plugin)
-        print("[mlx] http server listening on http://127.0.0.1:\(port)")
-        print("[mlx] server is listening on 127.0.0.1:\(port)")
+        log("[mlx] http server listening on http://127.0.0.1:\(port)")
+        log("[mlx] server is listening on 127.0.0.1:\(port)")
 
         try await app.run()
     }

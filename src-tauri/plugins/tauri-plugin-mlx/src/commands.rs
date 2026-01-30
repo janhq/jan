@@ -41,7 +41,6 @@ pub struct MlxConfig {
 #[tauri::command]
 pub async fn load_mlx_model<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
-    binary_path: String,
     model_id: String,
     model_path: String,
     port: u16,
@@ -53,6 +52,13 @@ pub async fn load_mlx_model<R: Runtime>(
     let state: State<MlxState> = app_handle.state();
     let mut process_map = state.mlx_server_process.lock().await;
 
+    // Resolve binary path from app resources
+    let binary_path = app_handle
+        .path()
+        .resource_dir()
+        .map_err(|e| MlxError::new(ErrorCode::BinaryNotFound, "Failed to get resource dir".to_string(), Some(e.to_string())))?
+        .join("resources/bin/mlx-server");
+
     log::info!("Attempting to launch MLX server at path: {:?}", binary_path);
     log::info!("Using MLX configuration: {:?}", config);
 
@@ -61,7 +67,7 @@ pub async fn load_mlx_model<R: Runtime>(
     if !bin_path.exists() {
         return Err(MlxError::new(
             ErrorCode::BinaryNotFound,
-            format!("MLX server binary not found at: {}", binary_path),
+            format!("MLX server binary not found at: {}", binary_path.display()),
             None,
         )
         .into());
