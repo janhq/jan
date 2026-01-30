@@ -210,7 +210,7 @@ function HardwareContent() {
                         <>
                           <Progress
                             value={systemUsage.cpu}
-                            className="h-2 w-10"
+                            className="h-2 w-10 border"
                           />
                           <span className="text-foreground">
                             {systemUsage.cpu?.toFixed(2)}%
@@ -255,7 +255,7 @@ function HardwareContent() {
                                   hardwareData.total_memory
                               ) * 100
                             }
-                            className="h-2 w-10"
+                            className="h-2 w-10 border"
                           />
                           <span className="text-foreground">
                             {(
