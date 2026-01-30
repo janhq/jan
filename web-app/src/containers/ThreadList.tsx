@@ -81,7 +81,7 @@ const ThreadItem = memo(
     return (
       <SidebarMenuItem>
         <SidebarMenuButton asChild>
-          <Link to="/threads/$threadId" params={{ threadId: thread.id }} className={cn(currentProjectId && "bg-secondary/20 px-4 py-6 hover:bg-secondary/30 rounded-md")}>
+          <Link to="/threads/$threadId" params={{ threadId: thread.id }} className={cn(currentProjectId && "bg-secondary dark:bg-secondary/20 px-4 py-5 hover:bg-secondary/30 rounded-lg")}>
             <span>{thread.title || t('common:newThread')}</span>
           </Link>
         </SidebarMenuButton>
@@ -89,7 +89,7 @@ const ThreadItem = memo(
           <DropdownMenuTrigger asChild>
             <SidebarMenuAction
               showOnHover
-              className={cn("hover:bg-sidebar-foreground/8", currentProjectId && 'mt-2 mr-2')}
+              className={cn("hover:bg-sidebar-foreground/8", currentProjectId && 'mt-1 mr-2')}
             >
               <MoreHorizontal />
               <span className="sr-only">More</span>

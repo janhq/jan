@@ -122,7 +122,7 @@ function ProjectPageContent() {
               <h2 className="text-base font-medium mb-4">
                 {t('projects.conversation')}
               </h2>
-              <SidebarMenu className='space-y-2'>
+              <SidebarMenu>
                 <ThreadList
                   threads={projectThreads}
                   currentProjectId={projectId}
