@@ -68,7 +68,7 @@ export default function JanBrowserExtensionDialog({
             </VisuallyHidden>
             <div className="flex items-center justify-center py-8">
               <div className="flex flex-col items-center justify-center gap-3">
-                <IconLoader2 className="size-8 text-accent animate-spin origin-center" />
+                <IconLoader2 className="size-8 text-muted-foreground animate-spin origin-center" />
                 <p className="text-sm text-muted-foreground">{t('mcp-servers:browserExtension.connecting.checking')}</p>
               </div>
             </div>

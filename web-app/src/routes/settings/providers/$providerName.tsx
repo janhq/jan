@@ -37,6 +37,7 @@ import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 import { basenameNoExt } from '@/lib/utils'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
+import { DialogAddModel } from '@/containers/dialogs/AddModel'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -57,6 +58,7 @@ function ProviderDetail() {
     useShallow((state) => [state.activeModels, state.setActiveModels])
   )
   const [loadingModels, setLoadingModels] = useState<string[]>([])
+  const [refreshingModels, setRefreshingModels] = useState(false)
   const [isCheckingBackendUpdate, setIsCheckingBackendUpdate] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [importingModel, setImportingModel] = useState<string | null>(null)
@@ -196,6 +198,69 @@ function ProviderDetail() {
 
   // Note: settingsChanged event is now handled globally in GlobalEventHandler
   // This ensures all screens receive the event intermediately
+
+  const handleRefreshModels = async () => {
+    if (!provider || !provider.base_url) {
+      toast.error(t('providers:models'), {
+        description: t('providers:refreshModelsError'),
+      })
+      return
+    }
+
+    setRefreshingModels(true)
+    try {
+      const modelIds = await serviceHub
+        .providers()
+        .fetchModelsFromProvider(provider)
+
+      // Create new models from the fetched IDs
+      const newModels: Model[] = modelIds.map((id) => ({
+        id,
+        model: id,
+        name: id,
+        capabilities: ['completion'], // Default capability
+        version: '1.0',
+      }))
+
+      // Filter out models that already exist
+      const existingModelIds = provider.models.map((m) => m.id)
+      const modelsToAdd = newModels.filter(
+        (model) => !existingModelIds.includes(model.id)
+      )
+
+      if (modelsToAdd.length > 0) {
+        // Update the provider with new models
+        const updatedModels = [...provider.models, ...modelsToAdd]
+        updateProvider(providerName, {
+          ...provider,
+          models: updatedModels,
+        })
+
+        toast.success(t('providers:models'), {
+          description: t('providers:refreshModelsSuccess', {
+            count: modelsToAdd.length,
+            provider: provider.provider,
+          }),
+        })
+      } else {
+        toast.success(t('providers:models'), {
+          description: t('providers:noNewModels'),
+        })
+      }
+    } catch (error) {
+      console.error(
+        t('providers:refreshModelsFailed', { provider: provider.provider }),
+        error
+      )
+      toast.error(t('providers:models'), {
+        description: t('providers:refreshModelsFailed', {
+          provider: provider.provider,
+        }),
+      })
+    } finally {
+      setRefreshingModels(false)
+    }
+  }
 
   const handleStartModel = async (modelId: string) => {
     // Add model to loading state
@@ -540,6 +605,29 @@ function ProviderDetail() {
                       {t('providers:models')}
                     </h1>
                     <div className="flex items-center gap-2">
+                      {provider && provider.provider !== 'llamacpp' && (
+                        <>
+                          <Button
+                            variant="secondary"
+                            size="icon-xs"
+                            onClick={handleRefreshModels}
+                            disabled={refreshingModels}
+                          >
+                            {refreshingModels ? (
+                              <IconLoader
+                                size={18}
+                                className="text-muted-foreground animate-spin"
+                              />
+                            ) : (
+                              <IconRefresh
+                                size={18}
+                                className="text-muted-foreground"
+                              />
+                            )}
+                          </Button>
+                          <DialogAddModel provider={provider} />
+                        </>
+                      )}
                       {provider && provider.provider === 'llamacpp' && (
                         <ImportVisionModelDialog
                           provider={provider}
@@ -668,10 +756,10 @@ function ProviderDetail() {
                     title={
                       <div className="flex items-center gap-2">
                         <div className="flex items-center gap-2 animate-pulse">
-                          <div className="bg-accent/20 flex gap-2 text-accent px-2 py-1 rounded-full text-xs">
+                          <div className="flex gap-2 px-2 py-1 rounded-full text-xs">
                             <IconLoader
                               size={16}
-                              className="animate-spin text-accent"
+                              className="animate-spin"
                             />
                             Importing...
                           </div>

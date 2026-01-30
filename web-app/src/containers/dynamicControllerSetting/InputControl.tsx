@@ -74,6 +74,7 @@ export function InputControl({
           size="icon-sm"
           type="button"
           aria-label="Decrement"
+          className='rounded-none'
           onClick={() => handleNumberAdjustment(-step)}
           disabled={min !== undefined && numericValue <= min}
         >
@@ -84,6 +85,7 @@ export function InputControl({
           size="icon-sm"
           type="button"
           aria-label="Increment"
+          className='rounded-r-md'
           onClick={() => handleNumberAdjustment(step)}
           disabled={max !== undefined && numericValue >= max}
         >
@@ -127,7 +129,7 @@ export function InputControl({
             className="p-1 rounded  text-muted-foreground"
           >
             {isCopied ? (
-              <CopyCheck className="text-accent" size={16} />
+              <CopyCheck className="text-primary" size={16} />
             ) : (
               <Copy size={16} />
             )}

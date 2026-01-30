@@ -1,4 +1,3 @@
-import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import userEvent from '@testing-library/user-event'
@@ -60,7 +59,7 @@ describe('Button', () => {
     render(<Button size="lg">Large Button</Button>)
 
     const button = screen.getByRole('button')
-    expect(button).toHaveClass('h-10', 'rounded-md', 'px-6')
+    expect(button).toHaveClass('h-10', 'px-6')
   })
 
   it('applies icon size classes', () => {
@@ -154,7 +153,7 @@ describe('Button', () => {
 
     const button = screen.getByRole('button')
     expect(button).toHaveClass('bg-destructive', 'text-white') // destructive variant
-    expect(button).toHaveClass('h-10', 'rounded-md', 'px-6') // large size
+    expect(button).toHaveClass('h-10', 'px-6') // large size
   })
 
   it('handles keyboard events', () => {

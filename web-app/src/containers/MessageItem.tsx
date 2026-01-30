@@ -24,6 +24,7 @@ import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 import { extractFilesFromPrompt, FileMetadata } from '@/lib/fileMetadata'
 import { useMemo } from 'react'
+import { Button } from '@/components/ui/button'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -344,7 +345,7 @@ export const MessageItem = memo(
 
         {/* Message actions for user messages */}
         {message.role === 'user' && (
-          <div className="flex items-center justify-end gap-2 text-muted-foreground text-xs mt-4">
+          <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs mt-4">
             <CopyButton text={getFullTextContent()} />
 
             {onEdit && status !== CHAT_STATUS.STREAMING && (
@@ -367,7 +368,7 @@ export const MessageItem = memo(
             <div className="flex items-center gap-2 text-muted-foreground text-xs mt-1">
               <div
                 className={cn(
-                  'flex items-center gap-2',
+                  'flex items-center gap-1',
                   isStreaming && 'hidden'
                 )}
               >
@@ -385,13 +386,14 @@ export const MessageItem = memo(
                 )}
 
                 {selectedModel && onRegenerate && !isStreaming && isLastMessage && (
-                  <button
-                    className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={handleRegenerate}
                     title="Regenerate response"
                   >
                     <IconRefresh size={16} />
-                  </button>
+                  </Button>
                 )}
               </div>
 

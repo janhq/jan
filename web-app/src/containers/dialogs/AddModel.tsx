@@ -71,9 +71,9 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {trigger || (
-          <div className="size-6 cursor-pointer flex items-center justify-center rounded transition-all duration-200 ease-in-out">
+          <Button variant="secondary" size="icon-xs">
             <IconPlus size={18} className="text-muted-foreground" />
-          </div>
+          </Button>
         )}
       </DialogTrigger>
       <DialogContent
