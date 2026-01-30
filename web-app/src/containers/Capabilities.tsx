@@ -58,7 +58,6 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
                       title={capability}
                     >
                       {icon}
-                      {isEmbedding && <span>Embedding</span>}
                     </span>
                   </TooltipTrigger>
                   <TooltipContent>
