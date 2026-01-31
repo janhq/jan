@@ -61,7 +61,6 @@ function ThreadDetail() {
   const { threadId } = useParams({ from: Route.id })
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
   const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
-  const currentAssistant = useAssistant((state) => state.currentAssistant)
   const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
   const addMessage = useMessages((state) => state.addMessage)
@@ -107,9 +106,11 @@ function ThreadDetail() {
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
 
-  // Get system message from current assistant's instructions
-  const systemMessage = currentAssistant?.instructions
-    ? renderInstructions(currentAssistant.instructions)
+  // Get system message from thread's assistant instructions (if thread has an assigned assistant)
+  // Only use assistant instructions if the thread was created with one (e.g., via a project)
+  const threadAssistant = thread?.assistants?.[0]
+  const systemMessage = threadAssistant?.instructions
+    ? renderInstructions(threadAssistant.instructions)
     : undefined
 
   // Use the AI SDK chat hook

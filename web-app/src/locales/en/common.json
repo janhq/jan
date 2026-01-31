@@ -260,6 +260,10 @@
     "noProjectsYetDesc": "Start a new project by clicking the Add Project button.",
     "projectNotFound": "Project Not Found",
     "projectNotFoundDesc": "The project you're looking for doesn't exist or has been deleted.",
+    "selectAssistant": "Select assistant",
+    "noAssistantAssigned": "No assistant assigned to this project",
+    "files": "Files",
+    "filesDescription": "Add PDFs, documents, or other text to reference in this project.",
     "deleteProjectDialog": {
       "title": "Delete Project",
       "permanentDelete": "This will permanently delete all threads.",
@@ -278,11 +282,15 @@
       "editTitle": "Edit Project",
       "nameLabel": "Project Name",
       "namePlaceholder": "Enter project name...",
+      "assistant": "Assistant",
+      "selectAssistant": "Select an assistant (optional)",
+      "noAssistant": "No assistant",
+      "addAssistant": "Add Assistant",
       "createButton": "Create",
       "updateButton": "Update",
       "alreadyExists": "Project \"{{projectName}}\" already exists",
       "createSuccess": "Project \"{{projectName}}\" created successfully",
-      "renameSuccess": "Project renamed from \"{{oldName}}\" to \"{{newName}}\""
+      "updateSuccess": "Project \"{{projectName}}\" updated successfully"
     },
     "noConversationsIn": "No Conversations in {{projectName}}",
     "startNewConversation": "Start a new conversation with {{projectName}} below",
