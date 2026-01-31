@@ -43,8 +43,6 @@ export function useChat(
   const updateStatus = useChatSessions((state) => state.updateStatus)
 
   // Get serviceHub and model metadata from app state
-  const languageModelId = useAppState((state) => state.languageModelId)
-  const languageModelProvider = useAppState((state) => state.languageModelProvider)
   const mcpToolNames = useAppState((state) => state.mcpToolNames)
   const ragToolNames = useAppState((state) => state.ragToolNames)
 
@@ -55,20 +53,13 @@ export function useChat(
   // Create transport immediately with modelId and provider
   if (!transportRef.current) {
     transportRef.current =
-      existingSessionTransport ?? new CustomChatTransport(languageModelId, languageModelProvider, systemMessage, sessionId)
+      existingSessionTransport ?? new CustomChatTransport(systemMessage, sessionId)
   } else if (
     existingSessionTransport &&
     transportRef.current !== existingSessionTransport
   ) {
     transportRef.current = existingSessionTransport
   }
-
-  // Update model metadata when it changes
-  useEffect(() => {
-    if (languageModelId && languageModelProvider && transportRef.current) {
-      transportRef.current.updateModelMetadata(languageModelId, languageModelProvider)
-    }
-  }, [languageModelId, languageModelProvider])
 
   useEffect(() => {
     if (transportRef.current) {
@@ -118,7 +109,7 @@ export function useChat(
       sessionTitle
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, ensureSession, languageModelId, languageModelProvider])
+  }, [sessionId, ensureSession])
 
   useEffect(() => {
     if (sessionId && sessionTitle) {
@@ -130,7 +121,7 @@ export function useChat(
     ...(chat
       ? { chat }
       : { transport: transportRef.current, ...chatInitOptions }),
-    // experimental_throttle,
+    experimental_throttle: options?.experimental_throttle,
     resume: false,
   })
 
@@ -152,7 +143,7 @@ export function useChat(
     if (transportRef.current) {
       // Use forceRefreshTools to update the transport's tool cache
       // This ensures the transport has the latest tools when MCP server status changes
-      transportRef.current.forceRefreshTools()
+      transportRef.current.refreshTools()
     }
   }, [mcpToolNames, ragToolNames])
 

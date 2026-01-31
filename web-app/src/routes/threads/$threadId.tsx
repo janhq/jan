@@ -10,10 +10,7 @@ import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
-import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
-import { useSmallScreen, useMobileScreen } from '@/hooks/useMediaQuery'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
@@ -24,7 +21,7 @@ import {
   Conversation,
   ConversationContent,
   ConversationScrollButton,
-} from '@/ai-elements/conversation'
+} from '@/components/ai-elements/conversation'
 import { generateId, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
@@ -47,6 +44,7 @@ import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
+import DropdownModelProvider from '@/containers/DropdownModelProvider'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -71,9 +69,6 @@ function ThreadDetail() {
   const deleteMessage = useMessages((state) => state.deleteMessage)
   const currentThread = useRef<string | undefined>(undefined)
 
-  const chatWidth = useInterfaceSettings((state) => state.chatWidth)
-  const isSmallScreen = useSmallScreen()
-  const isMobile = useMobileScreen()
   useTools()
 
   // Get attachments for this thread
@@ -111,38 +106,6 @@ function ThreadDetail() {
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
-  const providers = useModelProvider((state) => state.providers)
-
-  // Store model metadata in appState for the chat transport
-  const setLanguageModel = useAppState((state) => state.setLanguageModel)
-  const languageModelId = useAppState((state) => state.languageModelId)
-  const languageModelProvider = useAppState(
-    (state) => state.languageModelProvider
-  )
-
-  useEffect(() => {
-    // Wait for providers to be loaded before attempting to set model metadata
-    if (providers.length === 0) {
-      return
-    }
-
-    const provider = getProviderByName(selectedProvider)
-    const modelId = selectedModel?.id ?? thread?.model?.id ?? ''
-    if (!modelId || !provider) {
-      setLanguageModel(null, undefined, undefined)
-      return
-    }
-
-    // Store model metadata (no need to create LanguageModel here)
-    setLanguageModel(null, modelId, provider)
-  }, [
-    selectedModel?.id,
-    thread?.model?.id,
-    selectedProvider,
-    getProviderByName,
-    providers.length,
-    setLanguageModel,
-  ])
 
   // Get system message from current assistant's instructions
   const systemMessage = currentAssistant?.instructions
@@ -416,8 +379,6 @@ function ThreadDetail() {
       text: string,
       files?: Array<{ type: string; mediaType: string; url: string }>
     ) => {
-      if (!languageModelId || !languageModelProvider) return
-
       // Get all attachments from the store (includes both images and documents)
       const allAttachments = getAttachments(attachmentsKey)
 
@@ -507,8 +468,6 @@ function ThreadDetail() {
       clearAttachmentsForThread(attachmentsKey)
     },
     [
-      languageModelId,
-      languageModelProvider,
       sendMessage,
       threadId,
       addMessage,
@@ -525,7 +484,6 @@ function ThreadDetail() {
   useEffect(() => {
     // Prevent duplicate sends
     if (initialMessageSentRef.current) return
-    if (!languageModelId || !languageModelProvider) return
 
     const initialMessageKey = `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${threadId}`
 
@@ -550,7 +508,7 @@ function ThreadDetail() {
         }
       })()
     }
-  }, [threadId, languageModelId, languageModelProvider, processAndSendMessage])
+  }, [threadId, processAndSendMessage])
 
   // Handle submit from ChatInput
   const handleSubmit = useCallback(
@@ -567,11 +525,6 @@ function ThreadDetail() {
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
   // - For assistant messages: finds the closest preceding user message, deletes from there
   const handleRegenerate = (messageId?: string) => {
-    if (!languageModelId || !languageModelProvider) {
-      console.warn('No language model available')
-      return
-    }
-
     const currentLocalMessages = useMessages.getState().getMessages(threadId)
 
     // If regenerating from a specific message, delete all messages after it
@@ -616,10 +569,6 @@ function ThreadDetail() {
   // Handle edit message - updates the message and regenerates from it
   const handleEditMessage = useCallback(
     (messageId: string, newText: string) => {
-      if (!languageModelId || !languageModelProvider) {
-        console.warn('No language model available')
-        return
-      }
 
       const currentLocalMessages = useMessages.getState().getMessages(threadId)
       const messageIndex = currentLocalMessages.findIndex(
@@ -654,6 +603,9 @@ function ThreadDetail() {
       })
       setChatMessages(updatedChatMessages)
 
+      // Only regenerate if the edited message is from the user
+      if(updatedMessage.role === 'assistant') return
+
       // Delete all messages after this one and regenerate
       const messagesToDelete = currentLocalMessages.slice(messageIndex + 1)
       messagesToDelete.forEach((msg) => {
@@ -664,8 +616,6 @@ function ThreadDetail() {
       regenerate({ messageId })
     },
     [
-      languageModelId,
-      languageModelProvider,
       threadId,
       updateMessage,
       deleteMessage,
@@ -745,9 +695,7 @@ function ThreadDetail() {
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          <div>
-            <DropdownAssistant />
-          </div>
+          <DropdownModelProvider model={threadModel} />
         </div>
       </HeaderPage>
       <div className="flex flex-1 flex-col h-full overflow-hidden">
@@ -756,10 +704,7 @@ function ThreadDetail() {
           <Conversation className="absolute inset-0 text-start">
             <ConversationContent
               className={cn(
-                'mx-auto',
-                isMobile || isSmallScreen || chatWidth !== 'compact'
-                  ? 'w-full'
-                  : 'w-full md:w-4/5'
+                'mx-auto w-full md:w-4/5 xl:w-4/6',
               )}
             >
               {chatMessages.map((message, index) => {
@@ -781,14 +726,14 @@ function ThreadDetail() {
               })}
               {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
               {error && (
-                <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/50 bg-destructive/10">
+                <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
                   <div className="flex items-start gap-3">
-                    <IconAlertCircle className="size-5 text-destructive flex-shrink-0 mt-0.5" />
+                    <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
                     <div className="flex-1">
                       <p className="text-sm font-medium text-destructive mb-1">
                         Error generating response
                       </p>
-                      <p className="text-sm text-main-view-fg/70">
+                      <p className="text-sm text-muted-foreground">
                         {error.message}
                       </p>
                       {(error.message.toLowerCase().includes('context') &&
@@ -816,14 +761,7 @@ function ThreadDetail() {
         </div>
 
         {/* Chat Input - Fixed at bottom */}
-        <div
-          className={cn(
-            'px-4 py-4 mx-auto w-full',
-            isMobile || isSmallScreen || chatWidth !== 'compact'
-              ? 'max-w-full'
-              : 'w-full md:w-4/5'
-          )}
-        >
+        <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
           <ChatInput
             model={threadModel}
             onSubmit={handleSubmit}

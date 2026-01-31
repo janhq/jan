@@ -68,8 +68,8 @@ export default function JanBrowserExtensionDialog({
             </VisuallyHidden>
             <div className="flex items-center justify-center py-8">
               <div className="flex flex-col items-center justify-center gap-3">
-                <IconLoader2 className="size-8 text-accent animate-spin origin-center" />
-                <p className="text-sm text-main-view-fg/60">{t('mcp-servers:browserExtension.connecting.checking')}</p>
+                <IconLoader2 className="size-8 text-muted-foreground animate-spin origin-center" />
+                <p className="text-sm text-muted-foreground">{t('mcp-servers:browserExtension.connecting.checking')}</p>
               </div>
             </div>
           </>
@@ -80,19 +80,21 @@ export default function JanBrowserExtensionDialog({
           <>
             <DialogHeader>
               <DialogTitle>{t('mcp-servers:browserExtension.notInstalled.title')}</DialogTitle>
-              <DialogDescription className="mt-1 text-main-view-fg/70">
+              <DialogDescription className="mt-1 text-muted-foreground">
                 {t('mcp-servers:browserExtension.notInstalled.description')}
               </DialogDescription>
             </DialogHeader>
 
             <DialogFooter className="flex gap-2 sm:justify-end">
               <Button
-                variant="outline"
+                variant="ghost"
+                size="sm"
                 onClick={handleCancel}
               >
                 {t('common:cancel')}
               </Button>
               <Button
+                size="sm"
                 onClick={handleOpenChromeStore}
                 className="gap-2"
               >

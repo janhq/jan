@@ -33,7 +33,7 @@ export function MessageMetadataDialog({
     <Tooltip>
       <TooltipTrigger asChild>
         <div 
-          className="outline-0 focus:outline-0 flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+          className="outline-0 focus:outline-0 flex items-center gap-1 transition-colors cursor-pointer group relative"
           role="button"
           tabIndex={0}
           onKeyDown={(e) => {
@@ -59,7 +59,7 @@ export function MessageMetadataDialog({
         <DialogHeader>
           <DialogTitle>{t('common:dialogs.messageMetadata.title')}</DialogTitle>
           <div className="space-y-2 mt-4">
-            <div className="border border-main-view-fg/10 rounded-md">
+            <div className="border  rounded-md">
               <CodeEditor
                 value={JSON.stringify(metadata || {}, null, 2)}
                 language="json"
@@ -70,7 +70,7 @@ export function MessageMetadataDialog({
                   backgroundColor: 'transparent',
                   fontFamily: 'monospace',
                 }}
-                className="w-full h-full !text-sm "
+                className="w-full h-full text-sm!"
               />
             </div>
           </div>

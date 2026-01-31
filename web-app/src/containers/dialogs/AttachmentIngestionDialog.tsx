@@ -31,7 +31,7 @@ export default function AttachmentIngestionDialog() {
           <DialogTitle>
             {t('common:attachmentsIngestion.title')}
             {totalCount > 1 && (
-              <span className="text-sm font-normal text-main-view-fg/70 ml-2">
+              <span className="text-sm font-normal text-muted-foreground ml-2">
                 ({currentIndex + 1} of {totalCount})
               </span>
             )}
@@ -41,29 +41,29 @@ export default function AttachmentIngestionDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="border border-main-view-fg/10 rounded-md p-3 bg-main-view/40">
+        <div className="border rounded-md p-3 bg-secondary">
           <div className="flex items-center justify-between gap-2">
             <span className="truncate font-medium" title={currentAttachment.name}>
               {currentAttachment.name}
             </span>
-            <span className="text-xs text-main-view-fg/70 flex-shrink-0">
+            <span className="text-xs text-muted-foreground shrink-0">
               {formatBytes(currentAttachment.size)}
             </span>
           </div>
         </div>
 
         <DialogFooter className="flex gap-2 sm:justify-end">
-          <Button variant="ghost" onClick={cancel}>
+          <Button size="sm" variant="ghost" onClick={cancel}>
             {t('common:cancel')}
           </Button>
           <Button
+            size="sm"
             variant="outline"
-            className="border-main-view-fg/20"
             onClick={() => choose('embeddings')}
           >
             {t('common:attachmentsIngestion.embeddings')}
           </Button>
-          <Button onClick={() => choose('inline')}>
+          <Button size="sm" onClick={() => choose('inline')}>
             {t('common:attachmentsIngestion.inline')}
           </Button>
         </DialogFooter>

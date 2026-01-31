@@ -128,27 +128,25 @@ export function DownloadButtonPlaceholder({
     >
       {isDownloading && !isDownloaded && (
         <div className={cn('flex items-center gap-2 w-20')}>
-          <Progress value={downloadProgress * 100} />
-          <span className="text-xs text-center text-main-view-fg/70">
+          <Progress className='border' value={downloadProgress * 100} />
+          <span className="text-xs text-center text-muted-foreground">
             {Math.round(downloadProgress * 100)}%
           </span>
         </div>
       )}
       {isDownloaded ? (
         <Button
-          variant="link"
+          variant="default"
           size="sm"
-          className="p-0"
           onClick={() => handleUseModel(modelId)}
           data-test-id={`hub-model-${modelId}`}
         >
-          <div className="rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1">
-            {t('hub:newChat')}
-          </div>
+          {t('hub:newChat')}
         </Button>
       ) : (
         <Button
           data-test-id={`hub-model-${modelId}`}
+          variant="outline"
           size="sm"
           onClick={handleDownload}
           className={cn(isDownloading && 'hidden')}

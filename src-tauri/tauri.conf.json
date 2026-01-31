@@ -15,10 +15,10 @@
       {
         "label": "main",
         "title": "Jan",
-        "width": 1024,
-        "minWidth": 375,
-        "minHeight": 667,
+        "width": 1200,
+        "minWidth": 1024,
         "height": 800,
+        "minHeight": 740,
         "resizable": true,
         "fullscreen": false,
         "zoomHotkeysEnabled": true,
@@ -26,8 +26,8 @@
         "hiddenTitle": true,
         "transparent": true,
         "trafficLightPosition": {
-          "x": 12,
-          "y": 25
+          "x": 20,
+          "y": 32
         },
         "decorations": true,
         "titleBarStyle": "Overlay",
@@ -47,7 +47,7 @@
       ],
       "csp": {
         "default-src": "'self' customprotocol: asset: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-        "connect-src": "'self' asset: ipc: http://asset.localhost http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https: http:",
+        "connect-src": "'self' asset: ipc: data: http://asset.localhost http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https: http:",
         "font-src": [
           "https://fonts.gstatic.com blob: data: tauri://localhost http://tauri.localhost"
         ],

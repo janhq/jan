@@ -34,8 +34,9 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
   }
 
   const trigger = (
-    <div
-      className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+    <Button
+      variant="ghost"
+      size="icon-xs"
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -46,7 +47,7 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
       }}
     >
       <IconTrash size={16} />
-    </div>
+    </Button>
   )
 
   return (
@@ -64,9 +65,9 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
             Are you sure you want to delete this message? This action cannot be
             undone.
           </DialogDescription>
-          <DialogFooter className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
-              <Button variant="link" size="sm" className="w-full sm:w-auto">
+              <Button variant="ghost" size="sm" className="w-full sm:w-auto">
                 {t('common:cancel')}
               </Button>
             </DialogClose>

@@ -100,9 +100,9 @@ export function DeleteThreadDialog({
           <DialogDescription>
             {t('common:dialogs.deleteThread.description')}
           </DialogDescription>
-          <DialogFooter className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
-              <Button variant="link" size="sm" className="w-full sm:w-auto">
+              <Button variant="ghost" size="sm" className="w-full sm:w-auto">
                 {t('common:cancel')}
               </Button>
             </DialogClose>

@@ -63,8 +63,9 @@ export function EditMessageDialog({
   }
 
   const defaultTrigger = (
-    <div
-      className="flex outline-0 items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+    <Button
+      variant="ghost"
+      size="icon-xs"
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -75,7 +76,7 @@ export function EditMessageDialog({
       }}
     >
       <IconPencil size={16} />
-    </div>
+    </Button>
   )
 
   return (
@@ -90,7 +91,7 @@ export function EditMessageDialog({
                 {keptImages.map((imageUrl, index) => (
                   <div
                     key={index}
-                    className="relative border border-main-view-fg/5 rounded-lg size-14"
+                    className="relative border rounded-lg size-14"
                   >
                     <img
                       className="object-cover w-full h-full rounded-lg"
@@ -121,9 +122,9 @@ export function EditMessageDialog({
             placeholder={t('common:dialogs.editMessage.title')}
             aria-label={t('common:dialogs.editMessage.title')}
           />
-          <DialogFooter className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
-              <Button variant="link" size="sm" className="w-full sm:w-auto">
+              <Button variant="ghost" size="sm" className="w-full sm:w-auto">
                 {t('common:cancel')}
               </Button>
             </DialogClose>

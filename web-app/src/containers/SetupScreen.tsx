@@ -1,7 +1,6 @@
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import HeaderPage from './HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
@@ -14,8 +13,9 @@ import {
 } from '@/constants/models'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { IconEye, IconSquareCheck} from '@tabler/icons-react'
+import { IconEye, IconSquareCheck } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 
 type CacheEntry = {
   status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
@@ -82,7 +82,7 @@ function SetupScreen() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { getProviderByName } = useModelProvider()
-  
+
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
   const serviceHub = useServiceHub()
@@ -97,13 +97,14 @@ function SetupScreen() {
   const supportCheckInProgress = useRef(false)
   const checkedModelId = useRef<string | null>(null)
   const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
+  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
 
   const fetchJanModel = useCallback(async () => {
     setMetadataFetchFailed(false)
     try {
       const repo = await serviceHub
         .models()
-        .fetchHuggingFaceRepo(NEW_JAN_MODEL_HF_REPO)
+        .fetchHuggingFaceRepo(NEW_JAN_MODEL_HF_REPO, huggingfaceToken)
 
       if (repo) {
         const catalogModel = serviceHub
@@ -117,7 +118,7 @@ function SetupScreen() {
       console.error('Error fetching Jan Model V2:', error)
       setMetadataFetchFailed(true)
     }
-  }, [serviceHub])
+  }, [serviceHub, huggingfaceToken])
 
   // Check model support for variants when janNewModel is available
   useEffect(() => {
@@ -263,7 +264,9 @@ function SetupScreen() {
 
   const downloadedSize = useMemo(() => {
     if (!defaultVariant) return { current: 0, total: 0 }
-    const process = downloadProcesses.find((e) => e.id === defaultVariant.model_id)
+    const process = downloadProcesses.find(
+      (e) => e.id === defaultVariant.model_id
+    )
     return {
       current: process?.current || 0,
       total: process?.total || 0,
@@ -301,7 +304,7 @@ function SetupScreen() {
           (e) => e.model_id.toLowerCase() === 'mmproj-f16'
         ) || janNewModel.mmproj_models?.[0]
       )?.path,
-      undefined, // No HF token needed for public model
+      huggingfaceToken, // Use HF token from general settings
       true // Skip verification for faster download
     )
   }, [
@@ -310,6 +313,7 @@ function SetupScreen() {
     isSupportCheckComplete,
     addLocalDownloadingModel,
     serviceHub,
+    huggingfaceToken,
   ])
 
   // Process queued quick start when metadata becomes available
@@ -389,37 +393,35 @@ function SetupScreen() {
 
   return (
     <div className="flex h-full flex-col justify-center">
-      <HeaderPage></HeaderPage>
       <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center ">
         <div className="w-full mx-auto">
           <div className="mb-4 text-center">
-            <h1 className="font-studio font-medium text-main-view-fg text-2xl">
+            <h1 className="font-studio font-medium text-2xl mb-1">
               {isDownloading ?  'Sit tight, Jan is getting ready...' : 'Welcome to Jan!'}
             </h1>
-            <p className='text-main-view-fg/70 w-full md:w-3/4 mx-auto mt-1'>{isDownloading ? 'Jan is getting ready to work on your device. This may take a few minutes.' : 'To get started, Jan needs to download a model to your device. This only takes a few minutes.'}</p>
+            <p className='text-muted-foreground w-full md:w-1/2 mx-auto mt-1'>{isDownloading ? 'Jan is getting ready to work on your device. This may take a few minutes.' : 'To get started, Jan needs to download a model to your device. This only takes a few minutes.'}</p>
           </div>
           <div className="flex gap-4 flex-col mt-6">
             {/* Quick Start Button - Highlighted */}
-            <button
+            <div
               onClick={handleQuickStart}
-              disabled={quickStartInitiated || isDownloading || isDownloaded}
               className="w-full text-left lg:w-2/3 mx-auto"
             >
-              <div className={cn("bg-main-view-fg/2 p-3 rounded-lg border border-main-view-fg/10 transition-all hover:shadow-lg disabled:opacity-60 flex justify-between items-start")}>
+              <div className={cn("bg-background p-3 rounded-lg border transition-all hover:shadow-lg disabled:opacity-60 flex justify-between items-start")}>
                 <div className="flex items-start gap-4">
-                  <div className="shrink-0 size-12 bg-main-view-fg/10 rounded-lg flex items-center justify-center">
+                  <div className="shrink-0 size-12 bg-secondary/40 rounded-xl flex items-center justify-center">
                     <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
                   </div>
                   <div className="flex-1">
-                    <h1 className="text-main-view-fg font-semibold text-sm mb-1">
-                      <span>Jan v3</span> <span className='text-xs text-main-view-fg/50'>· {defaultVariant?.file_size}</span>
+                    <h1 className="font-semibold text-sm mb-1">
+                      <span>Jan v3</span>&nbsp;<span className='text-xs text-muted-foreground'>· {defaultVariant?.file_size}</span>
                     </h1>
-                    <div className="text-main-view-fg/70 text-sm mt-1.5">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-main-view-fg/20 text-xs rounded-full mr-1">
+                    <div className="text-muted-foreground text-sm mt-1.5">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full mr-1">
                         <IconSquareCheck size={12} />
                         General
                       </span>
-                      {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-main-view-fg/20 text-xs rounded-full">
+                      {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full">
                         <IconEye size={12} />
                         Vision
                       </span>}
@@ -427,11 +429,11 @@ function SetupScreen() {
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-2">
-                  <Button disabled={quickStartInitiated || isDownloading}>
+                  <Button size="sm" disabled={quickStartInitiated || isDownloading}>
                     {quickStartInitiated || isDownloading ? 'Downloading' : 'Download'}
                   </Button>
                   {(quickStartInitiated || isDownloading) && (
-                    <div className="flex items-center gap-1.5 text-xs text-main-view-fg/50">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <svg
                         className="size-3 animate-spin"
                         viewBox="0 0 24 24"
@@ -456,7 +458,7 @@ function SetupScreen() {
                   )}
                 </div>
               </div>
-            </button>
+            </div>
           </div>
         </div>
       </div>

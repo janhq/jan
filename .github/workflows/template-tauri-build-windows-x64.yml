@@ -216,6 +216,13 @@ jobs:
         run: |
           dotnet tool install --global --version 6.0.0 AzureSignTool
 
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
       - name: Build app
         shell: bash
         run: |

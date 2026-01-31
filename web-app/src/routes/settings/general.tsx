@@ -21,7 +21,6 @@ import {
   IconCopy,
   IconCopyCheck,
 } from '@tabler/icons-react'
-// import { windowKey } from '@/constants/windows'
 import { toast } from 'sonner'
 import { isDev } from '@/lib/utils'
 import { SystemEvent } from '@/types/events'
@@ -170,20 +169,23 @@ function General() {
   }, [t, checkForUpdate])
 
   return (
-    <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
+    <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <h1 className="font-medium">{t('common:settings')}</h1>
+        <div className="flex items-center gap-2 w-full">
+          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+        </div>
       </HeaderPage>
-      <div className="flex h-full w-full flex-col sm:flex-row">
+      <div className="flex h-[calc(100%-60px)]">
         <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+        <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+            
             {/* General */}
             <Card title={t('common:general')}>
               <CardItem
                 title={t('settings:general.appVersion')}
                 actions={
-                  <span className="text-main-view-fg/80 font-medium">
+                  <span className="text-foreground font-medium">
                     v{VERSION}
                   </span>
                 }
@@ -192,20 +194,17 @@ function General() {
                 <CardItem
                   title={t('settings:general.checkForUpdates')}
                   description={t('settings:general.checkForUpdatesDesc')}
-                  className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
+                  className="items-center flex-row gap-y-2"
                   actions={
                     <Button
-                      variant="link"
+                      variant="secondary"
                       size="sm"
-                      className="p-0"
                       onClick={handleCheckForUpdate}
                       disabled={isCheckingUpdate}
                     >
-                      <div className="cursor-pointer rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                        {isCheckingUpdate
-                          ? t('settings:general.checkingForUpdates')
-                          : t('settings:general.checkForUpdates')}
-                      </div>
+                      {isCheckingUpdate
+                        ? t('settings:general.checkingForUpdates')
+                        : t('settings:general.checkForUpdates')}
                     </Button>
                   }
                 />
@@ -223,7 +222,7 @@ function General() {
                   ns: 'settings',
                 })}
                 align="start"
-                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
+                className="items-start flex-row gap-2"
                 description={
                   <>
                     <span>
@@ -233,10 +232,10 @@ function General() {
                       &nbsp;
                     </span>
                     <div className="flex items-center gap-2 mt-1 ">
-                      <div className="">
+                      <div className="truncate">
                         <span
                           title={janDataFolder}
-                          className="bg-main-view-fg/10 text-xs px-1 py-0.5 rounded-sm text-main-view-fg/80 line-clamp-1 w-fit"
+                          className="bg-secondary text-xs p-1 rounded-sm"
                         >
                           {janDataFolder}
                         </span>
@@ -245,7 +244,7 @@ function General() {
                         onClick={() =>
                           janDataFolder && copyToClipboard(janDataFolder)
                         }
-                        className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1"
+                        className="cursor-pointer flex items-center justify-center rounded-sm bg-secondary transition-all duration-200 ease-in-out p-1"
                         title={
                           isCopied
                             ? t('settings:general.copied')
@@ -254,15 +253,15 @@ function General() {
                       >
                         {isCopied ? (
                           <div className="flex items-center gap-1">
-                            <IconCopyCheck size={12} className="text-accent" />
+                            <IconCopyCheck size={14} className="text-green-500 dark:text-green-600" />
                             <span className="text-xs leading-0">
                               {t('settings:general.copied')}
                             </span>
                           </div>
                         ) : (
                           <IconCopy
-                            size={12}
-                            className="text-main-view-fg/50"
+                            size={14}
+                            className="text-muted-foreground"
                           />
                         )}
                       </button>
@@ -272,19 +271,16 @@ function General() {
                 actions={
                   <>
                     <Button
-                      variant="link"
+                      variant="outline"
                       size="sm"
-                      className="p-0"
                       title={t('settings:dataFolder.appData')}
                       onClick={handleDataFolderChange}
                     >
-                      <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
                         <IconFolder
                           size={12}
-                          className="text-main-view-fg/50"
+                          className="text-muted-foreground"
                         />
                         <span>{t('settings:general.changeLocation')}</span>
-                      </div>
                     </Button>
                     {selectedNewPath && (
                       <ChangeDataFolderLocation
@@ -310,23 +306,11 @@ function General() {
                   ns: 'settings',
                 })}
                 description={t('settings:dataFolder.appLogsDesc')}
-                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
+                className="items-start flex-row gap-y-2"
                 actions={
                   <div className="flex items-center gap-2">
                     <Button
-                      variant="link"
-                      size="sm"
-                      className="p-0"
-                      onClick={handleOpenLogs}
-                      title={t('settings:dataFolder.appLogs')}
-                    >
-                      <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                        <IconLogs size={12} className="text-main-view-fg/50" />
-                        <span>{t('settings:general.openLogs')}</span>
-                      </div>
-                    </Button>
-                    <Button
-                      variant="link"
+                      variant="outline"
                       size="sm"
                       className="p-0"
                       onClick={async () => {
@@ -344,18 +328,26 @@ function General() {
                       }}
                       title={t('settings:general.revealLogs')}
                     >
-                      <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                        <IconFolder
-                          size={12}
-                          className="text-main-view-fg/50"
-                        />
-                        <span>{openFileTitle()}</span>
-                      </div>
+                      <IconFolder
+                        size={12}
+                        className="text-muted-foreground"
+                      />
+                      <span>{openFileTitle()}</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleOpenLogs}
+                      title={t('settings:dataFolder.appLogs')}
+                    >
+                      <IconLogs size={12} className="text-muted-foreground" />
+                      <span>{t('settings:general.openLogs')}</span>
                     </Button>
                   </div>
                 }
               />
             </Card>
+            
             {/* Advanced - Desktop only */}
             <Card title="Advanced">
               <CardItem
@@ -404,18 +396,12 @@ function General() {
                       id="hf-token"
                       value={huggingfaceToken || ''}
                       onChange={(e) => setHuggingfaceToken(e.target.value)}
-                      placeholder={'hf_xxx'}
+                      placeholder={'hf_xxx_xxx'}
                       required
                     />
                     <Button
-                      variant={
-                        (huggingfaceToken || '').trim() ? 'default' : 'link'
-                      }
-                      className={
-                        (huggingfaceToken || '').trim()
-                          ? 'bg-green-600 text-white hover:bg-green-700'
-                          : ''
-                      }
+                      variant="outline"
+                      size='sm'
                       disabled={isValidatingToken}
                       onClick={async () => {
                         const token = (huggingfaceToken || '').trim()
@@ -525,12 +511,10 @@ function General() {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out">
                       <IconBrandGithub
                         size={18}
-                        className="text-main-view-fg/50"
+                        className="text-muted-foreground"
                       />
-                    </div>
                   </a>
                 }
               />
@@ -543,12 +527,10 @@ function General() {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out">
-                      <IconBrandDiscord
-                        size={18}
-                        className="text-main-view-fg/50"
-                      />
-                    </div>
+                    <IconBrandDiscord
+                      size={18}
+                      className="text-muted-foreground"
+                    />
                   </a>
                 }
               />
@@ -578,7 +560,7 @@ function General() {
               <CardItem
                 align="start"
                 description={
-                  <div className="text-main-view-fg/70 -mt-2">
+                  <div className="text-muted-foreground -mt-2">
                     <p>{t('settings:general.creditsDesc1')}</p>
                     <p className="mt-2">{t('settings:general.creditsDesc2')}</p>
                   </div>

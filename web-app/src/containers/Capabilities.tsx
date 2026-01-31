@@ -26,9 +26,12 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
   })
 
   return (
-    <div className="flex gap-1">
+    <div className="flex gap-0.5">
       {filteredCapabilities.map((capability: string, capIndex: number) => {
         let icon = null
+
+        // Embedding models get special treatment with a distinct visual style
+        const isEmbedding = capability === 'embeddings'
 
         if (capability === 'vision') {
           icon = <IconEye className="size-4" />
@@ -36,7 +39,7 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
           icon = <IconTool className="size-3.5" />
         } else if (capability === 'reasoning') {
           icon = <IconAtom className="size-3.5" />
-        } else if (capability === 'embeddings') {
+        } else if (capability === 'embeddings' || isEmbedding) {
           icon = <IconCodeCircle2 className="size-3.5" />
         } else if (capability === 'web_search') {
           icon = <IconWorld className="size-3.5" />
@@ -51,7 +54,7 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span
-                      className="flex items-center gap-1 size-5 bg-main-view-fg/5 rounded text-main-view-fg/50 justify-center last:mr-1 hover:text-main-view-fg transition-all"
+                      className="flex items-center gap-1 size-5 hover:bg-secondary rounded text-muted-foreground justify-center last:mr-1 transition-all"
                       title={capability}
                     >
                       {icon}
@@ -61,7 +64,9 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
                     <p>
                       {capability === 'web_search'
                         ? 'Web Search'
-                        : capability}
+                        : capability === 'embeddings'
+                          ? 'Embedding Model (for RAG/vectors, not chat)'
+                          : capability}
                     </p>
                   </TooltipContent>
                 </Tooltip>

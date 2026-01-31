@@ -26,9 +26,9 @@ describe('Switch', () => {
 
   it('renders thumb with correct styling', () => {
     render(<Switch />)
-    
+
     const thumb = document.querySelector('[data-slot="switch-thumb"]')
-    expect(thumb).toHaveClass('bg-main-view', 'pointer-events-none', 'block', 'size-4', 'rounded-full', 'ring-0', 'transition-transform')
+    expect(thumb).toHaveClass('bg-background', 'pointer-events-none', 'block', 'size-4', 'rounded-full', 'ring-0', 'transition-transform')
   })
 
   it('renders with custom className', () => {
@@ -72,11 +72,11 @@ describe('Switch', () => {
 
   it('renders loading spinner with correct styling', () => {
     render(<Switch loading />)
-    
+
     const spinner = document.querySelector('.animate-spin')
     expect(spinner).toBeInTheDocument()
-    expect(spinner).toHaveClass('text-main-view-fg/50')
-    
+    expect(spinner).toHaveClass('text-muted-foreground')
+
     const spinnerContainer = document.querySelector('.absolute.inset-0')
     expect(spinnerContainer).toHaveClass('flex', 'items-center', 'justify-center', 'z-10', 'size-3.5')
   })
@@ -178,15 +178,15 @@ describe('Switch', () => {
 
   it('handles checked state styling', () => {
     render(<Switch checked />)
-    
+
     const switchElement = document.querySelector('[data-slot="switch"]')
-    expect(switchElement).toHaveClass('data-[state=checked]:bg-accent')
+    expect(switchElement).toHaveClass('data-[state=checked]:bg-primary')
   })
 
   it('handles unchecked state styling', () => {
     render(<Switch checked={false} />)
-    
+
     const switchElement = document.querySelector('[data-slot="switch"]')
-    expect(switchElement).toHaveClass('data-[state=unchecked]:bg-main-view-fg/20')
+    expect(switchElement).toHaveClass('data-[state=unchecked]:bg-input')
   })
 })

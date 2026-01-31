@@ -228,84 +228,291 @@ function HubModelDetailContent() {
 
   if (!modelData) {
     return (
-      <div className="flex h-full w-full">
-        <div className="flex flex-col h-full w-full">
-          <HeaderPage>
-            <button
-              className="relative z-20 flex items-center gap-2 cursor-pointer"
-              onClick={() => navigate({ to: route.hub.index })}
-              aria-label="Go back"
-            >
-              <div className="flex items-center justify-center size-5 rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
-                <IconArrowLeft size={18} className="text-main-view-fg" />
-              </div>
-              <span className="text-main-view-fg">Back to Hub</span>
-            </button>
-          </HeaderPage>
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-main-view-fg/60">Model not found</p>
-          </div>
+      <div className="flex flex-col h-svh w-full">
+        <HeaderPage>
+          <Button
+          onClick={() => navigate({ to: route.hub.index })}
+          aria-label="Go back"
+          variant="ghost"
+          size="sm"
+        >
+          <IconArrowLeft size={18} className="text-muted-foreground" />
+          <span className="text-foreground">Back to Hub</span>
+        </Button>
+        </HeaderPage>
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-muted-foreground">Model not found</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="flex h-full w-full">
-      <div className="flex flex-col h-full w-full ">
-        <HeaderPage>
-          <button
-            className="relative z-20 flex items-center gap-2 cursor-pointer"
+    <div className="flex flex-col h-svh w-full">
+      <HeaderPage>
+        <div className="flex items-center gap-2 w-full relative">
+          <Button
             onClick={() => navigate({ to: route.hub.index })}
             aria-label="Go back"
+            variant="ghost"
+            size="sm"
           >
-            <div className="flex items-center justify-center size-5 rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
-              <IconArrowLeft size={18} className="text-main-view-fg" />
-            </div>
-            <span className="text-main-view-fg">Back to Hub</span>
-          </button>
-        </HeaderPage>
+            <IconArrowLeft size={18} className="text-muted-foreground" />
+            <span className="text-foreground">Back to Hub</span>
+          </Button>
+        </div>
+      </HeaderPage>
 
-        <div className="flex-1 overflow-y-auto ">
-          <div className="md:w-4/5 mx-auto">
-            <div className="max-w-4xl mx-auto p-6">
-              {/* Model Header */}
-              <div className="mb-8">
-                <h1
-                  className="text-2xl font-semibold text-main-view-fg mb-4 capitalize break-words line-clamp-2"
-                  title={
-                    extractModelName(modelData.model_name) ||
-                    modelData.model_name
-                  }
-                >
-                  {extractModelName(modelData.model_name) ||
-                    modelData.model_name}
-                </h1>
+      <div className="flex-1 overflow-y-auto ">
+        <div className="md:w-4/5 mx-auto">
+          <div className="max-w-4xl mx-auto p-6">
+            {/* Model Header */}
+            <div className="mb-8">
+              <h1
+                className="text-2xl font-semibold mb-4 capitalize wrap-break-word line-clamp-2"
+                title={
+                  extractModelName(modelData.model_name) ||
+                  modelData.model_name
+                }
+              >
+                {extractModelName(modelData.model_name) ||
+                  modelData.model_name}
+              </h1>
 
-                {/* Stats */}
-                <div className="flex items-center gap-4 text-sm text-main-view-fg/60 mb-4 flex-wrap">
-                  {modelData.developer && (
-                    <>
-                      <span>By {modelData.developer}</span>
-                    </>
-                  )}
+              {/* Stats */}
+              <div className="flex items-center gap-4 text-sm text-foreground mb-4 flex-wrap">
+                {modelData.developer && (
+                  <>
+                    <span>By {modelData.developer}</span>
+                  </>
+                )}
+                <div className="flex items-center gap-2">
+                  <IconDownload size={16} />
+                  <span>{modelData.downloads || 0} Downloads</span>
+                </div>
+                {modelData.created_at && (
                   <div className="flex items-center gap-2">
-                    <IconDownload size={16} />
-                    <span>{modelData.downloads || 0} Downloads</span>
+                    <IconClock size={16} />
+                    <span>Updated {formatDate(modelData.created_at)}</span>
                   </div>
-                  {modelData.created_at && (
-                    <div className="flex items-center gap-2">
-                      <IconClock size={16} />
-                      <span>Updated {formatDate(modelData.created_at)}</span>
-                    </div>
-                  )}
+                )}
+              </div>
+
+              {/* Description */}
+              {modelData.description && (
+                <div className="text-muted-foreground mb-4">
+                  <RenderMarkdown
+                    className="select-none reset-heading"
+                    components={{
+                      a: ({ ...props }) => (
+                        <a
+                          {...props}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        />
+                      ),
+                    }}
+                    content={
+                      extractDescription(modelData.description) ||
+                      modelData.description
+                    }
+                  />
+                </div>
+              )}
+
+              {/* Tags */}
+              {tags.length > 0 && (
+                <div className="flex gap-2 flex-wrap">
+                  {tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="px-3 py-1 text-sm bg-secondary rounded-md"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Variants Section */}
+            {modelData.quants && modelData.quants.length > 0 && (
+              <div className="mb-8">
+                <div className="flex items-center gap-2 mb-4">
+                  <IconFileCode size={20} className="text-muted-foreground" />
+                  <h2 className="text-lg font-semibold text-foreground">
+                    Variants ({modelData.quants.length})
+                  </h2>
                 </div>
 
-                {/* Description */}
-                {modelData.description && (
-                  <div className="text-main-view-fg/80 mb-4">
+                <div className="w-full overflow-x-auto">
+                  <table className="w-full min-w-[500px]">
+                    <thead>
+                      <tr className="border-b ">
+                        <th className="text-left py-3 px-2 text-sm font-medium">
+                          Version
+                        </th>
+                        <th className="text-left py-3 px-2 text-sm font-medium">
+                          Format
+                        </th>
+                        <th className="text-left py-3 px-2 text-sm font-medium">
+                          Size
+                        </th>
+                        <th></th>
+                        <th className="text-right py-3 px-2 text-sm font-medium">
+                          Action
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modelData.quants.map((variant) => {
+                        const isDownloading =
+                          localDownloadingModels.has(variant.model_id) ||
+                          downloadProcesses.some(
+                            (e) => e.id === variant.model_id
+                          )
+                        const downloadProgress =
+                          downloadProcesses.find(
+                            (e) => e.id === variant.model_id
+                          )?.progress || 0
+                        const isDownloaded = llamaProvider?.models.some(
+                          (m: { id: string }) => m.id === variant.model_id
+                        )
+
+                        // Extract format from model_id
+                        const format = variant.model_id
+                          .toLowerCase()
+                          .includes('tensorrt')
+                          ? 'TensorRT'
+                          : 'GGUF'
+
+                        // Extract version name (remove format suffix)
+                        const versionName = variant.model_id
+                          .replace(/_GGUF$/i, '')
+                          .replace(/-GGUF$/i, '')
+                          .replace(/_TensorRT$/i, '')
+                          .replace(/-TensorRT$/i, '')
+
+                        return (
+                          <tr
+                            key={variant.model_id}
+                            className="border-b border-border"
+                          >
+                            <td className="py-3 px-2">
+                              <span className="text-sm font-medium">
+                                {versionName}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2">
+                              <span className="text-sm text-muted-foreground">
+                                {format}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2">
+                              <span className="text-sm text-muted-foreground">
+                                {variant.file_size}
+                              </span>
+                            </td>
+                            <td>
+                              <ModelInfoHoverCard
+                                model={modelData}
+                                variant={variant}
+                                defaultModelQuantizations={
+                                  DEFAULT_MODEL_QUANTIZATIONS
+                                }
+                                modelSupportStatus={modelSupportStatus}
+                                onCheckModelSupport={checkModelSupport}
+                              />
+                            </td>
+                            <td className="py-3 px-2 text-right ml-auto">
+                              {(() => {
+                                if (isDownloading && !isDownloaded) {
+                                  return (
+                                    <div className="flex items-center justify-end gap-2">
+                                      <Progress
+                                        value={downloadProgress * 100}
+                                        className="w-12"
+                                      />
+                                      <span className="text-xs text-muted-foreground text-right">
+                                        {Math.round(downloadProgress * 100)}%
+                                      </span>
+                                    </div>
+                                  )
+                                }
+
+                                if (isDownloaded) {
+                                  return (
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      onClick={() =>
+                                        handleUseModel(variant.model_id)
+                                      }
+                                    >
+                                      {t('hub:newChat')}
+                                    </Button>
+                                  )
+                                }
+
+                                return (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      addLocalDownloadingModel(
+                                        variant.model_id
+                                      )
+                                      serviceHub
+                                        .models()
+                                        .pullModelWithMetadata(
+                                          variant.model_id,
+                                          variant.path,
+                                          (
+                                            modelData.mmproj_models?.find(
+                                              (e) =>
+                                                e.model_id.toLowerCase() ===
+                                                'mmproj-f16'
+                                            ) || modelData.mmproj_models?.[0]
+                                          )?.path,
+                                          huggingfaceToken
+                                        )
+                                    }}
+                                    className={cn(isDownloading && 'hidden')}
+                                    variant="outline"
+                                  >
+                                    Download
+                                  </Button>
+                                )
+                              })()}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* README Section */}
+            {modelData.readme && (
+              <div className="mb-8">
+                <div className="flex items-center gap-2 mb-4">
+                  <IconFileCode size={20} className="text-muted-foreground" />
+                  <h2 className="text-lg font-semibold">
+                    README
+                  </h2>
+                </div>
+
+                {isLoadingReadme ? (
+                  <div className="flex items-center justify-center py-8">
+                    <span className="text-muted-foreground">
+                      Loading README...
+                    </span>
+                  </div>
+                ) : readmeContent ? (
+                  <div className="prose prose-invert max-w-none">
                     <RenderMarkdown
-                      className="select-none reset-heading"
+                      className="text-muted-foreground"
                       components={{
                         a: ({ ...props }) => (
                           <a
@@ -315,231 +522,18 @@ function HubModelDetailContent() {
                           />
                         ),
                       }}
-                      content={
-                        extractDescription(modelData.description) ||
-                        modelData.description
-                      }
+                      content={readmeContent}
                     />
                   </div>
-                )}
-
-                {/* Tags */}
-                {tags.length > 0 && (
-                  <div className="flex gap-2 flex-wrap">
-                    {tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="px-3 py-1 text-sm bg-main-view-fg/10 text-main-view-fg rounded-md"
-                      >
-                        {tag}
-                      </span>
-                    ))}
+                ) : (
+                  <div className="flex items-center justify-center py-8">
+                    <span className="text-muted-foreground">
+                      Failed to load README
+                    </span>
                   </div>
                 )}
               </div>
-
-              {/* Variants Section */}
-              {modelData.quants && modelData.quants.length > 0 && (
-                <div className="mb-8">
-                  <div className="flex items-center gap-2 mb-4">
-                    <IconFileCode size={20} className="text-main-view-fg/50" />
-                    <h2 className="text-lg font-semibold text-main-view-fg">
-                      Variants ({modelData.quants.length})
-                    </h2>
-                  </div>
-
-                  <div className="w-full overflow-x-auto">
-                    <table className="w-full min-w-[500px]">
-                      <thead>
-                        <tr className="border-b border-main-view-fg/10">
-                          <th className="text-left py-3 px-2 text-sm font-medium text-main-view-fg/70">
-                            Version
-                          </th>
-                          <th className="text-left py-3 px-2 text-sm font-medium text-main-view-fg/70">
-                            Format
-                          </th>
-                          <th className="text-left py-3 px-2 text-sm font-medium text-main-view-fg/70">
-                            Size
-                          </th>
-                          <th></th>
-                          <th className="text-right py-3 px-2 text-sm font-medium text-main-view-fg/70">
-                            Action
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {modelData.quants.map((variant) => {
-                          const isDownloading =
-                            localDownloadingModels.has(variant.model_id) ||
-                            downloadProcesses.some(
-                              (e) => e.id === variant.model_id
-                            )
-                          const downloadProgress =
-                            downloadProcesses.find(
-                              (e) => e.id === variant.model_id
-                            )?.progress || 0
-                          const isDownloaded = llamaProvider?.models.some(
-                            (m: { id: string }) => m.id === variant.model_id
-                          )
-
-                          // Extract format from model_id
-                          const format = variant.model_id
-                            .toLowerCase()
-                            .includes('tensorrt')
-                            ? 'TensorRT'
-                            : 'GGUF'
-
-                          // Extract version name (remove format suffix)
-                          const versionName = variant.model_id
-                            .replace(/_GGUF$/i, '')
-                            .replace(/-GGUF$/i, '')
-                            .replace(/_TensorRT$/i, '')
-                            .replace(/-TensorRT$/i, '')
-
-                          return (
-                            <tr
-                              key={variant.model_id}
-                              className="border-b border-main-view-fg/5 hover:bg-main-view-fg/5"
-                            >
-                              <td className="py-3 px-2">
-                                <span className="text-sm text-main-view-fg/80 font-medium">
-                                  {versionName}
-                                </span>
-                              </td>
-                              <td className="py-3 px-2">
-                                <span className="text-sm text-main-view-fg/60">
-                                  {format}
-                                </span>
-                              </td>
-                              <td className="py-3 px-2">
-                                <span className="text-sm text-main-view-fg/60">
-                                  {variant.file_size}
-                                </span>
-                              </td>
-                              <td>
-                                <ModelInfoHoverCard
-                                  model={modelData}
-                                  variant={variant}
-                                  defaultModelQuantizations={
-                                    DEFAULT_MODEL_QUANTIZATIONS
-                                  }
-                                  modelSupportStatus={modelSupportStatus}
-                                  onCheckModelSupport={checkModelSupport}
-                                />
-                              </td>
-                              <td className="py-3 px-2 text-right ml-auto">
-                                {(() => {
-                                  if (isDownloading && !isDownloaded) {
-                                    return (
-                                      <div className="flex items-center justify-end gap-2">
-                                        <Progress
-                                          value={downloadProgress * 100}
-                                          className="w-12"
-                                        />
-                                        <span className="text-xs text-main-view-fg/70 text-right">
-                                          {Math.round(downloadProgress * 100)}%
-                                        </span>
-                                      </div>
-                                    )
-                                  }
-
-                                  if (isDownloaded) {
-                                    return (
-                                      <Button
-                                        variant="link"
-                                        size="sm"
-                                        className="p-0"
-                                        onClick={() =>
-                                          handleUseModel(variant.model_id)
-                                        }
-                                      >
-                                        <div className="rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1">
-                                          {t('hub:newChat')}
-                                        </div>
-                                      </Button>
-                                    )
-                                  }
-
-                                  return (
-                                    <Button
-                                      size="sm"
-                                      onClick={() => {
-                                        addLocalDownloadingModel(
-                                          variant.model_id
-                                        )
-                                        serviceHub
-                                          .models()
-                                          .pullModelWithMetadata(
-                                            variant.model_id,
-                                            variant.path,
-                                            (
-                                              modelData.mmproj_models?.find(
-                                                (e) =>
-                                                  e.model_id.toLowerCase() ===
-                                                  'mmproj-f16'
-                                              ) || modelData.mmproj_models?.[0]
-                                            )?.path,
-                                            huggingfaceToken
-                                          )
-                                      }}
-                                      className={cn(isDownloading && 'hidden')}
-                                    >
-                                      Download
-                                    </Button>
-                                  )
-                                })()}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* README Section */}
-              {modelData.readme && (
-                <div className="mb-8">
-                  <div className="flex items-center gap-2 mb-4">
-                    <IconFileCode size={20} className="text-main-view-fg/50" />
-                    <h2 className="text-lg font-semibold text-main-view-fg">
-                      README
-                    </h2>
-                  </div>
-
-                  {isLoadingReadme ? (
-                    <div className="flex items-center justify-center py-8">
-                      <span className="text-main-view-fg/60">
-                        Loading README...
-                      </span>
-                    </div>
-                  ) : readmeContent ? (
-                    <div className="prose prose-invert max-w-none">
-                      <RenderMarkdown
-                        className="text-main-view-fg/80"
-                        components={{
-                          a: ({ ...props }) => (
-                            <a
-                              {...props}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            />
-                          ),
-                        }}
-                        content={readmeContent}
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center py-8">
-                      <span className="text-main-view-fg/60">
-                        Failed to load README
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </div>
       </div>

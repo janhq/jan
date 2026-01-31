@@ -141,40 +141,6 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
-    base_url: 'https://api.cohere.ai/v1',
-    explore_models_url: 'https://docs.cohere.com/v2/docs/models',
-    provider: 'cohere',
-    settings: [
-      {
-        key: 'api-key',
-        title: 'API Key',
-        description:
-          "The Cohere API uses API keys for authentication. Visit your [API Keys](https://dashboard.cohere.com/api-keys) page to retrieve the API key you'll use in your requests.",
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'Insert API Key',
-          value: '',
-          type: 'password',
-          input_actions: ['unobscure', 'copy'],
-        },
-      },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'The base OpenAI-compatible endpoint to use. See the [Cohere documentation](https://docs.cohere.com/docs/compatibility-api) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'https://api.cohere.ai/compatibility/v1',
-          value: 'https://api.cohere.ai/compatibility/v1',
-        },
-      },
-    ],
-    models: [],
-  },
-  {
-    active: true,
-    api_key: '',
     base_url: 'https://openrouter.ai/api/v1',
     explore_models_url: 'https://openrouter.ai/models',
     provider: 'openrouter',
@@ -224,7 +190,7 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
-    base_url: 'https://api.mistral.ai',
+    base_url: 'https://api.mistral.ai/v1',
     explore_models_url:
       'https://docs.mistral.ai/getting-started/models/models_overview/',
     provider: 'mistral',
@@ -249,8 +215,8 @@ export const predefinedProviders = [
           'The base endpoint to use. See the [Mistral documentation](https://docs.mistral.ai/getting-started/models/models_overview/) for more information.',
         controller_type: 'input',
         controller_props: {
-          placeholder: 'https://api.mistral.ai',
-          value: 'https://api.mistral.ai',
+          placeholder: 'https://api.mistral.ai/v1',
+          value: 'https://api.mistral.ai/v1',
         },
       },
     ],

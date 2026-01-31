@@ -98,8 +98,6 @@
     "resetToDefaultDesc": "将所有外观设置重置为默认值。",
     "resetInterfaceSuccess": "外观重置成功",
     "resetInterfaceSuccessDesc": "所有外观设置已恢复为默认值。",
-    "chatWidth": "聊天宽度",
-    "chatWidthDesc": "自定义聊天视图的宽度。",
     "tokenCounterCompact": "紧凑令牌计数器",
     "tokenCounterCompactDesc": "在聊天输入框内显示令牌计数器。禁用时，令牌计数器显示在输入框下方。",
     "codeBlockTitle": "代码块",

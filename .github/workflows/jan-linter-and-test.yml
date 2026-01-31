@@ -54,6 +54,13 @@ jobs:
           rm -rf ~/jan
           make clean
 
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
       - name: Install dependencies
         run: |
           make lint
@@ -87,6 +94,13 @@ jobs:
         run: |
           rm -rf ~/jan
           make clean
+
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
 
       - name: Linter and test
         run: |
@@ -124,6 +138,13 @@ jobs:
               Write-Output "Folder does not exist."
           }
           make clean
+
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
 
       - name: Linter and test
         shell: powershell
@@ -165,6 +186,13 @@ jobs:
         run: |
           Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile 'setup.exe'
           Start-Process -FilePath setup.exe -Verb RunAs -Wait
+
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
 
       - name: Linter and test
         shell: powershell
@@ -209,6 +237,13 @@ jobs:
           rm -rf ~/jan
           make clean
 
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
       - name: Linter and test
         run: |
           export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
@@ -242,6 +277,13 @@ jobs:
         run: |
           rm -rf ~/jan
           make clean
+
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
 
       - name: Install dependencies
         run: |
