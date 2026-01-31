@@ -1,0 +1,12 @@
+{
+  "welcome": "Hola, com estàs?",
+  "description": "En què et puc ajudar avui?",
+  "temporaryChat": "Xat temporal",
+  "temporaryChatDescription": "Inicia una conversa temporal que no es desarà a l’historial de xats.",
+  "status": {
+    "empty": "No s’ha trobat cap xat"
+  },
+  "sendMessage": "Envia el missatge",
+  "newConversation": "Conversa nova",
+  "clearHistory": "Neteja l’historial"
+}
