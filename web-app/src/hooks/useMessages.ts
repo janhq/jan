@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
 import { getServiceHub } from '@/hooks/useServiceHub'
-import { useAssistant } from './useAssistant'
 
 type MessageState = {
   messages: Record<string, ThreadMessage[]>
@@ -27,19 +26,9 @@ export const useMessages = create<MessageState>()((set, get) => ({
     }))
   },
   addMessage: (message) => {
-    const assistants = useAssistant.getState().assistants
-    const currentAssistant = useAssistant.getState().currentAssistant
-
-    const selectedAssistant =
-      assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
-
     const newMessage = {
       ...message,
       created_at: message.created_at || Date.now(),
-      metadata: {
-        ...message.metadata,
-        assistant: selectedAssistant,
-      },
     }
 
     // Optimistically update state immediately for instant UI feedback
@@ -69,18 +58,8 @@ export const useMessages = create<MessageState>()((set, get) => ({
     })
   },
   updateMessage: (message) => {
-    const assistants = useAssistant.getState().assistants
-    const currentAssistant = useAssistant.getState().currentAssistant
-
-    const selectedAssistant =
-      assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
-
     const updatedMessage = {
       ...message,
-      metadata: {
-        ...message.metadata,
-        assistant: selectedAssistant,
-      },
     }
 
     // Optimistically update state immediately for instant UI feedback
