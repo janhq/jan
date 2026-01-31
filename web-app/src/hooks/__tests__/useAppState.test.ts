@@ -2,21 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useAppState } from '../useAppState'
 
-// Mock the useAssistant hook as a Zustand store
-vi.mock('../useAssistant', () => ({
-  useAssistant: Object.assign(
-    vi.fn(() => ({
-      selectedAssistant: null,
-      updateAssistantTools: vi.fn()
-    })),
-    {
-      getState: vi.fn(() => ({
-        currentAssistant: { id: 'test-assistant', name: 'Test Assistant' },
-        assistants: [{ id: 'test-assistant', name: 'Test Assistant' }]
-      }))
-    }
-  )
-}))
 
 describe('useAppState', () => {
   beforeEach(() => {
@@ -51,20 +36,17 @@ describe('useAppState', () => {
 
   it('should update streaming content', () => {
     const { result } = renderHook(() => useAppState())
-    
+
     const content = { id: 'msg-1', content: 'Hello', role: 'user' }
-    
+
     act(() => {
       result.current.updateStreamingContent(content)
     })
-    
-    // The function adds created_at and metadata.assistant
+
+    // The function adds created_at if not present
     expect(result.current.streamingContent).toMatchObject({
       ...content,
       created_at: expect.any(Number),
-      metadata: {
-        assistant: { id: 'test-assistant', name: 'Test Assistant' }
-      }
     })
   })
 

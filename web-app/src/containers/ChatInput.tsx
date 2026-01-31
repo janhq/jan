@@ -129,7 +129,6 @@ const ChatInput = ({
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
-  const currentAssistant = useAssistant((state) => state.currentAssistant)
   const assistants = useAssistant((state) => state.assistants)
 
   // Get current thread messages for token counting
@@ -364,14 +363,12 @@ const ChatInput = ({
           params: { threadId: TEMPORARY_CHAT_ID },
         })
       } else {
-        // Create a new thread and navigate to it
-        const assistant =
-          assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
-
-        // Get project metadata if projectId is provided
+        // Get project metadata and assistant if projectId is provided
         let projectMetadata:
           | { id: string; name: string; updated_at: number }
           | undefined
+        let projectAssistantId: string | undefined
+
         if (projectId) {
           try {
             const project = await serviceHub
@@ -383,11 +380,18 @@ const ChatInput = ({
                 name: project.name,
                 updated_at: project.updated_at,
               }
+              projectAssistantId = project.assistantId
             }
           } catch (e) {
             console.warn('Failed to fetch project metadata:', e)
           }
         }
+
+        // Only use assistant when chatting via project with an assigned assistant
+        // When no projectId, assistant should be undefined (no system instructions)
+        const assistant = projectAssistantId
+          ? assistants.find((a) => a.id === projectAssistantId)
+          : undefined
 
         const newThread = await createThread(
           {

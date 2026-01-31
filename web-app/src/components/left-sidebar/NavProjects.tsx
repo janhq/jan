@@ -107,9 +107,9 @@ export function NavProjects() {
     setDeleteDialogOpen(true)
   }
 
-  const handleSaveEdit = async (name: string) => {
+  const handleSaveEdit = async (name: string, assistantId?: string) => {
     if (selectedProject) {
-      await updateFolder(selectedProject.id, name)
+      await updateFolder(selectedProject.id, name, assistantId)
       setEditDialogOpen(false)
       setSelectedProject(null)
     }

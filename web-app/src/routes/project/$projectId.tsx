@@ -3,13 +3,15 @@ import { useMemo, useState } from 'react'
 
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useThreads } from '@/hooks/useThreads'
+import { useAssistant } from '@/hooks/useAssistant'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
 import ThreadList from '@/containers/ThreadList'
+import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
-import { FolderPenIcon, MessageCircle, MoreHorizontal, Trash2 } from 'lucide-react'
+import { FileText, FolderPenIcon, MessageCircle, MoreHorizontal, PencilIcon, Trash2 } from 'lucide-react'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import {
   DropdownMenu,
@@ -32,12 +34,19 @@ function ProjectPageContent() {
   const { projectId } = useParams({ from: '/project/$projectId' })
   const { getFolderById, updateFolder } = useThreadManagement()
   const threads = useThreads((state) => state.threads)
+  const { assistants } = useAssistant()
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   // Find the project
   const project = getFolderById(projectId)
+
+  // Find the assigned assistant
+  const projectAssistant = useMemo(() => {
+    if (!project?.assistantId) return null
+    return assistants.find((a) => a.id === project.assistantId) || null
+  }, [project?.assistantId, assistants])
 
   // Get threads for this project
   const projectThreads = useMemo(() => {
@@ -46,9 +55,9 @@ function ProjectPageContent() {
       .sort((a, b) => (b.updated || 0) - (a.updated || 0))
   }, [threads, projectId])
 
-  const handleSaveEdit = async (name: string) => {
+  const handleSaveEdit = async (name: string, assistantId?: string) => {
     if (project) {
-      await updateFolder(project.id, name)
+      await updateFolder(project.id, name, assistantId)
       setEditDialogOpen(false)
     }
   }
@@ -69,7 +78,7 @@ function ProjectPageContent() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-col h-svh w-full">
       <HeaderPage>
         <div className="flex items-center justify-between w-full">
           <DropdownModelProvider />
@@ -116,9 +125,55 @@ function ProjectPageContent() {
             />
           </div>
 
+          {/* Project Settings Card */}
+          <div className="rounded-xl border border-border overflow-hidden mb-6">
+            {/* Assistant Section */}
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-sm font-medium">{t('projects.addProjectDialog.assistant')}</h3>
+                {projectAssistant ? (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    {projectAssistant.avatar && (
+                      <AvatarEmoji
+                        avatar={projectAssistant.avatar}
+                        imageClassName="w-4 h-4 object-contain"
+                        textClassName="text-sm"
+                      />
+                    )}
+                    <span className="text-sm text-muted-foreground">{projectAssistant.name}</span>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {t('projects.noAssistantAssigned')}
+                  </p>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setEditDialogOpen(true)}
+              >
+                <PencilIcon className="size-4" />
+              </Button>
+            </div>
+
+            {/* Files Section */}
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium">{t('projects.files')}</h3>
+              </div>
+              <div className="flex flex-col items-center justify-center py-8 px-4 rounded-lg bg-secondary/30 border border-dashed border-border">
+                <FileText className="size-8 text-muted-foreground/50 mb-3" />
+                <p className="text-sm text-muted-foreground text-center">
+                  {t('projects.filesDescription')}
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Conversation Section */}
           {projectThreads.length > 0 && (
-            <div className="flex flex-col">
+            <div className="flex flex-col mb-6">
               <h2 className="text-base font-medium mb-4">
                 {t('projects.conversation')}
               </h2>
@@ -134,18 +189,12 @@ function ProjectPageContent() {
           {/* Empty State */}
           {projectThreads.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-              <MessageCircle
-                className="text-muted-foreground size-8 mb-4"
-              />
-              <h3 className="text-lg font-medium text-foreground mb-1">
-                {t('projects.noConversationsIn', {
-                  projectName: project.name,
-                })}
+              <MessageCircle className="size-8 text-muted-foreground/50 mb-3" />
+              <h3 className="text-base font-medium text-foreground mb-1">
+                {t('projects.noConversationsIn', { projectName: project.name })}
               </h3>
-              <p className="text-muted-foreground/70 text-sm">
-                {t('projects.startNewConversation', {
-                  projectName: project.name,
-                })}
+              <p className="text-sm text-muted-foreground">
+                {t('projects.startNewConversation', { projectName: project.name })}
               </p>
             </div>
           )}
