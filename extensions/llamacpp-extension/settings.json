@@ -49,6 +49,44 @@
     }
   },
   {
+    "key": "fit",
+    "title": "Fit (auto-adjust to device memory)",
+    "description": "Whether to adjust unset arguments to fit in device memory ('on' or 'off'). (env: LLAMA_ARG_FIT)",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "on",
+      "options": [
+        { "value": "on", "name": "On" },
+        { "value": "off", "name": "Off" }
+      ],
+      "recommended": "on"
+    }
+  },
+  {
+    "key": "fit_target",
+    "title": "Fit Target per Device (MiB)",
+    "description": "Target margin per device for fit, comma-separated list of MiB values. Single value is broadcast across all devices. (env: LLAMA_ARG_FIT_TARGET)",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "1024",
+      "placeholder": "1024 or MiB0,MiB1,...",
+      "type": "text",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "fit_ctx",
+    "title": "Fit Minimum Context Size",
+    "description": "Minimum context size (tokens) that can be set by --fit option. (env: LLAMA_ARG_FIT_CTX)",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 4096,
+      "placeholder": "4096",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
     "key": "memory_util",
     "title": "Smart Memory utilization",
     "description": "Smart memory utilization mode for running local GGUF models",
