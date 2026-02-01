@@ -36,7 +36,7 @@ export function NavChats() {
       <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
         <DropdownMenuTrigger asChild>
           <SidebarGroupAction>
-            <MoreHorizontal />
+            <MoreHorizontal className="text-muted-foreground" />
             <span className="sr-only">More</span>
           </SidebarGroupAction>
         </DropdownMenuTrigger>
