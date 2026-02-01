@@ -60,7 +60,7 @@ export function DeleteAllThreadsDialog({
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+        <DropdownMenuItem variant="destructive" onSelect={(e) => e.preventDefault()}>
           <IconTrash size={16} />
           <span>{t('common:deleteAll')}</span>
         </DropdownMenuItem>
