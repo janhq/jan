@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { FileText, FilePlusIcon, Trash2 } from 'lucide-react'
+import { FileText, Trash2, PlusIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -113,6 +113,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
 
   const loadProjectFiles = useCallback(async () => {
     setLoading(true)
@@ -137,28 +138,8 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     loadProjectFiles()
   }, [loadProjectFiles])
 
-  const handleUpload = async () => {
-    if (!attachmentsEnabled) {
-      toast.info(
-        t('common:toast.attachmentsDisabledInfo.title') ??
-          'Attachments are disabled in Settings'
-      )
-      return
-    }
-
-    try {
-      const selection = await serviceHub.dialog().open({
-        multiple: true,
-        directory: false,
-        filters: [
-          {
-            name: 'Documents',
-            extensions: SUPPORTED_EXTENSIONS,
-          },
-        ],
-      })
-      if (!selection) return
-      const paths = Array.isArray(selection) ? selection : [selection]
+  const processFilePaths = useCallback(
+    async (paths: string[]) => {
       if (!paths.length) return
 
       // Get files from paths (recursively for directories)
@@ -173,6 +154,19 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       for (const p of filePaths) {
         const name = p.split(/[\\/]/).pop() || p
         const fileType = name.split('.').pop()?.toLowerCase()
+
+        // Filter unsupported file types
+        if (!fileType || !SUPPORTED_EXTENSIONS.includes(fileType)) {
+          toast.warning(
+            t('common:toast.unsupportedFileType.title') ??
+              'Unsupported file type',
+            {
+              description: name,
+            }
+          )
+          continue
+        }
+
         let size: number | undefined = undefined
         try {
           const stat = await import('@janhq/core').then((m) => m.fs.fileStat(p))
@@ -251,6 +245,33 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       } finally {
         setUploading(false)
       }
+    },
+    [files, loadProjectFiles, maxFileSizeMB, projectId, serviceHub, t]
+  )
+
+  const handleUpload = async () => {
+    if (!attachmentsEnabled) {
+      toast.info(
+        t('common:toast.attachmentsDisabledInfo.title') ??
+          'Attachments are disabled in Settings'
+      )
+      return
+    }
+
+    try {
+      const selection = await serviceHub.dialog().open({
+        multiple: true,
+        directory: false,
+        filters: [
+          {
+            name: 'Documents',
+            extensions: SUPPORTED_EXTENSIONS,
+          },
+        ],
+      })
+      if (!selection) return
+      const paths = Array.isArray(selection) ? selection : [selection]
+      await processFilePaths(paths)
     } catch (error) {
       console.error('Failed to open file dialog:', error)
       const desc =
@@ -261,6 +282,62 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           description: desc,
         }
       )
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+
+    if (!attachmentsEnabled) {
+      toast.info(
+        t('common:toast.attachmentsDisabledInfo.title') ??
+          'Attachments are disabled in Settings'
+      )
+      return
+    }
+
+    // Get file paths from the drop event (Tauri provides paths directly)
+    const paths: string[] = []
+    const items = e.dataTransfer.items
+    if (items) {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        if (item.kind === 'file') {
+          const file = item.getAsFile()
+          if (file && 'path' in file && typeof file.path === 'string') {
+            paths.push(file.path)
+          }
+        }
+      }
+    }
+
+    if (paths.length === 0) {
+      // Fallback for web: check dataTransfer.files
+      const dtFiles = e.dataTransfer.files
+      for (let i = 0; i < dtFiles.length; i++) {
+        const file = dtFiles[i]
+        if ('path' in file && typeof file.path === 'string') {
+          paths.push(file.path)
+        }
+      }
+    }
+
+    if (paths.length > 0) {
+      await processFilePaths(paths)
     }
   }
 
@@ -303,7 +380,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           {uploading ? (
             <IconLoader2 className="size-4 animate-spin" />
           ) : (
-            <FilePlusIcon className="size-4" />
+            <PlusIcon className="size-4" />
           )}
         </Button>
       </div>
@@ -313,14 +390,33 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           <IconLoader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : isEmpty ? (
-        <div className="flex flex-col items-center justify-center py-8 px-4 rounded-lg bg-secondary/30 border border-dashed border-border">
+        <div
+          className={cn(
+            'flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
+            isDragging
+              ? 'bg-primary/10 border-primary'
+              : 'bg-secondary/30 border-border hover:bg-secondary/50 hover:border-primary/50'
+          )}
+          onClick={handleUpload}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           <FileText className="size-8 text-muted-foreground/50 mb-3" />
           <p className="text-sm text-muted-foreground text-center">
             {t('common:projects.filesDescription')}
           </p>
         </div>
       ) : (
-        <div className="space-y-2 max-h-60 overflow-y-auto">
+        <div
+          className={cn(
+            'space-y-2 max-h-60 overflow-y-auto rounded-lg p-1 -m-1 transition-colors',
+            isDragging && 'bg-primary/10 ring-2 ring-primary ring-dashed'
+          )}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           {files.map((file) => (
             <div
               key={file.id}
@@ -330,7 +426,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
                 'group hover:bg-secondary/50 transition-colors'
               )}
             >
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 <IconPaperclip className="size-5 text-muted-foreground" />
               </div>
               <div className="flex-1 min-w-0">
@@ -358,6 +454,24 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
               </Button>
             </div>
           ))}
+
+          <div
+          className={cn(
+            'flex mt-2 flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
+            isDragging
+              ? 'bg-primary/10 border-primary'
+              : 'bg-secondary/30 border-border hover:bg-secondary/50 hover:border-primary/50'
+          )}
+          onClick={handleUpload}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <FileText className="size-8 text-muted-foreground/50 mb-3" />
+          <p className="text-sm text-muted-foreground text-center">
+            {t('common:projects.filesDescription')}
+          </p>
+        </div>
         </div>
       )}
     </div>

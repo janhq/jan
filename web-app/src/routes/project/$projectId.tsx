@@ -126,6 +126,34 @@ function ProjectPageContent() {
             />
           </div>
 
+          {/* Conversation Section */}
+          {projectThreads.length > 0 && (
+            <div className="flex flex-col mb-6">
+              <h2 className="text-base font-medium mb-4">
+                {t('projects.conversation')}
+              </h2>
+              <SidebarMenu>
+                <ThreadList
+                  threads={projectThreads}
+                  currentProjectId={projectId}
+                />
+              </SidebarMenu>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {projectThreads.length === 0 && (
+            <div className="flex flex-col items-center justify-center pt-6 pb-12 text-center">
+              <MessageCircle className="size-8 text-muted-foreground/50 mb-3" />
+              <h3 className="text-base font-medium text-foreground mb-1">
+                {t('projects.noConversationsIn', { projectName: project.name })}
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {t('projects.startNewConversation', { projectName: project.name })}
+              </p>
+            </div>
+          )}
+
           {/* Project Settings Card */}
           <div className="rounded-xl border border-border overflow-hidden mb-6">
             {/* Assistant Section */}
@@ -154,41 +182,13 @@ function ProjectPageContent() {
                 size="icon-xs"
                 onClick={() => setEditDialogOpen(true)}
               >
-                <PencilIcon className="size-4" />
+                <PencilIcon className="size-3" />
               </Button>
             </div>
 
             {/* Files Section */}
             <ProjectFiles projectId={projectId} lng={i18n.language} />
           </div>
-
-          {/* Conversation Section */}
-          {projectThreads.length > 0 && (
-            <div className="flex flex-col mb-6">
-              <h2 className="text-base font-medium mb-4">
-                {t('projects.conversation')}
-              </h2>
-              <SidebarMenu>
-                <ThreadList
-                  threads={projectThreads}
-                  currentProjectId={projectId}
-                />
-              </SidebarMenu>
-            </div>
-          )}
-
-          {/* Empty State */}
-          {projectThreads.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <MessageCircle className="size-8 text-muted-foreground/50 mb-3" />
-              <h3 className="text-base font-medium text-foreground mb-1">
-                {t('projects.noConversationsIn', { projectName: project.name })}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {t('projects.startNewConversation', { projectName: project.name })}
-              </p>
-            </div>
-          )}
         </div>
       </div>
 
