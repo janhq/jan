@@ -298,7 +298,7 @@ function ThreadDetail() {
   // Update RAG tools availability when documents, model, or tool availability changes
   useEffect(() => {
     const checkDocumentsAvailability = async () => {
-      let hasThreadDocuments = Boolean(thread?.metadata?.hasDocuments)
+      const hasThreadDocuments = Boolean(thread?.metadata?.hasDocuments)
       let hasProjectDocuments = false
 
       // Check if thread belongs to a project and if that project has files

@@ -126,7 +126,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       } else {
         setFiles([])
       }
-    } catch (error) {
+    } catch {
       setFiles([])
     } finally {
       setLoading(false)
