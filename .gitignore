@@ -65,3 +65,4 @@ llm-docs
 .claude/agents
 mlx-server/.build
 mlx-server/.swiftpm
+.claude

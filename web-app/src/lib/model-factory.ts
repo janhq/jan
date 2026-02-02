@@ -25,7 +25,11 @@
  * - Returns a unified LanguageModel interface compatible with Vercel AI SDK
  */
 
-import { type LanguageModel } from 'ai'
+import {
+  extractReasoningMiddleware,
+  wrapLanguageModel,
+  type LanguageModel,
+} from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
 import {
   createOpenAICompatible,
@@ -50,7 +54,6 @@ interface LlamaCppTimings {
 interface LlamaCppChunk {
   timings?: LlamaCppTimings
 }
-
 
 /**
  * Custom metadata extractor for MLX that extracts timing information
@@ -187,8 +190,14 @@ export class ModelFactory {
       fetch: fetch,
     })
 
-    return openAICompatible.languageModel(modelId, {
-      metadataExtractor: providerMetadataExtractor,
+    return wrapLanguageModel({
+      model: openAICompatible.languageModel(modelId, {
+        metadataExtractor: providerMetadataExtractor,
+      }),
+      middleware: extractReasoningMiddleware({
+        tagName: 'think',
+        separator: '\n',
+      }),
     })
   }
 
@@ -241,8 +250,16 @@ export class ModelFactory {
       fetch: fetch,
       metadataExtractor: providerMetadataExtractor,
     })
-    return model
+
+    return wrapLanguageModel({
+      model: model,
+      middleware: extractReasoningMiddleware({
+        tagName: 'think',
+        separator: '\n',
+      }),
+    })
   }
+
   /**
    * Create an Anthropic model using the official AI SDK
    */

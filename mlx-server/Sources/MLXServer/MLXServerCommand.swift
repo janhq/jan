@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Hummingbird
+import MLX
 
 @main
 struct MLXServerCommand: AsyncParsableCommand {
@@ -45,11 +46,15 @@ struct MLXServerCommand: AsyncParsableCommand {
     var enablePrefixCaching: Bool = false
 
     func run() async throws {
+        // Set GPU memory limit to prevent OOM issues
+        Memory.cacheLimit = 20 * 1024 * 1024  // 20GB limit
+
         // Print startup info
         log("[mlx] MLX-Swift Server starting...")
         log("[mlx] Model path: \(model)")
         log("[mlx] Port: \(port)")
         log("[mlx] Context size: \(ctxSize)")
+        log("[mlx] Memory cache limit: \(Memory.cacheLimit / (1024 * 1024))MB")
 
         // Print batching configuration if enabled
         if maxBatchSize > 0 {

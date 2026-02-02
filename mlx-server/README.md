@@ -80,6 +80,7 @@ cp "$METALLIB_PATH" .build/arm64-apple-macosx/release/
 | `--port` | 8080 | HTTP server port |
 | `--ctx-size` | 4096 | Context window size |
 | `--api-key` | "" | API key for authentication |
+| `--chat-template` | "" | Path to custom chat template file (for thinking models) |
 | `--max-batch-size` | 0 | Maximum batch size (0 = disabled) |
 | `--batch-timeout-ms` | 100 | Batch timeout in milliseconds |
 | `--enable-continuous-batching` | false | Enable continuous batching |
@@ -216,18 +217,6 @@ mlx-server/
 - **Improved Hash Function** - FNV-1a hash for better cache hit rates
 - **Continuous Batching** - Better GPU utilization under varying load
 - **Priority Queue** - Request prioritization and adaptive sleep
-
-## Integration with Jan
-
-The mlx-server is designed to integrate with Jan for local LLM inference:
-
-```json
-{
-  "backend": "mlx",
-  "urls": ["http://127.0.0.1:8080/v1"],
-  "apiKey": "optional-api-key"
-}
-```
 
 ## Troubleshooting
 

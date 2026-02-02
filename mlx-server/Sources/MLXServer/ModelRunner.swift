@@ -337,7 +337,8 @@ actor ModelRunner {
         let userInput = UserInput(
             chat: chat,
             processing: .init(resize: .init(width: 1024, height: 1024)),
-            tools: toolSpecs
+            tools: toolSpecs,
+            additionalContext: ["enable_thinking": true]
         )
 
         let result: (String, [ToolCallInfo], UsageInfo) = try await container.perform { context in
@@ -462,7 +463,8 @@ actor ModelRunner {
                 let userInput = UserInput(
                     chat: chat,
                     processing: .init(resize: .init(width: 1024, height: 1024)),
-                    tools: toolSpecs
+                    tools: toolSpecs,
+                    additionalContext: ["enable_thinking": true]
                 )
 
                 do {
@@ -697,104 +699,6 @@ public struct SpeculativeResult: Sendable {
         self.acceptanceRate = acceptanceRate
         self.speedup = speedup
     }
-}
-
-/// Manager for speculative decoding
-actor SpeculativeGenerator {
-    private var medusaHeads: MedusaHeads?
-    private var config: SpeculativeConfig?
-
-    /// Setup speculative decoding with configuration
-    func setup(config: SpeculativeConfig) async throws {
-        guard config.enabled else {
-            self.config = nil
-            return
-        }
-
-        // Check if model supports speculative decoding
-        // This would require checking for Medusa heads or creating them
-        self.config = config
-
-        log("[mlx] Speculative decoding enabled with \(config.numDraftTokens) draft tokens")
-    }
-
-    /// Generate with speculative decoding
-    func speculativeGenerate(
-        input: LMInput,
-        cache: [KVCache],
-        parameters: GenerateParameters,
-        context: ModelContext
-    ) async throws -> AsyncThrowingStream<String, Error> {
-        guard config != nil else {
-            throw MLXServerError.speculativeDecodingNotSupported
-        }
-
-        // Fall back to regular generation if speculative not set up
-        return AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    for try await generation in try MLXLMCommon.generate(
-                        input: input,
-                        cache: cache,
-                        parameters: parameters,
-                        context: context
-                    ) {
-                        switch generation {
-                        case .chunk(let text):
-                            continuation.yield(text)
-                        case .info(_), .toolCall(_):
-                            // Ignore info and tool calls for speculative generation
-                            break
-                        }
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
-    }
-
-    /// Get speculative decoding status
-    func getStatus() -> SpeculativeStatus {
-        SpeculativeStatus(
-            enabled: config != nil,
-            numDraftTokens: config?.numDraftTokens ?? 0,
-            hasMedusaHeads: medusaHeads != nil
-        )
-    }
-}
-
-/// Medusa heads for speculative decoding
-struct MedusaHeads {
-    /// Number of prediction heads
-    let numHeads: Int
-
-    /// Hidden dimension size
-    let hiddenSize: Int
-
-    /// Head configurations
-    let heads: [MedusaHead]
-
-    /// Tree mask for parallel decoding paths
-    let treeMask: MLXArray?
-
-    /// Tree indices for selecting paths
-    let treeIndices: MLXArray?
-}
-
-/// Configuration for a single Medusa head
-struct MedusaHead {
-    let index: Int
-    let hiddenSize: Int
-    let intermediateSize: Int
-}
-
-/// Status of speculative decoding
-struct SpeculativeStatus {
-    let enabled: Bool
-    let numDraftTokens: Int
-    let hasMedusaHeads: Bool
 }
 
 // MARK: - Paged Attention Support

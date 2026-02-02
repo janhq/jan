@@ -1,17 +1,5 @@
 [
   {
-    "key": "ctx_size",
-    "title": "Context Size",
-    "description": "Context window size for MLX inference",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 4096,
-      "placeholder": "4096",
-      "type": "number",
-      "textAlign": "right"
-    }
-  },
-  {
     "key": "batch_size",
     "title": "Batch Size",
     "description": "Maximum number of concurrent requests to batch (0 = disabled)",

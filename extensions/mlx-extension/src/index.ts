@@ -332,7 +332,7 @@ export default class mlx_extension extends AIEngine {
       )
       return sInfo
     } catch (error) {
-      logger.error('Error loading MLX model:', error)
+      logger.error(`Error loading MLX model: ${JSON.stringify(error)}`)
       throw error
     }
   }
@@ -629,11 +629,29 @@ export default class mlx_extension extends AIEngine {
         }
       )
 
+      // Detect capabilities after download
+      const isVision = await this.isVisionSupported(localPath)
+
+      // Build capabilities array
+      const capabilities: string[] = []
+      if (isVision) capabilities.push('vision')
+
       // Create model.yml with relative path
-      const modelConfig = {
+      const modelConfig: any = {
         model_path: `mlx/models/${modelId}/model.safetensors`,
         name: modelId,
         size_bytes: opts.modelSize ?? 0,
+      }
+
+      // For vision models, add mmproj_path
+      if (isVision) {
+        modelConfig.mmproj_path = `mlx/models/${modelId}/model.safetensors`
+        logger.info(`Vision model detected: ${modelId}`)
+      }
+
+      // Add capabilities array
+      if (capabilities.length > 0) {
+        modelConfig.capabilities = capabilities
       }
 
       await fs.mkdir(modelDir)
@@ -646,6 +664,7 @@ export default class mlx_extension extends AIEngine {
         modelId,
         modelPath: modelConfig.model_path,
         size_bytes: modelConfig.size_bytes,
+        capabilities: capabilities,
       })
     } else {
       // Local file - use absolute path directly
@@ -657,11 +676,30 @@ export default class mlx_extension extends AIEngine {
       const stat = await fs.fileStat(sourcePath)
       const size_bytes = stat.size
 
+      // Detect capabilities by checking model directory
+      const isVision = await this.isVisionSupported(sourcePath)
+
+      // Build capabilities array
+      const capabilities: string[] = []
+      if (isVision) capabilities.push('vision')
+
       // Create model.yml with absolute path
-      const modelConfig = {
+      const modelConfig: any = {
         model_path: sourcePath,
         name: modelId,
         size_bytes,
+      }
+
+      // For vision models, add mmproj_path pointing to model.safetensors
+      if (isVision) {
+        const modelDir = sourcePath.substring(0, sourcePath.lastIndexOf('/'))
+        modelConfig.mmproj_path = sourcePath
+        logger.info(`Vision model detected: ${modelId}`)
+      }
+
+      // Add capabilities array
+      if (capabilities.length > 0) {
+        modelConfig.capabilities = capabilities
       }
 
       // Create model folder for model.yml only (no copying of safetensors)
@@ -681,6 +719,7 @@ export default class mlx_extension extends AIEngine {
         modelId,
         modelPath: sourcePath,
         size_bytes,
+        capabilities: capabilities,
       })
     }
   }
@@ -695,6 +734,73 @@ export default class mlx_extension extends AIEngine {
     } catch (e) {
       logger.error(e)
       throw new Error(e)
+    }
+  }
+
+  async isVisionSupported(modelPath: string): Promise<boolean> {
+    // Check if model is a Vision Language Model by examining config.json
+    const modelDir = modelPath.substring(0, modelPath.lastIndexOf('/'))
+    const configPath = await joinPath([modelDir, 'config.json'])
+
+    if (!(await fs.existsSync(configPath))) {
+      return false
+    }
+
+    try {
+      const configContent = await invoke<string>('read_file_sync', {
+        args: [configPath],
+      })
+      const config = JSON.parse(configContent)
+
+      // Check architecture for vision models
+      const architectures = config.architectures
+      if (architectures && Array.isArray(architectures)) {
+        const archString = architectures[0]?.toString().toLowerCase() ?? ''
+        // Common VLM architecture suffixes
+        const vlmPatterns = [
+          'vl', 'vlm', 'vision', 'llava', 'qwen2vl', 'qwen3vl',
+          'idefics', 'fuyu', 'paligemma', 'clip', 'siglip'
+        ]
+        if (vlmPatterns.some(pattern => archString.includes(pattern))) {
+          logger.info(`Vision support detected from config.json: ${architectures[0]}`)
+          return true
+        }
+      }
+
+      // Check for vision-related configuration fields
+      if (config.visual_architectures || config.vision_config) {
+        logger.info('Vision support detected from visual_architectures/vision_config')
+        return true
+      }
+
+      // Check for image processor config
+      const imageProcessorPath = await joinPath([modelDir, 'image_processor_config.json'])
+      if (await fs.existsSync(imageProcessorPath)) {
+        logger.info('Vision support detected from image_processor_config.json')
+        return true
+      }
+
+      // Check preprocessor config for vision
+      const preprocessorConfigPath = await joinPath([modelDir, 'preprocessor_config.json'])
+      if (await fs.existsSync(preprocessorConfigPath)) {
+        try {
+          const preprocessorConfig = await invoke<string>('read_file_sync', {
+            args: [preprocessorConfigPath],
+          })
+          const pc = JSON.parse(preprocessorConfig)
+          if (pc.do_resize || pc.size || pc.patch_size) {
+            logger.info('Vision support detected from preprocessor_config.json')
+            return true
+          }
+        } catch (e) {
+          // Ignore
+        }
+      }
+
+      return false
+    } catch (e) {
+      logger.warn(`Failed to check vision support for ${modelPath}: ${e}`)
+      return false
     }
   }
 
