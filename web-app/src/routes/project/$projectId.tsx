@@ -11,7 +11,8 @@ import HeaderPage from '@/containers/HeaderPage'
 import ThreadList from '@/containers/ThreadList'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
-import { FileText, FolderPenIcon, MessageCircle, MoreHorizontal, PencilIcon, Trash2 } from 'lucide-react'
+import { FolderPenIcon, MessageCircle, MoreHorizontal, PencilIcon, Trash2 } from 'lucide-react'
+import ProjectFiles from '@/containers/ProjectFiles'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import {
   DropdownMenu,
@@ -30,7 +31,7 @@ export const Route = createFileRoute('/project/$projectId')({
 })
 
 function ProjectPageContent() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { projectId } = useParams({ from: '/project/$projectId' })
   const { getFolderById, updateFolder } = useThreadManagement()
   const threads = useThreads((state) => state.threads)
@@ -158,17 +159,7 @@ function ProjectPageContent() {
             </div>
 
             {/* Files Section */}
-            <div className="p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium">{t('projects.files')}</h3>
-              </div>
-              <div className="flex flex-col items-center justify-center py-8 px-4 rounded-lg bg-secondary/30 border border-dashed border-border">
-                <FileText className="size-8 text-muted-foreground/50 mb-3" />
-                <p className="text-sm text-muted-foreground text-center">
-                  {t('projects.filesDescription')}
-                </p>
-              </div>
-            </div>
+            <ProjectFiles projectId={projectId} lng={i18n.language} />
           </div>
 
           {/* Conversation Section */}

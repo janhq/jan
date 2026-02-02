@@ -401,6 +401,37 @@
     "threadRemovedFromProject": {
       "title": "Thread Removed",
       "description": "Thread removed from \"{{projectName}}\" successfully"
+    },
+    "fileUploaded": {
+      "title": "File Uploaded",
+      "description": "File has been uploaded and indexed successfully"
+    },
+    "uploadFailed": {
+      "title": "Upload Failed",
+      "description": "Failed to upload file"
+    },
+    "fileDeleted": {
+      "title": "File Deleted",
+      "description": "File has been removed from the project"
+    },
+    "deleteFailed": {
+      "title": "Delete Failed",
+      "description": "Failed to delete file"
+    },
+    "fileAlreadyExists": {
+      "title": "File Already Exists",
+      "description": "File is already attached to this project"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "Attachments Disabled",
+      "description": "Attachments are disabled in Settings"
     }
+  },
+  "errors": {
+    "fileTooLarge": "File too large",
+    "fileTooLargeDescription": "{{fileName}} exceeds the {{maxFileSizeMB}}MB limit"
+  },
+  "files": {
+    "chunksCount": "{{count}} chunks"
   }
 }

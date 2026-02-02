@@ -17,7 +17,7 @@ use tokio::sync::Mutex;
     tauri::mobile_entry_point
 )]
 pub fn run() {
-    let mut builder = tauri::Builder::default();
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
@@ -62,7 +62,6 @@ pub fn run() {
         core::filesystem::commands::write_yaml,
         core::filesystem::commands::read_yaml,
         core::filesystem::commands::decompress,
-        core::filesystem::commands::open_dialog,
         core::filesystem::commands::save_dialog,
         // App configuration commands
         core::app::commands::get_app_configurations,
@@ -135,7 +134,6 @@ pub fn run() {
         core::filesystem::commands::write_yaml,
         core::filesystem::commands::read_yaml,
         core::filesystem::commands::decompress,
-        core::filesystem::commands::open_dialog,
         core::filesystem::commands::save_dialog,
         // App configuration commands
         core::app::commands::get_app_configurations,

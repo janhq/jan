@@ -28,6 +28,7 @@
     "llamacpp:default",
     "updater:default",
     "updater:allow-check",
+    "dialog:default",
     {
       "identifier": "http:default",
       "allow": [

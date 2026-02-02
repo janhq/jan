@@ -789,7 +789,7 @@ const ChatInput = ({
       }
     } catch (e) {
       console.error('Failed to attach documents:', e)
-      const desc = e instanceof Error ? e.message : String(e)
+      const desc = e instanceof Error ? e.message : JSON.stringify(e)
       toast.error('Failed to attach documents', { description: desc })
     }
   }
