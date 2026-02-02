@@ -176,13 +176,15 @@ function AttachmentsSettings() {
   )
 
   return (
-    <div className="flex flex-col h-full pb-[calc(env(safe-area-inset-bottom)+env(safe-area-inset-top))]">
+    <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <h1 className="font-medium">{t('common:settings')}</h1>
+        <div className="flex items-center gap-2 w-full">
+          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+        </div>
       </HeaderPage>
-      <div className="flex h-full w-full flex-col sm:flex-row">
+      <div className="flex h-[calc(100%-60px)]">
         <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+        <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             <Card title={t('common:attachments') || 'Attachments'}>
               {defs.map((d) => {

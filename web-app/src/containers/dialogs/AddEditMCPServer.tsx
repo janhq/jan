@@ -79,9 +79,9 @@ function SortableArgItem({
       <div
         {...attributes}
         {...listeners}
-        className="size-6 cursor-move flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+        className="size-6 cursor-move flex items-center justify-center rounded hover:bg-secondary transition-all duration-200 ease-in-out"
       >
-        <IconGripVertical size={18} className="text-main-view-fg/60" />
+        <IconGripVertical size={16} className="text-muted-foreground" />
       </div>
       <Input
         value={value}
@@ -91,10 +91,10 @@ function SortableArgItem({
       />
       {canRemove && (
         <div
-          className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+          className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-secondary transition-all duration-200 ease-in-out"
           onClick={onRemove}
         >
-          <IconTrash size={18} className="text-destructive" />
+          <IconTrash size={16} className="text-destructive" />
         </div>
       )}
     </div>
@@ -387,8 +387,8 @@ export default function AddEditMCPServer({
             </span>
             <div
               className={cn(
-                'size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out',
-                isToggled && 'bg-main-view-fg/10 text-accent'
+                'size-6 cursor-pointer flex items-center justify-center rounded hover:bg-secondary transition-all duration-200 ease-in-out',
+                isToggled && 'bg-secondary text-primary'
               )}
               title="Add server by JSON"
               onClick={() => setIsToggled(!isToggled)}
@@ -403,7 +403,7 @@ export default function AddEditMCPServer({
               <label className="text-sm mb-2 inline-block">
                 {t('mcp-servers:editJson.placeholder')}
               </label>
-              <div className="border border-main-view-fg/10 rounded-md overflow-hidden">
+              <div className="border  rounded-md overflow-hidden">
                 <CodeEditor
                   value={jsonContent}
                   language="json"
@@ -427,7 +427,7 @@ export default function AddEditMCPServer({
                     overflowWrap: 'anywhere',
                     whiteSpace: 'pre-wrap',
                   }}
-                  className="w-full !text-sm min-h-[300px] !font-mono"
+                  className="w-full text-sm! min-h-[300px] font-mono!"
                 />
               </div>
               {error && <div className="text-destructive text-sm">{error}</div>}
@@ -517,10 +517,10 @@ export default function AddEditMCPServer({
                     {t('mcp-servers:arguments')}
                   </label>
                   <div
-                    className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                    className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-secondary transition-all duration-200 ease-in-out"
                     onClick={handleAddArg}
                   >
-                    <IconPlus size={18} className="text-main-view-fg/60" />
+                    <IconPlus size={16} className="text-muted-foreground" />
                   </div>
                 </div>
 
@@ -563,10 +563,10 @@ export default function AddEditMCPServer({
                 <div className="flex items-center justify-between">
                   <label className="text-sm">{t('mcp-servers:envVars')}</label>
                   <div
-                    className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                    className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-secondary transition-all duration-200 ease-in-out"
                     onClick={handleAddEnv}
                   >
-                    <IconPlus size={18} className="text-main-view-fg/60" />
+                    <IconPlus size={16} className="text-muted-foreground" />
                   </div>
                 </div>
 
@@ -590,10 +590,10 @@ export default function AddEditMCPServer({
                     />
                     {envKeys.length > 1 && (
                       <div
-                        className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                        className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-secondary transition-all duration-200 ease-in-out"
                         onClick={() => handleRemoveEnv(index)}
                       >
-                        <IconTrash size={18} className="text-destructive" />
+                        <IconTrash size={16} className="text-destructive" />
                       </div>
                     )}
                   </div>
@@ -607,10 +607,10 @@ export default function AddEditMCPServer({
                   <div className="flex items-center justify-between">
                     <label className="text-sm">Headers</label>
                     <div
-                      className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                      className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-secondary transition-all duration-200 ease-in-out"
                       onClick={handleAddHeader}
                     >
-                      <IconPlus size={18} className="text-main-view-fg/60" />
+                      <IconPlus size={16} className="text-muted-foreground" />
                     </div>
                   </div>
 
@@ -637,10 +637,10 @@ export default function AddEditMCPServer({
                       />
                       {headerKeys.length > 1 && (
                         <div
-                          className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                          className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-secondary transition-all duration-200 ease-in-out"
                           onClick={() => handleRemoveHeader(index)}
                         >
-                          <IconTrash size={18} className="text-destructive" />
+                          <IconTrash size={16} className="text-destructive" />
                         </div>
                       )}
                     </div>
@@ -664,11 +664,12 @@ export default function AddEditMCPServer({
         )}
 
         <DialogFooter>
-          <Button variant="link" onClick={() => onOpenChange(false)}>
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             {t('common:cancel')}
           </Button>
           <Button
             onClick={handleSave}
+            size="sm"
             disabled={!isToggled && serverName.trim() === ''}
           >
             {t('mcp-servers:save')}

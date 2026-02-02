@@ -493,7 +493,7 @@ describe('ModelCombobox', () => {
     await waitFor(() => {
       const secondModel = screen.getByText('gpt-4')
       const modelElement = secondModel.closest('[data-model]')
-      expect(modelElement).toHaveClass('bg-main-view-fg/20')
+      expect(modelElement).toHaveClass('bg-secondary')
     })
   })
 

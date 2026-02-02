@@ -7,6 +7,8 @@
 import { fontSizeOptions, useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { Button } from '@/components/ui/button'
+import { ChevronsUpDown } from 'lucide-react'
 
 export function FontSizeSwitcher() {
   const { fontSize, setFontSize } = useInterfaceSettings()
@@ -15,22 +17,20 @@ export function FontSizeSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <span
-          title={t('common:adjustFontSize')}
-          className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
-        >
+        <Button variant="outline" size="sm" className="w-full justify-between" title={t('common:adjustFontSize')}>
           {fontSizeOptions.find(
             (item: { value: string; label: string }) => item.value === fontSize
           )?.label || t('common:medium')}
-        </span>
+          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
+        </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-24">
+      <DropdownMenuContent align="end">
         {fontSizeOptions.map((item: { value: string; label: string }) => (
           <DropdownMenuItem
             key={item.value}
             className={cn(
               'cursor-pointer my-0.5',
-              fontSize === item.value && 'bg-main-view-fg/5'
+              fontSize === item.value && 'bg-secondary-foreground/8'
             )}
             onClick={() => setFontSize(item.value as FontSize)}
           >

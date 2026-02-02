@@ -91,11 +91,11 @@ function LogsViewer() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-main-view">
+    <div className="flex flex-col h-full bg-background">
       <div className="flex-1 overflow-auto" ref={logsContainerRef}>
         <div className="font-mono p-2">
           {logs.length === 0 ? (
-            <div className="text-center text-main-view-fg/50 py-8">
+            <div className="text-center text-muted-foreground py-8">
               {t('logs:noLogs')}
             </div>
           ) : (

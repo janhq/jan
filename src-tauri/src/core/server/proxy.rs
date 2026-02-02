@@ -20,6 +20,8 @@ pub struct ProxyConfig {
     pub prefix: String,
     pub proxy_api_key: String,
     pub trusted_hosts: Vec<Vec<String>>,
+    pub host: String,
+    pub port: u16,
 }
 
 /// Determines the final destination path based on the original request path
@@ -243,22 +245,24 @@ async fn proxy_request(
     }
 
     if !is_whitelisted_path && !config.proxy_api_key.is_empty() {
-        if let Some(authorization) = parts.headers.get(hyper::header::AUTHORIZATION) {
-            let auth_str = authorization.to_str().unwrap_or("");
+        // Check Authorization header (Bearer token)
+        let auth_valid = parts
+            .headers
+            .get(hyper::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|auth_str| auth_str.strip_prefix("Bearer "))
+            .map(|token| token == config.proxy_api_key)
+            .unwrap_or(false);
 
-            if auth_str.strip_prefix("Bearer ") != Some(config.proxy_api_key.as_str()) {
-                let mut error_response = Response::builder().status(StatusCode::UNAUTHORIZED);
-                error_response = add_cors_headers_with_host_and_origin(
-                    error_response,
-                    &host_header,
-                    &origin_header,
-                    &config.trusted_hosts,
-                );
-                return Ok(error_response
-                    .body(Body::from("Invalid or missing authorization token"))
-                    .unwrap());
-            }
-        } else {
+        // Check X-Api-Key header
+        let api_key_valid = parts
+            .headers
+            .get("X-Api-Key")
+            .and_then(|v| v.to_str().ok())
+            .map(|key| key == config.proxy_api_key)
+            .unwrap_or(false);
+
+        if !auth_valid && !api_key_valid {
             let mut error_response = Response::builder().status(StatusCode::UNAUTHORIZED);
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,
@@ -267,7 +271,7 @@ async fn proxy_request(
                 &config.trusted_hosts,
             );
             return Ok(error_response
-                .body(Body::from("Missing authorization header"))
+                .body(Body::from("Invalid or missing authorization token"))
                 .unwrap());
         }
     } else if is_whitelisted_path {
@@ -433,12 +437,37 @@ async fn proxy_request(
         }
 
         (hyper::Method::GET, "/openapi.json") => {
-            let body = include_str!("../../../static/openapi.json"); // relative to src-tauri/src/
-            return Ok(Response::builder()
-                .status(StatusCode::OK)
-                .header(hyper::header::CONTENT_TYPE, "application/json")
-                .body(Body::from(body))
-                .unwrap());
+            let static_body = include_str!("../../../static/openapi.json"); // relative to src-tauri/src/
+            // Parse the static OpenAPI JSON and update the server URL with actual host and port
+            match serde_json::from_str::<serde_json::Value>(static_body) {
+                Ok(mut openapi_spec) => {
+                    // Update the servers array with the actual host and port
+                    if let Some(servers) = openapi_spec.get_mut("servers").and_then(|s| s.as_array_mut()) {
+                        for server in servers {
+                            if let Some(server_obj) = server.as_object_mut() {
+                                if let Some(url) = server_obj.get_mut("url") {
+                                    let base_url = format!("http://{}:{}{}", config.host, config.port, config.prefix);
+                                    *url = serde_json::Value::String(base_url);
+                                }
+                            }
+                        }
+                    }
+                    let body = serde_json::to_string(&openapi_spec).unwrap_or_else(|_| static_body.to_string());
+                    return Ok(Response::builder()
+                        .status(StatusCode::OK)
+                        .header(hyper::header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(body))
+                        .unwrap());
+                }
+                Err(_) => {
+                    // If parsing fails, return the static file as fallback
+                    return Ok(Response::builder()
+                        .status(StatusCode::OK)
+                        .header(hyper::header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(static_body))
+                        .unwrap());
+                }
+            }
         }
 
         // DOCS route
@@ -704,6 +733,8 @@ pub async fn start_server(
         prefix,
         proxy_api_key,
         trusted_hosts,
+        host: host.clone(),
+        port,
     };
 
     let client = Client::builder()

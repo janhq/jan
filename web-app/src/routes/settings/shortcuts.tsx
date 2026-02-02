@@ -1,11 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import SettingsMenu from '@/containers/SettingsMenu'
-import HeaderPage from '@/containers/HeaderPage'
 import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ShortcutAction, PlatformShortcuts, type ShortcutSpec } from '@/lib/shortcuts'
 import { PlatformMetaKey } from '@/containers/PlatformMetaKey'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
+import HeaderPage from '@/containers/HeaderPage'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.shortcuts as any)({
@@ -24,11 +25,9 @@ function ShortcutLabel({ action, className = '' }: ShortcutLabelProps) {
   const spec = PlatformShortcuts[action]
 
   return (
-    <div className={`flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md ${className}`}>
-      <span className="font-medium">
-        <ShortcutKeys spec={spec} />
-      </span>
-    </div>
+    <KbdGroup className={className}>
+      <ShortcutKeys spec={spec} />
+    </KbdGroup>
   )
 }
 
@@ -50,48 +49,40 @@ function ShortcutKeys({ spec }: { spec: ShortcutSpec }) {
 
   // Add modifier keys
   if (spec.usePlatformMetaKey) {
-    parts.push(<PlatformMetaKey key="meta" />)
+    parts.push(<Kbd key="meta"><PlatformMetaKey /></Kbd>)
   }
   if (spec.ctrlKey) {
-    parts.push('Ctrl')
+    parts.push(<Kbd key="ctrl">Ctrl</Kbd>)
   }
   if (spec.metaKey) {
-    parts.push('⌘')
+    parts.push(<Kbd key="cmd">⌘</Kbd>)
   }
   if (spec.altKey) {
-    parts.push('Alt')
+    parts.push(<Kbd key="alt">Alt</Kbd>)
   }
   if (spec.shiftKey) {
-    parts.push('Shift')
+    parts.push(<Kbd key="shift">Shift</Kbd>)
   }
 
   // Add the main key with proper formatting
-  parts.push(formatKey(spec.key))
+  parts.push(<Kbd key="main">{formatKey(spec.key)}</Kbd>)
 
-  // Join with spaces
-  return (
-    <>
-      {parts.map((part, index) => (
-        <span key={index}>
-          {part}
-          {index < parts.length - 1 && ' '}
-        </span>
-      ))}
-    </>
-  )
+  return <>{parts}</>
 }
 
 function Shortcuts() {
   const { t } = useTranslation()
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <h1 className="font-medium">{t('common:settings')}</h1>
+        <div className="flex items-center gap-2 w-full">
+          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+        </div>
       </HeaderPage>
-      <div className="flex h-full w-full">
+      <div className="flex h-[calc(100%-60px)]">
         <SettingsMenu />
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+        <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Application */}
             <Card title={t('settings:shortcuts.application')}>
@@ -99,6 +90,11 @@ function Shortcuts() {
                 title={t('settings:shortcuts.newChat')}
                 description={t('settings:shortcuts.newChatDesc')}
                 actions={<ShortcutLabel action={ShortcutAction.NEW_CHAT} />}
+              />
+              <CardItem
+                title={t('settings:shortcuts.newProject')}
+                description={t('settings:shortcuts.newProjectDesc')}
+                actions={<ShortcutLabel action={ShortcutAction.NEW_PROJECT} />}
               />
               <CardItem
                 title={t('settings:shortcuts.toggleSidebar')}
@@ -123,28 +119,30 @@ function Shortcuts() {
                 title={t('settings:shortcuts.sendMessage')}
                 description={t('settings:shortcuts.sendMessageDesc')}
                 actions={
-                  <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
-                    <span className="font-medium">
-                      {t('settings:shortcuts.enter')}
-                    </span>
-                  </div>
+                  <KbdGroup>
+                    <Kbd>Enter</Kbd>
+                  </KbdGroup>
                 }
               />
               <CardItem
                 title={t('settings:shortcuts.newLine')}
                 description={t('settings:shortcuts.newLineDesc')}
                 actions={
-                  <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
-                    <span className="font-medium">
-                      {t('settings:shortcuts.shiftEnter')}
-                    </span>
-                  </div>
+                  <KbdGroup>
+                    <Kbd>Shift</Kbd>
+                    <Kbd>Enter</Kbd>
+                  </KbdGroup>
                 }
               />
             </Card>
 
             {/* Navigation */}
             <Card title={t('settings:shortcuts.navigation')}>
+              <CardItem
+                title={t('settings:shortcuts.search')}
+                description={t('settings:shortcuts.searchDesc')}
+                actions={<ShortcutLabel action={ShortcutAction.SEARCH} />}
+              />
               <CardItem
                 title={t('settings:shortcuts.goToSettings')}
                 description={t('settings:shortcuts.goToSettingsDesc')}

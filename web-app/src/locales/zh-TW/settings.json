@@ -98,8 +98,6 @@
     "resetToDefaultDesc": "將所有外觀設定重設為預設值。",
     "resetInterfaceSuccess": "外觀重設成功",
     "resetInterfaceSuccessDesc": "所有外觀設定已還原為預設值。",
-    "chatWidth": "聊天寬度",
-    "chatWidthDesc": "自訂聊天檢視的寬度。",
     "codeBlockTitle": "程式碼區塊",
     "codeBlockDesc": "選擇語法高亮樣式。",
     "showLineNumbers": "顯示行號",

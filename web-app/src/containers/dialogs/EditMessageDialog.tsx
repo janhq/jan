@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   Dialog,
@@ -11,7 +11,12 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { IconPencil, IconX } from '@tabler/icons-react'
+import { IconFile, IconPencil, IconX } from '@tabler/icons-react'
+import {
+  extractFilesFromPrompt,
+  injectFilesIntoPrompt,
+  FileMetadata,
+} from '@/lib/fileMetadata'
 
 interface EditMessageDialogProps {
   message: string
@@ -28,13 +33,20 @@ export function EditMessageDialog({
 }: EditMessageDialogProps) {
   const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
-  const [draft, setDraft] = useState(message)
+  const { files: initialFiles, cleanPrompt: initialCleanPrompt } = useMemo(
+    () => extractFilesFromPrompt(message),
+    [message]
+  )
+  const [draft, setDraft] = useState(initialCleanPrompt)
   const [keptImages, setKeptImages] = useState<string[]>(imageUrls || [])
+  const [keptFiles, setKeptFiles] = useState<FileMetadata[]>(initialFiles)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    setDraft(message)
+    const { files, cleanPrompt } = extractFilesFromPrompt(message)
+    setDraft(cleanPrompt)
     setKeptImages(imageUrls || [])
+    setKeptFiles(files)
   }, [message, imageUrls])
 
   useEffect(() => {
@@ -47,10 +59,13 @@ export function EditMessageDialog({
   }, [isOpen])
 
   const handleSave = () => {
-    const hasTextChanged = draft !== message && draft.trim()
+    const hasTextChanged = draft !== initialCleanPrompt
+    const hasFilesChanged =
+      JSON.stringify(keptFiles) !== JSON.stringify(initialFiles)
 
-    if (hasTextChanged) {
-      onSave(draft.trim() || message)
+    if ((hasTextChanged || hasFilesChanged) && draft.trim()) {
+      const finalMessage = injectFilesIntoPrompt(draft.trim(), keptFiles)
+      onSave(finalMessage)
       setIsOpen(false)
     }
   }
@@ -63,8 +78,9 @@ export function EditMessageDialog({
   }
 
   const defaultTrigger = (
-    <div
-      className="flex outline-0 items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+    <Button
+      variant="ghost"
+      size="icon-xs"
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -75,7 +91,7 @@ export function EditMessageDialog({
       }}
     >
       <IconPencil size={16} />
-    </div>
+    </Button>
   )
 
   return (
@@ -84,13 +100,13 @@ export function EditMessageDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('common:dialogs.editMessage.title')}</DialogTitle>
-          {keptImages.length > 0 && (
+          {(keptImages.length > 0 || keptFiles.length > 0) && (
             <div className="mt-2 space-y-2">
               <div className="flex gap-3 flex-wrap">
                 {keptImages.map((imageUrl, index) => (
                   <div
-                    key={index}
-                    className="relative border border-main-view-fg/5 rounded-lg size-14"
+                    key={`img-${index}`}
+                    className="relative border rounded-lg size-14"
                   >
                     <img
                       className="object-cover w-full h-full rounded-lg"
@@ -102,6 +118,27 @@ export function EditMessageDialog({
                       onClick={() =>
                         setKeptImages((prev) =>
                           prev.filter((_, i) => i !== index)
+                        )
+                      }
+                    >
+                      <IconX className="text-destructive-fg" size={16} />
+                    </div>
+                  </div>
+                ))}
+                {keptFiles.map((file) => (
+                  <div
+                    key={file.id}
+                    className="relative border rounded-lg px-3 py-2 flex items-center gap-2 bg-muted"
+                  >
+                    <IconFile size={16} className="text-muted-foreground" />
+                    <span className="text-sm max-w-32 truncate">
+                      {file.name}
+                    </span>
+                    <div
+                      className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
+                      onClick={() =>
+                        setKeptFiles((prev) =>
+                          prev.filter((f) => f.id !== file.id)
                         )
                       }
                     >
@@ -121,17 +158,19 @@ export function EditMessageDialog({
             placeholder={t('common:dialogs.editMessage.title')}
             aria-label={t('common:dialogs.editMessage.title')}
           />
-          <DialogFooter className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
-              <Button variant="link" size="sm" className="w-full sm:w-auto">
+              <Button variant="ghost" size="sm" className="w-full sm:w-auto">
                 {t('common:cancel')}
               </Button>
             </DialogClose>
             <Button
               disabled={
-                (draft === message &&
+                (draft === initialCleanPrompt &&
                   JSON.stringify(imageUrls || []) ===
-                  JSON.stringify(keptImages)) ||
+                    JSON.stringify(keptImages) &&
+                  JSON.stringify(initialFiles) ===
+                    JSON.stringify(keptFiles)) ||
                 !draft.trim()
               }
               onClick={handleSave}

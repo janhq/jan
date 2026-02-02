@@ -19,7 +19,10 @@ interface RenameThreadDialogProps {
   thread: Thread
   plainTitleForRename: string
   onRename: (threadId: string, title: string) => void
-  onDropdownClose: () => void
+  onDropdownClose?: () => void
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  withoutTrigger?: boolean
 }
 
 export function RenameThreadDialog({
@@ -27,35 +30,47 @@ export function RenameThreadDialog({
   plainTitleForRename,
   onRename,
   onDropdownClose,
+  open,
+  onOpenChange,
+  withoutTrigger,
 }: RenameThreadDialogProps) {
   const { t } = useTranslation()
   const [title, setTitle] = useState('')
-  const [isOpen, setIsOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  const isControlled = open !== undefined
+  const isOpen = isControlled ? !!open : internalOpen
+  const setOpenSafe = (next: boolean) => {
+    if (isControlled) {
+      onOpenChange?.(next)
+    } else {
+      setInternalOpen(next)
+    }
+  }
+
   useEffect(() => {
-    if (isOpen && inputRef.current) {
+    if (isOpen) {
+      setTitle(plainTitleForRename || t('common:newThread'))
       setTimeout(() => {
         inputRef.current?.focus()
         inputRef.current?.select()
       }, 100)
     }
-  }, [isOpen])
+  }, [isOpen, plainTitleForRename, t])
 
   const handleOpenChange = (open: boolean) => {
-    setIsOpen(open)
-    if (open) {
-      setTitle(plainTitleForRename || t('common:newThread'))
-    } else {
-      onDropdownClose()
+    setOpenSafe(open)
+    if (!open) {
+      onDropdownClose?.()
     }
   }
 
   const handleRename = () => {
     if (title.trim()) {
       onRename(thread.id, title.trim())
-      setIsOpen(false)
-      onDropdownClose()
+      setOpenSafe(false)
+      onDropdownClose?.()
       toast.success(t('common:toast.renameThread.title'), {
         id: 'rename-thread',
         description: t('common:toast.renameThread.description', { title }),
@@ -72,12 +87,14 @@ export function RenameThreadDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-          <IconEdit />
-          <span>{t('common:rename')}</span>
-        </DropdownMenuItem>
-      </DialogTrigger>
+      {!withoutTrigger && (
+        <DialogTrigger asChild>
+          <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+            <IconEdit />
+            <span>{t('common:rename')}</span>
+          </DropdownMenuItem>
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('common:threadTitle')}</DialogTitle>
@@ -90,14 +107,14 @@ export function RenameThreadDialog({
             placeholder={t('common:threadTitle')}
             aria-label={t('common:threadTitle')}
           />
-          <DialogFooter className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <DialogFooter className="mt-2 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
-              <Button variant="link" size="sm" className="w-full sm:w-auto">
+              <Button variant="ghost" size="sm" className="w-full sm:w-auto">
                 {t('common:cancel')}
               </Button>
             </DialogClose>
             <Button
-              disabled={!title.trim()}
+              disabled={!title.trim() || title.trim() === plainTitleForRename}
               onClick={handleRename}
               size="sm"
               className="w-full sm:w-auto"

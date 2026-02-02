@@ -17,7 +17,9 @@ use tauri::{
 };
 use tauri_plugin_store::Store;
 
+use crate::core::mcp::constants::DEFAULT_MCP_CONFIG;
 use crate::core::mcp::helpers::add_server_config;
+use crate::core::app::commands::get_jan_data_folder_path;
 
 use super::{
     extensions::commands::get_jan_extensions_path, mcp::helpers::run_mcp_commands, state::AppState,
@@ -181,7 +183,7 @@ pub fn migrate_mcp_servers(
     if mcp_version < 2 {
         log::info!("Migrating MCP schema version 2: Adding Jan Browser MCP");
         let result = add_server_config(
-            app_handle,
+            app_handle.clone(),
             "Jan Browser MCP".to_string(),
             serde_json::json!({
                 "command": "npx",
@@ -198,8 +200,50 @@ pub fn migrate_mcp_servers(
             log::error!("Failed to add Jan Browser MCP server config: {e}");
         }
     }
-    store.set("mcp_version", 2);
+    if mcp_version < 3 {
+        log::info!("Migrating MCP schema version 3: Updating Exa to streamable HTTP");
+        if let Err(e) = migrate_exa_to_http(app_handle) {
+            log::error!("Failed to migrate Exa to HTTP: {e}");
+        }
+    }
+    store.set("mcp_version", 3);
     store.save().expect("Failed to save store");
+    Ok(())
+}
+
+fn migrate_exa_to_http(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let config_path = get_jan_data_folder_path(app_handle).join("mcp_config.json");
+
+    let config_str = fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read MCP config: {e}"))?;
+
+    let mut config: serde_json::Value = serde_json::from_str(&config_str)
+        .map_err(|e| format!("Failed to parse MCP config: {e}"))?;
+
+    if let Some(servers) = config
+        .get_mut("mcpServers")
+        .and_then(|s| s.as_object_mut())
+    {
+        servers.insert(
+            "exa".to_string(),
+            serde_json::json!({
+                "type": "http",
+                "url": "https://mcp.exa.ai/mcp".to_string(),
+                "command": "",
+                "args": [],
+                "env": {},
+                "active": true
+            }),
+        );
+    }
+
+    fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&config)
+            .map_err(|e| format!("Failed to serialize MCP config: {e}"))?,
+    )
+    .map_err(|e| format!("Failed to write MCP config: {e}"))?;
+
     Ok(())
 }
 
@@ -239,6 +283,15 @@ pub fn setup_mcp<R: Runtime>(app: &App<R>) {
     let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         use crate::core::mcp::lockfile::cleanup_all_stale_locks;
+
+        // Create default mcp_config.json if it doesn't exist
+        let config_path = get_jan_data_folder_path(app_handle.clone()).join("mcp_config.json");
+        if !config_path.exists() {
+            log::info!("mcp_config.json not found, creating default config");
+            if let Err(e) = fs::write(&config_path, DEFAULT_MCP_CONFIG) {
+                log::error!("Failed to create default MCP config: {e}");
+            }
+        }
 
         if let Err(e) = cleanup_all_stale_locks(&app_handle).await {
             log::debug!("Lock file cleanup error: {}", e);

@@ -100,10 +100,16 @@ export const useModelProvider = create<ModelProviderState>()(
                       .join(getServiceHub().path().sep()) === model.id
                 )?.settings || model.settings
               const existingModel = models.find((m) => m.id === model.id)
+              const mergedCapabilities = [
+                ...(model.capabilities || []),
+                ...(existingModel?.capabilities || []).filter(
+                  (cap) => !(model.capabilities || []).includes(cap)
+                ),
+              ]
               return {
                 ...model,
                 settings: settings,
-                capabilities: existingModel?.capabilities || model.capabilities,
+                capabilities: mergedCapabilities.length > 0 ? mergedCapabilities : undefined,
                 displayName: existingModel?.displayName || model.displayName,
               }
             })
@@ -444,11 +450,6 @@ export const useModelProvider = create<ModelProviderState>()(
             }
           })
         }
-        if (version <= 6 && state?.providers) {
-          // Most of legacy cohere models are deprecated now, remove the provider entirely
-          // TODO: Default providers should be updated automatically somehow later
-          state.providers = state.providers.filter((provider) => provider.provider !== 'cohere')
-        }
         if (version <= 7 && state?.providers) {
           // Remove 'proactive' capability from all models as it's now managed in MCP settings
           state.providers.forEach((provider) => {
@@ -494,9 +495,15 @@ export const useModelProvider = create<ModelProviderState>()(
             }
           })
         }
+
+        if (version <= 9 && state?.providers) {
+          state.providers = state.providers.filter(
+            (provider) => provider.provider !== 'cohere'
+          )
+        }
         return state
       },
-      version: 9,
+      version: 10,
     }
   )
 )

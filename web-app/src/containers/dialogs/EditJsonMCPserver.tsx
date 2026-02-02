@@ -82,7 +82,7 @@ export default function EditJsonMCPserver({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-2">
-          <div className="border border-main-view-fg/10 rounded-md !overflow-hidden">
+          <div className="border  rounded-md overflow-hidden!">
             <style>{`
               .w-tc-editor textarea {
                 word-break: break-all !important;
@@ -106,14 +106,14 @@ export default function EditJsonMCPserver({
                 overflowWrap: 'anywhere',
                 whiteSpace: 'pre-wrap',
               }}
-              className="w-full !text-sm overflow-hidden !break-all !font-mono"
+              className="w-full text-sm! overflow-hidden break-all! font-mono!"
             />
           </div>
           {error && <div className="text-destructive text-sm">{error}</div>}
         </div>
 
         <DialogFooter>
-          <Button onClick={handleSave}>{t('mcp-servers:editJson.save')}</Button>
+          <Button size="sm" onClick={handleSave}>{t('mcp-servers:editJson.save')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

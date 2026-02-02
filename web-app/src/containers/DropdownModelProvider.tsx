@@ -23,6 +23,7 @@ import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/constants/providers'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
+import { ChevronsUpDown } from 'lucide-react'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -262,6 +263,9 @@ const DropdownModelProvider = ({
       if (!provider.active) return
 
       provider.models.forEach((modelItem) => {
+        // Skip embedding models - they can't be used for chat
+        if (modelItem.embedding) return
+
         // Skip models that require API key but don't have one (except llamacpp)
         if (
           provider &&
@@ -429,7 +433,7 @@ const DropdownModelProvider = ({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <div className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 flex items-center gap-1.5 rounded-sm">
+      <div className="border px-4 py-1.5 flex items-center gap-1.5 rounded-full">
         <PopoverTrigger asChild>
           <button
             type="button"
@@ -442,12 +446,13 @@ const DropdownModelProvider = ({
             )}
             <span
               className={cn(
-                'text-main-view-fg/80 truncate leading-normal',
-                !selectedModel?.id && 'text-main-view-fg/50'
+                'text-foreground truncate leading-normal',
+                !selectedModel?.id && 'text-muted-foreground'
               )}
             >
               {displayModel}
             </span>
+            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
           </button>
         </PopoverTrigger>
         {currentModel?.settings &&
@@ -456,31 +461,30 @@ const DropdownModelProvider = ({
             <ModelSetting
               model={currentModel as Model}
               provider={provider}
-              smallIcon
             />
           )}
         <ModelSupportStatus
           modelId={selectedModel?.id}
           provider={selectedProvider}
           contextSize={getContextSize()}
-          className="ml-0.5 flex-shrink-0"
+          className="ml-0.5 shrink-0"
         />
       </div>
 
       <PopoverContent
         className={cn(
-          'w-60 p-0 backdrop-blur-2xl',
-          searchValue.length === 0 && 'h-[320px]'
+          'w-70 p-0 backdrop-blur-2xl bg-background/95 border',
+          searchValue.length === 0 && 'h-80'
         )}
         align="start"
-        sideOffset={10}
-        alignOffset={-8}
-        side={searchValue.length === 0 ? undefined : 'top'}
+        sideOffset={16}
+        alignOffset={-10}
+        side="bottom"
         avoidCollisions={searchValue.length === 0 ? true : false}
       >
-        <div className="flex flex-col w-full h-full">
+        <div className="flex flex-col size-full">
           {/* Search input */}
-          <div className="relative px-2 py-1.5 border-b border-main-view-fg/10 backdrop-blur-4xl">
+          <div className="relative p-2 border-b">
             <input
               ref={searchInputRef}
               value={searchValue}
@@ -492,7 +496,7 @@ const DropdownModelProvider = ({
               <div className="absolute right-2 top-0 bottom-0 flex items-center justify-center">
                 <IconX
                   size={16}
-                  className="text-main-view-fg/50 hover:text-main-view-fg cursor-pointer"
+                  className="text-muted-foreground cursor-pointer"
                   onClick={onClearSearch}
                 />
               </div>
@@ -500,19 +504,19 @@ const DropdownModelProvider = ({
           </div>
 
           {/* Model list */}
-          <div className="max-h-[320px] overflow-y-auto">
+          <div className="max-h-80 overflow-y-auto">
             {Object.keys(groupedItems).length === 0 && searchValue ? (
-              <div className="py-3 px-4 text-sm text-main-view-fg/60">
+              <div className="py-3 px-4 text-sm ">
                 {t('common:noModelsFoundFor', { searchValue })}
               </div>
             ) : (
               <div className="py-1">
                 {/* Favorites section - only show when not searching */}
                 {!searchValue && favoriteItems.length > 0 && (
-                  <div className="bg-main-view-fg/2 backdrop-blur-2xl rounded-sm my-1.5 mx-1.5">
+                  <div className="bg-secondary/30 rounded-sm m-2 py-1">
                     {/* Favorites header */}
                     <div className="flex items-center gap-1.5 px-2 py-1">
-                      <span className="text-sm font-medium text-main-view-fg/80">
+                      <span className="text-sm font-medium text-muted-foreground">
                         {t('common:favorites')}
                       </span>
                     </div>
@@ -532,9 +536,9 @@ const DropdownModelProvider = ({
                           onClick={() => handleSelect(searchableModel)}
                           className={cn(
                             'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                            'hover:bg-main-view-fg/4',
+                            'hover:bg-secondary/40',
                             isSelected &&
-                              'bg-main-view-fg/8 hover:bg-main-view-fg/8'
+                              'bg-secondary/50'
                           )}
                         >
                           <div className="flex items-center gap-1 flex-1 min-w-0">
@@ -543,12 +547,12 @@ const DropdownModelProvider = ({
                                 provider={searchableModel.provider}
                               />
                             </div>
-                            <span className="text-main-view-fg/80 text-sm">
+                            <span className="text-sm truncate">
                               {getModelDisplayName(searchableModel.model)}
                             </span>
                             <div className="flex-1"></div>
                             {capabilities.length > 0 && (
-                              <div className="flex-shrink-0 -mr-1.5">
+                              <div className="shrink-0 -mr-1.5">
                                 <Capabilities capabilities={capabilities} />
                               </div>
                             )}
@@ -561,7 +565,7 @@ const DropdownModelProvider = ({
 
                 {/* Divider between favorites and regular providers */}
                 {favoriteItems.length > 0 && (
-                  <div className="border-b border-1 border-main-view-fg/8 mx-2"></div>
+                  <div className="border-b mx-2"></div>
                 )}
 
                 {/* Regular provider sections */}
@@ -575,19 +579,19 @@ const DropdownModelProvider = ({
                   return (
                     <div
                       key={providerKey}
-                      className="bg-main-view-fg/2 backdrop-blur-2xl first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0"
+                      className="bg-secondary/30 first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0 py-1"
                     >
                       {/* Provider header */}
                       <div className="flex items-center justify-between px-2 py-1">
                         <div className="flex items-center gap-1.5">
                           <ProvidersAvatar provider={providerInfo} />
-                          <span className="capitalize text-sm font-medium text-main-view-fg/80">
+                          <span className="capitalize text-sm font-medium text-muted-foreground">
                             {getProviderTitle(providerInfo.provider)}
                           </span>
                         </div>
 
                         <div
-                          className="size-6 cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                          className="size-6 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
                           onClick={(e) => {
                             e.stopPropagation()
                             navigate({
@@ -599,7 +603,7 @@ const DropdownModelProvider = ({
                         >
                           <IconSettings
                             size={16}
-                            className="text-main-view-fg/50"
+                            className="text-muted-foreground"
                           />
                         </div>
                       </div>
@@ -624,21 +628,21 @@ const DropdownModelProvider = ({
                               onClick={() => handleSelect(searchableModel)}
                               className={cn(
                                 'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                                'hover:bg-main-view-fg/4',
+                                'hover:bg-secondary/40',
                                 isSelected &&
-                                  'bg-main-view-fg/8 hover:bg-main-view-fg/8'
+                                  'bg-secondary/60 hover:bg-secondary/60'
                               )}
                             >
                               <div className="flex items-center gap-2 flex-1 min-w-0">
                                 <span
-                                  className="text-main-view-fg/80 text-sm"
+                                  className="text-sm truncate"
                                   title={searchableModel.model.id}
                                 >
                                   {getModelDisplayName(searchableModel.model)}
                                 </span>
                                 <div className="flex-1"></div>
                                 {capabilities.length > 0 && (
-                                  <div className="flex-shrink-0 -mr-1.5">
+                                  <div className="shrink-0 -mr-1.5">
                                     <Capabilities capabilities={capabilities} />
                                   </div>
                                 )}

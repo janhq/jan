@@ -4,7 +4,7 @@ import { Assistant, AssistantExtension, fs, joinPath } from '@janhq/core'
  * functionality for managing assistants.
  */
 export default class JanAssistantExtension extends AssistantExtension {
-  private readonly CURRENT_MIGRATION_VERSION = 1
+  private readonly CURRENT_MIGRATION_VERSION = 2
   private readonly MIGRATION_FILE = 'file://assistants/.migration_version'
 
   /**
@@ -20,7 +20,17 @@ export default class JanAssistantExtension extends AssistantExtension {
 
     const assistants = await this.getAssistants()
     if (assistants.length === 0) {
-      await this.createAssistant(this.defaultAssistant)
+      // Add default parameters when creating the assistant
+      const assistantWithParams = {
+        ...this.defaultAssistant,
+        parameters: {
+          temperature: 0.7,
+          top_k: 20,
+          top_p: 0.8,
+          repeat_penalty: 1.12,
+        },
+      }
+      await this.createAssistant(assistantWithParams as Assistant)
     }
   }
 
@@ -63,13 +73,15 @@ export default class JanAssistantExtension extends AssistantExtension {
       await this.saveMigrationVersion(1)
     }
 
-    // Future migrations can be added here
-    // if (currentVersion < 2) {
-    //   await this.migrationV2()
-    //   await this.saveMigrationVersion(2)
-    // }
+    if (currentVersion < 2) {
+      console.log('Running migration v2: Update to Menlo Research instructions')
+      await this.migrateToMenloInstructions()
+      await this.saveMigrationVersion(2)
+    }
 
-    console.log(`Migrations complete. Current version: ${this.CURRENT_MIGRATION_VERSION}`)
+    console.log(
+      `Migrations complete. Current version: ${this.CURRENT_MIGRATION_VERSION}`
+    )
   }
 
   /**
@@ -89,7 +101,9 @@ export default class JanAssistantExtension extends AssistantExtension {
       // Check if this assistant has the old instruction format
       if (assistant.instructions?.startsWith(OLD_INSTRUCTION)) {
         // Replace old instruction with new one, preserving the rest of the content
-        const restOfInstructions = assistant.instructions.substring(OLD_INSTRUCTION.length)
+        const restOfInstructions = assistant.instructions.substring(
+          OLD_INSTRUCTION.length
+        )
         assistant.instructions = NEW_INSTRUCTION + restOfInstructions
 
         // Save the updated assistant
@@ -100,8 +114,83 @@ export default class JanAssistantExtension extends AssistantExtension {
         ])
 
         try {
-          await fs.writeFileSync(assistantPath, JSON.stringify(assistant, null, 2))
+          await fs.writeFileSync(
+            assistantPath,
+            JSON.stringify(assistant, null, 2)
+          )
           console.log(`Migrated instructions for assistant: ${assistant.id}`)
+        } catch (error) {
+          console.error(`Failed to migrate assistant ${assistant.id}:`, error)
+        }
+      }
+    }
+  }
+
+  /**
+   * Migration v2: Update assistant instructions to Menlo Research format and set default parameters
+   */
+  private async migrateToMenloInstructions(): Promise<void> {
+    const OLD_INSTRUCTION_PREFIX = 'You are Jan, a helpful AI assistant.'
+    const NEW_INSTRUCTION = `You are Jan, a helpful AI assistant who assists users with their requests. Jan is trained by Menlo Research (https://www.menlo.ai).
+
+You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
+
+When handling user queries:
+
+1. Think step by step about the query:
+   - Break complex questions into smaller, searchable parts
+   - Identify key search terms and parameters
+   - Consider what information is needed to provide a complete answer
+
+2. Mandatory logical analysis:
+   - Before engaging any tools, articulate your complete thought process in natural language. You must act as a "professional tool caller," demonstrating rigorous logic.
+   - Analyze the information gap: explicitly state what data is missing.
+   - Derive the strategy: explain why a specific tool is the logical next step.
+   - Justify parameters: explain why you chose those specific search keywords or that specific URL.
+
+You have tools to search for and access real-time, up-to-date data. Use them. Search before stating that you can't or don't know.
+
+Current date: {{current_date}}`
+
+    const DEFAULT_PARAMETERS = {
+      temperature: 0.7,
+      top_k: 20,
+      top_p: 0.8,
+      repeat_penalty: 1.12,
+    }
+
+    if (!(await fs.existsSync('file://assistants'))) {
+      return
+    }
+
+    const assistants = await this.getAssistants()
+
+    for (const assistant of assistants) {
+      // Check if this assistant has the old instruction format
+      if (assistant.instructions?.startsWith(OLD_INSTRUCTION_PREFIX)) {
+        assistant.instructions = NEW_INSTRUCTION
+
+        // Add default parameters to the assistant
+        const assistantWithParams = {
+          ...assistant,
+          parameters: DEFAULT_PARAMETERS,
+        }
+
+        // Save the updated assistant
+        const assistantPath = await joinPath([
+          'file://assistants',
+          assistant.id,
+          'assistant.json',
+        ])
+
+        try {
+          await fs.writeFileSync(
+            assistantPath,
+            JSON.stringify(assistantWithParams, null, 2)
+          )
+          console.log(
+            `Migrated to Menlo instructions for assistant: ${assistant.id}`
+          )
         } catch (error) {
           console.error(`Failed to migrate assistant ${assistant.id}:`, error)
         }
@@ -125,10 +214,8 @@ export default class JanAssistantExtension extends AssistantExtension {
         assistant,
         'assistant.json',
       ])
-      if (!(await fs.existsSync(assistantPath))) {
-        console.warn(`Assistant file not found: ${assistantPath}`)
-        continue
-      }
+      if (!(await fs.existsSync(assistantPath))) continue
+
       try {
         const assistantData = JSON.parse(await fs.readFileSync(assistantPath))
         assistantsData.push(assistantData as Assistant)
@@ -173,8 +260,26 @@ export default class JanAssistantExtension extends AssistantExtension {
     description:
       'Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.',
     model: '*',
-    instructions:
-      'You are Jan, a helpful AI assistant. Your primary goal is to assist users with their questions and tasks to the best of your abilities.\n\nWhen responding:\n- Answer directly from your knowledge when you can\n- Be concise, clear, and helpful\n- Admit when you’re unsure rather than making things up\n\nIf tools are available to you:\n- Only use tools when they add real value to your response\n- Use tools when the user explicitly asks (e.g., "search for...", "calculate...", "run this code")\n- Use tools for information you don’t know or that needs verification\n- Never use tools just because they’re available\n\nWhen using tools:\n- Use one tool at a time and wait for results\n- Use actual values as arguments, not variable names\n- Learn from each result before deciding next steps\n- Avoid repeating the same tool call with identical parameters\n- You must use browser screenshot to double check before you announce you finished or completed the task. If you got stuck, go to google.com\n\nRemember: Most questions can be answered without tools. Think first whether you need them.\n\nCurrent date: {{current_date}}',
+    instructions: `You are Jan, a helpful AI assistant who assists users with their requests. Jan is trained by Menlo Research (https://www.menlo.ai).
+
+You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
+
+When handling user queries:
+
+1. Think step by step about the query:
+   - Break complex questions into smaller, searchable parts
+   - Identify key search terms and parameters
+   - Consider what information is needed to provide a complete answer
+
+2. Mandatory logical analysis:
+   - Before engaging any tools, articulate your complete thought process in natural language. You must act as a "professional tool caller," demonstrating rigorous logic.
+   - Analyze the information gap: explicitly state what data is missing.
+   - Derive the strategy: explain why a specific tool is the logical next step.
+   - Justify parameters: explain why you chose those specific search keywords or that specific URL.
+
+You have tools to search for and access real-time, up-to-date data. Use them. Search before stating that you can't or don't know.
+
+Current date: {{current_date}}`,
     tools: [
       {
         type: 'retrieval',

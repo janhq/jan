@@ -117,14 +117,14 @@
   /* Code */
   code {
     font-family: monospace;
-    @apply bg-main-view-fg/6 text-main-view-fg;
+    @apply bg-secondary text-foreground;
     padding: 0.2em 0.4em;
     border-radius: 3px;
   }
 
   pre {
     font-family: monospace;
-    @apply bg-main-view-fg/6 text-main-view-fg px-0!;
+    @apply bg-secondary text-foreground px-0!;
     overflow-x: auto;
     /* border-radius: 8px; */
     margin-bottom: 8px;
@@ -133,36 +133,9 @@
   pre code {
     background-color: transparent;
     padding: 2px;
-    @apply !text-sm;
+    @apply text-sm!;
     display: inline-block;
   }
-
-  /* Tables */
-  /* table {
-    border-collapse: collapse;
-    margin-bottom: 1em;
-    border-spacing: 0;
-    display: block;
-    max-width: max-content;
-    overflow-x: auto;
-    font-variant: tabular-nums;
-  }
-
-  th {
-    font-weight: 600;
-    text-align: left;
-    padding: 0.75em 1em;
-    @apply border border-main-view-fg/20;
-  }
-
-  td {
-    padding: 0.75em 1em;
-    @apply border border-main-view-fg/20;
-  }
-
-  tr:nth-child(even) {
-    @apply bg-main-view-fg/5;
-  } */
 
   /* Links */
   a {
@@ -204,7 +177,6 @@
   hr {
     border: 0;
     height: 1px;
-    @apply bg-main-view-fg/50;
     opacity: 0.2;
     margin: 2em 0;
   }

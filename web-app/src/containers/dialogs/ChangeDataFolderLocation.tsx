@@ -46,34 +46,34 @@ export default function ChangeDataFolderLocation({
 
         <div className="space-y-4">
           <div>
-            <h4 className="text-sm font-medium text-main-view-fg/80 mb-2">
+            <h4 className="text-sm font-medium mb-2">
               {t('settings:dialogs.changeDataFolder.currentLocation')}
             </h4>
-            <div className="bg-main-view-fg/5 border border-main-view-fg/10 rounded">
-              <code className="text-xs text-main-view-fg/70 break-all">
+            <div className="bg-secondary border p-2 rounded-lg">
+              <code className="text-xs text-muted-foreground break-all">
                 {currentPath}
               </code>
             </div>
           </div>
 
           <div>
-            <h4 className="text-sm font-medium text-main-view-fg/80 mb-2">
+            <h4 className="text-sm font-medium mb-2">
               {t('settings:dialogs.changeDataFolder.newLocation')}
             </h4>
-            <div className="bg-accent/10 border border-accent/20 rounded">
-              <code className="text-xs text-accent break-all">{newPath}</code>
+            <div className="bg-secondary border p-2 rounded-lg">
+              <code className="text-xs break-all">{newPath}</code>
             </div>
           </div>
         </div>
 
         <DialogFooter className="flex items-center gap-2">
           <DialogClose asChild>
-            <Button variant="link" size="sm">
+            <Button variant="ghost" size="sm">
               {t('settings:dialogs.changeDataFolder.cancel')}
             </Button>
           </DialogClose>
           <DialogClose asChild>
-            <Button onClick={onConfirm}>
+            <Button size="sm" onClick={onConfirm}>
               {t('settings:dialogs.changeDataFolder.changeLocation')}
             </Button>
           </DialogClose>

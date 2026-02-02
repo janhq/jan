@@ -26,7 +26,6 @@ interface TokenCounterProps {
 export const TokenCounter = ({
   messages = [],
   className,
-  compact = false,
   additionalTokens = 0,
   uploadedFiles = [],
 }: TokenCounterProps) => {
@@ -107,177 +106,126 @@ export const TokenCounter = ({
     return num.toString()
   }
 
-  if (compact) {
-    return (
-      <TooltipProvider delayDuration={isUpdating ? 1200 : 400}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div
-              className={cn('relative cursor-pointer', className)}
-              onClick={handleCalculateTokens}
-            >
-              {/* Main compact display */}
-              <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-main-view border border-main-view-fg/10">
+  return (
+    <TooltipProvider delayDuration={isUpdating ? 1200 : 400}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div
+            className={cn('relative cursor-pointer', className)}
+            onClick={handleCalculateTokens}
+          >
+            {/* Main compact display */}
+            <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-background border border-border">
+              <span
+                className={cn(
+                  'text-xs font-medium tabular-nums transition-all duration-500 ease-out',
+                  isOverLimit ? 'text-destructive' : 'text-primary',
+                  isAnimating && 'scale-110'
+                )}
+              >
+                {adjustedPercentage?.toFixed(1) || '0.0'}%
+              </span>
+
+              <div className="relative size-4 shrink-0">
+                <svg
+                  className="size-4 transform -rotate-90"
+                  viewBox="0 0 16 16"
+                >
+                  <circle
+                    cx="8"
+                    cy="8"
+                    r="6"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    fill="none"
+                    className="text-muted-foreground"
+                  />
+                  <circle
+                    cx="8"
+                    cy="8"
+                    r="6"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    fill="none"
+                    strokeDasharray={`${2 * Math.PI * 6}`}
+                    strokeDashoffset={`${2 * Math.PI * 6 * (1 - (adjustedPercentage || 0) / 100)}`}
+                    className={cn(
+                      'transition-all duration-500 ease-out',
+                      isOverLimit ? 'stroke-destructive' : 'stroke-primary'
+                    )}
+                    style={{
+                      transformOrigin: 'center',
+                    }}
+                  />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent
+          side="bottom"
+          align="center"
+          sideOffset={5}
+          showArrow={false}
+          className="min-w-60 max-w-60 bg-background border"
+        >
+          {/* Detailed breakdown panel */}
+          <>
+            {/* Header with percentage and progress bar */}
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-2">
                 <span
                   className={cn(
-                    'text-xs font-medium tabular-nums transition-all duration-500 ease-out',
-                    isOverLimit ? 'text-destructive' : 'text-accent',
-                    isAnimating && 'scale-110'
+                    'text-lg font-semibold tabular-nums',
+                    isOverLimit ? 'text-destructive' : 'text-primary'
                   )}
                 >
                   {adjustedPercentage?.toFixed(1) || '0.0'}%
                 </span>
+                <span className="text-sm text-muted-foreground font-mono">
+                  {formatNumber(totalTokens)} /{' '}
+                  {formatNumber(tokenData.maxTokens || 0)}
+                </span>
+              </div>
 
-                <div className="relative w-4 h-4 flex-shrink-0">
-                  <svg
-                    className="w-4 h-4 transform -rotate-90"
-                    viewBox="0 0 16 16"
-                  >
-                    <circle
-                      cx="8"
-                      cy="8"
-                      r="6"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      fill="none"
-                      className="text-main-view-fg/20"
-                    />
-                    <circle
-                      cx="8"
-                      cy="8"
-                      r="6"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      fill="none"
-                      strokeDasharray={`${2 * Math.PI * 6}`}
-                      strokeDashoffset={`${2 * Math.PI * 6 * (1 - (adjustedPercentage || 0) / 100)}`}
-                      className={cn(
-                        'transition-all duration-500 ease-out',
-                        isOverLimit ? 'stroke-destructive' : 'stroke-accent'
-                      )}
-                      style={{
-                        transformOrigin: 'center',
-                      }}
-                    />
-                  </svg>
-                </div>
+              {/* Progress bar */}
+              <div className="w-full h-2 bg-secondary/20 rounded-full overflow-hidden">
+                <div
+                  className={cn(
+                    'h-2 rounded-full transition-all duration-500 ease-out',
+                    isOverLimit ? 'bg-destructive' : 'bg-primary'
+                  )}
+                  style={{
+                    width: `${Math.min(adjustedPercentage || 0, 100)}%`,
+                  }}
+                />
               </div>
             </div>
-          </TooltipTrigger>
-          <TooltipContent
-            side="bottom"
-            align="center"
-            sideOffset={5}
-            showArrow={false}
-            className="min-w-[240px] max-w-[240px] bg-main-view border border-main-view-fg/10 "
-          >
-            {/* Detailed breakdown panel */}
-            <>
-              {/* Header with percentage and progress bar */}
-              <div className="mb-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span
-                    className={cn(
-                      'text-lg font-semibold tabular-nums',
-                      isOverLimit ? 'text-destructive' : 'text-accent'
-                    )}
-                  >
-                    {adjustedPercentage?.toFixed(1) || '0.0'}%
-                  </span>
-                  <span className="text-sm text-main-view-fg/60 font-mono">
-                    {formatNumber(totalTokens)} /{' '}
-                    {formatNumber(tokenData.maxTokens || 0)}
-                  </span>
-                </div>
 
-                {/* Progress bar */}
-                <div className="w-full h-2 bg-main-view-fg/10 rounded-full overflow-hidden">
-                  <div
-                    className={cn(
-                      'h-2 rounded-full transition-all duration-500 ease-out',
-                      isOverLimit ? 'bg-destructive' : 'bg-accent'
-                    )}
-                    style={{
-                      width: `${Math.min(adjustedPercentage || 0, 100)}%`,
-                    }}
-                  />
-                </div>
+            {/* Token breakdown */}
+            <div className="space-y-2 mb-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Text</span>
+                <span className="text-foreground font-mono">
+                  {formatNumber(Math.max(0, tokenData.tokenCount))}
+                </span>
               </div>
+            </div>
 
-              {/* Token breakdown */}
-              <div className="space-y-2 mb-3">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-main-view-fg/60">Text</span>
-                  <span className="text-main-view-fg font-mono">
-                    {formatNumber(Math.max(0, tokenData.tokenCount))}
-                  </span>
-                </div>
+            {/* Remaining tokens */}
+            <div className="border-t border-border pt-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Remaining</span>
+                <span className="text-foreground font-semibold font-mono">
+                  {formatNumber(
+                    Math.max(0, (tokenData.maxTokens || 0) - totalTokens)
+                  )}
+                </span>
               </div>
-
-              {/* Remaining tokens */}
-              <div className="border-t border-main-view-fg/10 pt-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-main-view-fg/60">Remaining</span>
-                  <span className="text-main-view-fg font-semibold font-mono">
-                    {formatNumber(
-                      Math.max(0, (tokenData.maxTokens || 0) - totalTokens)
-                    )}
-                  </span>
-                </div>
-              </div>
-            </>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    )
-  }
-
-  // Non-compact: Simple inline display
-  return (
-    <div
-      className={cn(
-        'flex items-center w-full justify-between gap-2 py-1 text-xs text-main-view-fg/50',
-        className
-      )}
-    >
-      <div className="space-x-0.5">
-        <span>Context&nbsp;</span>
-        <span
-          className={cn(
-            'font-mono font-bold transition-all duration-500 ease-out',
-            isAnimating && 'scale-110'
-          )}
-        >
-          {formatNumber(totalTokens)}
-        </span>
-        {tokenData.maxTokens && (
-          <>
-            <span>/</span>
-            <span
-              className={cn(
-                'font-mono font-bold transition-all duration-500 ease-out',
-                isAnimating && 'scale-110'
-              )}
-            >
-              {formatNumber(tokenData.maxTokens)}
-            </span>
-            <span
-              className={cn(
-                'ml-1 font-mono font-bold transition-all duration-500 ease-out',
-                isOverLimit ? 'text-destructive' : 'text-accent',
-                isAnimating && 'scale-110'
-              )}
-            >
-              ({adjustedPercentage?.toFixed(1) || '0.0'}%)
-            </span>
-            {isOverLimit && (
-              <span className="text-xs text-main-view-fg/40">
-                &nbsp;{isOverLimit ? '⚠️ Over limit' : 'Tokens used'}
-              </span>
-            )}
+            </div>
           </>
-        )}
-      </div>
-    </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }

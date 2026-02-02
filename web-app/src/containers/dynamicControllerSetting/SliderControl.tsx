@@ -24,14 +24,22 @@ export function SliderControl({
   step = 1,
   onChange,
 }: SliderControlProps) {
-  const [currentValue, setCurrentValue] = React.useState<number[]>(
-    Array.isArray(value) ? value : [min]
-  )
+  const initialValue = Array.isArray(value) && value[0] !== undefined ? value : [min]
+  const [currentValue, setCurrentValue] = React.useState<number[]>(initialValue)
   const [inputValue, setInputValue] = React.useState<string>(
-    currentValue[0].toString()
+    initialValue[0].toString()
   )
-  const [inputNumber, setInputNumber] = React.useState<number>(currentValue[0])
+  const [inputNumber, setInputNumber] = React.useState<number>(initialValue[0])
   const isExceedingMax = inputNumber > max
+
+  // Sync with external value changes
+  React.useEffect(() => {
+    if (Array.isArray(value) && value[0] !== undefined) {
+      setCurrentValue(value)
+      setInputValue(value[0].toString())
+      setInputNumber(value[0])
+    }
+  }, [value])
 
   const handleValueChange = (newValue: SliderProps['defaultValue']) => {
     if (newValue) {
@@ -67,19 +75,19 @@ export function SliderControl({
               step={step}
               value={currentValue}
               onValueChange={handleValueChange}
-              className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4"
+              className="**:[[role=slider]]:h-4 **:[[role=slider]]:w-4"
               aria-label={title}
             />
             <div className="flex justify-between px-1">
-              <span className="text-xs text-main-view-fg/50">{min}</span>
-              <span className="text-xs text-main-view-fg/50">{max}</span>
+              <span className="text-xs text-muted-foreground">{min}</span>
+              <span className="text-xs text-muted-foreground">{max}</span>
             </div>
           </div>
           <Input
             className={`w-16 h-8 -mt-6 rounded-md border px-2 text-right text-xs ${
               isExceedingMax
                 ? 'border-destructive text-destructive'
-                : 'text-main-view-fg/20 border-main-view-fg/10'
+                : 'text-muted-foreground'
             } transition-all duration-200 ease-in-out`}
             value={inputValue}
             onChange={handleInputChange}

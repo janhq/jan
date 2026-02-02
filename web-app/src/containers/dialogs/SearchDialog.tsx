@@ -33,6 +33,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [recentVersion, setRecentVersion] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const threads = useThreads((state) => state.threads)
   const getFilteredThreads = useThreads((state) => state.getFilteredThreads)
@@ -161,6 +162,16 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
     setSelectedIndex(0)
   }, [allItems.length])
 
+  // Scroll selected item into view
+  useEffect(() => {
+    if (listRef.current) {
+      const selectedElement = listRef.current.querySelector(
+        `[data-index="${selectedIndex}"]`
+      )
+      selectedElement?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [selectedIndex])
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
@@ -203,13 +214,13 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
         </VisuallyHidden>
 
         {/* Search Input */}
-        <div className="flex items-center border-b border-main-view-fg/10 px-3">
-          <IconSearch className="size-4 text-main-view-fg/50 shrink-0" />
+        <div className="flex items-center border-b  px-3">
+          <IconSearch className="size-4 text-muted-foreground shrink-0" />
           <input
             ref={inputRef}
             type="text"
             placeholder={t('common:searchThreads')}
-            className="flex-1 h-12 px-3 bg-transparent text-main-view-fg placeholder:text-main-view-fg/50 focus:outline-none"
+            className="flex-1 h-12 px-3 bg-transparent placeholder:text-muted-foreground focus:outline-none"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -217,15 +228,15 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
         </div>
 
         {/* Results */}
-        <div className="max-h-80 overflow-y-auto px-1 py-2">
+        <div ref={listRef} className="max-h-80 overflow-y-auto px-1 py-2">
           {/* Empty state when searching */}
           {searchQuery && !hasResults && (
             <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-              <IconSearch className="size-6 text-main-view-fg/50 mb-2" />
+              <IconSearch className="size-6 text-muted-foreground mb-2" />
               <h3 className="text-base font-medium mb-1">
                 {t('common:noResultsFound')}
               </h3>
-              <p className="text-xs leading-relaxed text-main-view-fg/60 w-1/2 mx-auto">
+              <p className="text-xs leading-relaxed text-muted-foreground w-1/2 mx-auto">
                 {t('common:noResultsFoundDesc')}
               </p>
             </div>
@@ -235,13 +246,14 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
           {showStartNewChat && (
             <div className="p-1">
               <button
+                data-index={0}
                 onClick={handleStartNewChat}
                 className={cn(
-                  'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-main-view-fg/5 transition-colors cursor-pointer',
-                  selectedIndex === 0 && 'bg-main-view-fg/5'
+                  'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-secondary/60 transition-colors cursor-pointer',
+                  selectedIndex === 0 && 'bg-secondary/50'
                 )}
               >
-                <IconCirclePlus className="size-4 text-main-view-fg/70" />
+                <IconCirclePlus className="size-4 text-muted-foreground" />
                 <span className="text-sm">{t('common:newChat')}</span>
               </button>
             </div>
@@ -250,13 +262,13 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
           {/* Recent searches - shown when search is empty */}
           {!searchQuery && recentSearches.length > 0 && (
             <div className="p-1">
-              <div className="px-3 pt-1.5 flex items-center justify-between">
-                <span className="text-xs font-medium text-main-view-fg/50">
+              <div className="px-3 pt-1.5 flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-muted-foreground">
                   {t('common:recents')}
                 </span>
                 <button
                   onClick={handleClearRecent}
-                  className="text-xs text-main-view-fg/50 hover:text-main-view-fg transition-colors cursor-pointer"
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 >
                   {t('common:clearRecent')}
                 </button>
@@ -266,13 +278,14 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
                 return (
                   <button
                     key={thread.id}
+                    data-index={itemIndex}
                     onClick={() => handleSelectThread(thread.id)}
                     className={cn(
-                      'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-main-view-fg/5 transition-colors cursor-pointer',
-                      selectedIndex === itemIndex && 'bg-main-view-fg/5'
+                      'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-secondary/60 transition-colors cursor-pointer',
+                      selectedIndex === itemIndex && 'bg-secondary/50'
                     )}
                   >
-                    <IconHistory className="size-4 text-main-view-fg/70 shrink-0" />
+                    <IconHistory className="size-4 text-muted-foreground shrink-0" />
                     <span className="text-sm truncate">{thread.title}</span>
                   </button>
                 )
@@ -288,15 +301,16 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
                 return (
                   <button
                     key={thread.id}
+                    data-index={itemIndex}
                     onClick={() => handleSelectThread(thread.id)}
                     className={cn(
-                      'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-main-view-fg/5 transition-colors cursor-pointer',
-                      selectedIndex === itemIndex && 'bg-main-view-fg/5'
+                      'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-secondary/60 transition-colors cursor-pointer',
+                      selectedIndex === itemIndex && 'bg-secondary/50'
                     )}
                   >
-                    <IconMessage className="size-4 text-main-view-fg/70 shrink-0" />
+                    <IconMessage className="size-4 text-muted-foreground shrink-0" />
                     <div className="flex items-center min-w-0">
-                      <span className="text-xs text-main-view-fg/50 flex items-center gap-1">
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <IconFolder className="size-3" />
                         {projectName} -&nbsp;
                       </span>
@@ -317,13 +331,14 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
                 return (
                   <button
                     key={thread.id}
+                    data-index={itemIndex}
                     onClick={() => handleSelectThread(thread.id)}
                     className={cn(
-                      'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-main-view-fg/5 transition-colors cursor-pointer',
-                      selectedIndex === itemIndex && 'bg-main-view-fg/5'
+                      'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-secondary/60 transition-colors cursor-pointer',
+                      selectedIndex === itemIndex && 'bg-secondary/50'
                     )}
                   >
-                    <IconMessage className="size-4 text-main-view-fg/70 shrink-0" />
+                    <IconMessage className="size-4 text-muted-foreground shrink-0" />
                     <span className="text-sm truncate">{thread.title}</span>
                   </button>
                 )
@@ -333,23 +348,23 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
         </div>
 
         {/* Footer with keyboard hints */}
-        <div className="flex items-center justify-between border-t border-main-view-fg/10 px-3 py-2 text-xs text-main-view-fg/50">
+        <div className="flex items-center justify-between border-t  px-3 py-2 text-xs text-muted-foreground">
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-main-view-fg/10 rounded text-[10px]">
+              <kbd className="px-1.5 py-0.5 bg-secondary/10 rounded text-[10px]">
                 ↑↓
               </kbd>
               {t('common:toNavigate')}
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-main-view-fg/10 rounded text-[10px]">
+              <kbd className="px-1.5 py-0.5 bg-secondary/10 rounded text-[10px]">
                 ↵
               </kbd>
               {t('common:toSelect')}
             </span>
           </div>
           <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 bg-main-view-fg/10 rounded text-[10px]">
+            <kbd className="px-1.5 py-0.5 bg-secondary/10 rounded text-[10px]">
               esc
             </kbd>
             {t('common:toClose')}

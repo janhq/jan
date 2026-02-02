@@ -102,7 +102,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * Filters out disabled tools based on thread settings
    * @private
    */
-  private async refreshTools() {
+  async refreshTools() {
     if (!this.serviceHub) {
       this.tools = {}
       return
@@ -184,14 +184,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return this.tools
   }
 
-  /**
-   * Force refresh tools from services
-   * Called when MCP server status changes or tools are updated
-   */
-  async forceRefreshTools() {
-    await this.refreshTools()
-  }
-
   async sendMessages(
     options: {
       chatId: string
@@ -202,6 +194,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
+
+    // Ensure tools updated before sending messages
+    await this.refreshTools()
+
     // Initialize model if not already initialized
     const modelId = useModelProvider.getState().selectedModel?.id
     const providerId = useModelProvider.getState().selectedProvider
@@ -252,11 +248,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     return result.toUIMessageStream({
       messageMetadata: ({ part }) => {
+        if (!streamStartTime) {
+          streamStartTime = Date.now()
+        }
         // Track stream start time on first text delta
         if (part.type === 'text-delta') {
-          if (!streamStartTime) {
-            streamStartTime = Date.now()
-          }
           // Count text deltas as a rough token approximation
           // Each delta typically represents one token in streaming
           textDeltaCount++

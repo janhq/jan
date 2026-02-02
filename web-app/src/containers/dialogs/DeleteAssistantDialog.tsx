@@ -55,7 +55,8 @@ export function DeleteAssistantDialog({
         </DialogHeader>
         <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
           <Button
-            variant="link"
+            variant="ghost"
+            size="sm"
             onClick={handleCancel}
             className="w-full sm:w-auto"
           >
@@ -65,6 +66,7 @@ export function DeleteAssistantDialog({
             ref={deleteButtonRef}
             variant="destructive"
             onClick={handleConfirm}
+            size="sm"
             onKeyDown={handleKeyDown}
             className="w-full sm:w-auto"
             aria-label={t('assistants:delete')}

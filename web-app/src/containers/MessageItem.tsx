@@ -8,16 +8,15 @@ import {
   Reasoning,
   ReasoningContent,
   ReasoningTrigger,
-} from '@/ai-elements/reasoning'
+} from '@/components/ai-elements/reasoning'
 import {
   Tool,
   ToolContent,
   ToolHeader,
   ToolInput,
   ToolOutput,
-} from '@/ai-elements/tool'
+} from '@/components/ai-elements/tool'
 import { CopyButton } from './CopyButton'
-import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { IconRefresh, IconPaperclip } from '@tabler/icons-react'
 import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
@@ -25,6 +24,7 @@ import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
 import { extractFilesFromPrompt, FileMetadata } from '@/lib/fileMetadata'
 import { useMemo } from 'react'
+import { Button } from '@/components/ui/button'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -59,8 +59,6 @@ export const MessageItem = memo(
     onRegenerate,
     onEdit,
     onDelete,
-    assistant,
-    showAssistant,
   }: MessageItemProps) => {
     const selectedModel = useModelProvider((state) => state.selectedModel)
     const [previewImage, setPreviewImage] = useState<{
@@ -149,23 +147,23 @@ export const MessageItem = memo(
       return (
         <div key={`${message.id}-${partIndex}`} className="w-full">
           {message.role === 'user' ? (
-            <div className="flex justify-end w-full h-full text-start break-words whitespace-normal">
-              <div className="bg-main-view-fg/4 relative text-main-view-fg p-2 rounded-md inline-block max-w-[80%]">
+            <div className="flex justify-end w-full h-full text-start wrap-break-word whitespace-normal">
+              <div className="bg-secondary relative text-foreground p-2 rounded-md inline-block max-w-[80%]">
                 {/* Show attached files if any */}
                 {attachedFiles.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-2">
+                  <div className="flex flex-wrap gap-2 mb-3">
                     {attachedFiles.map((file: FileMetadata, idx: number) => (
                       <div
                         key={`file-${idx}-${file.id}`}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-main-view-fg/10 text-xs"
+                        className="flex items-center gap-1.5 px-2 py-1 rounded-sm bg-secondary border text-xs"
                       >
                         <IconPaperclip
                           size={14}
-                          className="text-main-view-fg/50"
+                          className="text-muted-foreground"
                         />
                         <span className="font-medium">{file.name}</span>
                         {file.injectionMode && (
-                          <span className="text-main-view-fg/50">
+                          <span className="text-muted-foreground">
                             ({file.injectionMode})
                           </span>
                         )}
@@ -208,14 +206,14 @@ export const MessageItem = memo(
         return (
           <div
             key={`${message.id}-${partIndex}`}
-            className="flex justify-end w-full mb-2"
+            className="flex justify-end w-full my-2"
           >
             <div className="flex flex-wrap gap-2 max-w-[80%] justify-end">
               <div className="relative">
                 <img
                   src={part.url}
                   alt={part.filename || 'Uploaded attachment'}
-                  className="size-40 rounded-md object-cover border border-main-view-fg/10 cursor-pointer"
+                  className="size-20 rounded-lg object-cover border cursor-pointer"
                   onClick={() =>
                     setPreviewImage({ url: part.url!, filename: part.filename })
                   }
@@ -327,25 +325,6 @@ export const MessageItem = memo(
 
     return (
       <div className="w-full mb-4">
-        {/* Show assistant header for assistant messages */}
-        {message.role === 'assistant' && showAssistant && (
-          <div className="flex items-center gap-2 mb-3 text-main-view-fg/60">
-            {assistant?.avatar && (
-              <div className="flex items-center gap-2 size-8 rounded-md justify-center border border-main-view-fg/10 bg-main-view-fg/5 p-1">
-                <AvatarEmoji
-                  avatar={assistant.avatar}
-                  imageClassName="w-6 h-6 object-contain"
-                  textClassName="text-base"
-                />
-              </div>
-            )}
-            <div className="flex flex-col">
-              <span className="text-main-view-fg font-medium">
-                {assistant?.name || 'Jan'}
-              </span>
-            </div>
-          </div>
-        )}
 
         {/* Render message parts */}
         {message.parts.map((part, i) => {
@@ -366,7 +345,7 @@ export const MessageItem = memo(
 
         {/* Message actions for user messages */}
         {message.role === 'user' && (
-          <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
+          <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs mt-4">
             <CopyButton text={getFullTextContent()} />
 
             {onEdit && status !== CHAT_STATUS.STREAMING && (
@@ -386,10 +365,10 @@ export const MessageItem = memo(
         {/* Message actions for assistant messages (non-tool) */}
         {message.role === 'assistant' &&
           message.parts.some((p) => p.type === 'text' && p.text.length > 0) && (
-            <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs mt-1">
               <div
                 className={cn(
-                  'flex items-center gap-2',
+                  'flex items-center gap-1',
                   isStreaming && 'hidden'
                 )}
               >
@@ -407,13 +386,14 @@ export const MessageItem = memo(
                 )}
 
                 {selectedModel && onRegenerate && !isStreaming && isLastMessage && (
-                  <button
-                    className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={handleRegenerate}
                     title="Regenerate response"
                   >
                     <IconRefresh size={16} />
-                  </button>
+                  </Button>
                 )}
               </div>
 
@@ -429,7 +409,7 @@ export const MessageItem = memo(
         {/* Image Preview Dialog */}
         {previewImage && (
           <div
-            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center cursor-pointer"
+            className="fixed inset-0 z-100 bg-black/50 backdrop-blur-md flex items-center justify-center cursor-pointer"
             onClick={() => setPreviewImage(null)}
           >
             <img

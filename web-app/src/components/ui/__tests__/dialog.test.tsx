@@ -134,15 +134,13 @@ describe('Dialog Components', () => {
 
     const dialogContent = screen.getByRole('dialog')
     expect(dialogContent).toHaveClass(
-      'bg-main-view',
-      'max-h-[calc(100%-80px)]',
-      'overflow-auto',
-      'border-main-view-fg/10',
-      'text-main-view-fg',
+      'bg-background',
+      'max-h-[85vh]',
+      'overflow-y-auto',
       'fixed',
       'top-[50%]',
       'left-[50%]',
-      'z-[90]',
+      'z-50',
       'grid',
       'w-full',
       'max-w-[calc(100%-2rem)]',
@@ -200,7 +198,7 @@ describe('Dialog Components', () => {
 
   it('applies proper classes to dialog description', async () => {
     const user = userEvent.setup()
-    
+
     render(
       <Dialog>
         <DialogTrigger>Open Dialog</DialogTrigger>
@@ -212,11 +210,11 @@ describe('Dialog Components', () => {
         </DialogContent>
       </Dialog>
     )
-    
+
     await user.click(screen.getByText('Open Dialog'))
-    
+
     const dialogDescription = screen.getByText('Dialog description')
-    expect(dialogDescription).toHaveClass('text-main-view-fg/80', 'text-sm')
+    expect(dialogDescription).toHaveClass('text-muted-foreground', 'text-sm')
   })
 
   it('applies proper classes to dialog footer', async () => {
