@@ -35,6 +35,17 @@ pub struct MlxConfig {
     pub threads: i32,
     #[serde(default)]
     pub chat_template: String,
+    // Batching configuration
+    #[serde(default)]
+    pub batch_size: i32,
+    #[serde(default)]
+    pub batch_timeout_ms: i32,
+    #[serde(default)]
+    pub enable_continuous_batching: bool,
+    #[serde(default)]
+    pub kv_block_size: i32,
+    #[serde(default)]
+    pub enable_prefix_caching: bool,
 }
 
 /// Load a model using the MLX server binary
@@ -117,6 +128,30 @@ pub async fn load_mlx_model<R: Runtime>(
 
     if is_embedding {
         args.push("--embedding".to_string());
+    }
+
+    // Batching options
+    if config.batch_size > 0 {
+        args.push("--max-batch-size".to_string());
+        args.push(config.batch_size.to_string());
+    }
+
+    if config.batch_timeout_ms > 0 {
+        args.push("--batch-timeout-ms".to_string());
+        args.push(config.batch_timeout_ms.to_string());
+    }
+
+    if config.enable_continuous_batching {
+        args.push("--enable-continuous-batching".to_string());
+    }
+
+    if config.kv_block_size > 0 {
+        args.push("--kv-block-size".to_string());
+        args.push(config.kv_block_size.to_string());
+    }
+
+    if config.enable_prefix_caching {
+        args.push("--enable-prefix-caching".to_string());
     }
 
     log::info!("MLX server arguments: {:?}", args);

@@ -85,12 +85,115 @@ struct AnyCodable: Codable, @unchecked Sendable {
 
 struct ChatMessage: Codable {
     let role: String
-    var content: String?
+    var content: ContentType
     var images: [String]?
     var videos: [String]?
     var tool_calls: [ToolCallInfo]?
     var tool_call_id: String?
     var name: String?
+
+    enum ContentType: Codable {
+        case string(String)
+        case array([ContentPart])
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let string = try? container.decode(String.self) {
+                self = .string(string)
+            } else if let array = try? container.decode([ContentPart].self) {
+                self = .array(array)
+            } else {
+                throw DecodingError.dataCorrupted(
+                    DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Content must be string or array")
+                )
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            switch self {
+            case .string(let string):
+                try container.encode(string)
+            case .array(let array):
+                try container.encode(array)
+            }
+        }
+
+        /// Get text content, ignoring image parts
+        var textContent: String {
+            switch self {
+            case .string(let text):
+                return text
+            case .array(let parts):
+                return parts.compactMap { part -> String? in
+                    if case .text(let text) = part {
+                        return text
+                    }
+                    return nil
+                }.joined(separator: " ")
+            }
+        }
+
+        /// Get image URLs from content
+        var imageUrls: [String] {
+            switch self {
+            case .string:
+                return []
+            case .array(let parts):
+                return parts.compactMap { part -> String? in
+                    if case .imageUrl(let url) = part {
+                        return url
+                    }
+                    return nil
+                }
+            }
+        }
+    }
+
+    enum ContentPart: Codable {
+        case text(String)
+        case imageUrl(String)
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case text
+            case imageUrl = "image_url"
+        }
+
+        enum ImageUrlCodingKeys: String, CodingKey {
+            case url
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let type = try container.decode(String.self, forKey: .type)
+
+            switch type {
+            case "text":
+                let text = try container.decode(String.self, forKey: .text)
+                self = .text(text)
+            case "image_url":
+                let urlContainer = try container.nestedContainer(keyedBy: ImageUrlCodingKeys.self, forKey: .imageUrl)
+                let url = try urlContainer.decode(String.self, forKey: .url)
+                self = .imageUrl(url)
+            default:
+                throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Unknown part type: \(type)")
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            switch self {
+            case .text(let text):
+                try container.encode("text", forKey: .type)
+                try container.encode(text, forKey: .text)
+            case .imageUrl(let url):
+                try container.encode("image_url", forKey: .type)
+                var urlContainer = container.nestedContainer(keyedBy: ImageUrlCodingKeys.self, forKey: .imageUrl)
+                try urlContainer.encode(url, forKey: .url)
+            }
+        }
+    }
 }
 
 // MARK: - Tool Call Types (OpenAI-compatible)
@@ -163,6 +266,7 @@ struct ChatDelta: Codable {
     var role: String?
     var content: String?
     var tool_calls: [ToolCallDelta]?
+    var reasoning_content: String?
 }
 
 struct TimingsInfo: Codable {
@@ -190,6 +294,7 @@ struct ModelInfo: Codable {
 
 struct HealthResponse: Codable {
     let status: String
+    let batching: String?
 }
 
 // MARK: - Error Response

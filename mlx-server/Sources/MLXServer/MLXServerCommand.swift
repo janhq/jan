@@ -27,12 +27,40 @@ struct MLXServerCommand: AsyncParsableCommand {
     @Flag(name: .long, help: "Run in embedding mode")
     var embedding: Bool = false
 
+    // MARK: - Batching Options
+
+    @Option(name: .long, help: "Maximum batch size for concurrent requests (0 to disable)")
+    var maxBatchSize: Int = 0
+
+    @Option(name: .long, help: "Batch timeout in milliseconds")
+    var batchTimeoutMs: Int = 100
+
+    @Flag(name: .long, help: "Enable continuous batching")
+    var enableContinuousBatching: Bool = false
+
+    @Option(name: .long, help: "KV cache block size in tokens")
+    var kvBlockSize: Int = 16
+
+    @Flag(name: .long, help: "Enable prefix caching")
+    var enablePrefixCaching: Bool = false
+
     func run() async throws {
         // Print startup info
         log("[mlx] MLX-Swift Server starting...")
         log("[mlx] Model path: \(model)")
         log("[mlx] Port: \(port)")
         log("[mlx] Context size: \(ctxSize)")
+
+        // Print batching configuration if enabled
+        if maxBatchSize > 0 {
+            log("[mlx] Batching enabled:")
+            log("  - Max batch size: \(maxBatchSize)")
+            log("  - Batch timeout: \(batchTimeoutMs)ms")
+            log("  - Continuous batching: \(enableContinuousBatching)")
+            log("  - Prefix caching: \(enablePrefixCaching)")
+        } else {
+            log("[mlx] Batching disabled (sequential processing)")
+        }
 
         // Extract model ID from path
         let modelURL = URL(fileURLWithPath: model)
@@ -57,11 +85,27 @@ struct MLXServerCommand: AsyncParsableCommand {
             log("[mlx] Warning: Model warm-up failed (\(error.localizedDescription)), continuing anyway...")
         }
 
+        // Create batching configuration
+        let batchingConfig: BatchingConfig?
+        if maxBatchSize > 0 {
+            batchingConfig = BatchingConfig(
+                maxBatchSize: maxBatchSize,
+                batchTimeoutMs: batchTimeoutMs,
+                maxModelTokens: ctxSize,
+                enableContinuousBatching: enableContinuousBatching,
+                kvBlockSize: kvBlockSize,
+                enablePrefixCatching: enablePrefixCaching
+            )
+        } else {
+            batchingConfig = nil
+        }
+
         // Set up the HTTP server
         let server = MLXHTTPServer(
             modelRunner: modelRunner,
             modelId: modelId,
-            apiKey: apiKey
+            apiKey: apiKey,
+            batchingConfig: batchingConfig
         )
 
         let router = server.buildRouter()

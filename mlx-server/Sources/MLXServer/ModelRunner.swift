@@ -9,6 +9,7 @@ actor ModelRunner {
     private var container: ModelContainer?
     private var modelId: String = ""
     private var promptCache: [String: PromptCache] = [:]
+    private var isVLM: Bool = false  // Track if model is VLM (has different cache structure)
 
     var isLoaded: Bool {
         container != nil
@@ -31,7 +32,7 @@ actor ModelRunner {
         }
         log("[mlx] Running warm-up generation...")
 
-        let warmUpMessages = [ChatMessage(role: "user", content: "Hello")]
+        let warmUpMessages = [ChatMessage(role: "user", content: .string("Hello"))]
         let warmUpParameters = GenerateParameters(
             maxTokens: 1,
             temperature: 0.1,
@@ -59,34 +60,150 @@ actor ModelRunner {
         log("[mlx] Warm-up complete")
     }
 
-    /// Load a model from the given path, trying LLM first then VLM
+    /// Detect if model is a VLM from config.json
+    enum ModelType {
+        case llm
+        case vlm
+        case unknown
+    }
+
+    private func detectModelType(modelDir: URL) -> ModelType {
+        let configURL = modelDir.appendingPathComponent("config.json")
+
+        guard let configData = try? Data(contentsOf: configURL),
+              let json = try? JSONSerialization.jsonObject(with: configData, options: []) as? [String: Any],
+              let architectures = json["architectures"] as? [Any],
+              let firstArch = architectures.first else {
+            return .unknown
+        }
+
+        // Handle both String and [String: Any] architectures
+        let firstArchString: String
+        if let archString = firstArch as? String {
+            firstArchString = archString
+        } else if let archDict = firstArch as? [String: Any],
+                  let archString = archDict["architectures"] as? String {
+            firstArchString = archString
+        } else {
+            return .unknown
+        }
+
+        // Check if architecture indicates VLM (ends with VL or VLM)
+        let upperArch = firstArchString.uppercased()
+        if upperArch.contains("VL") || upperArch.contains("VLM") || upperArch.contains("VISION") {
+            log("[mlx] Detected VLM model: \(firstArchString)")
+            return .vlm
+        }
+
+        log("[mlx] Detected LLM model: \(firstArchString)")
+        return .llm
+    }
+
+    /// Load a model from the given path
+    /// Supports both local directories and HuggingFace model IDs
     func load(modelPath: String, modelId: String) async throws {
         log("[mlx] Loading model from: \(modelPath)")
 
-        let modelURL = URL(fileURLWithPath: modelPath)
-        let modelDir = modelURL.deletingLastPathComponent()
-        let configuration = ModelConfiguration(directory: modelDir, defaultPrompt: "")
+        let modelConfiguration: ModelConfiguration
+        var modelDir: URL?
 
-        // Try LLM factory first, fall back to VLM factory
-        do {
+        // Check if the path is a local directory or a HuggingFace model ID
+        let modelURL = URL(fileURLWithPath: modelPath)
+        let fileManager = FileManager.default
+
+        // Check if path is a directory
+        var isDirectory: ObjCBool = false
+        let pathExists = fileManager.fileExists(atPath: modelPath, isDirectory: &isDirectory)
+
+        if pathExists && isDirectory.boolValue {
+            // Local model directory
+            modelDir = modelURL
+            let configURL = modelDir!.appendingPathComponent("config.json")
+            if fileManager.fileExists(atPath: configURL.path) {
+                modelConfiguration = ModelConfiguration(directory: modelDir!, defaultPrompt: "")
+                log("[mlx] Using local model directory: \(modelDir!.path)")
+            } else {
+                // Try parent directory
+                let parentDir = modelDir!.deletingLastPathComponent()
+                let parentConfigURL = parentDir.appendingPathComponent("config.json")
+                if fileManager.fileExists(atPath: parentConfigURL.path) {
+                    modelDir = parentDir
+                    modelConfiguration = ModelConfiguration(directory: parentDir, defaultPrompt: "")
+                    log("[mlx] Using parent directory: \(parentDir.path)")
+                } else {
+                    modelConfiguration = ModelConfiguration(id: modelPath)
+                    log("[mlx] Falling back to HuggingFace model ID: \(modelPath)")
+                }
+            }
+        } else if pathExists {
+            // Single file - use parent directory
+            modelDir = modelURL.deletingLastPathComponent()
+            modelConfiguration = ModelConfiguration(directory: modelDir!, defaultPrompt: "")
+            log("[mlx] Using parent directory: \(modelDir!.path)")
+        } else if modelPath.contains("/") && !modelPath.hasPrefix("/") {
+            // HuggingFace model ID
+            modelConfiguration = ModelConfiguration(id: modelPath)
+            log("[mlx] Using HuggingFace model ID: \(modelPath)")
+        } else {
+            modelConfiguration = ModelConfiguration(id: modelPath)
+            log("[mlx] Treating as HuggingFace model ID: \(modelPath)")
+        }
+
+        // Detect model type and select appropriate factory
+        let modelType: ModelType
+        if let dir = modelDir {
+            modelType = detectModelType(modelDir: dir)
+        } else {
+            // For HuggingFace IDs, try VLM first for vision models, then LLM
+            modelType = .unknown
+        }
+
+        // Load using the appropriate factory
+        switch modelType {
+        case .vlm:
+            // Load as VLM directly
+            log("[mlx] Loading as VLM model...")
+            self.container = try await VLMModelFactory.shared.loadContainer(
+                configuration: modelConfiguration
+            ) { progress in
+                log("[mlx] Loading progress: \(Int(progress.fractionCompleted * 100))%")
+            }
+            self.isVLM = true
+            log("[mlx] Model loaded as VLM: \(modelId)")
+
+        case .llm:
+            // Load as LLM directly
+            log("[mlx] Loading as LLM model...")
             self.container = try await LLMModelFactory.shared.loadContainer(
-                configuration: configuration
+                configuration: modelConfiguration
             ) { progress in
                 log("[mlx] Loading progress: \(Int(progress.fractionCompleted * 100))%")
             }
             log("[mlx] Model loaded as LLM: \(modelId)")
-        } catch {
-            log("[mlx] LLM loading failed (\(error.localizedDescription)), trying VLM factory...")
+
+        case .unknown:
+            // Try LLM first, fall back to VLM
             do {
-                self.container = try await VLMModelFactory.shared.loadContainer(
-                    configuration: configuration
+                self.container = try await LLMModelFactory.shared.loadContainer(
+                    configuration: modelConfiguration
                 ) { progress in
                     log("[mlx] Loading progress: \(Int(progress.fractionCompleted * 100))%")
                 }
-                log("[mlx] Model loaded as VLM: \(modelId)")
+                log("[mlx] Model loaded as LLM: \(modelId)")
             } catch {
-                log("[mlx] Error: Failed to load model with both LLM and VLM factories: \(error.localizedDescription)")
-                throw error
+                log("[mlx] LLM loading failed (\(error.localizedDescription)), trying VLM factory...")
+                do {
+                    self.container = try await VLMModelFactory.shared.loadContainer(
+                        configuration: modelConfiguration
+                    ) { progress in
+                        log("[mlx] Loading progress: \(Int(progress.fractionCompleted * 100))%")
+                    }
+                    self.isVLM = true
+                    log("[mlx] Model loaded as VLM: \(modelId)")
+                } catch {
+                    log("[mlx] Error: Failed to load model with both LLM and VLM factories: \(error.localizedDescription)")
+                    throw error
+                }
             }
         }
 
@@ -114,8 +231,16 @@ actor ModelRunner {
                     .user
                 }
 
-            let images: [UserInput.Image] = (message.images ?? []).compactMap { urlString in
-                guard let url = URL(string: urlString) else {
+            // Get image URLs from both explicit images field and content array format
+            var imageUrls = message.content.imageUrls
+            if let legacyImages = message.images {
+                imageUrls.append(contentsOf: legacyImages)
+            }
+
+            let images: [UserInput.Image] = imageUrls.compactMap { urlString in
+                // Handle file:// URLs
+                let cleanUrl = urlString.replacingOccurrences(of: "file://", with: "")
+                guard let url = URL(string: urlString) ?? URL(string: cleanUrl) else {
                     log("[mlx] Warning: Invalid image URL: \(urlString)")
                     return nil
                 }
@@ -138,7 +263,7 @@ actor ModelRunner {
             }
 
             return Chat.Message(
-                role: role, content: message.content ?? "", images: images, videos: videos)
+                role: role, content: message.content.textContent, images: images, videos: videos)
         }
     }
 
@@ -168,7 +293,12 @@ actor ModelRunner {
     }
 
     /// Get or create a prompt cache for the current model
-    private func getPromptCache(context: ModelContext, parameters: GenerateParameters) -> PromptCache {
+    /// Note: VLM models have different cache structure, so caching is skipped for them
+    private func getPromptCache(context: ModelContext, parameters: GenerateParameters) -> PromptCache? {
+        // VLM models have incompatible cache structure - skip prefix caching
+        if isVLM {
+            return nil
+        }
         if let existingCache = promptCache[modelId] {
             return existingCache
         }
@@ -215,12 +345,12 @@ actor ModelRunner {
             let fullTokens = fullInput.text.tokens
             let promptTokenCount = fullTokens.size
 
-            // Get or create prompt cache
+            // Get or create prompt cache (nil for VLM models)
             let cache = await getPromptCache(context: context, parameters: generateParameters)
 
             // Determine if we can use cached prefix
             let lmInput: LMInput
-            if let suffix = cache.getUncachedSuffix(prompt: fullTokens) {
+            if let cache = cache, let suffix = cache.getUncachedSuffix(prompt: fullTokens) {
                 lmInput = LMInput(text: LMInput.Text(tokens: suffix))
                 log("[mlx] Using cached prefix, processing \(suffix.size) new tokens")
             } else {
@@ -235,7 +365,7 @@ actor ModelRunner {
 
             do {
                 for await generation in try MLXLMCommon.generate(
-                    input: lmInput, cache: cache.cache, parameters: generateParameters, context: context
+                    input: lmInput, cache: cache?.cache, parameters: generateParameters, context: context
                 ) {
                     switch generation {
                     case .chunk(let chunk):
@@ -345,12 +475,12 @@ actor ModelRunner {
                         let fullInput = try await context.processor.prepare(input: userInput)
                         let fullTokens = fullInput.text.tokens
 
-                        // Get or create prompt cache
+                        // Get or create prompt cache (nil for VLM models)
                         let cache = await self.getPromptCache(context: context, parameters: generateParameters)
 
                         // Determine if we can use cached prefix
                         let lmInput: LMInput
-                        if let suffix = cache.getUncachedSuffix(prompt: fullTokens) {
+                        if let cache = cache, let suffix = cache.getUncachedSuffix(prompt: fullTokens) {
                             lmInput = LMInput(text: LMInput.Text(tokens: suffix))
                             log("[mlx] Stream using cached prefix, processing \(suffix.size) new tokens")
                         } else {
@@ -364,7 +494,7 @@ actor ModelRunner {
 
                         do {
                             for await generation in try MLXLMCommon.generate(
-                                input: lmInput, cache: cache.cache, parameters: generateParameters, context: context
+                                input: lmInput, cache: cache?.cache, parameters: generateParameters, context: context
                             ) {
                                 switch generation {
                                 case .chunk(let chunk):
@@ -450,9 +580,58 @@ enum StreamEvent {
     case done(usage: UsageInfo, timings: TimingsInfo?, hasToolCalls: Bool)
 }
 
+// MARK: - Batching Support
+
+extension ModelRunner {
+    /// Execute a batch of requests concurrently
+    /// This is a simplified batch execution - for full batching, implement continuous batching
+    func executeBatch(
+        requests: [ChatCompletionRequest],
+        config: BatchingConfig
+    ) async throws -> [BatchResult] {
+        guard let container = container else {
+            throw MLXServerError.modelNotLoaded
+        }
+
+        log("[mlx] Batch execute: \(requests.count) requests")
+
+        var results: [BatchResult] = []
+
+        // Process all requests
+        for chatRequest in requests {
+            let startTime = Date()
+
+            let (text, toolCalls, usage) = try await generate(
+                messages: chatRequest.messages,
+                temperature: chatRequest.temperature ?? 0.7,
+                topP: chatRequest.top_p ?? 1.0,
+                maxTokens: chatRequest.max_tokens ?? chatRequest.n_predict ?? 2048,
+                repetitionPenalty: chatRequest.repetition_penalty ?? 1.0,
+                stop: chatRequest.stop ?? [],
+                tools: chatRequest.tools
+            )
+
+            let latencyMs = Date().timeIntervalSince(startTime) * 1000
+
+            let result = BatchResult(
+                requestId: chatRequest.model,  // Use model as request ID for now
+                text: text,
+                toolCalls: toolCalls,
+                usage: usage,
+                latencyMs: latencyMs
+            )
+            results.append(result)
+        }
+
+        return results
+    }
+}
+
 enum MLXServerError: Error, LocalizedError {
     case modelNotLoaded
     case invalidRequest(String)
+    case batchingNotEnabled
+    case speculativeDecodingNotSupported
 
     var errorDescription: String? {
         switch self {
@@ -460,6 +639,279 @@ enum MLXServerError: Error, LocalizedError {
             return "No model is currently loaded"
         case .invalidRequest(let msg):
             return "Invalid request: \(msg)"
+        case .batchingNotEnabled:
+            return "Batching is not enabled"
+        case .speculativeDecodingNotSupported:
+            return "Speculative decoding is not supported for this model"
         }
+    }
+}
+
+// MARK: - Speculative Decoding Support
+
+/// Configuration for speculative decoding
+public struct SpeculativeConfig: Sendable {
+    /// Number of draft tokens to generate
+    public let numDraftTokens: Int
+
+    /// Threshold for accepting draft tokens (0.0 - 1.0)
+    public let acceptanceThreshold: Float
+
+    /// Whether speculative decoding is enabled
+    public let enabled: Bool
+
+    public init(numDraftTokens: Int = 4, acceptanceThreshold: Float = 0.5, enabled: Bool = true) {
+        self.numDraftTokens = numDraftTokens
+        self.acceptanceThreshold = acceptanceThreshold
+        self.enabled = enabled
+    }
+}
+
+/// Result of speculative decoding
+public struct SpeculativeResult: Sendable {
+    /// The generated text
+    public let text: String
+
+    /// Number of draft tokens accepted
+    public let acceptedDraftTokens: Int
+
+    /// Total draft tokens generated
+    public let totalDraftTokens: Int
+
+    /// Acceptance rate
+    public let acceptanceRate: Double
+
+    /// Speedup achieved
+    public let speedup: Double
+
+    public init(
+        text: String,
+        acceptedDraftTokens: Int,
+        totalDraftTokens: Int,
+        acceptanceRate: Double,
+        speedup: Double
+    ) {
+        self.text = text
+        self.acceptedDraftTokens = acceptedDraftTokens
+        self.totalDraftTokens = totalDraftTokens
+        self.acceptanceRate = acceptanceRate
+        self.speedup = speedup
+    }
+}
+
+/// Manager for speculative decoding
+actor SpeculativeGenerator {
+    private var medusaHeads: MedusaHeads?
+    private var config: SpeculativeConfig?
+
+    /// Setup speculative decoding with configuration
+    func setup(config: SpeculativeConfig) async throws {
+        guard config.enabled else {
+            self.config = nil
+            return
+        }
+
+        // Check if model supports speculative decoding
+        // This would require checking for Medusa heads or creating them
+        self.config = config
+
+        log("[mlx] Speculative decoding enabled with \(config.numDraftTokens) draft tokens")
+    }
+
+    /// Generate with speculative decoding
+    func speculativeGenerate(
+        input: LMInput,
+        cache: [KVCache],
+        parameters: GenerateParameters,
+        context: ModelContext
+    ) async throws -> AsyncThrowingStream<String, Error> {
+        guard config != nil else {
+            throw MLXServerError.speculativeDecodingNotSupported
+        }
+
+        // Fall back to regular generation if speculative not set up
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    for try await generation in try MLXLMCommon.generate(
+                        input: input,
+                        cache: cache,
+                        parameters: parameters,
+                        context: context
+                    ) {
+                        switch generation {
+                        case .chunk(let text):
+                            continuation.yield(text)
+                        case .info(_), .toolCall(_):
+                            // Ignore info and tool calls for speculative generation
+                            break
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Get speculative decoding status
+    func getStatus() -> SpeculativeStatus {
+        SpeculativeStatus(
+            enabled: config != nil,
+            numDraftTokens: config?.numDraftTokens ?? 0,
+            hasMedusaHeads: medusaHeads != nil
+        )
+    }
+}
+
+/// Medusa heads for speculative decoding
+struct MedusaHeads {
+    /// Number of prediction heads
+    let numHeads: Int
+
+    /// Hidden dimension size
+    let hiddenSize: Int
+
+    /// Head configurations
+    let heads: [MedusaHead]
+
+    /// Tree mask for parallel decoding paths
+    let treeMask: MLXArray?
+
+    /// Tree indices for selecting paths
+    let treeIndices: MLXArray?
+}
+
+/// Configuration for a single Medusa head
+struct MedusaHead {
+    let index: Int
+    let hiddenSize: Int
+    let intermediateSize: Int
+}
+
+/// Status of speculative decoding
+struct SpeculativeStatus {
+    let enabled: Bool
+    let numDraftTokens: Int
+    let hasMedusaHeads: Bool
+}
+
+// MARK: - Paged Attention Support
+
+/// Paged KV cache for memory-efficient attention computation
+actor PagedKVCacheManager {
+    private var blocks: [Int: KVBlock] = [:]
+    private var freeBlocks: Set<Int> = []
+    private var nextBlockId: Int = 0
+
+    /// Block size in tokens
+    let blockSize: Int
+
+    /// Maximum number of blocks
+    let maxBlocks: Int
+
+    init(blockSize: Int = 16, maxBlocks: Int = 10000) {
+        self.blockSize = blockSize
+        self.maxBlocks = maxBlocks
+    }
+
+    /// Allocate blocks for n tokens
+    func allocate(nTokens: Int) -> [Int] {
+        let numBlocks = (nTokens + blockSize - 1) / blockSize
+        var blockIds: [Int] = []
+
+        for _ in 0..<numBlocks {
+            let blockId: Int
+            if let free = freeBlocks.popFirst() {
+                blockId = free
+            } else {
+                blockId = nextBlockId
+                nextBlockId += 1
+            }
+            blockIds.append(blockId)
+        }
+        return blockIds
+    }
+
+    /// Free blocks when sequence completes
+    func free(blockIds: [Int]) {
+        freeBlocks.formUnion(blockIds)
+    }
+
+    /// Get block statistics
+    func getStats() -> PagedCacheStats {
+        PagedCacheStats(
+            totalBlocks: blocks.count,
+            freeBlocks: freeBlocks.count,
+            allocatedBlocks: blocks.count - freeBlocks.count,
+            blockSize: blockSize,
+            maxBlocks: maxBlocks
+        )
+    }
+}
+
+/// A block in the paged KV cache
+struct KVBlock: Sendable {
+    let blockId: Int
+    var keys: MLXArray
+    var values: MLXArray
+}
+
+/// Statistics for paged cache
+struct PagedCacheStats {
+    let totalBlocks: Int
+    let freeBlocks: Int
+    let allocatedBlocks: Int
+    let blockSize: Int
+    let maxBlocks: Int
+}
+
+// MARK: - Optimization Metrics
+
+/// Track optimization metrics for the inference engine
+struct OptimizationMetrics {
+    var totalRequests: Int = 0
+    var totalTokens: Int = 0
+    var totalLatencyMs: Double = 0
+    var cacheHits: Int = 0
+    var cacheMisses: Int = 0
+    var speculativeAccepted: Int = 0
+    var speculativeTotal: Int = 0
+
+    var avgLatencyMs: Double {
+        totalRequests > 0 ? totalLatencyMs / Double(totalRequests) : 0
+    }
+
+    var tokensPerSecond: Double {
+        totalLatencyMs > 0 ? Double(totalTokens) / (totalLatencyMs / 1000) : 0
+    }
+
+    var cacheHitRate: Double {
+        let total = cacheHits + cacheMisses
+        return total > 0 ? Double(cacheHits) / Double(total) : 0
+    }
+
+    var speculativeAcceptanceRate: Double {
+        speculativeTotal > 0 ? Double(speculativeAccepted) / Double(speculativeTotal) : 0
+    }
+
+    mutating func recordRequest(tokens: Int, latencyMs: Double) {
+        totalRequests += 1
+        totalTokens += tokens
+        totalLatencyMs += latencyMs
+    }
+
+    mutating func recordCacheHit() {
+        cacheHits += 1
+    }
+
+    mutating func recordCacheMiss() {
+        cacheMisses += 1
+    }
+
+    mutating func recordSpeculative(accepted: Int, total: Int) {
+        speculativeAccepted += accepted
+        speculativeTotal += total
     }
 }

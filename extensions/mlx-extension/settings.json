@@ -12,6 +12,44 @@
     }
   },
   {
+    "key": "batch_size",
+    "title": "Batch Size",
+    "description": "Maximum number of concurrent requests to batch (0 = disabled)",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 4,
+      "placeholder": "4",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "batch_timeout_ms",
+    "title": "Batch Timeout (ms)",
+    "description": "Maximum time to wait for batch to fill (milliseconds)",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 100,
+      "placeholder": "100",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "enable_continuous_batching",
+    "title": "Continuous Batching",
+    "description": "Enable continuous batching for higher throughput",
+    "controllerType": "checkbox",
+    "controllerProps": { "value": false }
+  },
+  {
+    "key": "enable_prefix_caching",
+    "title": "Prefix Caching",
+    "description": "Enable KV cache reuse for repeated prefixes",
+    "controllerType": "checkbox",
+    "controllerProps": { "value": true }
+  },
+  {
     "key": "auto_unload",
     "title": "Auto unload model",
     "description": "Automatically unload other models when loading a new one",
