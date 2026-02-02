@@ -261,6 +261,53 @@ pub fn decompress<R: Runtime>(
     Ok(())
 }
 
+// rfd native file dialog
+#[tauri::command]
+pub async fn open_dialog(
+    options: Option<DialogOpenOptions>,
+) -> Result<Option<serde_json::Value>, String> {
+    let mut dialog = AsyncFileDialog::new();
+
+    if let Some(opts) = options {
+        // Set default path
+        if let Some(path) = opts.default_path {
+            dialog = dialog.set_directory(&path);
+        }
+
+        // Set filters
+        if let Some(filters) = opts.filters {
+            for filter in filters {
+                let extensions: Vec<&str> = filter.extensions.iter().map(|s| s.as_str()).collect();
+                dialog = dialog.add_filter(&filter.name, &extensions);
+            }
+        }
+
+        // Handle directory vs file selection
+        if opts.directory == Some(true) {
+            let result = dialog.pick_folder().await;
+            return Ok(result.map(|folder| {
+                serde_json::Value::String(folder.path().to_string_lossy().to_string())
+            }));
+        }
+
+        // Handle multiple file selection
+        if opts.multiple == Some(true) {
+            let result = dialog.pick_files().await;
+            return Ok(result.map(|files| {
+                let paths: Vec<String> = files
+                    .iter()
+                    .map(|f| f.path().to_string_lossy().to_string())
+                    .collect();
+                serde_json::to_value(paths).unwrap()
+            }));
+        }
+    }
+
+    // Default: single file selection
+    let result = dialog.pick_file().await;
+    Ok(result.map(|file| serde_json::Value::String(file.path().to_string_lossy().to_string())))
+}
+
 #[tauri::command]
 pub async fn save_dialog(options: Option<DialogOpenOptions>) -> Result<Option<String>, String> {
     let mut dialog = AsyncFileDialog::new();

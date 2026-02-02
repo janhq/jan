@@ -3,7 +3,6 @@
  */
 
 import { invoke } from '@tauri-apps/api/core'
-import { open } from '@tauri-apps/plugin-dialog'
 import type { DialogOpenOptions } from './types'
 import { DefaultDialogService } from './default'
 
@@ -20,8 +19,8 @@ export class TauriDialogService extends DefaultDialogService {
           )
         })
       }
-      const result = await open({
-        ...options,
+      const result = await invoke<string | string[] | null>('open_dialog', {
+        options,
       })
       console.log('TauriDialogService: Dialog result:', result)
       return result
