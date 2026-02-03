@@ -3,7 +3,7 @@ import { useThreads } from '@/hooks/useThreads'
 import { useMessages } from '@/hooks/useMessages'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 import {
   DropdownMenu,
@@ -27,6 +27,7 @@ import { Link } from '@tanstack/react-router'
 import { RenameThreadDialog, DeleteThreadDialog } from '@/containers/dialogs'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { ThreadMessage } from '@janhq/core'
 
 const ThreadItem = memo(
   ({
@@ -50,22 +51,43 @@ const ThreadItem = memo(
     const serviceHub = useServiceHub()
     const getMessages = useMessages((state) => state.getMessages)
     const setMessages = useMessages((state) => state.setMessages)
-    const messages = getMessages(thread.id)
+
+    // Use a ref to track if messages have been loaded
+    const messagesLoadedRef = useRef(false)
+    // Track current messages for comparison
+    const messagesLengthRef = useRef(0)
+
+    // Get messages reactively via ref tracking (to avoid infinite re-renders)
+    const [messages, setLocalMessages] = useState<ThreadMessage[]>(() =>
+      getMessages(thread.id)
+    )
 
     // Fetch messages if not loaded yet
     useEffect(() => {
-      if (messages.length === 0) {
+      const currentMessages = getMessages(thread.id)
+      if (currentMessages.length > 0) {
+        setLocalMessages(currentMessages)
+        messagesLengthRef.current = currentMessages.length
+        return
+      }
+
+      if (!messagesLoadedRef.current) {
+        messagesLoadedRef.current = true
         serviceHub
           .messages()
           .fetchMessages(thread.id)
           .then((fetchedMessages) => {
             if (fetchedMessages) {
               setMessages(thread.id, fetchedMessages)
+              setLocalMessages(fetchedMessages)
+              messagesLengthRef.current = fetchedMessages.length
             }
           })
-          .catch(console.error)
+          .catch(() => {
+            messagesLoadedRef.current = false
+          })
       }
-    }, [thread.id, serviceHub, messages.length, setMessages])
+    }, [thread.id, serviceHub, getMessages, setMessages])
 
     const lastUserMessageText = useMemo(() => {
       const userMessages = messages.filter((m) => m.role === 'user')
