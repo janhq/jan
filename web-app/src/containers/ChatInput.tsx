@@ -14,6 +14,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
@@ -27,6 +30,7 @@ import {
   IconLoader2,
   IconWorld,
   IconBrandChrome,
+  IconUser,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -47,6 +51,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
+import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
@@ -116,6 +121,7 @@ const ChatInput = ({
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
+  const currentThread = useThreads((state) => state.getCurrentThread())
   const updateCurrentThreadModel = useThreads(
     (state) => state.updateCurrentThreadModel
   )
@@ -1525,6 +1531,54 @@ const ChatInput = ({
                           : 'Add documents or files'}
                       </span>
                     </DropdownMenuItem>
+                    {/* Use Assistant - only show when no projectId */}
+                    {!projectId && (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <IconUser size={18} className="text-muted-foreground" />
+                          <span>Use Assistant</span>
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          {assistants.length > 0 ? (
+                            assistants.map((assistant) => {
+                              const isSelected = currentThread?.assistants?.some(
+                                (a) => a.id === assistant.id
+                              )
+                              return (
+                                <DropdownMenuItem
+                                  key={assistant.id}
+                                  className={isSelected ? 'bg-accent' : ''}
+                                  onClick={() => {
+                                    // Handle assistant selection - you may need to implement this
+                                    console.log('Selected assistant:', assistant.id)
+                                  }}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <AvatarEmoji
+                                      avatar={assistant.avatar}
+                                      imageClassName="w-4 h-4 object-contain"
+                                      textClassName="text-sm"
+                                    />
+                                    <span>{assistant.name || 'Unnamed Assistant'}</span>
+                                    {isSelected && (
+                                      <span className="text-xs text-muted-foreground ml-auto">
+                                        (Active)
+                                      </span>
+                                    )}
+                                  </div>
+                                </DropdownMenuItem>
+                              )
+                            })
+                          ) : (
+                            <DropdownMenuItem disabled>
+                              <span className="text-muted-foreground">
+                                No assistants available
+                              </span>
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
                 {/* {model?.provider === 'llamacpp' && loadingModel ? (
