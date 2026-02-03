@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type { Chat, UIMessage } from "@ai-sdk/react";
 import type { ChatStatus } from "ai";
 import { CustomChatTransport } from "@/lib/custom-chat-transport";
+import { AgentChatTransport } from "@/lib/agents/agent-transport";
 // import { showChatCompletionToast } from "@/components/toasts/chat-completion-toast";
 
 export type SessionData = {
@@ -13,7 +14,7 @@ export type SessionData = {
 
 export type ChatSession = {
   chat: Chat<UIMessage>;
-  transport: CustomChatTransport;
+  transport: CustomChatTransport | AgentChatTransport;
   status: ChatStatus;
   title?: string;
   isStreaming: boolean;
@@ -27,7 +28,7 @@ interface ChatSessionState {
   setActiveConversationId: (conversationId?: string) => void;
   ensureSession: (
     sessionId: string,
-    transport: CustomChatTransport,
+    transport: CustomChatTransport | AgentChatTransport,
     createChat: () => Chat<UIMessage>,
     title?: string,
   ) => Chat<UIMessage>;

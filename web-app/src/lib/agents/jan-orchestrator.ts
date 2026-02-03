@@ -1,0 +1,643 @@
+/**
+ * Jan Orchestrator
+ *
+ * Implements the ToolLoopAgent from AI SDK 6 for orchestrating
+ * AI-driven tasks with OpenCode delegation support.
+ *
+ * The orchestrator:
+ * 1. Receives user messages
+ * 2. Uses AI to determine if coding tasks are needed
+ * 3. Delegates to OpenCode subprocess when appropriate
+ * 4. Handles tool approvals and permission requests
+ * 5. Returns results back to the chat
+ */
+
+import {
+  type LanguageModel,
+  type Tool,
+  streamText,
+  jsonSchema,
+} from 'ai'
+import type {
+  OrchestratorConfig,
+  UnifiedAgentEvent,
+  OpenCodeAgentType,
+  OpenCodeDelegateResult,
+} from './types'
+import { getOpenCodeService } from '@/services/opencode'
+import { useOrchestratorState } from '@/hooks/useOrchestratorState'
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const DEFAULT_MAX_STEPS = 20
+
+const ORCHESTRATOR_SYSTEM_PROMPT = `You are Jan, an AI assistant that helps users with coding and general tasks.
+
+When you detect that a task involves coding work (writing, modifying, debugging, or running code), you MUST use the opencode_delegate tool to delegate the work to the specialized coding agent.
+
+For general questions, explanations, or non-coding tasks, respond directly without using tools.
+
+## When to use opencode_delegate:
+- Writing new code or files
+- Modifying existing code
+- Running shell commands (npm, git, cargo, make, etc.)
+- Debugging or fixing bugs
+- Creating new components, modules, or features
+- File system operations on source code
+- Multi-step development workflows
+
+## When NOT to use opencode_delegate:
+- Answering questions about code concepts
+- Explaining how something works
+- General conversation
+- Information lookup or research
+
+Always be helpful and concise in your responses.`
+
+// ============================================================================
+// OpenCode Delegate Tool
+// ============================================================================
+
+interface OpenCodeToolContext {
+  config: OrchestratorConfig
+  apiKey?: string
+  onEvent: (event: UnifiedAgentEvent) => void
+  onPermissionRequest?: (request: {
+    id: string
+    name: string
+    input?: Record<string, unknown>
+    description?: string
+  }) => Promise<{
+    approved: boolean
+    action?: 'allow_once' | 'allow_always' | 'deny'
+    message?: string
+  }>
+}
+
+/**
+ * Create the opencode_delegate tool for the orchestrator
+ */
+function createOpenCodeDelegateTool(context: OpenCodeToolContext): Tool {
+  return {
+    description: `Delegate complex coding tasks to the OpenCode agent.
+
+USE THIS TOOL WHEN THE TASK INVOLVES:
+- Writing, modifying, or refactoring code
+- Creating or editing files in a codebase
+- Running shell commands (npm, git, cargo, make, build tools, etc.)
+- Debugging or fixing bugs in code
+- Code review and analysis requiring file changes
+- File system operations on source code
+- Multi-step development workflows
+- Creating new components, modules, or features
+
+DO NOT USE THIS TOOL FOR:
+- Simple questions about code (answer directly)
+- Explaining code concepts (answer directly)
+- Web searches or research (use other tools)
+- Document/knowledge base queries (use RAG tools)
+- General conversation
+
+The OpenCode agent will autonomously execute the task with full access to:
+- Read/write files
+- Run shell commands
+- Search codebase
+- Make code changes
+
+You will receive a summary of changes made when the task completes.`,
+    inputSchema: jsonSchema({
+      type: 'object',
+      properties: {
+        task: {
+          type: 'string',
+          description: 'The coding task to perform, described in detail',
+        },
+        agent: {
+          type: 'string',
+          enum: ['build', 'plan', 'explore'],
+          description:
+            'Agent type: build (default - can modify files), plan (read-only analysis), explore (search and navigation)',
+        },
+      },
+      required: ['task'],
+    }),
+    execute: async ({ task, agent }: { task: string; agent?: string }) => {
+      return executeOpenCodeDelegation(
+        task,
+        (agent as OpenCodeAgentType) || context.config.agent || 'build',
+        context
+      )
+    },
+  }
+}
+
+/**
+ * Execute delegation to OpenCode subprocess
+ */
+async function executeOpenCodeDelegation(
+  task: string,
+  agent: OpenCodeAgentType,
+  context: OpenCodeToolContext
+): Promise<OpenCodeDelegateResult> {
+  const { config, apiKey, onEvent, onPermissionRequest } = context
+  const service = getOpenCodeService()
+
+  // Generate task ID
+  const taskId = crypto.randomUUID()
+
+  // Emit delegation started event
+  const startEvent: UnifiedAgentEvent = {
+    id: `delegation-start-${taskId}`,
+    source: 'opencode',
+    timestamp: Date.now(),
+    type: 'delegation.started',
+    data: {
+      taskId,
+      task,
+      agent,
+      projectPath: config.projectPath,
+    },
+  }
+  onEvent(startEvent)
+
+  // Update orchestrator state
+  const { setStatus, setActiveDelegation } = useOrchestratorState.getState()
+  setStatus('delegating')
+  setActiveDelegation({
+    taskId,
+    task,
+    agent,
+    projectPath: config.projectPath,
+    startedAt: Date.now(),
+  })
+
+  // Collect events and track state
+  const collectedEvents: UnifiedAgentEvent[] = []
+  const filesChanged: string[] = []
+  let summary: string | undefined
+  let tokensUsed: number | undefined
+
+  return new Promise((resolve) => {
+    // Set up event listener BEFORE starting task
+    const unsubscribe = service.onEvent(taskId, async (message) => {
+      const timestamp = Date.now()
+
+      switch (message.type) {
+        case 'event': {
+          const eventData = message.payload.event
+
+          // Map OpenCode events to unified events
+          const unifiedEvent = mapOpenCodeEventToUnified(
+            eventData,
+            taskId,
+            timestamp
+          )
+          if (unifiedEvent) {
+            collectedEvents.push(unifiedEvent)
+            onEvent(unifiedEvent)
+
+            // Track file changes
+            if (eventData.type === 'file.changed') {
+              const path = (eventData as { path: string }).path
+              if (path && !filesChanged.includes(path)) {
+                filesChanged.push(path)
+              }
+            }
+          }
+          break
+        }
+
+        case 'permission_request': {
+          // Handle permission request
+          const permRequest = message.payload
+
+          // Emit approval requested event
+          const approvalEvent: UnifiedAgentEvent = {
+            id: `approval-${permRequest.permissionId}`,
+            source: 'opencode',
+            timestamp,
+            type: 'tool.approval_requested',
+            data: {
+              toolCallId: permRequest.permissionId,
+              tool: permRequest.permission,
+              input: permRequest.metadata || {},
+              description: permRequest.description,
+            },
+          }
+          onEvent(approvalEvent)
+
+          // Check if auto-approve is enabled for read-only
+          if (
+            config.autoApproveReadOnly &&
+            isReadOnlyOperation(permRequest.permission)
+          ) {
+            await service.respondToPermission(
+              taskId,
+              permRequest.permissionId,
+              'allow_once'
+            )
+            onEvent({
+              id: `approval-response-${permRequest.permissionId}`,
+              source: 'opencode',
+              timestamp: Date.now(),
+              type: 'tool.approval_responded',
+              data: {
+                toolCallId: permRequest.permissionId,
+                tool: permRequest.permission,
+                approved: true,
+                message: 'Auto-approved (read-only)',
+              },
+            })
+          } else if (onPermissionRequest) {
+            // Request user approval
+            setStatus('waiting_approval')
+            const response = await onPermissionRequest({
+              id: permRequest.permissionId,
+              name: permRequest.permission,
+              input: permRequest.metadata,
+              description: permRequest.description,
+            })
+
+            await service.respondToPermission(
+              taskId,
+              permRequest.permissionId,
+              response.action || (response.approved ? 'allow_once' : 'deny'),
+              response.message
+            )
+
+            onEvent({
+              id: `approval-response-${permRequest.permissionId}`,
+              source: 'opencode',
+              timestamp: Date.now(),
+              type: 'tool.approval_responded',
+              data: {
+                toolCallId: permRequest.permissionId,
+                tool: permRequest.permission,
+                approved: response.approved,
+                message: response.message,
+              },
+            })
+            setStatus('delegating')
+          } else {
+            // No permission handler - deny by default
+            await service.respondToPermission(taskId, permRequest.permissionId, 'deny')
+          }
+          break
+        }
+
+        case 'result': {
+          // Task completed
+          const result = message.payload
+          summary = result.summary
+          tokensUsed = result.tokensUsed
+
+          // Clean up
+          unsubscribe()
+          setActiveDelegation(null)
+          setStatus('completed')
+
+          // Emit completion event
+          const completionEvent: UnifiedAgentEvent = {
+            id: `delegation-complete-${taskId}`,
+            source: 'opencode',
+            timestamp: Date.now(),
+            type: 'delegation.completed',
+            data: {
+              taskId,
+              success: result.status === 'completed',
+              summary,
+              filesChanged,
+              tokensUsed,
+            },
+          }
+          onEvent(completionEvent)
+
+          resolve({
+            success: result.status === 'completed',
+            status: result.status,
+            summary,
+            filesChanged,
+            tokensUsed,
+            events: collectedEvents,
+          })
+          break
+        }
+
+        case 'error': {
+          // Task failed
+          const error = message.payload
+
+          // Clean up
+          unsubscribe()
+          setActiveDelegation(null)
+          setStatus('error')
+
+          // Emit error event
+          const errorEvent: UnifiedAgentEvent = {
+            id: `delegation-error-${taskId}`,
+            source: 'opencode',
+            timestamp: Date.now(),
+            type: 'delegation.error',
+            data: {
+              taskId,
+              error: error.message || 'Unknown error',
+            },
+          }
+          onEvent(errorEvent)
+
+          resolve({
+            success: false,
+            status: 'error',
+            filesChanged,
+            events: collectedEvents,
+            error: error.message,
+          })
+          break
+        }
+      }
+    })
+
+    // Small delay to ensure listener is set up
+    setTimeout(async () => {
+      try {
+        await service.startTask({
+          taskId,
+          projectPath: config.projectPath,
+          prompt: task,
+          agent,
+          apiKey,
+        })
+      } catch (error) {
+        unsubscribe()
+        setActiveDelegation(null)
+        setStatus('error')
+
+        const errorEvent: UnifiedAgentEvent = {
+          id: `delegation-error-${taskId}`,
+          source: 'opencode',
+          timestamp: Date.now(),
+          type: 'delegation.error',
+          data: {
+            taskId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        }
+        onEvent(errorEvent)
+
+        resolve({
+          success: false,
+          status: 'error',
+          filesChanged: [],
+          events: collectedEvents,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }, 50)
+  })
+}
+
+// ============================================================================
+// Event Mapping
+// ============================================================================
+
+/**
+ * Map OpenCode events to unified event format
+ */
+function mapOpenCodeEventToUnified(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  event: any,
+  taskId: string,
+  timestamp: number
+): UnifiedAgentEvent | null {
+  const eventType = event.type
+
+  switch (eventType) {
+    case 'tool.started':
+      return {
+        id: `oc-tool-start-${taskId}-${timestamp}`,
+        source: 'opencode',
+        timestamp,
+        type: 'tool.started',
+        data: {
+          tool: event.tool || event.name || 'unknown',
+          input: event.input || event.args || {},
+        },
+      }
+
+    case 'tool.completed':
+      return {
+        id: `oc-tool-complete-${taskId}-${timestamp}`,
+        source: 'opencode',
+        timestamp,
+        type: 'tool.completed',
+        data: {
+          tool: event.tool || event.name || 'unknown',
+          output: event.output || event.result,
+          duration: event.duration,
+          title: event.title,
+        },
+      }
+
+    case 'tool.error':
+      return {
+        id: `oc-tool-error-${taskId}-${timestamp}`,
+        source: 'opencode',
+        timestamp,
+        type: 'tool.error',
+        data: {
+          tool: event.tool || event.name || 'unknown',
+          error: event.error || event.message || 'Unknown error',
+        },
+      }
+
+    case 'file.write':
+    case 'file.edit':
+    case 'file.create':
+    case 'file.delete':
+      return {
+        id: `oc-file-${taskId}-${timestamp}`,
+        source: 'opencode',
+        timestamp,
+        type: 'file.changed',
+        data: {
+          path: event.path || event.file,
+          diff: event.diff,
+          action:
+            eventType === 'file.delete'
+              ? 'deleted'
+              : eventType === 'file.create'
+                ? 'created'
+                : 'modified',
+        },
+      }
+
+    case 'text.delta':
+      return {
+        id: `oc-text-${taskId}-${timestamp}`,
+        source: 'opencode',
+        timestamp,
+        type: 'text.delta',
+        data: {
+          text: event.text || event.content || '',
+        },
+      }
+
+    case 'session.started':
+      return {
+        id: `oc-session-${taskId}-${timestamp}`,
+        source: 'opencode',
+        timestamp,
+        type: 'session.started',
+        data: {
+          sessionId: event.sessionId || taskId,
+        },
+      }
+
+    case 'reasoning.delta':
+      return {
+        id: `oc-reasoning-${taskId}-${timestamp}`,
+        source: 'opencode',
+        timestamp,
+        type: 'reasoning.delta',
+        data: {
+          text: event.text || event.content || '',
+        },
+      }
+
+    default:
+      // For unknown events, try to create a generic tool event
+      if (event.tool || event.name) {
+        return {
+          id: `oc-generic-${taskId}-${timestamp}`,
+          source: 'opencode',
+          timestamp,
+          type: 'tool.completed',
+          data: {
+            tool: event.tool || event.name,
+            output: event,
+          },
+        }
+      }
+      return null
+  }
+}
+
+/**
+ * Check if an operation is read-only
+ */
+function isReadOnlyOperation(toolName: string): boolean {
+  const readOnlyTools = [
+    'read',
+    'glob',
+    'grep',
+    'search',
+    'find',
+    'list',
+    'ls',
+    'cat',
+    'head',
+    'tail',
+    'view',
+    'show',
+  ]
+  const lowerName = toolName.toLowerCase()
+  return readOnlyTools.some((t) => lowerName.includes(t))
+}
+
+// ============================================================================
+// Orchestrator Creation
+// ============================================================================
+
+export interface JanOrchestratorOptions {
+  model: LanguageModel
+  config: OrchestratorConfig
+  tools?: Record<string, Tool>
+  apiKey?: string
+  systemPrompt?: string
+  onEvent?: (event: UnifiedAgentEvent) => void
+  onPermissionRequest?: (request: {
+    id: string
+    name: string
+    input?: Record<string, unknown>
+    description?: string
+  }) => Promise<{
+    approved: boolean
+    action?: 'allow_once' | 'allow_always' | 'deny'
+    message?: string
+  }>
+}
+
+/**
+ * Create the Jan orchestrator with OpenCode delegation support
+ *
+ * This creates a streamText-based orchestrator that includes the
+ * opencode_delegate tool for coding tasks.
+ */
+export function createJanOrchestrator(options: JanOrchestratorOptions) {
+  const {
+    model,
+    config,
+    tools = {},
+    apiKey,
+    systemPrompt,
+    onEvent = () => {},
+    onPermissionRequest,
+  } = options
+
+  // Create the OpenCode delegate tool
+  const opencodeTool = createOpenCodeDelegateTool({
+    config,
+    apiKey,
+    onEvent,
+    onPermissionRequest,
+  })
+
+  // Combine all tools
+  const allTools: Record<string, Tool> = {
+    ...tools,
+    opencode_delegate: opencodeTool,
+  }
+
+  // Return configuration for streamText
+  return {
+    model,
+    system: systemPrompt || ORCHESTRATOR_SYSTEM_PROMPT,
+    tools: allTools,
+    maxSteps: config.maxSteps || DEFAULT_MAX_STEPS,
+    toolChoice: 'auto' as const,
+  }
+}
+
+/**
+ * Run the orchestrator with messages
+ *
+ * This is a convenience function that wraps streamText with the
+ * orchestrator configuration.
+ */
+export async function runJanOrchestrator(
+  options: JanOrchestratorOptions & {
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  }
+) {
+  const orchestratorConfig = createJanOrchestrator(options)
+
+  // Emit step started event
+  const { setStatus, addEvent } = useOrchestratorState.getState()
+  setStatus('thinking')
+  addEvent({
+    id: `step-start-${Date.now()}`,
+    source: 'ai-sdk',
+    timestamp: Date.now(),
+    type: 'step.started',
+    data: { step: 1 },
+  })
+
+  const result = streamText({
+    ...orchestratorConfig,
+    messages: options.messages,
+  })
+
+  return result
+}

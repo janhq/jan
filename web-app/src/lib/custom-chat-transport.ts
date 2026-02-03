@@ -225,7 +225,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
 
     // Convert UI messages to model messages
-    const modelMessages = convertToModelMessages(
+    // Note: In AI SDK 6, convertToModelMessages is async
+    const modelMessages = await convertToModelMessages(
       this.mapUserInlineAttachments(options.messages)
     )
 

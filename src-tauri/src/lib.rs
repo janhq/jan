@@ -2,7 +2,9 @@ mod core;
 use core::{
     app::commands::get_jan_data_folder_path,
     downloads::models::DownloadManagerState,
+    gateway::{GatewayConfig, GatewayManager, SharedGatewayManager},
     mcp::models::McpSettings,
+    opencode::{OpenCodeProcessManager, SharedOpenCodeManager},
     setup::{self, setup_mcp},
     state::AppState,
 };
@@ -117,6 +119,23 @@ pub fn run() {
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
+        // OpenCode commands (desktop only)
+        core::opencode::commands::opencode_spawn_task,
+        core::opencode::commands::opencode_respond_permission,
+        core::opencode::commands::opencode_cancel_task,
+        core::opencode::commands::opencode_send_input,
+        core::opencode::commands::opencode_is_task_running,
+        core::opencode::commands::opencode_running_task_count,
+        // Gateway commands (desktop only)
+        core::gateway::commands::gateway_start_server,
+        core::gateway::commands::gateway_stop_server,
+        core::gateway::commands::gateway_get_status,
+        core::gateway::commands::gateway_send_response,
+        core::gateway::commands::gateway_get_connections,
+        core::gateway::commands::gateway_get_thread_mappings,
+        core::gateway::commands::gateway_add_thread_mapping,
+        core::gateway::commands::gateway_remove_thread_mapping,
+        core::gateway::commands::gateway_configure_discord,
     ]);
 
     // Mobile: no updater commands
@@ -189,6 +208,18 @@ pub fn run() {
         core::downloads::commands::cancel_download_task,
     ]);
 
+    // Create OpenCode process manager (desktop only)
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let opencode_manager: SharedOpenCodeManager =
+        Arc::new(Mutex::new(OpenCodeProcessManager::default()));
+
+    // Create Gateway manager (desktop only)
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let gateway_manager: SharedGatewayManager =
+        Arc::new(Mutex::new(GatewayManager::new()));
+
+    // Build the app with platform-specific state management
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let app = app_builder
         .manage(AppState {
             app_token: Some(generate_app_token()),
@@ -203,6 +234,8 @@ pub fn run() {
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
         })
+        .manage(opencode_manager)
+        .manage(gateway_manager)
         .setup(|app| {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
@@ -275,10 +308,119 @@ pub fn run() {
 
             setup_mcp(app);
             setup::setup_theme_listener(app)?;
+
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            {
+                let app_handle = app.handle().clone();
+                let gateway_manager = app.state::<SharedGatewayManager>().inner().clone();
+                tauri::async_runtime::spawn(async move {
+                    let config = GatewayConfig::default();
+                    log::info!("Auto-starting gateway server on ports {} (HTTP) and {} (WS)",
+                        config.http_port, config.ws_port);
+
+                    let mut guard = gateway_manager.lock().await;
+                    if guard.running {
+                        log::info!("Gateway already running, skipping auto-start");
+                        return;
+                    }
+
+                    guard.config = Some(config.clone());
+                    drop(guard);
+
+                    let app_handle_clone = app_handle.clone();
+                    if let Err(e) = core::gateway::commands::gateway_start_server(
+                        app_handle,
+                        app_handle_clone.state::<SharedGatewayManager>(),
+                        config,
+                    ).await {
+                        log::error!("Failed to auto-start gateway: {}", e);
+                    } else {
+                        log::info!("Gateway auto-started successfully");
+                    }
+                });
+            }
+
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
+
+    // Mobile: Build app without OpenCode manager
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let app = app_builder
+        .manage(AppState {
+            app_token: Some(generate_app_token()),
+            mcp_servers: Arc::new(Mutex::new(HashMap::new())),
+            download_manager: Arc::new(Mutex::new(DownloadManagerState::default())),
+            mcp_active_servers: Arc::new(Mutex::new(HashMap::new())),
+            server_handle: Arc::new(Mutex::new(None)),
+            tool_call_cancellations: Arc::new(Mutex::new(HashMap::new())),
+            mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
+            mcp_shutdown_in_progress: Arc::new(Mutex::new(false)),
+            mcp_monitoring_tasks: Arc::new(Mutex::new(HashMap::new())),
+            background_cleanup_handle: Arc::new(Mutex::new(None)),
+            mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
+        })
+        .setup(|app| {
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(log::LevelFilter::Debug)
+                    .targets([
+                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
+                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
+                            path: get_jan_data_folder_path(app.handle().clone()).join("logs"),
+                            file_name: Some("app".to_string()),
+                        }),
+                    ])
+                    .build(),
+            )?;
+
+            // Start migration
+            let mut store_path = get_jan_data_folder_path(app.handle().clone());
+            store_path.push("store.json");
+            let store = app
+                .handle()
+                .store(store_path)
+                .expect("Store not initialized");
+            let stored_version = store
+                .get("version")
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_default();
+            let app_version = app.config().version.clone().unwrap_or_default();
+            // Migrate extensions
+            if let Err(e) =
+                setup::install_extensions(app.handle().clone(), stored_version != app_version)
+            {
+                log::error!("Failed to install extensions: {e}");
+            }
+
+            // Migrate MCP servers
+            if let Err(e) = setup::migrate_mcp_servers(app.handle().clone(), store.clone()) {
+                log::error!("Failed to migrate MCP servers: {e}");
+            }
+
+            // Store the new app version
+            store.set("version", serde_json::json!(app_version));
+            store.save().expect("Failed to save store");
+
+            // Initialize SQLite database for mobile platforms
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = crate::core::threads::db::init_database(&app_handle).await {
+                        log::error!("Failed to initialize mobile database: {}", e);
+                    }
+                });
+            }
+
+            setup_mcp(app);
+            setup::setup_theme_listener(app)?;
+            Ok(())
+        })
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application");
+
     // Handle app lifecycle events
     app.run(|app, event| {
         if let RunEvent::Exit = event {
@@ -328,6 +470,16 @@ pub fn run() {
                     } else {
                         log::info!("Llama processes cleaned up successfully");
                     }
+
+                    // Cleanup OpenCode processes
+                    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                    {
+                        let opencode_state = app_handle.state::<SharedOpenCodeManager>();
+                        let manager = opencode_state.lock().await;
+                        manager.cancel_all_tasks().await;
+                        log::info!("OpenCode processes cleaned up successfully");
+                    }
+
                     log::info!("App cleanup completed");
                 });
             });

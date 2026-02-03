@@ -18,10 +18,10 @@
     "build:serve:web": "yarn build:web && yarn serve:web"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^2.0.0",
-    "@ai-sdk/openai": "^2.0.0",
-    "@ai-sdk/openai-compatible": "^1.0.28",
-    "@ai-sdk/react": "^2.0.109",
+    "@ai-sdk/anthropic": "^3.0.0",
+    "@ai-sdk/openai": "^3.0.0",
+    "@ai-sdk/openai-compatible": "^2.0.0",
+    "@ai-sdk/react": "^3.0.0",
     "@dnd-kit/core": "6.3.1",
     "@dnd-kit/modifiers": "9.0.0",
     "@dnd-kit/sortable": "10.0.0",
@@ -60,7 +60,7 @@
     "@types/react-syntax-highlighter": "15.5.13",
     "@types/uuid": "10.0.0",
     "@uiw/react-textarea-code-editor": "3.1.1",
-    "ai": "5.0.121",
+    "ai": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "culori": "4.0.1",
     "emoji-picker-react": "4.12.2",

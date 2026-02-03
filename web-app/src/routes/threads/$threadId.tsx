@@ -11,6 +11,8 @@ import { MessageItem } from '@/containers/MessageItem'
 import { useMessages } from '@/hooks/useMessages'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useAssistant } from '@/hooks/useAssistant'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
+import { useSmallScreen, useMobileScreen } from '@/hooks/useMediaQuery'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
@@ -44,7 +46,13 @@ import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { AgentProgressPanel } from '@/containers/AgentProgress'
+import { useIsAgentMode, useAgentMode } from '@/hooks/useAgentMode'
+import { useActiveOpenCodeTask, useOpenCode } from '@/hooks/useOpenCode'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { useOrchestratorState, useIsOrchestratorMode } from '@/hooks/useOrchestratorState'
+import { UnifiedProgressPanel } from '@/containers/AgentProgress/UnifiedProgressPanel'
+import type { OrchestratorConfig } from '@/lib/agents/types'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -69,7 +77,41 @@ function ThreadDetail() {
   const deleteMessage = useMessages((state) => state.deleteMessage)
   const currentThread = useRef<string | undefined>(undefined)
 
+  const chatWidth = useInterfaceSettings((state) => state.chatWidth)
+  const isSmallScreen = useSmallScreen()
+  const isMobile = useMobileScreen()
   useTools()
+
+  // Agent mode state
+  const isAgentMode = useIsAgentMode()
+  const activeAgentTask = useActiveOpenCodeTask()
+  const agentProjectPath = useAgentMode((s) => s.projectPath)
+  const agentCurrentAgent = useAgentMode((s) => s.currentAgent)
+  const startAgentTask = useOpenCode((s) => s.startTask)
+
+  // Orchestrator mode state
+  const isOrchestrator = useIsOrchestratorMode()
+
+  // Local API Server settings (for API key to pass to OpenCode)
+  const localApiServerKey = useLocalApiServer((s) => s.apiKey)
+  const serverStatus = useAppState((s) => s.serverStatus)
+
+  // Debug: Log agent mode state changes
+  useEffect(() => {
+    console.log('[Agent Mode State]', { isAgentMode, agentProjectPath, agentCurrentAgent })
+  }, [isAgentMode, agentProjectPath, agentCurrentAgent])
+
+  // Sync orchestrator state with agent mode settings
+  useEffect(() => {
+    const { setMode } = useOrchestratorState.getState()
+    // Only set orchestrator mode when executionMode is 'orchestrator'
+    const executionMode = useAgentMode.getState().executionMode
+    if (isAgentMode && agentProjectPath && executionMode === 'orchestrator') {
+      setMode('orchestrator')
+    } else {
+      setMode('chat')
+    }
+  }, [isAgentMode, agentProjectPath])
 
   // Get attachments for this thread
   const attachmentsKey = threadId ?? NEW_THREAD_ATTACHMENT_KEY
@@ -112,6 +154,17 @@ function ThreadDetail() {
     ? renderInstructions(currentAssistant.instructions)
     : undefined
 
+  // Build orchestrator config when in orchestrator mode
+  const orchestratorConfig: OrchestratorConfig | null = useMemo(() => {
+    if (!isOrchestrator || !agentProjectPath) return null
+    return {
+      projectPath: agentProjectPath,
+      agent: agentCurrentAgent as 'build' | 'plan' | 'explore',
+      maxSteps: 20,
+      autoApproveReadOnly: false,
+    }
+  }, [isOrchestrator, agentProjectPath, agentCurrentAgent])
+
   // Use the AI SDK chat hook
   const {
     messages: chatMessages,
@@ -128,6 +181,7 @@ function ThreadDetail() {
     sessionTitle: thread?.title,
     systemMessage,
     experimental_throttle: 50,
+    orchestratorConfig,
     onFinish: ({ message, isAbort }) => {
       // Persist assistant message to backend (skip if aborted)
       if (!isAbort && message.role === 'assistant') {
@@ -510,15 +564,58 @@ function ThreadDetail() {
     }
   }, [threadId, processAndSendMessage])
 
+  // Execution mode selector
+  const executionMode = useAgentMode((state) => state.executionMode)
+  const isOrchestratorMode = isOrchestrator && executionMode === 'orchestrator'
+  const isManualAgentMode = isAgentMode && executionMode === 'manual'
+
   // Handle submit from ChatInput
   const handleSubmit = useCallback(
     async (
       text: string,
       files?: Array<{ type: string; mediaType: string; url: string }>
     ) => {
-      await processAndSendMessage(text, files)
+      console.log('[Agent Mode Debug] isAgentMode:', isAgentMode, 'executionMode:', executionMode, 'isOrchestrator:', isOrchestrator, 'projectPath:', agentProjectPath, 'serverStatus:', serverStatus)
+
+      // Orchestrator mode: Go through normal chat, LLM will use opencode_delegate tool when needed
+      if (isOrchestratorMode && agentProjectPath) {
+        console.log('[Agent Mode Debug] Using orchestrator mode - sending to chat transport')
+        await processAndSendMessage(text, files)
+        return
+      }
+
+      // Manual agent mode: Direct OpenCode call (bypasses LLM)
+      if (isManualAgentMode && agentProjectPath) {
+        // Check if Local API Server is running
+        if (serverStatus !== 'running') {
+          console.warn('[Agent Mode Debug] Local API Server not running, falling back to normal chat')
+          // TODO: Show a toast/notification to user that they need to start the Local API Server
+          await processAndSendMessage(text, files)
+          return
+        }
+
+        console.log('[Agent Mode Debug] Starting agent task directly...')
+        try {
+          const taskId = await startAgentTask({
+            projectPath: agentProjectPath,
+            prompt: text,
+            agent: agentCurrentAgent,
+            apiKey: localApiServerKey || undefined,
+          })
+          console.log('[Agent Mode Debug] Task started with ID:', taskId)
+          // Agent mode handles the task - the sidebar will show progress
+          // Don't send to normal chat to avoid confusion
+        } catch (error) {
+          console.error('[Agent Mode Debug] Failed to start agent task:', error)
+          // Fall back to normal chat if agent fails
+          await processAndSendMessage(text, files)
+        }
+      } else {
+        console.log('[Agent Mode Debug] Not using agent mode, using normal chat')
+        await processAndSendMessage(text, files)
+      }
     },
-    [processAndSendMessage]
+    [processAndSendMessage, isAgentMode, executionMode, isOrchestrator, isOrchestratorMode, isManualAgentMode, agentProjectPath, agentCurrentAgent, startAgentTask, localApiServerKey, serverStatus]
   )
 
   // Handle regenerate from any message (user or assistant)
@@ -695,80 +792,101 @@ function ThreadDetail() {
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          <DropdownModelProvider model={threadModel} />
+          <div />
         </div>
       </HeaderPage>
-      <div className="flex flex-1 flex-col h-full overflow-hidden">
-        {/* Messages Area */}
-        <div className="flex-1 relative">
-          <Conversation className="absolute inset-0 text-start">
-            <ConversationContent
-              className={cn(
-                'mx-auto w-full md:w-4/5 xl:w-4/6',
-              )}
-            >
-              {chatMessages.map((message, index) => {
-                const isLastMessage = index === chatMessages.length - 1
-                const isFirstMessage = index === 0
-                return (
-                  <MessageItem
-                    key={message.id}
-                    message={message}
-                    isFirstMessage={isFirstMessage}
-                    isLastMessage={isLastMessage}
-                    status={status}
-                    reasoningContainerRef={reasoningContainerRef}
-                    onRegenerate={handleRegenerate}
-                    onEdit={handleEditMessage}
-                    onDelete={handleDeleteMessage}
-                  />
-                )
-              })}
-              {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
-              {error && (
-                <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
-                  <div className="flex items-start gap-3">
-                    <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-destructive mb-1">
-                        Error generating response
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {error.message}
-                      </p>
-                      {(error.message.toLowerCase().includes('context') &&
-                        (error.message.toLowerCase().includes('size') ||
-                          error.message.toLowerCase().includes('length') ||
-                          error.message.toLowerCase().includes('limit'))) ||
-                      error.message === OUT_OF_CONTEXT_SIZE ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mt-3"
-                          onClick={handleContextSizeIncrease}
-                        >
-                          <IconAlertCircle className="size-4 mr-2" />
-                          Increase Context Size
-                        </Button>
-                      ) : null}
+      <div className="flex flex-1 h-full overflow-hidden">
+        {/* Main chat area */}
+        <div className="flex flex-1 flex-col h-full overflow-hidden">
+          {/* Messages Area */}
+          <div className="flex-1 relative">
+            <Conversation className="absolute inset-0 text-start">
+              <ConversationContent
+                className={cn(
+                  'mx-auto',
+                  isMobile || isSmallScreen || chatWidth !== 'compact'
+                    ? 'w-full'
+                    : 'w-full md:w-4/5'
+                )}
+              >
+                {chatMessages.map((message, index) => {
+                  const isLastMessage = index === chatMessages.length - 1
+                  const isFirstMessage = index === 0
+                  return (
+                    <MessageItem
+                      key={message.id}
+                      message={message}
+                      isFirstMessage={isFirstMessage}
+                      isLastMessage={isLastMessage}
+                      status={status}
+                      reasoningContainerRef={reasoningContainerRef}
+                      onRegenerate={handleRegenerate}
+                      onEdit={handleEditMessage}
+                      onDelete={handleDeleteMessage}
+                    />
+                  )
+                })}
+                {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
+                {error && (
+                  <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/50 bg-destructive/10">
+                    <div className="flex items-start gap-3">
+                      <IconAlertCircle className="size-5 text-destructive flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-destructive mb-1">
+                          Error generating response
+                        </p>
+                        <p className="text-sm text-main-view-fg/70">
+                          {error.message}
+                        </p>
+                        {(error.message.toLowerCase().includes('context') &&
+                          (error.message.toLowerCase().includes('size') ||
+                            error.message.toLowerCase().includes('length') ||
+                            error.message.toLowerCase().includes('limit'))) ||
+                        error.message === OUT_OF_CONTEXT_SIZE ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-3"
+                            onClick={handleContextSizeIncrease}
+                          >
+                            <IconAlertCircle className="size-4 mr-2" />
+                            Increase Context Size
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </ConversationContent>
-            <ConversationScrollButton />
-          </Conversation>
+                )}
+              </ConversationContent>
+              <ConversationScrollButton />
+            </Conversation>
+          </div>
+
+          {/* Chat Input - Fixed at bottom */}
+          <div
+            className={cn(
+              'px-4 py-4 mx-auto w-full',
+              isMobile || isSmallScreen || chatWidth !== 'compact'
+                ? 'max-w-full'
+                : 'w-full md:w-4/5'
+            )}
+          >
+            <ChatInput
+              model={threadModel}
+              onSubmit={handleSubmit}
+              onStop={stop}
+              chatStatus={status}
+            />
+          </div>
         </div>
 
-        {/* Chat Input - Fixed at bottom */}
-        <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
-          <ChatInput
-            model={threadModel}
-            onSubmit={handleSubmit}
-            onStop={stop}
-            chatStatus={status}
-          />
-        </div>
+        {/* Agent Progress Panel - shown when agent mode is active with a task */}
+        {/* Show UnifiedProgressPanel when in orchestrator mode, fallback to old panel for manual agent mode */}
+        {isOrchestrator ? (
+          <UnifiedProgressPanel />
+        ) : (
+          isAgentMode && activeAgentTask && <AgentProgressPanel />
+        )}
       </div>
     </div>
   )

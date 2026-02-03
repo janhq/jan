@@ -1,6 +1,9 @@
 import {
   CustomChatTransport,
 } from '@/lib/custom-chat-transport'
+import {
+  AgentChatTransport,
+} from '@/lib/agents/agent-transport'
 // import { useCapabilities } from "@/stores/capabilities-store";
 import {
   Chat,
@@ -15,6 +18,7 @@ import {
 import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
+import type { OrchestratorConfig } from '@/lib/agents/types'
 
 type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
   Pick<UseChatOptions<UIMessage>, 'experimental_throttle' | 'resume'> & {
@@ -22,6 +26,7 @@ type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
     sessionTitle?: string
     systemMessage?: string
     onTokenUsage?: (usage: LanguageModelUsage, messageId: string) => void;
+    orchestratorConfig?: OrchestratorConfig | null
   }
 
 // This is a wrapper around the AI SDK's useChat hook
@@ -30,12 +35,13 @@ type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
 export function useChat(
   options?: CustomChatOptions
 ) {
-  const transportRef = useRef<CustomChatTransport | undefined>(undefined) // Using a ref here so we can update the model used in the transport without having to reload the page or recreate the transport
+  const transportRef = useRef<CustomChatTransport | AgentChatTransport | undefined>(undefined) // Using a ref here so we can update the model used in the transport without having to reload the page or recreate the transport
   const {
     sessionId,
     sessionTitle,
     systemMessage,
     onTokenUsage,
+    orchestratorConfig,
     ...chatInitOptions
   } = options ?? {}
   const ensureSession = useChatSessions((state) => state.ensureSession)
@@ -50,16 +56,27 @@ export function useChat(
     ? useChatSessions.getState().sessions[sessionId]?.transport
     : undefined
 
-  // Create transport immediately with modelId and provider
+  // Create transport immediately - use AgentChatTransport if orchestrator config is provided
   if (!transportRef.current) {
-    transportRef.current =
-      existingSessionTransport ?? new CustomChatTransport(systemMessage, sessionId)
+    if (orchestratorConfig) {
+      transportRef.current = new AgentChatTransport(systemMessage, sessionId)
+    } else {
+      transportRef.current =
+        existingSessionTransport ?? new CustomChatTransport(systemMessage, sessionId)
+    }
   } else if (
     existingSessionTransport &&
     transportRef.current !== existingSessionTransport
   ) {
     transportRef.current = existingSessionTransport
   }
+
+  // Update orchestrator config when it changes
+  useEffect(() => {
+    if (transportRef.current && transportRef.current instanceof AgentChatTransport) {
+      transportRef.current.setOrchestratorConfig(orchestratorConfig ?? null)
+    }
+  }, [orchestratorConfig])
 
   useEffect(() => {
     if (transportRef.current) {

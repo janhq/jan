@@ -66,6 +66,15 @@ pub async fn create_thread<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     mut thread: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    let title = thread.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled").to_string();
+    let is_gateway = thread.get("metadata").and_then(|m| m.get("gateway")).is_some();
+
+    if is_gateway {
+        log::info!("[Commands] GATEWAY creating thread: '{}'", title);
+    } else {
+        log::debug!("[Commands] Creating thread: '{}'", title);
+    }
+
     if should_use_sqlite() {
         #[cfg(any(target_os = "android", target_os = "ios"))]
         return db::db_create_thread(app_handle, thread).await;
@@ -82,6 +91,11 @@ pub async fn create_thread<R: Runtime>(
     let path = get_thread_metadata_path(app_handle.clone(), &uuid);
     let data = serde_json::to_string_pretty(&thread).map_err(|e| e.to_string())?;
     fs::write(path, data).map_err(|e| e.to_string())?;
+
+    if is_gateway {
+        log::info!("[Commands] GATEWAY thread created: {} ({})", uuid, title);
+    }
+
     Ok(thread)
 }
 
@@ -154,12 +168,6 @@ pub async fn create_message<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     mut message: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    if should_use_sqlite() {
-        #[cfg(any(target_os = "android", target_os = "ios"))]
-        return db::db_create_message(app_handle, message).await;
-    }
-
-    // Use file-based storage on desktop
     let thread_id = {
         let id = message
             .get("thread_id")
@@ -167,6 +175,33 @@ pub async fn create_message<R: Runtime>(
             .ok_or("Missing thread_id")?;
         id.to_string()
     };
+
+    let role = message.get("role").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let is_gateway = message.get("metadata").and_then(|m| m.get("gateway_source")).is_some();
+
+    let content = if let Some(v) = message.get("content").and_then(|v| v.as_str()) {
+        v
+    } else if let Some(arr) = message.get("content").and_then(|v| v.as_array()) {
+        &*format!("[array: {} items]", arr.len())
+    } else {
+        "N/A"
+    };
+    let content_preview = content.chars().take(80).collect::<String>();
+
+    if is_gateway {
+        log::info!("[Commands] GATEWAY creating message in thread {}: role={}, content='{}...'",
+            thread_id, role, content_preview);
+    } else {
+        log::debug!("[Commands] Creating message in thread {}: role={}, content='{}...'",
+            thread_id, role, content_preview);
+    }
+
+    if should_use_sqlite() {
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        return db::db_create_message(app_handle, message).await;
+    }
+
+    // Use file-based storage on desktop
     let path = get_messages_path(app_handle.clone(), &thread_id);
 
     if message.get("id").is_none() {
@@ -193,6 +228,11 @@ pub async fn create_message<R: Runtime>(
 
         // Explicitly flush to ensure data is written before returning
         file.flush().map_err(|e| e.to_string())?;
+    }
+
+    let msg_id = message.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
+    if is_gateway {
+        log::info!("[Commands] GATEWAY message created: {} in thread {}", msg_id, thread_id);
     }
 
     Ok(message)

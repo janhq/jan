@@ -24,6 +24,7 @@ import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionD
 import { useEffect } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
+import { GatewayMessageProcessor } from '@/containers/Gateway'
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { LeftSidebar } from '@/components/left-sidebar'
@@ -137,6 +138,7 @@ function RootLayout() {
           <ExtensionProvider>
             <DataProvider />
             <GlobalEventHandler />
+            <GatewayMessageProcessor />
             {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
           </ExtensionProvider>
           {/* <TanStackRouterDevtools position="bottom-right" /> */}
