@@ -122,6 +122,9 @@ const ChatInput = ({
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const currentThread = useThreads((state) => state.getCurrentThread())
+  const updateCurrentThreadAssistant = useThreads(
+    (state) => state.updateCurrentThreadAssistant
+  )
   const updateCurrentThreadModel = useThreads(
     (state) => state.updateCurrentThreadModel
   )
@@ -160,6 +163,7 @@ const ChatInput = ({
   const [hasMmproj, setHasMmproj] = useState(false)
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
+  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>()
 
   // Jan Browser Extension hook
   const {
@@ -394,10 +398,10 @@ const ChatInput = ({
         }
 
         // Only use assistant when chatting via project with an assigned assistant
-        // When no projectId, assistant should be undefined (no system instructions)
+        // When no projectId, use the selected assistant from dropdown (if any)
         const assistant = projectAssistantId
           ? assistants.find((a) => a.id === projectAssistantId)
-          : undefined
+          : selectedAssistant
 
         const newThread = await createThread(
           {
@@ -408,6 +412,9 @@ const ChatInput = ({
           assistant,
           projectMetadata
         )
+
+        // Clear selected assistant after creating thread
+        setSelectedAssistant(undefined)
 
         // Store the initial message for the new thread
         sessionStorage.setItem(
@@ -1539,21 +1546,39 @@ const ChatInput = ({
                           <span>Use Assistant</span>
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>
+                          <DropdownMenuItem
+                            className={!selectedAssistant && !currentThread?.assistants?.length ? 'bg-accent' : ''}
+                            onClick={() => {
+                              setSelectedAssistant(undefined)
+                              if (currentThreadId) {
+                                updateCurrentThreadAssistant(undefined as unknown as Assistant)
+                              }
+                            }}
+                          >
+                            <div className="flex items-center gap-2 w-full">
+                              <span className="text-muted-foreground">—</span>
+                              <span>None</span>
+                              {!selectedAssistant && !currentThread?.assistants?.length && (
+                                <span className="ml-auto text-xs text-muted-foreground">✓</span>
+                              )}
+                            </div>
+                          </DropdownMenuItem>
                           {assistants.length > 0 ? (
                             assistants.map((assistant) => {
-                              const isSelected = currentThread?.assistants?.some(
-                                (a) => a.id === assistant.id
-                              )
+                              const isSelected = selectedAssistant?.id === assistant.id ||
+                                currentThread?.assistants?.some((a) => a.id === assistant.id)
                               return (
                                 <DropdownMenuItem
                                   key={assistant.id}
                                   className={isSelected ? 'bg-accent' : ''}
                                   onClick={() => {
-                                    // Handle assistant selection - you may need to implement this
-                                    console.log('Selected assistant:', assistant.id)
+                                    setSelectedAssistant(assistant)
+                                    if (currentThreadId) {
+                                      updateCurrentThreadAssistant(assistant)
+                                    }
                                   }}
                                 >
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 w-full">
                                     <AvatarEmoji
                                       avatar={assistant.avatar}
                                       imageClassName="w-4 h-4 object-contain"
@@ -1561,8 +1586,8 @@ const ChatInput = ({
                                     />
                                     <span>{assistant.name || 'Unnamed Assistant'}</span>
                                     {isSelected && (
-                                      <span className="text-xs text-muted-foreground ml-auto">
-                                        (Active)
+                                      <span className="ml-auto text-xs text-muted-foreground">
+                                        ✓
                                       </span>
                                     )}
                                   </div>
