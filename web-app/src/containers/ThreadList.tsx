@@ -1,6 +1,9 @@
 import { Folder, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
 import { useThreads } from '@/hooks/useThreads'
+import { useMessages } from '@/hooks/useMessages'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useEffect } from 'react'
 
 import {
   DropdownMenu,
@@ -44,6 +47,34 @@ const ThreadItem = memo(
     const [renameOpen, setRenameOpen] = useState(false)
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
 
+    const serviceHub = useServiceHub()
+    const getMessages = useMessages((state) => state.getMessages)
+    const setMessages = useMessages((state) => state.setMessages)
+    const messages = getMessages(thread.id)
+
+    // Fetch messages if not loaded yet
+    useEffect(() => {
+      if (messages.length === 0) {
+        serviceHub
+          .messages()
+          .fetchMessages(thread.id)
+          .then((fetchedMessages) => {
+            if (fetchedMessages) {
+              setMessages(thread.id, fetchedMessages)
+            }
+          })
+          .catch(console.error)
+      }
+    }, [thread.id, serviceHub, messages.length, setMessages])
+
+    const lastUserMessageText = useMemo(() => {
+      const userMessages = messages.filter((m) => m.role === 'user')
+      const lastUserMessage = userMessages[userMessages.length - 1]
+      if (!lastUserMessage) return undefined
+      const textContent = lastUserMessage.content?.find((c) => c.type === 'text')
+      return textContent?.text?.value
+    }, [messages])
+
     const plainTitleForRename = useMemo(() => {
       return (thread.title || '').replace(/<span[^>]*>|<\/span>/g, '')
     }, [thread.title])
@@ -80,16 +111,27 @@ const ThreadItem = memo(
 
     return (
       <SidebarMenuItem>
+        {currentProjectId ? 
+        <Link to="/threads/$threadId" params={{ threadId: thread.id }} className="bg-secondary dark:bg-secondary/20 px-4 py-4 hover:bg-secondary/30 rounded-lg block">
+            <span>{thread.title || t('common:newThread')}</span>
+            {currentProjectId && lastUserMessageText && (
+              <div className="text-muted-foreground text-xs mt-1 line-clamp-1 pr-10">
+                {lastUserMessageText}
+              </div>
+            )}
+        </Link>
+        : 
         <SidebarMenuButton asChild>
-          <Link to="/threads/$threadId" params={{ threadId: thread.id }} className={cn(currentProjectId && "bg-secondary dark:bg-secondary/20 px-4 py-5 hover:bg-secondary/30 rounded-lg")}>
+          <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
             <span>{thread.title || t('common:newThread')}</span>
           </Link>
         </SidebarMenuButton>
+        }
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuAction
               showOnHover
-              className={cn("hover:bg-sidebar-foreground/8", currentProjectId && 'mt-1 mr-2')}
+              className={cn("hover:bg-sidebar-foreground/8", currentProjectId && 'mt-4 mr-2')}
             >
               <MoreHorizontal />
               <span className="sr-only">More</span>
