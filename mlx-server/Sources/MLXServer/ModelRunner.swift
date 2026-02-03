@@ -8,7 +8,8 @@ import MLXVLM
 actor ModelRunner {
     private var container: ModelContainer?
     private var modelId: String = ""
-    private var promptCache: [String: PromptCache] = [:]
+    /// Stores a prompt cache for each loaded model
+    private let promptCache = NSCache<NSString, PromptCache>()
     private var isVLM: Bool = false  // Track if model is VLM (has different cache structure)
 
     var isLoaded: Bool {
@@ -17,12 +18,6 @@ actor ModelRunner {
 
     var currentModelId: String {
         modelId
-    }
-
-    /// Clear the prompt cache when loading a new model
-    private func clearPromptCache() {
-        promptCache.removeAll()
-        log("[mlx] Prompt cache cleared")
     }
 
     /// Warm up the model by running a short generation to initialize GPU kernels
@@ -210,26 +205,26 @@ actor ModelRunner {
         self.modelId = modelId
         log("[mlx] Model ready: \(modelId)")
 
-        // Clear prompt cache when loading a new model
-        clearPromptCache()
+        // Clear out the promptCache for new model load
+        promptCache.removeObject(forKey: modelId as NSString)
     }
 
     /// Build Chat.Message array from ChatMessages, including images and videos
     private func buildChat(from messages: [ChatMessage]) -> [Chat.Message] {
         messages.map { message in
             let role: Chat.Message.Role =
-                switch message.role {
-                case "assistant":
+            switch message.role {
+            case "assistant":
                     .assistant
-                case "user":
+            case "user":
                     .user
-                case "system":
+            case "system":
                     .system
-                case "tool":
+            case "tool":
                     .tool
-                default:
+            default:
                     .user
-                }
+            }
 
             // Get image URLs from both explicit images field and content array format
             var imageUrls = message.content.imageUrls
@@ -292,22 +287,38 @@ actor ModelRunner {
         )
     }
 
-    /// Get or create a prompt cache for the current model
-    /// Note: VLM models have different cache structure, so caching is skipped for them
-    private func getPromptCache(context: ModelContext, parameters: GenerateParameters) -> PromptCache? {
-        // VLM models have incompatible cache structure - skip prefix caching
-        if isVLM {
-            return nil
+    func getPromptCache(
+        fullPrompt: LMInput, parameters: GenerateParameters, context: ModelContext,
+        modelName: String
+    ) -> (PromptCache, LMInput) {
+
+        if self.isVLM {
+            return (PromptCache(cache: context.model.newCache(parameters: parameters)), fullPrompt)
         }
-        if let existingCache = promptCache[modelId] {
-            return existingCache
+
+        let cache: PromptCache
+        if let existingCache = promptCache.object(forKey: modelName as NSString) {
+            cache = existingCache
+        } else {
+            // Create cache if it doesn't exist yet
+            cache = PromptCache(cache: context.model.newCache(parameters: parameters))
+            self.promptCache.setObject(cache, forKey: modelName as NSString)
         }
-        // Create new cache with the model's KV cache structure
-        let modelCache = context.model.newCache(parameters: parameters)
-        let newCache = PromptCache(cache: modelCache)
-        promptCache[modelId] = newCache
-        log("[mlx] Created new prompt cache with \(modelCache.count) KV layers for model: \(modelId)")
-        return newCache
+
+        let lmInput: LMInput
+
+        /// Remove prefix from prompt that is already in cache
+        if let suffix = cache.getUncachedSuffix(prompt: fullPrompt.text.tokens) {
+            lmInput = LMInput(text: LMInput.Text(tokens: suffix))
+        } else {
+            // If suffix is nil, the cache is inconsistent with the new prompt
+            // and the cache doesn't support trimming so create a new one here.
+            let newCache = PromptCache(cache: context.model.newCache(parameters: parameters))
+            self.promptCache.setObject(newCache, forKey: modelName as NSString)
+            lmInput = fullPrompt
+        }
+
+        return (cache, lmInput)
     }
 
     /// Generate a chat completion (non-streaming)
@@ -347,17 +358,13 @@ actor ModelRunner {
             let promptTokenCount = fullTokens.size
 
             // Get or create prompt cache (nil for VLM models)
-            let cache = await getPromptCache(context: context, parameters: generateParameters)
-
-            // Determine if we can use cached prefix
-            let lmInput: LMInput
-            if let cache = cache, let suffix = cache.getUncachedSuffix(prompt: fullTokens) {
-                lmInput = LMInput(text: LMInput.Text(tokens: suffix))
-                log("[mlx] Using cached prefix, processing \(suffix.size) new tokens")
-            } else {
-                lmInput = fullInput
-                log("[mlx] Cache miss, processing all \(fullTokens.size) tokens")
-            }
+            // TODO: Prompt cache access isn't isolated
+            // Get the prompt cache and adjust new prompt to remove
+            // prefix already in cache, trim cache if cache is
+            // inconsistent with new prompt.
+            let (cache, lmInput) = await getPromptCache(
+                fullPrompt: fullInput, parameters: generateParameters, context: context,
+                modelName: modelId)
 
             var output = ""
             var completionTokenCount = 0
@@ -366,7 +373,7 @@ actor ModelRunner {
 
             do {
                 for await generation in try MLXLMCommon.generate(
-                    input: lmInput, cache: cache?.cache, parameters: generateParameters, context: context
+                    input: lmInput, cache: cache.cache, parameters: generateParameters, context: context
                 ) {
                     switch generation {
                     case .chunk(let chunk):
@@ -478,17 +485,13 @@ actor ModelRunner {
                         let fullTokens = fullInput.text.tokens
 
                         // Get or create prompt cache (nil for VLM models)
-                        let cache = await self.getPromptCache(context: context, parameters: generateParameters)
-
-                        // Determine if we can use cached prefix
-                        let lmInput: LMInput
-                        if let cache = cache, let suffix = cache.getUncachedSuffix(prompt: fullTokens) {
-                            lmInput = LMInput(text: LMInput.Text(tokens: suffix))
-                            log("[mlx] Stream using cached prefix, processing \(suffix.size) new tokens")
-                        } else {
-                            lmInput = fullInput
-                            log("[mlx] Stream cache miss, processing all \(fullTokens.size) tokens")
-                        }
+                        // TODO: Prompt cache access isn't isolated
+                        // Get the prompt cache and adjust new prompt to remove
+                        // prefix already in cache, trim cache if cache is
+                        // inconsistent with new prompt.
+                        let (cache, lmInput) = await getPromptCache(
+                            fullPrompt: fullInput, parameters: generateParameters, context: context,
+                            modelName: modelId)
 
                         var completionTokenCount = 0
                         var accumulated = ""
@@ -496,7 +499,7 @@ actor ModelRunner {
 
                         do {
                             for await generation in try MLXLMCommon.generate(
-                                input: lmInput, cache: cache?.cache, parameters: generateParameters, context: context
+                                input: lmInput, cache: cache.cache, parameters: generateParameters, context: context
                             ) {
                                 switch generation {
                                 case .chunk(let chunk):
