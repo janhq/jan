@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { FileText, Trash2, PlusIcon } from 'lucide-react'
+import { FileText, Trash2, UploadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -372,16 +372,17 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium">{t('common:projects.files')}</h3>
         <Button
-          variant="ghost"
-          size="icon-xs"
+          variant="outline"
+          size="sm"
           onClick={handleUpload}
           disabled={uploading}
         >
           {uploading ? (
             <IconLoader2 className="size-4 animate-spin" />
           ) : (
-            <PlusIcon className="size-4" />
+            <UploadIcon className="size-4" />
           )}
+          <span>Upload</span>
         </Button>
       </div>
 
@@ -395,7 +396,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
             'flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
             isDragging
               ? 'bg-primary/10 border-primary'
-              : 'bg-secondary/30 border-border hover:bg-secondary/50 hover:border-primary/50'
+              : 'bg-secondary/30 border-border hover:bg-secondary/50'
           )}
           onClick={handleUpload}
           onDragOver={handleDragOver}
@@ -410,7 +411,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       ) : (
         <div
           className={cn(
-            'space-y-2 max-h-60 overflow-y-auto rounded-lg p-1 -m-1 transition-colors',
+            'space-y-2 rounded-lg p-1 -m-1 transition-colors',
             isDragging && 'bg-primary/10 ring-2 ring-primary ring-dashed'
           )}
           onDragOver={handleDragOver}
@@ -460,7 +461,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
             'flex mt-2 flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
             isDragging
               ? 'bg-primary/10 border-primary'
-              : 'bg-secondary/30 border-border hover:bg-secondary/50 hover:border-primary/50'
+              : 'bg-secondary/30 border-border hover:bg-secondary/50'
           )}
           onClick={handleUpload}
           onDragOver={handleDragOver}

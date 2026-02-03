@@ -143,7 +143,7 @@ function ProjectPageContent() {
 
           {/* Empty State */}
           {projectThreads.length === 0 && (
-            <div className="flex flex-col items-center justify-center pt-6 pb-12 text-center">
+            <div className="flex flex-col items-center justify-center pt-6 pb-12 text-center bg-card rounded-xl border mb-6">
               <MessageCircle className="size-8 text-muted-foreground/50 mb-3" />
               <h3 className="text-base font-medium text-foreground mb-1">
                 {t('projects.noConversationsIn', { projectName: project.name })}
@@ -155,7 +155,7 @@ function ProjectPageContent() {
           )}
 
           {/* Project Settings Card */}
-          <div className="rounded-xl border border-border overflow-hidden mb-6">
+          <div className="rounded-xl border border-border overflow-hidden mb-6 bg-card">
             {/* Assistant Section */}
             <div className="flex items-center justify-between p-4 border-b border-border">
               <div className="flex flex-col gap-1">
@@ -178,11 +178,12 @@ function ProjectPageContent() {
                 )}
               </div>
               <Button
-                variant="ghost"
-                size="icon-xs"
+                variant="outline"
+                size="sm"
                 onClick={() => setEditDialogOpen(true)}
               >
                 <PencilIcon className="size-3" />
+                <span>{t('common:edit')}</span>
               </Button>
             </div>
 
