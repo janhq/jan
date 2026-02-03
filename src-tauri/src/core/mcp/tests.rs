@@ -1,5 +1,5 @@
 use super::commands::is_extension_not_connected_error;
-use super::helpers::{add_server_config, add_server_config_with_path, run_mcp_commands};
+use super::helpers::{add_server_config_with_path, run_mcp_commands};
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::{AppState, SharedMcpServers};
 use std::collections::HashMap;
@@ -159,16 +159,12 @@ fn test_add_server_config_existing_servers() {
 fn test_add_server_config_missing_config_file() {
     let app = mock_app();
     let app_path = get_jan_data_folder_path(app.handle().clone());
+    let config_path = app_path.join("mcp_config_test_auto_create.json");
 
-    // Ensure the directory exists
-    if let Some(parent) = app_path.parent() {
+    // Ensure clean state
+    if let Some(parent) = config_path.parent() {
         std::fs::create_dir_all(parent).ok();
     }
-    std::fs::create_dir_all(&app_path).ok();
-
-    let config_path = app_path.join("mcp_config.json");
-
-    // Ensure the file doesn't exist
     if config_path.exists() {
         std::fs::remove_file(&config_path).ok();
     }
@@ -179,14 +175,28 @@ fn test_add_server_config_missing_config_file() {
         "active": false
     });
 
-    let result = add_server_config(
+    let result = add_server_config_with_path(
         app.handle().clone(),
         "test".to_string(),
-        server_value,
+        server_value.clone(),
+        Some("mcp_config_test_auto_create.json"),
     );
 
-    assert!(result.is_err(), "Expected error when config file doesn't exist");
-    assert!(result.unwrap_err().contains("Failed to read config file"));
+    assert!(result.is_ok(), "failed to add server config: {result:?}");
+    assert!(config_path.exists());
+
+    // Verify content
+    let config_content = std::fs::read_to_string(&config_path)
+        .expect("failed to read config file");
+    let config: serde_json::Value = serde_json::from_str(&config_content)
+        .expect("failed to parse config");
+
+    assert!(config["mcpServers"]["test"].is_object());
+    assert_eq!(config["mcpServers"]["test"]["command"], "test");
+    assert_eq!(config["mcpServers"]["test"]["active"], false);
+
+    // Cleanup
+    std::fs::remove_file(&config_path).ok();
 }
 
 #[cfg(not(target_os = "windows"))]
