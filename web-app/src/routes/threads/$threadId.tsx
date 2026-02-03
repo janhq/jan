@@ -373,7 +373,7 @@ function ThreadDetail() {
       .messages()
       .fetchMessages(threadId)
       .then((fetchedMessages) => {
-        if (fetchedMessages) {
+        if (fetchedMessages && fetchedMessages.length > 0) {
           const currentLocalMessages = useMessages
             .getState()
             .getMessages(threadId)
