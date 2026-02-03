@@ -54,7 +54,7 @@ export function MessageMetadataDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogTrigger>{triggerElement || defaultTrigger}</DialogTrigger>
+      <DialogTrigger asChild>{triggerElement || defaultTrigger}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('common:dialogs.messageMetadata.title')}</DialogTitle>

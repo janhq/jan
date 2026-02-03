@@ -438,21 +438,28 @@ async fn proxy_request(
 
         (hyper::Method::GET, "/openapi.json") => {
             let static_body = include_str!("../../../static/openapi.json"); // relative to src-tauri/src/
-            // Parse the static OpenAPI JSON and update the server URL with actual host and port
+                                                                            // Parse the static OpenAPI JSON and update the server URL with actual host and port
             match serde_json::from_str::<serde_json::Value>(static_body) {
                 Ok(mut openapi_spec) => {
                     // Update the servers array with the actual host and port
-                    if let Some(servers) = openapi_spec.get_mut("servers").and_then(|s| s.as_array_mut()) {
+                    if let Some(servers) = openapi_spec
+                        .get_mut("servers")
+                        .and_then(|s| s.as_array_mut())
+                    {
                         for server in servers {
                             if let Some(server_obj) = server.as_object_mut() {
                                 if let Some(url) = server_obj.get_mut("url") {
-                                    let base_url = format!("http://{}:{}{}", config.host, config.port, config.prefix);
+                                    let base_url = format!(
+                                        "http://{}:{}{}",
+                                        config.host, config.port, config.prefix
+                                    );
                                     *url = serde_json::Value::String(base_url);
                                 }
                             }
                         }
                     }
-                    let body = serde_json::to_string(&openapi_spec).unwrap_or_else(|_| static_body.to_string());
+                    let body = serde_json::to_string(&openapi_spec)
+                        .unwrap_or_else(|_| static_body.to_string());
                     return Ok(Response::builder()
                         .status(StatusCode::OK)
                         .header(hyper::header::CONTENT_TYPE, "application/json")

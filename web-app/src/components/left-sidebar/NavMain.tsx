@@ -132,8 +132,8 @@ export function NavMain() {
     () => setSearchOpen(true)
   )
 
-  const handleCreateProject = async (name: string) => {
-    const newProject = await addFolder(name)
+  const handleCreateProject = async (name: string, assistantId?: string) => {
+    const newProject = await addFolder(name, assistantId)
     setProjectDialogOpen(false)
     navigate({ to: '/project/$projectId', params: { projectId: newProject.id } })
   }

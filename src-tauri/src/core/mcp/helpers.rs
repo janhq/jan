@@ -26,9 +26,9 @@ use jan_utils::{can_override_npx, can_override_uvx};
 
 #[derive(Debug, Clone, Copy)]
 pub enum ShutdownContext {
-    AppExit,      // User closing app - be fast
+    AppExit,       // User closing app - be fast
     ManualRestart, // User restarting servers - be thorough
-    FactoryReset, // Deleting data - be very thorough
+    FactoryReset,  // Deleting data - be very thorough
 }
 
 impl ShutdownContext {
@@ -120,9 +120,7 @@ pub async fn run_mcp_commands<R: Runtime>(
 
             // If initial startup failed, we still want to continue with other servers
             if let Err(e) = &result {
-                log::error!(
-                    "Initial startup failed for MCP server {name_clone}: {e}"
-                );
+                log::error!("Initial startup failed for MCP server {name_clone}: {e}");
             }
 
             (name_clone, result)
@@ -208,9 +206,7 @@ pub async fn monitor_mcp_server_handle(
 
         if !health_check_result {
             // Server failed health check - remove it and return
-            log::error!(
-                "MCP server {name} failed health check, removing from active servers"
-            );
+            log::error!("MCP server {name} failed health check, removing from active servers");
             let mut servers = servers_state.lock().await;
             if let Some(service) = servers.remove(&name) {
                 // Try to cancel the service gracefully
@@ -260,9 +256,7 @@ pub async fn start_mcp_server<R: Runtime>(
             Ok(())
         }
         Err(e) => {
-            log::error!(
-                "Failed to start MCP server {name} on first attempt: {e}"
-            );
+            log::error!("Failed to start MCP server {name} on first attempt: {e}");
             Err(e)
         }
     }
@@ -547,9 +541,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
         };
 
         if !server_still_running {
-            return Err(format!(
-                "MCP server {name} quit immediately after starting"
-            ));
+            return Err(format!("MCP server {name} quit immediately after starting"));
         }
 
         // Create lock file for Jan Browser MCP
@@ -642,13 +634,7 @@ pub async fn restart_active_mcp_servers<R: Runtime>(
         let config_clone = config.clone();
 
         tauri::async_runtime::spawn(async move {
-            let _ = start_mcp_server(
-                app_clone,
-                servers_clone,
-                name_clone,
-                config_clone,
-            )
-            .await;
+            let _ = start_mcp_server(app_clone, servers_clone, name_clone, config_clone).await;
         });
     }
 
@@ -659,7 +645,9 @@ pub async fn kill_orphaned_mcp_process_with_app<R: Runtime>(
     app: &AppHandle<R>,
     port: u16,
 ) -> Result<bool, String> {
-    use crate::core::mcp::lockfile::{check_and_cleanup_stale_lock, is_process_alive, read_lock_file};
+    use crate::core::mcp::lockfile::{
+        check_and_cleanup_stale_lock, is_process_alive, read_lock_file,
+    };
 
     // Check lock file first (fast path)
     if let Some(lock) = read_lock_file(app, port) {
@@ -744,10 +732,7 @@ pub async fn kill_orphaned_mcp_process_with_app<R: Runtime>(
         log::info!("Cleaned up orphaned process on port {}", port);
         Ok(true)
     } else {
-        Err(format!(
-            "Port {} still in use after killing process",
-            port
-        ))
+        Err(format!("Port {} still in use after killing process", port))
     }
 }
 
@@ -875,7 +860,8 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
                 let port = if key == "Jan Browser MCP" {
                     let active_servers = state.mcp_active_servers.lock().await;
                     active_servers.get(&key).and_then(|config| {
-                        config.get("env")
+                        config
+                            .get("env")
                             .and_then(|e| e.get("BRIDGE_PORT"))
                             .and_then(|p| p.as_str())
                             .and_then(|s| s.parse::<u16>().ok())
@@ -894,7 +880,10 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
         return Ok(());
     }
 
-    let server_names: Vec<String> = servers_to_stop.iter().map(|(name, _, _)| name.clone()).collect();
+    let server_names: Vec<String> = servers_to_stop
+        .iter()
+        .map(|(name, _, _)| name.clone())
+        .collect();
     let per_server_timeout = context.per_server_timeout();
     let stop_handles: Vec<_> = servers_to_stop
         .into_iter()
@@ -932,8 +921,9 @@ pub async fn stop_mcp_servers_with_context<R: Runtime>(
     let overall_timeout = context.overall_timeout();
     let results = tokio::time::timeout(
         overall_timeout,
-        futures_util::future::join_all(stop_handles)
-    ).await;
+        futures_util::future::join_all(stop_handles),
+    )
+    .await;
 
     let failed_servers: Vec<String> = match results {
         Ok(results) => {

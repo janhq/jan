@@ -30,7 +30,12 @@ import {
   extractContentPartsFromUIMessage,
 } from '@/lib/messages'
 import { newUserThreadContent } from '@/lib/completion'
-import { ThreadMessage, MessageStatus, ChatCompletionRole, ContentType } from '@janhq/core'
+import {
+  ThreadMessage,
+  MessageStatus,
+  ChatCompletionRole,
+  ContentType,
+} from '@janhq/core'
 import { createImageAttachment } from '@/types/attachment'
 import {
   useChatAttachments,
@@ -45,6 +50,8 @@ import { Button } from '@/components/ui/button'
 import { IconAlertCircle } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
+import { ExtensionManager } from '@/lib/extension'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -61,7 +68,6 @@ function ThreadDetail() {
   const { threadId } = useParams({ from: Route.id })
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
   const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
-  const currentAssistant = useAssistant((state) => state.currentAssistant)
   const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
   const addMessage = useMessages((state) => state.addMessage)
@@ -106,11 +112,19 @@ function ThreadDetail() {
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
+  const threadRef = useRef(thread)
+  const projectId = threadRef.current?.metadata?.project?.id
 
-  // Get system message from current assistant's instructions
-  const systemMessage = currentAssistant?.instructions
-    ? renderInstructions(currentAssistant.instructions)
+  // Get system message from thread's assistant instructions (if thread has an assigned assistant)
+  // Only use assistant instructions if the thread was created with one (e.g., via a project)
+  const threadAssistant = !projectId && thread?.assistants?.[0]
+  const systemMessage = threadAssistant?.instructions
+    ? renderInstructions(threadAssistant.instructions)
     : undefined
+
+  useEffect(() => {
+    threadRef.current = thread
+  }, [thread])
 
   // Use the AI SDK chat hook
   const {
@@ -209,10 +223,13 @@ function ThreadDetail() {
 
             // Route to the appropriate service based on tool name
             if (ragToolNames.has(toolName)) {
+
               result = await serviceHub.rag().callTool({
                 toolName,
                 arguments: toolCall.input,
                 threadId,
+                projectId: projectId,
+                scope: projectId ? 'project' : 'thread',
               })
             } else if (mcpToolNames.has(toolName)) {
               result = await serviceHub.mcp().callTool({
@@ -248,7 +265,7 @@ function ThreadDetail() {
                 state: 'output-error',
                 tool: toolCall.toolName,
                 toolCallId: toolCall.toolCallId,
-                errorText: `Error: ${(error as Error).message}`,
+                errorText: `Error: ${JSON.stringify(error)}`,
               })
             }
           }
@@ -279,18 +296,42 @@ function ThreadDetail() {
 
   // Update RAG tools availability when documents, model, or tool availability changes
   useEffect(() => {
-    const hasDocuments = Boolean(thread?.metadata?.hasDocuments)
-    const ragFeatureAvailable = Boolean(useAttachments.getState().enabled)
-    const modelSupportsTools =
-      selectedModel?.capabilities?.includes('tools') ?? false
+    const checkDocumentsAvailability = async () => {
+      const hasThreadDocuments = Boolean(thread?.metadata?.hasDocuments)
+      let hasProjectDocuments = false
 
-    updateRagToolsAvailability(
-      hasDocuments,
-      modelSupportsTools,
-      ragFeatureAvailable
-    )
+      // Check if thread belongs to a project and if that project has files
+      const projectId = thread?.metadata?.project?.id
+      if (projectId) {
+        try {
+          const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
+            ExtensionTypeEnum.VectorDB
+          )
+          if (ext?.listAttachmentsForProject) {
+            const projectFiles = await ext.listAttachmentsForProject(projectId)
+            hasProjectDocuments = projectFiles.length > 0
+          }
+        } catch (error) {
+          console.warn('Failed to check project files:', error)
+        }
+      }
+
+      const hasDocuments = hasThreadDocuments || hasProjectDocuments
+      const ragFeatureAvailable = Boolean(useAttachments.getState().enabled)
+      const modelSupportsTools =
+        selectedModel?.capabilities?.includes('tools') ?? false
+
+      updateRagToolsAvailability(
+        hasDocuments,
+        modelSupportsTools,
+        ragFeatureAvailable
+      )
+    }
+
+    checkDocumentsAvailability()
   }, [
     thread?.metadata?.hasDocuments,
+    thread?.metadata?.project?.id,
     selectedModel?.capabilities,
     updateRagToolsAvailability,
     disabledTools, // Re-run when tools are enabled/disabled
@@ -332,7 +373,7 @@ function ThreadDetail() {
       .messages()
       .fetchMessages(threadId)
       .then((fetchedMessages) => {
-        if (fetchedMessages) {
+        if (fetchedMessages && fetchedMessages.length > 0) {
           const currentLocalMessages = useMessages
             .getState()
             .getMessages(threadId)
@@ -402,12 +443,14 @@ function ThreadDetail() {
 
       // Process attachments (ingest images, parse/index documents)
       let processedAttachments = combinedAttachments
+      const projectId = thread?.metadata?.project?.id
       if (combinedAttachments.length > 0) {
         try {
           const parsePreference = useAttachments.getState().parseMode
           const result = await processAttachmentsForSend({
             attachments: combinedAttachments,
             threadId,
+            projectId,
             serviceHub,
             selectedProvider,
             parsePreference,
@@ -470,6 +513,7 @@ function ThreadDetail() {
     [
       sendMessage,
       threadId,
+      thread,
       addMessage,
       getAttachments,
       attachmentsKey,
@@ -569,7 +613,6 @@ function ThreadDetail() {
   // Handle edit message - updates the message and regenerates from it
   const handleEditMessage = useCallback(
     (messageId: string, newText: string) => {
-
       const currentLocalMessages = useMessages.getState().getMessages(threadId)
       const messageIndex = currentLocalMessages.findIndex(
         (m) => m.id === messageId
@@ -604,7 +647,7 @@ function ThreadDetail() {
       setChatMessages(updatedChatMessages)
 
       // Only regenerate if the edited message is from the user
-      if(updatedMessage.role === 'assistant') return
+      if (updatedMessage.role === 'assistant') return
 
       // Delete all messages after this one and regenerate
       const messagesToDelete = currentLocalMessages.slice(messageIndex + 1)
@@ -685,7 +728,13 @@ function ThreadDetail() {
     setTimeout(() => {
       handleRegenerate()
     }, 1000)
-  }, [selectedModel, selectedProvider, getProviderByName, serviceHub, handleRegenerate])
+  }, [
+    selectedModel,
+    selectedProvider,
+    getProviderByName,
+    serviceHub,
+    handleRegenerate,
+  ])
 
   const threadModel = useMemo(() => thread?.model, [thread])
 
@@ -703,9 +752,7 @@ function ThreadDetail() {
         <div className="flex-1 relative">
           <Conversation className="absolute inset-0 text-start">
             <ConversationContent
-              className={cn(
-                'mx-auto w-full md:w-4/5 xl:w-4/6',
-              )}
+              className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}
             >
               {chatMessages.map((message, index) => {
                 const isLastMessage = index === chatMessages.length - 1

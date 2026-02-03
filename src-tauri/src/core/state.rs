@@ -6,10 +6,11 @@ use rmcp::{
     service::RunningService,
     RoleClient, ServiceError,
 };
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{oneshot, Mutex};
 
 /// Server handle type for managing the proxy server lifecycle
-pub type ServerHandle = tauri::async_runtime::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
+pub type ServerHandle =
+    tauri::async_runtime::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
 
 pub enum RunningServiceEnum {
     NoInit(RunningService<RoleClient, ()>),

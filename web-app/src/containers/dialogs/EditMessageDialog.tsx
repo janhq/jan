@@ -96,7 +96,7 @@ export function EditMessageDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogTrigger>{triggerElement || defaultTrigger}</DialogTrigger>
+      <DialogTrigger asChild>{triggerElement || defaultTrigger}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('common:dialogs.editMessage.title')}</DialogTitle>

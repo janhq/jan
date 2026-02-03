@@ -541,7 +541,6 @@ function ProviderDetail() {
                                   variant="outline"
                                   size="sm"
                                   className={cn(
-                                    'p-0',
                                     isCheckingBackendUpdate &&
                                     'pointer-events-none'
                                   )}
@@ -568,7 +567,6 @@ function ProviderDetail() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="p-0"
                                   onClick={handleInstallBackendFromFile}
                                   disabled={isInstallingBackend}
                                 >
