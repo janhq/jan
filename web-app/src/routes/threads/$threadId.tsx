@@ -112,15 +112,15 @@ function ThreadDetail() {
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
+  const threadRef = useRef(thread)
+  const projectId = threadRef.current?.metadata?.project?.id
 
   // Get system message from thread's assistant instructions (if thread has an assigned assistant)
   // Only use assistant instructions if the thread was created with one (e.g., via a project)
-  const threadAssistant = thread?.assistants?.[0]
+  const threadAssistant = !projectId && thread?.assistants?.[0]
   const systemMessage = threadAssistant?.instructions
     ? renderInstructions(threadAssistant.instructions)
     : undefined
-
-  const threadRef = useRef(thread)
 
   useEffect(() => {
     threadRef.current = thread
@@ -191,7 +191,6 @@ function ThreadDetail() {
       // Get cached tool names from store (initialized in useTools hook)
       const ragToolNames = useAppState.getState().ragToolNames
       const mcpToolNames = useAppState.getState().mcpToolNames
-      const projectId = threadRef.current?.metadata?.project?.id
 
       // Process tool calls sequentially, requesting approval for each if needed
       ;(async () => {
