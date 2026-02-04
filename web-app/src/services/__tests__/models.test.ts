@@ -221,13 +221,15 @@ describe('DefaultModelsService', () => {
   })
 
   describe('stopAllModels', () => {
-    it('should stop all active models', async () => {
+    it('should stop all active models from all providers', async () => {
       const mockActiveModels = ['model1', 'model2']
+      // The implementation now stops models from both llamacpp and mlx providers
       mockEngine.getLoadedModels.mockResolvedValue(mockActiveModels)
 
       await modelsService.stopAllModels()
 
-      expect(mockEngine.unload).toHaveBeenCalledTimes(2)
+      // Called once for llamacpp models (2 models) and once for mlx models (2 models)
+      expect(mockEngine.unload).toHaveBeenCalledTimes(4)
       expect(mockEngine.unload).toHaveBeenCalledWith('model1')
       expect(mockEngine.unload).toHaveBeenCalledWith('model2')
     })
@@ -659,6 +661,9 @@ describe('DefaultModelsService', () => {
         ],
         num_mmproj: 0,
         mmproj_models: [],
+        safetensors_files: [],
+        num_safetensors: 0,
+        is_mlx: true,
         created_at: '2021-01-01T00:00:00Z',
         readme:
           'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/README.md',
