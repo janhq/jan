@@ -134,7 +134,18 @@ ifeq ($(shell uname -s),Darwin)
 	cp "$$DERIVED_DATA/mlx-server" src-tauri/resources/bin/mlx-server; \
 	cp -r "$$DERIVED_DATA/mlx-swift_Cmlx.bundle" src-tauri/resources/bin/; \
 	chmod +x src-tauri/resources/bin/mlx-server; \
-	echo "MLX server built and copied successfully"
+	echo "MLX server built and copied successfully"; \
+	echo "Checking for code signing identity..."; \
+	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
+	if [ -n "$$SIGNING_IDENTITY" ]; then \
+		echo "Signing mlx-server with identity: $$SIGNING_IDENTITY"; \
+		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/mlx-server; \
+		echo "Signing mlx-swift_Cmlx.bundle..."; \
+		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" --deep src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
+		echo "Code signing completed successfully"; \
+	else \
+		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
+	fi
 else
 	@echo "Skipping MLX server build (macOS only)"
 endif
