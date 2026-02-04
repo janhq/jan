@@ -1,5 +1,6 @@
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_llamacpp::state::LlamacppState;
+use tauri_plugin_mlx::state::MlxState;
 
 use crate::core::server::proxy;
 use crate::core::state::AppState;
@@ -29,12 +30,16 @@ pub async fn start_server<R: Runtime>(
         proxy_timeout,
     } = config;
     let server_handle = state.server_handle.clone();
-    let plugin_state: State<LlamacppState> = app_handle.state();
-    let sessions = plugin_state.llama_server_process.clone();
+    let llama_state: State<LlamacppState> = app_handle.state();
+    let sessions = llama_state.llama_server_process.clone();
+
+    let mlx_state: State<MlxState> = app_handle.state();
+    let mlx_sessions = mlx_state.mlx_server_process.clone();
 
     let actual_port = proxy::start_server(
         server_handle,
         sessions,
+        mlx_sessions,
         host,
         port,
         prefix,
