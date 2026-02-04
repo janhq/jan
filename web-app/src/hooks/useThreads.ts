@@ -32,6 +32,7 @@ type ThreadState = {
   updateCurrentThreadAssistant: (assistant: Assistant) => void
   updateThreadTimestamp: (threadId: string) => void
   updateThread: (threadId: string, updates: Partial<Thread>) => void
+  deleteAllThreadsByProject: (projectId: string) => void
   searchIndex: Fzf<Thread[]> | null
 }
 
@@ -212,6 +213,41 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         threads: {},
         currentThreadId: undefined,
         searchIndex: new Fzf<Thread[]>([], {
+          selector: (item: Thread) => item.title,
+        }),
+      }
+    })
+  },
+  deleteAllThreadsByProject: (projectId) => {
+    set((state) => {
+      const allThreadIds = Object.keys(state.threads)
+
+      // Identify threads belonging to this project
+      const threadsToDeleteIds = allThreadIds.filter(
+        (threadId) =>
+          state.threads[threadId].metadata?.project?.id === projectId
+      )
+
+      // Delete threads and clean up their vector DB collections
+      threadsToDeleteIds.forEach((threadId) => {
+        cleanupVectorDB(threadId)
+        getServiceHub().threads().deleteThread(threadId)
+      })
+
+      // Keep threads that don't belong to this project
+      const remainingThreads = allThreadIds
+        .filter((threadId) => !threadsToDeleteIds.includes(threadId))
+        .reduce(
+          (acc, threadId) => {
+            acc[threadId] = state.threads[threadId]
+            return acc
+          },
+          {} as Record<string, Thread>
+        )
+
+      return {
+        threads: remainingThreads,
+        searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads).filter(t => t.id !== TEMPORARY_CHAT_ID), {
           selector: (item: Thread) => item.title,
         }),
       }
