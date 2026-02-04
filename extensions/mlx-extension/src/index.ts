@@ -608,16 +608,29 @@ export default class mlx_extension extends AIEngine {
       const downloadManager = window.core.extensionManager.getByName(
         '@janhq/download-extension'
       )
-      await downloadManager.downloadFiles(
-        [
-          {
-            url: sourcePath,
-            save_path: localPath,
-            sha256: opts.modelSha256,
-            size: opts.modelSize,
+
+      // Build download items list
+      const downloadItems: any[] = [
+        {
+          url: sourcePath,
+          save_path: localPath,
+          model_id: modelId,
+        },
+      ]
+
+      // Add additional files if provided (for MLX models - config.json, tokenizer, etc.)
+      if (opts.files && opts.files.length > 0) {
+        for (const file of opts.files) {
+          downloadItems.push({
+            url: file.url,
+            save_path: await joinPath([modelDir, file.filename]),
             model_id: modelId,
-          },
-        ],
+          })
+        }
+      }
+
+      await downloadManager.downloadFiles(
+        downloadItems,
         `mlx/${modelId}`,
         (transferred: number, total: number) => {
           events.emit(DownloadEvent.onFileDownloadUpdate, {
@@ -628,6 +641,9 @@ export default class mlx_extension extends AIEngine {
           })
         }
       )
+
+      // Emit download success event so DownloadManagement clears the download state
+      events.emit('onFileDownloadSuccess', { modelId, downloadType: 'Model' })
 
       // Detect capabilities after download
       const isVision = await this.isVisionSupported(localPath)

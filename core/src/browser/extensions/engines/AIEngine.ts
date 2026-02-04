@@ -211,6 +211,13 @@ export interface ImportOptions {
   modelSize?: number
   mmprojSha256?: string
   mmprojSize?: number
+  // Additional files to download for MLX models
+  files?: Array<{
+    url: string
+    filename: string
+    sha256?: string
+    size?: number
+  }>
 }
 
 export interface importResult {

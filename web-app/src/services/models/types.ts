@@ -18,6 +18,13 @@ export interface MMProjModel {
   file_size: string
 }
 
+export interface SafetensorsFile {
+  model_id: string
+  path: string
+  file_size: string
+  sha256?: string
+}
+
 export interface CatalogModel {
   model_name: string
   description: string
@@ -27,9 +34,12 @@ export interface CatalogModel {
   quants: ModelQuant[]
   mmproj_models?: MMProjModel[]
   num_mmproj: number
+  safetensors_files?: SafetensorsFile[]
+  num_safetensors: number
   created_at?: string
   readme?: string
   tools?: boolean
+  is_mlx?: boolean
 }
 
 export type ModelCatalog = CatalogModel[]
