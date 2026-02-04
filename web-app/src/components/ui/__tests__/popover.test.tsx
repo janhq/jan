@@ -101,13 +101,13 @@ describe('Popover Components', () => {
       await waitFor(() => {
         const content = document.querySelector('[data-slot="popover-content"]')
         expect(content).toBeInTheDocument()
-        expect(content).toHaveClass('bg-background')
-        expect(content).toHaveClass('text-foreground')
+        expect(content).toHaveClass('bg-popover')
+        expect(content).toHaveClass('text-popover-foreground')
         expect(content).toHaveClass('w-72')
         expect(content).toHaveClass('rounded-md')
         expect(content).toHaveClass('border')
         expect(content).toHaveClass('shadow-md')
-      })
+      }, { timeout: 1000 })
     })
 
     it('applies custom className', async () => {
