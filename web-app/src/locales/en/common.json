@@ -234,6 +234,10 @@
       "title": "Delete All Threads",
       "description": "All threads will be deleted. This action cannot be undone."
     },
+    "deleteAllThreadsInProject": {
+      "title": "Delete All Conversations",
+      "description": "{{count}} conversations in \"{{projectName}}\" will be deleted. This action cannot be undone."
+    },
     "deleteThread": {
       "description": "Are you sure you want to delete this thread? This action cannot be undone."
     },

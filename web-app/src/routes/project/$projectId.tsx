@@ -24,6 +24,7 @@ import {
 import { Button } from '@/components/ui/button'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { DeleteProjectDialog } from '@/containers/dialogs/DeleteProjectDialog'
+import { DeleteAllThreadsInProjectDialog } from '@/containers/dialogs/DeleteAllThreadsInProjectDialog'
 import { SidebarMenu } from '@/components/ui/sidebar'
 
 export const Route = createFileRoute('/project/$projectId')({
@@ -35,10 +36,12 @@ function ProjectPageContent() {
   const { projectId } = useParams({ from: '/project/$projectId' })
   const { getFolderById, updateFolder } = useThreadManagement()
   const threads = useThreads((state) => state.threads)
+  const deleteAllThreadsByProject = useThreads((state) => state.deleteAllThreadsByProject)
   const { assistants } = useAssistant()
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
 
   // Find the project
   const project = getFolderById(projectId)
@@ -61,6 +64,10 @@ function ProjectPageContent() {
       await updateFolder(project.id, name, assistantId)
       setEditDialogOpen(false)
     }
+  }
+
+  const handleDeleteAllThreads = () => {
+    deleteAllThreadsByProject(projectId)
   }
 
   if (!project) {
@@ -129,9 +136,27 @@ function ProjectPageContent() {
           {/* Conversation Section */}
           {projectThreads.length > 0 && (
             <div className="flex flex-col mb-6">
-              <h2 className="text-base font-medium mb-4">
-                {t('projects.conversation')}
-              </h2>
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <h2 className="text-base font-medium">
+                  {t('projects.conversation')}
+                </h2>
+                <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon-xs">
+                      <MoreHorizontal className="size-4" />
+                      <span className="sr-only">More options</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="right" align="start">
+                    <DeleteAllThreadsInProjectDialog
+                      projectName={project.name}
+                      threadCount={projectThreads.length}
+                      onDeleteAll={handleDeleteAllThreads}
+                      onDropdownClose={() => setDropdownOpen(false)}
+                    />
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
               <SidebarMenu>
                 <ThreadList
                   threads={projectThreads}
