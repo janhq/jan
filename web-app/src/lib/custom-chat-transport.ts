@@ -47,7 +47,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   public model: LanguageModel | null = null
   private tools: Record<string, Tool> = {}
   private onTokenUsage?: TokenUsageCallback
-  private onStreamingTokenSpeed?: StreamingTokenSpeedCallback
   private hasDocuments = false
   private modelSupportsTools = false
   private ragFeatureAvailable = false
@@ -64,10 +63,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
   updateSystemMessage(systemMessage: string | undefined) {
     this.systemMessage = systemMessage
-  }
-
-  setOnStreamingTokenSpeed(callback: StreamingTokenSpeedCallback | undefined) {
-    this.onStreamingTokenSpeed = callback
   }
 
   setOnTokenUsage(callback: TokenUsageCallback | undefined) {
@@ -250,17 +245,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // Track stream start time on start
         if (part.type === 'start' && !streamStartTime) {
           streamStartTime = Date.now()
-        }
-        if (part.type === 'text-delta') {
-          // Count text deltas as a rough token approximation
-          // Each delta typically represents one token in streaming
-          textDeltaCount++
-
-          // Report streaming token speed in real-time
-          if (this.onStreamingTokenSpeed && streamStartTime) {
-            const elapsedMs = Date.now() - streamStartTime
-            this.onStreamingTokenSpeed(textDeltaCount, elapsedMs)
-          }
         }
 
         if (part.type === 'finish-step') {

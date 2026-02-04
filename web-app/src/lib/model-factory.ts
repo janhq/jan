@@ -178,22 +178,24 @@ export class ModelFactory {
       throw new Error(`No running session found for model: ${modelId}`)
     }
 
-    // Create OpenAI-compatible client for llamacpp
-    const openAICompatible = createOpenAICompatible({
-      name: 'llamacpp',
-      baseURL: `http://localhost:${sessionInfo.port}/v1`,
-      headers: {
+    const model = new OpenAICompatibleChatLanguageModel(modelId, {
+      provider: 'llamacpp',
+      headers: () => ({
         Authorization: `Bearer ${sessionInfo.api_key}`,
         Origin: 'tauri://localhost',
+      }),
+      url: ({ path }) => {
+        const url = new URL(`http://localhost:${sessionInfo.port}/v1${path}`)
+
+        return url.toString()
       },
       includeUsage: true,
       fetch: fetch,
+      metadataExtractor: providerMetadataExtractor,
     })
 
     return wrapLanguageModel({
-      model: openAICompatible.languageModel(modelId, {
-        metadataExtractor: providerMetadataExtractor,
-      }),
+      model,
       middleware: extractReasoningMiddleware({
         tagName: 'think',
         separator: '\n',
