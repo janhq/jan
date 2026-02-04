@@ -1,12 +1,20 @@
 ﻿import { createRootRoute, Outlet } from '@tanstack/react-router'
 // import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 
+<<<<<<< HEAD
 import LeftPanel from '@/containers/LeftPanel'
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
 import BackendUpdater from '@/containers/dialogs/BackendUpdater'
 import { Fragment } from 'react/jsx-runtime'
 import { InterfaceProvider } from '@/providers/InterfaceProvider'
 import { ThemeProvider } from '@/providers/ThemeProvider'
+=======
+import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
+import BackendUpdater from '@/containers/dialogs/BackendUpdater'
+import { Fragment } from 'react/jsx-runtime'
+import { ThemeProvider } from '@/providers/ThemeProvider'
+import { InterfaceProvider } from '@/providers/InterfaceProvider'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import { KeyboardShortcutsProvider } from '@/providers/KeyboardShortcuts'
 import { DataProvider } from '@/providers/DataProvider'
 import { route } from '@/constants/routes'
@@ -14,6 +22,7 @@ import { ExtensionProvider } from '@/providers/ExtensionProvider'
 import { ToasterProvider } from '@/providers/ToasterProvider'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
+<<<<<<< HEAD
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { GoogleAnalyticsProvider } from '@/providers/GoogleAnalyticsProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
@@ -37,6 +46,23 @@ import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 import { AuthProvider } from '@/providers/AuthProvider'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+=======
+import { useJanModelPrompt } from '@/hooks/useJanModelPrompt'
+import { PromptJanModel } from '@/containers/PromptJanModel'
+import { AnalyticProvider } from '@/providers/AnalyticProvider'
+import { useLeftPanel } from '@/hooks/useLeftPanel'
+import ToolApproval from '@/containers/dialogs/ToolApproval'
+import { TranslationProvider } from '@/i18n/TranslationContext'
+import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
+import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
+import { useEffect } from 'react'
+import GlobalError from '@/containers/GlobalError'
+import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
+import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { LeftSidebar } from '@/components/left-sidebar'
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -45,6 +71,7 @@ export const Route = createRootRoute({
 
 const AppLayout = () => {
   const { productAnalyticPrompt } = useAnalytic()
+<<<<<<< HEAD
   const {
     open: isLeftPanelOpen,
     setLeftPanel,
@@ -178,6 +205,44 @@ const AppLayout = () => {
         <PromptAnalytic />
       )}
     </Fragment>
+=======
+  const { showJanModelPrompt } = useJanModelPrompt()
+  const {
+    open: isLeftPanelOpen,
+    setLeftPanel,
+    width: sidebarWidth,
+    setLeftPanelWidth,
+  } = useLeftPanel()
+
+  return (
+    <div className='bg-neutral-50 dark:bg-background size-full'>
+      <SidebarProvider
+        open={isLeftPanelOpen}
+        onOpenChange={setLeftPanel}
+        defaultWidth={sidebarWidth}
+        onWidthChange={setLeftPanelWidth}
+      >
+        <AnalyticProvider />
+        <KeyboardShortcutsProvider />
+        {/* Fake absolute panel top to enable window drag */}
+        {IS_MACOS &&
+          <div className="fixed w-full h-2 z-20 top-0" data-tauri-drag-region />
+        }
+        <DialogAppUpdater />
+        <BackendUpdater />
+        <LeftSidebar />
+        <SidebarInset >
+          <div className='bg-neutral-50 dark:bg-background size-full'>
+            <Outlet />
+          </div>
+        </SidebarInset>
+
+        {productAnalyticPrompt && <PromptAnalytic />}
+        {showJanModelPrompt && <PromptJanModel />}
+
+      </SidebarProvider>
+    </div>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   )
 }
 
@@ -188,7 +253,11 @@ const LogsLayout = () => {
         <div className="flex h-full">
           {/* Main content panel */}
           <div className="h-full flex w-full">
+<<<<<<< HEAD
             <div className="bg-main-view text-main-view-fg border border-main-view-fg/5 w-full overflow-hidden">
+=======
+            <div className="bg-background text-foreground border w-full overflow-hidden">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               <Outlet />
             </div>
           </div>
@@ -241,6 +310,7 @@ function RootLayout() {
         <ToasterProvider />
         <TranslationProvider>
           <ExtensionProvider>
+<<<<<<< HEAD
             <AuthProvider>
               <DataProvider />
               <GlobalEventHandler />
@@ -252,6 +322,14 @@ function RootLayout() {
           <ToolApproval />
           <LoadModelErrorDialog />
           <ErrorDialog />
+=======
+            <DataProvider />
+            <GlobalEventHandler />
+            {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
+          </ExtensionProvider>
+          {/* <TanStackRouterDevtools position="bottom-right" /> */}
+          <ToolApproval />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           <AttachmentIngestionDialog />
           <OutOfContextPromiseModal />
         </TranslationProvider>

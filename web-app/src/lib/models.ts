@@ -21,8 +21,12 @@ export const getModelCapabilities = (
   providerName: string,
   modelId: string
 ): string[] => {
+<<<<<<< HEAD
   const providerConfig =
     models[providerName as unknown as keyof typeof models]
+=======
+  const providerConfig = models[providerName as unknown as keyof typeof models]
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
   const supportsToolCalls = Array.isArray(
     providerConfig?.supportsToolCalls as unknown

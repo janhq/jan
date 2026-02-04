@@ -2,12 +2,16 @@
 import { route } from '@/constants/routes'
 import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
+<<<<<<< HEAD
 import { ColorPickerAppBgColor } from '@/containers/ColorPickerAppBgColor'
 import { ColorPickerAppMainView } from '@/containers/ColorPickerAppMainView'
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ThemeSwitcher } from '@/containers/ThemeSwitcher'
 import { FontSizeSwitcher } from '@/containers/FontSizeSwitcher'
+<<<<<<< HEAD
 import { ColorPickerAppPrimaryColor } from '@/containers/ColorPickerAppPrimaryColor'
 import { ColorPickerAppAccentColor } from '@/containers/ColorPickerAppAccentColor'
 import { ColorPickerAppDestructiveColor } from '@/containers/ColorPickerAppDestructiveColor'
@@ -21,6 +25,12 @@ import { toast } from 'sonner'
 import { ChatWidthSwitcher } from '@/containers/ChatWidthSwitcher'
 import { TokenCounterCompactSwitcher } from '@/containers/TokenCounterCompactSwitcher'
 import { ThreadScrollBehaviorSwitcher } from '@/containers/ThreadScrollBehaviorSwitcher'
+=======
+import { AccentColorPicker } from '@/containers/AccentColorPicker'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
+import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.interface as any)({
@@ -30,6 +40,7 @@ export const Route = createFileRoute(route.settings.interface as any)({
 function InterfaceSettings() {
   const { t } = useTranslation()
   const { resetInterface } = useInterfaceSettings()
+<<<<<<< HEAD
   const { resetCodeBlockStyle } = useCodeblock()
 
   return (
@@ -40,6 +51,19 @@ function InterfaceSettings() {
       <div className="flex h-full w-full flex-col sm:flex-row">
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+=======
+
+  return (
+    <div className="flex flex-col h-svh w-full">
+      <HeaderPage>
+        <div className="flex items-center gap-2 w-full">
+          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+        </div>
+      </HeaderPage>
+      <div className="flex h-[calc(100%-60px)]">
+        <SettingsMenu />
+        <div className="p-4 pt-0 w-full overflow-y-auto">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Interface */}
             <Card title={t('settings:interface.title')}>
@@ -53,6 +77,7 @@ function InterfaceSettings() {
                 description={t('settings:interface.fontSizeDesc')}
                 actions={<FontSizeSwitcher />}
               />
+<<<<<<< HEAD
 
               <CardItem
                 title={t('settings:interface.windowBackground')}
@@ -83,6 +108,13 @@ function InterfaceSettings() {
                 description={t('settings:interface.destructiveDesc')}
                 className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<ColorPickerAppDestructiveColor />}
+=======
+              <CardItem
+                title="Accent color"
+                description="Customize the accent color of the application."
+                className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
+                actions={<AccentColorPicker />}
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               />
               <CardItem
                 title={t('settings:interface.resetToDefault')}
@@ -109,6 +141,7 @@ function InterfaceSettings() {
                 }
               />
             </Card>
+<<<<<<< HEAD
 
             {/* Chat Message */}
             <Card>
@@ -171,6 +204,8 @@ function InterfaceSettings() {
                 }
               />
             </Card>
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           </div>
         </div>
       </div>

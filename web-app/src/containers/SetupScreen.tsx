@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { Card } from './Card'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { Link, useNavigate } from '@tanstack/react-router'
@@ -23,6 +24,26 @@ import {
 import { toast } from 'sonner'
 
 const isQuickStartAvailable = PlatformFeatures[PlatformFeature.LOCAL_INFERENCE]
+=======
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { useNavigate } from '@tanstack/react-router'
+import { route } from '@/constants/routes'
+import { useTranslation } from '@/i18n/react-i18next-compat'
+import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
+import type { CatalogModel } from '@/services/models/types'
+import {
+  NEW_JAN_MODEL_HF_REPO,
+  SETUP_SCREEN_QUANTIZATIONS,
+} from '@/constants/models'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { IconEye, IconSquareCheck } from '@tabler/icons-react'
+import { cn } from '@/lib/utils'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 type CacheEntry = {
   status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
@@ -57,7 +78,13 @@ function saveCacheToStorage() {
   }
 }
 
+<<<<<<< HEAD
 function getCachedSupport(modelId: string): 'RED' | 'YELLOW' | 'GREEN' | 'GREY' | null {
+=======
+function getCachedSupport(
+  modelId: string
+): 'RED' | 'YELLOW' | 'GREEN' | 'GREY' | null {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   const entry = modelSupportCache.get(modelId)
   if (!entry) return null
 
@@ -70,7 +97,14 @@ function getCachedSupport(modelId: string): 'RED' | 'YELLOW' | 'GREEN' | 'GREY' 
   return entry.status
 }
 
+<<<<<<< HEAD
 function setCachedSupport(modelId: string, status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY') {
+=======
+function setCachedSupport(
+  modelId: string,
+  status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
+) {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   modelSupportCache.set(modelId, {
     status,
     timestamp: Date.now(),
@@ -83,6 +117,7 @@ loadCacheFromStorage()
 function SetupScreen() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+<<<<<<< HEAD
   const { providers, getProviderByName } = useModelProvider()
   const firstItemRemoteProvider =
     providers.length > 0 ? providers[1]?.provider : 'openai'
@@ -90,13 +125,21 @@ function SetupScreen() {
   // Check if setup tour has been completed
   const isSetupCompleted =
     localStorage.getItem(localStorageKey.setupCompleted) === 'true'
+=======
+  const { getProviderByName } = useModelProvider()
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
   const serviceHub = useServiceHub()
   const llamaProvider = getProviderByName('llamacpp')
   const [quickStartInitiated, setQuickStartInitiated] = useState(false)
   const [quickStartQueued, setQuickStartQueued] = useState(false)
+<<<<<<< HEAD
   const [janModelV2, setJanModelV2] = useState<CatalogModel | null>(null)
+=======
+  const [janNewModel, setJanNewModel] = useState<CatalogModel | null>(null)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   const [supportedVariants, setSupportedVariants] = useState<
     Map<string, 'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
   >(new Map())
@@ -104,19 +147,35 @@ function SetupScreen() {
   const supportCheckInProgress = useRef(false)
   const checkedModelId = useRef<string | null>(null)
   const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
+<<<<<<< HEAD
 
   const fetchJanModel = useCallback(async () => {
     if (!isQuickStartAvailable) return
 
+=======
+  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
+
+  const fetchJanModel = useCallback(async () => {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     setMetadataFetchFailed(false)
     try {
       const repo = await serviceHub
         .models()
+<<<<<<< HEAD
         .fetchHuggingFaceRepo(JAN_MODEL_V2_HF_REPO)
 
       if (repo) {
         const catalogModel = serviceHub.models().convertHfRepoToCatalogModel(repo)
         setJanModelV2(catalogModel)
+=======
+        .fetchHuggingFaceRepo(NEW_JAN_MODEL_HF_REPO, huggingfaceToken)
+
+      if (repo) {
+        const catalogModel = serviceHub
+          .models()
+          .convertHfRepoToCatalogModel(repo)
+        setJanNewModel(catalogModel)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       } else {
         setMetadataFetchFailed(true)
       }
@@ -124,6 +183,7 @@ function SetupScreen() {
       console.error('Error fetching Jan Model V2:', error)
       setMetadataFetchFailed(true)
     }
+<<<<<<< HEAD
   }, [serviceHub])
 
   // Check model support for variants when janModelV2 is available
@@ -134,12 +194,28 @@ function SetupScreen() {
       if (
         supportCheckInProgress.current ||
         checkedModelId.current === janModelV2.model_name
+=======
+  }, [serviceHub, huggingfaceToken])
+
+  // Check model support for variants when janNewModel is available
+  useEffect(() => {
+    const checkModelSupport = async () => {
+      if (!janNewModel) return
+
+      if (
+        supportCheckInProgress.current ||
+        checkedModelId.current === janNewModel.model_name
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       ) {
         return
       }
 
       supportCheckInProgress.current = true
+<<<<<<< HEAD
       checkedModelId.current = janModelV2.model_name
+=======
+      checkedModelId.current = janNewModel.model_name
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       setIsSupportCheckComplete(false)
 
       const variantSupportMap = new Map<
@@ -148,16 +224,24 @@ function SetupScreen() {
       >()
 
       for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
+<<<<<<< HEAD
         const variant = janModelV2.quants.find((quant) =>
+=======
+        const variant = janNewModel.quants.find((quant) =>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           quant.model_id.toLowerCase().includes(quantization)
         )
 
         if (variant) {
           const cached = getCachedSupport(variant.model_id)
           if (cached) {
+<<<<<<< HEAD
             console.log(
               `[SetupScreen] ${variant.model_id}: ${cached} (cached)`
             )
+=======
+            console.log(`[SetupScreen] ${variant.model_id}: ${cached} (cached)`)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             variantSupportMap.set(variant.model_id, cached)
             continue
           }
@@ -190,14 +274,24 @@ function SetupScreen() {
     }
 
     checkModelSupport()
+<<<<<<< HEAD
   }, [janModelV2, serviceHub])
+=======
+  }, [janNewModel, serviceHub])
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
   useEffect(() => {
     fetchJanModel()
   }, [fetchJanModel])
 
+<<<<<<< HEAD
   const defaultVariant = useMemo(() => {
     if (!janModelV2) return null
+=======
+
+  const defaultVariant = useMemo(() => {
+    if (!janNewModel) return null
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     const priorityOrder: Array<'GREEN' | 'YELLOW' | 'GREY'> = [
       'GREEN',
@@ -207,7 +301,11 @@ function SetupScreen() {
 
     for (const status of priorityOrder) {
       for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
+<<<<<<< HEAD
         const variant = janModelV2.quants.find((quant) =>
+=======
+        const variant = janNewModel.quants.find((quant) =>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           quant.model_id.toLowerCase().includes(quantization)
         )
 
@@ -220,7 +318,11 @@ function SetupScreen() {
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
       if (quantization === 'q8_0') continue
 
+<<<<<<< HEAD
       const variant = janModelV2.quants.find((quant) =>
+=======
+      const variant = janNewModel.quants.find((quant) =>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         quant.model_id.toLowerCase().includes(quantization)
       )
 
@@ -230,7 +332,11 @@ function SetupScreen() {
     }
 
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
+<<<<<<< HEAD
       const variant = janModelV2.quants.find((quant) =>
+=======
+      const variant = janNewModel.quants.find((quant) =>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         quant.model_id.toLowerCase().includes(quantization)
       )
 
@@ -240,14 +346,23 @@ function SetupScreen() {
     }
 
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
+<<<<<<< HEAD
       const variant = janModelV2.quants.find((quant) =>
+=======
+      const variant = janNewModel.quants.find((quant) =>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         quant.model_id.toLowerCase().includes(quantization)
       )
       if (variant) return variant
     }
 
+<<<<<<< HEAD
     return janModelV2.quants[0]
   }, [janModelV2, supportedVariants])
+=======
+    return janNewModel.quants[0]
+  }, [janNewModel, supportedVariants])
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
   const downloadProcesses = useMemo(
     () =>
@@ -269,6 +384,7 @@ function SetupScreen() {
     )
   }, [defaultVariant, localDownloadingModels, downloadProcesses])
 
+<<<<<<< HEAD
   const downloadProgress = useMemo(() => {
     if (!defaultVariant) return 0
     return (
@@ -277,6 +393,25 @@ function SetupScreen() {
     )
   }, [defaultVariant, downloadProcesses])
 
+=======
+  const downloadedSize = useMemo(() => {
+    if (!defaultVariant) return { current: 0, total: 0 }
+    const process = downloadProcesses.find(
+      (e) => e.id === defaultVariant.model_id
+    )
+    return {
+      current: process?.current || 0,
+      total: process?.total || 0,
+    }
+  }, [defaultVariant, downloadProcesses])
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0'
+    const gb = bytes / (1024 * 1024 * 1024)
+    return gb.toFixed(1)
+  }
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   const isDownloaded = useMemo(() => {
     if (!defaultVariant) return false
     return llamaProvider?.models.some(
@@ -286,7 +421,11 @@ function SetupScreen() {
 
   const handleQuickStart = useCallback(() => {
     // If metadata is still loading, queue the download
+<<<<<<< HEAD
     if (!defaultVariant || !janModelV2 || !isSupportCheckComplete) {
+=======
+    if (!defaultVariant || !janNewModel || !isSupportCheckComplete) {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       setQuickStartQueued(true)
       setQuickStartInitiated(true)
       return
@@ -294,6 +433,7 @@ function SetupScreen() {
 
     setQuickStartInitiated(true)
     addLocalDownloadingModel(defaultVariant.model_id)
+<<<<<<< HEAD
     serviceHub
       .models()
       .pullModelWithMetadata(
@@ -313,11 +453,40 @@ function SetupScreen() {
     isSupportCheckComplete,
     addLocalDownloadingModel,
     serviceHub,
+=======
+    serviceHub.models().pullModelWithMetadata(
+      defaultVariant.model_id,
+      defaultVariant.path,
+      (
+        janNewModel.mmproj_models?.find(
+          (e) => e.model_id.toLowerCase() === 'mmproj-f16'
+        ) || janNewModel.mmproj_models?.[0]
+      )?.path,
+      huggingfaceToken, // Use HF token from general settings
+      true // Skip verification for faster download
+    )
+  }, [
+    defaultVariant,
+    janNewModel,
+    isSupportCheckComplete,
+    addLocalDownloadingModel,
+    serviceHub,
+    huggingfaceToken,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   ])
 
   // Process queued quick start when metadata becomes available
   useEffect(() => {
+<<<<<<< HEAD
     if (quickStartQueued && defaultVariant && janModelV2 && isSupportCheckComplete) {
+=======
+    if (
+      quickStartQueued &&
+      defaultVariant &&
+      janNewModel &&
+      isSupportCheckComplete
+    ) {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       setQuickStartQueued(false)
       addLocalDownloadingModel(defaultVariant.model_id)
       serviceHub
@@ -326,15 +495,32 @@ function SetupScreen() {
           defaultVariant.model_id,
           defaultVariant.path,
           (
+<<<<<<< HEAD
             janModelV2.mmproj_models?.find(
               (e) => e.model_id.toLowerCase() === 'mmproj-f16'
             ) || janModelV2.mmproj_models?.[0]
+=======
+            janNewModel.mmproj_models?.find(
+              (e) => e.model_id.toLowerCase() === 'mmproj-f16'
+            ) || janNewModel.mmproj_models?.[0]
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           )?.path,
           undefined,
           true
         )
     }
+<<<<<<< HEAD
   }, [quickStartQueued, defaultVariant, janModelV2, isSupportCheckComplete, addLocalDownloadingModel, serviceHub])
+=======
+  }, [
+    quickStartQueued,
+    defaultVariant,
+    janNewModel,
+    isSupportCheckComplete,
+    addLocalDownloadingModel,
+    serviceHub,
+  ])
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
   // Handle error when quick start is queued but metadata fetch fails
   useEffect(() => {
@@ -350,7 +536,16 @@ function SetupScreen() {
   }, [quickStartQueued, metadataFetchFailed, t])
 
   useEffect(() => {
+<<<<<<< HEAD
     if (quickStartInitiated && !quickStartQueued && !isDownloading && !isDownloaded) {
+=======
+    if (
+      quickStartInitiated &&
+      !quickStartQueued &&
+      !isDownloading &&
+      !isDownloaded
+    ) {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       setQuickStartInitiated(false)
     }
   }, [quickStartInitiated, quickStartQueued, isDownloading, isDownloaded])
@@ -375,6 +570,7 @@ function SetupScreen() {
 
   return (
     <div className="flex h-full flex-col justify-center">
+<<<<<<< HEAD
       <HeaderPage></HeaderPage>
       <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center ">
         <div className="w-full lg:w-4/6 mx-auto">
@@ -521,6 +717,74 @@ function SetupScreen() {
                 }
               />
             </Link>
+=======
+      <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center ">
+        <div className="w-full mx-auto">
+          <div className="mb-4 text-center">
+            <h1 className="font-studio font-medium text-2xl mb-1">
+              {isDownloading ?  'Sit tight, Jan is getting ready...' : 'Welcome to Jan!'}
+            </h1>
+            <p className='text-muted-foreground w-full md:w-1/2 mx-auto mt-1'>{isDownloading ? 'Jan is getting ready to work on your device. This may take a few minutes.' : 'To get started, Jan needs to download a model to your device. This only takes a few minutes.'}</p>
+          </div>
+          <div className="flex gap-4 flex-col mt-6">
+            {/* Quick Start Button - Highlighted */}
+            <div
+              onClick={handleQuickStart}
+              className="w-full text-left lg:w-2/3 mx-auto"
+            >
+              <div className={cn("bg-background p-3 rounded-lg border transition-all hover:shadow-lg disabled:opacity-60 flex justify-between items-start")}>
+                <div className="flex items-start gap-4">
+                  <div className="shrink-0 size-12 bg-secondary/40 rounded-xl flex items-center justify-center">
+                    <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
+                  </div>
+                  <div className="flex-1">
+                    <h1 className="font-semibold text-sm mb-1">
+                      <span>Jan v3</span>&nbsp;<span className='text-xs text-muted-foreground'>· {defaultVariant?.file_size}</span>
+                    </h1>
+                    <div className="text-muted-foreground text-sm mt-1.5">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full mr-1">
+                        <IconSquareCheck size={12} />
+                        General
+                      </span>
+                      {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full">
+                        <IconEye size={12} />
+                        Vision
+                      </span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <Button size="sm" disabled={quickStartInitiated || isDownloading}>
+                    {quickStartInitiated || isDownloading ? 'Downloading' : 'Download'}
+                  </Button>
+                  {(quickStartInitiated || isDownloading) && (
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <svg
+                        className="size-3 animate-spin"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                      <span>{formatBytes(downloadedSize.current)} / {formatBytes(downloadedSize.total)}GB</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           </div>
         </div>
       </div>

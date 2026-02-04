@@ -578,6 +578,7 @@ describe('useMCPServers', () => {
       expect(result.current.deletedServerKeys).toContain('lifecycle-server')
     })
   })
+<<<<<<< HEAD
 
   describe('Proactive Mode Settings', () => {
     it('should have proactiveMode in default settings', () => {
@@ -692,4 +693,6 @@ describe('useMCPServers', () => {
       expect(result.current.settings.toolCallTimeoutSeconds).toBe(45)
     })
   })
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 })

@@ -11,4 +11,7 @@ export * from './setting'
 export * from './engine'
 export * from './hardware'
 export * from './mcp'
+<<<<<<< HEAD
 export * from './promptTemplate'
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5

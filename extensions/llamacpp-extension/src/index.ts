@@ -148,10 +148,14 @@ export default class llamacpp_extension extends AIEngine {
     this.memoryMode = this.config.memory_util || 'high'
 
     // This sets the base directory where model files for this provider are stored.
+<<<<<<< HEAD
     this.providerPath = await joinPath([
       await getJanDataFolderPath(),
       this.providerId,
     ])
+=======
+    this.getProviderPath()
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     // Set up validation event listeners to bridge Tauri events to frontend
     this.unlistenValidationStarted = await listen<{
@@ -875,6 +879,14 @@ export default class llamacpp_extension extends AIEngine {
         modelConfig
       )
 
+<<<<<<< HEAD
+=======
+      const capabilities: string[] = []
+      if (modelConfig.mmproj_path) {
+        capabilities.push('vision')
+      }
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       const modelInfo = {
         id: modelId,
         name: modelConfig.name ?? modelId,
@@ -883,6 +895,10 @@ export default class llamacpp_extension extends AIEngine {
         port: 0, // port is not known until the model is loaded
         sizeBytes: modelConfig.size_bytes ?? 0,
         embedding: isEmbedding,
+<<<<<<< HEAD
+=======
+        capabilities: capabilities.length > 0 ? capabilities : undefined,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       } as modelInfo
       modelInfos.push(modelInfo)
     }
@@ -2034,10 +2050,17 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   /**
+<<<<<<< HEAD
    * Enhanced tool support detection with multi-pattern matching
    * Checks GGUF chat_template, model config capabilities, and model name heuristics
    * @param modelId - Model identifier to check
    * @returns Promise<boolean> - True if model supports tool calling
+=======
+   * Check if a tool is supported by the model
+   * Currently read from GGUF chat_template
+   * @param modelId
+   * @returns
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
    */
   async isToolSupported(modelId: string): Promise<boolean> {
     const janDataFolderPath = await getJanDataFolderPath()
@@ -2047,6 +2070,7 @@ export default class llamacpp_extension extends AIEngine {
       modelId,
       'model.yml',
     ])
+<<<<<<< HEAD
 
     try {
       const modelConfig = await invoke<ModelConfig>('read_yaml', {
@@ -2117,6 +2141,20 @@ export default class llamacpp_extension extends AIEngine {
       logger.error(`Failed to check tool support for ${modelId}:`, error)
       return false
     }
+=======
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path: modelConfigPath,
+    })
+    // model option is required
+    // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
+    const modelPath = await joinPath([
+      janDataFolderPath,
+      modelConfig.model_path,
+    ])
+    return (await readGgufMetadata(modelPath)).metadata?.[
+      'tokenizer.chat_template'
+    ]?.includes('tools')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   }
   /**
    * Get total system memory including both VRAM and RAM

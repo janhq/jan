@@ -90,8 +90,13 @@ export const DialogDeleteModel = ({
   return (
     <Dialog>
       <DialogTrigger asChild>
+<<<<<<< HEAD
         <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
           <IconTrash size={18} className="text-main-view-fg/50" />
+=======
+        <div className="size-6 cursor-pointer flex items-center justify-center rounded transition-all duration-200 ease-in-out">
+          <IconTrash size={18} className="text-muted-foreground" />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         </div>
       </DialogTrigger>
       <DialogContent>
@@ -106,7 +111,11 @@ export const DialogDeleteModel = ({
 
         <DialogFooter className="mt-2">
           <DialogClose asChild>
+<<<<<<< HEAD
             <Button variant="link" size="sm" className="hover:no-underline">
+=======
+            <Button variant="ghost" size="sm">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               {t('providers:deleteModel.cancel')}
             </Button>
           </DialogClose>

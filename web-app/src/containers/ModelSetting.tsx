@@ -21,13 +21,19 @@ import { useAppState } from '@/hooks/useAppState'
 type ModelSettingProps = {
   provider: ProviderObject
   model: Model
+<<<<<<< HEAD
   smallIcon?: boolean
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }
 
 export function ModelSetting({
   model,
   provider,
+<<<<<<< HEAD
   smallIcon,
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }: ModelSettingProps) {
   const { updateProvider } = useModelProvider()
   const { t } = useTranslation()
@@ -264,6 +270,7 @@ export function ModelSetting({
   return (
     <Sheet>
       <SheetTrigger asChild>
+<<<<<<< HEAD
         <div
           className={cn(
             'size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out',
@@ -274,28 +281,51 @@ export function ModelSetting({
         </div>
       </SheetTrigger>
       <SheetContent className="h-[calc(100%-8px)] top-1 right-1 rounded-e-md overflow-y-auto">
+=======
+        <Button variant="ghost" size="icon-xs">
+          <IconSettings size={18} className="text-muted-foreground" />
+        </Button>
+      </SheetTrigger>
+      <SheetContent className="overflow-y-auto">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         <SheetHeader>
           <SheetTitle>
             {t('common:modelSettings.title', {
               modelId: getModelDisplayName(model),
             })}
           </SheetTitle>
+<<<<<<< HEAD
           <SheetDescription>
+=======
+          <SheetDescription className='text-xs leading-normal'>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             {t('common:modelSettings.description')}
           </SheetDescription>
 
           {/* Model Load Planning Section - Only show for llamacpp provider */}
           {provider.provider === 'llamacpp' && (
+<<<<<<< HEAD
             <div className="pb-4 border-b border-main-view-fg/10 my-4">
+=======
+            <div className="pb-4 border-b mt-4">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               <div>
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="font-medium">Optimize Settings</h3>
+<<<<<<< HEAD
                     <div className="text-xs bg-main-view-fg/10 border border-main-view-fg/20 text-main-view-fg/70 rounded-full py-0.5 px-2">
                       <span>{t('mcp-servers:experimental')}</span>
                     </div>
                   </div>
                   <p className="text-main-view-fg/70 text-xs mb-3">
+=======
+                    <div className="text-xs bg-secondary border text-muted-foreground rounded-full py-0.5 px-2">
+                      <span>{t('mcp-servers:experimental')}</span>
+                    </div>
+                  </div>
+                  <p className="text-muted-foreground leading-normal text-xs mb-3">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                     Analyze your system and model, then apply optimal loading
                     settings automatically
                   </p>
@@ -320,25 +350,40 @@ export function ModelSetting({
           )}
         </SheetHeader>
 
+<<<<<<< HEAD
         <div className="px-4 space-y-6">
           {Object.entries(model.settings || {}).map(([key, value]) => {
             const config = value as ProviderSetting
 
+=======
+        <div className="px-4 space-y-8 pb-4">
+          {Object.entries(model.settings || {}).map(([key, value]) => {
+            const config = value as ProviderSetting
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             return (
               <div key={key} className="space-y-2">
                 <div
                   className={cn(
+<<<<<<< HEAD
                     'flex items-start justify-between gap-8 last:mb-2',
+=======
+                    'flex items-start justify-between gap-8',
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                     (key === 'chat_template' ||
                       key === 'override_tensor_buffer_t') &&
                       'flex-col gap-1 w-full'
                   )}
                 >
+<<<<<<< HEAD
                   <div className="space-y-1 mb-2">
                     <h3 className="font-medium">{config.title}</h3>
                     <p className="text-main-view-fg/70 text-xs">
                       {config.description}
                     </p>
+=======
+                  <div className="mb-1 truncate">
+                    <span title={config.title} className="font-medium">{config.title}</span>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                   </div>
                   <DynamicControllerSetting
                     key={config.key}
@@ -352,6 +397,12 @@ export function ModelSetting({
                     onChange={(newValue) => handleSettingChange(key, newValue)}
                   />
                 </div>
+<<<<<<< HEAD
+=======
+                <p className="text-muted-foreground leading-normal text-xs">
+                  {config.description}
+                </p>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               </div>
             )
           })}

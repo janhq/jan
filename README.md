@@ -12,7 +12,11 @@
 </p>
 
 <p align="center">
+<<<<<<< HEAD
   <a href="https://www.jan.ai/docs/desktop">Getting Started</a>
+=======
+  <a href="https://jan.ai/docs/desktop">Getting Started</a>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   - <a href="https://discord.gg/Exe46xPMbK">Community</a>
   - <a href="https://jan.ai/changelog">Changelog</a>
   - <a href="https://github.com/janhq/jan/issues">Bug reports</a>
@@ -72,8 +76,18 @@ The easiest way to get started is by downloading one of the following versions f
     <td><b>Linux (AppImage)</b></td>
     <td><a href='https://app.jan.ai/download/latest/linux-amd64-appimage'>jan.AppImage</a></td>
   </tr>
+<<<<<<< HEAD
 </table>
 
+=======
+  <tr>
+    <td><b>Linux (Arm64)</b></td>
+    <td><a href='https://github.com/janhq/jan/issues/4543#issuecomment-3734911349'>How-to</a></td>
+  </tr>
+</table>
+
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 Download from [jan.ai](https://jan.ai/) or [GitHub Releases](https://github.com/janhq/jan/releases).
 
 ## Features
@@ -91,6 +105,7 @@ For those who enjoy the scenic route:
 
 ### Prerequisites
 
+<<<<<<< HEAD
 - **Node.js** ≥ 20.0.0
 - **Yarn** ≥ 1.22.0 (run `corepack enable` if not installed)
 - **Make** ≥ 3.81
@@ -103,10 +118,19 @@ For those who enjoy the scenic route:
 - **Linux**: `build-essential libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev`
 
 ### Quick Start
+=======
+- Node.js ≥ 20.0.0
+- Yarn ≥ 1.22.0
+- Make ≥ 3.81
+- Rust (for Tauri)
+
+### Run with Make
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 ```bash
 git clone https://github.com/janhq/jan
 cd jan
+<<<<<<< HEAD
 make install-and-build
 make dev
 ```
@@ -202,6 +226,27 @@ cargo clean
 
 ```bash
 chmod +x src-tauri/build-utils/*
+=======
+make dev
+```
+
+This handles everything: installs dependencies, builds core components, and launches the app.
+
+**Available make targets:**
+- `make dev` - Full development setup and launch
+- `make build` - Production build
+- `make test` - Run tests and linting
+- `make clean` - Delete everything and start fresh
+
+### Manual Commands
+
+```bash
+yarn install
+yarn build:tauri:plugin:api
+yarn build:core
+yarn build:extensions
+yarn dev
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 ```
 
 ## System Requirements
@@ -218,10 +263,18 @@ For detailed compatibility, check our [installation guides](https://jan.ai/docs/
 
 If things go sideways:
 
+<<<<<<< HEAD
 1. Check our [troubleshooting docs](https://jan.ai/docs/troubleshooting)
 2. Copy your error logs and system specs
 3. Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH) `#🆘|jan-help` channel
 
+=======
+1. Check our [troubleshooting docs](https://jan.ai/docs/desktop/troubleshooting)
+2. Copy your error logs and system specs
+3. Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH) `#🆘|jan-help` channel
+
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 ## Contributing
 
 Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full spiel.

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+<<<<<<< HEAD
 import { RgbaColor } from 'react-colorful'
 import { rgb, oklch, formatCss } from 'culori'
 import { useTheme } from './useTheme'
@@ -38,11 +39,117 @@ interface InterfaceSettingsState {
   setAppAccentBgColor: (color: RgbaColor) => void
   setAppDestructiveBgColor: (color: RgbaColor) => void
   setThreadScrollBehavior: (value: ThreadScrollBehavior) => void
+=======
+import { useTheme } from './useTheme'
+
+export type FontSize = '14px' | '15px' | '16px' | '18px' | '20px'
+
+export const ACCENT_COLORS = [
+  {
+    name: 'Gray',
+    value: 'gray',
+    thumb: '#3F3F46',
+    primary: '#f17455',
+    sidebar: { light: '#f1f1f1', dark: '#171717' },
+  },
+  {
+    name: 'Red',
+    value: 'red',
+    thumb: '#F0614B',
+    primary: '#F0614B',
+    sidebar: { light: '#F3CBC4', dark: '#5E1308' },
+  },
+  {
+    name: 'Orange',
+    value: 'orange',
+    thumb: '#E9A23F',
+    primary: '#E9A23F',
+    sidebar: { light: '#F3DFC4', dark: '#5C3A0A' },
+  },
+  {
+    name: 'Green',
+    value: 'green',
+    thumb: '#88BA42',
+    primary: '#88BA42',
+    sidebar: { light: '#DFF3C4', dark: '#374B1B' },
+  },
+  {
+    name: 'Emerald',
+    value: 'emerald',
+    thumb: '#38AB51',
+    primary: '#38AB51',
+    sidebar: { light: '#C4F3CE', dark: '#194D24' },
+  },
+  {
+    name: 'Teal',
+    value: 'teal',
+    thumb: '#38AB8D',
+    primary: '#38AB8D',
+    sidebar: { light: '#C4F3E6', dark: '#194D3F' },
+  },
+  {
+    name: 'Cyan',
+    value: 'cyan',
+    thumb: '#45BBDE',
+    primary: '#45BBDE',
+    sidebar: { light: '#C4E8F3', dark: '#0F4657' },
+  },
+  {
+    name: 'Blue',
+    value: 'blue',
+    thumb: '#456BDE',
+    primary: '#456BDE',
+    sidebar: { light: '#C4D0F3', dark: '#0F2157' },
+  },
+  {
+    name: 'Purple',
+    value: 'purple',
+    thumb: '#865EEA',
+    primary: '#865EEA',
+    sidebar: { light: '#D2C4F3', dark: '#220C5A' },
+  },
+  {
+    name: 'Pink',
+    value: 'pink',
+    thumb: '#D55EF3',
+    primary: '#D55EF3',
+    sidebar: { light: '#FFDAE9', dark: '#4D075F' },
+  },
+  {
+    name: 'Rose',
+    value: 'rose',
+    thumb: '#F655B8',
+    primary: '#F655B8',
+    sidebar: { light: '#F3C4E1', dark: '#61053E' },
+  },
+] as const
+
+export type AccentColorValue = (typeof ACCENT_COLORS)[number]['value']
+const DEFAULT_ACCENT_COLOR: AccentColorValue = 'gray'
+
+const applyAccentColorToDOM = (colorValue: string, isDark: boolean) => {
+  const color = ACCENT_COLORS.find((c) => c.value === colorValue)
+  if (!color) return
+
+  const root = document.documentElement
+  const sidebarColor = isDark ? color.sidebar.dark : color.sidebar.light
+
+  root.style.setProperty('--sidebar', sidebarColor)
+  root.style.setProperty('--primary', color.primary)
+}
+
+interface InterfaceSettingsState {
+  fontSize: FontSize
+  accentColor: AccentColorValue
+  setFontSize: (size: FontSize) => void
+  setAccentColor: (color: AccentColorValue) => void
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   resetInterface: () => void
 }
 
 type InterfaceSettingsPersistedSlice = Omit<
   InterfaceSettingsState,
+<<<<<<< HEAD
   | 'resetInterface'
   | 'setChatWidth'
   | 'setFontSize'
@@ -207,6 +314,25 @@ const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
     appAccentTextColor: defaultTextColor,
     appDestructiveTextColor: '#FFF',
     threadScrollBehavior: DEFAULT_THREAD_SCROLL_BEHAVIOR,
+=======
+  'resetInterface' | 'setFontSize' | 'setAccentColor'
+>
+
+export const fontSizeOptions = [
+  { label: 'Small', value: '14px' as FontSize },
+  { label: 'Medium', value: '16px' as FontSize },
+  { label: 'Large', value: '18px' as FontSize },
+  { label: 'Extra Large', value: '20px' as FontSize },
+]
+
+// Default interface settings
+const defaultFontSize: FontSize = '16px'
+
+const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
+  return {
+    fontSize: defaultFontSize,
+    accentColor: DEFAULT_ACCENT_COLOR,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   }
 }
 
@@ -214,6 +340,7 @@ const interfaceStorage = createJSONStorage<InterfaceSettingsState>(() =>
   localStorage
 )
 
+<<<<<<< HEAD
 // Hook to check if alpha slider should be shown
 export const useBlurSupport = () => {
   const [supportsBlur, setSupportsBlur] = useState(
@@ -267,6 +394,8 @@ export const useBlurSupport = () => {
   return IS_TAURI && (IS_MACOS || supportsBlur)
 }
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 export const useInterfaceSettings = create<InterfaceSettingsState>()(
   persist(
     (set) => {
@@ -282,6 +411,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
             defaultFontSize
           )
 
+<<<<<<< HEAD
           // Reset app background color with correct alpha based on blur support
           const currentAlpha = blurEffectsSupported && IS_TAURI ? 0.4 : 1
           const defaultBg = isDark
@@ -415,6 +545,25 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
 
         setChatWidth: (value: ChatWidth) => {
           set({ chatWidth: value })
+=======
+          // Reset accent color preset
+          applyAccentColorToDOM(DEFAULT_ACCENT_COLOR, isDark)
+
+          // Update state
+          set({
+            fontSize: defaultFontSize,
+            accentColor: DEFAULT_ACCENT_COLOR,
+          })
+        },
+
+        setAccentColor: (color: AccentColorValue) => {
+          const colorExists = ACCENT_COLORS.find((c) => c.value === color)
+          if (!colorExists) return
+
+          const { isDark } = useTheme.getState()
+          applyAccentColorToDOM(color, isDark)
+          set({ accentColor: color })
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         },
 
         setFontSize: (size: FontSize) => {
@@ -423,6 +572,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
           // Update state
           set({ fontSize: size })
         },
+<<<<<<< HEAD
 
         setAppBgColor: (color: RgbaColor) => {
           // Get the current theme state
@@ -692,6 +842,8 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
             appDestructiveTextColor: textColor,
           })
         },
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       }
     },
     {
@@ -700,8 +852,14 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {
         if (state) {
+<<<<<<< HEAD
           if (!isThreadScrollBehavior(state.threadScrollBehavior)) {
             state.threadScrollBehavior = DEFAULT_THREAD_SCROLL_BEHAVIOR
+=======
+          // Migrate old font size value '15px' to '16px'
+          if ((state.fontSize as FontSize) === '15px') {
+            state.fontSize = '16px'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           }
 
           // Apply font size from storage
@@ -713,6 +871,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
           // Get the current theme state
           const { isDark } = useTheme.getState()
 
+<<<<<<< HEAD
           // Just use the stored color as-is during rehydration
           // The InterfaceProvider will handle alpha normalization after blur detection
           const finalColor = state.appBgColor
@@ -888,6 +1047,11 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
 
           // We don't need to update the state here as it will be handled by the store
           // The state will be updated with the hydrated values automatically
+=======
+          // Apply accent color preset
+          const accentColorValue = state.accentColor || DEFAULT_ACCENT_COLOR
+          applyAccentColorToDOM(accentColorValue, isDark)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         }
 
         // Return the state to be used for hydration
@@ -896,3 +1060,16 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
     }
   )
 )
+<<<<<<< HEAD
+=======
+
+// Subscribe to theme changes to update accent color sidebar variant
+let prevIsDark = useTheme.getState().isDark
+useTheme.subscribe((state) => {
+  if (state.isDark !== prevIsDark) {
+    prevIsDark = state.isDark
+    const { accentColor } = useInterfaceSettings.getState()
+    applyAccentColorToDOM(accentColor, state.isDark)
+  }
+})
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5

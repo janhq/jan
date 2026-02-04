@@ -33,10 +33,18 @@ export default function DeleteMCPServerConfirm({
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
+<<<<<<< HEAD
           <Button variant="link" onClick={() => onOpenChange(false)}>
             {t('common:cancel')}
           </Button>
           <Button
+=======
+          <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
+            {t('common:cancel')}
+          </Button>
+          <Button
+            size="sm"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             variant="destructive"
             autoFocus
             onClick={() => {

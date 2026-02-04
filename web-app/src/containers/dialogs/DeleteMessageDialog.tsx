@@ -12,11 +12,14 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { IconTrash } from '@tabler/icons-react'
+<<<<<<< HEAD
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 interface DeleteMessageDialogProps {
   onDelete: () => void
@@ -39,6 +42,7 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
   }
 
   const trigger = (
+<<<<<<< HEAD
     <Tooltip>
       <TooltipTrigger asChild>
         <div 
@@ -59,11 +63,31 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
         <p>{t('delete')}</p>
       </TooltipContent>
     </Tooltip>
+=======
+    <Button
+      variant="ghost"
+      size="icon-xs"
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          setIsOpen(true)
+        }
+      }}
+    >
+      <IconTrash size={16} />
+    </Button>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   )
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
+<<<<<<< HEAD
       <DialogTrigger>{trigger}</DialogTrigger>
+=======
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       <DialogContent
         onOpenAutoFocus={(e) => {
           e.preventDefault()
@@ -76,9 +100,15 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
             Are you sure you want to delete this message? This action cannot be
             undone.
           </DialogDescription>
+<<<<<<< HEAD
           <DialogFooter className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
               <Button variant="link" size="sm" className="w-full sm:w-auto">
+=======
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <DialogClose asChild>
+              <Button variant="ghost" size="sm" className="w-full sm:w-auto">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 {t('common:cancel')}
               </Button>
             </DialogClose>

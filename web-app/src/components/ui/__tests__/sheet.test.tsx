@@ -157,7 +157,11 @@ describe('Sheet Components', () => {
     const title = document.querySelector('[data-slot="sheet-title"]')
     expect(title).toBeInTheDocument()
     expect(title).toHaveTextContent('Sheet Title')
+<<<<<<< HEAD
     expect(title).toHaveClass('font-medium')
+=======
+    expect(title).toHaveClass('font-semibold')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   })
 
   it('renders SheetDescription', () => {
@@ -169,11 +173,19 @@ describe('Sheet Components', () => {
         </SheetContent>
       </Sheet>
     )
+<<<<<<< HEAD
     
     const description = document.querySelector('[data-slot="sheet-description"]')
     expect(description).toBeInTheDocument()
     expect(description).toHaveTextContent('Sheet Description')
     expect(description).toHaveClass('text-main-view-fg/70', 'text-sm')
+=======
+
+    const description = document.querySelector('[data-slot="sheet-description"]')
+    expect(description).toBeInTheDocument()
+    expect(description).toHaveTextContent('Sheet Description')
+    expect(description).toHaveClass('text-muted-foreground', 'text-sm')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   })
 
   it('renders close button with proper styling', () => {
@@ -205,7 +217,11 @@ describe('Sheet Components', () => {
 
     const overlay = document.querySelector('[data-slot="sheet-overlay"]')
     expect(overlay).toBeInTheDocument()
+<<<<<<< HEAD
     expect(overlay).toHaveClass('fixed', 'inset-0', 'z-50', 'bg-main-view/50', 'backdrop-blur-xs')
+=======
+    expect(overlay).toHaveClass('fixed', 'inset-0', 'z-50', 'bg-black/50', 'backdrop-blur')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   })
 
   it('renders SheetClose component', () => {
@@ -254,10 +270,19 @@ describe('Sheet Components', () => {
         </SheetContent>
       </Sheet>
     )
+<<<<<<< HEAD
     
     expect(screen.getByText('Test Sheet')).toBeInTheDocument()
     expect(screen.getByText('Test Description')).toBeInTheDocument()
     expect(screen.getByText('Main Content')).toBeInTheDocument()
     expect(screen.getByText('Close')).toBeInTheDocument()
+=======
+
+    expect(screen.getByText('Test Sheet')).toBeInTheDocument()
+    expect(screen.getByText('Test Description')).toBeInTheDocument()
+    expect(screen.getByText('Main Content')).toBeInTheDocument()
+    // There are two "Close" elements: the SheetClose button and the sr-only span in the X close button
+    expect(screen.getAllByText('Close').length).toBeGreaterThan(0)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   })
 })

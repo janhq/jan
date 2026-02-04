@@ -3,18 +3,24 @@ import { useEffect } from 'react'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useAnalytic } from '@/hooks/useAnalytic'
+<<<<<<< HEAD
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 export function AnalyticProvider() {
   const { productAnalytic } = useAnalytic()
   const serviceHub = useServiceHub()
 
   useEffect(() => {
+<<<<<<< HEAD
     // Early exit if analytics are disabled for this platform
     if (!PlatformFeatures[PlatformFeature.ANALYTICS]) {
       return
     }
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     if (!POSTHOG_KEY || !POSTHOG_HOST) {
       console.warn(
         'PostHog not initialized: Missing POSTHOG_KEY or POSTHOG_HOST environment variables'
@@ -53,7 +59,13 @@ export function AnalyticProvider() {
         },
       })
       // Attempt to restore distinct Id from app global settings
+<<<<<<< HEAD
       serviceHub.analytic().getAppDistinctId()
+=======
+      serviceHub
+        .analytic()
+        .getAppDistinctId()
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         .then((id) => {
           if (id) posthog.identify(id)
         })

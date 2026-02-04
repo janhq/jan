@@ -22,11 +22,19 @@ describe('RenderMarkdown', () => {
     This is line 3`
     render(<RenderMarkdown content={modelResponseWithNewLines} />)
     const markdownContainer = document.querySelector('.markdown')
+<<<<<<< HEAD
     expect(markdownContainer?.innerHTML).toContain('<br>')
     // Match either <br> or <br/>
     const brCount = (markdownContainer?.innerHTML.match(/<br\s*\/?>/g) || [])
       .length
     expect(brCount).toBe(2)
+=======
+    // Line breaks are preserved as newlines in the rendered HTML (not <br> tags)
+    const text = markdownContainer?.textContent || ''
+    expect(text).toContain('This is line 1')
+    expect(text).toContain('This is line 2')
+    expect(text).toContain('This is line 3')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   })
 
   it('preserves line breaks in user message (when isUser == true)', () => {
@@ -36,20 +44,37 @@ describe('RenderMarkdown', () => {
     render(<RenderMarkdown content={userMessageWithNewlines} isUser={true} />)
     const markdownContainer = document.querySelector('.markdown')
     expect(markdownContainer).toBeTruthy()
+<<<<<<< HEAD
     expect(markdownContainer?.innerHTML).toContain('<br>')
     const brCount = (markdownContainer?.innerHTML.match(/<br\s*\/?>/g) || [])
       .length
     expect(brCount).toBe(2)
+=======
+    // Line breaks are preserved as newlines in the rendered HTML
+    const text = markdownContainer?.textContent || ''
+    expect(text).toContain('User question line 1')
+    expect(text).toContain('User question line 2')
+    expect(text).toContain('User question line 3')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   })
 
   it('preserves line breaks with different line ending types', () => {
     const contentWithDifferentLineEndings = 'Line1\nLine2\r\nLine3\rLine4'
     render(<RenderMarkdown content={contentWithDifferentLineEndings} />)
     const markdownContainer = document.querySelector('.markdown')
+<<<<<<< HEAD
     expect(markdownContainer?.innerHTML).toContain('<br>')
     const brCount = (markdownContainer?.innerHTML.match(/<br\s*\/?>/g) || [])
       .length
     expect(brCount).toBe(3)
+=======
+    // Line breaks are preserved as newlines in the rendered HTML
+    const text = markdownContainer?.textContent || ''
+    expect(text).toContain('Line1')
+    expect(text).toContain('Line2')
+    expect(text).toContain('Line3')
+    expect(text).toContain('Line4')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   })
 
   it('handles empty lines correctly', () => {
@@ -57,11 +82,19 @@ describe('RenderMarkdown', () => {
       'Line 1\n\nLine 3 (after empty line)\n\nLine 5 (after two empty lines)'
     render(<RenderMarkdown content={contentWithEmptyLines} />)
     const markdownContainer = document.querySelector('.markdown')
+<<<<<<< HEAD
     const html = markdownContainer?.innerHTML || ''
     // Double new lines (`\n\n`) creates paragraph breaks, not line breaks
     expect(html).not.toContain('<br>')
     const paragraphCount = (html.match(/<p>/g) || []).length
     expect(paragraphCount).toBe(3) // Expect 3 paragraphs for 2 empty lines
+=======
+    const text = markdownContainer?.textContent || ''
+    // All content lines should be present
+    expect(text).toContain('Line 1')
+    expect(text).toContain('Line 3 (after empty line)')
+    expect(text).toContain('Line 5 (after two empty lines)')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   })
 
   describe('LaTeX normalization - dollar sign escaping', () => {
@@ -126,6 +159,107 @@ describe('RenderMarkdown', () => {
     })
   })
 
+<<<<<<< HEAD
+=======
+  it('does not format 4-space indented text as code blocks', () => {
+    const contentWithIndentedText = `Please explain this code block.
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <body>
+        <header>
+            <h1>Welcome to My Website</h1>
+            <p>A sample HTML document showcasing various HTML elements</p>
+        </header>
+        
+        <nav>
+            <a href="#home">Home</a>
+            <a href="#about">About</a>
+            <a href="#services">Services</a>
+            <a href="#contact">Contact</a>
+        </nav>
+        
+        <div class="container">
+            <section id="home">
+                <h2>Home</h2>
+                <div class="card">
+                    <p>This is a sample HTML document that demonstrates various HTML elements and their structure.</p>
+                    <p>HTML (HyperText Markup Language) is the standard markup language for creating web pages.</p>
+                </div>
+            </section>
+            
+        </div>
+        
+        <footer>
+            <p>&copy; ${new Date().getFullYear()} My Sample Website. All rights reserved.</p>
+        </footer>
+    </body>
+    </html>
+    `
+    render(
+      <RenderMarkdown
+        content={contentWithIndentedText}
+      />
+    )
+    const markdownContainer = document.querySelector('.markdown')
+    const html = markdownContainer?.innerHTML || ''
+    expect(html).not.toContain('<pre>')
+    expect(html).toContain('<p>')
+    // Left and right brackets get escaped as &lt; and &gt; respectively
+    expect(html).toContain('&lt;!DOCTYPE html&gt;')
+  })
+  
+  it('formats fenced code blocks correctly', async () => {
+    const contentWithFencedCodeBlock = `Please explain this code block.
+
+\`\`\`html
+<!DOCTYPE html>
+<html lang="en">
+<body>
+    <header>
+        <h1>Welcome to My Website</h1>
+        <p>A sample HTML document showcasing various HTML elements</p>
+    </header>
+    
+    <nav>
+        <a href="#home">Home</a>
+        <a href="#about">About</a>
+        <a href="#services">Services</a>
+        <a href="#contact">Contact</a>
+    </nav>
+    
+    <div class="container">
+        <section id="home">
+            <h2>Home</h2>
+            <div class="card">
+                <p>This is a sample HTML document that demonstrates various HTML elements and their structure.</p>
+                <p>HTML (HyperText Markup Language) is the standard markup language for creating web pages.</p>
+            </div>
+        </section>
+    </div>
+    
+    <footer>
+        <p>&copy; ${new Date().getFullYear()} My Sample Website. All rights reserved.</p>
+    </footer>
+</body>
+</html>
+\`\`\`
+`
+    const { container, findByText}  = render(
+      <RenderMarkdown
+        content={contentWithFencedCodeBlock}
+      />
+    )
+    // Wait for the code content to be rendered (async operation)
+    await findByText('<!DOCTYPE html>', { exact: false })
+    const markdownContainer = container.querySelector('.markdown')
+    const text = markdownContainer?.textContent || ''
+      // Check that the code content is present
+    expect(text).toContain('<!DOCTYPE html>')
+    expect(text).toContain('<html lang="en">')
+    expect(text).toContain('Welcome to My Website')
+  })
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   describe('LaTeX normalization - display math', () => {
     it('converts \\[...\\] to $$ display math', () => {
       const content = 'Here is math:\n\\[\nx^2 + y^2\n\\]\nDone'

@@ -33,7 +33,11 @@ export function MessageMetadataDialog({
     <Tooltip>
       <TooltipTrigger asChild>
         <div 
+<<<<<<< HEAD
           className="outline-0 focus:outline-0 flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+=======
+          className="outline-0 focus:outline-0 flex items-center gap-1 transition-colors cursor-pointer group relative"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           role="button"
           tabIndex={0}
           onKeyDown={(e) => {
@@ -54,12 +58,20 @@ export function MessageMetadataDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
+<<<<<<< HEAD
       <DialogTrigger>{triggerElement || defaultTrigger}</DialogTrigger>
+=======
+      <DialogTrigger asChild>{triggerElement || defaultTrigger}</DialogTrigger>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('common:dialogs.messageMetadata.title')}</DialogTitle>
           <div className="space-y-2 mt-4">
+<<<<<<< HEAD
             <div className="border border-main-view-fg/10 rounded-md">
+=======
+            <div className="border  rounded-md">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               <CodeEditor
                 value={JSON.stringify(metadata || {}, null, 2)}
                 language="json"
@@ -70,7 +82,11 @@ export function MessageMetadataDialog({
                   backgroundColor: 'transparent',
                   fontFamily: 'monospace',
                 }}
+<<<<<<< HEAD
                 className="w-full h-full !text-sm "
+=======
+                className="w-full h-full text-sm!"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               />
             </div>
           </div>

@@ -59,7 +59,11 @@
     "description": "設定 Jan 如何管理及重試 MCP 伺服器。",
     "toolCallTimeout": "工具呼叫逾時（秒）",
     "toolCallTimeoutDesc": "等待 MCP 工具回應的最長時間，超過即逾時。"
+<<<<<<< HEAD
   },
   "proactiveMode": "瀏覽器使用主動模式",
   "proactiveModeDesc": "啟用後，會自動擷取瀏覽器螢幕截圖，為瀏覽器自動化工作提供額外的情境資訊。需要具備視覺與工具使用模型的 Jan Browser MCP。"
+=======
+  }
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }

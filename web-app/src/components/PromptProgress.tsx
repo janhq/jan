@@ -1,4 +1,8 @@
 import { useAppState } from '@/hooks/useAppState'
+<<<<<<< HEAD
+=======
+import { Loader } from 'lucide-react'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 export function PromptProgress() {
   const promptProgress = useAppState((state) => state.promptProgress)
@@ -15,7 +19,11 @@ export function PromptProgress() {
     promptProgress.total <= 0 ||
     percentage >= 100
   ) {
+<<<<<<< HEAD
     return null
+=======
+    return <Loader className="animate-spin w-4 h-4" />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   }
 
   return (

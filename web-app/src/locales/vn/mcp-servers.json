@@ -59,7 +59,11 @@
     "description": "Cấu hình cách Jan quản lý và thử lại các máy chủ MCP.",
     "toolCallTimeout": "Thời gian chờ lệnh (giây)",
     "toolCallTimeoutDesc": "Thời gian tối đa chờ phản hồi từ công cụ MCP trước khi hết thời gian."
+<<<<<<< HEAD
   },
   "proactiveMode": "Chế độ Chủ động Sử dụng Trình duyệt",
   "proactiveModeDesc": "Khi được bật, tự động chụp ảnh màn hình trình duyệt để cung cấp ngữ cảnh bổ sung cho các tác vụ tự động hóa trình duyệt. Yêu cầu Jan Browser MCP với mô hình vision và sử dụng công cụ."
+=======
+  }
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }

@@ -4,6 +4,7 @@ import { route } from '@/constants/routes'
 import { useEffect, useState, useRef } from 'react'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+<<<<<<< HEAD
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 
@@ -20,6 +21,14 @@ function LogsViewerGuarded() {
   )
 }
 
+=======
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const Route = createFileRoute(route.appLogs as any)({
+  component: LogsViewer,
+})
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 // Define log entry type
 
 function LogsViewer() {
@@ -88,16 +97,28 @@ function LogsViewer() {
       timeZone: 'UTC',
       hour: '2-digit',
       minute: '2-digit',
+<<<<<<< HEAD
       second: '2-digit'
+=======
+      second: '2-digit',
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     })
   }
 
   return (
+<<<<<<< HEAD
     <div className="flex flex-col h-full bg-main-view">
       <div className="flex-1 overflow-auto" ref={logsContainerRef}>
         <div className="font-mono p-2">
           {logs.length === 0 ? (
             <div className="text-center text-main-view-fg/50 py-8">
+=======
+    <div className="flex flex-col h-full bg-background">
+      <div className="flex-1 overflow-auto" ref={logsContainerRef}>
+        <div className="font-mono p-2">
+          {logs.length === 0 ? (
+            <div className="text-center text-muted-foreground py-8">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               {t('logs:noLogs')}
             </div>
           ) : (

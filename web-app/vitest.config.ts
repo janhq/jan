@@ -25,6 +25,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+<<<<<<< HEAD
       // Provide a fallback for @jan/extensions-web when it doesn't exist (CICD desktop builds)
       '@jan/extensions-web': (() => {
         try {
@@ -36,6 +37,8 @@ export default defineConfig({
           return path.resolve(__dirname, './src/test/mocks/extensions-web.ts')
         }
       })(),
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     },
   },
   define: {

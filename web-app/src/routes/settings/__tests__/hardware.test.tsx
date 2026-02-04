@@ -84,7 +84,14 @@ vi.mock('@/services/hardware', () => ({
 }))
 
 vi.mock('@/services/models', () => ({ stopAllModels: vi.fn() }))
+<<<<<<< HEAD
 vi.mock('@/lib/utils', () => ({ formatMegaBytes: (mb: number) => `${mb} MB` }))
+=======
+vi.mock('@/lib/utils', () => ({
+  formatMegaBytes: (mb: number) => `${mb} MB`,
+  cn: (...classes: any[]) => classes.filter(Boolean).join(' '),
+}))
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 vi.mock('@/utils/number', () => ({ toNumber: (n: number) => n }))
 vi.mock('@tauri-apps/api/webviewWindow', () => ({ WebviewWindow: vi.fn() }))
 vi.mock('@/constants/routes', () => ({ 

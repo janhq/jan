@@ -15,7 +15,11 @@ import {
   MCPSettings,
   DEFAULT_MCP_SETTINGS,
 } from '@/hooks/useMCPServers'
+<<<<<<< HEAD
 import { useEffect, useState } from 'react'
+=======
+import { Fragment, useEffect, useState } from 'react'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import AddEditMCPServer from '@/containers/dialogs/AddEditMCPServer'
 import DeleteMCPServerConfirm from '@/containers/dialogs/DeleteMCPServerConfirm'
 import EditJsonMCPserver from '@/containers/dialogs/EditJsonMCPserver'
@@ -27,6 +31,7 @@ import { useToolApproval } from '@/hooks/useToolApproval'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
+<<<<<<< HEAD
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 import { listen } from '@tauri-apps/api/event'
@@ -38,6 +43,12 @@ const maskSensitiveValue = (value: string) => {
   if (value.length <= 8) return '*'.repeat(value.length)
   return value.slice(0, 4) + '*'.repeat(value.length - 8) + value.slice(-4)
 }
+=======
+import { listen } from '@tauri-apps/api/event'
+import { SystemEvent } from '@/types/events'
+import { Button } from '@/components/ui/button'
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 // Function to mask sensitive URL parameters
 const maskSensitiveUrl = (url: string) => {
@@ -70,9 +81,15 @@ const maskSensitiveUrl = (url: string) => {
     // Mask sensitive parameters
     sensitiveParams.forEach((paramName) => {
       // Check both exact match and case-insensitive match
+<<<<<<< HEAD
       for (const [key, value] of params.entries()) {
         if (key.toLowerCase() === paramName.toLowerCase()) {
           params.set(key, maskSensitiveValue(value))
+=======
+      for (const [key] of params.entries()) {
+        if (key.toLowerCase() === paramName.toLowerCase()) {
+          params.set(key, '******')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         }
       }
     })
@@ -86,13 +103,18 @@ const maskSensitiveUrl = (url: string) => {
     if (queryIndex === -1) return url
 
     const baseUrl = url.substring(0, queryIndex + 1)
+<<<<<<< HEAD
     const queryString = url.substring(queryIndex + 1)
     return baseUrl + maskSensitiveValue(queryString)
+=======
+    return baseUrl + '******'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.mcp_servers as any)({
+<<<<<<< HEAD
   component: MCPServers,
 })
 
@@ -104,6 +126,11 @@ function MCPServers() {
   )
 }
 
+=======
+  component: MCPServersDesktop,
+})
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 function MCPServersDesktop() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -221,7 +248,13 @@ function MCPServersDesktop() {
       }
 
       deleteServer(serverToDelete)
+<<<<<<< HEAD
       toast.success(t('mcp-servers:deleteServer.success', { serverName: serverToDelete }))
+=======
+      toast.success(
+        t('mcp-servers:deleteServer.success', { serverName: serverToDelete })
+      )
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       setServerToDelete(null)
       syncServersAndRestart()
     }
@@ -247,7 +280,14 @@ function MCPServersDesktop() {
     data:
       | MCPServerConfig
       | Record<string, MCPServerConfig>
+<<<<<<< HEAD
       | { mcpServers?: Record<string, MCPServerConfig>; mcpSettings?: MCPSettings }
+=======
+      | {
+          mcpServers?: Record<string, MCPServerConfig>
+          mcpSettings?: MCPSettings
+        }
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   ) => {
     if (jsonServerName) {
       try {
@@ -368,6 +408,7 @@ function MCPServersDesktop() {
     return () => {
       unlisten?.()
     }
+<<<<<<< HEAD
 
   }, [serviceHub, setConnectedServers])
 
@@ -634,6 +675,254 @@ function MCPServersDesktop() {
                 </Card>
               ))
             )}
+=======
+  }, [serviceHub, setConnectedServers])
+
+  return (
+    <Fragment>
+      <div className="flex flex-col h-svh w-full">
+        <HeaderPage>
+          <div className="flex items-center gap-2 w-full justify-between pr-4">
+            <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+            <Button variant="secondary" size="sm" onClick={() => handleOpenDialog()}>
+              <IconPlus size={18} className="text-muted-foreground" />
+              {t('mcp-servers:addServer')}
+            </Button>
+          </div>
+        </HeaderPage>
+        <div className="flex h-[calc(100%-60px)]">
+          <SettingsMenu />
+          <div className="p-4 pt-0 w-full overflow-y-auto">
+            <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+              <Card
+                header={
+                  <div className="flex flex-col mb-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <h1 className="text-foreground font-medium text-base font-studio">
+                          {t('mcp-servers:title')}
+                        </h1>
+                        <div className="text-xs bg-secondary border text-muted-foreground rounded-full py-0.5 px-2">
+                          <span>{t('mcp-servers:experimental')}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-0.5">
+                        <Button
+                          onClick={() => handleOpenJsonEditor()}
+                          title={t('mcp-servers:editAllJson')}
+                          size="icon-xs"
+                          variant="ghost"
+                        >
+                          <IconCodeCircle
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                        </Button>
+                      </div>
+                    </div>
+                    <p className="text-sm mt-1">
+                      {t('mcp-servers:findMore')}{' '}
+                      <a
+                        href="https://mcp.so/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        mcp.so
+                      </a>
+                    </p>
+                  </div>
+                }
+              >
+                <CardItem
+                  title={t('mcp-servers:allowPermissions')}
+                  description={t('mcp-servers:allowPermissionsDesc')}
+                  actions={
+                    <div className="shrink-0 ml-4">
+                      <Switch
+                        checked={allowAllMCPPermissions}
+                        onCheckedChange={setAllowAllMCPPermissions}
+                      />
+                    </div>
+                  }
+                />
+                <CardItem
+                  title={t('mcp-servers:runtimeSettings.toolCallTimeout')}
+                  description={t(
+                    'mcp-servers:runtimeSettings.toolCallTimeoutDesc'
+                  )}
+                  actions={
+                    <Input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={settings.toolCallTimeoutSeconds}
+                      onChange={(event) =>
+                        updateToolCallTimeout(event.target.value)
+                      }
+                      onBlur={() => {
+                        void syncServers()
+                      }}
+                      className="w-28"
+                    />
+                  }
+                />
+              </Card>
+
+              {Object.keys(mcpServers).length === 0 ? (
+                <div className="py-4 text-center font-medium text-muted-foreground">
+                  {t('mcp-servers:noServers')}
+                </div>
+              ) : (
+                Object.entries(mcpServers).map(([key, config], index) => (
+                  <Card key={`${key}-${index}`}>
+                    <CardItem
+                      align="start"
+                      title={
+                        <div className="flex items-center gap-x-2">
+                          <div
+                            className={twMerge(
+                              'size-2 rounded-full',
+                              connectedServers.includes(key)
+                                ? 'bg-green-600 dark:bg-green-600'
+                                : 'bg-secondary'
+                            )}
+                          />
+                          <h1 className="text-foreground text-base capitalize font-studio">
+                            {key}
+                          </h1>
+                          {config.official && (
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 text-xs bg-secondary border rounded-sm">
+                              <img
+                                src="/images/jan-logo.png"
+                                alt="Jan"
+                                className="w-3 h-3 object-contain"
+                              />
+                              <span>Official</span>
+                            </div>
+                          )}
+                        </div>
+                      }
+                      descriptionOutside={
+                        <div className="text-sm text-muted-foreground">
+                          <div className="mb-1">
+                            Transport:{' '}
+                            <span className="uppercase">
+                              {config.type || 'stdio'}
+                            </span>
+                          </div>
+
+                          {config.type === 'stdio' || !config.type ? (
+                            <>
+                              <div>
+                                {t('mcp-servers:command')}: {config.command}
+                              </div>
+                              <div className="my-1 break-all">
+                                {t('mcp-servers:args')}:{' '}
+                                {config?.args?.join(', ')}
+                              </div>
+                              {config.env &&
+                                Object.keys(config.env).length > 0 && (
+                                  <div className="break-all">
+                                    {t('mcp-servers:env')}:{' '}
+                                    {Object.entries(config.env)
+                                      .map(([key]) => `${key}=******`)
+                                      .join(', ')}
+                                  </div>
+                                )}
+                              {config.official && (
+                                <div className="mt-2 text-xs text-muted-foreground pt-2">
+                                  <p className="mb-1">
+                                    Requires Jan Browser Extension to be installed
+                                    in your Chrome-based browser.
+                                  </p>
+                                  <a
+                                    href="https://chromewebstore.google.com/detail/jan-browser-mcp/mkciifcjehgnpaigoiaakdgabbpfppal"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-500 hover:underline"
+                                  >
+                                    Install Extension →
+                                  </a>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <div className="break-all">
+                                URL: {maskSensitiveUrl(config.url || '')}
+                              </div>
+                              {config.headers &&
+                                Object.keys(config.headers).length > 0 && (
+                                  <div className="my-1 break-all">
+                                    Headers:{' '}
+                                    {Object.entries(config.headers)
+                                      .map(([key]) => `${key}=******`)
+                                      .join(', ')}
+                                  </div>
+                                )}
+                              {config.timeout && (
+                                <div>Timeout: {config.timeout}s</div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      }
+                      actions={
+                        <div className="flex items-center gap-0.5">
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            onClick={() => handleOpenJsonEditor(key)}
+                            title={t('mcp-servers:editJson.title', {
+                              serverName: key,
+                            })}
+                          >
+                            <IconCodeCircle
+                              size={18}
+                              className="text-muted-foreground"
+                            />
+                          </Button>
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            onClick={() => handleEdit(key)}
+                            title={t('mcp-servers:editServer')}
+                          >
+                            <IconPencil
+                              size={18}
+                              className="text-muted-foreground"
+                            />
+                          </Button>
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            onClick={() => handleDeleteClick(key)}
+                            title={t('mcp-servers:deleteServer.title')}
+                          >
+                            <IconTrash
+                              size={18}
+                              className="text-muted-foreground"
+                            />
+                          </Button>
+                          <div className="ml-2">
+                            <Switch
+                              checked={config.active}
+                              loading={!!loadingServers[key]}
+                              onCheckedChange={(checked) =>
+                                toggleServer(key, checked)
+                              }
+                            />
+                          </div>
+                        </div>
+                      }
+                    />
+                  </Card>
+                ))
+              )}
+            </div>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           </div>
         </div>
       </div>
@@ -668,6 +957,10 @@ function MCPServersDesktop() {
         }
         onSave={handleSaveJson}
       />
+<<<<<<< HEAD
     </div>
+=======
+    </Fragment>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   )
 }

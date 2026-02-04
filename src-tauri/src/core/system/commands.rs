@@ -26,7 +26,12 @@ pub fn factory_reset<R: Runtime>(app_handle: tauri::AppHandle<R>, state: State<'
     log::info!("Factory reset, removing data folder: {data_folder:?}");
 
     tauri::async_runtime::block_on(async {
+<<<<<<< HEAD
         let _ = stop_mcp_servers_with_context(&app_handle, &state, ShutdownContext::FactoryReset).await;
+=======
+        let _ =
+            stop_mcp_servers_with_context(&app_handle, &state, ShutdownContext::FactoryReset).await;
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
         {
             let mut active_servers = state.mcp_active_servers.lock().await;
@@ -127,4 +132,7 @@ pub fn is_library_available(library: &str) -> bool {
         }
     }
 }
+<<<<<<< HEAD
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5

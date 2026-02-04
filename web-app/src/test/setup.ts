@@ -5,6 +5,7 @@ import * as matchers from '@testing-library/jest-dom/matchers'
 // extends Vitest's expect method with methods from react-testing-library
 expect.extend(matchers)
 
+<<<<<<< HEAD
 // Global mock for platform features to enable all features in tests
 // This ensures consistent behavior across all tests and enables testing of
 // platform-specific features like Hub, Hardware monitoring, etc.
@@ -30,6 +31,8 @@ vi.mock('@/lib/platform/const', () => ({
   }
 }))
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 // Create a mock ServiceHub
 const mockServiceHub = {
   theme: () => ({

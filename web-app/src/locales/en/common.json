@@ -38,6 +38,14 @@
   "profile": "Profile",
   "reset": "Reset",
   "search": "Search",
+<<<<<<< HEAD
+=======
+  "searchThreads": "Search threads...",
+  "toNavigate": "to navigate",
+  "toSelect": "to select",
+  "toClose": "to close",
+  "clearRecent": "Clear",
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   "name": "Name",
   "cancel": "Cancel",
   "create": "Create",
@@ -98,6 +106,7 @@
   "deleteThread": "Delete Thread",
   "renameThread": "Rename Thread",
   "threadTitle": "Thread Title",
+<<<<<<< HEAD
   "selectThread": "Select thread",
   "selected": "selected",
   "selectAll": "Select all",
@@ -113,6 +122,8 @@
     "unstarThreadsTitle": "Remove {{count}} threads from favorites?",
     "unstarThreadsDescription": "Are you sure you want to remove {{count}} thread(s) from favorites?"
   },
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   "deleteAllThreads": "Delete All Threads",
   "allThreadsUnfavorited": "All Threads Unfavorited",
   "deleteAllThreadsConfirm": "Are you sure you want to delete all threads? This action cannot be undone.",
@@ -256,6 +267,10 @@
   },
   "projects": {
     "title": "Projects",
+<<<<<<< HEAD
+=======
+    "new": "New Projects",
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "addProject": "Add Project",
     "addToProject": "Add to project",
     "removeFromProject": "Remove from project",
@@ -269,6 +284,13 @@
     "noProjectsYetDesc": "Start a new project by clicking the Add Project button.",
     "projectNotFound": "Project Not Found",
     "projectNotFoundDesc": "The project you're looking for doesn't exist or has been deleted.",
+<<<<<<< HEAD
+=======
+    "selectAssistant": "Select assistant",
+    "noAssistantAssigned": "No assistant assigned to this project",
+    "files": "Files",
+    "filesDescription": "Add PDFs, documents, or other text to reference in this project.",
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "deleteProjectDialog": {
       "title": "Delete Project",
       "permanentDelete": "This will permanently delete all threads.",
@@ -287,16 +309,35 @@
       "editTitle": "Edit Project",
       "nameLabel": "Project Name",
       "namePlaceholder": "Enter project name...",
+<<<<<<< HEAD
+=======
+      "assistant": "Assistant",
+      "selectAssistant": "Select an assistant (optional)",
+      "noAssistant": "No assistant",
+      "addAssistant": "Add Assistant",
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       "createButton": "Create",
       "updateButton": "Update",
       "alreadyExists": "Project \"{{projectName}}\" already exists",
       "createSuccess": "Project \"{{projectName}}\" created successfully",
+<<<<<<< HEAD
       "renameSuccess": "Project renamed from \"{{oldName}}\" to \"{{newName}}\""
+=======
+      "updateSuccess": "Project \"{{projectName}}\" updated successfully"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     },
     "noConversationsIn": "No Conversations in {{projectName}}",
     "startNewConversation": "Start a new conversation with {{projectName}} below",
     "conversationsIn": "Conversations in {{projectName}}",
     "conversationsDescription": "Click on any conversation to continue chatting, or start a new one below.",
+<<<<<<< HEAD
+=======
+    "conversation": "Conversation",
+    "instructions": "Instructions",
+    "setup": "Setup",
+    "instructionsDescription": "Customize tone and style of response",
+    "manageInstructions": "Manage Instructions",
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "thread": "thread",
     "threads": "threads",
     "updated": "Updated:",
@@ -398,6 +439,7 @@
       "title": "Thread Removed",
       "description": "Thread removed from \"{{projectName}}\" successfully"
     },
+<<<<<<< HEAD
     "bulkDeleteThreads": {
       "title": "Deleted {{count}} threads",
       "description": "Successfully deleted {{count}} thread(s)",
@@ -418,5 +460,38 @@
       "description": "Successfully assigned {{count}} thread(s) to \"{{projectName}}\"",
       "error": "Failed to assign threads to project"
     }
+=======
+    "fileUploaded": {
+      "title": "File Uploaded",
+      "description": "File has been uploaded and indexed successfully"
+    },
+    "uploadFailed": {
+      "title": "Upload Failed",
+      "description": "Failed to upload file"
+    },
+    "fileDeleted": {
+      "title": "File Deleted",
+      "description": "File has been removed from the project"
+    },
+    "deleteFailed": {
+      "title": "Delete Failed",
+      "description": "Failed to delete file"
+    },
+    "fileAlreadyExists": {
+      "title": "File Already Exists",
+      "description": "File is already attached to this project"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "Attachments Disabled",
+      "description": "Attachments are disabled in Settings"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "File too large",
+    "fileTooLargeDescription": "{{fileName}} exceeds the {{maxFileSizeMB}}MB limit"
+  },
+  "files": {
+    "chunksCount": "{{count}} chunks"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   }
 }

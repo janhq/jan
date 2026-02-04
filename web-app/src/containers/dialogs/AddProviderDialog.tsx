@@ -74,7 +74,11 @@ export function AddProviderDialog({
             placeholder={t('provider:enterNameForProvider')}
             onKeyDown={handleKeyDown}
           />
+<<<<<<< HEAD
           <DialogFooter className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+=======
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             <DialogClose asChild>
               <Button
                 variant="link"

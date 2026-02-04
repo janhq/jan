@@ -5,6 +5,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { LogEntry } from '@/services/app/types'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+<<<<<<< HEAD
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 
@@ -21,6 +22,14 @@ function LocalApiServerLogsGuarded() {
   )
 }
 
+=======
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const Route = createFileRoute(route.localApiServerlogs as any)({
+  component: LogsViewer,
+})
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 const SERVER_LOG_TARGET = 'app_lib::core::server::proxy'
 const LOG_EVENT_NAME = 'log://log'
 
@@ -101,11 +110,19 @@ function LogsViewer() {
   }
 
   return (
+<<<<<<< HEAD
     <div className="flex flex-col h-full bg-main-view">
       <div className="flex-1 overflow-auto" ref={logsContainerRef}>
         <div className="font-mono p-2">
           {logs.length === 0 ? (
             <div className="text-center text-main-view-fg/50 py-8">
+=======
+    <div className="flex flex-col h-full bg-background">
+      <div className="flex-1 overflow-auto" ref={logsContainerRef}>
+        <div className="font-mono p-2">
+          {logs.length === 0 ? (
+            <div className="text-center text-muted-foreground py-8">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               {t('logs:noLogs')}
             </div>
           ) : (

@@ -17,7 +17,11 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+<<<<<<< HEAD
 import { predefinedProviders } from '@/consts/providers'
+=======
+import { predefinedProviders } from '@/constants/providers'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 
 type Props = {
@@ -43,7 +47,11 @@ const DeleteProvider = ({ provider }: Props) => {
         removeFavorite(favoriteModel.id)
       }
     })
+<<<<<<< HEAD
     
+=======
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     deleteProvider(provider.provider)
     toast.success(t('providers:deleteProvider.title'), {
       id: `delete-provider-${provider.provider}`,
@@ -86,7 +94,11 @@ const DeleteProvider = ({ provider }: Props) => {
 
             <DialogFooter className="mt-2">
               <DialogClose asChild>
+<<<<<<< HEAD
                 <Button variant="link" size="sm" className="hover:no-underline">
+=======
+                <Button variant="ghost" size="sm" className="hover:no-underline">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                   {t('providers:deleteProvider.cancel')}
                 </Button>
               </DialogClose>

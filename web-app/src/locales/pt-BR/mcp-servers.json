@@ -59,7 +59,11 @@
     "description": "Configure como o Jan gerencia e tenta novamente os servidores MCP.",
     "toolCallTimeout": "Tempo limite de chamada da ferramenta (segundos)",
     "toolCallTimeoutDesc": "Tempo máximo de espera por uma resposta da ferramenta MCP antes de atingir o tempo limite."
+<<<<<<< HEAD
   },
   "proactiveMode": "Modo Proativo de Uso do Navegador",
   "proactiveModeDesc": "Quando habilitado, captura automaticamente capturas de tela do navegador para fornecer contexto adicional para tarefas de automação do navegador. Requer Jan Browser MCP com modelo de visão e uso de ferramentas."
+=======
+  }
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }

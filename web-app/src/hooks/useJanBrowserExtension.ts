@@ -176,10 +176,13 @@ export function useJanBrowserExtension() {
     } catch (error) {
       // Don't show error if cancelled
       if (cancelledRef.current) return
+<<<<<<< HEAD
 
       toast.error('Failed to toggle Jan Browser MCP', {
         description: error instanceof Error ? error.message : String(error),
       })
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       console.error('Error toggling Jan Browser MCP:', error)
       setDialogOpen(false)
       setDialogState('closed')

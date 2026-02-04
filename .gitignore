@@ -16,8 +16,11 @@ test_results.html
 pre-install
 
 # docs
+<<<<<<< HEAD
 GIT_WORKFLOW_BACKDATED.md
 GIT_CONTRIBUTION_GUIDE.md
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 docs/yarn.lock
 src-tauri/resources/lib
 src-tauri/icons

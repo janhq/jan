@@ -1,5 +1,9 @@
 import { IconStar, IconStarFilled } from '@tabler/icons-react'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
+<<<<<<< HEAD
+=======
+import { Button } from '@/components/ui/button'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 interface FavoriteModelActionProps {
   model: Model
@@ -10,6 +14,7 @@ export function FavoriteModelAction({ model }: FavoriteModelActionProps) {
   const isModelFavorite = isFavorite(model.id)
 
   return (
+<<<<<<< HEAD
     <div
       aria-label="Toggle favorite"
       className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
@@ -21,5 +26,19 @@ export function FavoriteModelAction({ model }: FavoriteModelActionProps) {
         <IconStar size={18} className="text-main-view-fg/50" />
       )}
     </div>
+=======
+    <Button
+      aria-label="Toggle favorite" 
+      variant="ghost"
+      size="icon-xs"
+      onClick={() => toggleFavorite(model)}
+    >
+      {isModelFavorite ? (
+        <IconStarFilled size={18} className="text-muted-foreground" />
+      ) : (
+        <IconStar size={18} className="text-muted-foreground" />
+      )}
+    </Button>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   )
 }

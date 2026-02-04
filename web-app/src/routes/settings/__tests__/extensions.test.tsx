@@ -224,6 +224,10 @@ describe('Extensions Settings Route', () => {
     render(<Component />)
 
     const settingsContent = screen.getByTestId('settings-menu').nextElementSibling
+<<<<<<< HEAD
     expect(settingsContent).toHaveClass('p-4', 'w-full', 'h-[calc(100%-32px)]', 'overflow-y-auto')
+=======
+    expect(settingsContent).toHaveClass('p-4', 'pt-0', 'w-full', 'overflow-y-auto')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   })
 })

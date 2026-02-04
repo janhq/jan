@@ -49,7 +49,11 @@ export default function GlobalError({ error }: GlobalErrorProps) {
           or <br /> feel free to{' '}
           <a
             rel="noopener noreferrer"
+<<<<<<< HEAD
             className="!text-accent hover:underline"
+=======
+            className="text-accent! hover:underline"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             href="https://discord.gg/FTk2MvZwJH"
             target="_blank"
           >
@@ -58,7 +62,11 @@ export default function GlobalError({ error }: GlobalErrorProps) {
           if the problem persists.
         </p>
         <div
+<<<<<<< HEAD
           className="mt-5 w-full md:w-4/5 mx-auto rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700 "
+=======
+          className="mt-5 w-full md:w-4/5 xl:w-4/6 mx-auto rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700 "
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           role="alert"
         >
           <strong className="font-bold">Error: </strong>

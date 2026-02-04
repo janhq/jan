@@ -3,9 +3,15 @@ use std::io::{BufRead, BufReader, Write};
 use tauri::Runtime;
 
 // For async file write serialization
+<<<<<<< HEAD
 use std::sync::OnceLock;
 use std::collections::HashMap;
 use std::sync::Arc;
+=======
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::OnceLock;
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 use tokio::sync::Mutex;
 
 use super::utils::{get_messages_path, get_thread_metadata_path};

@@ -20,11 +20,18 @@ import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
+<<<<<<< HEAD
 import { predefinedProviders } from '@/consts/providers'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { getLastUsedModel } from '@/utils/getModelToStart'
+=======
+import { predefinedProviders } from '@/constants/providers'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { getLastUsedModel } from '@/utils/getModelToStart'
+import { ChevronsUpDown } from 'lucide-react'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -179,6 +186,7 @@ const DropdownModelProvider = ({
             await checkAndUpdateModelVisionCapability(lastUsed.model)
           }
         } else {
+<<<<<<< HEAD
           // For web-only builds, auto-select the first model from jan provider
           if (PlatformFeatures[PlatformFeature.WEB_AUTO_MODEL_SELECTION]) {
             const janProvider = providers.find(
@@ -191,6 +199,8 @@ const DropdownModelProvider = ({
             }
           }
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           // Fallback: auto-select first llamacpp model if available
           const llamacppProvider = providers.find(
             (p) => p.provider === 'llamacpp' && p.active && p.models.length > 0
@@ -203,6 +213,7 @@ const DropdownModelProvider = ({
             selectModelProvider('', '')
           }
         }
+<<<<<<< HEAD
       } else {
         // Get current state for web auto-selection check
         const currentState = { selectedModel, selectedProvider }
@@ -220,6 +231,8 @@ const DropdownModelProvider = ({
             selectModelProvider(janProvider.provider, firstModel.id)
           }
         }
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       }
     }
 
@@ -293,6 +306,12 @@ const DropdownModelProvider = ({
       if (!provider.active) return
 
       provider.models.forEach((modelItem) => {
+<<<<<<< HEAD
+=======
+        // Skip embedding models - they can't be used for chat
+        if (modelItem.embedding) return
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         // Skip models that require API key but don't have one (except llamacpp)
         if (
           provider &&
@@ -460,11 +479,19 @@ const DropdownModelProvider = ({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
+<<<<<<< HEAD
       <div className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 flex items-center gap-1.5 rounded-sm">
         <PopoverTrigger asChild>
           <button
             type="button"
             className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20"
+=======
+      <div className="border px-4 py-1.5 flex items-center gap-1.5 rounded-full">
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-50"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           >
             {provider && (
               <div className="shrink-0">
@@ -473,12 +500,21 @@ const DropdownModelProvider = ({
             )}
             <span
               className={cn(
+<<<<<<< HEAD
                 'text-main-view-fg/80 truncate leading-normal',
                 !selectedModel?.id && 'text-main-view-fg/50'
+=======
+                'text-foreground truncate leading-normal',
+                !selectedModel?.id && 'text-muted-foreground'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               )}
             >
               {displayModel}
             </span>
+<<<<<<< HEAD
+=======
+            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           </button>
         </PopoverTrigger>
         {currentModel?.settings &&
@@ -487,19 +523,27 @@ const DropdownModelProvider = ({
             <ModelSetting
               model={currentModel as Model}
               provider={provider}
+<<<<<<< HEAD
               smallIcon
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             />
           )}
         <ModelSupportStatus
           modelId={selectedModel?.id}
           provider={selectedProvider}
           contextSize={getContextSize()}
+<<<<<<< HEAD
           className="ml-0.5 flex-shrink-0"
+=======
+          className="ml-0.5 shrink-0"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         />
       </div>
 
       <PopoverContent
         className={cn(
+<<<<<<< HEAD
           'w-60 p-0 backdrop-blur-2xl',
           searchValue.length === 0 && 'h-[320px]'
         )}
@@ -512,6 +556,20 @@ const DropdownModelProvider = ({
         <div className="flex flex-col w-full h-full">
           {/* Search input */}
           <div className="relative px-2 py-1.5 border-b border-main-view-fg/10 backdrop-blur-4xl">
+=======
+          'w-70 p-0 backdrop-blur-2xl bg-background/95 border',
+          searchValue.length === 0 && 'h-80'
+        )}
+        align="start"
+        sideOffset={16}
+        alignOffset={-10}
+        side="bottom"
+        avoidCollisions={searchValue.length === 0 ? true : false}
+      >
+        <div className="flex flex-col size-full">
+          {/* Search input */}
+          <div className="relative p-2 border-b">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             <input
               ref={searchInputRef}
               value={searchValue}
@@ -523,7 +581,11 @@ const DropdownModelProvider = ({
               <div className="absolute right-2 top-0 bottom-0 flex items-center justify-center">
                 <IconX
                   size={16}
+<<<<<<< HEAD
                   className="text-main-view-fg/50 hover:text-main-view-fg cursor-pointer"
+=======
+                  className="text-muted-foreground cursor-pointer"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                   onClick={onClearSearch}
                 />
               </div>
@@ -531,19 +593,32 @@ const DropdownModelProvider = ({
           </div>
 
           {/* Model list */}
+<<<<<<< HEAD
           <div className="max-h-[320px] overflow-y-auto">
             {Object.keys(groupedItems).length === 0 && searchValue ? (
               <div className="py-3 px-4 text-sm text-main-view-fg/60">
+=======
+          <div className="max-h-80 overflow-y-auto">
+            {Object.keys(groupedItems).length === 0 && searchValue ? (
+              <div className="py-3 px-4 text-sm ">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 {t('common:noModelsFoundFor', { searchValue })}
               </div>
             ) : (
               <div className="py-1">
                 {/* Favorites section - only show when not searching */}
                 {!searchValue && favoriteItems.length > 0 && (
+<<<<<<< HEAD
                   <div className="bg-main-view-fg/2 backdrop-blur-2xl rounded-sm my-1.5 mx-1.5">
                     {/* Favorites header */}
                     <div className="flex items-center gap-1.5 px-2 py-1">
                       <span className="text-sm font-medium text-main-view-fg/80">
+=======
+                  <div className="bg-secondary/30 rounded-sm m-2 py-1">
+                    {/* Favorites header */}
+                    <div className="flex items-center gap-1.5 px-2 py-1">
+                      <span className="text-sm font-medium text-muted-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                         {t('common:favorites')}
                       </span>
                     </div>
@@ -563,9 +638,15 @@ const DropdownModelProvider = ({
                           onClick={() => handleSelect(searchableModel)}
                           className={cn(
                             'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
+<<<<<<< HEAD
                             'hover:bg-main-view-fg/4',
                             isSelected &&
                               'bg-main-view-fg/8 hover:bg-main-view-fg/8'
+=======
+                            'hover:bg-secondary/40',
+                            isSelected &&
+                              'bg-secondary/50'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                           )}
                         >
                           <div className="flex items-center gap-1 flex-1 min-w-0">
@@ -574,12 +655,20 @@ const DropdownModelProvider = ({
                                 provider={searchableModel.provider}
                               />
                             </div>
+<<<<<<< HEAD
                             <span className="text-main-view-fg/80 text-sm">
+=======
+                            <span className="text-sm truncate">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                               {getModelDisplayName(searchableModel.model)}
                             </span>
                             <div className="flex-1"></div>
                             {capabilities.length > 0 && (
+<<<<<<< HEAD
                               <div className="flex-shrink-0 -mr-1.5">
+=======
+                              <div className="shrink-0 -mr-1.5">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                                 <Capabilities capabilities={capabilities} />
                               </div>
                             )}
@@ -592,7 +681,11 @@ const DropdownModelProvider = ({
 
                 {/* Divider between favorites and regular providers */}
                 {favoriteItems.length > 0 && (
+<<<<<<< HEAD
                   <div className="border-b border-1 border-main-view-fg/8 mx-2"></div>
+=======
+                  <div className="border-b mx-2"></div>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 )}
 
                 {/* Regular provider sections */}
@@ -606,12 +699,17 @@ const DropdownModelProvider = ({
                   return (
                     <div
                       key={providerKey}
+<<<<<<< HEAD
                       className="bg-main-view-fg/2 backdrop-blur-2xl first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0"
+=======
+                      className="bg-secondary/30 first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0 py-1"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                     >
                       {/* Provider header */}
                       <div className="flex items-center justify-between px-2 py-1">
                         <div className="flex items-center gap-1.5">
                           <ProvidersAvatar provider={providerInfo} />
+<<<<<<< HEAD
                           <span className="capitalize text-sm font-medium text-main-view-fg/80">
                             {getProviderTitle(providerInfo.provider)}
                           </span>
@@ -636,6 +734,29 @@ const DropdownModelProvider = ({
                             />
                           </div>
                         )}
+=======
+                          <span className="capitalize text-sm font-medium text-muted-foreground">
+                            {getProviderTitle(providerInfo.provider)}
+                          </span>
+                        </div>
+
+                        <div
+                          className="size-6 cursor-pointer flex items-center justify-center rounded-sm bg-secondary-foreground/8 transition-all duration-200 ease-in-out"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            navigate({
+                              to: route.settings.providers,
+                              params: { providerName: providerInfo.provider },
+                            })
+                            setOpen(false)
+                          }}
+                        >
+                          <IconSettings
+                            size={16}
+                            className="text-muted-foreground"
+                          />
+                        </div>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                       </div>
 
                       {/* Models for this provider */}
@@ -658,21 +779,35 @@ const DropdownModelProvider = ({
                               onClick={() => handleSelect(searchableModel)}
                               className={cn(
                                 'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
+<<<<<<< HEAD
                                 'hover:bg-main-view-fg/4',
                                 isSelected &&
                                   'bg-main-view-fg/8 hover:bg-main-view-fg/8'
+=======
+                                'hover:bg-secondary/40',
+                                isSelected &&
+                                  'bg-secondary/60 hover:bg-secondary/60'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                               )}
                             >
                               <div className="flex items-center gap-2 flex-1 min-w-0">
                                 <span
+<<<<<<< HEAD
                                   className="text-main-view-fg/80 text-sm"
+=======
+                                  className="text-sm truncate"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                                   title={searchableModel.model.id}
                                 >
                                   {getModelDisplayName(searchableModel.model)}
                                 </span>
                                 <div className="flex-1"></div>
                                 {capabilities.length > 0 && (
+<<<<<<< HEAD
                                   <div className="flex-shrink-0 -mr-1.5">
+=======
+                                  <div className="shrink-0 -mr-1.5">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                                     <Capabilities capabilities={capabilities} />
                                   </div>
                                 )}

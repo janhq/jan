@@ -5,7 +5,10 @@ type CardProps = {
   title?: string
   children?: ReactNode
   header?: ReactNode
+<<<<<<< HEAD
   className?: string
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }
 
 type CardItemProps = {
@@ -29,6 +32,7 @@ export function CardItem({
   column,
   actions,
 }: CardItemProps) {
+<<<<<<< HEAD
   const alignmentClasses = {
     start: 'items-start',
     center: 'items-center',
@@ -57,6 +61,29 @@ export function CardItem({
           )}
         </div>
 
+=======
+  return (
+    <>
+      <div
+        className={cn(
+          'flex justify-between mt-2 first:mt-0 border-b border-border/40 pb-3 last:border-none last:pb-0 gap-8',
+          descriptionOutside && 'border-0',
+          align === 'start' && 'items-start',
+          align === 'center' && 'items-center',
+          align === 'end' && 'items-end',
+          column && 'flex-col gap-y-0 items-start',
+          className
+        )}
+      >
+        <div className="space-y-1.5">
+          <h1 className="font-medium text-foreground">{title}</h1>
+          {description && (
+            <span className="text-muted-foreground leading-normal">
+              {description}
+            </span>
+          )}
+        </div>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         {actions && (
           <div
             className={cn(
@@ -69,6 +96,7 @@ export function CardItem({
           </div>
         )}
       </div>
+<<<<<<< HEAD
 
       {descriptionOutside && (
         <div className="text-sm text-main-view-fg/70 leading-normal pb-3 border-b border-main-view-fg/5 last:border-none last:pb-0">
@@ -94,6 +122,27 @@ export function Card({ title, children, header, className }: CardProps) {
       )}
       {header && <div className="mb-4">{header}</div>}
       <div className="flex flex-col">{children}</div>
+=======
+      {descriptionOutside && (
+        <span className="text-muted-foreground leading-normal">
+          {descriptionOutside}
+        </span>
+      )}
+    </>
+  )
+}
+
+export function Card({ title, children, header }: CardProps) {
+  return (
+    <div className="bg-card p-4 rounded-lg text-muted-foreground w-full">
+      {title && (
+        <h1 className="text-foreground font-studio font-medium text-base mb-4">
+          {title}
+        </h1>
+      )}
+      {header && header}
+      {children}
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     </div>
   )
 }

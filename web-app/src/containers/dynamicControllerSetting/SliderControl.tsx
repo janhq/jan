@@ -24,6 +24,7 @@ export function SliderControl({
   step = 1,
   onChange,
 }: SliderControlProps) {
+<<<<<<< HEAD
   const [currentValue, setCurrentValue] = React.useState<number[]>(
     Array.isArray(value) ? value : [min]
   )
@@ -33,6 +34,25 @@ export function SliderControl({
   const [inputNumber, setInputNumber] = React.useState<number>(currentValue[0])
   const isExceedingMax = inputNumber > max
 
+=======
+  const initialValue = Array.isArray(value) && value[0] !== undefined ? value : [min]
+  const [currentValue, setCurrentValue] = React.useState<number[]>(initialValue)
+  const [inputValue, setInputValue] = React.useState<string>(
+    initialValue[0].toString()
+  )
+  const [inputNumber, setInputNumber] = React.useState<number>(initialValue[0])
+  const isExceedingMax = inputNumber > max
+
+  // Sync with external value changes
+  React.useEffect(() => {
+    if (Array.isArray(value) && value[0] !== undefined) {
+      setCurrentValue(value)
+      setInputValue(value[0].toString())
+      setInputNumber(value[0])
+    }
+  }, [value])
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   const handleValueChange = (newValue: SliderProps['defaultValue']) => {
     if (newValue) {
       setCurrentValue(newValue)
@@ -67,19 +87,32 @@ export function SliderControl({
               step={step}
               value={currentValue}
               onValueChange={handleValueChange}
+<<<<<<< HEAD
               className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4"
               aria-label={title}
             />
             <div className="flex justify-between px-1">
               <span className="text-xs text-main-view-fg/50">{min}</span>
               <span className="text-xs text-main-view-fg/50">{max}</span>
+=======
+              className="**:[[role=slider]]:h-4 **:[[role=slider]]:w-4"
+              aria-label={title}
+            />
+            <div className="flex justify-between px-1">
+              <span className="text-xs text-muted-foreground">{min}</span>
+              <span className="text-xs text-muted-foreground">{max}</span>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             </div>
           </div>
           <Input
             className={`w-16 h-8 -mt-6 rounded-md border px-2 text-right text-xs ${
               isExceedingMax
                 ? 'border-destructive text-destructive'
+<<<<<<< HEAD
                 : 'text-main-view-fg/20 border-main-view-fg/10'
+=======
+                : 'text-muted-foreground'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             } transition-all duration-200 ease-in-out`}
             value={inputValue}
             onChange={handleInputChange}

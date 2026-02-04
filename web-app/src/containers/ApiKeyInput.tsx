@@ -73,7 +73,11 @@ export function ApiKeyInput({
         className={cn(
           'w-full text-sm pr-10',
           hasError &&
+<<<<<<< HEAD
             'border-1 border-destructive focus:border-destructive focus:ring-destructive',
+=======
+            'border border-destructive focus:border-destructive focus:ring-destructive',
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           isServerRunning && 'opacity-50 pointer-events-none'
         )}
         placeholder={t('common:enterApiKey')}
@@ -81,7 +85,11 @@ export function ApiKeyInput({
       <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
         <button
           onClick={() => setShowPassword(!showPassword)}
+<<<<<<< HEAD
           className="p-1 rounded hover:bg-main-view-fg/5 text-main-view-fg/70"
+=======
+          className="p-1 rounded hover:bg-secondary/50 text-muted-foreground"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           type="button"
         >
           {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}

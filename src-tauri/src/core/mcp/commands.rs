@@ -9,9 +9,13 @@ use super::{
     helpers::{restart_active_mcp_servers, start_mcp_server},
 };
 use crate::core::{
+<<<<<<< HEAD
     app::commands::get_jan_data_folder_path,
     mcp::models::McpSettings,
     state::AppState,
+=======
+    app::commands::get_jan_data_folder_path, mcp::models::McpSettings, state::AppState,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 };
 use crate::core::{
     mcp::models::ToolWithServer,
@@ -20,11 +24,15 @@ use crate::core::{
 use std::{fs, time::Duration};
 
 async fn tool_call_timeout(state: &State<'_, AppState>) -> Duration {
+<<<<<<< HEAD
     state
         .mcp_settings
         .lock()
         .await
         .tool_call_timeout_duration()
+=======
+    state.mcp_settings.lock().await.tool_call_timeout_duration()
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }
 
 #[tauri::command]
@@ -123,7 +131,14 @@ pub async fn deactivate_mcp_server<R: Runtime>(
 }
 
 #[tauri::command]
+<<<<<<< HEAD
 pub async fn restart_mcp_servers<R: Runtime>(app: AppHandle<R>, state: State<'_, AppState>) -> Result<(), String> {
+=======
+pub async fn restart_mcp_servers<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     use super::helpers::{stop_mcp_servers_with_context, ShutdownContext};
 
     let servers = state.mcp_servers.clone();
@@ -139,7 +154,10 @@ pub async fn restart_mcp_servers<R: Runtime>(app: AppHandle<R>, state: State<'_,
     Ok(())
 }
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 #[tauri::command]
 pub async fn get_connected_servers(
     _app: AppHandle<impl Runtime>,
@@ -237,6 +255,7 @@ pub async fn call_tool(
     let servers = state.mcp_servers.lock().await;
 
     // If server_name is provided, only check that specific server
+<<<<<<< HEAD
     let servers_to_check: Vec<(&String, &crate::core::state::RunningServiceEnum)> = if let Some(ref server) = server_name {
         servers.iter()
             .filter(|(name, _)| *name == server)
@@ -244,6 +263,14 @@ pub async fn call_tool(
     } else {
         servers.iter().collect()
     };
+=======
+    let servers_to_check: Vec<(&String, &crate::core::state::RunningServiceEnum)> =
+        if let Some(ref server) = server_name {
+            servers.iter().filter(|(name, _)| *name == server).collect()
+        } else {
+            servers.iter().collect()
+        };
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     if servers_to_check.is_empty() {
         if let Some(server) = server_name {
@@ -322,7 +349,11 @@ pub async fn cancel_tool_call(
     cancellation_token: String,
 ) -> Result<(), String> {
     let mut cancellations = state.tool_call_cancellations.lock().await;
+<<<<<<< HEAD
     
+=======
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     if let Some(cancel_tx) = cancellations.remove(&cancellation_token) {
         // Send cancellation signal - ignore if receiver is already dropped
         let _ = cancel_tx.send(());
@@ -562,13 +593,25 @@ async fn try_browser_snapshot_tool(service: &RunningServiceEnum) -> Result<bool,
 }
 
 #[tauri::command]
+<<<<<<< HEAD
 pub async fn save_mcp_configs<R: Runtime>(app: AppHandle<R>, configs: String) -> Result<(), String> {
+=======
+pub async fn save_mcp_configs<R: Runtime>(
+    app: AppHandle<R>,
+    configs: String,
+) -> Result<(), String> {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     let mut path = get_jan_data_folder_path(app.clone());
     path.push("mcp_config.json");
     log::info!("save mcp configs, path: {path:?}");
 
+<<<<<<< HEAD
     let mut config_value: Value = serde_json::from_str(&configs)
         .map_err(|e| format!("Invalid MCP config payload: {e}"))?;
+=======
+    let mut config_value: Value =
+        serde_json::from_str(&configs).map_err(|e| format!("Invalid MCP config payload: {e}"))?;
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     if !config_value.is_object() {
         return Err("MCP config must be a JSON object".to_string());

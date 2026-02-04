@@ -49,10 +49,17 @@ export function FactoryResetDialog({
           <DialogDescription>
             {t('settings:general.factoryResetDesc')}
           </DialogDescription>
+<<<<<<< HEAD
           <DialogFooter className="mt-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
               <Button 
                 variant="link" 
+=======
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <DialogClose asChild>
+              <Button 
+                variant="ghost" 
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 size="sm" 
                 className="hover:no-underline w-full sm:w-auto"
               >

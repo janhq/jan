@@ -34,6 +34,7 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
     }
 
     match fs::read_to_string(&configuration_file) {
+<<<<<<< HEAD
         Ok(content) => match serde_json::from_str::<AppConfiguration>(&content) {
             Ok(app_configurations) => app_configurations,
             Err(err) => {
@@ -43,6 +44,21 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
         },
         Err(err) => {
             log::error!("Failed to read app config, returning default config instead. Error: {err}");
+=======
+        Ok(content) => {
+            match serde_json::from_str::<AppConfiguration>(&content) {
+                Ok(app_configurations) => app_configurations,
+                Err(err) => {
+                    log::error!("Failed to parse app config, returning default config instead. Error: {err}");
+                    app_default_configuration
+                }
+            }
+        }
+        Err(err) => {
+            log::error!(
+                "Failed to read app config, returning default config instead. Error: {err}"
+            );
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             app_default_configuration
         }
     }
@@ -96,9 +112,13 @@ pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
 #[tauri::command]
 pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
     let app_path = app_handle.path().app_data_dir().unwrap_or_else(|err| {
+<<<<<<< HEAD
         log::error!(
             "Failed to get app data directory: {err}. Using home directory instead."
         );
+=======
+        log::error!("Failed to get app data directory: {err}. Using home directory instead.");
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
         let home_dir = std::env::var(if cfg!(target_os = "windows") {
             "USERPROFILE"

@@ -5,17 +5,26 @@ import { ThreadMessage } from '@janhq/core'
 
 // Mock the ServiceHub
 const mockCreateMessage = vi.fn()
+<<<<<<< HEAD
+=======
+const mockModifyMessage = vi.fn()
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 const mockDeleteMessage = vi.fn()
 
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({
     messages: () => ({
       createMessage: mockCreateMessage,
+<<<<<<< HEAD
+=======
+      modifyMessage: mockModifyMessage,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       deleteMessage: mockDeleteMessage,
     }),
   }),
 }))
 
+<<<<<<< HEAD
 vi.mock('./useAssistant', () => ({
   useAssistant: {
     getState: vi.fn(() => ({
@@ -36,6 +45,8 @@ vi.mock('./useAssistant', () => ({
     })),
   },
 }))
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 describe('useMessages', () => {
 
@@ -188,6 +199,7 @@ describe('useMessages', () => {
         role: 'user',
         content: 'Test message',
         created_at: Date.now(),
+<<<<<<< HEAD
         metadata: {
           assistant: {
             id: 'test-assistant',
@@ -197,6 +209,8 @@ describe('useMessages', () => {
             parameters: 'test parameters',
           },
         },
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       }
 
       mockCreateMessage.mockResolvedValue(mockCreatedMessage)
@@ -215,6 +229,7 @@ describe('useMessages', () => {
 
       expect(mockCreateMessage).toHaveBeenCalledWith(
         expect.objectContaining({
+<<<<<<< HEAD
           ...messageToAdd,
           metadata: expect.objectContaining({
             assistant: expect.objectContaining({
@@ -222,6 +237,12 @@ describe('useMessages', () => {
               name: expect.any(String),
             }),
           }),
+=======
+          id: messageToAdd.id,
+          thread_id: messageToAdd.thread_id,
+          role: messageToAdd.role,
+          content: messageToAdd.content,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         })
       )
 
@@ -232,12 +253,15 @@ describe('useMessages', () => {
           thread_id: messageToAdd.thread_id,
           role: messageToAdd.role,
           content: messageToAdd.content,
+<<<<<<< HEAD
           metadata: expect.objectContaining({
             assistant: expect.objectContaining({
               id: expect.any(String),
               name: expect.any(String),
             }),
           }),
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         })
       )
 
@@ -288,6 +312,12 @@ describe('useMessages', () => {
         role: 'user',
         content: 'Test message',
         created_at: Date.now(),
+<<<<<<< HEAD
+=======
+        metadata: {
+          customField: 'custom value',
+        },
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       }
 
       mockCreateMessage.mockResolvedValue(mockCreatedMessage)
@@ -311,7 +341,10 @@ describe('useMessages', () => {
         expect.objectContaining({
           metadata: expect.objectContaining({
             customField: 'custom value',
+<<<<<<< HEAD
             assistant: expect.any(Object),
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           }),
         })
       )

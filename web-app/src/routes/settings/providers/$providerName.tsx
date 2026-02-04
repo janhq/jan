@@ -14,7 +14,10 @@ import Capabilities from '@/containers/Capabilities'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { DialogEditModel } from '@/containers/dialogs/EditModel'
+<<<<<<< HEAD
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import { ImportVisionModelDialog } from '@/containers/dialogs/ImportVisionModelDialog'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
@@ -31,15 +34,25 @@ import {
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { useCallback, useEffect, useState } from 'react'
+<<<<<<< HEAD
 import { predefinedProviders } from '@/consts/providers'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+=======
+import { predefinedProviders } from '@/constants/providers'
+import { useModelLoad } from '@/hooks/useModelLoad'
+import { useLlamacppDevices } from '@/hooks/useLlamacppDevices'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 import { basenameNoExt } from '@/lib/utils'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
+<<<<<<< HEAD
+=======
+import { DialogAddModel } from '@/containers/dialogs/AddModel'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -365,6 +378,7 @@ function ProviderDetail() {
     }
   }, [provider, serviceHub, refreshSettings, t, installBackend])
 
+<<<<<<< HEAD
   // Check if model provider settings are enabled for this platform
   if (!PlatformFeatures[PlatformFeature.MODEL_PROVIDER_SETTINGS]) {
     return (
@@ -818,10 +832,423 @@ function ProviderDetail() {
                   )}
                 </Card>
               </div>
+=======
+  return (
+    <div className="flex flex-col h-svh w-full">
+      <HeaderPage>
+        <div className="flex items-center gap-2 w-full">
+          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+        </div>
+      </HeaderPage>
+      <div className="flex h-[calc(100%-60px)]">
+        <SettingsMenu />
+        <div className="p-4 pt-0 w-full overflow-y-auto">
+          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+            <div className="flex items-center justify-between">
+              <h1 className="font-medium text-base">
+                {getProviderTitle(providerName)}
+              </h1>
+            </div>
+
+            <div
+              className={cn(
+                'flex flex-col gap-3',
+                provider &&
+                provider.provider === 'llamacpp' &&
+                'flex-col-reverse'
+              )}
+            >
+              {/* Settings */}
+              <Card>
+                {provider?.settings.map((setting, settingIndex) => {
+                  // Use the DynamicController component
+                  const actionComponent = (
+                    <div className="mt-2">
+                      {needsBackendConfig &&
+                        setting.key === 'version_backend' ? (
+                        <div className="flex items-center gap-1 text-sm">
+                          <IconLoader size={16} className="animate-spin" />
+                          <span>loading</span>
+                        </div>
+                      ) : (
+                        <DynamicControllerSetting
+                          controllerType={setting.controller_type}
+                          controllerProps={setting.controller_props}
+                          className={cn(
+                            setting.key === 'device' && 'hidden'
+                          )}
+                          onChange={(newValue) => {
+                            if (provider) {
+                              const newSettings = [...provider.settings]
+                                // Handle different value types by forcing the type
+                                // Use type assertion to bypass type checking
+
+                                ; (
+                                  newSettings[settingIndex]
+                                    .controller_props as {
+                                      value: string | boolean | number
+                                    }
+                                ).value = newValue
+
+                              // Create update object with updated settings
+                              const updateObj: Partial<ModelProvider> = {
+                                settings: newSettings,
+                              }
+                              // Check if this is an API key or base URL setting and update the corresponding top-level field
+                              const settingKey = setting.key
+                              if (
+                                settingKey === 'api-key' &&
+                                typeof newValue === 'string'
+                              ) {
+                                updateObj.api_key = newValue
+                              } else if (
+                                settingKey === 'base-url' &&
+                                typeof newValue === 'string'
+                              ) {
+                                updateObj.base_url = newValue
+                              }
+
+                              // Reset device setting to empty when backend version changes
+                              if (settingKey === 'version_backend') {
+                                const deviceSettingIndex =
+                                  newSettings.findIndex(
+                                    (s) => s.key === 'device'
+                                  )
+
+                                if (deviceSettingIndex !== -1) {
+                                  (
+                                    newSettings[deviceSettingIndex]
+                                      .controller_props as {
+                                        value: string
+                                      }
+                                  ).value = ''
+                                }
+
+                                // Reset llamacpp device activations when backend version changes
+                                if (providerName === 'llamacpp') {
+                                  // Refresh devices to update activation status from provider settings
+                                  const { fetchDevices } =
+                                    useLlamacppDevices.getState()
+                                  fetchDevices()
+                                }
+                              }
+
+                              serviceHub
+                                .providers()
+                                .updateSettings(
+                                  providerName,
+                                  updateObj.settings ?? []
+                                )
+                              updateProvider(providerName, {
+                                ...provider,
+                                ...updateObj,
+                              })
+
+                              serviceHub.models().stopAllModels()
+
+                              // Refresh active models after stopping
+                              serviceHub
+                                .models()
+                                .getActiveModels()
+                                .then((models) =>
+                                  setActiveModels(models || [])
+                                )
+                            }
+                          }}
+                        />
+                      )}
+                    </div>
+                  )
+
+                  return (
+                    <CardItem
+                      key={settingIndex}
+                      title={setting.title}
+                      className={cn(setting.key === 'device' && 'hidden')}
+                      column={
+                        setting.controller_type === 'input' &&
+                          setting.controller_props.type !== 'number'
+                          ? true
+                          : false
+                      }
+                      description={
+                        <>
+                          <RenderMarkdown
+                            className="![>p]:text-muted-foreground select-none"
+                            content={setting.description}
+                            components={{
+                              // Make links open in a new tab
+                              a: ({ ...props }) => {
+                                return (
+                                  <a
+                                    {...props}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  />
+                                )
+                              },
+                              p: ({ ...props }) => (
+                                <p {...props} className="mb-0!" />
+                              ),
+                            }}
+                          />
+                          {setting.key === 'version_backend' &&
+                            setting.controller_props?.recommended && (
+                              <div className="mt-1 text-sm text-muted-foreground">
+                                <span className="font-medium">
+                                  {setting.controller_props.recommended
+                                    ?.split('/')
+                                    .pop() ||
+                                    setting.controller_props.recommended}
+                                </span>
+                                <span> is the recommended backend.</span>
+                              </div>
+                            )}
+                          {setting.key === 'version_backend' &&
+                            provider?.provider === 'llamacpp' && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className={cn(
+                                    isCheckingBackendUpdate &&
+                                    'pointer-events-none'
+                                  )}
+                                  onClick={handleCheckForBackendUpdate}
+                                >
+                                  <IconRefresh
+                                      size={12}
+                                      className={cn(
+                                        'text-muted-foreground',
+                                        isCheckingBackendUpdate &&
+                                        'animate-spin'
+                                      )}
+                                    />
+                                    <span>
+                                      {isCheckingBackendUpdate
+                                        ? t(
+                                          'settings:checkingForBackendUpdates'
+                                        )
+                                        : t(
+                                          'settings:checkForBackendUpdates'
+                                        )}
+                                    </span>
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={handleInstallBackendFromFile}
+                                  disabled={isInstallingBackend}
+                                >
+                                  <IconUpload
+                                    size={12}
+                                    className={cn(
+                                      'text-muted-foreground',
+                                      isInstallingBackend && 'animate-pulse'
+                                    )}
+                                  />
+                                  <span>
+                                    {isInstallingBackend
+                                      ? 'Installing Backend...'
+                                      : 'Install Backend from File'}
+                                  </span>
+                                </Button>
+                              </div>
+                            )}
+                        </>
+                      }
+                      actions={actionComponent}
+                    />
+                  )
+                })}
+
+                <DeleteProvider provider={provider} />
+              </Card>
+
+              {/* Models */}
+              <Card
+                header={
+                  <div className="flex items-center justify-between mb-4">
+                    <h1 className="text-foreground font-medium text-base">
+                      {t('providers:models')}
+                    </h1>
+                    <div className="flex items-center gap-2">
+                      {provider && provider.provider !== 'llamacpp' && (
+                        <>
+                          <Button
+                            variant="secondary"
+                            size="icon-xs"
+                            onClick={handleRefreshModels}
+                            disabled={refreshingModels}
+                          >
+                            {refreshingModels ? (
+                              <IconLoader
+                                size={18}
+                                className="text-muted-foreground animate-spin"
+                              />
+                            ) : (
+                              <IconRefresh
+                                size={18}
+                                className="text-muted-foreground"
+                              />
+                            )}
+                          </Button>
+                          <DialogAddModel provider={provider} />
+                        </>
+                      )}
+                      {provider && provider.provider === 'llamacpp' && (
+                        <ImportVisionModelDialog
+                          provider={provider}
+                          onSuccess={handleModelImportSuccess}
+                          trigger={
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                            >
+                              <IconFolderPlus
+                                size={18}
+                                className="text-muted-foreground"
+                              />
+                              <span>
+                                {t('providers:import')}
+                              </span>
+                            </Button>
+                          }
+                        />
+                      )}
+                    </div>
+                  </div>
+                }
+              >
+                {provider?.models.length ? (
+                  provider?.models.map((model, modelIndex) => {
+                    const capabilities = model.capabilities || []
+                    return (
+                      <CardItem
+                        key={modelIndex}
+                        title={
+                          <div className="flex items-center gap-2">
+                            <h1
+                              className="font-medium line-clamp-1"
+                              title={model.id}
+                            >
+                              {getModelDisplayName(model)}
+                            </h1>
+                            <Capabilities capabilities={capabilities} />
+                          </div>
+                        }
+                        actions={
+                          <div className="flex items-center gap-0.5">
+                            <DialogEditModel
+                              provider={provider}
+                              modelId={model.id}
+                            />
+                            {model.settings && (
+                              <ModelSetting
+                                provider={provider}
+                                model={model}
+                              />
+                            )}
+                            {((provider &&
+                              !predefinedProviders.some(
+                                (p) => p.provider === provider.provider
+                              )) ||
+                              (provider &&
+                                predefinedProviders.some(
+                                  (p) => p.provider === provider.provider
+                                ) &&
+                                Boolean(provider.api_key?.length))) && (
+                                <FavoriteModelAction model={model} />
+                              )}
+                            <DialogDeleteModel
+                              provider={provider}
+                              modelId={model.id}
+                            />
+                            {provider && provider.provider === 'llamacpp' && (
+                              <div className="ml-2">
+                                {activeModels.some(
+                                  (activeModel) => activeModel === model.id
+                                ) ? (
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => handleStopModel(model.id)}
+                                  >
+                                    {t('providers:stop')}
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    disabled={loadingModels.includes(
+                                      model.id
+                                    )}
+                                    onClick={() => handleStartModel(model.id)}
+                                  >
+                                    {loadingModels.includes(model.id) ? (
+                                      <div className="flex items-center gap-2">
+                                        <IconLoader
+                                          size={16}
+                                          className="animate-spin"
+                                        />
+                                      </div>
+                                    ) : (
+                                      t('providers:start')
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        }
+                      />
+                    )
+                  })
+                ) : (
+                  <div className="-mt-2">
+                    <div className="flex items-center gap-2">
+                      <h6 className="font-medium text-base">
+                        {t('providers:noModelFound')}
+                      </h6>
+                    </div>
+                    <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+                      {t('providers:noModelFoundDesc')}
+                      &nbsp;
+                      <Link to={route.hub.index}>{t('common:hub')}</Link>
+                    </p>
+                  </div>
+                )}
+                {/* Show importing skeleton first if there's one */}
+                {importingModel && (
+                  <CardItem
+                    key="importing-skeleton"
+                    title={
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 animate-pulse">
+                          <div className="flex gap-2 px-2 py-1 rounded-full text-xs">
+                            <IconLoader
+                              size={16}
+                              className="animate-spin"
+                            />
+                            Importing...
+                          </div>
+                          <h1 className="font-medium line-clamp-1">
+                            {importingModel}
+                          </h1>
+                        </div>
+                      </div>
+                    }
+                  />
+                )}
+              </Card>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             </div>
           </div>
         </div>
       </div>
+<<<<<<< HEAD
     </>
+=======
+    </div>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   )
 }

@@ -59,7 +59,11 @@
     "description": "Atur bagaimana Jan mengelola dan mencoba ulang server MCP.",
     "toolCallTimeout": "Batas waktu pemanggilan alat (detik)",
     "toolCallTimeoutDesc": "Waktu maksimum menunggu respons alat MCP sebelum waktu habis."
+<<<<<<< HEAD
   },
   "proactiveMode": "Mode Proaktif Penggunaan Browser",
   "proactiveModeDesc": "Jika diaktifkan, secara otomatis menangkap tangkapan layar browser untuk memberikan konteks tambahan untuk tugas otomasi browser. Memerlukan Jan Browser MCP dengan model vision dan penggunaan tool."
+=======
+  }
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }

@@ -15,6 +15,7 @@ import type { HardwareData, SystemUsage } from '@/services/hardware/types'
 import { formatMegaBytes } from '@/lib/utils'
 import { toNumber } from '@/utils/number'
 import { useModelProvider } from '@/hooks/useModelProvider'
+<<<<<<< HEAD
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
 import { useAppState } from '@/hooks/useAppState'
@@ -32,6 +33,16 @@ function Hardware() {
   )
 }
 
+=======
+import { useAppState } from '@/hooks/useAppState'
+import { Button } from '@/components/ui/button'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const Route = createFileRoute(route.settings.hardware as any)({
+  component: HardwareContent,
+})
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 function HardwareContent() {
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
@@ -128,6 +139,7 @@ function HardwareContent() {
   }
 
   return (
+<<<<<<< HEAD
     <div className="flex flex-col h-full">
       <HeaderPage>
         <div className="flex items-center gap-2 justify-between w-full pr-3">
@@ -147,6 +159,29 @@ function HardwareContent() {
           {isLoading ? (
             <div className="flex items-center justify-center h-32">
               <div className="text-main-view-fg/50">
+=======
+    <div className="flex flex-col h-svh w-full">
+      <HeaderPage>
+        <div className="flex items-center gap-2 justify-between w-full pr-3">
+          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="flex items-center gap-2"
+            onClick={handleClickSystemMonitor}
+          >
+            <IconDeviceDesktopAnalytics className="text-muted-foreground size-5" />
+            <p>{t('settings:hardware.systemMonitor')}</p>
+          </Button>
+        </div>
+      </HeaderPage>
+      <div className="flex h-[calc(100%-60px)]">
+        <SettingsMenu />
+        <div className="p-4 pt-0 w-full overflow-y-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-32">
+              <div className="text-muted-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 Loading hardware information...
               </div>
             </div>
@@ -157,7 +192,11 @@ function HardwareContent() {
                 <CardItem
                   title={t('settings:hardware.name')}
                   actions={
+<<<<<<< HEAD
                     <span className="text-main-view-fg/80 capitalize">
+=======
+                    <span className="text-foreground capitalize">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                       {hardwareData.os_type}
                     </span>
                   }
@@ -165,7 +204,11 @@ function HardwareContent() {
                 <CardItem
                   title={t('settings:hardware.version')}
                   actions={
+<<<<<<< HEAD
                     <span className="text-main-view-fg/80">
+=======
+                    <span className="text-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                       {hardwareData.os_name}
                     </span>
                   }
@@ -177,7 +220,11 @@ function HardwareContent() {
                 <CardItem
                   title={t('settings:hardware.model')}
                   actions={
+<<<<<<< HEAD
                     <span className="text-main-view-fg/80">
+=======
+                    <span className="text-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                       {hardwareData.cpu?.name}
                     </span>
                   }
@@ -185,7 +232,11 @@ function HardwareContent() {
                 <CardItem
                   title={t('settings:hardware.architecture')}
                   actions={
+<<<<<<< HEAD
                     <span className="text-main-view-fg/80">
+=======
+                    <span className="text-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                       {hardwareData.cpu?.arch}
                     </span>
                   }
@@ -193,7 +244,11 @@ function HardwareContent() {
                 <CardItem
                   title={t('settings:hardware.cores')}
                   actions={
+<<<<<<< HEAD
                     <span className="text-main-view-fg/80">
+=======
+                    <span className="text-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                       {hardwareData.cpu?.core_count}
                     </span>
                   }
@@ -203,7 +258,11 @@ function HardwareContent() {
                     title={t('settings:hardware.instructions')}
                     column={hardwareData.cpu?.extensions.length > 6}
                     actions={
+<<<<<<< HEAD
                       <span className="text-main-view-fg/80 break-words">
+=======
+                      <span className="text-foreground wrap-break-word">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                         {hardwareData.cpu?.extensions?.join(', ')}
                       </span>
                     }
@@ -217,9 +276,15 @@ function HardwareContent() {
                         <>
                           <Progress
                             value={systemUsage.cpu}
+<<<<<<< HEAD
                             className="h-2 w-10"
                           />
                           <span className="text-main-view-fg/80">
+=======
+                            className="h-2 w-10 border"
+                          />
+                          <span className="text-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                             {systemUsage.cpu?.toFixed(2)}%
                           </span>
                         </>
@@ -234,7 +299,11 @@ function HardwareContent() {
                 <CardItem
                   title={t('settings:hardware.totalRam')}
                   actions={
+<<<<<<< HEAD
                     <span className="text-main-view-fg/80">
+=======
+                    <span className="text-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                       {formatMegaBytes(hardwareData.total_memory)}
                     </span>
                   }
@@ -242,7 +311,11 @@ function HardwareContent() {
                 <CardItem
                   title={t('settings:hardware.availableRam')}
                   actions={
+<<<<<<< HEAD
                     <span className="text-main-view-fg/80">
+=======
+                    <span className="text-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                       {formatMegaBytes(
                         hardwareData.total_memory - systemUsage.used_memory
                       )}
@@ -262,9 +335,15 @@ function HardwareContent() {
                                   hardwareData.total_memory
                               ) * 100
                             }
+<<<<<<< HEAD
                             className="h-2 w-10"
                           />
                           <span className="text-main-view-fg/80">
+=======
+                            className="h-2 w-10 border"
+                          />
+                          <span className="text-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                             {(
                               toNumber(
                                 systemUsage.used_memory /
@@ -302,10 +381,17 @@ function HardwareContent() {
                           actions={
                             <div className="flex items-center gap-4">
                               {/* <div className="flex flex-col items-end gap-1">
+<<<<<<< HEAD
                             <span className="text-main-view-fg/80 text-sm">
                               ID: {device.id}
                             </span>
                             <span className="text-main-view-fg/80 text-sm">
+=======
+                            <span className="text-foreground text-sm">
+                              ID: {device.id}
+                            </span>
+                            <span className="text-foreground text-sm">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                               Memory: {formatMegaBytes(device.mem)} /{' '}
                               {formatMegaBytes(device.free)} free
                             </span>
@@ -332,7 +418,11 @@ function HardwareContent() {
                           <CardItem
                             title={t('settings:hardware.vram')}
                             actions={
+<<<<<<< HEAD
                               <span className="text-main-view-fg/80">
+=======
+                              <span className="text-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                                 {formatMegaBytes(device.free)}{' '}
                                 {t('settings:hardware.freeOf')}{' '}
                                 {formatMegaBytes(device.mem)}

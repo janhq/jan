@@ -59,6 +59,7 @@ export enum PlatformFeature {
   // Assistant functionality (creation, editing, management)
   ASSISTANTS = 'assistants',
 
+<<<<<<< HEAD
   // Authentication (Google OAuth, user profiles)
   AUTHENTICATION = 'authentication',
 
@@ -74,6 +75,8 @@ export enum PlatformFeature {
   // Temporary chat mode - web-only feature for ephemeral conversations like ChatGPT
   TEMPORARY_CHAT = 'temporaryChat',
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   // File attachments/RAG UI and tooling (desktop-only for now)
   FILE_ATTACHMENTS = 'fileAttachments',
 }

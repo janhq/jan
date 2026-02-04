@@ -98,8 +98,11 @@
     "resetToDefaultDesc": "Setzt alle Darstellungseinstellungen auf die Standardeinstellungen zurück.",
     "resetInterfaceSuccess": "Erscheinungsbild erfolgreich zurückgesetzt",
     "resetInterfaceSuccessDesc": "Alle Darstellungseinstellungen wurden auf die Standardeinstellungen zurückgesetzt.",
+<<<<<<< HEAD
     "chatWidth": "Chat Breite",
     "chatWidthDesc": "Passe die Breite der Chatansicht an.",
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "tokenCounterCompact": "Kompakter Token-Zähler",
     "tokenCounterCompactDesc": "Token-Zähler im Chat-Eingabefeld anzeigen. Wenn deaktiviert, wird der Token-Zähler unter dem Eingabefeld angezeigt.",
     "codeBlockTitle": "Code Block",

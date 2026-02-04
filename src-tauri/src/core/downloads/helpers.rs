@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 use super::models::{DownloadEvent, DownloadItem, ProxyConfig, ProgressTracker};
+=======
+use super::models::{DownloadEvent, DownloadItem, ProgressTracker, ProxyConfig};
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 use crate::core::app::commands::get_jan_data_folder_path;
 use futures_util::StreamExt;
 use jan_utils::normalize_path;
@@ -18,7 +22,10 @@ pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {e}")
 }
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 // ===== VALIDATION FUNCTIONS =====
 
 /// Validates a downloaded file against expected hash and size
@@ -40,6 +47,7 @@ async fn validate_downloaded_file(
 
     // Use model_id from item if available, otherwise extract from save path
     // Path structure: llamacpp/models/{modelId}/model.gguf or llamacpp/models/{modelId}/mmproj.gguf
+<<<<<<< HEAD
     let model_id = item.model_id.as_ref().map(|s| s.as_str()).unwrap_or_else(|| {
         save_path
             .parent() // get parent directory (modelId folder)
@@ -47,6 +55,19 @@ async fn validate_downloaded_file(
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
     });
+=======
+    let model_id = item
+        .model_id
+        .as_ref()
+        .map(|s| s.as_str())
+        .unwrap_or_else(|| {
+            save_path
+                .parent() // get parent directory (modelId folder)
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+        });
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     if emit_event {
         app.emit(
@@ -107,7 +128,13 @@ async fn validate_downloaded_file(
     if let Some(expected_sha256) = &item.sha256 {
         log::info!("Starting Hash verification for {}", item.url);
 
+<<<<<<< HEAD
         match jan_utils::crypto::compute_file_sha256_with_cancellation(save_path, cancel_token).await {
+=======
+        match jan_utils::crypto::compute_file_sha256_with_cancellation(save_path, cancel_token)
+            .await
+        {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             Ok(computed_sha256) => {
                 if computed_sha256 != *expected_sha256 {
                     log::error!(
@@ -368,6 +395,7 @@ pub async fn _download_files_internal(
         };
 
         let task = tokio::spawn(async move {
+<<<<<<< HEAD
             download_single_file(
                 app_clone,
                 &item_clone,
@@ -377,6 +405,9 @@ pub async fn _download_files_internal(
                 ctx,
             )
             .await
+=======
+            download_single_file(app_clone, &item_clone, &save_path, file_id, file_size, ctx).await
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         });
 
         download_tasks.push(task);
@@ -395,7 +426,18 @@ pub async fn _download_files_internal(
                 let path_clone = downloaded_path.clone();
                 let cancel_token_clone = cancel_token.clone();
                 let validation_task = tokio::spawn(async move {
+<<<<<<< HEAD
                     validate_downloaded_file(&item_clone, &path_clone, &app_clone, &cancel_token_clone, false).await
+=======
+                    validate_downloaded_file(
+                        &item_clone,
+                        &path_clone,
+                        &app_clone,
+                        &cancel_token_clone,
+                        false,
+                    )
+                    .await
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 });
                 validation_tasks.push((validation_task, downloaded_path, item.clone()));
             }
@@ -403,7 +445,12 @@ pub async fn _download_files_internal(
         }
     }
 
+<<<<<<< HEAD
     let model_id = items.iter()
+=======
+    let model_id = items
+        .iter()
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         .find_map(|item| item.model_id.as_ref())
         .map(|s| s.as_str())
         .or_else(|| {
@@ -416,7 +463,15 @@ pub async fn _download_files_internal(
         })
         .unwrap_or("unknown");
 
+<<<<<<< HEAD
     if !validation_tasks.is_empty() && items.iter().any(|item| item.sha256.is_some() || item.size.is_some()) {
+=======
+    if !validation_tasks.is_empty()
+        && items
+            .iter()
+            .any(|item| item.sha256.is_some() || item.size.is_some())
+    {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         app.emit(
             "onModelValidationStarted",
             serde_json::json!({

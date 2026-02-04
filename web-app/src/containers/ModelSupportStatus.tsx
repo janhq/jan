@@ -101,9 +101,15 @@ export const ModelSupportStatus = ({
       case 'RED':
         return 'bg-red-500'
       case 'LOADING':
+<<<<<<< HEAD
         return 'bg-main-view-fg/50'
       default:
         return 'bg-main-view-fg/50'
+=======
+        return 'bg-secondary'
+      default:
+        return 'bg-secondary'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     }
   }
 
@@ -161,7 +167,11 @@ export const ModelSupportStatus = ({
             className={cn(
               'size-2 flex items-center justify-center rounded-full',
               modelSupportStatus === 'LOADING'
+<<<<<<< HEAD
                 ? 'size-2.5 border border-main-view-fg/50 border-t-transparent animate-spin'
+=======
+                ? 'size-2.5 border border-t-transparent animate-spin'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 : getStatusColor(),
               className
             )}

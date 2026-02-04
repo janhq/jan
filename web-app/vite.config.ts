@@ -67,6 +67,7 @@ export default defineConfig(({ mode }) => {
         '@janhq/conversational-extension': path.resolve(__dirname, '../extensions/conversational-extension/src/index.ts'),
       },
     },
+<<<<<<< HEAD
     optimizeDeps: {
       exclude: ['@jan/extensions-web'],
     },
@@ -75,6 +76,8 @@ export default defineConfig(({ mode }) => {
         external: ['@jan/extensions-web'],
       },
     },
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     define: {
       IS_TAURI: JSON.stringify(process.env.IS_TAURI),
       IS_DEV: JSON.stringify(process.env.IS_DEV),
@@ -107,6 +110,12 @@ export default defineConfig(({ mode }) => {
       AUTO_UPDATER_DISABLED: JSON.stringify(
         env.AUTO_UPDATER_DISABLED === 'true'
       ),
+<<<<<<< HEAD
+=======
+      UPDATE_CHECK_INTERVAL_MS: JSON.stringify(
+        Number(env.UPDATE_CHECK_INTERVAL_MS) || 60 * 60 * 1000
+      ),
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     },
 
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

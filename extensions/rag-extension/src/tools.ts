@@ -12,6 +12,7 @@ export function getRAGTools(retrievalLimit: number): MCPTool[] {
     {
       name: LIST_ATTACHMENTS,
       description:
+<<<<<<< HEAD
         'List files attached to the current thread. Thread is inferred automatically; you may optionally provide {"scope":"thread"}. Returns basic file info (name/path).',
       inputSchema: {
         type: 'object',
@@ -19,28 +20,58 @@ export function getRAGTools(retrievalLimit: number): MCPTool[] {
           scope: { type: 'string', enum: ['thread'], description: 'Retrieval scope; currently only thread is supported' },
         },
         required: ['scope'],
+=======
+        'List files attached to the current thread or project. Use scope to specify: "thread" for thread-level files (default), "project" for project-level files shared across all threads in the project.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        required: [],
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       },
       server: RAG_INTERNAL_SERVER,
     },
     {
       name: RETRIEVE,
       description:
+<<<<<<< HEAD
         'Retrieve relevant snippets from locally attached, indexed documents. Use query only; do not pass raw document content. Thread context is inferred automatically; you may optionally provide {"scope":"thread"}. Use file_ids to search within specific files only.',
+=======
+        'Retrieve relevant snippets from locally attached, indexed documents. Use query only; do not pass raw document content. Use scope to search: "thread" (default) for thread-level files, "project" for project-level files shared across all threads. Use file_ids to search within specific files only.',
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       inputSchema: {
         type: 'object',
         properties: {
           query: { type: 'string', description: 'User query to search for' },
+<<<<<<< HEAD
           top_k: { type: 'number', description: 'Optional: Max citations to return. Adjust as needed.', minimum: 1, maximum: maxTopK, default: retrievalLimit ?? 3 },
           scope: { type: 'string', enum: ['thread'], description: 'Retrieval scope; currently only thread is supported' },
           file_ids: { type: 'array', items: { type: 'string' }, description: 'Optional: Filter search to specific file IDs from list_attachments' },
         },
         required: ['query', 'scope'],
+=======
+          top_k: {
+            type: 'number',
+            description: 'Optional: Max citations to return. Adjust as needed.',
+            minimum: 1,
+            maximum: maxTopK,
+            default: retrievalLimit ?? 3,
+          },
+          file_ids: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Optional: Filter search to specific file IDs from list_attachments',
+          },
+        },
+        required: ['query'],
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       },
       server: RAG_INTERNAL_SERVER,
     },
     {
       name: GET_CHUNKS,
       description:
+<<<<<<< HEAD
         'Retrieve chunks from a file by their order range. For a single chunk, use start_order = end_order. Thread context is inferred automatically; you may optionally provide {"scope":"thread"}. Use sparingly; intended for advanced usage. Prefer using retrieve instead for relevance-based fetching.',
       inputSchema: {
         type: 'object',
@@ -51,6 +82,27 @@ export function getRAGTools(retrievalLimit: number): MCPTool[] {
           scope: { type: 'string', enum: ['thread'], description: 'Retrieval scope; currently only thread is supported' },
         },
         required: ['file_id', 'start_order', 'end_order', 'scope'],
+=======
+        'Retrieve chunks from a file by their order range. For a single chunk, use start_order = end_order. Use scope to specify source: "thread" (default) for thread-level, "project" for project-level files. Use sparingly; intended for advanced usage. Prefer using retrieve instead for relevance-based fetching.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file_id: {
+            type: 'string',
+            description: 'File ID from list_attachments',
+          },
+          start_order: {
+            type: 'number',
+            description: 'Start of chunk range (inclusive, 0-indexed)',
+          },
+          end_order: {
+            type: 'number',
+            description:
+              'End of chunk range (inclusive, 0-indexed). For single chunk, use start_order = end_order.',
+          },
+        },
+        required: ['file_id', 'start_order', 'end_order'],
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       },
       server: RAG_INTERNAL_SERVER,
     },

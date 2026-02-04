@@ -33,6 +33,7 @@ export class DefaultProjectsService implements ProjectsService {
     }
   }
 
+<<<<<<< HEAD
   private buildProjectPath(
     projectId: string,
     projects: ThreadFolder[]
@@ -46,10 +47,13 @@ export class DefaultProjectsService implements ProjectsService {
     return [...parentPath, project.id]
   }
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   async getProjects(): Promise<ThreadFolder[]> {
     return this.loadFromStorage()
   }
 
+<<<<<<< HEAD
   async addProject(
     name: string,
     parentId?: string | null
@@ -89,6 +93,28 @@ export class DefaultProjectsService implements ProjectsService {
     const updatedProjects = projects.map((project) =>
       project.id === id
         ? { ...project, ...updates, updated_at: Date.now() }
+=======
+  async addProject(name: string, assistantId?: string): Promise<ThreadFolder> {
+    const newProject: ThreadFolder = {
+      id: ulid(),
+      name,
+      updated_at: Date.now(),
+      assistantId,
+    }
+
+    const projects = this.loadFromStorage()
+    const updatedProjects = [...projects, newProject]
+    this.saveToStorage(updatedProjects)
+
+    return newProject
+  }
+
+  async updateProject(id: string, name: string, assistantId?: string): Promise<void> {
+    const projects = this.loadFromStorage()
+    const updatedProjects = projects.map((project) =>
+      project.id === id
+        ? { ...project, name, updated_at: Date.now(), assistantId }
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         : project
     )
     this.saveToStorage(updatedProjects)
@@ -108,6 +134,7 @@ export class DefaultProjectsService implements ProjectsService {
   async setProjects(projects: ThreadFolder[]): Promise<void> {
     this.saveToStorage(projects)
   }
+<<<<<<< HEAD
 
   async moveProject(
     projectId: string,
@@ -148,4 +175,6 @@ export class DefaultProjectsService implements ProjectsService {
 
     return path
   }
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }

@@ -17,10 +17,17 @@ import {
   DropDrawerTrigger,
 } from '../dropdrawer'
 
+<<<<<<< HEAD
 // Mock the media query hook
 const mockUseSmallScreen = vi.fn()
 vi.mock('@/hooks/useMediaQuery', () => ({
   useSmallScreen: () => mockUseSmallScreen(),
+=======
+// Mock the mobile hook
+const mockUseIsMobile = vi.fn()
+vi.mock('@/hooks/use-mobile', () => ({
+  useIsMobile: () => mockUseIsMobile(),
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }))
 
 // Mock framer-motion to avoid animation complexity in tests
@@ -53,7 +60,11 @@ describe('DropDrawer Component', () => {
 
   describe('Desktop Mode', () => {
     beforeEach(() => {
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(false)
+=======
+      mockUseIsMobile.mockReturnValue(false)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     })
 
     it('renders dropdown menu on desktop', () => {
@@ -119,7 +130,11 @@ describe('DropDrawer Component', () => {
 
   describe('Mobile Mode', () => {
     beforeEach(() => {
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(true)
+=======
+      mockUseIsMobile.mockReturnValue(true)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     })
 
     it('renders drawer on mobile', () => {
@@ -186,7 +201,11 @@ describe('DropDrawer Component', () => {
 
   describe('DropDrawerItem', () => {
     beforeEach(() => {
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(false)
+=======
+      mockUseIsMobile.mockReturnValue(false)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     })
 
     it('can be structured with click handlers', () => {
@@ -257,7 +276,11 @@ describe('DropDrawer Component', () => {
 
   describe('DropDrawerGroup', () => {
     it('structures groups in desktop mode', () => {
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(false)
+=======
+      mockUseIsMobile.mockReturnValue(false)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
       render(
         <DropDrawer>
@@ -276,7 +299,11 @@ describe('DropDrawer Component', () => {
     })
 
     it('structures groups in mobile mode', () => {
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(true)
+=======
+      mockUseIsMobile.mockReturnValue(true)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
       render(
         <DropDrawer>
@@ -297,7 +324,11 @@ describe('DropDrawer Component', () => {
 
   describe('DropDrawerFooter', () => {
     it('structures footer in desktop mode', () => {
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(false)
+=======
+      mockUseIsMobile.mockReturnValue(false)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
       render(
         <DropDrawer>
@@ -314,7 +345,11 @@ describe('DropDrawer Component', () => {
     })
 
     it('structures footer in mobile mode', () => {
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(true)
+=======
+      mockUseIsMobile.mockReturnValue(true)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
       render(
         <DropDrawer>
@@ -333,7 +368,11 @@ describe('DropDrawer Component', () => {
 
   describe('Submenu Components', () => {
     beforeEach(() => {
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(false)
+=======
+      mockUseIsMobile.mockReturnValue(false)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     })
 
     it('structures submenu in desktop mode', () => {
@@ -356,7 +395,11 @@ describe('DropDrawer Component', () => {
     })
 
     it('structures submenu in mobile mode', () => {
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(true)
+=======
+      mockUseIsMobile.mockReturnValue(true)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
       render(
         <DropDrawer>
@@ -379,7 +422,11 @@ describe('DropDrawer Component', () => {
     })
 
     it('handles submenu content correctly in mobile mode', () => {
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(true)
+=======
+      mockUseIsMobile.mockReturnValue(true)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
       render(
         <DropDrawer>
@@ -402,7 +449,11 @@ describe('DropDrawer Component', () => {
 
   describe('Accessibility', () => {
     beforeEach(() => {
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(false)
+=======
+      mockUseIsMobile.mockReturnValue(false)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     })
 
     it('maintains proper ARIA attributes on triggers', () => {
@@ -424,7 +475,11 @@ describe('DropDrawer Component', () => {
     it('supports disabled state', () => {
       const handleClick = vi.fn()
 
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(true)
+=======
+      mockUseIsMobile.mockReturnValue(true)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
       render(
         <DropDrawer>
@@ -458,7 +513,11 @@ describe('DropDrawer Component', () => {
 
   describe('Custom Props and Styling', () => {
     beforeEach(() => {
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(false)
+=======
+      mockUseIsMobile.mockReturnValue(false)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     })
 
     it('applies custom className', () => {
@@ -502,7 +561,11 @@ describe('DropDrawer Component', () => {
       )
 
       // Desktop mode
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(false)
+=======
+      mockUseIsMobile.mockReturnValue(false)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       rerender(
         <DropDrawer>
           <DropDrawerTrigger>Responsive Trigger</DropDrawerTrigger>
@@ -516,7 +579,11 @@ describe('DropDrawer Component', () => {
       expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
 
       // Mobile mode
+<<<<<<< HEAD
       mockUseSmallScreen.mockReturnValue(true)
+=======
+      mockUseIsMobile.mockReturnValue(true)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       rerender(
         <DropDrawer>
           <DropDrawerTrigger>Responsive Trigger</DropDrawerTrigger>

@@ -68,8 +68,13 @@ export default function JanBrowserExtensionDialog({
             </VisuallyHidden>
             <div className="flex items-center justify-center py-8">
               <div className="flex flex-col items-center justify-center gap-3">
+<<<<<<< HEAD
                 <IconLoader2 className="size-8 text-accent animate-spin origin-center" />
                 <p className="text-sm text-main-view-fg/60">{t('mcp-servers:browserExtension.connecting.checking')}</p>
+=======
+                <IconLoader2 className="size-8 text-muted-foreground animate-spin origin-center" />
+                <p className="text-sm text-muted-foreground">{t('mcp-servers:browserExtension.connecting.checking')}</p>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               </div>
             </div>
           </>
@@ -80,19 +85,32 @@ export default function JanBrowserExtensionDialog({
           <>
             <DialogHeader>
               <DialogTitle>{t('mcp-servers:browserExtension.notInstalled.title')}</DialogTitle>
+<<<<<<< HEAD
               <DialogDescription className="mt-1 text-main-view-fg/70">
+=======
+              <DialogDescription className="mt-1 text-muted-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 {t('mcp-servers:browserExtension.notInstalled.description')}
               </DialogDescription>
             </DialogHeader>
 
             <DialogFooter className="flex gap-2 sm:justify-end">
               <Button
+<<<<<<< HEAD
                 variant="outline"
+=======
+                variant="ghost"
+                size="sm"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 onClick={handleCancel}
               >
                 {t('common:cancel')}
               </Button>
               <Button
+<<<<<<< HEAD
+=======
+                size="sm"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 onClick={handleOpenChromeStore}
                 className="gap-2"
               >

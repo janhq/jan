@@ -100,10 +100,23 @@ export const useModelProvider = create<ModelProviderState>()(
                       .join(getServiceHub().path().sep()) === model.id
                 )?.settings || model.settings
               const existingModel = models.find((m) => m.id === model.id)
+<<<<<<< HEAD
               return {
                 ...model,
                 settings: settings,
                 capabilities: existingModel?.capabilities || model.capabilities,
+=======
+              const mergedCapabilities = [
+                ...(model.capabilities || []),
+                ...(existingModel?.capabilities || []).filter(
+                  (cap) => !(model.capabilities || []).includes(cap)
+                ),
+              ]
+              return {
+                ...model,
+                settings: settings,
+                capabilities: mergedCapabilities.length > 0 ? mergedCapabilities : undefined,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 displayName: existingModel?.displayName || model.displayName,
               }
             })
@@ -444,11 +457,14 @@ export const useModelProvider = create<ModelProviderState>()(
             }
           })
         }
+<<<<<<< HEAD
         if (version <= 6 && state?.providers) {
           // Most of legacy cohere models are deprecated now, remove the provider entirely
           // TODO: Default providers should be updated automatically somehow later
           state.providers = state.providers.filter((provider) => provider.provider !== 'cohere')
         }
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         if (version <= 7 && state?.providers) {
           // Remove 'proactive' capability from all models as it's now managed in MCP settings
           state.providers.forEach((provider) => {
@@ -463,9 +479,52 @@ export const useModelProvider = create<ModelProviderState>()(
             }
           })
         }
+<<<<<<< HEAD
         return state
       },
       version: 8,
+=======
+        if (version <= 8 && state?.providers) {
+          state.providers.forEach((provider) => {
+            // Migrate Mistral provider base URL to add /v1
+            if (provider.provider === 'mistral') {
+              if (provider.base_url === 'https://api.mistral.ai') {
+                provider.base_url = 'https://api.mistral.ai/v1'
+              }
+
+              // Update base-url in settings
+              if (provider.settings) {
+                const baseUrlSetting = provider.settings.find(
+                  (s) => s.key === 'base-url'
+                )
+                if (
+                  baseUrlSetting?.controller_props?.value ===
+                  'https://api.mistral.ai'
+                ) {
+                  baseUrlSetting.controller_props.value =
+                    'https://api.mistral.ai/v1'
+                }
+                if (
+                  baseUrlSetting?.controller_props?.placeholder ===
+                  'https://api.mistral.ai'
+                ) {
+                  baseUrlSetting.controller_props.placeholder =
+                    'https://api.mistral.ai/v1'
+                }
+              }
+            }
+          })
+        }
+
+        if (version <= 9 && state?.providers) {
+          state.providers = state.providers.filter(
+            (provider) => provider.provider !== 'cohere'
+          )
+        }
+        return state
+      },
+      version: 10,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     }
   )
 )

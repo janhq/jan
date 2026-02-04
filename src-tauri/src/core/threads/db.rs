@@ -84,6 +84,7 @@ pub async fn init_database<R: Runtime>(app: &AppHandle<R>) -> Result<(), String>
     .map_err(|e| format!("Failed to create messages table: {}", e))?;
 
     // Create indexes
+<<<<<<< HEAD
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_messages_thread_id ON messages(thread_id);",
     )
@@ -97,6 +98,17 @@ pub async fn init_database<R: Runtime>(app: &AppHandle<R>) -> Result<(), String>
     .execute(&pool)
     .await
     .map_err(|e| format!("Failed to create created_at index: {}", e))?;
+=======
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_messages_thread_id ON messages(thread_id);")
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to create thread_id index: {}", e))?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);")
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("Failed to create created_at index: {}", e))?;
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     // Store pool globally
     DB_POOL
@@ -111,9 +123,13 @@ pub async fn init_database<R: Runtime>(app: &AppHandle<R>) -> Result<(), String>
 
 /// Get database pool
 async fn get_pool() -> Result<SqlitePool, String> {
+<<<<<<< HEAD
     let pool_mutex = DB_POOL
         .get()
         .ok_or("Database not initialized")?;
+=======
+    let pool_mutex = DB_POOL.get().ok_or("Database not initialized")?;
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     let pool_guard = pool_mutex.lock().await;
     pool_guard
@@ -122,9 +138,13 @@ async fn get_pool() -> Result<SqlitePool, String> {
 }
 
 /// List all threads from database
+<<<<<<< HEAD
 pub async fn db_list_threads<R: Runtime>(
     _app_handle: AppHandle<R>,
 ) -> Result<Vec<Value>, String> {
+=======
+pub async fn db_list_threads<R: Runtime>(_app_handle: AppHandle<R>) -> Result<Vec<Value>, String> {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     let pool = get_pool().await?;
 
     let rows = sqlx::query("SELECT data FROM threads ORDER BY updated_at DESC")
@@ -215,6 +235,7 @@ pub async fn db_list_messages<R: Runtime>(
 ) -> Result<Vec<Value>, String> {
     let pool = get_pool().await?;
 
+<<<<<<< HEAD
     let rows = sqlx::query(
         "SELECT data FROM messages WHERE thread_id = ?1 ORDER BY created_at ASC",
     )
@@ -222,6 +243,14 @@ pub async fn db_list_messages<R: Runtime>(
     .fetch_all(&pool)
     .await
     .map_err(|e| format!("Failed to list messages: {}", e))?;
+=======
+    let rows =
+        sqlx::query("SELECT data FROM messages WHERE thread_id = ?1 ORDER BY created_at ASC")
+            .bind(thread_id)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| format!("Failed to list messages: {}", e))?;
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     let messages: Result<Vec<Value>, _> = rows
         .iter()

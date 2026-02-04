@@ -31,6 +31,7 @@ export function DeleteProjectDialog({
   const threads = useThreads((state) => state.threads)
   const { deleteFolderWithThreads } = useThreadManagement()
 
+<<<<<<< HEAD
   // Calculate thread stats for this project
   const { threadCount, starredThreadCount } = useMemo(() => {
     if (!projectId) return { threadCount: 0, starredThreadCount: 0 }
@@ -46,6 +47,14 @@ export function DeleteProjectDialog({
       threadCount: projectThreads.length,
       starredThreadCount: starredCount,
     }
+=======
+  const threadCount = useMemo(() => {
+    if (!projectId) return 0
+
+    return Object.values(threads).filter(
+      (thread) => thread.metadata?.project?.id === projectId
+    ).length
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   }, [projectId, threads])
 
   const handleConfirm = async () => {
@@ -71,13 +80,19 @@ export function DeleteProjectDialog({
     }
   }
 
+<<<<<<< HEAD
   const hasStarredThreads = starredThreadCount > 0
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   const hasThreads = threadCount > 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+<<<<<<< HEAD
         className="sm:max-w-md"
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         onOpenAutoFocus={(e) => {
           e.preventDefault()
           deleteButtonRef.current?.focus()
@@ -85,6 +100,7 @@ export function DeleteProjectDialog({
       >
         <DialogHeader>
           <DialogTitle>{t('projects.deleteProjectDialog.title')}</DialogTitle>
+<<<<<<< HEAD
           <DialogDescription className="space-y-2">
             {hasStarredThreads ? (
               <>
@@ -108,15 +124,30 @@ export function DeleteProjectDialog({
               <p className="text-sm text-muted-foreground mt-3">
                 {t('projects.deleteProjectDialog.saveThreadsAdvice')}
               </p>
+=======
+          <DialogDescription>
+            {hasThreads ? (
+              <p>{t('projects.deleteProjectDialog.permanentDelete')}</p>
+            ) : (
+              <p>{t('projects.deleteProjectDialog.deleteEmptyProject', { projectName })}</p>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             )}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
+<<<<<<< HEAD
           <Button variant="link" onClick={() => onOpenChange(false)}>
+=======
+          <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             {t('cancel')}
           </Button>
           <Button
             ref={deleteButtonRef}
+<<<<<<< HEAD
+=======
+            size="sm"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             variant="destructive"
             onClick={handleConfirm}
             onKeyDown={handleKeyDown}

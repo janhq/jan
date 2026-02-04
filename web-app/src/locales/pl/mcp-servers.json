@@ -59,7 +59,11 @@
     "description": "Skonfiguruj, jak Jan zarządza i ponawia próby połączenia z serwerami MCP.",
     "toolCallTimeout": "Limit czasu wywołania narzędzia (sekundy)",
     "toolCallTimeoutDesc": "Maksymalny czas oczekiwania na odpowiedź narzędzia MCP przed przekroczeniem limitu czasu."
+<<<<<<< HEAD
   },
   "proactiveMode": "Tryb Proaktywnego Użycia Przeglądarki",
   "proactiveModeDesc": "Po włączeniu automatycznie przechwytuje zrzuty ekranu przeglądarki, aby zapewnić dodatkowy kontekst dla zadań automatyzacji przeglądarki. Wymaga Jan Browser MCP z modelem vision i narzędzi."
+=======
+  }
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }

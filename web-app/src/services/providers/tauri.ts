@@ -3,7 +3,11 @@
  */
 
 import { models as providerModels } from 'token.js'
+<<<<<<< HEAD
 import { predefinedProviders } from '@/consts/providers'
+=======
+import { predefinedProviders } from '@/constants/providers'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import { EngineManager, SettingComponentProps } from '@janhq/core'
 import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
@@ -47,7 +51,11 @@ export class TauriProvidersService extends DefaultProvidersService {
 
       const runtimeProviders: ModelProvider[] = []
       for (const [providerName, value] of EngineManager.instance().engines) {
+<<<<<<< HEAD
         const models = await value.list().then(list => list.filter(e => !e.embedding)) ?? []
+=======
+        const models = await value.list() ?? [] 
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         const provider: ModelProvider = {
           active: false,
           persist: true,
@@ -69,6 +77,7 @@ export class TauriProvidersService extends DefaultProvidersService {
             models.map(async (model) => {
               let capabilities: string[] = []
 
+<<<<<<< HEAD
               // Check for capabilities
               if ('capabilities' in model) {
                 capabilities = model.capabilities as string[]
@@ -78,6 +87,16 @@ export class TauriProvidersService extends DefaultProvidersService {
                   const toolSupported = await value.isToolSupported(model.id)
                   if (toolSupported) {
                     capabilities = [ModelCapabilities.TOOLS]
+=======
+              if ('capabilities' in model && Array.isArray(model.capabilities)) {
+                capabilities = [...(model.capabilities as string[])]
+              }
+              if (!capabilities.includes(ModelCapabilities.TOOLS)) {
+                try {
+                  const toolSupported = await value.isToolSupported(model.id)
+                  if (toolSupported) {
+                    capabilities.push(ModelCapabilities.TOOLS)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                   }
                 } catch (error) {
                   console.warn(
@@ -88,12 +107,24 @@ export class TauriProvidersService extends DefaultProvidersService {
                 }
               }
 
+<<<<<<< HEAD
+=======
+              // Add embeddings capability for embedding models
+              if (model.embedding && !capabilities.includes(ModelCapabilities.EMBEDDINGS)) {
+                capabilities = [...capabilities, ModelCapabilities.EMBEDDINGS]
+              }
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               return {
                 id: model.id,
                 model: model.id,
                 name: model.name,
                 description: model.description,
                 capabilities,
+<<<<<<< HEAD
+=======
+                embedding: model.embedding, // Preserve embedding flag for filtering in UI
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 provider: providerName,
                 settings: Object.values(modelSettings).reduce(
                   (acc, setting) => {

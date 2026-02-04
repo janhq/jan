@@ -41,9 +41,15 @@ describe('Progress', () => {
 
   it('renders with default styling classes', () => {
     render(<Progress value={50} />)
+<<<<<<< HEAD
     
     const progress = document.querySelector('[data-slot="progress"]')
     expect(progress).toHaveClass('bg-accent/30')
+=======
+
+    const progress = document.querySelector('[data-slot="progress"]')
+    expect(progress).toHaveClass('bg-secondary')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     expect(progress).toHaveClass('relative')
     expect(progress).toHaveClass('h-2')
     expect(progress).toHaveClass('w-full')
@@ -53,9 +59,15 @@ describe('Progress', () => {
 
   it('renders indicator with correct styling', () => {
     render(<Progress value={50} />)
+<<<<<<< HEAD
     
     const indicator = document.querySelector('[data-slot="progress-indicator"]')
     expect(indicator).toHaveClass('bg-accent')
+=======
+
+    const indicator = document.querySelector('[data-slot="progress-indicator"]')
+    expect(indicator).toHaveClass('bg-primary')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     expect(indicator).toHaveClass('h-full')
     expect(indicator).toHaveClass('w-full')
     expect(indicator).toHaveClass('flex-1')

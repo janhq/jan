@@ -2713,7 +2713,11 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
 "@dnd-kit/core@npm:^6.3.1":
+=======
+"@dnd-kit/core@npm:6.3.1":
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   version: 6.3.1
   resolution: "@dnd-kit/core@npm:6.3.1"
   dependencies:
@@ -2740,7 +2744,11 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
 "@dnd-kit/sortable@npm:^10.0.0":
+=======
+"@dnd-kit/sortable@npm:10.0.0":
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   version: 10.0.0
   resolution: "@dnd-kit/sortable@npm:10.0.0"
   dependencies:
@@ -3322,6 +3330,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
+=======
+"@gilbarbara/deep-equal@npm:^0.1.1":
+  version: 0.1.2
+  resolution: "@gilbarbara/deep-equal@npm:0.1.2"
+  checksum: 10c0/ef441034a34d3e3a2fdcdd473b1082c4e8a324682c8a35cea100d60b5341fecb7249ae043eecf2ea9bdf736a1fe582b294a347095c3d48a1d9d04d7d6e4ad16a
+  languageName: node
+  linkType: hard
+
+"@gilbarbara/deep-equal@npm:^0.3.1":
+  version: 0.3.1
+  resolution: "@gilbarbara/deep-equal@npm:0.3.1"
+  checksum: 10c0/009584aa912f13c59e98b35c3ebf99ff7fc7c5658d5394fd56d58570da61d68cbc6f7ec082ad2ef009ff72873cc1bd8b9b9fda9e39f7e6594fd643a915e0bc94
+  languageName: node
+  linkType: hard
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "@google/genai@npm:^1.10.0":
   version: 1.19.0
   resolution: "@google/genai@npm:1.19.0"
@@ -3498,20 +3523,32 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@janhq/web-app@workspace:web-app"
   dependencies:
+<<<<<<< HEAD
     "@dnd-kit/core": "npm:^6.3.1"
     "@dnd-kit/modifiers": "npm:9.0.0"
     "@dnd-kit/sortable": "npm:^10.0.0"
     "@dnd-kit/utilities": "npm:^3.2.2"
+=======
+    "@dnd-kit/core": "npm:6.3.1"
+    "@dnd-kit/modifiers": "npm:9.0.0"
+    "@dnd-kit/sortable": "npm:10.0.0"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "@eslint/js": "npm:8.57.0"
     "@jan/extensions-web": "workspace:*"
     "@janhq/core": "workspace:*"
     "@radix-ui/react-accordion": "npm:1.2.11"
     "@radix-ui/react-avatar": "npm:1.1.10"
+<<<<<<< HEAD
     "@radix-ui/react-checkbox": "npm:^1.3.3"
     "@radix-ui/react-dialog": "npm:1.1.15"
     "@radix-ui/react-dropdown-menu": "npm:2.1.16"
     "@radix-ui/react-hover-card": "npm:1.1.14"
     "@radix-ui/react-label": "npm:^2.1.8"
+=======
+    "@radix-ui/react-dialog": "npm:1.1.15"
+    "@radix-ui/react-dropdown-menu": "npm:2.1.16"
+    "@radix-ui/react-hover-card": "npm:1.1.14"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "@radix-ui/react-popover": "npm:1.1.14"
     "@radix-ui/react-progress": "npm:1.1.4"
     "@radix-ui/react-radio-group": "npm:1.3.8"
@@ -3536,7 +3573,10 @@ __metadata:
     "@testing-library/react": "npm:16.3.0"
     "@testing-library/user-event": "npm:14.6.1"
     "@types/culori": "npm:2.1.1"
+<<<<<<< HEAD
     "@types/diff": "npm:^8.0.0"
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "@types/istanbul-lib-report": "npm:3.0.3"
     "@types/istanbul-reports": "npm:3.0.4"
     "@types/lodash.clonedeep": "npm:4.5.9"
@@ -3552,7 +3592,10 @@ __metadata:
     class-variance-authority: "npm:0.7.1"
     clsx: "npm:2.1.1"
     culori: "npm:4.0.1"
+<<<<<<< HEAD
     diff: "npm:^8.0.3"
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     emoji-picker-react: "npm:4.12.2"
     eslint: "npm:9.25.1"
     eslint-plugin-react-hooks: "npm:5.2.0"
@@ -3578,6 +3621,10 @@ __metadata:
     react-colorful: "npm:5.6.1"
     react-dom: "npm:19.0.0"
     react-i18next: "npm:15.5.1"
+<<<<<<< HEAD
+=======
+    react-joyride: "npm:2.9.3"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     react-markdown: "npm:10.1.0"
     react-resizable-panels: "npm:3.0.5"
     react-syntax-highlighter: "npm:15.6.1"
@@ -3599,6 +3646,10 @@ __metadata:
     typescript-eslint: "npm:8.31.0"
     ulidx: "npm:2.4.1"
     unified: "npm:11.0.5"
+<<<<<<< HEAD
+=======
+    unist-util-visit: "npm:^5.0.0"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     uuid: "npm:11.1.0"
     vaul: "npm:1.1.2"
     vite: "npm:6.3.2"
@@ -4200,6 +4251,7 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
 "@radix-ui/react-checkbox@npm:^1.3.3":
   version: 1.3.3
   resolution: "@radix-ui/react-checkbox@npm:1.3.3"
@@ -4226,6 +4278,8 @@ __metadata:
   languageName: node
   linkType: hard
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "@radix-ui/react-collapsible@npm:1.1.11":
   version: 1.1.11
   resolution: "@radix-ui/react-collapsible@npm:1.1.11"
@@ -4550,6 +4604,7 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
 "@radix-ui/react-label@npm:^2.1.8":
   version: 2.1.8
   resolution: "@radix-ui/react-label@npm:2.1.8"
@@ -4569,6 +4624,8 @@ __metadata:
   languageName: node
   linkType: hard
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "@radix-ui/react-menu@npm:2.1.16":
   version: 2.1.16
   resolution: "@radix-ui/react-menu@npm:2.1.16"
@@ -4840,6 +4897,7 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
 "@radix-ui/react-primitive@npm:2.1.4":
   version: 2.1.4
   resolution: "@radix-ui/react-primitive@npm:2.1.4"
@@ -4859,6 +4917,8 @@ __metadata:
   languageName: node
   linkType: hard
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "@radix-ui/react-progress@npm:1.1.4":
   version: 1.1.4
   resolution: "@radix-ui/react-progress@npm:1.1.4"
@@ -4993,6 +5053,7 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
 "@radix-ui/react-slot@npm:1.2.4":
   version: 1.2.4
   resolution: "@radix-ui/react-slot@npm:1.2.4"
@@ -5008,6 +5069,8 @@ __metadata:
   languageName: node
   linkType: hard
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "@radix-ui/react-switch@npm:1.2.2":
   version: 1.2.2
   resolution: "@radix-ui/react-switch@npm:1.2.2"
@@ -7727,6 +7790,7 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
 "@types/diff@npm:^8.0.0":
   version: 8.0.0
   resolution: "@types/diff@npm:8.0.0"
@@ -7736,6 +7800,8 @@ __metadata:
   languageName: node
   linkType: hard
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "@types/estree-jsx@npm:^1.0.0":
   version: 1.0.5
   resolution: "@types/estree-jsx@npm:1.0.5"
@@ -10276,6 +10342,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
+=======
+"deep-diff@npm:^1.0.2":
+  version: 1.0.2
+  resolution: "deep-diff@npm:1.0.2"
+  checksum: 10c0/cc3e315ba95963eba4bbb79ed88d0a37d80ba19bd3b0039b79d2ad0e19e48b0e15c692b49bcd617bbe0dcc7358d40464c993889313dd8bf806bb25978b12375d
+  languageName: node
+  linkType: hard
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "deep-eql@npm:^5.0.1":
   version: 5.0.2
   resolution: "deep-eql@npm:5.0.2"
@@ -10297,7 +10373,11 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
 "deepmerge@npm:^4.2.2":
+=======
+"deepmerge@npm:^4.2.2, deepmerge@npm:^4.3.1":
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   version: 4.3.1
   resolution: "deepmerge@npm:4.3.1"
   checksum: 10c0/e53481aaf1aa2c4082b5342be6b6d8ad9dfe387bc92ce197a66dea08bd4265904a087e75e464f14d1347cf2ac8afe1e4c16b266e0561cc5df29382d3c5f80044
@@ -10417,6 +10497,7 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
 "diff@npm:*, diff@npm:^8.0.3":
   version: 8.0.3
   resolution: "diff@npm:8.0.3"
@@ -10424,6 +10505,8 @@ __metadata:
   languageName: node
   linkType: hard
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "diff@npm:^7.0.0":
   version: 7.0.0
   resolution: "diff@npm:7.0.0"
@@ -13444,6 +13527,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
+=======
+"is-lite@npm:^0.8.2":
+  version: 0.8.2
+  resolution: "is-lite@npm:0.8.2"
+  checksum: 10c0/ed4b99d47ff12d0bf9730994cec8bcdee20bf46d68810f55e9e041797c76da664ab6d48a9ed2e7fb3aa52843a48ac4a083561a2235311a046551542504d995fd
+  languageName: node
+  linkType: hard
+
+"is-lite@npm:^1.2.1":
+  version: 1.2.1
+  resolution: "is-lite@npm:1.2.1"
+  checksum: 10c0/53acb0f6329f0aba96fef4d883d42f3d9aabf2c42baba45821407d14b1782b9c6bea42c3eef72b37788be1acc95d6cf2df8a6b8424cb9f6eb12c08d5a7d81288
+  languageName: node
+  linkType: hard
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "is-map@npm:^2.0.3":
   version: 2.0.3
   resolution: "is-map@npm:2.0.3"
@@ -16722,6 +16822,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
+=======
+"popper.js@npm:^1.16.0":
+  version: 1.16.1
+  resolution: "popper.js@npm:1.16.1"
+  checksum: 10c0/1c1a826f757edb5b8c2049dfd7a9febf6ae1e9d0e51342fc715b49a0c1020fced250d26484619883651e097c5764bbcacd2f31496e3646027f079dd83e072681
+  languageName: node
+  linkType: hard
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "posix-character-classes@npm:^0.1.0":
   version: 0.1.1
   resolution: "posix-character-classes@npm:0.1.1"
@@ -16923,7 +17033,11 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
 "prop-types@npm:^15.7.2":
+=======
+"prop-types@npm:^15.7.2, prop-types@npm:^15.8.1":
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   version: 15.8.1
   resolution: "prop-types@npm:15.8.1"
   dependencies:
@@ -17134,6 +17248,25 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
+=======
+"react-floater@npm:^0.7.9":
+  version: 0.7.9
+  resolution: "react-floater@npm:0.7.9"
+  dependencies:
+    deepmerge: "npm:^4.3.1"
+    is-lite: "npm:^0.8.2"
+    popper.js: "npm:^1.16.0"
+    prop-types: "npm:^15.8.1"
+    tree-changes: "npm:^0.9.1"
+  peerDependencies:
+    react: 15 - 18
+    react-dom: 15 - 18
+  checksum: 10c0/3fa58e968a405fb95a004897ed19c87b4991e52ebd45d837b8577eb9175ddc1dfab223bb653a0fa73ffc22fc2b2a30f2d07e924f41f41a040299793e4d2decd4
+  languageName: node
+  linkType: hard
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "react-i18next@npm:15.5.1":
   version: 15.5.1
   resolution: "react-i18next@npm:15.5.1"
@@ -17155,6 +17288,19 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
+=======
+"react-innertext@npm:^1.1.5":
+  version: 1.1.5
+  resolution: "react-innertext@npm:1.1.5"
+  peerDependencies:
+    "@types/react": ">=0.0.0 <=99"
+    react: ">=0.0.0 <=99"
+  checksum: 10c0/45335918ac83334133a9fa0df4ce109e0d4a45d54b783a8eaec88811b36dd5c3bbb5d9a6af2da1eed518a6f325a6ffae4be7bd30878596e0ec1760b231a8e0ee
+  languageName: node
+  linkType: hard
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "react-is@npm:^16.13.1":
   version: 16.13.1
   resolution: "react-is@npm:16.13.1"
@@ -17169,6 +17315,31 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
+=======
+"react-joyride@npm:2.9.3":
+  version: 2.9.3
+  resolution: "react-joyride@npm:2.9.3"
+  dependencies:
+    "@gilbarbara/deep-equal": "npm:^0.3.1"
+    deep-diff: "npm:^1.0.2"
+    deepmerge: "npm:^4.3.1"
+    is-lite: "npm:^1.2.1"
+    react-floater: "npm:^0.7.9"
+    react-innertext: "npm:^1.1.5"
+    react-is: "npm:^16.13.1"
+    scroll: "npm:^3.0.1"
+    scrollparent: "npm:^2.1.0"
+    tree-changes: "npm:^0.11.2"
+    type-fest: "npm:^4.27.0"
+  peerDependencies:
+    react: 15 - 18
+    react-dom: 15 - 18
+  checksum: 10c0/8045ef1cc14e1d48aebf46f9ecff43c1aecb6eacf3310f533844c5bf7b4d6390cdbed5f43424bb4d19c6a3351ca8d150d0a0e0c5c5e99138b70d52830276d554
+  languageName: node
+  linkType: hard
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "react-lifecycles-compat@npm:^3.0.4":
   version: 3.0.4
   resolution: "react-lifecycles-compat@npm:3.0.4"
@@ -18279,6 +18450,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
+=======
+"scroll@npm:^3.0.1":
+  version: 3.0.1
+  resolution: "scroll@npm:3.0.1"
+  checksum: 10c0/5b0c98089be0edb43444c7604a4866a0a4c457ac6c3c559b23b9c19e48bb9f977a5876bfeba8e567740b70c05dab75a01cef1a935faf47fdb6a505b538b413ed
+  languageName: node
+  linkType: hard
+
+"scrollparent@npm:^2.1.0":
+  version: 2.1.0
+  resolution: "scrollparent@npm:2.1.0"
+  checksum: 10c0/b377ec5a461f6ed8021f0c3c6b0c76317341c33838f047e91387cdfe0ba4c28aa2a3855240458f9bcf1e18e6c8718540075eb1215fc094496300114f295b2e6b
+  languageName: node
+  linkType: hard
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "semver@npm:^5.6.0":
   version: 5.7.2
   resolution: "semver@npm:5.7.2"
@@ -19594,6 +19782,29 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
+=======
+"tree-changes@npm:^0.11.2":
+  version: 0.11.3
+  resolution: "tree-changes@npm:0.11.3"
+  dependencies:
+    "@gilbarbara/deep-equal": "npm:^0.3.1"
+    is-lite: "npm:^1.2.1"
+  checksum: 10c0/4479a54fb1589a0963a29e17959a6d13c5f60f962032bf23e84111b34d367d0abb56c6c17c5511a95aade7274b25eacccb651d1d88c6606151e6fdcd2e185feb
+  languageName: node
+  linkType: hard
+
+"tree-changes@npm:^0.9.1":
+  version: 0.9.3
+  resolution: "tree-changes@npm:0.9.3"
+  dependencies:
+    "@gilbarbara/deep-equal": "npm:^0.1.1"
+    is-lite: "npm:^0.8.2"
+  checksum: 10c0/e7a38ed3c22ed1195a78e800a8f08a01d44cd8f4abac421b2be6ae34f991dfbd60ce4235be4e002882f3debef95b8e0f7e027b3b758325e9b4bda905c34d3d8f
+  languageName: node
+  linkType: hard
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "treeverse@npm:^3.0.0":
   version: 3.0.0
   resolution: "treeverse@npm:3.0.0"
@@ -19736,6 +19947,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+<<<<<<< HEAD
+=======
+"type-fest@npm:^4.27.0":
+  version: 4.41.0
+  resolution: "type-fest@npm:4.41.0"
+  checksum: 10c0/f5ca697797ed5e88d33ac8f1fec21921839871f808dc59345c9cf67345bfb958ce41bd821165dbf3ae591cedec2bf6fe8882098dfdd8dc54320b859711a2c1e4
+  languageName: node
+  linkType: hard
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 "type-is@npm:^2.0.0, type-is@npm:^2.0.1":
   version: 2.0.1
   resolution: "type-is@npm:2.0.1"

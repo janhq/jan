@@ -52,6 +52,7 @@ export const useAppUpdater = () => {
 
   const checkForUpdate = useCallback(
     async (resetRemindMeLater = false) => {
+<<<<<<< HEAD
       if (AUTO_UPDATER_DISABLED) {
         console.log('Auto updater is disabled')
         return
@@ -60,6 +61,13 @@ export const useAppUpdater = () => {
       try {
         // Reset remindMeLater if requested (e.g., when called from settings)
         if (resetRemindMeLater) {
+=======
+      console.log('Checking for updates...')
+
+      try {
+        // Reset remindMeLater if requested (e.g., when called from settings)
+        if (resetRemindMeLater && !AUTO_UPDATER_DISABLED) {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           const newState = {
             remindMeLater: false,
           }
@@ -76,6 +84,14 @@ export const useAppUpdater = () => {
           const update = await getServiceHub().updater().check()
 
           if (update) {
+<<<<<<< HEAD
+=======
+            if (AUTO_UPDATER_DISABLED) {
+              console.log('Auto updater is disabled')
+              return null
+            }
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             const newState = {
               isUpdateAvailable: true,
               remindMeLater: false,
@@ -237,6 +253,10 @@ export const useAppUpdater = () => {
     }
   }, [updateState.updateInfo])
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   return {
     updateState,
     checkForUpdate,

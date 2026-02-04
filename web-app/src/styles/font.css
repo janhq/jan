@@ -1,22 +1,118 @@
+<<<<<<< HEAD
 /* PP Editorial New */
 @font-face {
   font-family: 'PPEditorialNew';
   font-display: swap;
   src: url('/fonts/PPEditorialNew/PPEditorialNew-Regular.otf')
     format('opentype');
+=======
+/* Inter */
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-Thin.ttf') format('truetype');
+  font-weight: 100;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-ExtraLight.ttf') format('truetype');
+  font-weight: 200;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-Light.ttf') format('truetype');
+  font-weight: 300;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-Regular.ttf') format('truetype');
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   font-weight: 400;
 }
 
 @font-face {
+<<<<<<< HEAD
   font-family: 'PPEditorialNew';
   font-display: swap;
   src: url('/fonts/PPEditorialNew/PPEditorialNew-RegularItalic.otf')
     format('opentype');
+=======
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-Medium.ttf') format('truetype');
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-Bold.ttf') format('truetype');
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-ExtraBold.ttf') format('truetype');
+  font-weight: 800;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-Black.ttf') format('truetype');
+  font-weight: 900;
+}
+
+/* Inter Italic */
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-ThinItalic.ttf') format('truetype');
+  font-weight: 100;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-ExtraLightItalic.ttf') format('truetype');
+  font-weight: 200;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-LightItalic.ttf') format('truetype');
+  font-weight: 300;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-Italic.ttf') format('truetype');
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   font-weight: 400;
   font-style: italic;
 }
 
 @font-face {
+<<<<<<< HEAD
   font-family: 'PPEditorialNew';
   font-display: swap;
   src: url('/fonts/PPEditorialNew/PPEditorialNew-Ultrabold.otf')
@@ -29,23 +125,109 @@
   font-display: swap;
   src: url('/fonts/PPEditorialNew/PPEditorialNew-UltraboldItalic.otf')
     format('opentype');
+=======
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-MediumItalic.ttf') format('truetype');
+  font-weight: 500;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-SemiBoldItalic.ttf') format('truetype');
+  font-weight: 600;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-BoldItalic.ttf') format('truetype');
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   font-weight: 700;
   font-style: italic;
 }
 
 @font-face {
+<<<<<<< HEAD
   font-family: 'PPEditorialNew';
   font-display: swap;
   src: url('/fonts/PPEditorialNew/PPEditorialNew-Ultralight.otf')
     format('opentype');
+=======
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-ExtraBoldItalic.ttf') format('truetype');
+  font-weight: 800;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-display: swap;
+  src: url('/fonts/inter/Inter_18pt-BlackItalic.ttf') format('truetype');
+  font-weight: 900;
+  font-style: italic;
+}
+
+/* Studio Feixen Sans */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('/fonts/StudioFeixenSans-Ultralight.otf') format('opentype');
+  font-weight: 200;
+}
+
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('/fonts/StudioFeixenSans-Light.otf') format('opentype');
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   font-weight: 300;
 }
 
 @font-face {
+<<<<<<< HEAD
   font-family: 'PPEditorialNew';
   font-display: swap;
   src: url('/fonts/PPEditorialNew/PPEditorialNew-UltralightItalic.otf')
     format('opentype');
   font-weight: 300;
   font-style: italic;
+=======
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('/fonts/StudioFeixenSans-Book.otf') format('opentype');
+  font-weight: 350;
+}
+
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('/fonts/StudioFeixenSans-Regular.otf') format('opentype');
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('/fonts/StudioFeixenSans-Medium.otf') format('opentype');
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('/fonts/StudioFeixenSans-Semibold.otf') format('opentype');
+  font-weight: 600;
+}
+
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('/fonts/StudioFeixenSans-Bold.otf') format('opentype');
+  font-weight: 700;
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }

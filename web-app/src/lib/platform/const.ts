@@ -66,6 +66,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // Assistant functionality - disabled for web
   [PlatformFeature.ASSISTANTS]: isPlatformTauri(),
 
+<<<<<<< HEAD
   // Authentication (Google OAuth) - enabled for web only
   [PlatformFeature.AUTHENTICATION]: !isPlatformTauri(),
 
@@ -85,6 +86,11 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // Temporary chat mode - enabled for web only
   [PlatformFeature.TEMPORARY_CHAT]: !isPlatformTauri(),
 
+=======
+  // Shortcut
+  [PlatformFeature.SHORTCUT]: !isPlatformIOS() && !isPlatformAndroid(),
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   // File attachments/RAG UI and tooling - desktop platforms only
   [PlatformFeature.FILE_ATTACHMENTS]:
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),

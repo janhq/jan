@@ -16,6 +16,7 @@ use crate::core::state::ServerHandle;
 
 /// Configuration for the proxy server
 #[derive(Clone)]
+<<<<<<< HEAD
 struct ProxyConfig {
     prefix: String,
     proxy_api_key: String,
@@ -24,6 +25,18 @@ struct ProxyConfig {
 
 /// Determines the final destination path based on the original request path
 fn get_destination_path(original_path: &str, prefix: &str) -> String {
+=======
+pub struct ProxyConfig {
+    pub prefix: String,
+    pub proxy_api_key: String,
+    pub trusted_hosts: Vec<Vec<String>>,
+    pub host: String,
+    pub port: u16,
+}
+
+/// Determines the final destination path based on the original request path
+pub fn get_destination_path(original_path: &str, prefix: &str) -> String {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     remove_prefix(original_path, prefix)
 }
 
@@ -95,9 +108,13 @@ async fn proxy_request(
         };
 
         if !is_trusted {
+<<<<<<< HEAD
             log::warn!(
                 "CORS preflight: Host '{host}' not trusted for path '{request_path}'"
             );
+=======
+            log::warn!("CORS preflight: Host '{host}' not trusted for path '{request_path}'");
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             return Ok(Response::builder()
                 .status(StatusCode::FORBIDDEN)
                 .body(Body::from("Host not allowed"))
@@ -153,9 +170,13 @@ async fn proxy_request(
         };
 
         if !headers_valid {
+<<<<<<< HEAD
             log::warn!(
                 "CORS preflight: Some requested headers not allowed: {requested_headers}"
             );
+=======
+            log::warn!("CORS preflight: Some requested headers not allowed: {requested_headers}");
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             return Ok(Response::builder()
                 .status(StatusCode::FORBIDDEN)
                 .body(Body::from("Headers not allowed"))
@@ -180,9 +201,13 @@ async fn proxy_request(
             response = response.header("Access-Control-Allow-Origin", "*");
         }
 
+<<<<<<< HEAD
         log::debug!(
             "CORS preflight response: host_trusted={is_trusted}, origin='{origin}'"
         );
+=======
+        log::debug!("CORS preflight response: host_trusted={is_trusted}, origin='{origin}'");
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         return Ok(response.body(Body::empty()).unwrap());
     }
 
@@ -249,6 +274,7 @@ async fn proxy_request(
     }
 
     if !is_whitelisted_path && !config.proxy_api_key.is_empty() {
+<<<<<<< HEAD
         if let Some(authorization) = parts.headers.get(hyper::header::AUTHORIZATION) {
             let auth_str = authorization.to_str().unwrap_or("");
 
@@ -265,6 +291,26 @@ async fn proxy_request(
                     .unwrap());
             }
         } else {
+=======
+        // Check Authorization header (Bearer token)
+        let auth_valid = parts
+            .headers
+            .get(hyper::header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|auth_str| auth_str.strip_prefix("Bearer "))
+            .map(|token| token == config.proxy_api_key)
+            .unwrap_or(false);
+
+        // Check X-Api-Key header
+        let api_key_valid = parts
+            .headers
+            .get("X-Api-Key")
+            .and_then(|v| v.to_str().ok())
+            .map(|key| key == config.proxy_api_key)
+            .unwrap_or(false);
+
+        if !auth_valid && !api_key_valid {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             let mut error_response = Response::builder().status(StatusCode::UNAUTHORIZED);
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,
@@ -273,6 +319,7 @@ async fn proxy_request(
                 &config.trusted_hosts,
             );
             return Ok(error_response
+<<<<<<< HEAD
                 .body(Body::from("Missing authorization header"))
                 .unwrap());
         }
@@ -280,6 +327,13 @@ async fn proxy_request(
         log::debug!(
             "Bypassing authorization check for whitelisted path: {path}"
         );
+=======
+                .body(Body::from("Invalid or missing authorization token"))
+                .unwrap());
+        }
+    } else if is_whitelisted_path {
+        log::debug!("Bypassing authorization check for whitelisted path: {path}");
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     }
 
     if path.contains("/configs") {
@@ -302,8 +356,15 @@ async fn proxy_request(
     match (method.clone(), destination_path.as_str()) {
         (hyper::Method::POST, "/chat/completions")
         | (hyper::Method::POST, "/completions")
+<<<<<<< HEAD
         | (hyper::Method::POST, "/embeddings") => {
             log::debug!(
+=======
+        | (hyper::Method::POST, "/embeddings")
+        | (hyper::Method::POST, "/messages")
+        | (hyper::Method::POST, "/messages/count_tokens") => {
+            log::info!(
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 "Handling POST request to {destination_path} requiring model lookup in body",
             );
             let body_bytes = match hyper::body::to_bytes(body).await {
@@ -331,9 +392,13 @@ async fn proxy_request(
                         let sessions_guard = sessions.lock().await;
 
                         if sessions_guard.is_empty() {
+<<<<<<< HEAD
                             log::warn!(
                                 "Request for model '{model_id}' but no models are running."
                             );
+=======
+                            log::warn!("Request for model '{model_id}' but no models are running.");
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                             let mut error_response =
                                 Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
                             error_response = add_cors_headers_with_host_and_origin(
@@ -388,9 +453,13 @@ async fn proxy_request(
                     }
                 }
                 Err(e) => {
+<<<<<<< HEAD
                     log::warn!(
                         "Failed to parse POST body for {destination_path} as JSON: {e}"
                     );
+=======
+                    log::warn!("Failed to parse POST body for {destination_path} as JSON: {e}");
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                     let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
                     error_response = add_cors_headers_with_host_and_origin(
                         error_response,
@@ -443,12 +512,53 @@ async fn proxy_request(
         }
 
         (hyper::Method::GET, "/openapi.json") => {
+<<<<<<< HEAD
             let body = include_str!("../../../static/openapi.json"); // relative to src-tauri/src/
             return Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header(hyper::header::CONTENT_TYPE, "application/json")
                 .body(Body::from(body))
                 .unwrap());
+=======
+            let static_body = include_str!("../../../static/openapi.json"); // relative to src-tauri/src/
+                                                                            // Parse the static OpenAPI JSON and update the server URL with actual host and port
+            match serde_json::from_str::<serde_json::Value>(static_body) {
+                Ok(mut openapi_spec) => {
+                    // Update the servers array with the actual host and port
+                    if let Some(servers) = openapi_spec
+                        .get_mut("servers")
+                        .and_then(|s| s.as_array_mut())
+                    {
+                        for server in servers {
+                            if let Some(server_obj) = server.as_object_mut() {
+                                if let Some(url) = server_obj.get_mut("url") {
+                                    let base_url = format!(
+                                        "http://{}:{}{}",
+                                        config.host, config.port, config.prefix
+                                    );
+                                    *url = serde_json::Value::String(base_url);
+                                }
+                            }
+                        }
+                    }
+                    let body = serde_json::to_string(&openapi_spec)
+                        .unwrap_or_else(|_| static_body.to_string());
+                    return Ok(Response::builder()
+                        .status(StatusCode::OK)
+                        .header(hyper::header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(body))
+                        .unwrap());
+                }
+                Err(_) => {
+                    // If parsing fails, return the static file as fallback
+                    return Ok(Response::builder()
+                        .status(StatusCode::OK)
+                        .header(hyper::header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(static_body))
+                        .unwrap());
+                }
+            }
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         }
 
         // DOCS route
@@ -564,8 +674,14 @@ async fn proxy_request(
                 .unwrap());
         }
     };
+<<<<<<< HEAD
 
     let upstream_url = format!("http://127.0.0.1:{port}{destination_path}");
+=======
+    log::info!("Proxying request to model server at port {port}, path: {destination_path}");
+
+    let upstream_url = format!("http://127.0.0.1:{port}/v1{destination_path}");
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     let mut outbound_req = client.request(method.clone(), &upstream_url);
 
@@ -713,6 +829,11 @@ pub async fn start_server(
         prefix,
         proxy_api_key,
         trusted_hosts,
+<<<<<<< HEAD
+=======
+        host: host.clone(),
+        port,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     };
 
     let client = Client::builder()

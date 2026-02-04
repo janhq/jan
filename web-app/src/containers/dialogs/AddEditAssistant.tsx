@@ -258,25 +258,41 @@ export default function AddEditAssistant({
                 {t('assistants:emoji')}
               </label>
               <div
+<<<<<<< HEAD
                 className="border rounded-sm p-1 w-9 h-9 flex items-center justify-center border-main-view-fg/10 cursor-pointer"
+=======
+                className="border rounded-sm p-1 size-9 flex items-center justify-center cursor-pointer"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                 ref={emojiPickerTriggerRef}
               >
                 {avatar ? (
                   <AvatarEmoji
                     avatar={avatar}
+<<<<<<< HEAD
                     imageClassName="w-5 h-5 object-contain"
                     textClassName=""
                   />
                 ) : (
                   <IconMoodSmile size={18} className="text-main-view-fg/50" />
+=======
+                    imageClassName="size-5 object-contain"
+                    textClassName=""
+                  />
+                ) : (
+                  <IconMoodSmile size={18} className="text-muted-foreground" />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 )}
               </div>
               <div className="relative" ref={emojiPickerRef}>
                 <EmojiPicker
                   open={showEmojiPicker}
                   theme={isDark ? ('dark' as Theme) : ('light' as Theme)}
+<<<<<<< HEAD
                   className="!absolute !z-40 !overflow-y-auto top-2"
+=======
+                  className="absolute!s z-40! overflow-y-auto! top-2"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                   height={350}
                   customEmojis={isDev() ? teamEmoji : []}
                   lazyLoadEmojis
@@ -339,7 +355,11 @@ export default function AddEditAssistant({
               className="resize-none"
               rows={4}
             />
+<<<<<<< HEAD
             <div className="text-xs text-main-view-fg/60">
+=======
+            <div className="text-xs text-muted-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               {t('assistants:instructionsDateHint')}
             </div>
           </div>
@@ -415,7 +435,11 @@ export default function AddEditAssistant({
                     }
                   }}
                   className={cn(
+<<<<<<< HEAD
                     'text-xs bg-main-view-fg/10 py-1 px-2 rounded-sm cursor-pointer',
+=======
+                    'text-xs bg-secondary-foreground/5 py-1 px-2 rounded-sm cursor-pointer',
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                     paramsKeys.includes(setting.key) && 'opacity-50'
                   )}
                 >
@@ -428,12 +452,22 @@ export default function AddEditAssistant({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-sm">{t('assistants:parameters')}</label>
+<<<<<<< HEAD
               <div
                 className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                 onClick={handleAddParameter}
               >
                 <IconPlus size={18} className="text-main-view-fg/60" />
               </div>
+=======
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={handleAddParameter}
+              >
+                <IconPlus size={18} className="text-muted-foreground" />
+              </Button>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             </div>
 
             {paramsKeys.map((key, index) => (
@@ -463,7 +497,11 @@ export default function AddEditAssistant({
                         />
                         <IconChevronDown
                           size={14}
+<<<<<<< HEAD
                           className="text-main-view-fg/50 absolute right-2 top-1/2 -translate-y-1/2"
+=======
+                          className="text-muted-foreground absolute right-2 top-1/2 -translate-y-1/2"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                         />
                       </div>
                     </DropdownMenuTrigger>
@@ -513,7 +551,11 @@ export default function AddEditAssistant({
                           />
                           <IconChevronDown
                             size={14}
+<<<<<<< HEAD
                             className="text-main-view-fg/50 absolute right-2 top-1/2 -translate-y-1/2"
+=======
+                            className="text-muted-foreground absolute right-2 top-1/2 -translate-y-1/2"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                           />
                         </div>
                       </DropdownMenuTrigger>
@@ -545,7 +587,11 @@ export default function AddEditAssistant({
                         handleParameterChange(index, e.target.value, 'value')
                       }
                       placeholder={t('assistants:jsonValuePlaceholder')}
+<<<<<<< HEAD
                       className="sm:flex-1 h-[36px] w-full"
+=======
+                      className="sm:flex-1 h-9 w-full"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                     />
                   ) : (
                     <Input
@@ -556,6 +602,7 @@ export default function AddEditAssistant({
                       type={paramsTypes[index] === 'number' ? 'number' : 'text'}
                       step={paramsTypes[index] === 'number' ? 'any' : undefined}
                       placeholder={t('assistants:value')}
+<<<<<<< HEAD
                       className="sm:flex-1 h-[36px] w-full"
                     />
                   )}
@@ -566,6 +613,19 @@ export default function AddEditAssistant({
                 >
                   <IconTrash size={18} className="text-destructive" />
                 </div>
+=======
+                      className="sm:flex-1 h-9 w-full"
+                    />
+                  )}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => handleRemoveParameter(index)}
+                >
+                  <IconTrash size={18} className="text-destructive" />
+                </Button>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               </div>
             ))}
           </div>

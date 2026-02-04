@@ -3,7 +3,11 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "target": "ES2020",
     "useDefineForClassFields": true,
+<<<<<<< HEAD
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
+=======
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "module": "ESNext",
     "skipLibCheck": true,
 

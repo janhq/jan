@@ -61,6 +61,11 @@
     "application": "Application",
     "newChat": "New Chat",
     "newChatDesc": "Create a new chat.",
+<<<<<<< HEAD
+=======
+    "newProject": "New Project",
+    "newProjectDesc": "Open the create project dialog.",
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "toggleSidebar": "Toggle Sidebar",
     "toggleSidebarDesc": "Show or hide the sidebar.",
     "zoomIn": "Zoom In",
@@ -75,6 +80,11 @@
     "newLineDesc": "Insert a new line.",
     "shiftEnter": "Shift + Enter",
     "navigation": "Navigation",
+<<<<<<< HEAD
+=======
+    "search": "Search",
+    "searchDesc": "Open the search dialog.",
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "goToSettings": "Go to Settings",
     "goToSettingsDesc": "Open settings."
   },
@@ -98,8 +108,11 @@
     "resetToDefaultDesc": "Reset all interface settings to default.",
     "resetInterfaceSuccess": "Interface reset successfully",
     "resetInterfaceSuccessDesc": "All interface settings have been restored to default.",
+<<<<<<< HEAD
     "chatWidth": "Chat Layout Width",
     "chatWidthDesc": "Pick a chat width preset that fits your workspace.",
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "threadScrollTitle": "Thread Scroll Behavior",
     "threadScrollDesc": "Choose how the chat viewport should react when new messages arrive.",
     "threadScrollFlowTitle": "Flow scroll",

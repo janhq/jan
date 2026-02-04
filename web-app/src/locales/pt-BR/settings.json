@@ -98,8 +98,11 @@
     "resetToDefaultDesc": "Redefinir todas as configurações de aparência para padrão.",
     "resetAppearanceSuccess": "Aparência redefinida com sucesso",
     "resetAppearanceSuccessDesc": "Todas as configurações de aparência foram restauradas para padrão.",
+<<<<<<< HEAD
     "chatWidth": "Largura do Chat",
     "chatWidthDesc": "Personalizar a largura da visualização do chat.",
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "tokenCounterCompact": "Contador de Tokens Compacto",
     "tokenCounterCompactDesc": "Mostrar contador de tokens dentro da entrada do chat. Quando desabilitado, contador de tokens aparece abaixo da entrada.",
     "codeBlockTitle": "Bloco de Código",

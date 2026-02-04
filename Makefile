@@ -10,6 +10,7 @@ REPORT_PORTAL_DESCRIPTION ?= "Jan App report"
 all:
 	@echo "Specify a target to run"
 
+<<<<<<< HEAD
 # Config yarn version
 
 config-yarn:
@@ -20,6 +21,10 @@ config-yarn:
 
 # Installs yarn dependencies and builds core and extensions
 install-and-build: config-yarn
+=======
+# Installs yarn dependencies and builds core and extensions
+install-and-build:
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 ifeq ($(OS),Windows_NT)
 	echo "skip"
 else ifeq ($(shell uname -s),Linux)
@@ -28,7 +33,11 @@ endif
 	yarn install
 	yarn build:tauri:plugin:api
 	yarn build:core
+<<<<<<< HEAD
 	yarn build:extensions && yarn build:extensions-web
+=======
+	yarn build:extensions
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 # Install required Rust targets for macOS universal builds
 install-rust-targets:
@@ -63,7 +72,11 @@ dev: install-and-build
 	yarn dev
 
 # Web application targets
+<<<<<<< HEAD
 install-web-app: config-yarn
+=======
+install-web-app:
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 	yarn install
 
 dev-web-app: install-web-app

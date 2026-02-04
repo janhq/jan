@@ -98,8 +98,11 @@
     "resetToDefaultDesc": "Réinitialisez tous les paramètres d'interface par défaut.",
     "resetInterfaceSuccess": "Interface réinitialisée avec succès",
     "resetInterfaceSuccessDesc": "Tous les paramètres d'interface ont été restaurés par défaut.",
+<<<<<<< HEAD
     "chatWidth": "Largeur de la disposition de la discussion",
     "chatWidthDesc": "Choisissez un préréglage de largeur de discussion qui correspond à votre espace de travail.",
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "threadScrollTitle": "Comportement du défilement de la discussion",
     "threadScrollDesc": "Choisissez comment la fenêtre de discussion doit réagir à l'arrivée de nouveaux messages.",
     "threadScrollFlowTitle": "Défilement fluide",

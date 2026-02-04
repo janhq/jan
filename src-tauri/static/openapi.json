@@ -54,6 +54,15 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateChatCompletionDto"
+<<<<<<< HEAD
+=======
+              },
+              "example": {
+                "model": "janhq/Jan-v3-4b-base-instruct-Q4_K_XL",
+                "messages": [
+                  {"role": "user", "content": "Hello!"}
+                ]
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               }
             }
           }
@@ -71,6 +80,45 @@
           }
         }
       }
+<<<<<<< HEAD
+=======
+    },
+    "/messages": {
+      "post": {
+        "summary": "Create a message",
+        "description": "Generates a response based on input messages. Streaming mode is supported. This endpoint follows the Anthropic Messages API specification and is compatible with Claude models.",
+        "operationId": "createMessage",
+        "tags": ["Inference"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMessageDto"
+              },
+              "example": {
+                "model": "janhq/Jan-v3-4b-base-instruct-Q4_K_XL",
+                "messages": [
+                  {"role": "user", "content": "Hello!"}
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Message creation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponseDto"
+                }
+              }
+            }
+          }
+        }
+      }
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     }
   },
   "components": {
@@ -497,6 +545,288 @@
         },
         "required": ["model", "messages"]
       },
+<<<<<<< HEAD
+=======
+      "CreateMessageDto": {
+        "type": "object",
+        "description": "Request body for `POST /v1/messages`. Follows Anthropic Messages API specification.",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "The unique identifier of the Claude model to use (e.g., claude-3-5-sonnet-20241022, claude-3-opus-20240229)."
+          },
+          "max_tokens": {
+            "type": "integer",
+            "description": "The maximum number of tokens to generate in the completion.",
+            "default": 1024
+          },
+          "messages": {
+            "type": "array",
+            "description": "Array of messages that form the conversation.",
+            "items": {
+              "$ref": "#/components/schemas/AnthropicMessage"
+            }
+          },
+          "system": {
+            "type": "string",
+            "description": "Optional system instructions that guide the model's behavior."
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Adjusts randomness of the output (0.0 - 1.0).",
+            "default": 1.0
+          },
+          "top_p": {
+            "type": "number",
+            "description": "Nucleus sampling cutoff (0.0 - 1.0).",
+            "default": 1.0
+          },
+          "top_k": {
+            "type": "integer",
+            "description": "Restricts sampling to the K most probable tokens.",
+            "default": 0
+          },
+          "stop_sequences": {
+            "type": "array",
+            "description": "Stop sequences – generation stops before emitting any of these strings.",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "stream": {
+            "type": "boolean",
+            "description": "If true, the server streams tokens as they are generated.",
+            "default": false
+          },
+          "anthropic_version": {
+            "type": "string",
+            "description": "The version of the Anthropic API to use.",
+            "default": "bedrock-2023-05-31"
+          },
+          "tools": {
+            "type": "array",
+            "description": "List of tools the model may call.",
+            "items": {
+              "$ref": "#/components/schemas/Tool"
+            }
+          },
+          "tool_choice": {
+            "type": "object",
+            "description": "Controls which tool is called.",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["auto", "any", "tool"],
+                "description": "How the model chooses which tool to call."
+              },
+              "name": {
+                "type": "string",
+                "description": "The name of the tool to use."
+              }
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optional metadata to include in the response.",
+            "properties": {
+              "user_id": {
+                "type": "string",
+                "description": "A unique identifier for the end-user."
+              },
+              "tags": {
+                "type": "array",
+                "description": "Tags to apply to the message.",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "required": ["model", "messages"]
+      },
+      "AnthropicMessage": {
+        "type": "object",
+        "description": "A single message in the Anthropic Messages API format.",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": ["user", "assistant", "system"],
+            "description": "The role of the message sender."
+          },
+          "content": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "description": "Array of content blocks (text, images, etc.).",
+                "items": {
+                  "$ref": "#/components/schemas/ContentBlock"
+                }
+              }
+            ],
+            "description": "The content of the message."
+          },
+          "stop_reason": {
+            "type": "string",
+            "description": "The reason the generation stopped (e.g., `stop`, `max_tokens`, `tool_use`)."
+          },
+          "stop_sequence": {
+            "type": "string",
+            "description": "The specific stop sequence that was encountered."
+          },
+          "usage": {
+            "$ref": "#/components/schemas/MessageUsage"
+          },
+          "tool_use": {
+            "$ref": "#/components/schemas/ToolUse"
+          }
+        },
+        "required": ["role", "content"]
+      },
+      "ContentBlock": {
+        "type": "object",
+        "description": "A content block in the Anthropic Messages API format.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["text", "image"],
+            "description": "The type of content block."
+          },
+          "text": {
+            "type": "string",
+            "description": "Text content (for type 'text')."
+          },
+          "source": {
+            "type": "object",
+            "description": "Image source data (for type 'image').",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["base64"]
+              },
+              "media_type": {
+                "type": "string",
+                "description": "The media type of the image (e.g., 'image/jpeg')."
+              },
+              "data": {
+                "type": "string",
+                "description": "Base64-encoded image data."
+              }
+            },
+            "required": ["type", "media_type", "data"]
+          }
+        },
+        "required": ["type"]
+      },
+      "Tool": {
+        "type": "object",
+        "description": "A tool definition for function calling.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the tool."
+          },
+          "description": {
+            "type": "string",
+            "description": "A description of what the tool does."
+          },
+          "input_schema": {
+            "type": "object",
+            "description": "JSON schema defining the tool's input parameters."
+          }
+        },
+        "required": ["name", "description", "input_schema"]
+      },
+      "ToolUse": {
+        "type": "object",
+        "description": "Information about a tool use request from the model.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "A unique identifier for this tool use."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the tool being called."
+          },
+          "input": {
+            "type": "object",
+            "description": "The arguments for the tool."
+          }
+        },
+        "required": ["id", "name", "input"]
+      },
+      "MessageUsage": {
+        "type": "object",
+        "description": "Token usage statistics for the message.",
+        "properties": {
+          "input_tokens": {
+            "type": "integer",
+            "description": "Number of tokens in the input."
+          },
+          "output_tokens": {
+            "type": "integer",
+            "description": "Number of tokens in the output."
+          }
+        },
+        "required": ["input_tokens", "output_tokens"]
+      },
+      "MessageResponseDto": {
+        "type": "object",
+        "description": "Response from `POST /v1/messages` following Anthropic Messages API format.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "A unique identifier for the message."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["message"],
+            "description": "The type of the response."
+          },
+          "role": {
+            "type": "string",
+            "enum": ["assistant"],
+            "description": "The role of the assistant."
+          },
+          "content": {
+            "type": "array",
+            "description": "Array of content blocks in the response.",
+            "items": {
+              "$ref": "#/components/schemas/ContentBlock"
+            }
+          },
+          "stop_reason": {
+            "type": "string",
+            "description": "The reason the generation stopped."
+          },
+          "stop_sequence": {
+            "type": "string",
+            "description": "The specific stop sequence that was encountered."
+          },
+          "usage": {
+            "$ref": "#/components/schemas/MessageUsage"
+          },
+          "model": {
+            "type": "string",
+            "description": "The model used for generation."
+          },
+          "cache_control": {
+            "type": "object",
+            "description": "Optional cache control information."
+          },
+          "billing": {
+            "type": "object",
+            "description": "Optional billing information."
+          }
+        },
+        "required": ["id", "type", "role", "content", "stop_reason", "usage", "model"]
+      },
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       "ChatCompletionResponseDto": {
         "type": "object",
         "description": "Response from `POST /v1/chat/completion`.",

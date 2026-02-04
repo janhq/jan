@@ -11,15 +11,21 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
+<<<<<<< HEAD
 import { CapabilityOverrideUI } from '@/components/CapabilityOverrideUI'
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import {
   IconPencil,
   IconEye,
   IconTool,
   IconAlertTriangle,
   IconLoader2,
+<<<<<<< HEAD
   IconChevronDown,
   IconChevronRight,
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 } from '@tabler/icons-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -49,11 +55,18 @@ export const DialogEditModel = ({
     vision: false,
     tools: false,
   })
+<<<<<<< HEAD
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false)
 
   // Initialize with the provided model ID or the first model if available
   useEffect(() => {
     if ((isOpen && !selectedModelId) || !isOpen) {
+=======
+
+  // Initialize with the provided model ID or the first model if available
+  useEffect(() => {
+    if (isOpen && !selectedModelId || !isOpen) {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       if (modelId) {
         setSelectedModelId(modelId)
       } else if (provider.models && provider.models.length > 0) {
@@ -83,9 +96,13 @@ export const DialogEditModel = ({
       setOriginalCapabilities(capsObject)
 
       // Use existing displayName if available, otherwise fall back to model ID
+<<<<<<< HEAD
       const displayNameValue =
         (selectedModel as Model & { displayName?: string }).displayName ||
         selectedModel.id
+=======
+      const displayNameValue = (selectedModel as Model & { displayName?: string }).displayName || selectedModel.id
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       setDisplayName(displayNameValue)
       setOriginalDisplayName(displayNameValue)
     }
@@ -119,6 +136,7 @@ export const DialogEditModel = ({
     setIsLoading(true)
     try {
       const nameChanged = displayName !== originalDisplayName
+<<<<<<< HEAD
       const capabilitiesChanged =
         JSON.stringify(capabilities) !== JSON.stringify(originalCapabilities)
 
@@ -126,6 +144,12 @@ export const DialogEditModel = ({
       const modelUpdate: Partial<Model> & {
         _userConfiguredCapabilities?: boolean
       } = {}
+=======
+      const capabilitiesChanged = JSON.stringify(capabilities) !== JSON.stringify(originalCapabilities)
+
+      // Build the update object for the selected model
+      const modelUpdate: Partial<Model> & { _userConfiguredCapabilities?: boolean } = {}
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
       if (nameChanged) {
         modelUpdate.displayName = displayName
@@ -189,8 +213,13 @@ export const DialogEditModel = ({
   return (
     <Dialog open={isOpen} onOpenChange={handleDialogChange}>
       <DialogTrigger asChild>
+<<<<<<< HEAD
         <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
           <IconPencil size={18} className="text-main-view-fg/50" />
+=======
+        <div className="size-6 cursor-pointer flex items-center justify-center rounded transition-all duration-200 ease-in-out">
+          <IconPencil size={18} className="text-muted-foreground" />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         </div>
       </DialogTrigger>
       <DialogContent onKeyDown={handleKeyDown}>
@@ -219,13 +248,19 @@ export const DialogEditModel = ({
             className="w-full"
             disabled={isLoading}
           />
+<<<<<<< HEAD
           <p className="text-xs text-main-view-fg/60 mt-1">
             This is the name that will be shown in the interface. The original
             model file remains unchanged.
+=======
+          <p className="text-xs text-muted-foreground mt-1">
+            This is the name that will be shown in the interface. The original model file remains unchanged.
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           </p>
         </div>
 
         {/* Warning Banner */}
+<<<<<<< HEAD
         <div className="bg-main-view-fg/5 border border-main-view-fg/10 rounded-md p-3">
           <div className="flex items-start space-x-3">
             <IconAlertTriangle className="size-5 text-yellow-600 mt-0.5 flex-shrink-0" />
@@ -234,6 +269,16 @@ export const DialogEditModel = ({
                 {t('providers:editModel.warning.title')}
               </p>
               <p className="text-main-view-fg/70">
+=======
+        <div className="bg-secondary border  rounded-md p-3">
+          <div className="flex items-start space-x-3">
+            <IconAlertTriangle className="size-5 text-yellow-600 mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <p className="font-medium mb-1">
+                {t('providers:editModel.warning.title')}
+              </p>
+              <p className="text-muted-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 {t('providers:editModel.warning.description')}
               </p>
             </div>
@@ -247,7 +292,11 @@ export const DialogEditModel = ({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
+<<<<<<< HEAD
                 <IconTool className="size-4 text-main-view-fg/70" />
+=======
+                <IconTool className="size-4 text-muted-foreground" />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 <span className="text-sm">
                   {t('providers:editModel.tools')}
                 </span>
@@ -264,7 +313,11 @@ export const DialogEditModel = ({
 
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
+<<<<<<< HEAD
                 <IconEye className="size-4 text-main-view-fg/70" />
+=======
+                <IconEye className="size-4 text-muted-foreground" />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 <span className="text-sm">
                   {t('providers:editModel.vision')}
                 </span>
@@ -281,6 +334,7 @@ export const DialogEditModel = ({
           </div>
         </div>
 
+<<<<<<< HEAD
         {/* Advanced Options */}
         <div className="py-1 border-t border-main-view-fg/10">
           <button
@@ -315,12 +369,18 @@ export const DialogEditModel = ({
           )}
         </div>
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         {/* Save Button */}
         <div className="flex justify-end pt-4">
           <Button
             onClick={handleSaveChanges}
             disabled={!hasUnsavedChanges() || isLoading}
+<<<<<<< HEAD
             className="px-4 py-2"
+=======
+            size="sm"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           >
             {isLoading ? (
               <>

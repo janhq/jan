@@ -12,7 +12,11 @@ function Switch({ loading, className, ...props }: SwitchProps) {
     <SwitchPrimitive.Root
       data-slot="switch"
       className={cn(
+<<<<<<< HEAD
         'relative peer cursor-pointer data-[state=checked]:bg-accent data-[state=unchecked]:bg-main-view-fg/20 focus-visible:border-none inline-flex h-[18px] w-8.5 shrink-0 items-center rounded-full border border-transparent shadow-xs outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50 transition-all',
+=======
+        'relative peer cursor-pointer data-[state=checked]:bg-primary data-[state=unchecked]:bg-input focus-visible:border-none inline-flex h-[18px] w-8.5 shrink-0 items-center rounded-full border shadow-xs outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50 transition-all',
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         loading && 'w-4.5 pointer-events-none',
         className
       )}
@@ -20,13 +24,21 @@ function Switch({ loading, className, ...props }: SwitchProps) {
     >
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center z-10 size-3.5 top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2">
+<<<<<<< HEAD
           <IconLoader2 className="animate-spin text-main-view-fg/50" />
+=======
+          <IconLoader2 className="animate-spin text-muted-foreground" />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         </div>
       )}
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
         className={cn(
+<<<<<<< HEAD
           'bg-main-view pointer-events-none block size-4 rounded-full ring-0 transition-transform data-[state=checked]:translate-x-[calc(100%)] data-[state=unchecked]:-translate-x-0'
+=======
+          'bg-background pointer-events-none block size-4 rounded-full ring-0 transition-transform data-[state=checked]:translate-x-[calc(100%)] data-[state=unchecked]:translate-x-0'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         )}
       />
     </SwitchPrimitive.Root>

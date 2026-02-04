@@ -15,10 +15,17 @@
       {
         "label": "main",
         "title": "Jan",
+<<<<<<< HEAD
         "width": 1024,
         "minWidth": 375,
         "minHeight": 667,
         "height": 800,
+=======
+        "width": 1200,
+        "minWidth": 1024,
+        "height": 800,
+        "minHeight": 740,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         "resizable": true,
         "fullscreen": false,
         "zoomHotkeysEnabled": true,
@@ -26,8 +33,13 @@
         "hiddenTitle": true,
         "transparent": true,
         "trafficLightPosition": {
+<<<<<<< HEAD
           "x": 12,
           "y": 25
+=======
+          "x": 20,
+          "y": 32
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         },
         "decorations": true,
         "titleBarStyle": "Overlay",
@@ -47,13 +59,21 @@
       ],
       "csp": {
         "default-src": "'self' customprotocol: asset: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+<<<<<<< HEAD
         "connect-src": "'self' asset: ipc: http://asset.localhost http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https: http:",
+=======
+        "connect-src": "'self' asset: ipc: data: http://asset.localhost http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https: http:",
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         "font-src": [
           "https://fonts.gstatic.com blob: data: tauri://localhost http://tauri.localhost"
         ],
         "img-src": "'self' asset: http://asset.localhost blob: data: https:",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
+<<<<<<< HEAD
         "script-src": "'self' asset: $APPDATA/**.* http://asset.localhost https://eu-assets.i.posthog.com https://posthog.com"
+=======
+        "script-src": "'self' 'unsafe-eval' asset: $APPDATA/**.* http://asset.localhost https://eu-assets.i.posthog.com https://posthog.com"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       },
       "assetProtocol": {
         "enable": true,
@@ -72,6 +92,10 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJFNDEzMEVCMUEzNUFENDQKUldSRXJUVWE2ekJCTGc1Mm1BVXgrWmtES3huUlBFR0lCdG5qbWFvMzgyNDhGN3VTTko5Q1NtTW0K",
       "endpoints": [
+<<<<<<< HEAD
+=======
+        "https://apps.jan.ai/update-check",
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         "https://github.com/janhq/jan/releases/latest/download/latest.json"
       ],
       "windows": {

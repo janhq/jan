@@ -71,14 +71,24 @@ const ErrorSection = ({
         {t('common:failedToLoadModels')}
       </span>
     </div>
+<<<<<<< HEAD
     <div className="text-xs text-main-view-fg/50 mt-0">{error}</div>
+=======
+    <div className="text-xs text-muted-foreground mt-0">{error}</div>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   </div>
 )
 
 const LoadingSection = ({ t }: { t: (key: string) => string }) => (
+<<<<<<< HEAD
   <div className="flex items-center justify-center px-3 py-3 text-sm text-main-view-fg/50">
     <IconLoader2 className="h-4 w-4 animate-spin mr-2 text-main-view-fg/50" />
     <span className="text-sm text-main-view-fg/50">{t('common:loading')}</span>
+=======
+  <div className="flex items-center justify-center px-3 py-3 text-sm text-muted-foreground">
+    <IconLoader2 className="h-4 w-4 animate-spin mr-2 text-muted-foreground" />
+    <span className="text-sm text-muted-foreground">{t('common:loading')}</span>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   </div>
 )
 
@@ -89,6 +99,7 @@ const EmptySection = ({
   inputValue: string
   t: (key: string, options?: Record<string, string>) => string
 }) => (
+<<<<<<< HEAD
   <div className="px-3 py-3 text-sm text-main-view-fg/50 text-center">
     <div className="flex items-center justify-between">
       <div className="flex-1">
@@ -98,6 +109,17 @@ const EmptySection = ({
           </span>
         ) : (
           <span className="text-main-view-fg/50">{t('common:noModels')}</span>
+=======
+  <div className="px-3 py-3 text-sm text-muted-foreground text-center">
+    <div className="flex items-center justify-between">
+      <div className="flex-1">
+        {inputValue.trim() ? (
+          <span className="text-muted-foreground">
+            {t('common:noModelsFoundFor', { searchValue: inputValue })}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">{t('common:noModels')}</span>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         )}
       </div>
     </div>
@@ -128,12 +150,21 @@ const ModelsList = ({
         }}
         onMouseEnter={() => onHighlight(index)}
         className={cn(
+<<<<<<< HEAD
           'cursor-pointer px-3 py-2 hover:bg-main-view-fg/15 hover:shadow-sm transition-all duration-200 text-main-view-fg',
           value === model && 'bg-main-view-fg/12 shadow-sm',
           highlightedIndex === index && 'bg-main-view-fg/20 shadow-md'
         )}
       >
         <span className="text-sm truncate text-main-view-fg">{model}</span>
+=======
+          'cursor-pointer mx-3 px-2 rounded-md py-2 bg-background z-20 transition-all duration-200',
+          value === model && 'bg-secondary shadow-sm',
+          highlightedIndex === index && ' bg-secondary'
+        )}
+      >
+        <span className="text-sm truncate text-foreground">{model}</span>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       </div>
     ))}
   </>
@@ -416,14 +447,20 @@ export function ModelCombobox({
         <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-1">
           {onRefresh && (
             <Button
+<<<<<<< HEAD
               variant="link"
               size="sm"
+=======
+              variant="ghost"
+              size="icon-xs"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               disabled={disabled || loading}
               onMouseDown={(e) => e.preventDefault()}
               onClick={(e) => {
                 e.stopPropagation()
                 onRefresh()
               }}
+<<<<<<< HEAD
               className="h-6 w-6 p-0 no-underline hover:bg-main-view-fg/10"
               aria-label="Refresh models"
             >
@@ -431,10 +468,19 @@ export function ModelCombobox({
                 <IconLoader2 className="h-3 w-3 animate-spin" />
               ) : (
                 <IconRefresh className="h-3 w-3 opacity-70" />
+=======
+              aria-label="Refresh models"
+            >
+              {loading ? (
+                <IconLoader2 className="size-4 animate-spin" />
+              ) : (
+                <IconRefresh className="size-4 opacity-70" />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               )}
             </Button>
           )}
           <Button
+<<<<<<< HEAD
             variant="link"
             size="sm"
             disabled={disabled}
@@ -443,6 +489,15 @@ export function ModelCombobox({
             className="h-6 w-6 p-0 no-underline hover:bg-main-view-fg/10"
           >
             <IconChevronDown className="h-3 w-3 opacity-50" />
+=======
+            variant="ghost"
+            size="icon-xs"
+            disabled={disabled}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleDropdownToggle}
+          >
+            <IconChevronDown className="size-4 opacity-50" />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           </Button>
         </div>
 
@@ -452,7 +507,11 @@ export function ModelCombobox({
           createPortal(
             <div
               ref={dropdownRef}
+<<<<<<< HEAD
               className="fixed z-[9999] bg-main-view border border-main-view-fg/10 rounded-md shadow-lg max-h-[300px] overflow-y-auto text-main-view-fg animate-in fade-in-0 zoom-in-95 duration-200"
+=======
+              className="fixed z-9999 py-2 bg-background border rounded-md shadow-lg max-h-[300px] overflow-y-auto animate-in fade-in-0 zoom-in-95 duration-200 "
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               style={{
                 top: dropdownPosition.top,
                 left: dropdownPosition.left,

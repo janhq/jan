@@ -12,12 +12,18 @@ export const route = {
     attachments: '/settings/attachments',
     interface: '/settings/interface',
     privacy: '/settings/privacy',
+<<<<<<< HEAD
     projects: '/settings/projects',
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     shortcuts: '/settings/shortcuts',
     extensions: '/settings/extensions',
     local_api_server: '/settings/local-api-server',
     mcp_servers: '/settings/mcp-servers',
+<<<<<<< HEAD
     prompt_templates: '/settings/prompt-templates',
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     https_proxy: '/settings/https-proxy',
     hardware: '/settings/hardware',
     assistant: '/settings/assistant',

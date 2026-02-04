@@ -13,12 +13,19 @@ import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { AddProviderDialog } from '@/containers/dialogs'
 import { Switch } from '@/components/ui/switch'
 import { useCallback } from 'react'
+<<<<<<< HEAD
 import { openAIProviderSettings } from '@/consts/providers'
 import cloneDeep from 'lodash/cloneDeep'
 import { toast } from 'sonner'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+=======
+import { openAIProviderSettings } from '@/constants/providers'
+import cloneDeep from 'lodash/cloneDeep'
+import { toast } from 'sonner'
+import { useServiceHub } from '@/hooks/useServiceHub'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.model_providers as any)({
@@ -60,6 +67,7 @@ function ModelProviders() {
     [providers, addProvider, t, navigate]
   )
 
+<<<<<<< HEAD
   // Check if model provider settings are enabled for this platform
   if (!PlatformFeatures[PlatformFeature.MODEL_PROVIDER_SETTINGS]) {
     return (
@@ -92,16 +100,33 @@ function ModelProviders() {
       <div className="flex h-full w-full flex-col sm:flex-row">
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+=======
+  return (
+    <div className="flex flex-col h-svh w-full">
+      <HeaderPage>
+        <div className="flex items-center gap-2 w-full">
+          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+        </div>
+      </HeaderPage>
+      <div className="flex h-[calc(100%-60px)]">
+        <SettingsMenu />
+        <div className="p-4 pt-0 w-full h-[calc(100%-32px)] overflow-y-auto">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Model Providers */}
             <Card
               header={
                 <div className="flex items-center justify-between w-full mb-6">
+<<<<<<< HEAD
                   <span className="text-main-view-fg font-medium text-base">
+=======
+                  <span className="font-medium text-base font-studio text-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                     {t('common:modelProviders')}
                   </span>
                   <AddProviderDialog onCreateProvider={createProvider}>
                     <Button
+<<<<<<< HEAD
                       variant="link"
                       size="sm"
                       className="flex items-center gap-2"
@@ -110,6 +135,14 @@ function ModelProviders() {
                         <IconCirclePlus size={16} />
                         <span>{t('provider:addProvider')}</span>
                       </div>
+=======
+                      variant="secondary"
+                      size="sm"
+                      className="flex items-center gap-2"
+                    >
+                      <IconCirclePlus size={16} />
+                      <span>{t('provider:addProvider')}</span>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                     </Button>
                   </AddProviderDialog>
                 </div>
@@ -125,7 +158,11 @@ function ModelProviders() {
                         <h3 className="font-medium">
                           {getProviderTitle(provider.provider)}
                         </h3>
+<<<<<<< HEAD
                         <p className="text-xs text-main-view-fg/70">
+=======
+                        <p className="text-xs text-muted-foreground mt-1">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                           {provider.models.length} Models
                         </p>
                       </div>
@@ -135,9 +172,14 @@ function ModelProviders() {
                     <div className="flex items-center gap-2">
                       {provider.active && (
                         <Button
+<<<<<<< HEAD
                           variant="default"
                           size="sm"
                           className="h-6 w-6 p-0 bg-transparent hover:bg-main-view-fg/10 border-none shadow-none"
+=======
+                          variant="ghost"
+                          size="icon-xs"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                           onClick={() => {
                             navigate({
                               to: route.settings.providers,
@@ -148,7 +190,11 @@ function ModelProviders() {
                           }}
                         >
                           <IconSettings
+<<<<<<< HEAD
                             className="text-main-view-fg/60"
+=======
+                            className="text-muted-foreground"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                             size={16}
                           />
                         </Button>

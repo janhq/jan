@@ -26,7 +26,10 @@ interface TokenCounterProps {
 export const TokenCounter = ({
   messages = [],
   className,
+<<<<<<< HEAD
   compact = false,
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   additionalTokens = 0,
   uploadedFiles = [],
 }: TokenCounterProps) => {
@@ -107,6 +110,7 @@ export const TokenCounter = ({
     return num.toString()
   }
 
+<<<<<<< HEAD
   if (compact) {
     return (
       <TooltipProvider delayDuration={isUpdating ? 1200 : 400}>
@@ -123,10 +127,85 @@ export const TokenCounter = ({
                     'text-xs font-medium tabular-nums transition-all duration-500 ease-out',
                     isOverLimit ? 'text-destructive' : 'text-accent',
                     isAnimating && 'scale-110'
+=======
+  return (
+    <TooltipProvider delayDuration={isUpdating ? 1200 : 400}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div
+            className={cn('relative cursor-pointer', className)}
+            onClick={handleCalculateTokens}
+          >
+            {/* Main compact display */}
+            <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-background border border-border">
+              <span
+                className={cn(
+                  'text-xs font-medium tabular-nums transition-all duration-500 ease-out',
+                  isOverLimit ? 'text-destructive' : 'text-primary',
+                  isAnimating && 'scale-110'
+                )}
+              >
+                {adjustedPercentage?.toFixed(1) || '0.0'}%
+              </span>
+
+              <div className="relative size-4 shrink-0">
+                <svg
+                  className="size-4 transform -rotate-90"
+                  viewBox="0 0 16 16"
+                >
+                  <circle
+                    cx="8"
+                    cy="8"
+                    r="6"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    fill="none"
+                    className="text-muted-foreground"
+                  />
+                  <circle
+                    cx="8"
+                    cy="8"
+                    r="6"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    fill="none"
+                    strokeDasharray={`${2 * Math.PI * 6}`}
+                    strokeDashoffset={`${2 * Math.PI * 6 * (1 - (adjustedPercentage || 0) / 100)}`}
+                    className={cn(
+                      'transition-all duration-500 ease-out',
+                      isOverLimit ? 'stroke-destructive' : 'stroke-primary'
+                    )}
+                    style={{
+                      transformOrigin: 'center',
+                    }}
+                  />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent
+          side="bottom"
+          align="center"
+          sideOffset={5}
+          showArrow={false}
+          className="min-w-60 max-w-60 bg-background border"
+        >
+          {/* Detailed breakdown panel */}
+          <>
+            {/* Header with percentage and progress bar */}
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <span
+                  className={cn(
+                    'text-lg font-semibold tabular-nums',
+                    isOverLimit ? 'text-destructive' : 'text-primary'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                   )}
                 >
                   {adjustedPercentage?.toFixed(1) || '0.0'}%
                 </span>
+<<<<<<< HEAD
 
                 <div className="relative w-4 h-4 flex-shrink-0">
                   <svg
@@ -279,5 +358,52 @@ export const TokenCounter = ({
         )}
       </div>
     </div>
+=======
+                <span className="text-sm text-muted-foreground font-mono">
+                  {formatNumber(totalTokens)} /{' '}
+                  {formatNumber(tokenData.maxTokens || 0)}
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full h-2 bg-secondary/20 rounded-full overflow-hidden">
+                <div
+                  className={cn(
+                    'h-2 rounded-full transition-all duration-500 ease-out',
+                    isOverLimit ? 'bg-destructive' : 'bg-primary'
+                  )}
+                  style={{
+                    width: `${Math.min(adjustedPercentage || 0, 100)}%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Token breakdown */}
+            <div className="space-y-2 mb-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Text</span>
+                <span className="text-foreground font-mono">
+                  {formatNumber(Math.max(0, tokenData.tokenCount))}
+                </span>
+              </div>
+            </div>
+
+            {/* Remaining tokens */}
+            <div className="border-t border-border pt-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Remaining</span>
+                <span className="text-foreground font-semibold font-mono">
+                  {formatNumber(
+                    Math.max(0, (tokenData.maxTokens || 0) - totalTokens)
+                  )}
+                </span>
+              </div>
+            </div>
+          </>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   )
 }

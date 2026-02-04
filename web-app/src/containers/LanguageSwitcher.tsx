@@ -7,6 +7,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+<<<<<<< HEAD
+=======
+import { Button } from '@/components/ui/button'
+import { ChevronsUpDown } from 'lucide-react'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 const LANGUAGES = [
   { value: 'en', label: 'English' },
@@ -35,23 +40,38 @@ export default function LanguageSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
+<<<<<<< HEAD
         <span
           title={t('common:changeLanguage')}
           className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
         >
+=======
+        <Button variant="outline" size="sm" className="w-full justify-between">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           {LANGUAGES.find(
             (lang: { value: string; label: string }) =>
               lang.value === currentLanguage
           )?.label || t('common:english')}
+<<<<<<< HEAD
         </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-24">
+=======
+          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-40">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         {LANGUAGES.map((lang) => (
           <DropdownMenuItem
             key={lang.value}
             className={cn(
               'cursor-pointer my-0.5',
+<<<<<<< HEAD
               currentLanguage === lang.value && 'bg-main-view-fg/5'
+=======
+              currentLanguage === lang.value && 'bg-secondary-foreground/8'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             )}
             onClick={() => changeLanguage(lang.value)}
           >

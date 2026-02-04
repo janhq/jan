@@ -51,8 +51,14 @@ export default function OutOfContextPromiseModal() {
         </DialogDescription>
         <DialogFooter className="flex gap-2">
           <Button
+<<<<<<< HEAD
             variant="link"
             className="bg-transparent border border-main-view-fg/20 hover:bg-main-view-fg/4"
+=======
+            variant="ghost"
+            size="sm"
+            className="bg-transparent border"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             onClick={() => {
               handleContextShift()
             }}
@@ -61,11 +67,19 @@ export default function OutOfContextPromiseModal() {
           </Button>
           <Button
             autoFocus
+<<<<<<< HEAD
+=======
+            size="sm"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             onClick={() => {
               handleContextLength()
             }}
           >
+<<<<<<< HEAD
             <span className="text-main-view-fg/70">
+=======
+            <span className="text-muted-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               {t('model-errors:increaseContextSize')}
             </span>
           </Button>

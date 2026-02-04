@@ -40,6 +40,11 @@ on:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
         required: false
+<<<<<<< HEAD
+=======
+      JAN_SIGNING_KEY:
+        required: false
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 jobs:
   build-linux-x64:
     runs-on: ubuntu-22.04
@@ -127,7 +132,15 @@ jobs:
 
           # Change app name for beta and nightly builds
           if [ "${{ inputs.channel }}" != "stable" ]; then
+<<<<<<< HEAD
             jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+=======
+            if [[ "${{ inputs.channel }}" == "nightly" ]]; then
+              jq '.plugins.updater.endpoints = ["https://apps-nightly.jan.ai/update-check", "https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            else
+              jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            fi
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
 
             chmod +x .github/scripts/rename-tauri-app.sh
@@ -145,6 +158,17 @@ jobs:
             .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
             cat ./package.json
           fi
+<<<<<<< HEAD
+=======
+
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       - name: Build app
         run: |
           make build
@@ -157,6 +181,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
+<<<<<<< HEAD
+=======
+          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       # Publish app
 
       ## Artifacts, for dev and test

@@ -4,6 +4,7 @@ import {
   ChatCompletionRole,
   ThreadMessage,
   MessageStatus,
+<<<<<<< HEAD
   EngineManager,
   ModelManager,
   chatCompletionRequestMessage,
@@ -47,6 +48,12 @@ export type ChatCompletionResponse =
   | AsyncIterable<chatCompletionChunk>
   | StreamCompletionResponse
   | CompletionResponse
+=======
+} from '@janhq/core'
+import { ulid } from 'ulidx'
+import { Attachment } from '@/types/attachment'
+import { injectFilesIntoPrompt } from './fileMetadata'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 /**
  * @fileoverview Helper functions for creating thread content.
@@ -59,7 +66,12 @@ export type ChatCompletionResponse =
 export const newUserThreadContent = (
   threadId: string,
   content: string,
+<<<<<<< HEAD
   attachments?: Attachment[]
+=======
+  attachments?: Attachment[],
+  id?: string
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 ): ThreadMessage => {
   // Separate images and documents
   const images = attachments?.filter((a) => a.type === 'image') || []
@@ -110,7 +122,11 @@ export const newUserThreadContent = (
     type: 'text',
     role: ChatCompletionRole.User,
     content: contentParts,
+<<<<<<< HEAD
     id: ulid(),
+=======
+    id: id ?? ulid(),
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     object: 'thread.message',
     thread_id: threadId,
     status: MessageStatus.Ready,
@@ -127,6 +143,10 @@ export const newUserThreadContent = (
         : undefined,
   }
 }
+<<<<<<< HEAD
+=======
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 /**
  * @fileoverview Helper functions for creating thread content.
  * These functions are used to create thread content objects
@@ -138,7 +158,12 @@ export const newUserThreadContent = (
 export const newAssistantThreadContent = (
   threadId: string,
   content: string,
+<<<<<<< HEAD
   metadata: Record<string, unknown> = {}
+=======
+  metadata: Record<string, unknown> = {},
+  id?: string,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 ): ThreadMessage => ({
   type: 'text',
   role: ChatCompletionRole.Assistant,
@@ -151,7 +176,11 @@ export const newAssistantThreadContent = (
       },
     },
   ],
+<<<<<<< HEAD
   id: ulid(),
+=======
+  id: id ?? ulid(),
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   object: 'thread.message',
   thread_id: threadId,
   status: MessageStatus.Ready,
@@ -175,6 +204,7 @@ export const emptyThreadContent: ThreadMessage = {
   created_at: 0,
   completed_at: 0,
 }
+<<<<<<< HEAD
 
 /**
  * @fileoverview Helper function to send a completion request to the model provider.
@@ -717,3 +747,5 @@ export const postMessageProcessing = async (
     return message
   }
 }
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5

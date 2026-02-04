@@ -199,6 +199,7 @@ class PlatformServiceHub implements ServiceHub {
         this.pathService = new pathModule.TauriPathService()
         this.coreService = new coreModule.MobileCoreService() // Mobile service with pre-loaded extensions
         this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
+<<<<<<< HEAD
       } else {
         const [
           themeModule,
@@ -237,6 +238,8 @@ class PlatformServiceHub implements ServiceHub {
         this.providersService = new providersModule.WebProvidersService()
         this.mcpService = new mcpModule.WebMCPService()
         this.projectsService = new projectsModule.WebProjectsService()
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       }
 
       this.initialized = true

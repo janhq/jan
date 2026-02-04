@@ -54,6 +54,16 @@ jobs:
           rm -rf ~/jan
           make clean
 
+<<<<<<< HEAD
+=======
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       - name: Install dependencies
         run: |
           make lint
@@ -88,6 +98,16 @@ jobs:
           rm -rf ~/jan
           make clean
 
+<<<<<<< HEAD
+=======
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       - name: Linter and test
         run: |
           make test
@@ -99,7 +119,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+<<<<<<< HEAD
         antivirus-tools: ['mcafee', 'default-windows-security', 'bit-defender']
+=======
+        antivirus-tools: ['mcafee', 'bit-defender']
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     runs-on: windows-desktop-${{ matrix.antivirus-tools }}
     steps:
       - name: Getting the repo
@@ -125,6 +149,16 @@ jobs:
           }
           make clean
 
+<<<<<<< HEAD
+=======
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       - name: Linter and test
         shell: powershell
         run: |
@@ -166,6 +200,16 @@ jobs:
           Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile 'setup.exe'
           Start-Process -FilePath setup.exe -Verb RunAs -Wait
 
+<<<<<<< HEAD
+=======
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       - name: Linter and test
         shell: powershell
         run: |
@@ -209,6 +253,16 @@ jobs:
           rm -rf ~/jan
           make clean
 
+<<<<<<< HEAD
+=======
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       - name: Linter and test
         run: |
           export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
@@ -243,6 +297,16 @@ jobs:
           rm -rf ~/jan
           make clean
 
+<<<<<<< HEAD
+=======
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       - name: Install dependencies
         run: |
           make lint

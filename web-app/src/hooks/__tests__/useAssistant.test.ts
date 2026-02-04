@@ -150,11 +150,16 @@ describe('useAssistant', () => {
     expect(result.current.currentAssistant.id).toBe('jan')
     expect(result.current.currentAssistant.name).toBe('Jan')
     expect(result.current.currentAssistant.avatar).toBe('👋')
+<<<<<<< HEAD
     expect(result.current.currentAssistant.description).toContain(
       'helpful desktop assistant'
     )
     expect(result.current.currentAssistant.instructions).toContain(
       'Only use tools when they add real value to your response'
+=======
+    expect(result.current.currentAssistant.instructions).toContain(
+      'Before engaging any tools, articulate your complete thought process in natural language'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     )
     expect(typeof result.current.currentAssistant.created_at).toBe('number')
     expect(typeof result.current.currentAssistant.parameters).toBe('object')

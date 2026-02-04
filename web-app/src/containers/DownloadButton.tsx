@@ -10,9 +10,12 @@ import { cn, sanitizeModelId } from '@/lib/utils'
 import { CatalogModel } from '@/services/models/types'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+<<<<<<< HEAD
 import { toast } from 'sonner'
 import { route } from '@/constants/routes'
 import { useNavigate } from '@tanstack/react-router'
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import { useShallow } from 'zustand/shallow'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 
@@ -40,7 +43,10 @@ export function DownloadButtonPlaceholder({
   const serviceHub = useServiceHub()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const [isDownloaded, setDownloaded] = useState<boolean>(false)
+<<<<<<< HEAD
   const navigate = useNavigate()
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
   const quant =
     model.quants.find((e) =>
@@ -89,6 +95,7 @@ export function DownloadButtonPlaceholder({
   if (model.quants.length === 0) {
     return (
       <div className="flex items-center gap-2">
+<<<<<<< HEAD
         <Button
           size="sm"
           onClick={() => {
@@ -97,6 +104,15 @@ export function DownloadButtonPlaceholder({
         >
           View on HuggingFace
         </Button>
+=======
+        <a
+          href={`https://huggingface.co/${model.model_name}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Button size="sm">View on HuggingFace</Button>
+        </a>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       </div>
     )
   }
@@ -112,6 +128,7 @@ export function DownloadButtonPlaceholder({
   const isRecommended = isRecommendedModel(model.model_name)
 
   const handleDownload = async () => {
+<<<<<<< HEAD
     // Preflight check for gated repos/artifacts
     const preflight = await serviceHub
       .models()
@@ -175,6 +192,8 @@ export function DownloadButtonPlaceholder({
       return
     }
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     // Immediately set local downloading state and start download
     addLocalDownloadingModel(modelId)
     const mmprojPath = (
@@ -196,14 +215,20 @@ export function DownloadButtonPlaceholder({
     >
       {isDownloading && !isDownloaded && (
         <div className={cn('flex items-center gap-2 w-20')}>
+<<<<<<< HEAD
           <Progress value={downloadProgress * 100} />
           <span className="text-xs text-center text-main-view-fg/70">
+=======
+          <Progress className='border' value={downloadProgress * 100} />
+          <span className="text-xs text-center text-muted-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             {Math.round(downloadProgress * 100)}%
           </span>
         </div>
       )}
       {isDownloaded ? (
         <Button
+<<<<<<< HEAD
           variant="link"
           size="sm"
           className="p-0"
@@ -213,10 +238,22 @@ export function DownloadButtonPlaceholder({
           <div className="rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1">
             {t('hub:newChat')}
           </div>
+=======
+          variant="default"
+          size="sm"
+          onClick={() => handleUseModel(modelId)}
+          data-test-id={`hub-model-${modelId}`}
+        >
+          {t('hub:newChat')}
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         </Button>
       ) : (
         <Button
           data-test-id={`hub-model-${modelId}`}
+<<<<<<< HEAD
+=======
+          variant="outline"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           size="sm"
           onClick={handleDownload}
           className={cn(isDownloading && 'hidden')}

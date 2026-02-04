@@ -80,15 +80,28 @@ fn test_add_server_config_new_file() {
     assert!(result.is_ok(), "Failed to add server config: {result:?}");
 
     // Verify the config was added correctly
+<<<<<<< HEAD
     let config_content = std::fs::read_to_string(&config_path)
         .expect("Failed to read config file");
     let config: serde_json::Value = serde_json::from_str(&config_content)
         .expect("Failed to parse config");
+=======
+    let config_content = std::fs::read_to_string(&config_path).expect("Failed to read config file");
+    let config: serde_json::Value =
+        serde_json::from_str(&config_content).expect("Failed to parse config");
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     assert!(config["mcpServers"]["test_server"].is_object());
     assert_eq!(config["mcpServers"]["test_server"]["command"], "npx");
     assert_eq!(config["mcpServers"]["test_server"]["args"][0], "-y");
+<<<<<<< HEAD
     assert_eq!(config["mcpServers"]["test_server"]["args"][1], "test-server");
+=======
+    assert_eq!(
+        config["mcpServers"]["test_server"]["args"][1],
+        "test-server"
+    );
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     // Clean up
     std::fs::remove_file(&config_path).expect("Failed to remove config file");
@@ -117,8 +130,17 @@ fn test_add_server_config_existing_servers() {
     });
 
     let mut file = File::create(&config_path).expect("Failed to create config file");
+<<<<<<< HEAD
     file.write_all(serde_json::to_string_pretty(&initial_config).unwrap().as_bytes())
         .expect("Failed to write to config file");
+=======
+    file.write_all(
+        serde_json::to_string_pretty(&initial_config)
+            .unwrap()
+            .as_bytes(),
+    )
+    .expect("Failed to write to config file");
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     drop(file);
 
     // Add new server
@@ -138,6 +160,7 @@ fn test_add_server_config_existing_servers() {
     assert!(result.is_ok(), "Failed to add server config: {result:?}");
 
     // Verify both servers exist
+<<<<<<< HEAD
     let config_content = std::fs::read_to_string(&config_path)
         .expect("Failed to read config file");
     let config: serde_json::Value = serde_json::from_str(&config_content)
@@ -146,6 +169,18 @@ fn test_add_server_config_existing_servers() {
     // Check existing server is still there
     assert!(config["mcpServers"]["existing_server"].is_object());
     assert_eq!(config["mcpServers"]["existing_server"]["command"], "existing_command");
+=======
+    let config_content = std::fs::read_to_string(&config_path).expect("Failed to read config file");
+    let config: serde_json::Value =
+        serde_json::from_str(&config_content).expect("Failed to parse config");
+
+    // Check existing server is still there
+    assert!(config["mcpServers"]["existing_server"].is_object());
+    assert_eq!(
+        config["mcpServers"]["existing_server"]["command"],
+        "existing_command"
+    );
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     // Check new server was added
     assert!(config["mcpServers"]["new_server"].is_object());
@@ -179,6 +214,7 @@ fn test_add_server_config_missing_config_file() {
         "active": false
     });
 
+<<<<<<< HEAD
     let result = add_server_config(
         app.handle().clone(),
         "test".to_string(),
@@ -186,6 +222,14 @@ fn test_add_server_config_missing_config_file() {
     );
 
     assert!(result.is_err(), "Expected error when config file doesn't exist");
+=======
+    let result = add_server_config(app.handle().clone(), "test".to_string(), server_value);
+
+    assert!(
+        result.is_err(),
+        "Expected error when config file doesn't exist"
+    );
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     assert!(result.unwrap_err().contains("Failed to read config file"));
 }
 
@@ -300,7 +344,10 @@ async fn test_background_cleanup_with_empty_state() {
 
     let active = state.mcp_active_servers.lock().await;
     assert!(active.is_empty());
+<<<<<<< HEAD
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }
 
 #[tokio::test]
@@ -384,6 +431,7 @@ fn test_extension_disconnected_error_detection() {
 fn test_extension_connected_response_detection() {
     // Valid responses when extension IS connected - should NOT trigger error detection
     let connected_responses = [
+<<<<<<< HEAD
         "pong",                          // Successful ping response
         "Success",                       // Generic success
         "Connected successfully",        // Connection confirmation
@@ -392,6 +440,16 @@ fn test_extension_connected_response_detection() {
         "Page loaded",                   // Browser action success
         "browser",                       // Single keyword (not an error pattern)
         "tool",                          // Single keyword (not an error pattern)
+=======
+        "pong",                   // Successful ping response
+        "Success",                // Generic success
+        "Connected successfully", // Connection confirmation
+        "",                       // Empty response (not an error)
+        "Screenshot captured",    // Successful browser_snapshot
+        "Page loaded",            // Browser action success
+        "browser",                // Single keyword (not an error pattern)
+        "tool",                   // Single keyword (not an error pattern)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     ];
 
     for msg in connected_responses {

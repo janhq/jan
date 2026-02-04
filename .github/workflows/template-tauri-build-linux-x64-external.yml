@@ -107,7 +107,15 @@ jobs:
           ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
 
           if [ "${{ inputs.channel }}" != "stable" ]; then
+<<<<<<< HEAD
             jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+=======
+            if [[ "${{ inputs.channel }}" == "nightly" ]]; then
+              jq '.plugins.updater.endpoints = ["https://apps-nightly.jan.ai/update-check", "https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            else
+              jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            fi
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
             chmod +x .github/scripts/rename-tauri-app.sh
             .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json ${{ inputs.channel }}
@@ -117,6 +125,16 @@ jobs:
             .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
           fi
 
+<<<<<<< HEAD
+=======
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       - name: Build app
         run: |
           make build

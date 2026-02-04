@@ -19,9 +19,15 @@ describe('Skeleton', () => {
 
   it('renders with default styling classes', () => {
     render(<Skeleton />)
+<<<<<<< HEAD
     
     const skeleton = document.querySelector('[data-slot="skeleton"]')
     expect(skeleton).toHaveClass('bg-main-view-fg/10')
+=======
+
+    const skeleton = document.querySelector('[data-slot="skeleton"]')
+    expect(skeleton).toHaveClass('bg-accent')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   })
 
   it('renders with custom width and height', () => {

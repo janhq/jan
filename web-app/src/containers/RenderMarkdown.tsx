@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkEmoji from 'remark-emoji'
@@ -14,14 +15,38 @@ import 'katex/dist/katex.min.css'
 import { IconCopy, IconCopyCheck } from '@tabler/icons-react'
 import rehypeRaw from 'rehype-raw'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+=======
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { Components } from 'react-markdown'
+import { memo, useMemo } from 'react'
+import { cn, disableIndentedCodeBlockPlugin } from '@/lib/utils'
+// import 'katex/dist/katex.min.css'
+import { defaultRehypePlugins, Streamdown } from 'streamdown'
+import { cjk } from '@streamdown/cjk'
+import { code } from '@streamdown/code'
+import { math } from '@streamdown/math'
+import { mermaid } from '@streamdown/mermaid'
+
+import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
+import { MermaidError } from '@/components/MermaidError'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 interface MarkdownProps {
   content: string
   className?: string
   components?: Components
+<<<<<<< HEAD
   enableRawHtml?: boolean
   isUser?: boolean
   isWrapping?: boolean
+=======
+  isUser?: boolean
+  isStreaming?: boolean
+  messageId?: string
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }
 
 // Cache for normalized LaTeX content
@@ -80,6 +105,7 @@ const normalizeLatex = (input: string): string => {
   return result
 }
 
+<<<<<<< HEAD
 // Memoized code component to prevent unnecessary re-renders
 const CodeComponent = memo(
   ({
@@ -223,10 +249,20 @@ function RenderMarkdownComponent({
       setCopiedId(null)
     }, 2000)
   }, [])
+=======
+function RenderMarkdownComponent({
+  content,
+  className,
+  isUser,
+  components,
+  messageId,
+}: MarkdownProps) {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
   // Memoize the normalized content to avoid reprocessing on every render
   const normalizedContent = useMemo(() => normalizeLatex(content), [content])
 
+<<<<<<< HEAD
   // Stable remarkPlugins reference
   const remarkPlugins = useMemo(() => {
     return [remarkGfm, remarkMath, remarkEmoji, remarkBreaks]
@@ -265,6 +301,8 @@ function RenderMarkdownComponent({
     ]
   )
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   // Render the markdown content
   return (
     <div
@@ -274,6 +312,7 @@ function RenderMarkdownComponent({
         className
       )}
     >
+<<<<<<< HEAD
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
@@ -281,6 +320,47 @@ function RenderMarkdownComponent({
       >
         {normalizedContent}
       </ReactMarkdown>
+=======
+      <Streamdown
+        animate={true}
+        animationDuration={500}
+        linkSafety={{
+          enabled: false,
+        }}
+        className={cn(
+          'size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
+          className
+        )}
+        remarkPlugins={[remarkGfm, remarkMath, disableIndentedCodeBlockPlugin]}
+        rehypePlugins={[
+          rehypeKatex,
+          defaultRehypePlugins.harden,
+        ]}
+        components={components}
+        plugins={{
+          code: code,
+          mermaid: mermaid,
+          math: math,
+          cjk: cjk,
+        }}
+        controls={{
+          mermaid: {
+            fullscreen: false,
+          },
+        }}
+        mermaid={
+          messageId
+            ? {
+                errorComponent: (props) => (
+                  <MermaidError messageId={messageId} {...props} />
+                ),
+              }
+            : {}
+        }
+      >
+        {normalizedContent}
+      </Streamdown>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     </div>
   )
 }

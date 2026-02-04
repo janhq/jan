@@ -21,11 +21,15 @@ export const totalDownload = (release: []) => {
   if (release instanceof Array) {
     const count = release
       .map((version: { assets: any[]; name: string }) => {
+<<<<<<< HEAD
         // it will be correct since 0.5.15
         const tag = version.name >= '0.5.15' && version.name.includes('0.5.15')
 
         return version.assets
           .filter((os) => !(tag && os.name.endsWith('.yml')))
+=======
+        return version.assets
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           .map((os) => os.download_count)
       })
       .map((x: any[]) => x.reduce((a: any, b: any) => a + b, 0))

@@ -64,9 +64,14 @@ describe('Input', () => {
 
   it('renders with default styling classes', () => {
     render(<Input />)
+<<<<<<< HEAD
     
     const input = screen.getByRole('textbox')
     expect(input).toHaveClass('flex')
+=======
+
+    const input = screen.getByRole('textbox')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     expect(input).toHaveClass('h-9')
     expect(input).toHaveClass('w-full')
     expect(input).toHaveClass('rounded-md')

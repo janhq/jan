@@ -98,8 +98,11 @@
     "resetToDefaultDesc": "Przywróć domyślne ustawienia wyglądu.",
     "resetInterfaceSuccess": "Pomyślnie Przywrócono Ustawienia Wyglądu",
     "resetInterfaceSuccessDesc": "Wszystkie ustawienia wyglądu zostały przywrócone do wartości domyślnych.",
+<<<<<<< HEAD
     "chatWidth": "Szerokość Czatu",
     "chatWidthDesc": "Ustaw szerokość komponentu czatu.",
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "codeBlockTitle": "Blok Kodu",
     "codeBlockDesc": "Wybierz styl kolorowania składni w blokach kodu.",
     "showLineNumbers": "Pokazuj Numery Linii",

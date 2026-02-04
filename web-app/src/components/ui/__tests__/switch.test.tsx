@@ -26,9 +26,15 @@ describe('Switch', () => {
 
   it('renders thumb with correct styling', () => {
     render(<Switch />)
+<<<<<<< HEAD
     
     const thumb = document.querySelector('[data-slot="switch-thumb"]')
     expect(thumb).toHaveClass('bg-main-view', 'pointer-events-none', 'block', 'size-4', 'rounded-full', 'ring-0', 'transition-transform')
+=======
+
+    const thumb = document.querySelector('[data-slot="switch-thumb"]')
+    expect(thumb).toHaveClass('bg-background', 'pointer-events-none', 'block', 'size-4', 'rounded-full', 'ring-0', 'transition-transform')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   })
 
   it('renders with custom className', () => {
@@ -72,11 +78,19 @@ describe('Switch', () => {
 
   it('renders loading spinner with correct styling', () => {
     render(<Switch loading />)
+<<<<<<< HEAD
     
     const spinner = document.querySelector('.animate-spin')
     expect(spinner).toBeInTheDocument()
     expect(spinner).toHaveClass('text-main-view-fg/50')
     
+=======
+
+    const spinner = document.querySelector('.animate-spin')
+    expect(spinner).toBeInTheDocument()
+    expect(spinner).toHaveClass('text-muted-foreground')
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     const spinnerContainer = document.querySelector('.absolute.inset-0')
     expect(spinnerContainer).toHaveClass('flex', 'items-center', 'justify-center', 'z-10', 'size-3.5')
   })
@@ -178,15 +192,27 @@ describe('Switch', () => {
 
   it('handles checked state styling', () => {
     render(<Switch checked />)
+<<<<<<< HEAD
     
     const switchElement = document.querySelector('[data-slot="switch"]')
     expect(switchElement).toHaveClass('data-[state=checked]:bg-accent')
+=======
+
+    const switchElement = document.querySelector('[data-slot="switch"]')
+    expect(switchElement).toHaveClass('data-[state=checked]:bg-primary')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   })
 
   it('handles unchecked state styling', () => {
     render(<Switch checked={false} />)
+<<<<<<< HEAD
     
     const switchElement = document.querySelector('[data-slot="switch"]')
     expect(switchElement).toHaveClass('data-[state=unchecked]:bg-main-view-fg/20')
+=======
+
+    const switchElement = document.querySelector('[data-slot="switch"]')
+    expect(switchElement).toHaveClass('data-[state=unchecked]:bg-input')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   })
 })

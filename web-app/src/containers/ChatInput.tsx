@@ -1,5 +1,8 @@
+<<<<<<< HEAD
 'use client'
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
@@ -9,7 +12,10 @@ import { Button } from '@/components/ui/button'
 import {
   Tooltip,
   TooltipContent,
+<<<<<<< HEAD
   TooltipProvider,
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import {
@@ -17,6 +23,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+<<<<<<< HEAD
+=======
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 } from '@/components/ui/dropdown-menu'
 import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
@@ -28,9 +40,15 @@ import {
   IconX,
   IconPaperclip,
   IconLoader2,
+<<<<<<< HEAD
   IconCheck,
   IconWorld,
   IconAlertTriangle,
+=======
+  IconWorld,
+  IconBrandChrome,
+  IconUser,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -38,10 +56,27 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppState } from '@/hooks/useAppState'
 import { MovingBorder } from './MovingBorder'
+<<<<<<< HEAD
 import { useChat } from '@/hooks/useChat'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
+=======
+import type { ChatStatus } from 'ai'
+import { useRouter } from '@tanstack/react-router'
+import { route } from '@/constants/routes'
+import {
+  TEMPORARY_CHAT_ID,
+  TEMPORARY_CHAT_QUERY_ID,
+  SESSION_STORAGE_KEY,
+  SESSION_STORAGE_PREFIX,
+} from '@/constants/chat'
+import { localStorageKey } from '@/constants/localStorage'
+import { defaultModel } from '@/lib/models'
+import { useAssistant } from '@/hooks/useAssistant'
+import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
+import { AvatarEmoji } from '@/containers/AvatarEmoji'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
@@ -60,8 +95,11 @@ import {
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
 import { toast } from 'sonner'
+<<<<<<< HEAD
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
@@ -77,9 +115,13 @@ import {
 } from '@/types/attachment'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
+<<<<<<< HEAD
 import { EnhancePromptButton } from '@/components/EnhancePromptButton'
 import { usePromptAutocomplete } from '@/hooks/usePromptAutocomplete'
 import { PromptSuggestions } from '@/components/PromptSuggestions'
+=======
+import { PromptVisionModel } from '@/containers/PromptVisionModel'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 type ChatInputProps = {
   className?: string
@@ -87,6 +129,7 @@ type ChatInputProps = {
   model?: ThreadModel
   initialMessage?: boolean
   projectId?: string
+<<<<<<< HEAD
 }
 
 const ChatInput = ({
@@ -94,15 +137,37 @@ const ChatInput = ({
   className,
   initialMessage,
   projectId,
+=======
+  onSubmit?: (
+    text: string,
+    files?: Array<{ type: string; mediaType: string; url: string }>
+  ) => void
+  onStop?: () => void
+  chatStatus?: ChatStatus
+}
+
+const ChatInput = ({
+  className,
+  initialMessage,
+  projectId,
+  onSubmit,
+  onStop,
+  chatStatus,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
+<<<<<<< HEAD
   const [cursorPosition, setCursorPosition] = useState(0)
   const serviceHub = useServiceHub()
   const streamingContent = useAppState((state) => state.streamingContent)
   const abortControllers = useAppState((state) => state.abortControllers)
   const loadingModel = useAppState((state) => state.loadingModel)
+=======
+  const serviceHub = useServiceHub()
+  const abortControllers = useAppState((state) => state.abortControllers)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   const updateLoadingModel = useAppState((state) => state.updateLoadingModel)
   const tools = useAppState((state) => state.tools)
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
@@ -110,6 +175,16 @@ const ChatInput = ({
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
+<<<<<<< HEAD
+=======
+  const currentThread = useThreads((state) => state.getCurrentThread())
+  const updateCurrentThreadAssistant = useThreads(
+    (state) => state.updateCurrentThreadAssistant
+  )
+  const updateCurrentThreadModel = useThreads(
+    (state) => state.updateCurrentThreadModel
+  )
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   const { t } = useTranslation()
   const spellCheckChatInput = useGeneralSetting(
     (state) => state.spellCheckChatInput
@@ -118,6 +193,12 @@ const ChatInput = ({
     (state) => state.tokenCounterCompact
   )
   useTools()
+<<<<<<< HEAD
+=======
+  const router = useRouter()
+  const createThread = useThreads((state) => state.createThread)
+  const assistants = useAssistant((state) => state.assistants)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
   // Get current thread messages for token counting
   const threadMessages = useMessages(
@@ -131,6 +212,7 @@ const ChatInput = ({
 
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
+<<<<<<< HEAD
   const sendMessage = useChat()
   const {
     suggestions,
@@ -142,11 +224,18 @@ const ChatInput = ({
     inputValue: prompt,
     cursorPosition,
   })
+=======
+  const selectModelProvider = useModelProvider(
+    (state) => state.selectModelProvider
+  )
+  const updateProvider = useModelProvider((state) => state.updateProvider)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
+<<<<<<< HEAD
   const activeModels = useAppState(useShallow((state) => state.activeModels))
   const hasActiveModels = useMemo(
     () =>
@@ -154,6 +243,11 @@ const ChatInput = ({
       activeModels.some((e) => e === selectedModel?.id),
     [activeModels, selectedModel?.id]
   )
+=======
+  const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
+  const activeModels = useAppState(useShallow((state) => state.activeModels))
+  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>()
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
   // Jan Browser Extension hook
   const {
@@ -167,13 +261,33 @@ const ChatInput = ({
     setDialogOpen: setExtensionDialogOpen,
   } = useJanBrowserExtension()
 
+<<<<<<< HEAD
+=======
+  // Check if model supports browser feature (requires both vision and tools)
+  const modelSupportsBrowser = useMemo(() => {
+    const capabilities = selectedModel?.capabilities || []
+    return capabilities.includes('vision') && capabilities.includes('tools')
+  }, [selectedModel?.capabilities])
+
+  // Auto-disable browser feature when model doesn't support it
+  useEffect(() => {
+    if (janBrowserMCPActive && !modelSupportsBrowser) {
+      handleBrowseClick()
+    }
+  }, [janBrowserMCPActive, modelSupportsBrowser, handleBrowseClick])
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   const attachmentsEnabled = useAttachments((s) => s.enabled)
   const parsePreference = useAttachments((s) => s.parseMode)
   const maxFileSizeMB = useAttachments((s) => s.maxFileSizeMB)
   const autoInlineContextRatio = useAttachments((s) => s.autoInlineContextRatio)
+<<<<<<< HEAD
   // Determine whether to show the Attach documents button (simple gating)
   const showAttachmentButton =
     attachmentsEnabled && PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]
+=======
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   // Derived: any document currently processing (ingestion in progress)
   const attachmentsKey = currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
   const attachments = useChatAttachments(
@@ -305,6 +419,7 @@ const ChatInput = ({
 
     setMessage('')
 
+<<<<<<< HEAD
     sendMessage(
       prompt,
       true,
@@ -312,6 +427,113 @@ const ChatInput = ({
       projectId,
       updateAttachmentProcessing
     )
+=======
+    // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
+    if (onSubmit) {
+      // Build file parts for AI SDK
+      const files = attachments
+        .filter((att) => att.type === 'image' && att.dataUrl)
+        .map((att) => ({
+          type: 'file',
+          mediaType: att.mimeType ?? 'image/jpeg',
+          url: att.dataUrl!,
+        }))
+
+      onSubmit(prompt, files.length > 0 ? files : undefined)
+      setPrompt('')
+      clearAttachmentsForThread(attachmentsKey)
+    } else {
+      // No onSubmit provided - create a new thread and navigate to it
+      // Store the initial message in sessionStorage for the thread page to read
+      const isTemporaryChat = window.location.search.includes(
+        `${TEMPORARY_CHAT_QUERY_ID}=true`
+      )
+
+      // Build message payload with attachments
+      const files = attachments
+        .filter((att) => att.type === 'image' && att.dataUrl)
+        .map((att) => ({
+          type: 'file',
+          mediaType: att.mimeType ?? 'image/jpeg',
+          url: att.dataUrl!,
+        }))
+
+      const messagePayload = {
+        text: prompt,
+        files: files.length > 0 ? files : [],
+      }
+
+      if (isTemporaryChat) {
+        // For temporary chat, store message and navigate to temporary thread
+        sessionStorage.setItem(
+          SESSION_STORAGE_KEY.INITIAL_MESSAGE_TEMPORARY,
+          JSON.stringify(messagePayload)
+        )
+        sessionStorage.setItem('temp-chat-nav', 'true')
+        router.navigate({
+          to: route.threadsDetail,
+          params: { threadId: TEMPORARY_CHAT_ID },
+        })
+      } else {
+        // Get project metadata and assistant if projectId is provided
+        let projectMetadata:
+          | { id: string; name: string; updated_at: number }
+          | undefined
+        let projectAssistantId: string | undefined
+
+        if (projectId) {
+          try {
+            const project = await serviceHub
+              .projects()
+              .getProjectById(projectId)
+            if (project) {
+              projectMetadata = {
+                id: project.id,
+                name: project.name,
+                updated_at: project.updated_at,
+              }
+              projectAssistantId = project.assistantId
+            }
+          } catch (e) {
+            console.warn('Failed to fetch project metadata:', e)
+          }
+        }
+
+        // Only use assistant when chatting via project with an assigned assistant
+        // When no projectId, use the selected assistant from dropdown (if any)
+        const assistant = projectAssistantId
+          ? assistants.find((a) => a.id === projectAssistantId)
+          : selectedAssistant
+
+        const newThread = await createThread(
+          {
+            id: selectedModel?.id ?? defaultModel(selectedProvider),
+            provider: selectedProvider,
+          },
+          prompt, // Use prompt as thread title
+          assistant,
+          projectMetadata
+        )
+
+        // Clear selected assistant after creating thread
+        setSelectedAssistant(undefined)
+
+        // Store the initial message for the new thread
+        sessionStorage.setItem(
+          `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${newThread.id}`,
+          JSON.stringify(messagePayload)
+        )
+
+        router.navigate({
+          to: route.threadsDetail,
+          params: { threadId: newThread.id },
+        })
+      }
+
+      setPrompt('')
+      clearAttachmentsForThread(attachmentsKey)
+    }
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   }
 
   useEffect(() => {
@@ -358,12 +580,17 @@ const ChatInput = ({
 
   // Focus when streaming content finishes
   useEffect(() => {
+<<<<<<< HEAD
     if (!streamingContent && textareaRef.current) {
+=======
+    if (chatStatus !== 'submitted' && textareaRef.current) {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       // Small delay to ensure UI has updated
       setTimeout(() => {
         textareaRef.current?.focus()
       }, 10)
     }
+<<<<<<< HEAD
   }, [streamingContent])
 
   const stopStreaming = useCallback(
@@ -372,6 +599,21 @@ const ChatInput = ({
       cancelToolCall?.()
     },
     [abortControllers, cancelToolCall]
+=======
+  }, [chatStatus])
+
+  const stopStreaming = useCallback(
+    (threadId: string) => {
+      // Use onStop prop if available (AI SDK), otherwise use legacy abort
+      if (onStop) {
+        onStop()
+      } else {
+        abortControllers[threadId]?.abort()
+      }
+      cancelToolCall?.()
+    },
+    [abortControllers, cancelToolCall, onStop]
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   )
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -576,10 +818,13 @@ const ChatInput = ({
         toast.info('Attachments are disabled in Settings')
         return
       }
+<<<<<<< HEAD
       if (!PlatformFeatures[PlatformFeature.FILE_ATTACHMENTS]) {
         toast.info('File attachments are unavailable on this platform')
         return
       }
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       const selection = await serviceHub.dialog().open({
         multiple: true,
         filters: [
@@ -682,7 +927,11 @@ const ChatInput = ({
       }
     } catch (e) {
       console.error('Failed to attach documents:', e)
+<<<<<<< HEAD
       const desc = e instanceof Error ? e.message : String(e)
+=======
+      const desc = e instanceof Error ? e.message : JSON.stringify(e)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       toast.error('Failed to attach documents', { description: desc })
     }
   }
@@ -922,7 +1171,12 @@ const ChatInput = ({
     }
   }
 
+<<<<<<< HEAD
   const handleImagePickerClick = async () => {
+=======
+  // Open the image picker dialog (extracted for reuse)
+  const openImagePicker = useCallback(async () => {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     if (isPlatformTauri()) {
       try {
         const selected = await serviceHub.dialog().open({
@@ -988,8 +1242,65 @@ const ChatInput = ({
       // Fallback to input click for web
       fileInputRef.current?.click()
     }
+<<<<<<< HEAD
   }
 
+=======
+  }, [serviceHub, processImageFiles])
+
+  const handleImagePickerClick = async () => {
+    if (hasMmproj) {
+      await openImagePicker()
+      return
+    }
+    setShowVisionModelPrompt(true)
+  }
+
+  const handleVisionModelDownloadComplete = useCallback(
+    (modelId: string) => {
+      setShowVisionModelPrompt(false)
+
+      try {
+        localStorage.setItem(
+          localStorageKey.lastUsedModel,
+          JSON.stringify({ provider: 'llamacpp', model: modelId })
+        )
+      } catch {
+        // Ignore localStorage errors
+      }
+
+      setTimeout(() => {
+        const provider = getProviderByName('llamacpp')
+        if (provider) {
+          const modelIndex = provider.models.findIndex((m) => m.id === modelId)
+          if (modelIndex !== -1) {
+            const model = provider.models[modelIndex]
+            const capabilities = model.capabilities || []
+
+            if (!capabilities.includes('vision')) {
+              const updatedModels = [...provider.models]
+              updatedModels[modelIndex] = {
+                ...model,
+                capabilities: [...capabilities, 'vision'],
+              }
+              updateProvider('llamacpp', { models: updatedModels })
+            }
+          }
+        }
+
+        selectModelProvider('llamacpp', modelId)
+        updateCurrentThreadModel({ id: modelId, provider: 'llamacpp' })
+      }, 500)
+    },
+    [
+      selectModelProvider,
+      getProviderByName,
+      updateProvider,
+      updateCurrentThreadModel,
+    ]
+  )
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -1153,16 +1464,29 @@ const ChatInput = ({
     // If hasMmproj is false or no images found, allow normal text pasting to continue
   }
 
+<<<<<<< HEAD
+=======
+  const isStreaming = chatStatus === 'submitted' || chatStatus === 'streaming'
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   return (
     <div className="relative">
       <div className="relative">
         <div
           className={cn(
+<<<<<<< HEAD
             'relative overflow-hidden p-[2px] rounded-lg',
             Boolean(streamingContent) && 'opacity-70'
           )}
         >
           {streamingContent && (
+=======
+            'relative overflow-hidden p-0.5 rounded-3xl',
+            isStreaming && 'opacity-70'
+          )}
+        >
+          {isStreaming && (
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             <div className="absolute inset-0">
               <MovingBorder rx="10%" ry="10%">
                 <div
@@ -1176,9 +1500,15 @@ const ChatInput = ({
 
           <div
             className={cn(
+<<<<<<< HEAD
               'relative z-20 px-0 pb-10 border border-main-view-fg/5 rounded-lg text-main-view-fg bg-main-view',
               isFocused && 'ring-1 ring-main-view-fg/10',
               isDragOver && 'ring-2 ring-accent border-accent'
+=======
+              'relative z-20 px-0 pb-10 border rounded-3xl border-input dark:bg-input/30',
+              isFocused && 'ring-1 ring-ring/50',
+              isDragOver && 'ring-2 ring-ring/50 border-primary'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             )}
             data-drop-zone={hasMmproj ? 'true' : undefined}
             onDragEnter={hasMmproj ? handleDragEnter : undefined}
@@ -1199,6 +1529,7 @@ const ChatInput = ({
                           key={`${att.type}-${idx}-${att.name}`}
                           className="relative"
                         >
+<<<<<<< HEAD
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -1271,6 +1602,57 @@ const ChatInput = ({
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
+=======
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div
+                                className={cn(
+                                  'relative border rounded-xl size-14 overflow-hidden',
+                                  'flex items-center justify-center'
+                                )}
+                              >
+                                {/* Inner content by state */}
+                                {isImage && att.dataUrl ? (
+                                  <img
+                                    className="object-cover w-full h-full"
+                                    src={att.dataUrl}
+                                    alt={`${att.name}`}
+                                  />
+                                ) : (
+                                  <div className="flex flex-col items-center justify-center text-muted-foreground">
+                                    <IconPaperclip size={18} />
+                                    {ext && (
+                                      <span className="text-[10px] leading-none mt-0.5 uppercase opacity-70">
+                                        .{ext}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <div className="text-xs">
+                                <div
+                                  className="font-medium truncate max-w-52"
+                                  title={att.name}
+                                >
+                                  {att.name}
+                                </div>
+                                <div className="opacity-70">
+                                  {isImage
+                                    ? att.mimeType || 'image'
+                                    : ext
+                                      ? `.${ext}`
+                                      : 'document'}
+                                  {att.size
+                                    ? ` · ${formatBytes(att.size)}`
+                                    : ''}
+                                </div>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
                           {/* Remove button disabled while processing - outside overflow-hidden container */}
                           {!att.processing && (
@@ -1290,6 +1672,7 @@ const ChatInput = ({
                 </div>
               </div>
             )}
+<<<<<<< HEAD
             {hasActiveMCPServers &&
               !selectedModel?.capabilities?.includes('tools') && (
                 <div className="mb-2 mx-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-start gap-3">
@@ -1342,6 +1725,8 @@ const ChatInput = ({
                 position={{ top: -200, left: 0 }}
               />
             )}
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             <TextareaAutosize
               ref={textareaRef}
               minRows={2}
@@ -1351,19 +1736,25 @@ const ChatInput = ({
               data-testid={'chat-input'}
               onChange={(e) => {
                 setPrompt(e.target.value)
+<<<<<<< HEAD
                 // Track cursor position for autocomplete
                 setCursorPosition(e.target.selectionStart || 0)
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 // Count the number of newlines to estimate rows
                 const newRows = (e.target.value.match(/\n/g) || []).length + 1
                 setRows(Math.min(newRows, maxRows))
               }}
               onKeyDown={(e) => {
+<<<<<<< HEAD
                 // Handle autocomplete navigation first
                 if (showSuggestions) {
                   const handled = handleAutocompleteKeyDown(e as any)
                   if (handled) return
                 }
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 // e.keyCode 229 is for IME input with Safari
                 const isComposing =
                   e.nativeEvent.isComposing || e.keyCode === 229
@@ -1373,7 +1764,11 @@ const ChatInput = ({
                   // - Enter is pressed without Shift
                   // - The streaming content has finished
                   // - Prompt is not empty
+<<<<<<< HEAD
                   if (!streamingContent && prompt.trim() && !ingestingAny) {
+=======
+                  if (!isStreaming && prompt.trim() && !ingestingAny) {
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                     handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
@@ -1387,7 +1782,11 @@ const ChatInput = ({
               data-gramm_editor={spellCheckChatInput}
               data-gramm_grammarly={spellCheckChatInput}
               className={cn(
+<<<<<<< HEAD
                 'bg-transparent pt-4 w-full flex-shrink-0 border-none resize-none outline-0 px-4',
+=======
+                'bg-transparent pt-4 w-full shrink-0 border-none resize-none outline-0 px-4',
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 rows < maxRows && 'scrollbar-hide',
                 className
               )}
@@ -1401,12 +1800,17 @@ const ChatInput = ({
               <div
                 className={cn(
                   'px-1 flex items-center w-full gap-1',
+<<<<<<< HEAD
                   streamingContent && 'opacity-50 pointer-events-none'
+=======
+                  isStreaming && 'opacity-50 pointer-events-none'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 )}
               >
                 {/* Dropdown for attachments */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
+<<<<<<< HEAD
                     <div className="size-7 flex items-center justify-center rounded-full bg-main-view-fg/4 hover:bg-main-view-fg/4 transition-all duration-200 ease-in-out gap-1 mr-2 cursor-pointer">
                       <PlusIcon size={18} className="text-main-view-fg/50" />
                     </div>
@@ -1418,6 +1822,16 @@ const ChatInput = ({
                       disabled={!hasMmproj}
                     >
                       <IconPhoto size={18} className="text-main-view-fg/50" />
+=======
+                    <Button variant="secondary" size="icon-sm" className='rounded-full mr-2 mb-1'>
+                      <PlusIcon size={18} className="text-muted-foreground" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {/* Vision image attachment - always enabled, prompts to download vision model if needed */}
+                    <DropdownMenuItem onClick={handleImagePickerClick}>
+                      <IconPhoto size={18} className="text-muted-foreground" />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                       <span>Add Images</span>
                       <input
                         type="file"
@@ -1430,20 +1844,32 @@ const ChatInput = ({
                     {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
                     <DropdownMenuItem
                       onClick={handleAttachDocsIngest}
+<<<<<<< HEAD
                       disabled={
                         !selectedModel?.capabilities?.includes('tools') &&
                         !showAttachmentButton
                       }
+=======
+                      disabled={!selectedModel?.capabilities?.includes('tools')}
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                     >
                       {ingestingDocs ? (
                         <IconLoader2
                           size={18}
+<<<<<<< HEAD
                           className="text-main-view-fg/50 animate-spin"
+=======
+                          className="text-muted-foreground animate-spin"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                         />
                       ) : (
                         <IconPaperclip
                           size={18}
+<<<<<<< HEAD
                           className="text-main-view-fg/50"
+=======
+                          className="text-muted-foreground"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                         />
                       )}
                       <span>
@@ -1452,15 +1878,88 @@ const ChatInput = ({
                           : 'Add documents or files'}
                       </span>
                     </DropdownMenuItem>
+<<<<<<< HEAD
                   </DropdownMenuContent>
                 </DropdownMenu>
                 {model?.provider === 'llamacpp' && loadingModel ? (
+=======
+                    {/* Use Assistant - only show when no projectId */}
+                    {!projectId && (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <IconUser size={18} className="text-muted-foreground" />
+                          <span>Use Assistant</span>
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          <DropdownMenuItem
+                            className={!selectedAssistant && !currentThread?.assistants?.length ? 'bg-accent' : ''}
+                            onClick={() => {
+                              setSelectedAssistant(undefined)
+                              if (currentThreadId) {
+                                updateCurrentThreadAssistant(undefined as unknown as Assistant)
+                              }
+                            }}
+                          >
+                            <div className="flex items-center gap-2 w-full">
+                              <span className="text-muted-foreground">—</span>
+                              <span>None</span>
+                              {!selectedAssistant && !currentThread?.assistants?.length && (
+                                <span className="ml-auto text-xs text-muted-foreground">✓</span>
+                              )}
+                            </div>
+                          </DropdownMenuItem>
+                          {assistants.length > 0 ? (
+                            assistants.map((assistant) => {
+                              const isSelected = selectedAssistant?.id === assistant.id ||
+                                currentThread?.assistants?.some((a) => a.id === assistant.id)
+                              return (
+                                <DropdownMenuItem
+                                  key={assistant.id}
+                                  className={isSelected ? 'bg-accent' : ''}
+                                  onClick={() => {
+                                    setSelectedAssistant(assistant)
+                                    if (currentThreadId) {
+                                      updateCurrentThreadAssistant(assistant)
+                                    }
+                                  }}
+                                >
+                                  <div className="flex items-center gap-2 w-full">
+                                    <AvatarEmoji
+                                      avatar={assistant.avatar}
+                                      imageClassName="w-4 h-4 object-contain"
+                                      textClassName="text-sm"
+                                    />
+                                    <span>{assistant.name || 'Unnamed Assistant'}</span>
+                                    {isSelected && (
+                                      <span className="ml-auto text-xs text-muted-foreground">
+                                        ✓
+                                      </span>
+                                    )}
+                                  </div>
+                                </DropdownMenuItem>
+                              )
+                            })
+                          ) : (
+                            <DropdownMenuItem disabled>
+                              <span className="text-muted-foreground">
+                                No assistants available
+                              </span>
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {/* {model?.provider === 'llamacpp' && loadingModel ? (
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                   <ModelLoader />
                 ) : (
                   <DropdownModelProvider
                     model={model}
                     useLastUsedModel={initialMessage}
                   />
+<<<<<<< HEAD
                 )}
                 {/* Microphone - always available - Temp Hide */}
                 {/* <div className="h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
@@ -1529,6 +2028,70 @@ const ChatInput = ({
                       </Tooltip>
                     </TooltipProvider>
                   )}
+=======
+                )} */}
+                {hasJanBrowserMCPConfig && modelSupportsBrowser && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        disabled={isJanBrowserMCPLoading}
+                        className={cn(janBrowserMCPActive && "text-primary")}
+                        onClick={
+                          isJanBrowserMCPLoading
+                            ? undefined
+                            : handleBrowseClick
+                        }
+                      >
+                        {isJanBrowserMCPLoading ? (
+                          <IconLoader2
+                            size={18}
+                            className="text-primary animate-spin"
+                          />
+                        ) : (
+                          <IconBrandChrome
+                            size={18}
+                            className={cn(
+                              'text-muted-foreground',
+                              janBrowserMCPActive && 'text-primary'
+                            )}
+                          />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {isJanBrowserMCPLoading
+                          ? 'Starting...'
+                          : janBrowserMCPActive
+                            ? 'Browse (Active)'
+                            : 'Browse'}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+                {selectedModel?.capabilities?.includes('embeddings') && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                          variant="ghost"
+                          size="icon-xs"
+                        >
+                        <IconCodeCircle2
+                          size={18}
+                          className="text-muted-foreground"
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{t('embeddings')}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 {selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
@@ -1544,6 +2107,7 @@ const ChatInput = ({
                     />
                   ) : (
                     // Use default tools dropdown
+<<<<<<< HEAD
                     <TooltipProvider>
                       <Tooltip
                         open={tooltipToolsAvailable}
@@ -1629,13 +2193,98 @@ const ChatInput = ({
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
+=======
+                    <Tooltip
+                      open={tooltipToolsAvailable}
+                      onOpenChange={setTooltipToolsAvailable}
+                    >
+                      <TooltipTrigger
+                        asChild
+                        disabled={dropdownToolsAvailable}
+                      >
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={(e) => {
+                            setDropdownToolsAvailable(false)
+                            e.stopPropagation()
+                          }}
+                        >
+                          <DropdownToolsAvailable
+                            initialMessage={initialMessage}
+                            onOpenChange={(isOpen) => {
+                              setDropdownToolsAvailable(isOpen)
+                              if (isOpen) {
+                                setTooltipToolsAvailable(false)
+                              }
+                            }}
+                          >
+                            {() => {
+                              return (
+                                <div
+                                  className={cn(
+                                    'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer',
+                                  )}
+                                >
+                                  <IconTool
+                                    size={18}
+                                    className={cn(
+                                      'text-muted-foreground',
+                                    )}
+                                  />
+                                </div>
+                              )
+                            }}
+                          </DropdownToolsAvailable>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('tools')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  ))}
+
+                {selectedModel?.capabilities?.includes('web_search') && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon-xs">
+                        <IconWorld
+                          size={18}
+                          className="text-muted-foreground"
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Web Search</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+                {selectedModel?.capabilities?.includes('reasoning') && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon-xs">
+                        <IconAtom
+                          size={18}
+                          className="text-muted-foreground"
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{t('reasoning')}</p>
+                    </TooltipContent>
+                  </Tooltip>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 )}
               </div>
             </div>
 
             <div className="flex items-center gap-2">
               {selectedProvider === 'llamacpp' &&
+<<<<<<< HEAD
                 hasActiveModels &&
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 tokenCounterCompact &&
                 !initialMessage &&
                 (threadMessages?.length > 0 || prompt.trim().length > 0) && (
@@ -1656,6 +2305,7 @@ const ChatInput = ({
                   </div>
                 )}
 
+<<<<<<< HEAD
               {!streamingContent && prompt.trim().length > 10 && (
                 <EnhancePromptButton
                   prompt={prompt}
@@ -1675,11 +2325,22 @@ const ChatInput = ({
                   onClick={() =>
                     stopStreaming(currentThreadId ?? streamingContent.thread_id)
                   }
+=======
+              {isStreaming ? (
+                <Button
+                  variant="destructive"
+                  size="icon-sm"
+                  className="rounded-full mr-1 mb-1"
+                  onClick={() => {
+                    if (currentThreadId) stopStreaming(currentThreadId)
+                  }}
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 >
                   <IconPlayerStopFilled />
                 </Button>
               ) : (
                 <Button
+<<<<<<< HEAD
                   variant={!prompt.trim() ? null : 'default'}
                   size="icon"
                   disabled={!prompt.trim() || ingestingAny}
@@ -1691,6 +2352,16 @@ const ChatInput = ({
                   ) : (
                     <ArrowRight className="text-primary-fg" />
                   )}
+=======
+                  variant="default"
+                  size="icon-sm"
+                  disabled={!prompt.trim() || ingestingAny}
+                  data-test-id="send-message-button"
+                  onClick={() => handleSendMessage(prompt)}
+                  className="rounded-full mr-1 mb-1"
+                >
+                  <ArrowRight className="text-primary-fg" />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 </Button>
               )}
             </div>
@@ -1699,11 +2370,19 @@ const ChatInput = ({
       </div>
 
       {message && (
+<<<<<<< HEAD
         <div className="bg-main-view-fg/2 -mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-destructive transition-all duration-200 ease-in-out">
           <div className="flex items-center gap-1 justify-between">
             {message}
             <IconX
               className="size-3 text-main-view-fg/30 cursor-pointer"
+=======
+        <div className="-mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-destructive transition-all duration-200 ease-in-out">
+          <div className="flex items-center gap-1 justify-between">
+            {message}
+            <IconX
+              className="size-3 text-muted-foreground cursor-pointer"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               onClick={() => {
                 setMessage('')
                 // Reset file input to allow re-uploading the same file
@@ -1717,14 +2396,20 @@ const ChatInput = ({
       )}
 
       {selectedProvider === 'llamacpp' &&
+<<<<<<< HEAD
         hasActiveModels &&
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         !tokenCounterCompact &&
         !initialMessage &&
         (threadMessages?.length > 0 || prompt.trim().length > 0) && (
           <div className="flex-1 w-full flex justify-start px-2">
             <TokenCounter
               messages={threadMessages || []}
+<<<<<<< HEAD
               compact={false}
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               uploadedFiles={attachments
                 .filter((a) => a.type === 'image' && a.dataUrl)
                 .map((a) => ({
@@ -1744,6 +2429,16 @@ const ChatInput = ({
         state={extensionDialogState}
         onCancel={handleExtensionDialogCancel}
       />
+<<<<<<< HEAD
+=======
+
+      {/* Vision Model Download Prompt */}
+      <PromptVisionModel
+        open={showVisionModelPrompt}
+        onClose={() => setShowVisionModelPrompt(false)}
+        onDownloadComplete={handleVisionModelDownloadComplete}
+      />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     </div>
   )
 }

@@ -43,11 +43,18 @@ pub fn create_lock_file<R: Runtime>(
             .unwrap_or_else(|_| "unknown".to_string()),
     };
 
+<<<<<<< HEAD
     let lock_json =
         serde_json::to_string_pretty(&lock).map_err(|e| format!("Failed to serialize lock: {}", e))?;
 
     fs::write(&lock_path, lock_json)
         .map_err(|e| format!("Failed to write lock file: {}", e))?;
+=======
+    let lock_json = serde_json::to_string_pretty(&lock)
+        .map_err(|e| format!("Failed to serialize lock: {}", e))?;
+
+    fs::write(&lock_path, lock_json).map_err(|e| format!("Failed to write lock file: {}", e))?;
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     log::debug!("Created lock file for port {} at {:?}", port, lock_path);
     Ok(())
@@ -68,8 +75,12 @@ pub fn delete_lock_file<R: Runtime>(app: &AppHandle<R>, port: u16) -> Result<(),
     let lock_path = get_lock_file_path(app, port);
 
     if lock_path.exists() {
+<<<<<<< HEAD
         fs::remove_file(&lock_path)
             .map_err(|e| format!("Failed to delete lock file: {}", e))?;
+=======
+        fs::remove_file(&lock_path).map_err(|e| format!("Failed to delete lock file: {}", e))?;
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         log::debug!("Deleted lock file for port {}", port);
     }
 

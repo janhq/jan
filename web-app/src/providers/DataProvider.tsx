@@ -13,6 +13,10 @@ import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import { getModelToStart } from '@/utils/getModelToStart'
+<<<<<<< HEAD
+=======
+import { isDev } from '@/lib/utils'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 export function DataProvider() {
   const { setProviders, selectedModel, selectedProvider, getProviderByName } =
@@ -93,13 +97,36 @@ export function DataProvider() {
       })
   }, [serviceHub, setThreads])
 
+<<<<<<< HEAD
   // Check for app updates
+=======
+  // Check for app updates - initial check and periodic interval
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   useEffect(() => {
     // Only check for updates if the auto updater is not disabled
     // App might be distributed via other package managers
     // or methods that handle updates differently
+<<<<<<< HEAD
     if (!AUTO_UPDATER_DISABLED) {
       checkForUpdate()
+=======
+    if (isDev()) {
+      return
+    }
+
+    // Initial check on mount
+    checkForUpdate()
+
+    // Set up periodic update checks (singleton - only runs in DataProvider)
+    const intervalId = setInterval(() => {
+      console.log('Periodic update check triggered')
+      checkForUpdate()
+    }, Number(UPDATE_CHECK_INTERVAL_MS))
+
+    // Cleanup interval on unmount
+    return () => {
+      clearInterval(intervalId)
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     }
   }, [checkForUpdate])
 

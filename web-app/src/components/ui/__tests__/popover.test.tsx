@@ -88,13 +88,18 @@ describe('Popover Components', () => {
   describe('PopoverContent', () => {
     it('renders PopoverContent with correct styling and data-slot', async () => {
       const user = userEvent.setup()
+<<<<<<< HEAD
       
+=======
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       render(
         <Popover>
           <PopoverTrigger>Open</PopoverTrigger>
           <PopoverContent>Popover Content</PopoverContent>
         </Popover>
       )
+<<<<<<< HEAD
       
       await user.click(screen.getByRole('button'))
       
@@ -103,6 +108,16 @@ describe('Popover Components', () => {
         expect(content).toBeInTheDocument()
         expect(content).toHaveClass('bg-main-view')
         expect(content).toHaveClass('text-main-view-fg')
+=======
+
+      await user.click(screen.getByRole('button'))
+
+      await waitFor(() => {
+        const content = document.querySelector('[data-slot="popover-content"]')
+        expect(content).toBeInTheDocument()
+        expect(content).toHaveClass('bg-background')
+        expect(content).toHaveClass('text-foreground')
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         expect(content).toHaveClass('w-72')
         expect(content).toHaveClass('rounded-md')
         expect(content).toHaveClass('border')

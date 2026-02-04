@@ -24,7 +24,10 @@ import type {
   ModelValidationResult,
   ModelPlan,
 } from './types'
+<<<<<<< HEAD
 import { PreflightResult } from './types'
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
@@ -106,6 +109,7 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
+<<<<<<< HEAD
   async preflightArtifactAccess(
     url: string,
     hfToken?: string
@@ -137,6 +141,8 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel {
     // Format file size helper
     const formatFileSize = (size?: number) => {

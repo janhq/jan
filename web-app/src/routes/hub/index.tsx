@@ -4,8 +4,11 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn } from '@/lib/utils'
+<<<<<<< HEAD
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import {
   useState,
   useMemo,
@@ -29,7 +32,10 @@ import { Switch } from '@/components/ui/switch'
 import {
   Tooltip,
   TooltipContent,
+<<<<<<< HEAD
   TooltipProvider,
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
@@ -56,12 +62,17 @@ type SearchParams = {
 }
 
 export const Route = createFileRoute(route.hub.index as any)({
+<<<<<<< HEAD
   component: Hub,
+=======
+  component: HubContent,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
     repo: search.repo as SearchParams['repo'],
   }),
 })
 
+<<<<<<< HEAD
 function Hub() {
   return (
     <PlatformGuard feature={PlatformFeature.MODEL_HUB}>
@@ -70,6 +81,8 @@ function Hub() {
   )
 }
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 function HubContent() {
   const parentRef = useRef(null)
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
@@ -312,7 +325,11 @@ function HubContent() {
         {searchValue.length === 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger>
+<<<<<<< HEAD
               <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
+=======
+              <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm text-sm outline-none text-foreground font-medium">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 {
                   sortOptions.find((option) => option.value === sortSelected)
                     ?.name
@@ -324,7 +341,11 @@ function HubContent() {
                 <DropdownMenuItem
                   className={cn(
                     'cursor-pointer my-0.5',
+<<<<<<< HEAD
                     sortSelected === option.value && 'bg-main-view-fg/5'
+=======
+                    sortSelected === option.value && 'bg-secondary'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                   )}
                   key={option.value}
                   onClick={() => setSortSelected(option.value)}
@@ -348,7 +369,11 @@ function HubContent() {
               }
             }}
           />
+<<<<<<< HEAD
           <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
+=======
+          <span className="text-xs text-foreground font-medium whitespace-nowrap">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             {t('hub:downloaded')}
           </span>
         </div>
@@ -364,10 +389,17 @@ function HubContent() {
             <div className="pr-4 py-3  h-10 w-full flex items-center justify-between relative z-20">
               <div className="flex items-center gap-2 w-full">
                 {isSearching ? (
+<<<<<<< HEAD
                   <Loader className="shrink-0 size-4 animate-spin text-main-view-fg/60" />
                 ) : (
                   <IconSearch
                     className="shrink-0 text-main-view-fg/60"
+=======
+                  <Loader className="shrink-0 size-4 animate-spin text-muted-foreground" />
+                ) : (
+                  <IconSearch
+                    className="shrink-0 text-muted-foreground"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                     size={14}
                   />
                 )}
@@ -383,8 +415,13 @@ function HubContent() {
               </div>
             </div>
           </HeaderPage>
+<<<<<<< HEAD
           <div className="p-4 w-full h-[calc(100%-32px)] !overflow-y-auto first-step-setup-local-provider">
             <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 mx-auto">
+=======
+          <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto! first-step-setup-local-provider">
+            <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               {loading && !filteredModels.length ? (
                 <div className="flex items-center justify-center">
                   <div className="text-center text-muted-foreground">
@@ -429,7 +466,11 @@ function HubContent() {
                               >
                                 <h1
                                   className={cn(
+<<<<<<< HEAD
                                     'text-main-view-fg font-medium text-base capitalize  sm:max-w-none',
+=======
+                                    'text-foreground font-medium text-base capitalize sm:max-w-none',
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                                     isRecommendedModel(
                                       filteredModels[virtualItem.index]
                                         .model_name
@@ -450,7 +491,11 @@ function HubContent() {
                                 </h1>
                               </div>
                               <div className="shrink-0 space-x-3 flex items-center">
+<<<<<<< HEAD
                                 <span className="text-main-view-fg/70 font-medium text-xs">
+=======
+                                <span className="text-muted-foreground font-medium text-xs">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                                   {
                                     (
                                       filteredModels[
@@ -493,9 +538,14 @@ function HubContent() {
                             </div>
                           }
                         >
+<<<<<<< HEAD
                           <div className="line-clamp-2 mt-3 text-main-view-fg/60">
                             <RenderMarkdown
                               enableRawHtml={true}
+=======
+                          <div className="line-clamp-2 mt-3 text-muted-foreground leading-normal">
+                            <RenderMarkdown
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                               className="select-none reset-heading"
                               components={{
                                 a: ({ ...props }) => (
@@ -514,7 +564,11 @@ function HubContent() {
                             />
                           </div>
                           <div className="flex items-center gap-2 mt-2">
+<<<<<<< HEAD
                             <span className="capitalize text-main-view-fg/80">
+=======
+                            <span className="capitalize text-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                               {t('hub:by')}{' '}
                               {filteredModels[virtualItem.index]?.developer}
                             </span>
@@ -522,10 +576,17 @@ function HubContent() {
                               <div className="flex items-center gap-1">
                                 <IconDownload
                                   size={18}
+<<<<<<< HEAD
                                   className="text-main-view-fg/50"
                                   title={t('hub:downloads')}
                                 />
                                 <span className="text-main-view-fg/80">
+=======
+                                  className="text-muted-foreground"
+                                  title={t('hub:downloads')}
+                                />
+                                <span className="text-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                                   {filteredModels[virtualItem.index]
                                     .downloads || 0}
                                 </span>
@@ -533,10 +594,17 @@ function HubContent() {
                               <div className="flex items-center gap-1">
                                 <IconFileCode
                                   size={20}
+<<<<<<< HEAD
                                   className="text-main-view-fg/50"
                                   title={t('hub:variants')}
                                 />
                                 <span className="text-main-view-fg/80">
+=======
+                                  className="text-muted-foreground"
+                                  title={t('hub:variants')}
+                                />
+                                <span className="text-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                                   {filteredModels[virtualItem.index].quants
                                     ?.length || 0}
                                 </span>
@@ -545,6 +613,7 @@ function HubContent() {
                                 {filteredModels[virtualItem.index].num_mmproj >
                                   0 && (
                                   <div className="flex items-center gap-1">
+<<<<<<< HEAD
                                     <TooltipProvider>
                                       <Tooltip>
                                         <TooltipTrigger asChild>
@@ -560,10 +629,26 @@ function HubContent() {
                                         </TooltipContent>
                                       </Tooltip>
                                     </TooltipProvider>
+=======
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div>
+                                          <IconEye
+                                            size={17}
+                                            className="text-muted-foreground"
+                                          />
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>{t('vision')}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                                   </div>
                                 )}
                                 {filteredModels[virtualItem.index].tools && (
                                   <div className="flex items-center gap-1">
+<<<<<<< HEAD
                                     <TooltipProvider>
                                       <Tooltip>
                                         <TooltipTrigger asChild>
@@ -579,6 +664,21 @@ function HubContent() {
                                         </TooltipContent>
                                       </Tooltip>
                                     </TooltipProvider>
+=======
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div>
+                                          <IconTool
+                                            size={17}
+                                            className="text-muted-foreground"
+                                          />
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>{t('tools')}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                                   </div>
                                 )}
                               </div>
@@ -599,7 +699,11 @@ function HubContent() {
                                       )
                                     }
                                   />
+<<<<<<< HEAD
                                   <p className="text-main-view-fg/70">
+=======
+                                  <p className="text-muted-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                                     {t('hub:showVariants')}
                                   </p>
                                 </div>
@@ -625,6 +729,7 @@ function HubContent() {
                                             {filteredModels[virtualItem.index]
                                               .num_mmproj > 0 && (
                                               <div className="flex items-center gap-1">
+<<<<<<< HEAD
                                                 <TooltipProvider>
                                                   <Tooltip>
                                                     <TooltipTrigger asChild>
@@ -640,11 +745,27 @@ function HubContent() {
                                                     </TooltipContent>
                                                   </Tooltip>
                                                 </TooltipProvider>
+=======
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <div>
+                                                      <IconEye
+                                                        size={17}
+                                                        className="text-muted-foreground"
+                                                      />
+                                                    </div>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent>
+                                                    <p>{t('vision')}</p>
+                                                  </TooltipContent>
+                                                </Tooltip>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                                               </div>
                                             )}
                                             {filteredModels[virtualItem.index]
                                               .tools && (
                                               <div className="flex items-center gap-1">
+<<<<<<< HEAD
                                                 <TooltipProvider>
                                                   <Tooltip>
                                                     <TooltipTrigger asChild>
@@ -660,6 +781,21 @@ function HubContent() {
                                                     </TooltipContent>
                                                   </Tooltip>
                                                 </TooltipProvider>
+=======
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <div>
+                                                      <IconTool
+                                                        size={17}
+                                                        className="text-muted-foreground"
+                                                      />
+                                                    </div>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent>
+                                                    <p>{t('tools')}</p>
+                                                  </TooltipContent>
+                                                </Tooltip>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                                               </div>
                                             )}
                                           </div>
@@ -667,7 +803,11 @@ function HubContent() {
                                       }
                                       actions={
                                         <div className="flex items-center gap-2">
+<<<<<<< HEAD
                                           <p className="text-main-view-fg/70 font-medium text-xs">
+=======
+                                          <p className="text-muted-foreground font-medium text-xs">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                                             {variant.file_size}
                                           </p>
                                           <ModelInfoHoverCard

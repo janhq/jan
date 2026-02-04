@@ -56,10 +56,19 @@ env = "1.0.1"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
 flate2 = "1.0"
 futures-util = "0.3.31"
+<<<<<<< HEAD
+=======
+hex = "0.4"
+hmac = "0.12"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 hyper = { version = "0.14", features = ["server"] }
 jan-utils = { path = "./utils" }
 libloading = "0.8.7"
 log = "0.4"
+<<<<<<< HEAD
+=======
+rand = "0.8"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 rmcp = { version = "0.8.5", features = [
     "client",
     "transport-sse-client",
@@ -73,6 +82,10 @@ rmcp = { version = "0.8.5", features = [
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9.34"
+<<<<<<< HEAD
+=======
+sha2 = "0.10"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 tar = "0.4"
 zip = "0.6"
 tauri-plugin-deep-link = { version = "2", optional = true }

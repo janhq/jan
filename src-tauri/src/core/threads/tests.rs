@@ -1,4 +1,7 @@
+<<<<<<< HEAD
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 use super::commands::*;
 use super::helpers::should_use_sqlite;
 use crate::core::app::commands::get_jan_data_folder_path;
@@ -108,7 +111,14 @@ async fn test_create_and_list_messages() {
     let messages = list_messages(app.handle().clone(), thread_id.clone())
         .await
         .unwrap();
+<<<<<<< HEAD
     assert!(!messages.is_empty(), "Expected at least one message, but got none. Thread ID: {thread_id}");
+=======
+    assert!(
+        !messages.is_empty(),
+        "Expected at least one message, but got none. Thread ID: {thread_id}"
+    );
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     assert_eq!(messages[0]["role"], "user");
 
     // Clean up
@@ -166,12 +176,26 @@ fn test_should_use_sqlite_platform_detection() {
 
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
+<<<<<<< HEAD
         assert!(should_use_sqlite(), "should_use_sqlite should return true on mobile platforms");
+=======
+        assert!(
+            should_use_sqlite(),
+            "should_use_sqlite should return true on mobile platforms"
+        );
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+<<<<<<< HEAD
         assert!(!should_use_sqlite(), "should_use_sqlite should return false on desktop platforms");
+=======
+        assert!(
+            !should_use_sqlite(),
+            "should_use_sqlite should return false on desktop platforms"
+        );
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     }
 }
 
@@ -200,7 +224,14 @@ async fn test_desktop_storage_backend() {
         // Verify we can retrieve the thread (which proves file storage works)
         let threads = list_threads(app.handle().clone()).await.unwrap();
         let found = threads.iter().any(|t| t["id"] == thread_id);
+<<<<<<< HEAD
         assert!(found, "Thread should be retrievable from file-based storage");
+=======
+        assert!(
+            found,
+            "Thread should be retrievable from file-based storage"
+        );
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
         // Create a message
         let message = json!({
@@ -220,7 +251,15 @@ async fn test_desktop_storage_backend() {
         let messages = list_messages(app.handle().clone(), thread_id.clone())
             .await
             .unwrap();
+<<<<<<< HEAD
         assert_eq!(messages.len(), 1, "Message should be retrievable from file-based storage");
+=======
+        assert_eq!(
+            messages.len(),
+            1,
+            "Message should be retrievable from file-based storage"
+        );
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
         // Clean up - get the actual data directory used by the app
         use super::utils::get_data_dir;
@@ -347,9 +386,18 @@ async fn test_modify_thread_assistant() {
     let (app, data_dir) = mock_app_with_temp_data_dir();
     let app_handle = app.handle().clone();
 
+<<<<<<< HEAD
     let created = create_thread(app_handle.clone(), create_test_thread("Assistant Mod Thread"))
         .await
         .unwrap();
+=======
+    let created = create_thread(
+        app_handle.clone(),
+        create_test_thread("Assistant Mod Thread"),
+    )
+    .await
+    .unwrap();
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     let thread_id = created["id"].as_str().unwrap();
 
     let assistant = json!({
@@ -365,9 +413,19 @@ async fn test_modify_thread_assistant() {
     let mut modified_assistant = assistant;
     modified_assistant["assistant_name"] = json!("Modified Assistant");
 
+<<<<<<< HEAD
     modify_thread_assistant(app_handle.clone(), thread_id.to_string(), modified_assistant)
         .await
         .unwrap();
+=======
+    modify_thread_assistant(
+        app_handle.clone(),
+        thread_id.to_string(),
+        modified_assistant,
+    )
+    .await
+    .unwrap();
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     let retrieved = get_thread_assistant(app_handle, thread_id.to_string())
         .await
@@ -384,9 +442,29 @@ async fn test_thread_not_found_errors() {
     let fake_thread_id = "non-existent-thread-id".to_string();
     let assistant = json!({"id": "assistant-1", "assistant_name": "Test Assistant"});
 
+<<<<<<< HEAD
     assert!(get_thread_assistant(app_handle.clone(), fake_thread_id.clone()).await.is_err());
     assert!(create_thread_assistant(app_handle.clone(), fake_thread_id.clone(), assistant.clone()).await.is_err());
     assert!(modify_thread_assistant(app_handle, fake_thread_id, assistant).await.is_err());
+=======
+    assert!(
+        get_thread_assistant(app_handle.clone(), fake_thread_id.clone())
+            .await
+            .is_err()
+    );
+    assert!(create_thread_assistant(
+        app_handle.clone(),
+        fake_thread_id.clone(),
+        assistant.clone()
+    )
+    .await
+    .is_err());
+    assert!(
+        modify_thread_assistant(app_handle, fake_thread_id, assistant)
+            .await
+            .is_err()
+    );
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     let _ = fs::remove_dir_all(data_dir);
 }
@@ -430,7 +508,13 @@ async fn test_concurrent_message_operations() {
         .collect();
 
     let results = future::join_all(handles).await;
+<<<<<<< HEAD
     assert!(results.iter().all(|r| r.is_ok() && r.as_ref().unwrap().is_ok()));
+=======
+    assert!(results
+        .iter()
+        .all(|r| r.is_ok() && r.as_ref().unwrap().is_ok()));
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
     let messages = list_messages(app_handle, thread_id).await.unwrap();
     assert_eq!(messages.len(), 5);
@@ -451,12 +535,26 @@ async fn test_empty_message_list() {
     let (app, data_dir) = mock_app_with_temp_data_dir();
     let app_handle = app.handle().clone();
 
+<<<<<<< HEAD
     let created = create_thread(app_handle.clone(), create_test_thread("Empty Messages Test"))
         .await
         .unwrap();
     let thread_id = created["id"].as_str().unwrap();
 
     let messages = list_messages(app_handle, thread_id.to_string()).await.unwrap();
+=======
+    let created = create_thread(
+        app_handle.clone(),
+        create_test_thread("Empty Messages Test"),
+    )
+    .await
+    .unwrap();
+    let thread_id = created["id"].as_str().unwrap();
+
+    let messages = list_messages(app_handle, thread_id.to_string())
+        .await
+        .unwrap();
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     assert_eq!(messages.len(), 0);
 
     let _ = fs::remove_dir_all(data_dir);

@@ -23,6 +23,11 @@ export const localStorageKey = {
   setupCompleted: 'setup-completed',
   threadManagement: 'thread-management',
   modelSupportCache: 'jan_model_support_cache',
+<<<<<<< HEAD
+=======
+  recentSearches: 'recent-searches',
+  janModelPromptDismissed: 'jan-model-prompt-dismissed',
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

@@ -19,13 +19,17 @@ import { IconLogs } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
 import { useEffect, useState } from 'react'
+<<<<<<< HEAD
 import { PlatformGuard } from '@/lib/platform/PlatformGuard'
 import { PlatformFeature } from '@/lib/platform'
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import { toast } from 'sonner'
 import { getModelToStart } from '@/utils/getModelToStart'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
+<<<<<<< HEAD
   component: LocalAPIServer,
 })
 
@@ -37,6 +41,11 @@ function LocalAPIServer() {
   )
 }
 
+=======
+  component: LocalAPIServerContent,
+})
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 function LocalAPIServerContent() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -237,6 +246,7 @@ function LocalAPIServerContent() {
   const isServerRunning = serverStatus !== 'stopped'
 
   return (
+<<<<<<< HEAD
     <div className="flex flex-col h-full">
       <HeaderPage>
         <h1 className="font-medium">{t('common:settings')}</h1>
@@ -244,16 +254,36 @@ function LocalAPIServerContent() {
       <div className="flex h-full w-full">
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+=======
+    <div className="flex flex-col h-svh w-full">
+      <HeaderPage>
+        <div className="flex items-center gap-2 w-full">
+          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+        </div>
+      </HeaderPage>
+      <div className="flex h-[calc(100%-60px)]">
+        <SettingsMenu />
+        <div className="p-4 pt-0 w-full overflow-y-auto">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* General Settings */}
             <Card
               header={
+<<<<<<< HEAD
                 <div className="mb-3 flex w-full items-center border-b border-main-view-fg/4 pb-2">
                   <div className="w-full space-y-2">
                     <h1 className="text-base font-medium">
                       {t('settings:localApiServer.title')}
                     </h1>
                     <p className="text-main-view-fg/70 mb-2">
+=======
+                <div className="mb-3 flex w-full items-center border-b pb-2">
+                  <div className="w-full space-y-2">
+                    <h1 className="text-base font-medium text-foreground font-studio">
+                      {t('settings:localApiServer.title')}
+                    </h1>
+                    <p className="text-muted-foreground mb-2">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                       {t('settings:localApiServer.description')}
                     </p>
                   </div>
@@ -291,16 +321,25 @@ function LocalAPIServerContent() {
                 description={t('settings:localApiServer.serverLogsDesc')}
                 actions={
                   <Button
+<<<<<<< HEAD
                     variant="link"
+=======
+                    variant="secondary"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                     size="sm"
                     className="p-0"
                     onClick={handleOpenLogs}
                     title={t('settings:localApiServer.serverLogs')}
                   >
+<<<<<<< HEAD
                     <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
                       <IconLogs size={18} className="text-main-view-fg/50" />
                       <span>{t('settings:localApiServer.openLogs')}</span>
                     </div>
+=======
+                    <IconLogs size={18} className="text-muted-foreground" />
+                    <span>{t('settings:localApiServer.openLogs')}</span>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                   </Button>
                 }
               />
@@ -315,6 +354,7 @@ function LocalAPIServerContent() {
                     rel="noopener noreferrer"
                   >
                     <Button
+<<<<<<< HEAD
                       asChild
                       variant="link"
                       size="sm"
@@ -330,6 +370,14 @@ function LocalAPIServerContent() {
                       >
                         <span>{t('settings:localApiServer.openDocs')}</span>
                       </div>
+=======
+                      variant="secondary"
+                      size="sm"
+                      disabled={!isServerRunning}
+                      title={t('settings:localApiServer.swaggerDocs')}
+                    >
+                      <span>{t('settings:localApiServer.openDocs')}</span>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                     </Button>
                   </a>
                 }

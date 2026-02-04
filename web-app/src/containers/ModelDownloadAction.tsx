@@ -10,7 +10,10 @@ import { CatalogModel } from '@/services/models/types'
 import { IconDownload } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo } from 'react'
+<<<<<<< HEAD
 import { toast } from 'sonner'
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 export const ModelDownloadAction = ({
   variant,
@@ -56,6 +59,7 @@ export const ModelDownloadAction = ({
   )
 
   const handleDownloadModel = useCallback(async () => {
+<<<<<<< HEAD
     const preflight = await serviceHub
       .models()
       .preflightArtifactAccess(variant.path, huggingfaceToken)
@@ -126,6 +130,8 @@ export const ModelDownloadAction = ({
       return
     }
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     addLocalDownloadingModel(variant.model_id)
     serviceHub
       .models()
@@ -164,8 +170,13 @@ export const ModelDownloadAction = ({
     return (
       <>
         <div className="flex items-center gap-2 w-20">
+<<<<<<< HEAD
           <Progress value={downloadProgress * 100} />
           <span className="text-xs text-center text-main-view-fg/70">
+=======
+          <Progress className="border" value={downloadProgress * 100} />
+          <span className="text-xs text-center text-muted-foreground">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             {Math.round(downloadProgress * 100)}%
           </span>
         </div>
@@ -176,6 +187,7 @@ export const ModelDownloadAction = ({
   if (isDownloaded) {
     return (
       <Button
+<<<<<<< HEAD
         variant="link"
         size="sm"
         className="p-0"
@@ -185,17 +197,33 @@ export const ModelDownloadAction = ({
         <div className="rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1">
           {t('hub:newChat')}
         </div>
+=======
+        variant="default"
+        size="sm"
+        onClick={() => handleUseModel(variant.model_id)}
+        title={t('hub:useModel')}
+      >
+        {t('hub:newChat')}
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       </Button>
     )
   }
 
   return (
     <div
+<<<<<<< HEAD
       className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
       title={t('hub:downloadModel')}
       onClick={handleDownloadModel}
     >
       <IconDownload size={16} className="text-main-view-fg/80" />
+=======
+      className="size-6 cursor-pointer flex items-center justify-center rounded transition-all duration-200 ease-in-out"
+      title={t('hub:downloadModel')}
+      onClick={handleDownloadModel}
+    >
+      <IconDownload size={16} className="text-muted-foreground" />
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     </div>
   )
 }

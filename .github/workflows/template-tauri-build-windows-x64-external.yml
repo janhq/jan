@@ -113,7 +113,15 @@ jobs:
           sed -i "s/jan_build/$new_build_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
 
           if [ "${{ inputs.channel }}" != "stable" ]; then
+<<<<<<< HEAD
             jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+=======
+            if [[ "${{ inputs.channel }}" == "nightly" ]]; then
+              jq '.plugins.updater.endpoints = ["https://apps-nightly.jan.ai/update-check", "https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            else
+              jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            fi
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
             
             # Update product name
@@ -143,6 +151,17 @@ jobs:
           fi
           echo "---------nsis.template---------"
           cat ./src-tauri/tauri.bundle.windows.nsis.template
+<<<<<<< HEAD
+=======
+
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       - name: Build app
         shell: bash
         run: |

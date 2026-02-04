@@ -117,21 +117,32 @@
   /* Code */
   code {
     font-family: monospace;
+<<<<<<< HEAD
     @apply bg-main-view-fg/6 text-main-view-fg;
+=======
+    @apply bg-secondary text-foreground;
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     padding: 0.2em 0.4em;
     border-radius: 3px;
   }
 
   pre {
     font-family: monospace;
+<<<<<<< HEAD
     @apply bg-main-view-fg/6 text-main-view-fg;
     overflow-x: auto;
     border-radius: 8px;
+=======
+    @apply bg-secondary text-foreground px-0!;
+    overflow-x: auto;
+    /* border-radius: 8px; */
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     margin-bottom: 8px;
   }
 
   pre code {
     background-color: transparent;
+<<<<<<< HEAD
     padding: 8px;
     @apply !text-sm;
     display: inline-block;
@@ -164,6 +175,13 @@
     @apply bg-main-view-fg/5;
   }
 
+=======
+    padding: 2px;
+    @apply text-sm!;
+    display: inline-block;
+  }
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   /* Links */
   a {
     color: var(--color-primary);
@@ -204,10 +222,27 @@
   hr {
     border: 0;
     height: 1px;
+<<<<<<< HEAD
     @apply bg-main-view-fg/50;
     opacity: 0.2;
     margin: 2em 0;
   }
+=======
+    opacity: 0.2;
+    margin: 2em 0;
+  }
+
+  [data-streamdown="mermaid-block"] {
+    border-color: var(--border);
+    margin-bottom: 1em;
+  }
+
+  /* Streamdown caret styling */
+  & *:last-child::after {
+    color: oklch(0.556 0 0) !important;
+  }
+
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }
 [data-tool-call-block] + [data-tool-call-block] {
   margin-top: 16px;

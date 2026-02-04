@@ -31,7 +31,11 @@ export default function AttachmentIngestionDialog() {
           <DialogTitle>
             {t('common:attachmentsIngestion.title')}
             {totalCount > 1 && (
+<<<<<<< HEAD
               <span className="text-sm font-normal text-main-view-fg/70 ml-2">
+=======
+              <span className="text-sm font-normal text-muted-foreground ml-2">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
                 ({currentIndex + 1} of {totalCount})
               </span>
             )}
@@ -41,29 +45,50 @@ export default function AttachmentIngestionDialog() {
           </DialogDescription>
         </DialogHeader>
 
+<<<<<<< HEAD
         <div className="border border-main-view-fg/10 rounded-md p-3 bg-main-view/40">
+=======
+        <div className="border rounded-md p-3 bg-secondary">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           <div className="flex items-center justify-between gap-2">
             <span className="truncate font-medium" title={currentAttachment.name}>
               {currentAttachment.name}
             </span>
+<<<<<<< HEAD
             <span className="text-xs text-main-view-fg/70 flex-shrink-0">
+=======
+            <span className="text-xs text-muted-foreground shrink-0">
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
               {formatBytes(currentAttachment.size)}
             </span>
           </div>
         </div>
 
         <DialogFooter className="flex gap-2 sm:justify-end">
+<<<<<<< HEAD
           <Button variant="ghost" onClick={cancel}>
             {t('common:cancel')}
           </Button>
           <Button
             variant="outline"
             className="border-main-view-fg/20"
+=======
+          <Button size="sm" variant="ghost" onClick={cancel}>
+            {t('common:cancel')}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             onClick={() => choose('embeddings')}
           >
             {t('common:attachmentsIngestion.embeddings')}
           </Button>
+<<<<<<< HEAD
           <Button onClick={() => choose('inline')}>
+=======
+          <Button size="sm" onClick={() => choose('inline')}>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
             {t('common:attachmentsIngestion.inline')}
           </Button>
         </DialogFooter>

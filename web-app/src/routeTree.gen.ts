@@ -14,12 +14,18 @@ import { Route as rootRoute } from './routes/__root'
 import { Route as SystemMonitorImport } from './routes/system-monitor'
 import { Route as LogsImport } from './routes/logs'
 import { Route as IndexImport } from './routes/index'
+<<<<<<< HEAD
 import { Route as ProjectIndexImport } from './routes/project/index'
 import { Route as HubIndexImport } from './routes/hub/index'
 import { Route as ThreadsThreadIdImport } from './routes/threads/$threadId'
 import { Route as SettingsShortcutsImport } from './routes/settings/shortcuts'
 import { Route as SettingsPromptTemplatesImport } from './routes/settings/prompt-templates'
 import { Route as SettingsProjectsImport } from './routes/settings/projects'
+=======
+import { Route as HubIndexImport } from './routes/hub/index'
+import { Route as ThreadsThreadIdImport } from './routes/threads/$threadId'
+import { Route as SettingsShortcutsImport } from './routes/settings/shortcuts'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import { Route as SettingsPrivacyImport } from './routes/settings/privacy'
 import { Route as SettingsMcpServersImport } from './routes/settings/mcp-servers'
 import { Route as SettingsLocalApiServerImport } from './routes/settings/local-api-server'
@@ -35,7 +41,10 @@ import { Route as LocalApiServerLogsImport } from './routes/local-api-server/log
 import { Route as HubModelIdImport } from './routes/hub/$modelId'
 import { Route as SettingsProvidersIndexImport } from './routes/settings/providers/index'
 import { Route as SettingsProvidersProviderNameImport } from './routes/settings/providers/$providerName'
+<<<<<<< HEAD
 import { Route as AuthGoogleCallbackImport } from './routes/auth.google.callback'
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 // Create/Update Routes
 
@@ -57,12 +66,15 @@ const IndexRoute = IndexImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+<<<<<<< HEAD
 const ProjectIndexRoute = ProjectIndexImport.update({
   id: '/project/',
   path: '/project/',
   getParentRoute: () => rootRoute,
 } as any)
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 const HubIndexRoute = HubIndexImport.update({
   id: '/hub/',
   path: '/hub/',
@@ -81,6 +93,7 @@ const SettingsShortcutsRoute = SettingsShortcutsImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+<<<<<<< HEAD
 const SettingsPromptTemplatesRoute = SettingsPromptTemplatesImport.update({
   id: '/settings/prompt-templates',
   path: '/settings/prompt-templates',
@@ -93,6 +106,8 @@ const SettingsProjectsRoute = SettingsProjectsImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 const SettingsPrivacyRoute = SettingsPrivacyImport.update({
   id: '/settings/privacy',
   path: '/settings/privacy',
@@ -184,12 +199,15 @@ const SettingsProvidersProviderNameRoute =
     getParentRoute: () => rootRoute,
   } as any)
 
+<<<<<<< HEAD
 const AuthGoogleCallbackRoute = AuthGoogleCallbackImport.update({
   id: '/auth/google/callback',
   path: '/auth/google/callback',
   getParentRoute: () => rootRoute,
 } as any)
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 // Populate the FileRoutesByPath interface
 
 declare module '@tanstack/react-router' {
@@ -306,6 +324,7 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsPrivacyImport
       parentRoute: typeof rootRoute
     }
+<<<<<<< HEAD
     '/settings/projects': {
       id: '/settings/projects'
       path: '/settings/projects'
@@ -320,6 +339,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsPromptTemplatesImport
       parentRoute: typeof rootRoute
     }
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     '/settings/shortcuts': {
       id: '/settings/shortcuts'
       path: '/settings/shortcuts'
@@ -341,6 +362,7 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HubIndexImport
       parentRoute: typeof rootRoute
     }
+<<<<<<< HEAD
     '/project/': {
       id: '/project/'
       path: '/project'
@@ -355,6 +377,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthGoogleCallbackImport
       parentRoute: typeof rootRoute
     }
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     '/settings/providers/$providerName': {
       id: '/settings/providers/$providerName'
       path: '/settings/providers/$providerName'
@@ -391,6 +415,7 @@ export interface FileRoutesByFullPath {
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+<<<<<<< HEAD
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/prompt-templates': typeof SettingsPromptTemplatesRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
@@ -398,6 +423,11 @@ export interface FileRoutesByFullPath {
   '/hub': typeof HubIndexRoute
   '/project': typeof ProjectIndexRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
+=======
+  '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/hub': typeof HubIndexRoute
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
 }
@@ -419,6 +449,7 @@ export interface FileRoutesByTo {
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+<<<<<<< HEAD
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/prompt-templates': typeof SettingsPromptTemplatesRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
@@ -426,6 +457,11 @@ export interface FileRoutesByTo {
   '/hub': typeof HubIndexRoute
   '/project': typeof ProjectIndexRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
+=======
+  '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/hub': typeof HubIndexRoute
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
 }
@@ -448,6 +484,7 @@ export interface FileRoutesById {
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+<<<<<<< HEAD
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/prompt-templates': typeof SettingsPromptTemplatesRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
@@ -455,6 +492,11 @@ export interface FileRoutesById {
   '/hub/': typeof HubIndexRoute
   '/project/': typeof ProjectIndexRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
+=======
+  '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/hub/': typeof HubIndexRoute
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers/': typeof SettingsProvidersIndexRoute
 }
@@ -478,6 +520,7 @@ export interface FileRouteTypes {
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
+<<<<<<< HEAD
     | '/settings/projects'
     | '/settings/prompt-templates'
     | '/settings/shortcuts'
@@ -485,6 +528,11 @@ export interface FileRouteTypes {
     | '/hub'
     | '/project'
     | '/auth/google/callback'
+=======
+    | '/settings/shortcuts'
+    | '/threads/$threadId'
+    | '/hub'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     | '/settings/providers/$providerName'
     | '/settings/providers'
   fileRoutesByTo: FileRoutesByTo
@@ -505,6 +553,7 @@ export interface FileRouteTypes {
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
+<<<<<<< HEAD
     | '/settings/projects'
     | '/settings/prompt-templates'
     | '/settings/shortcuts'
@@ -512,6 +561,11 @@ export interface FileRouteTypes {
     | '/hub'
     | '/project'
     | '/auth/google/callback'
+=======
+    | '/settings/shortcuts'
+    | '/threads/$threadId'
+    | '/hub'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     | '/settings/providers/$providerName'
     | '/settings/providers'
   id:
@@ -532,6 +586,7 @@ export interface FileRouteTypes {
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
+<<<<<<< HEAD
     | '/settings/projects'
     | '/settings/prompt-templates'
     | '/settings/shortcuts'
@@ -539,6 +594,11 @@ export interface FileRouteTypes {
     | '/hub/'
     | '/project/'
     | '/auth/google/callback'
+=======
+    | '/settings/shortcuts'
+    | '/threads/$threadId'
+    | '/hub/'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     | '/settings/providers/$providerName'
     | '/settings/providers/'
   fileRoutesById: FileRoutesById
@@ -561,6 +621,7 @@ export interface RootRouteChildren {
   SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
   SettingsMcpServersRoute: typeof SettingsMcpServersRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
+<<<<<<< HEAD
   SettingsProjectsRoute: typeof SettingsProjectsRoute
   SettingsPromptTemplatesRoute: typeof SettingsPromptTemplatesRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
@@ -568,6 +629,11 @@ export interface RootRouteChildren {
   HubIndexRoute: typeof HubIndexRoute
   ProjectIndexRoute: typeof ProjectIndexRoute
   AuthGoogleCallbackRoute: typeof AuthGoogleCallbackRoute
+=======
+  SettingsShortcutsRoute: typeof SettingsShortcutsRoute
+  ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
+  HubIndexRoute: typeof HubIndexRoute
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
   SettingsProvidersIndexRoute: typeof SettingsProvidersIndexRoute
 }
@@ -589,6 +655,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsLocalApiServerRoute: SettingsLocalApiServerRoute,
   SettingsMcpServersRoute: SettingsMcpServersRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
+<<<<<<< HEAD
   SettingsProjectsRoute: SettingsProjectsRoute,
   SettingsPromptTemplatesRoute: SettingsPromptTemplatesRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
@@ -596,6 +663,11 @@ const rootRouteChildren: RootRouteChildren = {
   HubIndexRoute: HubIndexRoute,
   ProjectIndexRoute: ProjectIndexRoute,
   AuthGoogleCallbackRoute: AuthGoogleCallbackRoute,
+=======
+  SettingsShortcutsRoute: SettingsShortcutsRoute,
+  ThreadsThreadIdRoute: ThreadsThreadIdRoute,
+  HubIndexRoute: HubIndexRoute,
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,
   SettingsProvidersIndexRoute: SettingsProvidersIndexRoute,
 }
@@ -626,6 +698,7 @@ export const routeTree = rootRoute
         "/settings/local-api-server",
         "/settings/mcp-servers",
         "/settings/privacy",
+<<<<<<< HEAD
         "/settings/projects",
         "/settings/prompt-templates",
         "/settings/shortcuts",
@@ -633,6 +706,11 @@ export const routeTree = rootRoute
         "/hub/",
         "/project/",
         "/auth/google/callback",
+=======
+        "/settings/shortcuts",
+        "/threads/$threadId",
+        "/hub/",
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
         "/settings/providers/$providerName",
         "/settings/providers/"
       ]
@@ -685,12 +763,15 @@ export const routeTree = rootRoute
     "/settings/privacy": {
       "filePath": "settings/privacy.tsx"
     },
+<<<<<<< HEAD
     "/settings/projects": {
       "filePath": "settings/projects.tsx"
     },
     "/settings/prompt-templates": {
       "filePath": "settings/prompt-templates.tsx"
     },
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "/settings/shortcuts": {
       "filePath": "settings/shortcuts.tsx"
     },
@@ -700,12 +781,15 @@ export const routeTree = rootRoute
     "/hub/": {
       "filePath": "hub/index.tsx"
     },
+<<<<<<< HEAD
     "/project/": {
       "filePath": "project/index.tsx"
     },
     "/auth/google/callback": {
       "filePath": "auth.google.callback.tsx"
     },
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     "/settings/providers/$providerName": {
       "filePath": "settings/providers/$providerName.tsx"
     },

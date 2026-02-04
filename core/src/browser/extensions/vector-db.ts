@@ -79,4 +79,38 @@ export abstract class VectorDBExtension extends BaseExtension {
     startOrder: number,
     endOrder: number
   ): Promise<VectorSearchResult[]>
+<<<<<<< HEAD
+=======
+
+  // Project-level operations (shared across all threads in a project)
+  abstract createCollectionForProject(projectId: string, dimension: number): Promise<void>
+  abstract insertChunksForProject(
+    projectId: string,
+    fileId: string,
+    chunks: VectorChunkInput[]
+  ): Promise<void>
+  abstract ingestFileForProject(
+    projectId: string,
+    file: VectorDBFileInput,
+    opts: VectorDBIngestOptions
+  ): Promise<AttachmentFileInfo>
+  abstract searchCollectionForProject(
+    projectId: string,
+    query_embedding: number[],
+    limit: number,
+    threshold: number,
+    mode?: SearchMode,
+    fileIds?: string[]
+  ): Promise<VectorSearchResult[]>
+  abstract deleteChunksForProject(projectId: string, ids: string[]): Promise<void>
+  abstract deleteFileForProject(projectId: string, fileId: string): Promise<void>
+  abstract deleteCollectionForProject(projectId: string): Promise<void>
+  abstract listAttachmentsForProject(projectId: string, limit?: number): Promise<AttachmentFileInfo[]>
+  abstract getChunksForProject(
+    projectId: string,
+    fileId: string,
+    startOrder: number,
+    endOrder: number
+  ): Promise<VectorSearchResult[]>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }

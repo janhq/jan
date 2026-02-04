@@ -1,7 +1,10 @@
 import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
 import { MCPTool } from '@/types/completion'
+<<<<<<< HEAD
 import { useAssistant } from './useAssistant'
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 
 export type PromptProgress = {
@@ -21,6 +24,11 @@ type AppState = {
   streamingContent?: ThreadMessage
   loadingModel?: boolean
   tools: MCPTool[]
+<<<<<<< HEAD
+=======
+  ragToolNames: Set<string>
+  mcpToolNames: Set<string>
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   serverStatus: 'running' | 'stopped' | 'pending'
   abortControllers: Record<string, AbortController>
   tokenSpeed?: TokenSpeed
@@ -37,6 +45,11 @@ type AppState = {
   ) => void
   updateLoadingModel: (loading: boolean) => void
   updateTools: (tools: MCPTool[]) => void
+<<<<<<< HEAD
+=======
+  updateRagToolNames: (names: string[]) => void
+  updateMcpToolNames: (names: string[]) => void
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   setAbortController: (threadId: string, controller: AbortController) => void
   updateTokenSpeed: (message: ThreadMessage, increment?: number) => void
   setTokenSpeed: (
@@ -57,6 +70,11 @@ export const useAppState = create<AppState>()((set) => ({
   streamingContent: undefined,
   loadingModel: false,
   tools: [],
+<<<<<<< HEAD
+=======
+  ragToolNames: new Set<string>(),
+  mcpToolNames: new Set<string>(),
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   serverStatus: 'stopped',
   abortControllers: {},
   tokenSpeed: undefined,
@@ -65,21 +83,27 @@ export const useAppState = create<AppState>()((set) => ({
   cancelToolCall: undefined,
   activeModels: [],
   updateStreamingContent: (content: ThreadMessage | undefined) => {
+<<<<<<< HEAD
     const assistants = useAssistant.getState().assistants
     const currentAssistant = useAssistant.getState().currentAssistant
 
     const selectedAssistant =
       assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     set(() => ({
       streamingContent: content
         ? {
             ...content,
             created_at: content.created_at || Date.now(),
+<<<<<<< HEAD
             metadata: {
               ...content.metadata,
               assistant: selectedAssistant,
             },
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
           }
         : undefined,
     }))
@@ -95,6 +119,15 @@ export const useAppState = create<AppState>()((set) => ({
   updateTools: (tools) => {
     set({ tools })
   },
+<<<<<<< HEAD
+=======
+  updateRagToolNames: (names) => {
+    set({ ragToolNames: new Set(names) })
+  },
+  updateMcpToolNames: (names) => {
+    set({ mcpToolNames: new Set(names) })
+  },
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
   setServerStatus: (value) => set({ serverStatus: value }),
   setAbortController: (threadId, controller) => {
     set((state) => ({
@@ -182,5 +215,9 @@ export const useAppState = create<AppState>()((set) => ({
     set(() => ({
       activeModels: models,
     }))
+<<<<<<< HEAD
   }
+=======
+  },
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 }))

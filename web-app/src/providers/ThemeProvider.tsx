@@ -8,7 +8,20 @@ import { isPlatformTauri } from '@/lib/platform/utils'
  * It first detects the OS theme preference and applies it accordingly
  */
 export function ThemeProvider() {
+<<<<<<< HEAD
   const { activeTheme, setIsDark, setTheme } = useTheme()
+=======
+  const { activeTheme, isDark, setIsDark, setTheme } = useTheme()
+
+  // Apply dark class to root element
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }, [isDark])
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
   // Detect OS theme on mount and apply it
   useEffect(() => {
@@ -28,6 +41,7 @@ export function ThemeProvider() {
     // Add a delayed refresh to catch the correct OS theme
     const timeoutId = setTimeout(refreshTheme, 100)
 
+<<<<<<< HEAD
     // Listen for changes in OS theme preference
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
 
@@ -43,6 +57,8 @@ export function ThemeProvider() {
     // Add event listener for browser/web
     mediaQuery.addEventListener('change', handleThemeChange)
 
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
     // Listen to Tauri native theme events (uses XDG Desktop Portal on Linux)
     let unlistenTauri: (() => void) | undefined
 
@@ -67,7 +83,10 @@ export function ThemeProvider() {
     // Clean up
     return () => {
       clearTimeout(timeoutId)
+<<<<<<< HEAD
       mediaQuery.removeEventListener('change', handleThemeChange)
+=======
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
       if (unlistenTauri) {
         unlistenTauri()
       }

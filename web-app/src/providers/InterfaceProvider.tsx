@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ﻿import { useEffect } from 'react'
 import { useInterfaceSettings, useBlurSupport } from '@/hooks/useInterfaceSettings'
 import { useTheme } from '@/hooks/useTheme'
@@ -9,12 +10,19 @@ import {
   isDefaultColorAccent,
   isDefaultColorDestructive,
 } from '@/hooks/useInterfaceSettings'
+=======
+import { useEffect } from 'react'
+import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
+import { useTheme } from '@/hooks/useTheme'
+import { ACCENT_COLORS } from '@/hooks/useInterfaceSettings'
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
 /**
  * InterfaceProvider ensures interface settings are applied on every page load
  * This component should be mounted at the root level of the application
  */
 export function InterfaceProvider() {
+<<<<<<< HEAD
   const {
     fontSize,
     appBgColor,
@@ -52,11 +60,16 @@ export function InterfaceProvider() {
     // Re-apply color to update alpha based on blur support
     setAppBgColor(appBgColor)
   }, [showAlphaSlider])
+=======
+  const { fontSize, accentColor } = useInterfaceSettings()
+  const { isDark } = useTheme()
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
   // Apply interface settings on mount and when they change
   useEffect(() => {
     // Apply font size
     document.documentElement.style.setProperty('--font-size-base', fontSize)
+<<<<<<< HEAD
 
     // Hide alpha slider when blur is not supported
     const shouldHideAlpha = !showAlphaSlider
@@ -312,6 +325,21 @@ export function InterfaceProvider() {
     appAccentTextColor,
     appDestructiveTextColor,
   ])
+=======
+  }, [fontSize])
+
+  // Apply accent color when it changes or theme changes
+  useEffect(() => {
+    const color = ACCENT_COLORS.find((c) => c.value === accentColor)
+    if (!color) return
+
+    const root = document.documentElement
+    const sidebarColor = isDark ? color.sidebar.dark : color.sidebar.light
+
+    root.style.setProperty('--sidebar', sidebarColor)
+    root.style.setProperty('--primary', color.primary)
+  }, [accentColor, isDark])
+>>>>>>> e49d51786081e89f4d262e710160cdbef16ba6a5
 
   return null
 }
