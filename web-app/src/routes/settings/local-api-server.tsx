@@ -67,7 +67,7 @@ function LocalAPIServerContent() {
   const { providers, selectedModel, selectedProvider, getProviderByName } =
     useModelProvider()
   const [showApiKeyError, setShowApiKeyError] = useState(false)
-  const [_, setIsApiKeyEmpty] = useState(
+  const [, setIsApiKeyEmpty] = useState(
     !apiKey || apiKey.toString().trim().length === 0
   )
   const { activeModels } = useAppState()
@@ -75,7 +75,6 @@ function LocalAPIServerContent() {
 
   // Helper card state (persisted to localStorage)
   const { models: helperModels, setModel: setHelperModel, setEnvVars, setCustomCli } = useClaudeCodeModel()
-  const [isLogVisible, setIsLogVisible] = useState(false)
   const [isCustomCliDialogOpen, setIsCustomCliDialogOpen] = useState(false)
 
   useEffect(() => {
@@ -522,7 +521,7 @@ function LocalAPIServerContent() {
           />
           <div className="p-4 shrink-0">
             <Card>
-              <Collapsible defaultOpen={false} onOpenChange={(open) => setIsLogVisible(open)}>
+              <Collapsible defaultOpen={false} >
                 <div className="flex items-center justify-between">
                   <CollapsibleTrigger className="flex items-center gap-2 hover:no-underline">
                     <IconChevronDown
@@ -544,7 +543,7 @@ function LocalAPIServerContent() {
                 <CollapsibleContent>
                   <div className="pt-3">
                     <div className="h-[200px]">
-                      <LogViewer isVisible={isLogVisible} />
+                      <LogViewer />
                     </div>
                   </div>
                 </CollapsibleContent>

@@ -3,19 +3,10 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import type { LogEntry } from '@/services/app/types'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
-interface LogViewerProps {
-  className?: string
-  maxHeight?: string
-  filterTarget?: string
-  isVisible?: boolean
-}
-
 const SERVER_LOG_TARGET = 'app_lib::core::server::proxy'
 const LOG_EVENT_NAME = 'log://log'
 
-export function LogViewer({
-  isVisible,
-}: LogViewerProps) {
+export function LogViewer() {
   const { t } = useTranslation()
   const [logs, setLogs] = useState<LogEntry[]>([])
   const logsContainerRef = useRef<HTMLDivElement>(null)
@@ -27,26 +18,6 @@ export function LogViewer({
       el.scrollTop = el.scrollHeight - el.clientHeight
     }
   }, [])
-
-  // Scroll when visibility changes OR when logs change (and isVisible is true)
-  useEffect(() => {
-    if (isVisible && logs.length > 0) {
-      // Use requestAnimationFrame to ensure DOM is fully rendered
-      let rafId1: number
-      let rafId2: number
-
-      rafId1 = requestAnimationFrame(() => {
-        scrollToBottom()
-        // Try again after a frame to handle any animations
-        rafId2 = requestAnimationFrame(scrollToBottom)
-      })
-
-      return () => {
-        cancelAnimationFrame(rafId1)
-        cancelAnimationFrame(rafId2)
-      }
-    }
-  }, [isVisible, logs.length, scrollToBottom])
 
   // Initial scroll to bottom when logs are loaded
   useEffect(() => {

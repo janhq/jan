@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 
 export type ClaudeCodeModelType = 'big' | 'medium' | 'small'
 
