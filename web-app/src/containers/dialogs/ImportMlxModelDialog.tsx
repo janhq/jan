@@ -57,6 +57,7 @@ export const ImportMlxModelDialog = ({
       const nameFromPath = pathParts[pathParts.length - 1] || 'mlx-model'
       const sanitizedName = nameFromPath
         .replace(/\s/g, '-')
+        //eslint-disable-next-line
         .replace(/[^a-zA-Z0-9/_.\-]/g, '')
       setModelName(sanitizedName)
     }
@@ -74,6 +75,7 @@ export const ImportMlxModelDialog = ({
     }
 
     // Validate model name - only allow alphanumeric, underscore, hyphen, and dot
+    //eslint-disable-next-line
     if (!/^[a-zA-Z0-9/_.\-]+$/.test(modelName)) {
       toast.error('Invalid model name. Only alphanumeric and _ - . characters are allowed.')
       return

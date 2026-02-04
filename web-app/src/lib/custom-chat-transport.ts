@@ -227,7 +227,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     // Track stream timing and token count for token speed calculation
     let streamStartTime: number | undefined
-    let textDeltaCount = 0
 
     const result = streamText({
       model: this.model,
@@ -238,7 +237,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       system: this.systemMessage,
     })
 
-    var tokensPerSecond = 0
+    let tokensPerSecond = 0
 
     return result.toUIMessageStream({
       messageMetadata: ({ part }) => {
@@ -265,7 +264,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           const durationSec = durationMs / 1000
 
           // Use provider's outputTokens, or llama.cpp completionTokens, or fall back to text delta count
-          const outputTokens = usage?.outputTokens ?? textDeltaCount
+          const outputTokens = usage?.outputTokens ?? 0
           const inputTokens = usage?.inputTokens
 
           // Use llama.cpp's tokens per second if available, otherwise calculate from duration

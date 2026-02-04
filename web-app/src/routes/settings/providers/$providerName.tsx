@@ -451,7 +451,7 @@ function ProviderDetail() {
                                   )
 
                                 if (deviceSettingIndex !== -1) {
-                                  ;(
+                                  (
                                     newSettings[deviceSettingIndex]
                                       .controller_props as {
                                       value: string
