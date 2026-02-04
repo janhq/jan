@@ -57,7 +57,7 @@ For general questions, explanations, or non-coding tasks, respond directly witho
 Always be helpful and concise in your responses.`
 
 // ============================================================================
-// OpenCode Delegate Tool
+// Agent Delegate Tool
 // ============================================================================
 
 interface OpenCodeToolContext {
@@ -188,7 +188,7 @@ async function executeOpenCodeDelegation(
         case 'event': {
           const eventData = message.payload.event
 
-          // Map OpenCode events to unified events
+          // Map subprocess events to unified events
           const unifiedEvent = mapOpenCodeEventToUnified(
             eventData,
             taskId,
@@ -586,7 +586,7 @@ export function createJanOrchestrator(options: JanOrchestratorOptions) {
     onPermissionRequest,
   } = options
 
-  // Create the OpenCode delegate tool
+  // Create the agent delegate tool
   const opencodeTool = createOpenCodeDelegateTool({
     config,
     apiKey,

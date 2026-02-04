@@ -151,6 +151,7 @@ function mapOpenCodeEventToUnified(
         },
       }
 
+    case 'file.changed':
     case 'file.write':
     case 'file.edit':
     case 'file.create':
@@ -205,7 +206,43 @@ function mapOpenCodeEventToUnified(
         },
       }
 
+    case 'step.started':
+      return {
+        id: `oc-step-start-${taskId}-${timestamp}`,
+        source: 'opencode',
+        timestamp,
+        type: 'step.started',
+        data: {
+          step: event.step ?? 0,
+          agent: event.agent,
+        },
+      }
+
+    case 'step.completed':
+      return {
+        id: `oc-step-complete-${taskId}-${timestamp}`,
+        source: 'opencode',
+        timestamp,
+        type: 'step.completed',
+        data: {
+          step: event.step ?? 0,
+          agent: event.agent,
+        },
+      }
+
+    case 'text.complete':
+      return {
+        id: `oc-text-complete-${taskId}-${timestamp}`,
+        source: 'opencode',
+        timestamp,
+        type: 'text.complete',
+        data: {
+          text: event.text || event.content || '',
+        },
+      }
+
     default:
+      console.log('[OpenCode Delegate] Unmapped event type:', eventType, event)
       return null
   }
 }
@@ -264,12 +301,19 @@ async function executeOpenCodeDelegation(
     // Set up event listener BEFORE starting task
     const unsubscribe = service.onEvent(taskId, async (message) => {
       const timestamp = Date.now()
+      console.log('[OpenCode Delegate] Received message:', message.type, taskId)
 
+      try {
       switch (message.type) {
+        case 'ready': {
+          console.log('[OpenCode Delegate] OpenCode ready for task:', taskId)
+          break
+        }
+
         case 'event': {
           const eventData = message.payload.event
 
-          // Map OpenCode events to unified events
+          // Map subprocess events to unified events
           const unifiedEvent = mapOpenCodeEventToUnified(
             eventData,
             taskId,
@@ -438,6 +482,9 @@ async function executeOpenCodeDelegation(
           break
         }
       }
+      } catch (err) {
+        console.error('[OpenCode Delegate] Error in event handler:', err)
+      }
     })
 
     // Small delay to ensure listener is set up
@@ -509,31 +556,48 @@ export function createOpenCodeDelegateTool(context: DelegateContext): Tool {
       },
       required: ['task'],
     }),
-    execute: async ({ task, agent }: { task: string; agent?: string }) => {
-      console.log('[OpenCode Delegate] Tool executed with task:', task.slice(0, 50), '...')
-      const result = await executeOpenCodeDelegation(task, {
-        ...context,
-        agent: (agent as OpenCodeAgentType) || context.agent || 'build',
-      })
-      console.log('[OpenCode Delegate] Result:', result.success ? 'success' : 'failed')
+    execute: async (input: { task: string; agent?: string }) => {
+      const { task, agent } = input
+      console.log('[OpenCode Delegate] Tool execute called with input:', JSON.stringify(input).slice(0, 200))
 
-      // Return a formatted result for the LLM
-      if (result.success) {
-        const parts = []
-        if (result.summary) {
-          parts.push(`Summary: ${result.summary}`)
+      try {
+        const result = await executeOpenCodeDelegation(task, {
+          ...context,
+          agent: (agent as OpenCodeAgentType) || context.agent || 'build',
+        })
+        console.log('[OpenCode Delegate] Result:', JSON.stringify({
+          success: result.success,
+          status: result.status,
+          summary: result.summary?.slice(0, 100),
+          filesChanged: result.filesChanged,
+          error: result.error,
+        }))
+
+        // Always return a string result — never throw.
+        // AI SDK feeds this back to the model for a final response.
+        if (result.success) {
+          const parts = []
+          if (result.summary) {
+            parts.push(`Summary: ${result.summary}`)
+          }
+          if (result.filesChanged.length > 0) {
+            parts.push(`Files changed: ${result.filesChanged.join(', ')}`)
+          }
+          if (result.tokensUsed) {
+            parts.push(`Tokens used: ${result.tokensUsed}`)
+          }
+          return parts.length > 0
+            ? parts.join('\n')
+            : 'Task completed successfully.'
+        } else {
+          return `Task failed: ${result.error || 'Unknown error'}`
         }
-        if (result.filesChanged.length > 0) {
-          parts.push(`Files changed: ${result.filesChanged.join(', ')}`)
-        }
-        if (result.tokensUsed) {
-          parts.push(`Tokens used: ${result.tokensUsed}`)
-        }
-        return parts.length > 0
-          ? parts.join('\n')
-          : 'Task completed successfully.'
-      } else {
-        return `Task failed: ${result.error || 'Unknown error'}`
+      } catch (error) {
+        // Catch any exception and return it as a string result instead of throwing.
+        // Throwing would put the tool in 'output-error' state and show as "Failed" in the chat.
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.error('[OpenCode Delegate] Execute exception:', errorMessage, error)
+        return `OpenCode delegation error: ${errorMessage}`
       }
     },
   }

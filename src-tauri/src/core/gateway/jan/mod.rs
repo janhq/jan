@@ -5,9 +5,11 @@
 
 pub mod thread_manager;
 pub mod message_handler;
+pub mod integration_service;
 
 pub use thread_manager::ThreadManager;
 pub use message_handler::MessageHandler;
+pub use integration_service::{JanIntegrationService, SharedJanIntegration};
 
 use super::types::{NormalizedMessage, GatewayResponse, Platform, ThreadMapping};
 

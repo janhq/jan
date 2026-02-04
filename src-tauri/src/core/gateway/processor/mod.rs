@@ -2,12 +2,16 @@
 //!
 //! This module contains the processing stages for incoming messages:
 //! - Whitelist validation
+//! - Message debouncing
 //! - Message normalization
 //! - Thread routing
+//! - ACK handling
 
 pub mod whitelist;
+pub mod debounce;
 pub mod normalizer;
 pub mod router;
+pub mod ack;
 
 use super::types::{GatewayMessage, NormalizedMessage, WhitelistConfig};
 

@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
-use super::super::types::{GatewayMessage, MessageAttachment, Platform};
+use super::super::types::{GatewayMessage, MessageAttachment, Platform, GATEWAY_PROTOCOL_VERSION};
 
 /// Discord webhook payload structure
 #[derive(Debug, Deserialize)]
@@ -157,6 +157,7 @@ pub fn parse_payload(payload: &serde_json::Value) -> Result<GatewayMessage, Stri
         content: discord_payload.content,
         timestamp: parse_discord_timestamp(&discord_payload.timestamp),
         metadata,
+        protocol_version: GATEWAY_PROTOCOL_VERSION.to_string(),
     })
 }
 

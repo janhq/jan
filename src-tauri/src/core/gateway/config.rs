@@ -48,6 +48,9 @@ impl GatewayConfigManager {
             whitelist: super::types::WhitelistConfig::default(),
             auto_create_threads: true,
             default_assistant_id: None,
+            discord_webhook_url: None,
+            discord_bot_token: None,
+            telegram_bot_token: None,
         }
     }
 

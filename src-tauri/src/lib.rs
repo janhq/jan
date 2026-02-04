@@ -119,7 +119,7 @@ pub fn run() {
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
-        // OpenCode commands (desktop only)
+        // Agent subprocess commands (desktop only)
         core::opencode::commands::opencode_spawn_task,
         core::opencode::commands::opencode_respond_permission,
         core::opencode::commands::opencode_cancel_task,
@@ -136,6 +136,10 @@ pub fn run() {
         core::gateway::commands::gateway_add_thread_mapping,
         core::gateway::commands::gateway_remove_thread_mapping,
         core::gateway::commands::gateway_configure_discord,
+        // Discord bot commands
+        core::gateway::commands::gateway_start_discord_bot,
+        core::gateway::commands::gateway_stop_discord_bot,
+        core::gateway::commands::gateway_get_discord_bot_status,
     ]);
 
     // Mobile: no updater commands
@@ -208,7 +212,7 @@ pub fn run() {
         core::downloads::commands::cancel_download_task,
     ]);
 
-    // Create OpenCode process manager (desktop only)
+    // Create agent subprocess manager (desktop only)
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let opencode_manager: SharedOpenCodeManager =
         Arc::new(Mutex::new(OpenCodeProcessManager::default()));
@@ -345,7 +349,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 
-    // Mobile: Build app without OpenCode manager
+    // Mobile: Build app without agent subprocess manager
     #[cfg(any(target_os = "android", target_os = "ios"))]
     let app = app_builder
         .manage(AppState {
@@ -471,13 +475,13 @@ pub fn run() {
                         log::info!("Llama processes cleaned up successfully");
                     }
 
-                    // Cleanup OpenCode processes
+                    // Cleanup agent subprocesses
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     {
                         let opencode_state = app_handle.state::<SharedOpenCodeManager>();
                         let manager = opencode_state.lock().await;
                         manager.cancel_all_tasks().await;
-                        log::info!("OpenCode processes cleaned up successfully");
+                        log::info!("Agent subprocesses cleaned up successfully");
                     }
 
                     log::info!("App cleanup completed");

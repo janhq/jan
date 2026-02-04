@@ -144,27 +144,21 @@ export function UnifiedEventItem({ event }: UnifiedEventItemProps) {
   // Format the event content
   const content = formatEventContent(event)
   const details = getEventDetails(event)
-  const hasDetails = details !== null
 
   return (
     <div className="group">
       <div
-        className={`flex items-start gap-2 py-1 px-1.5 rounded text-xs hover:bg-muted/50 transition-colors ${
-          hasDetails ? 'cursor-pointer' : ''
-        }`}
-        onClick={() => hasDetails && setIsExpanded(!isExpanded)}
+        className="flex items-start gap-2 py-1 px-1.5 rounded text-xs hover:bg-muted/50 transition-colors cursor-pointer"
+        onClick={() => setIsExpanded(!isExpanded)}
       >
-        {/* Expand/collapse button or icon */}
-        {hasDetails ? (
-          <button className="shrink-0 mt-0.5">
-            {isExpanded ? (
-              <ChevronDown size={12} className="text-muted-foreground" />
-            ) : (
-              <ChevronRight size={12} className="text-muted-foreground" />
-            )}
-          </button>
-        ) : (
-          <span className={`shrink-0 mt-0.5 ${color}`}>
+        {/* Expand/collapse chevron + colored icon */}
+        <span className="shrink-0 mt-0.5 flex items-center gap-1">
+          {isExpanded ? (
+            <ChevronDown size={12} className="text-muted-foreground" />
+          ) : (
+            <ChevronRight size={12} className="text-muted-foreground" />
+          )}
+          <span className={color}>
             <Icon
               size={12}
               className={
@@ -174,11 +168,11 @@ export function UnifiedEventItem({ event }: UnifiedEventItemProps) {
               }
             />
           </span>
-        )}
+        </span>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
-          <span className={hasDetails ? 'font-medium' : ''}>{content}</span>
+          <span className="font-medium">{content}</span>
 
           {/* Source badge */}
           <span
@@ -194,21 +188,26 @@ export function UnifiedEventItem({ event }: UnifiedEventItemProps) {
       </div>
 
       {/* Expanded details */}
-      {isExpanded && hasDetails && (
+      {isExpanded && (
         <div className="ml-5 mt-1 mb-2 p-2 bg-muted/30 rounded text-[10px] font-mono overflow-auto max-h-48 border border-dashed border-muted-foreground/20">
-          {/* Detect if this is bash/terminal output */}
-          {(() => {
-            const toolName = (event.data as { tool?: string }).tool
-            if (toolName?.toLowerCase().includes('bash')) {
-              return (
-                <div className="flex items-start gap-1.5">
-                  <Terminal size={12} className="shrink-0 mt-0.5 text-yellow-500" />
-                  <pre className="whitespace-pre-wrap break-all flex-1">{details}</pre>
-                </div>
-              )
-            }
-            return <pre className="whitespace-pre-wrap break-all">{details}</pre>
-          })()}
+          {details ? (
+            (() => {
+              const toolName = (event.data as { tool?: string }).tool
+              if (toolName?.toLowerCase().includes('bash')) {
+                return (
+                  <div className="flex items-start gap-1.5">
+                    <Terminal size={12} className="shrink-0 mt-0.5 text-yellow-500" />
+                    <pre className="whitespace-pre-wrap break-all flex-1">{details}</pre>
+                  </div>
+                )
+              }
+              return <pre className="whitespace-pre-wrap break-all">{details}</pre>
+            })()
+          ) : (
+            <pre className="whitespace-pre-wrap break-all text-muted-foreground">
+              {JSON.stringify(event.data, null, 2)}
+            </pre>
+          )}
         </div>
       )}
     </div>
@@ -295,7 +294,6 @@ function getEventDetails(event: UnifiedAgentEvent): string | null {
       if (data.output) {
         const output = data.output
         if (typeof output === 'string') {
-          // Show full output for bash commands
           return output.length > 1000 ? `${output.slice(0, 1000)}\n... (truncated)` : output
         }
         return JSON.stringify(output, null, 2)
@@ -305,32 +303,61 @@ function getEventDetails(event: UnifiedAgentEvent): string | null {
     case 'tool.error':
       return data.error as string
 
-    case 'text.complete': {
-      const text = data.text as string
-      if (text.length > 50) {
-        return text
+    case 'tool.approval_requested': {
+      const parts: string[] = []
+      if (data.tool) parts.push(`Tool: ${data.tool}`)
+      if (data.description) parts.push(`Description: ${data.description}`)
+      if (data.input && Object.keys(data.input as object).length > 0) {
+        parts.push(`Input: ${JSON.stringify(data.input, null, 2)}`)
       }
-      return null
+      return parts.length > 0 ? parts.join('\n') : null
     }
+
+    case 'tool.approval_responded': {
+      const parts: string[] = []
+      parts.push(`Action: ${data.approved ? 'Approved' : 'Denied'}`)
+      if (data.message) parts.push(`Message: ${data.message}`)
+      return parts.join('\n')
+    }
+
+    case 'text.complete':
+      return (data.text as string) || null
+
+    case 'file.changed': {
+      const parts: string[] = []
+      if (data.action) parts.push(`Action: ${data.action}`)
+      if (data.path) parts.push(`Path: ${data.path}`)
+      if (data.diff) parts.push(`\n${data.diff}`)
+      return parts.length > 0 ? parts.join('\n') : null
+    }
+
+    case 'step.started':
+    case 'step.completed':
+      if (data.agent) return `Agent: ${data.agent}`
+      return null
 
     case 'delegation.started':
       return `Task: ${data.task}\nAgent: ${data.agent}\nPath: ${data.projectPath}`
 
     case 'delegation.completed': {
       const result: string[] = []
+      result.push(`Status: ${data.success ? 'Success' : 'Failed'}`)
       if (data.summary) result.push(`Summary: ${data.summary}`)
-      if (data.filesChanged) {
-        result.push(`Files: ${(data.filesChanged as string[]).join(', ')}`)
+      if (data.filesChanged && (data.filesChanged as string[]).length > 0) {
+        result.push(`Files changed:\n  ${(data.filesChanged as string[]).join('\n  ')}`)
       }
       if (data.tokensUsed) result.push(`Tokens: ${data.tokensUsed}`)
-      return result.length > 0 ? result.join('\n') : null
+      return result.join('\n')
     }
 
-    case 'file.changed':
-      if (data.diff) {
-        return data.diff as string
-      }
-      return null
+    case 'delegation.error':
+      return `Error: ${data.error}`
+
+    case 'session.started':
+      return `Session ID: ${data.sessionId}`
+
+    case 'reasoning.delta':
+      return (data.text as string) || null
 
     default:
       return null

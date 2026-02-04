@@ -1,6 +1,3 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-
 use super::super::types::{NormalizedMessage, GatewayResponse};
 
 /// Message handler for formatting messages for Jan's chat system

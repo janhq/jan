@@ -28,6 +28,7 @@ const initialState = {
   activeDelegation: null as ActiveDelegation | null,
   events: [] as UnifiedAgentEvent[],
   pendingApproval: null as PendingApproval | null,
+  panelRevealed: false,
 }
 
 export const useOrchestratorState = create<OrchestratorState>()(
@@ -51,6 +52,8 @@ export const useOrchestratorState = create<OrchestratorState>()(
 
       setPendingApproval: (approval: PendingApproval | null) =>
         set({ pendingApproval: approval }),
+
+      setPanelRevealed: (revealed: boolean) => set({ panelRevealed: revealed }),
 
       clearEvents: () => set({ events: [] }),
 
@@ -201,6 +204,7 @@ export function useOrchestratorActions() {
     addEvent: useOrchestratorState.getState().addEvent,
     setActiveDelegation: useOrchestratorState.getState().setActiveDelegation,
     setPendingApproval: useOrchestratorState.getState().setPendingApproval,
+    setPanelRevealed: useOrchestratorState.getState().setPanelRevealed,
     clearEvents: useOrchestratorState.getState().clearEvents,
     reset: useOrchestratorState.getState().reset,
   }

@@ -6,7 +6,6 @@ pub mod websocket;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use super::{GatewayManager, SharedGatewayManager, GatewayConfig};
 use crate::core::gateway::types::{GatewayMessage, Platform};
 
 /// HTTP server handle for shutdown control

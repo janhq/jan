@@ -44,15 +44,11 @@ import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { Button } from '@/components/ui/button'
-import { IconAlertCircle } from '@tabler/icons-react'
+import { IconAlertCircle, IconLayoutSidebarRight } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
-import { AgentProgressPanel } from '@/containers/AgentProgress'
-import { useIsAgentMode, useAgentMode } from '@/hooks/useAgentMode'
-import { useActiveOpenCodeTask, useOpenCode } from '@/hooks/useOpenCode'
-import { useLocalApiServer } from '@/hooks/useLocalApiServer'
-import { useOrchestratorState, useIsOrchestratorMode } from '@/hooks/useOrchestratorState'
+import { useIsAgentEnabled, useAgentMode } from '@/hooks/useAgentMode'
+import { useOrchestratorState } from '@/hooks/useOrchestratorState'
 import { UnifiedProgressPanel } from '@/containers/AgentProgress/UnifiedProgressPanel'
-import type { OrchestratorConfig } from '@/lib/agents/types'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -82,36 +78,15 @@ function ThreadDetail() {
   const isMobile = useMobileScreen()
   useTools()
 
-  // Agent mode state
-  const isAgentMode = useIsAgentMode()
-  const activeAgentTask = useActiveOpenCodeTask()
+  // Agent mode state (unified - LLM decides when to use tools)
+  const isAgentEnabled = useIsAgentEnabled()
   const agentProjectPath = useAgentMode((s) => s.projectPath)
   const agentCurrentAgent = useAgentMode((s) => s.currentAgent)
-  const startAgentTask = useOpenCode((s) => s.startTask)
-
-  // Orchestrator mode state
-  const isOrchestrator = useIsOrchestratorMode()
-
-  // Local API Server settings (for API key to pass to OpenCode)
-  const localApiServerKey = useLocalApiServer((s) => s.apiKey)
-  const serverStatus = useAppState((s) => s.serverStatus)
 
   // Debug: Log agent mode state changes
   useEffect(() => {
-    console.log('[Agent Mode State]', { isAgentMode, agentProjectPath, agentCurrentAgent })
-  }, [isAgentMode, agentProjectPath, agentCurrentAgent])
-
-  // Sync orchestrator state with agent mode settings
-  useEffect(() => {
-    const { setMode } = useOrchestratorState.getState()
-    // Only set orchestrator mode when executionMode is 'orchestrator'
-    const executionMode = useAgentMode.getState().executionMode
-    if (isAgentMode && agentProjectPath && executionMode === 'orchestrator') {
-      setMode('orchestrator')
-    } else {
-      setMode('chat')
-    }
-  }, [isAgentMode, agentProjectPath])
+    console.log('[Agent Mode State]', { isAgentEnabled, agentProjectPath, agentCurrentAgent })
+  }, [isAgentEnabled, agentProjectPath, agentCurrentAgent])
 
   // Get attachments for this thread
   const attachmentsKey = threadId ?? NEW_THREAD_ATTACHMENT_KEY
@@ -154,16 +129,15 @@ function ThreadDetail() {
     ? renderInstructions(currentAssistant.instructions)
     : undefined
 
-  // Build orchestrator config when in orchestrator mode
-  const orchestratorConfig: OrchestratorConfig | null = useMemo(() => {
-    if (!isOrchestrator || !agentProjectPath) return null
+  // Build agent config for unified mode (LLM decides when to use tools)
+  const agentConfig = useMemo(() => {
+    if (!agentProjectPath) return null
     return {
       projectPath: agentProjectPath,
-      agent: agentCurrentAgent as 'build' | 'plan' | 'explore',
-      maxSteps: 20,
+      defaultAgent: agentCurrentAgent as 'build' | 'plan' | 'explore',
       autoApproveReadOnly: false,
     }
-  }, [isOrchestrator, agentProjectPath, agentCurrentAgent])
+  }, [agentProjectPath, agentCurrentAgent])
 
   // Use the AI SDK chat hook
   const {
@@ -181,7 +155,7 @@ function ThreadDetail() {
     sessionTitle: thread?.title,
     systemMessage,
     experimental_throttle: 50,
-    orchestratorConfig,
+    agentConfig,
     onFinish: ({ message, isAbort }) => {
       // Persist assistant message to backend (skip if aborted)
       if (!isAbort && message.role === 'assistant') {
@@ -232,12 +206,21 @@ function ThreadDetail() {
       const ragToolNames = useAppState.getState().ragToolNames
       const mcpToolNames = useAppState.getState().mcpToolNames
 
-      // Process tool calls sequentially, requesting approval for each if needed
+      // Process tool calls sequentially, requesting approval for each if needed.
+      // Skip tools that have server-side execute functions (e.g. opencode_delegate)
+      // — those are already handled by streamText in the transport layer.
+      const SERVER_EXECUTED_TOOLS = new Set(['opencode_delegate'])
+
       ;(async () => {
         for (const toolCall of sessionData.tools) {
           // Check if already aborted before starting
           if (signal.aborted) {
             break
+          }
+
+          // Skip tools executed server-side by streamText (they have execute functions)
+          if (SERVER_EXECUTED_TOOLS.has(toolCall.toolName)) {
+            continue
           }
 
           try {
@@ -564,58 +547,17 @@ function ThreadDetail() {
     }
   }, [threadId, processAndSendMessage])
 
-  // Execution mode selector
-  const executionMode = useAgentMode((state) => state.executionMode)
-  const isOrchestratorMode = isOrchestrator && executionMode === 'orchestrator'
-  const isManualAgentMode = isAgentMode && executionMode === 'manual'
-
-  // Handle submit from ChatInput
+  // Handle submit from ChatInput - Unified flow with LLM deciding tool usage
   const handleSubmit = useCallback(
     async (
       text: string,
       files?: Array<{ type: string; mediaType: string; url: string }>
     ) => {
-      console.log('[Agent Mode Debug] isAgentMode:', isAgentMode, 'executionMode:', executionMode, 'isOrchestrator:', isOrchestrator, 'projectPath:', agentProjectPath, 'serverStatus:', serverStatus)
-
-      // Orchestrator mode: Go through normal chat, LLM will use opencode_delegate tool when needed
-      if (isOrchestratorMode && agentProjectPath) {
-        console.log('[Agent Mode Debug] Using orchestrator mode - sending to chat transport')
-        await processAndSendMessage(text, files)
-        return
-      }
-
-      // Manual agent mode: Direct OpenCode call (bypasses LLM)
-      if (isManualAgentMode && agentProjectPath) {
-        // Check if Local API Server is running
-        if (serverStatus !== 'running') {
-          console.warn('[Agent Mode Debug] Local API Server not running, falling back to normal chat')
-          // TODO: Show a toast/notification to user that they need to start the Local API Server
-          await processAndSendMessage(text, files)
-          return
-        }
-
-        console.log('[Agent Mode Debug] Starting agent task directly...')
-        try {
-          const taskId = await startAgentTask({
-            projectPath: agentProjectPath,
-            prompt: text,
-            agent: agentCurrentAgent,
-            apiKey: localApiServerKey || undefined,
-          })
-          console.log('[Agent Mode Debug] Task started with ID:', taskId)
-          // Agent mode handles the task - the sidebar will show progress
-          // Don't send to normal chat to avoid confusion
-        } catch (error) {
-          console.error('[Agent Mode Debug] Failed to start agent task:', error)
-          // Fall back to normal chat if agent fails
-          await processAndSendMessage(text, files)
-        }
-      } else {
-        console.log('[Agent Mode Debug] Not using agent mode, using normal chat')
-        await processAndSendMessage(text, files)
-      }
+      console.log('[Agent Mode] Unified flow - sending to chat transport')
+      // Always use unified chat flow - LLM decides whether to use tools
+      await processAndSendMessage(text, files)
     },
-    [processAndSendMessage, isAgentMode, executionMode, isOrchestrator, isOrchestratorMode, isManualAgentMode, agentProjectPath, agentCurrentAgent, startAgentTask, localApiServerKey, serverStatus]
+    [processAndSendMessage]
   )
 
   // Handle regenerate from any message (user or assistant)
@@ -793,6 +735,7 @@ function ThreadDetail() {
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
           <div />
+          <AgentPanelToggleButton />
         </div>
       </HeaderPage>
       <div className="flex flex-1 h-full overflow-hidden">
@@ -880,14 +823,73 @@ function ThreadDetail() {
           </div>
         </div>
 
-        {/* Agent Progress Panel - shown when agent mode is active with a task */}
-        {/* Show UnifiedProgressPanel when in orchestrator mode, fallback to old panel for manual agent mode */}
-        {isOrchestrator ? (
-          <UnifiedProgressPanel />
-        ) : (
-          isAgentMode && activeAgentTask && <AgentProgressPanel />
-        )}
+        {/* Agent Progress Panel - shown only when agent is actively working */}
+        <AgentProgressPanelWrapper />
       </div>
     </div>
   )
+}
+
+function AgentPanelToggleButton() {
+  const isAgentEnabled = useIsAgentEnabled()
+  const panelRevealed = useOrchestratorState((s) => s.panelRevealed)
+  const setPanelRevealed = useOrchestratorState((s) => s.setPanelRevealed)
+
+  if (!isAgentEnabled) return null
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="rounded-full"
+      onClick={() => setPanelRevealed(!panelRevealed)}
+      aria-label="Toggle agent panel"
+    >
+      <IconLayoutSidebarRight
+        className={cn(
+          'relative size-4.5',
+          panelRevealed ? 'text-primary' : 'text-muted-foreground'
+        )}
+      />
+    </Button>
+  )
+}
+
+function AgentProgressPanelWrapper() {
+  const isAgentEnabled = useIsAgentEnabled()
+  const events = useOrchestratorState((s) => s.events)
+  const status = useOrchestratorState((s) => s.status)
+  const pendingApproval = useOrchestratorState((s) => s.pendingApproval)
+  const activeDelegation = useOrchestratorState((s) => s.activeDelegation)
+  const panelRevealed = useOrchestratorState((s) => s.panelRevealed)
+  const setPanelRevealed = useOrchestratorState((s) => s.setPanelRevealed)
+
+  // Check if LLM used any tools in this conversation turn
+  const hasToolActivity = events.some(
+    (e) =>
+      e.type.startsWith('tool.') ||
+      e.type.startsWith('delegation.') ||
+      e.type === 'file.changed'
+  )
+
+  // Detect actual agent work (not just 'thinking' which fires for every message)
+  const hasAgentWork =
+    hasToolActivity ||
+    activeDelegation != null ||
+    pendingApproval != null ||
+    ['executing_tool', 'delegating', 'waiting_approval'].includes(status)
+
+  // Auto-reveal the panel when agent work is detected
+  useEffect(() => {
+    if (hasAgentWork && !panelRevealed) {
+      setPanelRevealed(true)
+    }
+  }, [hasAgentWork, panelRevealed, setPanelRevealed])
+
+  // Panel stays visible once revealed, until user manually toggles it off
+  if (!isAgentEnabled || !panelRevealed) {
+    return null
+  }
+
+  return <UnifiedProgressPanel />
 }

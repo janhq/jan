@@ -111,6 +111,8 @@ tokio-tungstenite = { version = "0.21", features = ["tokio-native-tls"] }
 tungstenite = "0.21"
 regex = "1"
 ureq = { version = "2", features = ["json"] }
+async-trait = "0.1"
+once_cell = "1.18"
 
 [dependencies.tauri]
 version = "2.8.5"

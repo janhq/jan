@@ -81,7 +81,6 @@ import {
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
-import { AgentModeToggle } from '@/containers/AgentModeToggle'
 
 type ChatInputProps = {
   className?: string
@@ -1689,8 +1688,6 @@ const ChatInput = ({
                     </TooltipContent>
                   </Tooltip>
                 )}
-                {/* Agent Mode Toggle - only show on desktop/Tauri */}
-                {isPlatformTauri() && <AgentModeToggle />}
               </div>
             </div>
 

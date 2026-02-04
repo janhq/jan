@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
-use super::super::types::{GatewayMessage, Platform, MessageAttachment};
+use super::super::types::{GatewayMessage, Platform, MessageAttachment, GATEWAY_PROTOCOL_VERSION};
 
 /// Slack webhook payload structure (URL verification challenge)
 #[derive(Debug, Deserialize)]
@@ -152,6 +152,7 @@ fn parse_event(event: SlackEvent) -> Result<GatewayMessage, String> {
         content: event.text,
         timestamp: parse_slack_timestamp(&event.ts),
         metadata,
+        protocol_version: GATEWAY_PROTOCOL_VERSION.to_string(),
     })
 }
 

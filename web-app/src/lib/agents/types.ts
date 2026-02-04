@@ -43,7 +43,7 @@ export interface OrchestratorConfig {
 }
 
 // ============================================================================
-// Event Types (Unified across AI SDK and OpenCode)
+// Event Types (Unified across AI SDK and agent subprocess)
 // ============================================================================
 
 /**
@@ -232,7 +232,7 @@ export interface OrchestratorState {
   // Current status
   status: OrchestratorStatus
 
-  // Active delegation info (when delegating to OpenCode)
+  // Active delegation info (when delegating to subprocess)
   activeDelegation: ActiveDelegation | null
 
   // Unified event stream
@@ -241,6 +241,9 @@ export interface OrchestratorState {
   // Pending approval request
   pendingApproval: PendingApproval | null
 
+  // Whether the agent panel has been revealed (stays true until manually toggled off)
+  panelRevealed: boolean
+
   // Actions
   setMode: (mode: OrchestratorMode) => void
   setConfig: (config: OrchestratorConfig | null) => void
@@ -248,18 +251,19 @@ export interface OrchestratorState {
   addEvent: (event: UnifiedAgentEvent) => void
   setActiveDelegation: (delegation: ActiveDelegation | null) => void
   setPendingApproval: (approval: PendingApproval | null) => void
+  setPanelRevealed: (revealed: boolean) => void
   clearEvents: () => void
   reset: () => void
 }
 
 // ============================================================================
-// OpenCode Delegate Tool Types
+// Agent Delegate Tool Types
 // ============================================================================
 
 /**
- * Input for the opencode_delegate tool
+ * Input for the agent_delegate tool
  */
-export interface OpenCodeDelegateInput {
+export interface AgentDelegateInput {
   task: string
   projectPath: string
   agent?: OpenCodeAgentType

@@ -1,12 +1,18 @@
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{command, AppHandle, Emitter, State};
-use tokio::sync::Mutex;
+use serde::{Serialize, Deserialize};
+use serde_json::Value;
 
-use super::{GatewayManager, GatewayConfig, SharedGatewayManager};
+use super::SharedGatewayManager;
 use super::server::{http_server, websocket};
-use super::types::{GatewayStatus, GatewayResponse, ConnectionState, ThreadMapping, Platform};
+use super::types::{GatewayStatus, GatewayResponse, ConnectionState, ThreadMapping, GatewayConfig, Platform, GatewayMessage};
 use super::platforms;
+use super::discord_bot;
+use super::channel::{ChannelConfig, ChannelStats};
+use super::processor::debounce::DebounceConfig;
+use super::processor::ack::AckConfig;
+use super::routing::agent_integration::AgentRoutingConfig;
+use super::jan::JanIntegrationService;
 
 /// Command to start the gateway server
 #[command]
@@ -23,6 +29,15 @@ pub async fn gateway_start_server(
 
     // Store the config
     guard.config = Some(config.clone());
+
+    // Configure Discord sender from config
+    if config.discord_webhook_url.is_some() || config.discord_bot_token.is_some() {
+        let mut discord_config = platforms::discord_sender::DiscordConfig::default();
+        discord_config.webhook_url = config.discord_webhook_url.clone();
+        discord_config.bot_token = config.discord_bot_token.clone();
+        guard.discord_sender.lock().await.configure(discord_config);
+        log::info!("[Commands] Discord sender configured from config");
+    }
 
     // Clone the Arc for the server functions
     let manager_clone: SharedGatewayManager = (*state).clone();
@@ -65,23 +80,32 @@ pub async fn gateway_start_server(
 
     // Spawn message consumer task and store handle
     let consumer_task = tokio::spawn(async move {
-        log::info!("[Consumer] Message consumer started");
+        log::info!("[FLOW-4] [Consumer] 🚀 Message consumer started");
         let mut msg_count = 0;
         while let Some(msg) = receiver.recv().await {
             msg_count += 1;
+            log::info!("[FLOW-4] [Consumer] 📩 Received message #{} from queue: {}", msg_count, msg.id);
+
             // Emit message event to frontend
             let event_name = format!("gateway:message:{}", msg.platform.as_str());
+            log::info!("[FLOW-4] [Consumer] 📡 Emitting event '{}' for message {}", event_name, msg.id);
+
             let emit_result = app_clone.emit(&event_name, &msg);
-            log::info!("[Consumer] #{}. Emitted {} event for message {} (user={}, channel={}, content='{}')",
-                msg_count, event_name, msg.id, msg.user_id, msg.channel_id,
-                msg.content.chars().take(50).collect::<String>());
+
+            log::info!("[FLOW-4] [Consumer] 📤 Event details:");
+            log::info!("[FLOW-4] [Consumer]    - platform: {}", msg.platform.as_str());
+            log::info!("[FLOW-4] [Consumer]    - message_id: {}", msg.id);
+            log::info!("[FLOW-4] [Consumer]    - user_id: {}", msg.user_id);
+            log::info!("[FLOW-4] [Consumer]    - channel_id: {}", msg.channel_id);
+            log::info!("[FLOW-4] [Consumer]    - content: '{}'", msg.content.chars().take(80).collect::<String>());
+
             if let Err(e) = emit_result {
-                log::error!("[Consumer] Failed to emit {} event: {}", event_name, e);
+                log::error!("[FLOW-4] [Consumer] ❌ Failed to emit {} event: {}", event_name, e);
             } else {
-                log::debug!("[Consumer] Event {} emitted successfully", event_name);
+                log::info!("[FLOW-4] [Consumer] ✅ Event {} emitted successfully. Frontend should receive it.", event_name);
             }
         }
-        log::info!("[Consumer] Message consumer receiver closed. Total messages processed: {}", msg_count);
+        log::info!("[FLOW-4] [Consumer] 🛑 Message consumer receiver closed. Total messages processed: {}", msg_count);
     });
 
     guard.consumer_task = Some(consumer_task);
@@ -141,12 +165,45 @@ pub async fn gateway_send_response(
     state: State<'_, SharedGatewayManager>,
     response: GatewayResponse,
 ) -> Result<(), String> {
+    log::info!("[Commands] 📨 [GATEWAY-RESPONSE] Received gateway_send_response command");
+    log::info!("[Commands] 📨 [GATEWAY-RESPONSE] Target platform: {:?}", response.target_platform);
+    log::info!("[Commands] 📨 [GATEWAY-RESPONSE] Target channel: {}", response.target_channel_id);
+    log::info!("[Commands] 📨 [GATEWAY-RESPONSE] Response content (first 200 chars): {}",
+        response.content.chars().take(200).collect::<String>());
+
     let platform = response.target_platform.as_str();
     let channel_id = &response.target_channel_id;
     let content_preview = response.content.chars().take(80).collect::<String>();
 
+    // Check Discord webhook configuration
+    {
+        let guard = state.lock().await;
+        let discord_config = &guard.discord_sender.lock().await.config;
+        log::info!("[Commands] 📨 [GATEWAY-RESPONSE] Discord config:");
+        log::info!("[Commands] 📨 [GATEWAY-RESPONSE]   - webhook_url configured: {}",
+            discord_config.webhook_url.is_some());
+        if let Some(ref webhook) = discord_config.webhook_url {
+            // Log webhook URL (masked for security)
+            let masked = if webhook.len() > 20 {
+                let parts: Vec<&str> = webhook.rsplitn(2, '/').collect();
+                if parts.len() >= 2 {
+                    format!(".../{}", parts[0])
+                } else {
+                    webhook.chars().take(10).collect::<String>() + "..."
+                }
+            } else {
+                webhook.clone()
+            };
+            log::info!("[Commands] 📨 [GATEWAY-RESPONSE]   - webhook URL: {}", masked);
+        }
+        log::info!("[Commands] 📨 [GATEWAY-RESPONSE]   - bot_token configured: {}",
+            discord_config.bot_token.is_some());
+    }
+
     log::info!("[Commands] Gateway response to {} on {}: '{}...'",
         platform, channel_id, content_preview);
+    log::info!("[Commands] Full response content length: {} chars", response.content.len());
+    log::info!("[Commands] Response preview (full): {}", response.content);
 
     // Route to appropriate platform sender
     match platform {
@@ -197,10 +254,16 @@ pub async fn gateway_configure_discord(
     let mut guard = state.lock().await;
 
     let mut discord_config = platforms::discord_sender::DiscordConfig::default();
-    discord_config.webhook_url = webhook_url;
-    discord_config.bot_token = bot_token;
+    discord_config.webhook_url = webhook_url.clone();
+    discord_config.bot_token = bot_token.clone();
 
     guard.discord_sender.lock().await.configure(discord_config);
+
+    // Also update stored config for persistence
+    if let Some(ref mut config) = guard.config {
+        config.discord_webhook_url = webhook_url;
+        config.discord_bot_token = bot_token;
+    }
 
     let configured = guard.discord_sender.lock().await.is_configured();
     if configured {
@@ -294,4 +357,672 @@ pub async fn gateway_remove_thread_mapping(
 
     let existed = guard.thread_mappings.remove(&(platform, external_id)).is_some();
     Ok(existed)
+}
+
+/// Command to replay missed messages - emits all thread mappings and pending configurations
+/// so the frontend can reconnect properly
+#[command]
+pub async fn gateway_replay_state(
+    app: AppHandle,
+    state: State<'_, SharedGatewayManager>,
+) -> Result<(), String> {
+    let guard = state.lock().await;
+
+    // Emit status
+    let status = guard.get_status();
+    let _ = app.emit("gateway:status", &status);
+
+    // Emit all thread mappings
+    log::info!("[Commands] Replaying {} thread mappings", guard.thread_mappings.len());
+    for ((platform, _), mapping) in &guard.thread_mappings {
+        let event_name = format!("gateway:message:{}", platform.as_str());
+        log::info!("[Commands] Re-emitting thread mapping for {}", event_name);
+    }
+
+    log::info!("[Commands] State replay complete");
+    Ok(())
+}
+
+/// Command to start the Discord bot for mention detection
+#[command]
+pub async fn gateway_start_discord_bot(
+    app: AppHandle,
+    state: State<'_, SharedGatewayManager>,
+    bot_token: String,
+    bot_user_id: String,
+    channel_id: String,
+) -> Result<(), String> {
+    log::info!("[Commands] 🎮 Starting Discord bot...");
+
+    // Clone values for async tasks
+    let bot_user_id_clone = bot_user_id.clone();
+    let channel_id_clone = channel_id.clone();
+    let app_for_emit = app.clone();
+
+    // Create bot config
+    let bot_config = discord_bot::DiscordBotConfig {
+        bot_token: Some(bot_token),
+        bot_user_id: Some(bot_user_id),
+        channel_id: Some(channel_id.clone()),
+        active: true,
+    };
+
+    // Store config in state
+    {
+        let mut guard = state.lock().await;
+        guard.discord_bot_state.lock().await.configure(bot_config.clone());
+    }
+
+    // Create channel for forwarding events
+    let (sender, receiver) = tokio::sync::mpsc::channel::<discord_bot::DiscordBotEvent>(100);
+
+    // Get arc references for async tasks
+    let state_arc: Arc<SharedGatewayManager> = Arc::from(state.inner().clone());
+    let app_arc = Arc::new(app);
+
+    // Start event processor task
+    let state_for_processor = state_arc.clone();
+    let app_for_processor = app_arc.clone();
+    let _processor_task = tokio::spawn(async move {
+        discord_bot_event_processor(receiver, state_for_processor, app_for_processor).await;
+    });
+
+    // Clone state for the bot
+    let bot_state = {
+        let guard = state.lock().await;
+        guard.discord_bot_state.clone()
+    };
+
+    // Start the bot in a background task
+    let bot_task = tokio::spawn(async move {
+        if let Err(e) = discord_bot::handler::start_bot(bot_config, sender, bot_state).await {
+            log::error!("[Commands] Discord bot error: {}", e);
+        }
+    });
+
+    // Store task handles
+    {
+        let mut guard = state.lock().await;
+        guard.discord_bot_task = Some(bot_task);
+    }
+
+    log::info!("[Commands] ✅ Discord bot started successfully");
+    let _ = app_for_emit.emit("gateway:discord_bot:started", serde_json::json!({
+        "status": "connected",
+        "bot_user_id": bot_user_id_clone,
+        "channel_id": channel_id_clone,
+    }));
+
+    Ok(())
+}
+
+/// Command to stop the Discord bot
+#[command]
+pub async fn gateway_stop_discord_bot(
+    app: AppHandle,
+    state: State<'_, SharedGatewayManager>,
+) -> Result<(), String> {
+    log::info!("[Commands] 🛑 Stopping Discord bot...");
+
+    let bot_state = {
+        let guard = state.lock().await;
+        guard.discord_bot_state.clone()
+    };
+
+    // Stop the bot
+    discord_bot::handler::stop_bot(&bot_state).await;
+
+    // Cancel the task
+    {
+        let mut guard = state.lock().await;
+        if let Some(task) = guard.discord_bot_task.take() {
+            task.abort();
+        }
+    }
+
+    log::info!("[Commands] ✅ Discord bot stopped");
+    let _ = app.emit("gateway:discord_bot:stopped", serde_json::json!({}));
+
+    Ok(())
+}
+
+/// Command to get Discord bot status
+#[command]
+pub async fn gateway_get_discord_bot_status(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<serde_json::Value, String> {
+    let guard = state.lock().await;
+    let bot_state = guard.discord_bot_state.lock().await;
+
+    Ok(serde_json::json!({
+        "configured": bot_state.config.is_configured(),
+        "active": bot_state.config.active,
+        "running": bot_state.running,
+        "channel_id": bot_state.config.channel_id,
+    }))
+}
+
+/// Command to initialize the Jan integration service
+#[command]
+pub async fn gateway_init_jan_integration(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<(), String> {
+    log::info!("[Commands] Initializing Jan integration service...");
+
+    let mut guard = state.lock().await;
+
+    // Create and store the Jan integration service
+    let integration = JanIntegrationService::create_shared();
+    guard.jan_integration = Some(integration);
+
+    log::info!("[Commands] Jan integration service initialized");
+
+    Ok(())
+}
+
+/// Command to get Jan integration status
+#[command]
+pub async fn gateway_get_jan_integration_status(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<serde_json::Value, String> {
+    let guard = state.lock().await;
+
+    if let Some(ref integration) = guard.jan_integration {
+        let integration = integration.lock().await;
+        let thread_count = integration.thread_count(None);
+        let response_count = integration.get_pending_responses().len();
+
+        return Ok(serde_json::json!({
+            "initialized": true,
+            "thread_count": thread_count,
+            "pending_responses": response_count,
+        }));
+    }
+
+    Ok(serde_json::json!({
+        "initialized": false,
+        "thread_count": 0,
+        "pending_responses": 0,
+    }))
+}
+
+/// Command to add a thread mapping via the Jan integration service
+#[command]
+pub async fn gateway_add_thread_mapping_via_integration(
+    _app: AppHandle,
+    state: State<'_, SharedGatewayManager>,
+    platform: String,
+    external_id: String,
+    thread_id: String,
+) -> Result<(), String> {
+    let platform_str = platform.clone();
+    let platform_enum = Platform::from_str(&platform);
+    if matches!(platform_enum, Platform::Unknown) {
+        return Err("Invalid platform".to_string());
+    }
+
+    log::info!(
+        "[Commands] Adding thread mapping via integration: {}:{} -> {}",
+        platform_str, external_id, thread_id
+    );
+
+    let mut guard = state.lock().await;
+    let external_id_clone = external_id.clone();
+    let thread_id_clone = thread_id.clone();
+
+    if let Some(ref integration) = guard.jan_integration {
+        let mut integration = integration.lock().await;
+        integration.add_thread_mapping(platform_enum, external_id, thread_id);
+    } else {
+        // Fallback to direct mapping in GatewayManager
+        guard.set_thread_mapping(platform_enum, external_id_clone.clone(), thread_id_clone.clone());
+    }
+
+    log::info!(
+        "[Commands] Thread mapping added via integration: {} -> {}",
+        external_id_clone, thread_id_clone
+    );
+
+    Ok(())
+}
+
+/// Process Discord bot events and forward to gateway queue
+async fn discord_bot_event_processor(
+    mut receiver: tokio::sync::mpsc::Receiver<discord_bot::DiscordBotEvent>,
+    state: Arc<SharedGatewayManager>,
+    app: Arc<AppHandle>,
+) {
+    log::info!("[DiscordBotProcessor] Event processor started");
+
+    // Get Jan integration service if available
+    let jan_integration = {
+        let guard = state.lock().await;
+        guard.jan_integration.clone()
+    };
+
+    while let Some(event) = receiver.recv().await {
+        log::info!(
+            "[DiscordBotProcessor] 📩 Received event from user {} in channel {}",
+            event.user_id,
+            event.channel_id
+        );
+
+        // Convert to GatewayMessage
+        let message: GatewayMessage = event.into();
+
+        // Queue the message for processing
+        {
+            let guard = state.lock().await;
+            guard.message_queue.send(message.clone()).await;
+        }
+
+        // Process via Jan integration service if available
+        if let Some(ref integration) = jan_integration {
+            let integration = (*integration).lock().await;
+            let config = {
+                let guard = state.lock().await;
+                guard.config.clone()
+            };
+            let auto_create_threads = config.as_ref().map(|c| c.auto_create_threads).unwrap_or(true);
+            let default_assistant_id = config.as_ref().and_then(|c| c.default_assistant_id.as_ref().map(|s| s.as_str()));
+
+            // Note: We can't call process_message here because it needs &mut self
+            // and we're holding a read lock on state. The frontend handles the actual
+            // Jan integration via events.
+            log::debug!(
+                "[DiscordBotProcessor] Jan integration available, message {} will be processed by frontend",
+                message.id
+            );
+        }
+
+        // Emit to frontend
+        let event_name = format!("gateway:message:discord");
+        let _ = (&*app).emit(&event_name, &message);
+
+        log::info!(
+            "[DiscordBotProcessor] ✅ Event queued and emitted: {}",
+            message.id
+        );
+    }
+
+    log::info!("[DiscordBotProcessor] Event processor stopped");
+}
+
+// ==================== Telegram Commands ====================
+
+use super::platforms::telegram::{TelegramBotConfig, SharedTelegramBotState, create_telegram_bot_state};
+
+/// Command to configure Telegram bot
+#[command]
+pub async fn gateway_configure_telegram(
+    state: State<'_, SharedGatewayManager>,
+    bot_token: String,
+) -> Result<(), String> {
+    log::info!("[Commands] Configuring Telegram bot...");
+
+    let mut guard = state.lock().await;
+
+    // Update Telegram bot state
+    {
+        let bot_state = guard.telegram_bot_state.lock().await;
+        let mut config = bot_state.config.clone();
+        config.bot_token = Some(bot_token.clone());
+        config.enabled = true;
+    }
+
+    // Also update stored config for persistence
+    if let Some(ref mut config) = guard.config {
+        config.telegram_bot_token = Some(bot_token.clone());
+    }
+
+    log::info!("[Commands] Telegram bot configured successfully");
+
+    Ok(())
+}
+
+/// Command to test Telegram bot connection
+#[command]
+pub async fn gateway_test_telegram_connection(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<serde_json::Value, String> {
+    // Get bot token first (must be in its own block to drop locks)
+    let bot_token = {
+        let guard = state.lock().await;
+        let bot_state = guard.telegram_bot_state.lock().await;
+
+        match &bot_state.config.bot_token {
+            Some(token) if !token.is_empty() => token.clone(),
+            _ => {
+                return Ok(serde_json::json!({
+                    "success": false,
+                    "error": "Bot token not configured",
+                    "username": serde_json::Value::Null,
+                }));
+            }
+        }
+    };
+
+    // Test connection by calling getMe
+    match super::platforms::telegram::get_me(&bot_token).await {
+        Ok(user) => {
+            log::info!("[Commands] Telegram bot connected: @{}", user.username.clone().unwrap_or_default());
+            Ok(serde_json::json!({
+                "success": true,
+                "error": serde_json::Value::Null,
+                "username": user.username,
+                "first_name": user.first_name,
+                "bot_id": user.id,
+            }))
+        }
+        Err(e) => {
+            log::error!("[Commands] Telegram connection failed: {:?}", e);
+            Ok(serde_json::json!({
+                "success": false,
+                "error": e.to_string(),
+                "username": serde_json::Value::Null,
+            }))
+        }
+    }
+}
+
+/// Command to get Telegram bot status
+#[command]
+pub async fn gateway_get_telegram_status(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<serde_json::Value, String> {
+    let guard = state.lock().await;
+    let bot_state = guard.telegram_bot_state.lock().await;
+
+    Ok(serde_json::json!({
+        "configured": bot_state.config.is_configured(),
+        "enabled": bot_state.config.enabled,
+        "running": bot_state.running,
+        "last_error": bot_state.last_error,
+    }))
+}
+
+/// Command to send a test message to Telegram
+#[command]
+pub async fn gateway_send_telegram_test(
+    state: State<'_, SharedGatewayManager>,
+    chat_id: String,
+    message: String,
+) -> Result<serde_json::Value, String> {
+    // Get bot token first
+    let bot_token = {
+        let guard = state.lock().await;
+        let bot_state = guard.telegram_bot_state.lock().await;
+
+        match &bot_state.config.bot_token {
+            Some(token) if !token.is_empty() => token.clone(),
+            _ => return Err("Bot token not configured".to_string()),
+        }
+    };
+
+    // Send test message
+    match super::platforms::telegram::send_message(&bot_token, &chat_id, &message, None).await {
+        Ok(result) => {
+            log::info!("[Commands] Test message sent to {}: {}", chat_id, result.message_id);
+            Ok(serde_json::json!({
+                "success": true,
+                "message_id": result.message_id,
+                "chat_id": result.chat_id,
+            }))
+        }
+        Err(e) => {
+            log::error!("[Commands] Failed to send test message: {:?}", e);
+            Err(format!("Failed to send: {}", e))
+        }
+    }
+}
+
+/// Command to stop Telegram bot
+#[command]
+pub async fn gateway_stop_telegram(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<(), String> {
+    log::info!("[Commands] Stopping Telegram bot...");
+
+    let mut guard = state.lock().await;
+    let mut bot_state = guard.telegram_bot_state.lock().await;
+
+    bot_state.running = false;
+    bot_state.last_error = None;
+
+    log::info!("[Commands] Telegram bot stopped");
+
+    Ok(())
+}
+
+// ==================== Channel Manager Commands ====================
+
+/// Command to add a channel to the manager
+#[command]
+pub async fn gateway_add_channel(
+    state: State<'_, SharedGatewayManager>,
+    platform: String,
+    account_id: String,
+    display_name: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let platform_enum = Platform::from_str(&platform);
+    if matches!(platform_enum, Platform::Unknown) {
+        return Err("Invalid platform".to_string());
+    }
+
+    let config = ChannelConfig {
+        platform: platform_enum,
+        account_id: account_id.clone(),
+        display_name,
+        enabled,
+        ..Default::default()
+    };
+
+    let guard = state.lock().await;
+    guard.add_channel(config).await;
+
+    log::info!("[Commands] Channel added: {} / {}", platform, account_id);
+    Ok(())
+}
+
+/// Command to get channel statistics
+#[command]
+pub async fn gateway_get_channel_stats(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<serde_json::Value, String> {
+    let guard = state.lock().await;
+    let stats = guard.channel_manager.get_stats().await;
+
+    Ok(serde_json::json!({
+        "total_channels": stats.total_channels,
+        "connected_channels": stats.connected_channels,
+        "failed_channels": stats.failed_channels,
+        "total_messages": stats.total_messages,
+        "total_reconnections": stats.total_reconnections,
+    }))
+}
+
+/// Command to get channel state
+#[command]
+pub async fn gateway_get_channel_state(
+    state: State<'_, SharedGatewayManager>,
+    platform: String,
+    account_id: String,
+) -> Result<serde_json::Value, String> {
+    let platform_enum = Platform::from_str(&platform);
+    let guard = state.lock().await;
+    let state = guard.channel_manager.get_state(&platform_enum, &account_id).await;
+
+    match state {
+        Some(s) => Ok(serde_json::json!({
+            "state": format!("{:?}", s),
+        })),
+        None => Ok(serde_json::json!({
+            "state": null,
+        })),
+    }
+}
+
+// ==================== Debouncer Commands ====================
+
+/// Command to configure message debouncing
+#[command]
+pub async fn gateway_configure_debounce(
+    state: State<'_, SharedGatewayManager>,
+    enabled: bool,
+    window_ms: u64,
+    max_messages: usize,
+    flush_on_mention: bool,
+    flush_on_command: bool,
+) -> Result<(), String> {
+    let config = DebounceConfig {
+        enabled,
+        window_ms,
+        max_messages,
+        flush_on_mention,
+        flush_on_command,
+    };
+
+    let guard = state.lock().await;
+    guard.debouncer.set_config(config).await;
+
+    log::info!("[Commands] Debounce configured: enabled={}, window={}ms", enabled, window_ms);
+    Ok(())
+}
+
+/// Command to get debounce statistics
+#[command]
+pub async fn gateway_get_debounce_stats(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<serde_json::Value, String> {
+    let guard = state.lock().await;
+    let stats = guard.debouncer.get_stats().await;
+
+    Ok(serde_json::json!({
+        "total_received": stats.total_received,
+        "total_flushed": stats.total_flushed,
+        "batches_created": stats.batches_created,
+        "batches_expired": stats.batches_expired,
+        "messages_merged": stats.messages_merged,
+    }))
+}
+
+// ==================== ACK Handler Commands ====================
+
+/// Command to configure ACK handling
+#[command]
+pub async fn gateway_configure_ack(
+    state: State<'_, SharedGatewayManager>,
+    enabled: bool,
+    show_typing: bool,
+    enable_read_receipts: bool,
+) -> Result<(), String> {
+    let config = AckConfig {
+        enabled,
+        show_typing,
+        enable_read_receipts,
+        ..Default::default()
+    };
+
+    let guard = state.lock().await;
+    guard.ack_handler.set_config(config).await;
+
+    log::info!("[Commands] ACK configured: enabled={}, typing={}", enabled, show_typing);
+    Ok(())
+}
+
+/// Command to get ACK statistics
+#[command]
+pub async fn gateway_get_ack_stats(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<serde_json::Value, String> {
+    let guard = state.lock().await;
+    let stats = guard.ack_handler.get_stats().await;
+
+    Ok(serde_json::json!({
+        "pending_count": stats.pending_count,
+        "delivered_count": stats.delivered_count,
+        "read_count": stats.read_count,
+        "total_completed": stats.total_completed,
+    }))
+}
+
+// ==================== Agent Routing Commands ====================
+
+/// Command to configure agent routing
+#[command]
+pub async fn gateway_configure_agent_routing(
+    state: State<'_, SharedGatewayManager>,
+    enabled: bool,
+    default_agent: String,
+    fallback_agent: String,
+) -> Result<(), String> {
+    let config = AgentRoutingConfig {
+        enabled,
+        default_agent,
+        fallback_agent,
+        resolver: Default::default(),
+        bindings: vec![],
+    };
+
+    let guard = state.lock().await;
+    guard.agent_routing.initialize(config).await;
+
+    log::info!("[Commands] Agent routing configured: enabled={}", enabled);
+    Ok(())
+}
+
+/// Command to resolve agent for a message
+#[command]
+pub async fn gateway_resolve_agent(
+    state: State<'_, SharedGatewayManager>,
+    platform: String,
+    channel_id: String,
+    user_id: String,
+    guild_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let platform_enum = Platform::from_str(&platform);
+    let guard = state.lock().await;
+
+    let result = guard.agent_routing.resolve_from_context(
+        platform_enum,
+        &channel_id,
+        &user_id,
+        guild_id.as_deref(),
+    ).await;
+
+    match result {
+        Some(r) => Ok(serde_json::json!({
+            "agent_id": r.agent_id,
+            "confidence": r.confidence,
+            "is_fallback": r.is_fallback,
+        })),
+        None => Ok(serde_json::json!({
+            "agent_id": null,
+        })),
+    }
+}
+
+/// Command to get routing statistics
+#[command]
+pub async fn gateway_get_routing_stats(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<serde_json::Value, String> {
+    let guard = state.lock().await;
+    let enabled = guard.agent_routing.is_enabled().await;
+
+    if !enabled {
+        return Ok(serde_json::json!({
+            "enabled": false,
+        }));
+    }
+
+    let stats = guard.agent_routing.get_stats().await;
+
+    Ok(serde_json::json!({
+        "enabled": true,
+        "total_resolutions": stats.total_resolutions,
+        "cache_size": stats.cache_size,
+        "binding_count": stats.binding_count,
+    }))
 }

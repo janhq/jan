@@ -5,7 +5,7 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
-use super::super::types::{GatewayMessage, Platform, MessageAttachment};
+use super::super::types::{GatewayMessage, Platform, MessageAttachment, GATEWAY_PROTOCOL_VERSION};
 
 /// Telegram update structure
 #[derive(Debug, Deserialize)]
@@ -247,6 +247,7 @@ fn parse_message(update_id: u64, message: TelegramMessage) -> Result<GatewayMess
         content,
         timestamp: (message.date as u64) * 1000,
         metadata,
+        protocol_version: GATEWAY_PROTOCOL_VERSION.to_string(),
     })
 }
 

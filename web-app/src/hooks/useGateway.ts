@@ -61,6 +61,11 @@ interface GatewayState {
     janThreadId: string
   ) => Promise<void>;
   removeThreadMapping: (platform: Platform, externalId: string) => Promise<boolean>;
+
+  // Discord bot management
+  startDiscordBot: (botToken: string, botUserId: string, channelId: string) => Promise<void>;
+  stopDiscordBot: () => Promise<void>;
+  fetchDiscordBotStatus: () => Promise<void>;
 }
 
 // Create the service
@@ -78,6 +83,7 @@ export const useGatewayStore = create<GatewayState>()(
     gatewayInferenceInProgress: new Map(),
     isLoading: false,
     error: null,
+    discordBotStatus: null,
 
     // Actions
     startServer: async (config: GatewayConfig) => {
@@ -206,6 +212,52 @@ export const useGatewayStore = create<GatewayState>()(
         return false;
       }
     },
+
+    // Discord bot actions
+    startDiscordBot: async (botToken: string, botUserId: string, channelId: string) => {
+      set({ isLoading: true, error: null });
+      try {
+        await invoke('gateway_start_discord_bot', {
+          botToken,
+          botUserId,
+          channelId,
+        });
+        set({ isLoading: false });
+        get().fetchDiscordBotStatus();
+      } catch (error) {
+        set({
+          isLoading: false,
+          error: error instanceof Error ? error.message : 'Failed to start Discord bot',
+        });
+      }
+    },
+
+    stopDiscordBot: async () => {
+      set({ isLoading: true, error: null });
+      try {
+        await invoke('gateway_stop_discord_bot');
+        set({ isLoading: false, discordBotStatus: null });
+      } catch (error) {
+        set({
+          isLoading: false,
+          error: error instanceof Error ? error.message : 'Failed to stop Discord bot',
+        });
+      }
+    },
+
+    fetchDiscordBotStatus: async () => {
+      try {
+        const status = await invoke<{
+          configured: boolean;
+          active: boolean;
+          running: boolean;
+          channelId: string | null;
+        }>('gateway_get_discord_bot_status');
+        set({ discordBotStatus: status });
+      } catch (error) {
+        console.error('Failed to fetch Discord bot status:', error);
+      }
+    },
   }))
 );
 
@@ -224,6 +276,9 @@ export const useGatewayError = () =>
 
 export const useGatewayThreadMappings = () =>
   useGatewayStore((state) => state.threadMappings);
+
+export const useDiscordBotStatus = () =>
+  useGatewayStore((state) => state.discordBotStatus);
 
 // Initialize event listeners
 if (typeof window !== 'undefined') {

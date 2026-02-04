@@ -167,10 +167,8 @@ export function UnifiedProgressPanel({
     }
   }, [activeDelegation?.taskId])
 
-  // Don't render if idle and no events
-  if (status === 'idle' && events.length === 0) {
-    return null
-  }
+  // Note: Visibility is now controlled by the parent component (AgentProgressPanelWrapper)
+  // The panel only mounts when LLM decides to use tools, so we don't need to hide here
 
   const statusInfo = statusConfig[status] || statusConfig.idle
   const isActive = ['thinking', 'executing_tool', 'delegating', 'waiting_approval'].includes(status)

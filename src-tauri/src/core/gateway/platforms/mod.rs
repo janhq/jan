@@ -3,12 +3,14 @@
 //! This module contains parsers and senders for each supported messaging platform:
 //! - Discord (parser + sender)
 //! - Slack (parser)
-//! - Telegram (parser)
+//! - Telegram (parser + bot)
 
 pub mod discord;
 pub mod discord_sender;
 pub mod slack;
+pub mod telegram_parser;
 pub mod telegram;
+pub mod plugin;
 
 use super::types::GatewayMessage;
 
@@ -24,5 +26,5 @@ pub fn parse_slack_payload(payload: &serde_json::Value) -> Result<GatewayMessage
 
 /// Parse a Telegram webhook payload into a GatewayMessage
 pub fn parse_telegram_payload(payload: &serde_json::Value) -> Result<GatewayMessage, String> {
-    telegram::parse_payload(payload)
+    telegram_parser::parse_payload(payload)
 }

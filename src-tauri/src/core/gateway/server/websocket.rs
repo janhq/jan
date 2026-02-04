@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use tokio_tungstenite::accept_async;
 use futures_util::{StreamExt, SinkExt};
@@ -8,17 +8,30 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tungstenite::protocol::Message;
 
-use super::super::{SharedGatewayManager};
+use super::super::{SharedGatewayManager, protocol::{ProtocolHandler, EventFrame}};
 use super::WsServerHandle;
 use crate::core::gateway::types::{WebSocketMessage, WebSocketOutgoing, Platform, GatewayMessage};
+use crate::core::gateway::protocol::frames::{ProtocolFrame};
 
 type WsStream = tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>;
 
 /// WebSocket client session
 struct WsSession {
     addr: SocketAddr,
+    client_id: String,
     subscribed_platforms: Vec<Platform>,
     last_activity: std::time::Instant,
+}
+
+impl WsSession {
+    fn new(addr: SocketAddr) -> Self {
+        Self {
+            addr,
+            client_id: uuid::Uuid::new_v4().to_string(),
+            subscribed_platforms: Vec::new(),
+            last_activity: std::time::Instant::now(),
+        }
+    }
 }
 
 /// Handle a WebSocket connection
@@ -36,13 +49,21 @@ async fn handle_ws_connection(
     };
 
     let (mut tx, mut rx) = ws_stream.split();
-    let session = Arc::new(Mutex::new(WsSession {
-        addr,
-        subscribed_platforms: Vec::new(),
-        last_activity: std::time::Instant::now(),
-    }));
+    let session = Arc::new(Mutex::new(WsSession::new(addr)));
+    let client_id = session.lock().await.client_id.clone();
 
-    log::info!("WebSocket client connected: {}", addr);
+    // Create protocol handler for this connection
+    let protocol_handler = ProtocolHandler::new(manager.clone(), client_id.clone());
+
+    log::info!("WebSocket client connected: {} (id: {})", addr, client_id);
+
+    // Send connected event
+    let connected_event = EventFrame::new("gateway.connected", serde_json::json!({
+        "clientId": client_id,
+        "connectedAt": chrono::Utc::now().timestamp_millis(),
+        "protocolVersion": crate::core::gateway::protocol::PROTOCOL_VERSION
+    }));
+    let _ = tx.send(Message::Text(connected_event.to_json().unwrap_or_default())).await;
 
     // Main message loop
     while let Some(msg) = rx.next().await {
@@ -50,8 +71,22 @@ async fn handle_ws_connection(
             Ok(msg) => {
                 if let Message::Text(text) = msg {
                     session.lock().await.last_activity = std::time::Instant::now();
-                    if let Err(e) = handle_ws_message(&session, &manager, &mut tx, &text).await {
-                        log::warn!("Error handling WS message from {}: {}", addr, e);
+
+                    // Try to parse as new protocol frame first
+                    match ProtocolFrame::from_json(&text) {
+                        Ok(frame) => {
+                            // Handle using new protocol handler
+                            if let Some(response) = super::super::protocol::handler::process_frame(frame, &protocol_handler).await {
+                                let response_text = response.to_json().unwrap_or_default();
+                                let _ = tx.send(Message::Text(response_text)).await;
+                            }
+                        }
+                        Err(_) => {
+                            // Fall back to legacy WebSocketMessage format
+                            if let Err(e) = handle_ws_message_legacy(&session, &manager, &mut tx, &text).await {
+                                log::warn!("Error handling WS message from {}: {}", addr, e);
+                            }
+                        }
                     }
                 }
             }
@@ -65,8 +100,8 @@ async fn handle_ws_connection(
     log::info!("WebSocket client {} disconnected", addr);
 }
 
-/// Handle incoming WebSocket message
-async fn handle_ws_message(
+/// Handle incoming WebSocket message (legacy format for backward compatibility)
+async fn handle_ws_message_legacy(
     session: &Arc<Mutex<WsSession>>,
     manager: &SharedGatewayManager,
     tx: &mut futures_util::stream::SplitSink<WsStream, Message>,

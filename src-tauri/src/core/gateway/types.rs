@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Gateway protocol version constant
+pub const GATEWAY_PROTOCOL_VERSION: &str = "1.0.0";
+
 /// Configuration for the gateway
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -11,6 +14,12 @@ pub struct GatewayConfig {
     pub whitelist: WhitelistConfig,
     pub auto_create_threads: bool,
     pub default_assistant_id: Option<String>,
+    /// Discord webhook URL for sending responses back to Discord
+    pub discord_webhook_url: Option<String>,
+    /// Discord bot token for sending responses (alternative to webhook)
+    pub discord_bot_token: Option<String>,
+    /// Telegram bot token for sending messages to Telegram
+    pub telegram_bot_token: Option<String>,
 }
 
 impl Default for GatewayConfig {
@@ -22,6 +31,9 @@ impl Default for GatewayConfig {
             whitelist: WhitelistConfig::default(),
             auto_create_threads: true,
             default_assistant_id: None,
+            discord_webhook_url: None,
+            discord_bot_token: None,
+            telegram_bot_token: None,
         }
     }
 }
@@ -98,6 +110,13 @@ pub struct GatewayMessage {
     pub content: String,
     pub timestamp: u64,
     pub metadata: HashMap<String, serde_json::Value>,
+    /// Protocol version for compatibility checking
+    #[serde(default = "default_protocol_version")]
+    pub protocol_version: String,
+}
+
+fn default_protocol_version() -> String {
+    GATEWAY_PROTOCOL_VERSION.to_string()
 }
 
 impl GatewayMessage {
@@ -116,8 +135,25 @@ impl GatewayMessage {
             content,
             timestamp: chrono::Utc::now().timestamp_millis() as u64,
             metadata: HashMap::new(),
+            protocol_version: GATEWAY_PROTOCOL_VERSION.to_string(),
         }
     }
+
+    /// Check if the protocol version is compatible with the gateway
+    pub fn is_version_compatible(&self) -> bool {
+        let major_client = extract_major_version(&self.protocol_version);
+        let major_server = extract_major_version(GATEWAY_PROTOCOL_VERSION);
+        major_client == major_server
+    }
+}
+
+/// Extract major version from a semantic version string
+fn extract_major_version(version: &str) -> u32 {
+    version
+        .split('.')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0)
 }
 
 /// Normalized message for processing
@@ -178,6 +214,9 @@ pub struct GatewayResponse {
     pub reply_to: Option<String>,
     #[serde(default)]
     pub mentions: Vec<String>,
+    /// Protocol version for compatibility checking
+    #[serde(default = "default_protocol_version")]
+    pub protocol_version: String,
 }
 
 impl GatewayResponse {
@@ -188,6 +227,7 @@ impl GatewayResponse {
             content,
             reply_to: None,
             mentions: Vec::new(),
+            protocol_version: GATEWAY_PROTOCOL_VERSION.to_string(),
         }
     }
 }

@@ -64,23 +64,46 @@ pub async fn send_discord_response(
     state: &Arc<Mutex<DiscordSenderState>>,
     response: &GatewayResponse,
 ) -> Result<(), String> {
+    log::info!("[Discord] 📤 send_discord_response called");
+    log::info!("[Discord] 📤 Target channel: {}", response.target_channel_id);
+    log::info!("[Discord] 📤 Content length: {} chars", response.content.len());
+    log::info!("[Discord] 📤 Content preview: {}", response.content.chars().take(200).collect::<String>());
+
     let state_guard = state.lock().await;
 
+    log::info!("[Discord] 📤 Checking configuration...");
+    log::info!("[Discord] 📤   - webhook_url: {}", state_guard.config.webhook_url.is_some());
+    log::info!("[Discord] 📤   - bot_token: {}", state_guard.config.bot_token.is_some());
+    log::info!("[Discord] 📤   - is_configured: {}", state_guard.is_configured());
+
     if !state_guard.is_configured() {
-        log::warn!("[Discord] Not configured - cannot send response");
+        log::error!("[Discord] ❌ Not configured - cannot send response");
         return Err("Discord not configured".to_string());
     }
 
     // Prefer webhook over bot token
     if let Some(webhook_url) = &state_guard.config.webhook_url {
+        log::info!("[Discord] 📤 Using webhook method");
+        // Log the full curl command for debugging
+        let escaped_content = response.content
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n");
+        log::info!("[Discord] 📤 ============ FULL CURL COMMAND ============");
+        log::info!("[Discord] 📤 curl -X POST '{}' \\", webhook_url);
+        log::info!("[Discord] 📤   -H 'Content-Type: application/json' \\");
+        log::info!("[Discord] 📤   -d '{{\"content\": \"{}\", \"username\": \"Jan AI\"}}'", escaped_content);
+        log::info!("[Discord] 📤 =============================================");
         return send_via_webhook(&state_guard, webhook_url, response).await;
     }
 
     // Fall back to bot token
     if let Some(bot_token) = &state_guard.config.bot_token {
+        log::info!("[Discord] 📤 Using bot token method");
         return send_via_bot(&state_guard, bot_token, response).await;
     }
 
+    log::error!("[Discord] ❌ No webhook or bot token configured");
     Err("Discord not configured".to_string())
 }
 
@@ -92,8 +115,9 @@ async fn send_via_webhook(
 ) -> Result<(), String> {
     let content = &response.content;
 
-    log::info!("[Discord] Sending via webhook: content='{}...' ({} chars)",
-        content.chars().take(100).collect::<String>(),
+    log::info!("[Discord] 🌐 send_via_webhook called");
+    log::info!("[Discord] 🌐 Content: '{}...' ({} chars)",
+        content.chars().take(200).collect::<String>(),
         content.len());
 
     // Discord webhook payload
@@ -112,31 +136,43 @@ async fn send_via_webhook(
         avatar_url: None,
     };
 
-    let client = state.http_client.as_ref().ok_or("HTTP client not initialized")?;
+    let client = match state.http_client.as_ref() {
+        Some(c) => c,
+        None => {
+            log::error!("[Discord] ❌ HTTP client not initialized");
+            return Err("HTTP client not initialized".to_string());
+        }
+    };
 
-    let response = client
+    let json_payload = ureq::json!({
+        "content": content,
+        "username": "Jan AI"
+    });
+
+    log::info!("[Discord] 🌐 Sending POST to webhook...");
+    log::info!("[Discord] 🌐 JSON payload: {}", json_payload.to_string());
+
+    let http_response = client
         .post(webhook_url)
         .set("Content-Type", "application/json")
-        .send_json(ureq::json!({
-            "content": content,
-            "username": "Jan AI",
-            "avatar_url": null
-        }));
+        .send_json(json_payload);
 
-    match response {
+    match http_response {
         Ok(resp) => {
-            if resp.status() == 204 || resp.status() == 200 {
-                log::info!("[Discord] Webhook response sent successfully");
+            let status = resp.status();
+            log::info!("[Discord] 🌐 Response status: {}", status);
+            if status == 204 || status == 200 {
+                log::info!("[Discord] ✅ Webhook response sent successfully!");
                 Ok(())
             } else {
-                let err = format!("Webhook returned status {}", resp.status());
-                log::error!("[Discord] Webhook error: {}", err);
+                let err = format!("Webhook returned status {}", status);
+                log::error!("[Discord] ❌ Webhook error: {}", err);
                 Err(err)
             }
         }
         Err(e) => {
             let err = format!("Webhook request failed: {}", e);
-            log::error!("[Discord] Webhook error: {}", err);
+            log::error!("[Discord] ❌ Webhook error: {}", err);
             Err(err)
         }
     }
@@ -149,7 +185,18 @@ async fn send_via_bot(
     response: &GatewayResponse,
 ) -> Result<(), String> {
     let channel_id = &response.target_channel_id;
-    let content = &response.content;
+
+    // Build content with mentions
+    let mut content = String::new();
+
+    // Add user mentions at the beginning
+    for mention in &response.mentions {
+        content.push_str(mention);
+        content.push(' ');
+    }
+
+    // Add the main content
+    content.push_str(&response.content);
 
     log::info!("[Discord] Sending via bot to channel {}: content='{}...' ({} chars)",
         channel_id,
@@ -164,13 +211,25 @@ async fn send_via_bot(
         channel_id
     );
 
+    // Build request body
+    let mut request_body = ureq::json!({
+        "content": content
+    });
+
+    // Add reply reference if available
+    if let Some(ref reply_to) = response.reply_to {
+        if let Some(obj) = request_body.as_object_mut() {
+            obj.insert("message_reference".to_string(), ureq::json!({
+                "message_id": reply_to
+            }));
+        }
+    }
+
     let response = client
         .post(&url)
         .set("Authorization", &format!("Bot {}", bot_token))
         .set("Content-Type", "application/json")
-        .send_json(ureq::json!({
-            "content": content
-        }));
+        .send_json(request_body);
 
     match response {
         Ok(resp) => {

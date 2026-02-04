@@ -1,7 +1,4 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-
-use crate::core::gateway::types::{NormalizedMessage, Platform, ThreadMapping};
+use crate::core::gateway::types::{Platform, ThreadMapping};
 
 /// Thread manager for gateway-related thread operations
 #[derive(Debug, Default)]

@@ -1,15 +1,17 @@
 /**
  * Agent Transport
  *
- * Extends the CustomChatTransport to support orchestrator mode.
- * When orchestrator mode is enabled, messages are processed through
- * the ToolLoopAgent instead of direct streamText calls.
+ * Extends the CustomChatTransport to support agent-assisted responses.
+ * All tools (OpenCode, MCP, RAG) are always available - the LLM decides when to use them.
+ *
+ * No mode toggle needed - AI SDK ToolLoopAgent with toolChoice: 'auto' handles all decisions.
  */
 
 import type { UIMessage } from '@ai-sdk/react'
 import {
   convertToModelMessages,
   streamText,
+  stepCountIs,
   type ChatRequestOptions,
   type ChatTransport,
   type LanguageModel,
@@ -25,7 +27,6 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useOrchestratorState } from '@/hooks/useOrchestratorState'
 import { createOpenCodeDelegateTool } from '@/tools/opencode-delegate'
 import type {
-  OrchestratorConfig,
   UnifiedAgentEvent,
 } from './types'
 
@@ -66,15 +67,64 @@ export type ServiceHub = {
 }
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+const UNIFIED_SYSTEM_PROMPT = `You are Jan, an intelligent AI assistant.
+
+You have access to multiple tools:
+1. **opencode_delegate** - For coding tasks (write, modify, debug, run code)
+2. **RAG tools** - For searching your knowledge base
+3. **MCP tools** - For various integrations (filesystem, browser, database, etc.)
+
+## When to respond directly:
+- Simple greetings and small talk
+- General knowledge questions not requiring tools
+- Short explanations without needing to search or modify files
+
+## When to use tools:
+
+### Use opencode_delegate when:
+- Writing new code or files
+- Modifying existing code
+- Running shell commands (npm, git, cargo, make, etc.)
+- Debugging or fixing bugs
+- Creating new components, modules, or features
+- File system operations on source code
+- Multi-step development workflows
+
+### Use RAG tools when:
+- Questions about uploaded documents
+- Searching your knowledge base
+- Finding information in previous conversations
+
+### Use MCP tools when:
+- Actions on connected services
+- Database queries
+- Browser automation
+- Other service integrations
+
+## Decision guidelines:
+- If the user asks to write, modify, or debug code → use opencode_delegate
+- If the user asks about uploaded documents or knowledge → use RAG tools
+- If the user asks to perform actions (send message, query DB) → use MCP tools
+- If the query is simple (greetings, basic questions) → respond directly
+
+Always choose the most appropriate approach.`
+
+// ============================================================================
 // Agent Transport Class
 // ============================================================================
 
 /**
- * AgentChatTransport - Extends chat transport with orchestrator support
+ * AgentChatTransport - Chat transport with AI-powered agent assistance
  *
- * This transport can operate in two modes:
- * 1. Chat mode: Uses streamText directly (existing behavior)
- * 2. Orchestrator mode: Uses ToolLoopAgent with OpenCode delegation
+ * All messages flow through the AI SDK with all tools available:
+ * - opencode_delegate: For coding tasks
+ * - MCP tools: For integrations
+ * - RAG tools: For knowledge search
+ *
+ * The LLM automatically decides when to use tools vs direct responses.
  */
 export class AgentChatTransport implements ChatTransport<UIMessage> {
   public model: LanguageModel | null = null
@@ -87,8 +137,10 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
   private systemMessage?: string
   private threadId?: string
 
-  // Orchestrator-specific fields
-  private orchestratorConfig: OrchestratorConfig | null = null
+  // Agent configuration (project path for agent)
+  private projectPath: string | null = null
+  private defaultAgent: 'build' | 'plan' | 'explore' = 'build'
+  private autoApproveReadOnly: boolean = true
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
@@ -120,17 +172,31 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * Configure orchestrator mode
+   * Configure agent settings for OpenCode delegation
    */
-  setOrchestratorConfig(config: OrchestratorConfig | null) {
-    this.orchestratorConfig = config
+  setAgentConfig(config: {
+    projectPath: string | null
+    defaultAgent?: 'build' | 'plan' | 'explore'
+    autoApproveReadOnly?: boolean
+  }) {
+    this.projectPath = config.projectPath ?? null
+    this.defaultAgent = config.defaultAgent ?? 'build'
+    this.autoApproveReadOnly = config.autoApproveReadOnly ?? true
   }
 
   /**
-   * Check if orchestrator mode is enabled
+   * Get current agent configuration
    */
-  isOrchestratorMode(): boolean {
-    return this.orchestratorConfig !== null
+  getAgentConfig(): {
+    projectPath: string | null
+    defaultAgent: 'build' | 'plan' | 'explore'
+    autoApproveReadOnly: boolean
+  } {
+    return {
+      projectPath: this.projectPath,
+      defaultAgent: this.defaultAgent,
+      autoApproveReadOnly: this.autoApproveReadOnly,
+    }
   }
 
   // ============================================================================
@@ -221,7 +287,7 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
   }
 
   // ============================================================================
-  // Message Sending
+  // Message Sending - Unified Flow
   // ============================================================================
 
   async sendMessages(
@@ -266,145 +332,30 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
       throw new Error('ServiceHub not initialized or model/provider missing.')
     }
 
-    // If orchestrator mode is enabled, use the orchestrator
-    if (this.orchestratorConfig && this.model) {
-      return this.sendMessagesWithOrchestrator(options)
+    if (!this.model) {
+      throw new Error('Model not initialized')
     }
 
-    // Otherwise, use standard streamText
-    return this.sendMessagesWithStreamText(options)
+    // Unified message processing - always includes all tools
+    return this.sendMessagesWithAgent(options)
   }
 
-  // ============================================================================
-  // Standard Stream Text Mode
-  // ============================================================================
-
-  private async sendMessagesWithStreamText(
+  /**
+   * Unified message sending with all tools available
+   *
+   * The LLM decides whether to:
+   * - Respond directly (simple Q&A)
+   * - Use OpenCode for coding tasks
+   * - Use MCP/RAG tools for other tasks
+   */
+  private async sendMessagesWithAgent(
     options: {
       chatId: string
       messages: UIMessage[]
       abortSignal: AbortSignal | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
-    // Note: In AI SDK 6, convertToModelMessages is async
-    const modelMessages = await convertToModelMessages(
-      this.mapUserInlineAttachments(options.messages)
-    )
-
-    const hasTools = Object.keys(this.tools).length > 0
-    const shouldEnableTools = hasTools && this.modelSupportsTools
-
-    let streamStartTime: number | undefined
-    let textDeltaCount = 0
-
-    const result = streamText({
-      model: this.model!,
-      messages: modelMessages,
-      abortSignal: options.abortSignal,
-      tools: shouldEnableTools ? this.tools : undefined,
-      toolChoice: shouldEnableTools ? 'auto' : undefined,
-      system: this.systemMessage,
-    })
-
-    return result.toUIMessageStream({
-      messageMetadata: ({ part }) => {
-        if (!streamStartTime) {
-          streamStartTime = Date.now()
-        }
-
-        if (part.type === 'text-delta') {
-          textDeltaCount++
-          if (this.onStreamingTokenSpeed) {
-            const elapsedMs = Date.now() - streamStartTime
-            this.onStreamingTokenSpeed(textDeltaCount, elapsedMs)
-          }
-        }
-
-        if (part.type === 'finish') {
-          const finishPart = part as {
-            type: 'finish'
-            totalUsage: LanguageModelUsage
-            finishReason: string
-            providerMetadata?: {
-              llamacpp?: {
-                promptTokens?: number | null
-                completionTokens?: number | null
-                tokensPerSecond?: number | null
-              }
-            }
-          }
-          const usage = finishPart.totalUsage
-          const llamacppMeta = finishPart.providerMetadata?.llamacpp
-          const durationMs = streamStartTime ? Date.now() - streamStartTime : 0
-          const durationSec = durationMs / 1000
-
-          const outputTokens =
-            usage?.outputTokens ??
-            llamacppMeta?.completionTokens ??
-            textDeltaCount
-          const inputTokens = usage?.inputTokens ?? llamacppMeta?.promptTokens
-
-          let tokenSpeed: number
-          if (llamacppMeta?.tokensPerSecond != null) {
-            tokenSpeed = llamacppMeta.tokensPerSecond
-          } else if (durationSec > 0 && outputTokens > 0) {
-            tokenSpeed = outputTokens / durationSec
-          } else {
-            tokenSpeed = 0
-          }
-
-          return {
-            usage: {
-              inputTokens: inputTokens,
-              outputTokens: outputTokens,
-              totalTokens: usage?.totalTokens ?? (inputTokens ?? 0) + outputTokens,
-            },
-            tokenSpeed: {
-              tokenSpeed: Math.round(tokenSpeed * 10) / 10,
-              tokenCount: outputTokens,
-              durationMs,
-            },
-          }
-        }
-
-        return undefined
-      },
-      onError: (error) => {
-        if (error == null) return 'Unknown error'
-        if (typeof error === 'string') return error
-        if (error instanceof Error) return error.message
-        return JSON.stringify(error)
-      },
-      onFinish: ({ responseMessage }) => {
-        if (responseMessage) {
-          const metadata = responseMessage.metadata as
-            | Record<string, unknown>
-            | undefined
-          const usage = metadata?.usage as LanguageModelUsage | undefined
-          if (usage) {
-            this.onTokenUsage?.(usage, responseMessage.id)
-          }
-        }
-      },
-    })
-  }
-
-  // ============================================================================
-  // Orchestrator Mode
-  // ============================================================================
-
-  private async sendMessagesWithOrchestrator(
-    options: {
-      chatId: string
-      messages: UIMessage[]
-      abortSignal: AbortSignal | undefined
-    } & ChatRequestOptions
-  ): Promise<ReadableStream<UIMessageChunk>> {
-    if (!this.orchestratorConfig || !this.model) {
-      throw new Error('Orchestrator not configured')
-    }
-
-    // Update orchestrator state to thinking
+    // Update orchestrator state
     const { setStatus, addEvent, clearEvents, setPendingApproval } = useOrchestratorState.getState()
 
     // Clear previous events for new task
@@ -420,111 +371,122 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
       data: { step: 1 },
     })
 
-    // Note: In AI SDK 6, convertToModelMessages is async
+    // Convert messages (async in AI SDK 6)
     const modelMessages = await convertToModelMessages(
       this.mapUserInlineAttachments(options.messages)
     )
 
-    // Create the OpenCode delegate tool with context
-    const opencodeTool = createOpenCodeDelegateTool({
-      projectPath: this.orchestratorConfig.projectPath,
-      agent: this.orchestratorConfig.agent || 'build',
-      autoApproveReadOnly: this.orchestratorConfig.autoApproveReadOnly,
-      onProgress: (event: UnifiedAgentEvent) => {
-        addEvent(event)
-      },
-      onPermissionRequest: async (request) => {
-        // Set up pending approval in state for UI
-        setPendingApproval({
-          source: 'opencode',
-          type: 'tool',
-          request: {
-            id: request.permissionId,
-            name: request.permission,
-            input: request.metadata,
-            description: request.description,
+    // Create agent delegate tool if project path is set
+    const opencodeTool = this.projectPath
+      ? createOpenCodeDelegateTool({
+          projectPath: this.projectPath,
+          agent: this.defaultAgent,
+          autoApproveReadOnly: this.autoApproveReadOnly,
+          onProgress: (event: UnifiedAgentEvent) => {
+            addEvent(event)
+          },
+          onPermissionRequest: async (request) => {
+            // Set up pending approval in state for UI
+            setPendingApproval({
+              source: 'opencode',
+              type: 'tool',
+              request: {
+                id: request.permissionId,
+                name: request.permission,
+                input: request.metadata,
+                description: request.description,
+              },
+            })
+            setStatus('waiting_approval')
+
+            // Wait for user response via the state
+            return new Promise((resolve) => {
+              const checkApproval = setInterval(() => {
+                const state = useOrchestratorState.getState()
+                if (!state.pendingApproval) {
+                  clearInterval(checkApproval)
+                  // Check the last approval response event
+                  const lastApprovalEvent = [...state.events].reverse().find(
+                    (e) => e.type === 'tool.approval_responded' &&
+                           (e.data as { toolCallId: string }).toolCallId === request.permissionId
+                  )
+                  if (lastApprovalEvent) {
+                    const data = lastApprovalEvent.data as { approved: boolean; message?: string }
+                    resolve({
+                      action: data.approved ? 'allow_once' : 'deny',
+                      message: data.message,
+                    })
+                  } else {
+                    resolve({ action: 'deny' })
+                  }
+                }
+              }, 100)
+            })
           },
         })
-        setStatus('waiting_approval')
+      : null
 
-        // Wait for user response via the state
-        // This is a simplified approach - in production, you'd use a promise resolver
-        return new Promise((resolve) => {
-          const checkApproval = setInterval(() => {
-            const state = useOrchestratorState.getState()
-            if (!state.pendingApproval) {
-              clearInterval(checkApproval)
-              // Check the last approval response event
-              const lastApprovalEvent = [...state.events].reverse().find(
-                (e) => e.type === 'tool.approval_responded' &&
-                       (e.data as { toolCallId: string }).toolCallId === request.permissionId
-              )
-              if (lastApprovalEvent) {
-                const data = lastApprovalEvent.data as { approved: boolean; message?: string }
-                resolve({
-                  action: data.approved ? 'allow_once' : 'deny',
-                  message: data.message,
-                })
-              } else {
-                resolve({ action: 'deny' })
-              }
-            }
-          }, 100)
-        })
-      },
-    })
-
-    // Combine all tools: existing tools + OpenCode delegate
+    // Combine all tools: MCP + RAG + agent (if project path set)
     const allTools: Record<string, Tool> = {
       ...this.tools,
-      opencode_delegate: opencodeTool,
+      ...(opencodeTool ? { opencode_delegate: opencodeTool } : {}),
     }
 
-    // System prompt for orchestrator mode
-    const orchestratorSystemPrompt = this.systemMessage
-      ? `${this.systemMessage}\n\nYou have access to the opencode_delegate tool for coding tasks. Use it when the user asks you to write, modify, debug, or run code.`
-      : `You are Jan, an AI assistant that helps users with coding and general tasks.
-
-When you detect that a task involves coding work (writing, modifying, debugging, or running code), you MUST use the opencode_delegate tool to delegate the work to the specialized coding agent.
-
-For general questions, explanations, or non-coding tasks, respond directly without using tools.
-
-## When to use opencode_delegate:
-- Writing new code or files
-- Modifying existing code
-- Running shell commands (npm, git, cargo, make, etc.)
-- Debugging or fixing bugs
-- Creating new components, modules, or features
-- File system operations on source code
-- Multi-step development workflows
-
-## When NOT to use opencode_delegate:
-- Answering questions about code concepts
-- Explaining how something works
-- General conversation
-- Information lookup or research
-
-Always be helpful and concise in your responses.`
+    // Build system prompt
+    const systemPrompt = this.systemMessage
+      ? `${this.systemMessage}\n\n${UNIFIED_SYSTEM_PROMPT}`
+      : UNIFIED_SYSTEM_PROMPT
 
     let streamStartTime: number | undefined
     let textDeltaCount = 0
 
-    console.log('[Orchestrator] Starting with tools:', Object.keys(allTools))
-    console.log('[Orchestrator] System prompt length:', orchestratorSystemPrompt.length)
+    console.log('[AgentTransport] Starting with tools:', Object.keys(allTools))
 
     const result = streamText({
       model: this.model,
       messages: modelMessages,
       abortSignal: options.abortSignal,
       tools: allTools,
-      toolChoice: 'auto',
-      system: orchestratorSystemPrompt,
+      toolChoice: 'auto',  // LLM decides when to use tools
+      stopWhen: stepCountIs(20),  // Allow multi-step tool loop so tool results feed back to the model
+      system: systemPrompt,
+      onStepFinish: ({ toolCalls, toolResults }) => {
+        // Track tool execution status for each step
+        if (toolCalls && toolCalls.length > 0) {
+          for (const tc of toolCalls) {
+            if (tc.toolName !== 'opencode_delegate') {
+              // OpenCode delegation manages its own status via the delegate tool
+              setStatus('executing_tool')
+              addEvent({
+                id: `sdk-tool-start-${tc.toolCallId}`,
+                source: 'ai-sdk',
+                timestamp: Date.now(),
+                type: 'tool.started',
+                data: { tool: tc.toolName, input: tc.input as Record<string, unknown> },
+              })
+            }
+          }
+        }
+        if (toolResults && toolResults.length > 0) {
+          for (const tr of toolResults) {
+            if (tr.toolName !== 'opencode_delegate') {
+              addEvent({
+                id: `sdk-tool-complete-${tr.toolCallId}`,
+                source: 'ai-sdk',
+                timestamp: Date.now(),
+                type: 'tool.completed',
+                data: { tool: tr.toolName, output: tr.output },
+              })
+            }
+          }
+          // After tool results, model will think again
+          setStatus('thinking')
+        }
+      },
     })
 
     return result.toUIMessageStream({
       messageMetadata: ({ part }) => {
-        console.log('[Orchestrator] Stream part:', part.type)
-
         if (!streamStartTime) {
           streamStartTime = Date.now()
         }
@@ -570,7 +532,7 @@ Always be helpful and concise in your responses.`
             tokenSpeed = 0
           }
 
-          // Mark orchestrator as completed
+          // Mark as completed
           setStatus('completed')
           addEvent({
             id: `step-complete-${Date.now()}`,
