@@ -13,11 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useNavigate } from '@tanstack/react-router'
 
-export const MlxModelDownloadAction = ({
-  model,
-}: {
-  model: CatalogModel
-}) => {
+export const MlxModelDownloadAction = ({ model }: { model: CatalogModel }) => {
   const serviceHub = useServiceHub()
   const { t } = useTranslation()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
@@ -25,7 +21,6 @@ export const MlxModelDownloadAction = ({
   const navigate = useNavigate()
 
   const [isDownloaded, setDownloaded] = useState(false)
-  const [localDownloading, setLocalDownloading] = useState(false)
 
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
@@ -68,12 +63,17 @@ export const MlxModelDownloadAction = ({
     const onDownloadSuccess = (state: { modelId: string }) => {
       if (state.modelId === modelId) {
         setDownloaded(true)
-        setLocalDownloading(false)
       }
     }
-    events.on(DownloadEvent.onFileDownloadAndVerificationSuccess, onDownloadSuccess)
+    events.on(
+      DownloadEvent.onFileDownloadAndVerificationSuccess,
+      onDownloadSuccess
+    )
     return () => {
-      events.off(DownloadEvent.onFileDownloadAndVerificationSuccess, onDownloadSuccess)
+      events.off(
+        DownloadEvent.onFileDownloadAndVerificationSuccess,
+        onDownloadSuccess
+      )
     }
   }, [modelId])
 
@@ -91,7 +91,6 @@ export const MlxModelDownloadAction = ({
   }, [navigate, modelId])
 
   const handleDownloadMlxModel = useCallback(async () => {
-    setLocalDownloading(true)
     addLocalDownloadingModel(modelId)
 
     try {
@@ -127,7 +126,9 @@ export const MlxModelDownloadAction = ({
       }
 
       // Get the MLX engine and import
-      const engine = (await import('@janhq/core')).EngineManager.instance().get('mlx')
+      const engine = (await import('@janhq/core')).EngineManager.instance().get(
+        'mlx'
+      )
       if (!engine) {
         throw new Error('MLX engine not found')
       }
@@ -163,19 +164,11 @@ export const MlxModelDownloadAction = ({
       })
     } catch (error) {
       console.error('Error downloading MLX model:', error)
-      setLocalDownloading(false)
       toast.error('Failed to download MLX model', {
-        description:
-          error instanceof Error ? error.message : 'Unknown error',
+        description: error instanceof Error ? error.message : 'Unknown error',
       })
     }
-  }, [
-    serviceHub,
-    model,
-    huggingfaceToken,
-    addLocalDownloadingModel,
-    modelId,
-  ])
+  }, [serviceHub, model, huggingfaceToken, addLocalDownloadingModel, modelId])
 
   return (
     <div className="flex items-center">
@@ -213,7 +206,5 @@ export const MlxModelDownloadAction = ({
 
 // Helper function to sanitize model ID
 function sanitizeModelId(id: string): string {
-  return id
-    .replace(/\s+/g, '-')
-    .replace(/[^a-zA-Z0-9\-_./]/g, '')
+  return id.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
 }
