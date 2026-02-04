@@ -290,10 +290,10 @@ actor ModelRunner {
     func getPromptCache(
         fullPrompt: LMInput, parameters: GenerateParameters, context: ModelContext,
         modelName: String
-    ) -> (PromptCache, LMInput) {
+    ) -> (PromptCache?, LMInput) {
 
         if self.isVLM {
-            return (PromptCache(cache: context.model.newCache(parameters: parameters)), fullPrompt)
+            return (nil, fullPrompt)
         }
 
         let cache: PromptCache
@@ -373,22 +373,12 @@ actor ModelRunner {
 
             do {
                 for await generation in try MLXLMCommon.generate(
-                    input: lmInput, cache: cache.cache, parameters: generateParameters, context: context
+                    input: lmInput, cache: cache?.cache, parameters: generateParameters, context: context
                 ) {
                     switch generation {
                     case .chunk(let chunk):
                         output += chunk
                         completionTokenCount += 1
-
-                        // Check stop sequences
-                        var hitStop = false
-                        for s in stop where output.hasSuffix(s) {
-                            output = String(output.dropLast(s.count))
-                            hitStop = true
-                            log("[mlx] Hit stop sequence: \"\(s)\"")
-                            break
-                        }
-                        if hitStop { break }
 
                     case .info(let info):
                         completionInfo = info
@@ -451,7 +441,7 @@ actor ModelRunner {
         topP: Float = 1.0,
         maxTokens: Int = 2048,
         repetitionPenalty: Float = 1.0,
-        stop: [String] = [],
+        stop: [String] = [], // Skipped for now, later should pass thru model load where container preparation - context.configuration.extraEOSTokens
         tools: [AnyCodable]? = nil
     ) -> AsyncThrowingStream<StreamEvent, Error> {
         AsyncThrowingStream { continuation in
@@ -499,7 +489,7 @@ actor ModelRunner {
 
                         do {
                             for await generation in try MLXLMCommon.generate(
-                                input: lmInput, cache: cache.cache, parameters: generateParameters, context: context
+                                input: lmInput, cache: cache?.cache, parameters: generateParameters, context: context
                             ) {
                                 switch generation {
                                 case .chunk(let chunk):
@@ -507,15 +497,6 @@ actor ModelRunner {
                                     completionTokenCount += 1
 
                                     continuation.yield(.chunk(chunk))
-
-                                    // Check stop sequences
-                                    var hitStop = false
-                                    for s in stop where accumulated.hasSuffix(s) {
-                                        hitStop = true
-                                        log("[mlx] Hit stop sequence: \"\(s)\"")
-                                        break
-                                    }
-                                    if hitStop { break }
 
                                 case .info(let info):
                                     log("[mlx] Stream generation info: \(info.promptTokenCount) processed prompt tokens, \(info.generationTokenCount) generated tokens")
@@ -652,173 +633,3 @@ enum MLXServerError: Error, LocalizedError {
     }
 }
 
-// MARK: - Speculative Decoding Support
-
-/// Configuration for speculative decoding
-public struct SpeculativeConfig: Sendable {
-    /// Number of draft tokens to generate
-    public let numDraftTokens: Int
-
-    /// Threshold for accepting draft tokens (0.0 - 1.0)
-    public let acceptanceThreshold: Float
-
-    /// Whether speculative decoding is enabled
-    public let enabled: Bool
-
-    public init(numDraftTokens: Int = 4, acceptanceThreshold: Float = 0.5, enabled: Bool = true) {
-        self.numDraftTokens = numDraftTokens
-        self.acceptanceThreshold = acceptanceThreshold
-        self.enabled = enabled
-    }
-}
-
-/// Result of speculative decoding
-public struct SpeculativeResult: Sendable {
-    /// The generated text
-    public let text: String
-
-    /// Number of draft tokens accepted
-    public let acceptedDraftTokens: Int
-
-    /// Total draft tokens generated
-    public let totalDraftTokens: Int
-
-    /// Acceptance rate
-    public let acceptanceRate: Double
-
-    /// Speedup achieved
-    public let speedup: Double
-
-    public init(
-        text: String,
-        acceptedDraftTokens: Int,
-        totalDraftTokens: Int,
-        acceptanceRate: Double,
-        speedup: Double
-    ) {
-        self.text = text
-        self.acceptedDraftTokens = acceptedDraftTokens
-        self.totalDraftTokens = totalDraftTokens
-        self.acceptanceRate = acceptanceRate
-        self.speedup = speedup
-    }
-}
-
-// MARK: - Paged Attention Support
-
-/// Paged KV cache for memory-efficient attention computation
-actor PagedKVCacheManager {
-    private var blocks: [Int: KVBlock] = [:]
-    private var freeBlocks: Set<Int> = []
-    private var nextBlockId: Int = 0
-
-    /// Block size in tokens
-    let blockSize: Int
-
-    /// Maximum number of blocks
-    let maxBlocks: Int
-
-    init(blockSize: Int = 16, maxBlocks: Int = 10000) {
-        self.blockSize = blockSize
-        self.maxBlocks = maxBlocks
-    }
-
-    /// Allocate blocks for n tokens
-    func allocate(nTokens: Int) -> [Int] {
-        let numBlocks = (nTokens + blockSize - 1) / blockSize
-        var blockIds: [Int] = []
-
-        for _ in 0..<numBlocks {
-            let blockId: Int
-            if let free = freeBlocks.popFirst() {
-                blockId = free
-            } else {
-                blockId = nextBlockId
-                nextBlockId += 1
-            }
-            blockIds.append(blockId)
-        }
-        return blockIds
-    }
-
-    /// Free blocks when sequence completes
-    func free(blockIds: [Int]) {
-        freeBlocks.formUnion(blockIds)
-    }
-
-    /// Get block statistics
-    func getStats() -> PagedCacheStats {
-        PagedCacheStats(
-            totalBlocks: blocks.count,
-            freeBlocks: freeBlocks.count,
-            allocatedBlocks: blocks.count - freeBlocks.count,
-            blockSize: blockSize,
-            maxBlocks: maxBlocks
-        )
-    }
-}
-
-/// A block in the paged KV cache
-struct KVBlock: Sendable {
-    let blockId: Int
-    var keys: MLXArray
-    var values: MLXArray
-}
-
-/// Statistics for paged cache
-struct PagedCacheStats {
-    let totalBlocks: Int
-    let freeBlocks: Int
-    let allocatedBlocks: Int
-    let blockSize: Int
-    let maxBlocks: Int
-}
-
-// MARK: - Optimization Metrics
-
-/// Track optimization metrics for the inference engine
-struct OptimizationMetrics {
-    var totalRequests: Int = 0
-    var totalTokens: Int = 0
-    var totalLatencyMs: Double = 0
-    var cacheHits: Int = 0
-    var cacheMisses: Int = 0
-    var speculativeAccepted: Int = 0
-    var speculativeTotal: Int = 0
-
-    var avgLatencyMs: Double {
-        totalRequests > 0 ? totalLatencyMs / Double(totalRequests) : 0
-    }
-
-    var tokensPerSecond: Double {
-        totalLatencyMs > 0 ? Double(totalTokens) / (totalLatencyMs / 1000) : 0
-    }
-
-    var cacheHitRate: Double {
-        let total = cacheHits + cacheMisses
-        return total > 0 ? Double(cacheHits) / Double(total) : 0
-    }
-
-    var speculativeAcceptanceRate: Double {
-        speculativeTotal > 0 ? Double(speculativeAccepted) / Double(speculativeTotal) : 0
-    }
-
-    mutating func recordRequest(tokens: Int, latencyMs: Double) {
-        totalRequests += 1
-        totalTokens += tokens
-        totalLatencyMs += latencyMs
-    }
-
-    mutating func recordCacheHit() {
-        cacheHits += 1
-    }
-
-    mutating func recordCacheMiss() {
-        cacheMisses += 1
-    }
-
-    mutating func recordSpeculative(accepted: Int, total: Int) {
-        speculativeAccepted += accepted
-        speculativeTotal += total
-    }
-}
