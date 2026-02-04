@@ -95,7 +95,7 @@ function RenderMarkdownComponent({
   return (
     <div
       className={cn(
-        'markdown break-words select-text',
+        'markdown wrap-break-word select-text',
         isUser && 'is-user',
         className
       )}
@@ -119,7 +119,6 @@ function RenderMarkdownComponent({
         plugins={{
           code: code,
           mermaid: mermaid,
-          math: math,
           cjk: cjk,
         }}
         controls={{
