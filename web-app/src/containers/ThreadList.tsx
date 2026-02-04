@@ -134,20 +134,20 @@ const ThreadItem = memo(
     return (
       <SidebarMenuItem>
         {currentProjectId ? 
-        <Link to="/threads/$threadId" params={{ threadId: thread.id }} className="bg-secondary dark:bg-secondary/20 px-4 py-4 hover:bg-secondary/30 rounded-lg block">
-            <span>{thread.title || t('common:newThread')}</span>
-            {currentProjectId && lastUserMessageText && (
-              <div className="text-muted-foreground text-xs mt-1 line-clamp-1 pr-10">
-                {lastUserMessageText}
-              </div>
-            )}
-        </Link>
-        : 
-        <SidebarMenuButton asChild>
-          <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
-            <span>{thread.title || t('common:newThread')}</span>
+          <Link to="/threads/$threadId" params={{ threadId: thread.id }} className="bg-card dark:bg-secondary/20 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block">
+              <span>{thread.title || t('common:newThread')}</span>
+              {currentProjectId && lastUserMessageText && (
+                <div className="text-muted-foreground text-xs mt-1 line-clamp-1 pr-10">
+                  {lastUserMessageText}
+                </div>
+              )}
           </Link>
-        </SidebarMenuButton>
+          : 
+          <SidebarMenuButton asChild>
+            <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
+              <span>{thread.title || t('common:newThread')}</span>
+            </Link>
+          </SidebarMenuButton>
         }
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
