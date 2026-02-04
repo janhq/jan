@@ -6,7 +6,6 @@ import { cn, disableIndentedCodeBlockPlugin } from '@/lib/utils'
 import { defaultRehypePlugins, Streamdown } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
 import { code } from '@streamdown/code'
-import { math } from '@streamdown/math'
 import { mermaid } from '@streamdown/mermaid'
 
 import remarkGfm from 'remark-gfm'
@@ -95,7 +94,7 @@ function RenderMarkdownComponent({
   return (
     <div
       className={cn(
-        'markdown break-words select-text',
+        'markdown wrap-break-word select-text',
         isUser && 'is-user',
         className
       )}
@@ -119,7 +118,6 @@ function RenderMarkdownComponent({
         plugins={{
           code: code,
           mermaid: mermaid,
-          math: math,
           cjk: cjk,
         }}
         controls={{
