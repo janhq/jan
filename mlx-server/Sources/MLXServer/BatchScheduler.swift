@@ -9,23 +9,14 @@ import Hummingbird
 /// Configuration for batch processing
 public struct BatchingConfig: Sendable {
     public var maxBatchSize: Int
-    public var batchTimeoutMs: Int
     public var maxModelTokens: Int
     public var enableContinuousBatching: Bool
-    public var kvBlockSize: Int
-    public var enablePrefixCatching: Bool
 
-    public var batchTimeout: TimeInterval {
-        TimeInterval(batchTimeoutMs) / 1000.0
-    }
 
     public static let `default` = BatchingConfig(
         maxBatchSize: 8,
-        batchTimeoutMs: 50,
         maxModelTokens: 4096,
         enableContinuousBatching: true,
-        kvBlockSize: 16,
-        enablePrefixCatching: true
     )
 }
 
@@ -37,7 +28,6 @@ struct BatchRequest: Identifiable, Sendable {
     let chatRequest: ChatCompletionRequest
     let createdAt: Date
     var priority: Int
-    var timeoutTimer: Task<Void, Never>?
 
     init(
         id: String = UUID().uuidString,
@@ -49,13 +39,6 @@ struct BatchRequest: Identifiable, Sendable {
         self.chatRequest = chatRequest
         self.createdAt = createdAt
         self.priority = priority
-    }
-
-    /// Create a copy with a modified timeout timer
-    func withTimeout(_ timer: Task<Void, Never>?) -> BatchRequest {
-        var copy = self
-        copy.timeoutTimer = timer
-        return copy
     }
 }
 
@@ -140,6 +123,7 @@ actor RequestScheduler {
 
     init(config: BatchingConfig) {
         self.config = config
+        log("RequestScheduler initialized with config: \(config)")
     }
 
     func setBatchProcessor(_ processor: BatchProcessor) {
@@ -151,41 +135,12 @@ actor RequestScheduler {
     }
 
     /// Enqueue a request for batch processing
-    func enqueue(_ request: BatchRequest, timeout: TimeInterval = 30.0) {
-        // Cancel any existing timeout
-        request.timeoutTimer?.cancel()
-
-        let requestId = request.id  // Capture for timeout closure
-
-        // Set up timeout timer
-        let timer = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-
-            guard let self = self else { return }
-
-            // Check if request is still waiting (actor-isolated access)
-            await self.checkAndRemoveTimedOutRequest(id: requestId, timeout: timeout)
-        }
-
-        let updatedRequest = request.withTimeout(timer)
-        waitingQueue.append(updatedRequest)
-    }
-
-    /// Check and remove timed out requests (actor-isolated)
-    private func checkAndRemoveTimedOutRequest(id: String, timeout: TimeInterval) {
-        if let index = waitingQueue.firstIndex(where: { $0.id == id }) {
-            waitingQueue.remove(at: index)
-            log("[mlx] Request \(id) timed out after \(timeout)s")
-        }
+    func enqueue(_ request: BatchRequest) {
+        waitingQueue.append(request)
     }
 
     /// Get the next batch of requests to process
     func getNextBatch() -> [BatchRequest] {
-        let now = Date()
-
-        // Remove timed out requests
-        waitingQueue.removeAll { now.timeIntervalSince($0.createdAt) > config.batchTimeout }
-
         // For continuous batching, add slots from finished requests
         let availableSlots = config.maxBatchSize - runningRequests.count
 
@@ -341,7 +296,6 @@ actor BatchProcessor {
 
 enum BatchingError: Error, LocalizedError {
     case queueEmpty
-    case batchTimeout
     case invalidRequest(String)
     case processingFailed(String)
 
@@ -349,8 +303,6 @@ enum BatchingError: Error, LocalizedError {
         switch self {
         case .queueEmpty:
             return "Request queue is empty"
-        case .batchTimeout:
-            return "Batch processing timed out"
         case .invalidRequest(let reason):
             return "Invalid request: \(reason)"
         case .processingFailed(let reason):

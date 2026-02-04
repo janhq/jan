@@ -33,17 +33,8 @@ struct MLXServerCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Maximum batch size for concurrent requests (0 to disable)")
     var maxBatchSize: Int = 0
 
-    @Option(name: .long, help: "Batch timeout in milliseconds")
-    var batchTimeoutMs: Int = 100
-
     @Flag(name: .long, help: "Enable continuous batching")
     var enableContinuousBatching: Bool = false
-
-    @Option(name: .long, help: "KV cache block size in tokens")
-    var kvBlockSize: Int = 16
-
-    @Flag(name: .long, help: "Enable prefix caching")
-    var enablePrefixCaching: Bool = false
 
     func run() async throws {
         // Set GPU memory limit to prevent OOM issues
@@ -60,9 +51,7 @@ struct MLXServerCommand: AsyncParsableCommand {
         if maxBatchSize > 0 {
             log("[mlx] Batching enabled:")
             log("  - Max batch size: \(maxBatchSize)")
-            log("  - Batch timeout: \(batchTimeoutMs)ms")
             log("  - Continuous batching: \(enableContinuousBatching)")
-            log("  - Prefix caching: \(enablePrefixCaching)")
         } else {
             log("[mlx] Batching disabled (sequential processing)")
         }
@@ -95,11 +84,8 @@ struct MLXServerCommand: AsyncParsableCommand {
         if maxBatchSize > 0 {
             batchingConfig = BatchingConfig(
                 maxBatchSize: maxBatchSize,
-                batchTimeoutMs: batchTimeoutMs,
                 maxModelTokens: ctxSize,
                 enableContinuousBatching: enableContinuousBatching,
-                kvBlockSize: kvBlockSize,
-                enablePrefixCatching: enablePrefixCaching
             )
         } else {
             batchingConfig = nil

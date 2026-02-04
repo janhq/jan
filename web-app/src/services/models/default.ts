@@ -333,8 +333,14 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async stopAllModels(): Promise<void> {
-    const models = await this.getActiveModels()
-    if (models) await Promise.all(models.map((model) => this.stopModel(model)))
+    const llamaCppModels = await this.getActiveModels('llamacpp')
+    if (llamaCppModels)
+      await Promise.all(
+        llamaCppModels.map((model) => this.stopModel(model, 'llamacpp'))
+      )
+    const mlxModels = await this.getActiveModels('mlx')
+    if (mlxModels)
+      await Promise.all(mlxModels.map((model) => this.stopModel(model, 'mlx')))
   }
 
   async startModel(

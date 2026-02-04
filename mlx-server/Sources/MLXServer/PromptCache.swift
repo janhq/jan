@@ -45,24 +45,15 @@ public class PromptCache: @unchecked Sendable {
     ///             to create a new cache.
     public func getUncachedSuffix(prompt: MLXArray) -> MLXArray? {
 
-        log("[getUncachedSuffix] self.tokens.size = \(self.tokens.size)")
-
-        log("cache[\(self.tokens.size)]: \(self.tokens)")
-        log("prompt[\(prompt.size)]: \(prompt)")
-
         let comPrefixLength = commonPrefixLength(newPromptTokens: prompt)
-        log("[getUncachedSuffix] comPrefixLength: \(comPrefixLength)")
 
         if comPrefixLength == self.tokens.size {
             let suffix = prompt[comPrefixLength ..< prompt.size]
-            log("Concating...")
             self.tokens = concatenated([self.tokens, suffix], axis: 0)
             return suffix
         } else if comPrefixLength < self.tokens.size {
             if isTrimmable() {
-                log("trimming: \(self.tokens.size - comPrefixLength)")
                 let trimmedLen = self.trim(self.tokens.size - comPrefixLength)
-                log("trimmed: \(trimmedLen)")
                 if trimmedLen != self.tokens.size - comPrefixLength {
                     log("Warning: request trimmed amount and actual trimmed amount are different")
                 }
@@ -111,7 +102,6 @@ public class PromptCache: @unchecked Sendable {
     /// - Returns: Length of the common prefix
     public func commonPrefixLength(_ array1: MLXArray, _ array2: MLXArray) -> Int {
         // TODO: Add test cases
-        log("Calculating common prefix: array1[\(array1.size)] array2[\(array2.size)]")
         let minLength = min(array1.size, array2.size)
         for i in 0 ..< minLength {
             if all(array1[i] .!= array2[i]).item(Bool.self) {
