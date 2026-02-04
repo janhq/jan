@@ -6,7 +6,6 @@ import { cn, disableIndentedCodeBlockPlugin } from '@/lib/utils'
 import { defaultRehypePlugins, Streamdown } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
 import { code } from '@streamdown/code'
-import { math } from '@streamdown/math'
 import { mermaid } from '@streamdown/mermaid'
 
 import remarkGfm from 'remark-gfm'
