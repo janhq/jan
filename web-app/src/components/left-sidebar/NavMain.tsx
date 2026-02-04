@@ -16,6 +16,7 @@ import { SearchIcon, type SearchIconHandle } from "@/components/animated-icon/se
 import { FolderPlusIcon, type FolderPlusIconHandle } from "@/components/animated-icon/folder-plus"
 import { MessageCircleIcon, type MessageCircleIconHandle } from "@/components/animated-icon/message-circle"
 import { SettingsIcon, type SettingsIconHandle } from "@/components/animated-icon/settings"
+import { GlobeIcon, type GlobeIconHandle } from "@/components/animated-icon/globe"
 import { BlocksIcon, type BlocksIconHandle } from "../animated-icon/blocks"
 import AddProjectDialog from "@/containers/dialogs/AddProjectDialog"
 import { SearchDialog } from "@/containers/dialogs/SearchDialog"
@@ -23,7 +24,7 @@ import { useThreadManagement } from "@/hooks/useThreadManagement"
 import { useSearchDialog } from "@/hooks/useSearchDialog"
 import { useProjectDialog } from "@/hooks/useProjectDialog"
 
-type AnimatedIconHandle = SearchIconHandle | FolderPlusIconHandle | MessageCircleIconHandle | SettingsIconHandle | BlocksIconHandle
+type AnimatedIconHandle = SearchIconHandle | FolderPlusIconHandle | MessageCircleIconHandle | SettingsIconHandle | GlobeIconHandle | BlocksIconHandle
 
 type NavMainItem = {
   title: string
@@ -75,6 +76,11 @@ const getNavMainItems = (onNewProject: () => void, onSearch: () => void): NavMai
     title: "common:hub",
     url: route.hub.index,
     animatedIcon: BlocksIcon,
+  },
+  {
+    title: "common:gateway",
+    url: route.gateway,
+    animatedIcon: GlobeIcon,
   },
   {
     title: "common:settings",

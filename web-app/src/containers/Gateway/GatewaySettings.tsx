@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useGatewayStore } from '../../hooks/useGateway';
 import { useGatewayStatus, useIsGatewayRunning } from '../../hooks/useGateway';
 import type { GatewayConfig } from '../../services/gateway';
@@ -27,6 +28,10 @@ export function GatewaySettings({ onSave, onToggle }: GatewaySettingsProps) {
   const [autoCreateThreads, setAutoCreateThreads] = useState(true);
   const [defaultAssistantId, setDefaultAssistantId] = useState<string | null>(null);
 
+  // Discord configuration state
+  const [discordWebhookUrl, setDiscordWebhookUrl] = useState('');
+  const [discordBotToken, setDiscordBotToken] = useState('');
+
   // Whitelist state
   const [whitelistEnabled, setWhitelistEnabled] = useState(false);
   const [whitelistUsers, setWhitelistUsers] = useState('');
@@ -42,9 +47,27 @@ export function GatewaySettings({ onSave, onToggle }: GatewaySettingsProps) {
     if (status) {
       setHttpPort(status.httpPort || 4281);
       setWsPort(status.wsPort || 4282);
-      setEnabled(status.running);
     }
   }, [status]);
+
+  // Replay gateway state on mount to catch any missed messages
+  useEffect(() => {
+    const replayState = async () => {
+      if (isRunning) {
+        console.log('[GatewaySettings] Replaying gateway state...');
+        try {
+          await invoke('gateway_replay_state');
+          console.log('[GatewaySettings] State replayed successfully');
+        } catch (error) {
+          console.error('[GatewaySettings] Failed to replay state:', error);
+        }
+      }
+    };
+
+    // Small delay to ensure all listeners are set up
+    const timer = setTimeout(replayState, 1000);
+    return () => clearTimeout(timer);
+  }, [isRunning]);
 
   const handleStart = async () => {
     try {
@@ -62,6 +85,8 @@ export function GatewaySettings({ onSave, onToggle }: GatewaySettingsProps) {
         },
         autoCreateThreads,
         defaultAssistantId,
+        discordWebhookUrl: discordWebhookUrl || null,
+        discordBotToken: discordBotToken || null,
       };
 
       await startServer(config);
@@ -103,6 +128,8 @@ export function GatewaySettings({ onSave, onToggle }: GatewaySettingsProps) {
         },
         autoCreateThreads,
         defaultAssistantId,
+        discordWebhookUrl: discordWebhookUrl || null,
+        discordBotToken: discordBotToken || null,
       };
 
       // Save config (would call backend command)
@@ -194,6 +221,47 @@ export function GatewaySettings({ onSave, onToggle }: GatewaySettingsProps) {
                 placeholder="Select an assistant..."
               />
             </label>
+          )}
+        </section>
+
+        {/* Discord Configuration */}
+        <section className="gateway-settings__section">
+          <h4>Discord Integration</h4>
+
+          <p className="gateway-settings__help">
+            Configure how Jan sends responses back to Discord. Get your webhook URL from Discord Server Settings &rarr; Integrations &rarr; Webhooks.
+          </p>
+
+          <label>
+            Discord Webhook URL
+            <input
+              type="text"
+              value={discordWebhookUrl}
+              onChange={(e) => setDiscordWebhookUrl(e.target.value)}
+              placeholder="https://discord.com/api/webhooks/..."
+              disabled={isRunning}
+            />
+          </label>
+
+          <label className="gateway-settings__help-text">
+            OR
+          </label>
+
+          <label>
+            Discord Bot Token
+            <input
+              type="password"
+              value={discordBotToken}
+              onChange={(e) => setDiscordBotToken(e.target.value)}
+              placeholder="MTEyMzQ1Njg5Nzg5MDEyMzQ1Njc4..."
+              disabled={isRunning}
+            />
+          </label>
+
+          {(discordWebhookUrl || discordBotToken) && (
+            <div className="gateway-settings__status gateway-settings__status--success">
+              Discord integration configured
+            </div>
           )}
         </section>
 

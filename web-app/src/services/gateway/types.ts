@@ -11,6 +11,8 @@ export interface GatewayConfig {
   whitelist: WhitelistConfig;
   autoCreateThreads: boolean;
   defaultAssistantId: string | null;
+  discordWebhookUrl: string | null;
+  discordBotToken: string | null;
 }
 
 export interface WhitelistConfig {
@@ -67,6 +69,7 @@ export interface GatewayServiceInterface {
   startServer(config: GatewayConfig): Promise<void>;
   stopServer(): Promise<void>;
   getStatus(): Promise<GatewayStatus>;
+  configureDiscord(webhookUrl: string | null, botToken: string | null): Promise<void>;
   sendResponse(channelId: string, content: string): Promise<void>;
   getConnections(): Promise<ConnectionState[]>;
   getThreadMappings(): Promise<ThreadMapping[]>;

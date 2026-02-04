@@ -24,6 +24,7 @@ export const route = {
     index: '/hub/',
     model: '/hub/$modelId',
   },
+  gateway: '/gateway',
   localApiServerlogs: '/local-api-server/logs',
   systemMonitor: '/system-monitor',
   threadsDetail: '/threads/$threadId',

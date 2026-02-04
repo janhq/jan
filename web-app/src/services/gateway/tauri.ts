@@ -30,6 +30,13 @@ export function createGatewayService(): GatewayServiceInterface {
       return await invoke('gateway_get_status');
     },
 
+    async configureDiscord(webhookUrl: string | null, botToken: string | null): Promise<void> {
+      await invoke('gateway_configure_discord', {
+        webhookUrl: webhookUrl || null,
+        botToken: botToken || null,
+      });
+    },
+
     async sendResponse(channelId: string, content: string): Promise<void> {
       await invoke('gateway_send_response', {
         response: {
@@ -74,8 +81,14 @@ export function createGatewayService(): GatewayServiceInterface {
 
     onMessage(platform: Platform, handler: (message: GatewayMessage) => void): () => void {
       const eventName = `gateway:message:${platform}`;
+      console.log(`[GatewayTauri] 📡 Setting up listener for event: ${eventName}`);
 
       const unlisten = listen<GatewayMessage>(eventName, (event) => {
+        console.log(`[GatewayTauri] 📨 EVENT RECEIVED: ${eventName}`, {
+          id: event.payload.id,
+          channel: event.payload.channelId,
+          content: event.payload.content.substring(0, 50),
+        });
         handler(event.payload);
       });
 
