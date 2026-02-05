@@ -24,6 +24,7 @@ import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from '../model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useOrchestratorState } from '@/hooks/useOrchestratorState'
 import { createOpenCodeDelegateTool } from '@/tools/opencode-delegate'
 import type {
@@ -376,12 +377,33 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
       this.mapUserInlineAttachments(options.messages)
     )
 
+    // Get provider info from the current model settings for OpenCode to use.
+    // OpenCode always connects to Jan's inference server (local API server) which
+    // proxies all models — both local (llama.cpp) and remote (Anthropic, OpenAI, etc.).
+    const currentProvider = useModelProvider.getState().getProviderByName(
+      useModelProvider.getState().selectedProvider
+    )
+    const providerName = useModelProvider.getState().selectedProvider
+    const selectedModelId = useModelProvider.getState().selectedModel?.id
+
+    // Construct the Jan server URL from local API server settings
+    const localServer = useLocalApiServer.getState()
+    const host = localServer.serverHost || '127.0.0.1'
+    const port = localServer.serverPort || 1337
+    const prefix = localServer.apiPrefix || '/v1'
+    const providerBaseUrl = currentProvider?.base_url || `http://${host}:${port}${prefix}`
+    const providerApiKey = currentProvider?.api_key || localServer.apiKey || undefined
+
     // Create agent delegate tool if project path is set
     const opencodeTool = this.projectPath
       ? createOpenCodeDelegateTool({
           projectPath: this.projectPath,
           agent: this.defaultAgent,
           autoApproveReadOnly: this.autoApproveReadOnly,
+          apiKey: providerApiKey,
+          providerId: providerName,
+          modelId: selectedModelId,
+          baseUrl: providerBaseUrl,
           onProgress: (event: UnifiedAgentEvent) => {
             addEvent(event)
           },

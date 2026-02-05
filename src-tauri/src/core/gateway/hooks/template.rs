@@ -50,18 +50,29 @@ impl TemplateContext {
 
     /// Get a value from the context (checks all sources)
     pub fn get(&self, key: &str) -> Option<&Value> {
-        // Check path params first (as string)
-        if let Some(val) = self.path_params.get(key) {
-            return Some(&Value::String(val.clone()));
-        }
-
-        // Check request
+        // Check request first
         if let Some(val) = self.request.get(key) {
             return Some(val);
         }
 
         // Check platform
         self.platform.get(key)
+    }
+
+    /// Get a string value from the context (creates a new Value::String for path params)
+    pub fn get_string(&self, key: &str) -> Option<Value> {
+        // Check path params first (as string)
+        if let Some(val) = self.path_params.get(key) {
+            return Some(Value::String(val.clone()));
+        }
+
+        // Check request
+        if let Some(val) = self.request.get(key) {
+            return Some(val.clone());
+        }
+
+        // Check platform
+        self.platform.get(key).cloned()
     }
 }
 
@@ -126,8 +137,8 @@ impl TemplateEngine {
         }
 
         // Check context for the variable
-        if let Some(value) = context.get(name) {
-            Self::value_to_string(value)
+        if let Some(value) = context.get_string(name) {
+            Self::value_to_string(&value)
         } else {
             Err(TemplateError::VariableNotFound(name.to_string()))
         }

@@ -254,14 +254,20 @@ function formatEventContent(event: UnifiedAgentEvent): string {
     case 'step.completed':
       return `Step ${data.step} completed`
 
-    case 'delegation.started':
-      return `Delegating: ${(data.task as string).slice(0, 30)}...`
+    case 'delegation.started': {
+      const taskText = data.task as string
+      const truncatedTask = taskText.length > 40 ? `${taskText.slice(0, 40)}...` : taskText
+      return `Delegating: ${truncatedTask}`
+    }
 
     case 'delegation.completed': {
       const files = data.filesChanged as string[] | undefined
-      return files && files.length > 0
-        ? `OpenCode completed: ${files.length} files changed`
-        : 'OpenCode completed'
+      if (files && files.length > 0) {
+        // Show shortened file names (just the basename)
+        const shortNames = files.map(f => f.split('/').pop() || f)
+        return `OpenCode completed: ${shortNames.join(', ')}`
+      }
+      return 'OpenCode completed'
     }
 
     case 'delegation.error':

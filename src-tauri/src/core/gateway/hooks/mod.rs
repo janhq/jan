@@ -126,15 +126,6 @@ impl HookMappingService {
     }
 }
 
-/// Convert config to service
-impl From<HookMappingConfig> for HookMappingService {
-    fn from(config: HookMappingConfig) -> Self {
-        let service = Self::new();
-        let _ = futures::executor::block_on(service.add_mapping(config));
-        service
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

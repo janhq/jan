@@ -117,6 +117,9 @@ export interface OpenCodeServiceInterface {
     prompt: string
     agent?: 'build' | 'plan' | 'explore'
     apiKey?: string
+    providerId?: string
+    modelId?: string
+    baseUrl?: string
   }): Promise<string>
 
   /**

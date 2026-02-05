@@ -1461,7 +1461,8 @@ pub async fn gateway_list_hook_mappings(
 ) -> Result<Vec<serde_json::Value>, String> {
     let guard = state.lock().await;
     let mappings = guard.hook_mapping_service.list_mappings().await;
-    Ok(mappings.into_iter().map(serde_json::json).collect())
+    let results: Vec<serde_json::Value> = mappings.into_iter().map(|m| serde_json::to_value(m).unwrap_or_default()).collect();
+    Ok(results)
 }
 
 /// Command to get hook mapping statistics
@@ -1526,8 +1527,8 @@ pub async fn gateway_is_timestamps_enabled(
 pub async fn gateway_create_timing_context(
     state: State<'_, SharedGatewayManager>,
 ) -> Result<serde_json::Value, String> {
-    let guard = state.lock().await;
-    let ctx = guard.timestamp_injector.create_record();
+    use super::timestamps::TimestampInjector;
+    let ctx = TimestampInjector::create_record();
 
     Ok(serde_json::json!({
         "received_at": ctx.received_at,

@@ -10,13 +10,16 @@ export function createOpenCodeService(): OpenCodeServiceInterface {
   const listeners = new Map<string, UnlistenFn[]>()
 
   return {
-    async startTask({ taskId, projectPath, prompt, agent, apiKey }) {
+    async startTask({ taskId, projectPath, prompt, agent, apiKey, providerId, modelId, baseUrl }) {
       const resultTaskId = await invoke<string>('opencode_spawn_task', {
         taskId,
         projectPath,
         prompt,
         agent,
         apiKey,
+        providerId,
+        modelId,
+        baseUrl,
       })
       return resultTaskId
     },

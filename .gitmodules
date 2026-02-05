@@ -1,0 +1,3 @@
+[submodule "opencode"]
+	path = opencode
+	url = git@github.com:Vanalite/opencode.git

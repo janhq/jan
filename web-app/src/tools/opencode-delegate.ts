@@ -42,6 +42,15 @@ export interface DelegateContext {
 
   /** API key for OpenCode to use (from Jan's model settings) */
   apiKey?: string
+
+  /** Provider identifier (e.g., "anthropic", "openai") */
+  providerId?: string
+
+  /** Model identifier (e.g., "claude-sonnet-4-20250514") */
+  modelId?: string
+
+  /** Base URL for the provider API */
+  baseUrl?: string
 }
 
 // ============================================================================
@@ -258,8 +267,63 @@ async function executeOpenCodeDelegation(
   task: string,
   context: DelegateContext
 ): Promise<OpenCodeDelegateResult> {
-  const { projectPath, agent = 'build', apiKey, onProgress, onPermissionRequest, autoApproveReadOnly } = context
+  const { projectPath, agent = 'build', apiKey, providerId, modelId, baseUrl, onProgress, onPermissionRequest, autoApproveReadOnly } = context
   const service = getOpenCodeService()
+
+  // Pre-flight check: verify Jan's local API server is reachable
+  if (baseUrl) {
+    try {
+      const healthUrl = baseUrl.replace(/\/v1\/?$/, '/v1/models')
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 5000)
+      const headers: Record<string, string> = {}
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`
+      }
+      const resp = await fetch(healthUrl, { signal: controller.signal, headers }).catch(() => null)
+      clearTimeout(timeout)
+      if (!resp || !resp.ok) {
+        const errorMsg = `Jan's local API server is not reachable at ${baseUrl}. Please start the server in Settings > Local API Server.`
+        console.error('[OpenCode Delegate]', errorMsg)
+        const { setStatus } = useOrchestratorState.getState()
+        setStatus('error')
+        onProgress?.({
+          id: `preflight-error-${Date.now()}`,
+          source: 'opencode',
+          timestamp: Date.now(),
+          type: 'delegation.error',
+          data: { taskId: 'preflight', error: errorMsg },
+        })
+        return {
+          success: false,
+          status: 'error' as const,
+          filesChanged: [],
+          events: [],
+          error: errorMsg,
+        }
+      }
+    } catch (e) {
+      // If fetch itself throws (e.g., AbortError), the server is unreachable
+      const errorMsg = `Jan's local API server is not reachable at ${baseUrl}. Please start the server in Settings > Local API Server.`
+      console.error('[OpenCode Delegate]', errorMsg, e)
+      const { setStatus } = useOrchestratorState.getState()
+      setStatus('error')
+      onProgress?.({
+        id: `preflight-error-${Date.now()}`,
+        source: 'opencode',
+        timestamp: Date.now(),
+        type: 'delegation.error',
+        data: { taskId: 'preflight', error: errorMsg },
+      })
+      return {
+        success: false,
+        status: 'error' as const,
+        filesChanged: [],
+        events: [],
+        error: errorMsg,
+      }
+    }
+  }
 
   // Generate task ID
   const taskId = crypto.randomUUID()
@@ -277,10 +341,8 @@ async function executeOpenCodeDelegation(
       projectPath,
     },
   }
-  onProgress?.(startEvent)
-
   // Update orchestrator state
-  const { setStatus, setActiveDelegation, addEvent } = useOrchestratorState.getState()
+  const { setStatus, setActiveDelegation } = useOrchestratorState.getState()
   setStatus('delegating')
   setActiveDelegation({
     taskId,
@@ -289,7 +351,9 @@ async function executeOpenCodeDelegation(
     projectPath,
     startedAt: Date.now(),
   })
-  addEvent(startEvent)
+
+  // Emit delegation started event via onProgress only (caller adds to orchestrator state)
+  onProgress?.(startEvent)
 
   // Collect events and track state
   const collectedEvents: UnifiedAgentEvent[] = []
@@ -297,7 +361,54 @@ async function executeOpenCodeDelegation(
   let summary: string | undefined
   let tokensUsed: number | undefined
 
+  // Delegation timeout: 5 minutes max to prevent silent stalls
+  const DELEGATION_TIMEOUT_MS = 5 * 60 * 1000
+
   return new Promise((resolve) => {
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+    let resolved = false
+
+    const safeResolve = (result: OpenCodeDelegateResult) => {
+      if (resolved) return
+      resolved = true
+      if (timeoutHandle) clearTimeout(timeoutHandle)
+      resolve(result)
+    }
+
+    // Set up timeout to prevent silent stalls (e.g. server unreachable)
+    timeoutHandle = setTimeout(() => {
+      if (resolved) return
+      console.warn('[OpenCode Delegate] Delegation timed out after', DELEGATION_TIMEOUT_MS / 1000, 'seconds')
+
+      // Clean up
+      unsubscribe()
+      setActiveDelegation(null)
+      setStatus('error')
+
+      const timeoutEvent: UnifiedAgentEvent = {
+        id: `delegation-timeout-${taskId}`,
+        source: 'opencode',
+        timestamp: Date.now(),
+        type: 'delegation.error',
+        data: {
+          taskId,
+          error: 'Delegation timed out. Is Jan\'s local API server running? Check Settings > Local API Server.',
+        },
+      }
+      onProgress?.(timeoutEvent)
+
+      safeResolve({
+        success: false,
+        status: 'error',
+        filesChanged,
+        events: collectedEvents,
+        error: 'Delegation timed out. The local API server may not be running.',
+      })
+
+      // Try to cancel the task
+      service.cancelTask(taskId).catch(() => {})
+    }, DELEGATION_TIMEOUT_MS)
+
     // Set up event listener BEFORE starting task
     const unsubscribe = service.onEvent(taskId, async (message) => {
       const timestamp = Date.now()
@@ -322,7 +433,6 @@ async function executeOpenCodeDelegation(
           if (unifiedEvent) {
             collectedEvents.push(unifiedEvent)
             onProgress?.(unifiedEvent)
-            addEvent(unifiedEvent)
 
             // Track file changes
             if (eventData.type === 'file.changed') {
@@ -353,7 +463,6 @@ async function executeOpenCodeDelegation(
             },
           }
           onProgress?.(approvalEvent)
-          addEvent(approvalEvent)
 
           // Check if auto-approve is enabled for read-only
           if (autoApproveReadOnly && isReadOnlyOperation(permRequest.permission)) {
@@ -375,7 +484,6 @@ async function executeOpenCodeDelegation(
               },
             }
             onProgress?.(autoApproveEvent)
-            addEvent(autoApproveEvent)
           } else if (onPermissionRequest) {
             // Request user approval
             setStatus('waiting_approval')
@@ -401,7 +509,6 @@ async function executeOpenCodeDelegation(
               },
             }
             onProgress?.(responseEvent)
-            addEvent(responseEvent)
             setStatus('delegating')
           } else {
             // No permission handler - deny by default
@@ -436,9 +543,8 @@ async function executeOpenCodeDelegation(
             },
           }
           onProgress?.(completionEvent)
-          addEvent(completionEvent)
 
-          resolve({
+          safeResolve({
             success: result.status === 'completed',
             status: result.status,
             summary,
@@ -470,9 +576,8 @@ async function executeOpenCodeDelegation(
             },
           }
           onProgress?.(errorEvent)
-          addEvent(errorEvent)
 
-          resolve({
+          safeResolve({
             success: false,
             status: 'error',
             filesChanged,
@@ -496,6 +601,9 @@ async function executeOpenCodeDelegation(
           prompt: task,
           agent,
           apiKey,
+          providerId,
+          modelId,
+          baseUrl,
         })
       } catch (error) {
         unsubscribe()
@@ -513,9 +621,8 @@ async function executeOpenCodeDelegation(
           },
         }
         onProgress?.(errorEvent)
-        addEvent(errorEvent)
 
-        resolve({
+        safeResolve({
           success: false,
           status: 'error',
           filesChanged: [],
@@ -556,49 +663,63 @@ export function createOpenCodeDelegateTool(context: DelegateContext): Tool {
       },
       required: ['task'],
     }),
-    execute: async (input: { task: string; agent?: string }) => {
-      const { task, agent } = input
-      console.log('[OpenCode Delegate] Tool execute called with input:', JSON.stringify(input).slice(0, 200))
+    execute: (() => {
+      // Track delegation attempts to prevent the LLM from retrying on error.
+      // When the tool fails once, the LLM sees the error result and often
+      // decides to call the tool again, causing duplicate subprocesses.
+      let delegationAttempted = false
 
-      try {
-        const result = await executeOpenCodeDelegation(task, {
-          ...context,
-          agent: (agent as OpenCodeAgentType) || context.agent || 'build',
-        })
-        console.log('[OpenCode Delegate] Result:', JSON.stringify({
-          success: result.success,
-          status: result.status,
-          summary: result.summary?.slice(0, 100),
-          filesChanged: result.filesChanged,
-          error: result.error,
-        }))
+      return async (input: { task: string; agent?: string }) => {
+        const { task, agent } = input
+        console.log('[OpenCode Delegate] Tool execute called with input:', JSON.stringify(input).slice(0, 200))
 
-        // Always return a string result — never throw.
-        // AI SDK feeds this back to the model for a final response.
-        if (result.success) {
-          const parts = []
-          if (result.summary) {
-            parts.push(`Summary: ${result.summary}`)
-          }
-          if (result.filesChanged.length > 0) {
-            parts.push(`Files changed: ${result.filesChanged.join(', ')}`)
-          }
-          if (result.tokensUsed) {
-            parts.push(`Tokens used: ${result.tokensUsed}`)
-          }
-          return parts.length > 0
-            ? parts.join('\n')
-            : 'Task completed successfully.'
-        } else {
-          return `Task failed: ${result.error || 'Unknown error'}`
+        // Prevent duplicate delegations within the same conversation turn
+        if (delegationAttempted) {
+          console.log('[OpenCode Delegate] Blocking retry — already attempted delegation this turn')
+          return 'OpenCode delegation was already attempted for this conversation. Do NOT call opencode_delegate again. Instead, inform the user about the previous error and suggest they check their configuration.'
         }
-      } catch (error) {
-        // Catch any exception and return it as a string result instead of throwing.
-        // Throwing would put the tool in 'output-error' state and show as "Failed" in the chat.
-        const errorMessage = error instanceof Error ? error.message : String(error)
-        console.error('[OpenCode Delegate] Execute exception:', errorMessage, error)
-        return `OpenCode delegation error: ${errorMessage}`
+        delegationAttempted = true
+
+        try {
+          const result = await executeOpenCodeDelegation(task, {
+            ...context,
+            agent: (agent as OpenCodeAgentType) || context.agent || 'build',
+          })
+          console.log('[OpenCode Delegate] Result:', JSON.stringify({
+            success: result.success,
+            status: result.status,
+            summary: result.summary?.slice(0, 100),
+            filesChanged: result.filesChanged,
+            error: result.error,
+          }))
+
+          // Always return a string result — never throw.
+          // AI SDK feeds this back to the model for a final response.
+          if (result.success) {
+            const parts = []
+            if (result.summary) {
+              parts.push(`Summary: ${result.summary}`)
+            }
+            if (result.filesChanged.length > 0) {
+              parts.push(`Files changed: ${result.filesChanged.join(', ')}`)
+            }
+            if (result.tokensUsed) {
+              parts.push(`Tokens used: ${result.tokensUsed}`)
+            }
+            return parts.length > 0
+              ? parts.join('\n')
+              : 'Task completed successfully.'
+          } else {
+            return `Task failed: ${result.error || 'Unknown error'}. Do NOT retry this delegation — report the error to the user instead.`
+          }
+        } catch (error) {
+          // Catch any exception and return it as a string result instead of throwing.
+          // Throwing would put the tool in 'output-error' state and show as "Failed" in the chat.
+          const errorMessage = error instanceof Error ? error.message : String(error)
+          console.error('[OpenCode Delegate] Execute exception:', errorMessage, error)
+          return `OpenCode delegation error: ${errorMessage}. Do NOT retry — inform the user about this error.`
+        }
       }
-    },
+    })(),
   }
 }

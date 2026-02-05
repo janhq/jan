@@ -262,6 +262,9 @@ export function UnifiedProgressPanel({
                     <span className="text-[10px] text-muted-foreground line-clamp-2">
                       {activeDelegation.task}
                     </span>
+                    <span className="text-[10px] text-muted-foreground/70 font-mono truncate block">
+                      {activeDelegation.projectPath}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -305,12 +308,14 @@ export function UnifiedProgressPanel({
                             <span>{delegationOutput.summary}</span>
                           </div>
                         )}
-                        {delegationOutput.filesChanged && delegationOutput.filesChanged.length > 0 && (
+                        {delegationOutput.filesChanged && (delegationOutput.filesChanged as string[]).length > 0 && (
                           <div className="text-[10px]">
                             <span className="text-muted-foreground">Files: </span>
-                            <span className="font-mono">
-                              {delegationOutput.filesChanged.length} changed
-                            </span>
+                            <div className="font-mono pl-2 space-y-0.5 mt-0.5">
+                              {(delegationOutput.filesChanged as string[]).map((f: string) => (
+                                <div key={f} className="truncate">{f}</div>
+                              ))}
+                            </div>
                           </div>
                         )}
                         {delegationOutput.tokensUsed && (

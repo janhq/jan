@@ -8,6 +8,18 @@ use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, RwLock};
 use log::{error, info, warn};
 
+/// How to launch the OpenCode process
+#[derive(Debug, Clone)]
+enum LaunchMode {
+    /// Run a compiled binary directly
+    Binary(PathBuf),
+    /// Run via bun in dev mode: `bun run --conditions=browser ./src/index.ts stdio ...`
+    BunDev {
+        bun_path: PathBuf,
+        opencode_dir: PathBuf,
+    },
+}
+
 /// Handle for a running OpenCode task
 struct OpenCodeTaskHandle {
     #[allow(dead_code)]
@@ -19,7 +31,7 @@ struct OpenCodeTaskHandle {
 /// Manages OpenCode subprocess lifecycle
 pub struct OpenCodeProcessManager {
     tasks: Arc<RwLock<HashMap<TaskId, OpenCodeTaskHandle>>>,
-    binary_path: PathBuf,
+    launch_mode: LaunchMode,
 }
 
 impl OpenCodeProcessManager {
@@ -27,7 +39,15 @@ impl OpenCodeProcessManager {
     pub fn with_binary(path: PathBuf) -> Self {
         Self {
             tasks: Arc::new(RwLock::new(HashMap::new())),
-            binary_path: path,
+            launch_mode: LaunchMode::Binary(path),
+        }
+    }
+
+    /// Create a process manager using bun dev mode
+    pub fn with_bun_dev(bun_path: PathBuf, opencode_dir: PathBuf) -> Self {
+        Self {
+            tasks: Arc::new(RwLock::new(HashMap::new())),
+            launch_mode: LaunchMode::BunDev { bun_path, opencode_dir },
         }
     }
 
@@ -38,7 +58,10 @@ impl OpenCodeProcessManager {
     /// * `project_path` - Path to the project directory
     /// * `prompt` - The task prompt/instruction
     /// * `agent` - Optional agent type (build, plan, explore)
-    /// * `api_key` - Optional API key for authenticating with Jan's Local API Server
+    /// * `api_key` - Optional API key for the LLM provider
+    /// * `provider_id` - Optional provider identifier (e.g., "anthropic", "openai")
+    /// * `model_id` - Optional model identifier (e.g., "claude-sonnet-4-20250514")
+    /// * `base_url` - Optional base URL for the provider API
     /// * `event_tx` - Channel to send events back to the caller
     ///
     /// # Returns
@@ -51,25 +74,89 @@ impl OpenCodeProcessManager {
         prompt: String,
         agent: Option<String>,
         api_key: Option<String>,
+        provider_id: Option<String>,
+        model_id: Option<String>,
+        base_url: Option<String>,
         event_tx: mpsc::Sender<(TaskId, OpenCodeToJan)>,
     ) -> Result<(), String> {
         info!(
-            "Spawning OpenCode task: {} for project: {} with binary: {:?}",
-            task_id, project_path, self.binary_path
+            "Spawning OpenCode task: {} for project: {} with mode: {:?}",
+            task_id, project_path, self.launch_mode
         );
 
-        // Build the command
-        let mut cmd = Command::new(&self.binary_path);
-        cmd.args(["stdio", "--project", &project_path]);
+        // Build the command depending on launch mode
+        let mut cmd = match &self.launch_mode {
+            LaunchMode::Binary(binary_path) => {
+                let mut c = Command::new(binary_path);
+                c.args(["stdio", "--project", &project_path]);
+                c
+            }
+            LaunchMode::BunDev { bun_path, opencode_dir } => {
+                let mut c = Command::new(bun_path);
+                c.current_dir(opencode_dir);
+                c.args([
+                    "run",
+                    "--conditions=browser",
+                    "./src/index.ts",
+                    "stdio",
+                    "--project",
+                    &project_path,
+                ]);
+                c
+            }
+        };
 
         if let Some(agent_name) = &agent {
             cmd.args(["--agent", agent_name]);
         }
 
-        // Pass the API key as environment variable for OpenAI-compatible provider
-        if let Some(key) = &api_key {
-            cmd.env("OPENAI_API_KEY", key);
-            info!("Set OPENAI_API_KEY environment variable for OpenCode");
+        // Build OPENCODE_CONFIG_CONTENT to override OpenCode's global config
+        // (~/.config/opencode/opencode.jsonc). OpenCode always uses Jan's selected
+        // model via an OpenAI-compatible endpoint — regardless of whether the model
+        // is local (llama.cpp) or remote (Anthropic, OpenAI, etc.).
+        // Jan's inference server exposes all models through http://127.0.0.1:1337/v1.
+        {
+            let model_name = model_id.as_deref().unwrap_or("default");
+            let server_url = base_url.as_deref().unwrap_or("http://127.0.0.1:1337/v1");
+            let jan_provider_id = "jan";
+
+            let mut config = serde_json::Map::new();
+
+            // Set model in "provider/model" format
+            config.insert(
+                "model".to_string(),
+                serde_json::Value::String(format!("{}/{}", jan_provider_id, model_name)),
+            );
+
+            // Configure the "jan" provider as OpenAI-compatible
+            let mut provider_config = serde_json::Map::new();
+            let mut provider_entry = serde_json::Map::new();
+            provider_entry.insert("npm".to_string(), serde_json::Value::String("@ai-sdk/openai-compatible".to_string()));
+            provider_entry.insert("name".to_string(), serde_json::Value::String("Jan Server".to_string()));
+
+            // Provider options
+            let mut options = serde_json::Map::new();
+            options.insert("baseURL".to_string(), serde_json::Value::String(server_url.to_string()));
+            if let Some(ref key) = api_key {
+                options.insert("apiKey".to_string(), serde_json::Value::String(key.clone()));
+            }
+            provider_entry.insert("options".to_string(), serde_json::Value::Object(options));
+
+            // Register the model in the provider's model list
+            let mut models = serde_json::Map::new();
+            let mut model_entry = serde_json::Map::new();
+            model_entry.insert("name".to_string(), serde_json::Value::String(model_name.to_string()));
+            models.insert(model_name.to_string(), serde_json::Value::Object(model_entry));
+            provider_entry.insert("models".to_string(), serde_json::Value::Object(models));
+
+            provider_config.insert(jan_provider_id.to_string(), serde_json::Value::Object(provider_entry));
+            config.insert("provider".to_string(), serde_json::Value::Object(provider_config));
+
+            let config_json = serde_json::to_string(&serde_json::Value::Object(config))
+                .unwrap_or_else(|_| "{}".to_string());
+            cmd.env("OPENCODE_CONFIG_CONTENT", &config_json);
+            cmd.env("OPENCODE_DISABLE_PROJECT_CONFIG", "true");
+            info!("Set OPENCODE_CONFIG_CONTENT: {}", config_json);
         }
 
         cmd.stdin(Stdio::piped())
@@ -340,9 +427,10 @@ impl OpenCodeProcessManager {
     /// Create a process manager that auto-detects the best way to run OpenCode
     ///
     /// Priority:
-    /// 1. Use built OpenCode binary from opencode/packages/opencode/dist (development)
-    /// 2. Use bundled OpenCode binary in resources (production)
-    /// 3. Fall back to system-installed opencode binary
+    /// 1. Dev mode: Use bun to run source directly from opencode/packages/opencode/
+    /// 2. Use built OpenCode binary from opencode/packages/opencode/dist (development)
+    /// 3. Use bundled OpenCode binary in resources (production)
+    /// 4. Fall back to system-installed opencode binary
     pub fn auto_detect() -> Self {
         // Get the current executable's directory (where Jan is installed)
         let exe_path = std::env::current_exe().ok();
@@ -367,17 +455,65 @@ impl OpenCodeProcessManager {
         };
 
         if let Some(bin_dir) = exe_dir {
-            // Development: Look for built binary in opencode/packages/opencode/dist
-            // Path: target/debug -> target -> src-tauri -> jan-app (3 levels up)
-            let dev_opencode_root = bin_dir
+            // Development: Navigate from target/debug -> target -> src-tauri -> jan-app
+            let project_root = bin_dir
                 .parent()
                 .and_then(|p| p.parent())
-                .and_then(|p| p.parent())
-                .map(|p| p.join("opencode"));
+                .and_then(|p| p.parent());
 
-            if let Some(opencode_root) = dev_opencode_root {
-                let built_binary = opencode_root
-                    .join("packages/opencode/dist")
+            if let Some(root) = project_root {
+                let opencode_pkg_dir = root.join("opencode").join("packages").join("opencode");
+                let opencode_entry = opencode_pkg_dir.join("src").join("index.ts");
+
+                // Priority 1: Dev mode - use bun to run source directly
+                if opencode_entry.exists() {
+                    // Find bun binary
+                    let bun_candidates: Vec<PathBuf> = vec![
+                        // Common bun install locations
+                        PathBuf::from(std::env::var("HOME")
+                            .unwrap_or_default())
+                            .join(".bun/bin/bun"),
+                        PathBuf::from("/opt/homebrew/bin/bun"),
+                        PathBuf::from("/usr/local/bin/bun"),
+                        PathBuf::from("/usr/bin/bun"),
+                    ];
+
+                    for bun_path in bun_candidates {
+                        if bun_path.exists() {
+                            info!(
+                                "Using bun dev mode: {} in {}",
+                                bun_path.display(),
+                                opencode_pkg_dir.display()
+                            );
+                            return Self::with_bun_dev(bun_path, opencode_pkg_dir);
+                        }
+                    }
+
+                    // Try bun from PATH via `which`
+                    if let Ok(output) = std::process::Command::new("which")
+                        .arg("bun")
+                        .output()
+                    {
+                        if output.status.success() {
+                            let bun_path = String::from_utf8_lossy(&output.stdout)
+                                .trim()
+                                .to_string();
+                            if !bun_path.is_empty() {
+                                let bun_path = PathBuf::from(&bun_path);
+                                info!(
+                                    "Using bun dev mode (from PATH): {} in {}",
+                                    bun_path.display(),
+                                    opencode_pkg_dir.display()
+                                );
+                                return Self::with_bun_dev(bun_path, opencode_pkg_dir);
+                            }
+                        }
+                    }
+                }
+
+                // Priority 2: Built binary from dist/
+                let built_binary = opencode_pkg_dir
+                    .join("dist")
                     .join(platform_dir)
                     .join("bin")
                     .join(binary_name);
@@ -388,7 +524,7 @@ impl OpenCodeProcessManager {
                 }
             }
 
-            // Production: Look for bundled binary in resources
+            // Priority 3: Bundled binary in resources (production)
             let bundled_binary = bin_dir
                 .join("resources")
                 .join("opencode")
@@ -408,7 +544,7 @@ impl OpenCodeProcessManager {
             }
         }
 
-        // Fall back to system-installed opencode binary
+        // Priority 4: System-installed opencode binary
         let binary_candidates = [
             "/opt/homebrew/bin/opencode",
             "/usr/local/bin/opencode",

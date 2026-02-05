@@ -112,8 +112,8 @@ impl TimestampInjector {
             record.agent_latency_ms = Some(completed - routed);
         }
 
-        if let (Some(received), Some(routed)) = (record.received_at, record.routed_at) {
-            record.platform_latency_ms = Some(routed - received);
+        if let Some(routed) = record.routed_at {
+            record.platform_latency_ms = Some(routed - record.received_at);
         }
     }
 

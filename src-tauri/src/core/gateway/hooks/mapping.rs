@@ -2,10 +2,13 @@
 //!
 //! Individual hook mapping with path matching and routing logic.
 
-use super::{HookMappingConfig, HookMatchResult};
+use super::HookMappingConfig;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use regex::Regex;
+
+/// Type alias for hook mapping vector
+type HookMappingList = Vec<Arc<HookMapping>>;
 
 /// Result of matching a request against a hook mapping
 #[derive(Debug, Clone)]
@@ -51,10 +54,13 @@ impl HookMapping {
         // Convert wildcard pattern to regex
         let regex_pattern = Self::pattern_to_regex(&config.path_pattern)?;
 
+        let pattern_regex = Regex::new(&regex_pattern)
+            .map_err(|e| format!("Invalid regex pattern '{}': {}", regex_pattern, e))?;
+
         Ok(Self {
             id: config.id,
             path_pattern: config.path_pattern,
-            pattern_regex: Regex::new(&regex_pattern)?,
+            pattern_regex,
             source: config.source,
             channel_id: config.channel_id,
             input_template: config.input_template,
@@ -86,7 +92,7 @@ impl HookMapping {
         }
 
         // Anchor to match from start
-        format!("^{}$", regex)
+        Ok(format!("^{}$", regex))
     }
 
     /// Check if a path matches this mapping
@@ -177,7 +183,7 @@ impl HookMapping {
 #[derive(Debug, Clone, Default)]
 pub struct HookMapper {
     /// Registered hook mappings
-    mappings: Arc<Mutex<Vec<Arc<HookMapping>>>>,
+    mappings: Arc<Mutex<HookMappingList>>,
 }
 
 impl HookMapper {
@@ -214,7 +220,7 @@ impl HookMapper {
     }
 
     /// Get all registered mappings
-    pub async fn list(&self) -> Vec<Arc<HookMapping>>> {
+    pub async fn list(&self) -> HookMappingList {
         let guard = self.mappings.lock().await;
         guard.clone()
     }
@@ -238,8 +244,8 @@ mod tests {
         assert!(mapping.matches("/webhooks/discord", None).await.is_some());
         assert!(mapping.matches("/webhooks/slack/events", None).await.is_some());
         assert!(mapping.matches("/webhooks/", None).await.is_some());
-        assert!(mapping.matches("/webhooks", None).is_none()); // No trailing slash match
-        assert!(mapping.matches("/api/webhooks", None).is_none()); // Different prefix
+        assert!(mapping.matches("/webhooks", None).await.is_none()); // No trailing slash match
+        assert!(mapping.matches("/api/webhooks", None).await.is_none()); // Different prefix
     }
 
     #[tokio::test]

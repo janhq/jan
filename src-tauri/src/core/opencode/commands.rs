@@ -14,7 +14,10 @@ pub type SharedOpenCodeManager = Arc<Mutex<OpenCodeProcessManager>>;
 /// * `project_path` - Path to the project directory
 /// * `prompt` - The task prompt/instruction
 /// * `agent` - Optional agent type (build, plan, explore)
-/// * `api_key` - Optional API key for Jan's Local API Server
+/// * `api_key` - Optional API key for the LLM provider
+/// * `provider_id` - Optional provider identifier (e.g., "anthropic", "openai")
+/// * `model_id` - Optional model identifier (e.g., "claude-sonnet-4-20250514")
+/// * `base_url` - Optional base URL for the provider API
 ///
 /// # Returns
 /// * Task ID string on success
@@ -27,12 +30,15 @@ pub async fn opencode_spawn_task(
     prompt: String,
     agent: Option<String>,
     api_key: Option<String>,
+    provider_id: Option<String>,
+    model_id: Option<String>,
+    base_url: Option<String>,
 ) -> Result<String, String> {
     // Use provided task_id or generate a new one
     let task_id = task_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     info!(
-        "Creating OpenCode task {} for project: {}",
-        task_id, project_path
+        "Creating OpenCode task {} for project: {} (provider: {:?}, model: {:?})",
+        task_id, project_path, provider_id, model_id
     );
 
     // Create event channel
@@ -48,6 +54,9 @@ pub async fn opencode_spawn_task(
                 prompt,
                 agent,
                 api_key,
+                provider_id,
+                model_id,
+                base_url,
                 event_tx,
             )
             .await?;
