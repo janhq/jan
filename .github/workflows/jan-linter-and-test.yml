@@ -76,7 +76,7 @@ jobs:
           path: coverage/lcov.info
 
   test-on-macos:
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'macos-latest' || 'macos-selfhosted-15-arm64' }}
+    runs-on: 'macos-latest'
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
