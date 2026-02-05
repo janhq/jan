@@ -1407,3 +1407,154 @@ pub async fn gateway_list_accounts(
 
     Ok(serde_json::Value::Object(accounts_map))
 }
+
+// ==================== Hook Mapping Commands ====================
+
+/// Command to add a hook mapping
+#[command]
+pub async fn gateway_add_hook_mapping(
+    state: State<'_, SharedGatewayManager>,
+    id: String,
+    path_pattern: String,
+    source: String,
+    channel_id: Option<String>,
+    input_template: Option<String>,
+    output_template: Option<String>,
+    auth_required: bool,
+    auth_header: Option<String>,
+    auth_value: Option<String>,
+    description: Option<String>,
+) -> Result<(), String> {
+    let guard = state.lock().await;
+
+    let config = super::hooks::HookMappingConfig {
+        id,
+        path_pattern,
+        source,
+        channel_id,
+        input_template,
+        output_template,
+        auth_required,
+        auth_header,
+        auth_value,
+        enabled: true,
+        description,
+    };
+
+    guard.hook_mapping_service.add_mapping(config).await
+}
+
+/// Command to remove a hook mapping
+#[command]
+pub async fn gateway_remove_hook_mapping(
+    state: State<'_, SharedGatewayManager>,
+    id: String,
+) -> Result<bool, String> {
+    let guard = state.lock().await;
+    Ok(guard.hook_mapping_service.remove_mapping(&id).await)
+}
+
+/// Command to list hook mappings
+#[command]
+pub async fn gateway_list_hook_mappings(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let guard = state.lock().await;
+    let mappings = guard.hook_mapping_service.list_mappings().await;
+    Ok(mappings.into_iter().map(serde_json::json).collect())
+}
+
+/// Command to get hook mapping statistics
+#[command]
+pub async fn gateway_get_hook_stats(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<serde_json::Value, String> {
+    let guard = state.lock().await;
+    let stats = guard.hook_mapping_service.get_stats().await;
+
+    Ok(serde_json::json!({
+        "total_requests": stats.total_requests,
+        "successful_matches": stats.successful_matches,
+        "auth_failures": stats.auth_failures,
+        "template_errors": stats.template_errors,
+    }))
+}
+
+/// Command to match a path against hook mappings (for testing)
+#[command]
+pub async fn gateway_match_hook(
+    state: State<'_, SharedGatewayManager>,
+    path: String,
+    auth_header: Option<String>,
+) -> Result<Option<serde_json::Value>, String> {
+    let guard = state.lock().await;
+    let result = guard.hook_mapping_service.match_path(&path, auth_header.as_deref()).await;
+
+    Ok(result.map(|r| serde_json::json!({
+        "matched": true,
+        "id": r.mapping.id,
+        "source": r.mapping.source,
+        "channel_id": r.mapping.channel_id,
+        "path_params": r.path_params,
+    })))
+}
+
+// ==================== Timestamp Injection Commands ====================
+
+/// Command to enable/disable timestamp injection
+#[command]
+pub async fn gateway_set_timestamps_enabled(
+    state: State<'_, SharedGatewayManager>,
+    enabled: bool,
+) -> Result<(), String> {
+    let guard = state.lock().await;
+    guard.timestamp_injector.set_enabled(enabled).await;
+    Ok(())
+}
+
+/// Command to check if timestamp injection is enabled
+#[command]
+pub async fn gateway_is_timestamps_enabled(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<bool, String> {
+    let guard = state.lock().await;
+    Ok(guard.timestamp_injector.is_enabled().await)
+}
+
+/// Command to create a timing context for testing
+#[command]
+pub async fn gateway_create_timing_context(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<serde_json::Value, String> {
+    let guard = state.lock().await;
+    let ctx = guard.timestamp_injector.create_record();
+
+    Ok(serde_json::json!({
+        "received_at": ctx.received_at,
+        "timestamp_ms": chrono::Utc::now().timestamp_millis(),
+    }))
+}
+
+/// Command to get timing context stage
+#[command]
+pub async fn gateway_get_timing_context_stage(
+    state: State<'_, SharedGatewayManager>,
+    stage: String,
+) -> Result<serde_json::Value, String> {
+    use super::timestamps::TimingStage;
+
+    let stage_enum = match stage.as_str() {
+        "received" => TimingStage::Received,
+        "queued" => TimingStage::Queued,
+        "routed" => TimingStage::Routed,
+        "agent_processing" => TimingStage::AgentProcessing,
+        "completed" => TimingStage::Completed,
+        "sent" => TimingStage::Sent,
+        _ => return Err("Invalid stage".to_string()),
+    };
+
+    Ok(serde_json::json!({
+        "stage": stage,
+        "display_name": stage_enum.to_string(),
+    }))
+}

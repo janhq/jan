@@ -13,6 +13,8 @@ pub mod protocol;  // WebSocket protocol with frame types
 pub mod routing;   // Agent routing system
 pub mod channel;   // Channel lifecycle management
 pub mod formatter; // Outbound markdown formatting + chunking
+pub mod hooks;     // Hook mappings for webhook routing
+pub mod timestamps;// Timestamp injection for performance tracking
 
 // Re-export commonly used types
 pub use types::{
@@ -34,6 +36,8 @@ use channel::ChannelManager;
 use processor::debounce::MessageDebouncer;
 use processor::ack::AckHandler;
 use routing::agent_integration::AgentRoutingService;
+use hooks::HookMappingService;
+use timestamps::TimestampInjector;
 use platforms::plugin::PluginRegistry;
 
 /// Main gateway manager that coordinates all gateway components
@@ -88,6 +92,12 @@ pub struct GatewayManager {
     /// Agent routing service
     pub agent_routing: AgentRoutingService,
 
+    /// Hook mapping service
+    pub hook_mapping_service: HookMappingService,
+
+    /// Timestamp injector for performance tracking
+    pub timestamp_injector: TimestampInjector,
+
     /// Platform plugin registry
     pub plugin_registry: PluginRegistry,
 }
@@ -119,6 +129,8 @@ impl GatewayManager {
             debouncer: MessageDebouncer::default(),
             ack_handler: AckHandler::new(),
             agent_routing: AgentRoutingService::new(),
+            hook_mapping_service: HookMappingService::new(),
+            timestamp_injector: TimestampInjector::new(),
             plugin_registry: PluginRegistry::new(),
         }
     }
@@ -246,5 +258,54 @@ impl GatewayManager {
         } else {
             None
         }
+    }
+
+    // ==================== Hook Mapping Methods ====================
+
+    /// Add a hook mapping
+    pub async fn add_hook_mapping(&self, config: hooks::HookMappingConfig) -> Result<(), String> {
+        self.hook_mapping_service.add_mapping(config).await
+    }
+
+    /// Remove a hook mapping
+    pub async fn remove_hook_mapping(&self, id: &str) -> bool {
+        self.hook_mapping_service.remove_mapping(id).await
+    }
+
+    /// List all hook mappings
+    pub async fn list_hook_mappings(&self) -> Vec<hooks::HookMappingConfig> {
+        self.hook_mapping_service.list_mappings().await
+    }
+
+    /// Match a request path to a hook
+    pub async fn match_hook(&self, path: &str, auth_header: Option<&str>) -> Option<hooks::HookMatchResult> {
+        self.hook_mapping_service.match_path(path, auth_header).await
+    }
+
+    /// Get hook mapping statistics
+    pub async fn get_hook_stats(&self) -> hooks::HookStats {
+        self.hook_mapping_service.get_stats().await
+    }
+
+    // ==================== Timestamp Injection Methods ====================
+
+    /// Create a new timing context
+    pub fn create_timing_context(&self) -> timestamps::TimingContext {
+        timestamps::TimingContext::new()
+    }
+
+    /// Get timestamp injector reference
+    pub fn get_timestamp_injector(&self) -> &timestamps::TimestampInjector {
+        &self.timestamp_injector
+    }
+
+    /// Enable/disable timestamp injection
+    pub async fn set_timestamps_enabled(&self, enabled: bool) {
+        self.timestamp_injector.set_enabled(enabled).await;
+    }
+
+    /// Check if timestamps are enabled
+    pub async fn are_timestamps_enabled(&self) -> bool {
+        self.timestamp_injector.is_enabled().await
     }
 }
