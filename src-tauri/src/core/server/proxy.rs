@@ -449,8 +449,38 @@ async fn proxy_request<R: tauri::Runtime>(
                                     extra: None,
                                 };
 
-                                // Stream the remote response
-                                match crate::core::server::remote_provider_commands::stream_remote_chat_for_proxy(&provider_cfg, &request).await {
+                                // Determine the endpoint path for the remote provider and output format
+                                let (remote_endpoint, output_format) = match destination_path.as_str() {
+                                    "/messages" | "/messages/count_tokens" => {
+                                        // For /messages, check if provider supports it; if not, use /chat/completions
+                                        // with format conversion
+                                        ("/chat/completions", "anthropic")
+                                    }
+                                    "/chat/completions" | "/completions" | "/embeddings" => {
+                                        ("/chat/completions", "openai")
+                                    }
+                                    _ => ("/chat/completions", "openai")
+                                };
+
+                                log::debug!("Routing {destination_path} to {remote_endpoint} with format {output_format}");
+
+                                // Stream the remote response with format conversion if needed
+                                let stream_result = if output_format == "anthropic" {
+                                    crate::core::server::remote_provider_commands::stream_remote_chat_with_format_conversion(
+                                        &provider_cfg,
+                                        &request,
+                                        remote_endpoint,
+                                        output_format,
+                                    ).await
+                                } else {
+                                    crate::core::server::remote_provider_commands::stream_remote_chat_for_proxy(
+                                        &provider_cfg,
+                                        &request,
+                                        remote_endpoint,
+                                    ).await
+                                };
+
+                                match stream_result {
                                     Ok(stream) => {
                                         log::info!("Successfully started streaming from remote provider '{provider}'");
 

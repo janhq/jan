@@ -73,6 +73,93 @@ pub struct Usage {
     pub total_tokens: i32,
 }
 
+/// Convert ChatCompletion messages to Anthropic Messages API format
+pub fn convert_messages_to_anthropic(
+    messages: &[ChatMessage],
+) -> Vec<serde_json::Value> {
+    messages
+        .iter()
+        .map(|msg| {
+            let role = match msg.role.as_str() {
+                "user" => "user",
+                "assistant" => "assistant",
+                "system" => "system",
+                "tool" => "user", // Anthropic uses user for tool results
+                _ => "user",
+            };
+            serde_json::json!({
+                "role": role,
+                "content": msg.content
+            })
+        })
+        .collect()
+}
+
+/// Convert OpenAI chat completions chunk to Anthropic messages format
+/// OpenAI: {"id":"...","object":"chat.completion.chunk","created":...,"model":"...","choices":[{"index":0,"delta":{"role":"assistant","content":"..."},"finish_reason":null}]}
+/// Anthropic: {"type":"content_block_delta","delta":{"text_type":"text_streaming","text":"..."}}
+fn convert_chunk_to_anthropic(
+    chunk: &serde_json::Value,
+    request_id: &str,
+    model: &str,
+) -> Option<serde_json::Value> {
+    let choices = chunk.get("choices")?;
+    let first_choice = choices.get(0)?;
+    let delta = first_choice.get("delta")?;
+    let content = delta.get("content")?;
+    let content_str = content.as_str()?;
+
+    // Check for content
+    if content_str.is_empty() {
+        return None;
+    }
+
+    // Convert to Anthropic format
+    Some(serde_json::json!({
+        "id": request_id,
+        "type": "content_block_delta",
+        "delta": {
+            "text_type": "text_streaming",
+            "text": content_str
+        },
+        "model": model
+    }))
+}
+
+/// Convert OpenAI completion chunk to Anthropic messages format (streaming)
+pub fn convert_stream_chunk(
+    chunk: &serde_json::Value,
+    request_id: &str,
+    model: &str,
+) -> Option<String> {
+    // Handle OpenAI-style chunk
+    if let Some(converted) = convert_chunk_to_anthropic(chunk, request_id, model) {
+        return Some(format!("data: {}\n\n", converted.to_string()));
+    }
+
+    // Check for [DONE]
+    let choices = chunk.get("choices")?;
+    if choices.as_array()?.is_empty() {
+        return None;
+    }
+    let first_choice = choices.get(0)?;
+    if first_choice.get("finish_reason").is_some() {
+        // Stream done
+        let done = serde_json::json!({
+            "id": request_id,
+            "type": "message_delta",
+            "delta": {
+                "stop_reason": "end_turn",
+                "stop_sequence": null
+            },
+            "model": model
+        });
+        return Some(format!("data: {}\n\n", done.to_string()));
+    }
+
+    None
+}
+
 /// Register a remote provider configuration
 #[tauri::command]
 pub async fn register_provider_config(
@@ -390,9 +477,11 @@ pub async fn abort_remote_stream(
 
 /// Stream remote chat completion for a specific provider config
 /// Returns a boxed stream of chunk bytes suitable for Hyper response bodies
+/// endpoint: the API endpoint path (e.g., "/chat/completions", "/messages")
 pub async fn stream_remote_chat_for_proxy(
     provider_config: &ProviderConfig,
     request: &RemoteChatCompletionRequest,
+    endpoint: &str,
 ) -> Result<Pin<Box<dyn futures_util::Stream<Item = Result<hyper::body::Bytes, std::io::Error>> + Send>>, String> {
     let base_url = provider_config
         .base_url
@@ -405,13 +494,24 @@ pub async fn stream_remote_chat_for_proxy(
         .ok_or_else(|| format!("Provider '{}' has no api_key", request.provider))?;
 
     let client = reqwest::Client::new();
-    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let url = format!("{}{}", base_url.trim_end_matches('/'), endpoint);
 
-    let request_body = serde_json::json!({
-        "model": request.model,
-        "messages": request.messages,
-        "stream": true
-    });
+    // Prepare request body based on endpoint type
+    let request_body = if endpoint == "/messages" || endpoint.starts_with("/messages/") {
+        // Anthropic Messages API format
+        serde_json::json!({
+            "model": request.model,
+            "messages": request.messages,
+            "stream": true
+        })
+    } else {
+        // Standard OpenAI format
+        serde_json::json!({
+            "model": request.model,
+            "messages": request.messages,
+            "stream": true
+        })
+    };
 
     let mut req_builder = client.post(&url).json(&request_body).bearer_auth(&api_key);
 
@@ -436,4 +536,107 @@ pub async fn stream_remote_chat_for_proxy(
         .boxed();
 
     Ok(stream)
+}
+
+/// Stream remote chat completion and convert output format
+/// This is used when a client requests /messages but remote provider uses /chat/completions
+pub async fn stream_remote_chat_with_format_conversion(
+    provider_config: &ProviderConfig,
+    request: &RemoteChatCompletionRequest,
+    target_endpoint: &str,
+    output_format: &str,
+) -> Result<Pin<Box<dyn futures_util::Stream<Item = Result<hyper::body::Bytes, std::io::Error>> + Send>>, String> {
+    let base_url = provider_config
+        .base_url
+        .clone()
+        .ok_or_else(|| format!("Provider '{}' has no base_url", request.provider))?;
+
+    let api_key = provider_config
+        .api_key
+        .clone()
+        .ok_or_else(|| format!("Provider '{}' has no api_key", request.provider))?;
+
+    let client = reqwest::Client::new();
+    let url = format!("{}{}", base_url.trim_end_matches('/'), target_endpoint);
+
+    let request_body = serde_json::json!({
+        "model": request.model,
+        "messages": request.messages,
+        "stream": true
+    });
+
+    let mut req_builder = client.post(&url).json(&request_body).bearer_auth(&api_key);
+
+    for header in &provider_config.custom_headers {
+        req_builder = req_builder.header(&header.header, &header.value);
+    }
+
+    let response = req_builder
+        .send()
+        .await
+        .map_err(|e| format!("Failed to call provider API: {e}"))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("Provider API error: {error_text}"));
+    }
+
+    let request_id = Uuid::new_v4().to_string();
+    let model = request.model.clone();
+    let output_format = output_format.to_string();
+
+    // Convert stream with format conversion
+    let converted_stream = response
+        .bytes_stream()
+        .map(move |result| {
+            result.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+        })
+        .map(move |result| {
+            // Convert bytes to string, parse JSON, convert format
+            match result {
+                Ok(bytes) => {
+                    let chunk_str = String::from_utf8_lossy(&bytes);
+                    // Parse each line (SSE format)
+                    let mut output = String::new();
+                    for line in chunk_str.lines() {
+                        if line.starts_with("data:") {
+                            let data = line.trim_start_matches("data:").trim();
+                            if data == "[DONE]" {
+                                if output_format == "anthropic" {
+                                    let done = serde_json::json!({
+                                        "id": request_id,
+                                        "type": "message_delta",
+                                        "delta": { "stop_reason": "end_turn" },
+                                        "model": model
+                                    });
+                                    output.push_str(&format!("data: {}\n\n", done.to_string()));
+                                }
+                            } else {
+                                match serde_json::from_str::<serde_json::Value>(data) {
+                                    Ok(json) => {
+                                        if output_format == "anthropic" {
+                                            if let Some(converted) = convert_stream_chunk(&json, &request_id, &model) {
+                                                output.push_str(&converted);
+                                            }
+                                        } else {
+                                            output.push_str(line);
+                                            output.push_str("\n");
+                                        }
+                                    }
+                                    Err(_) => {
+                                        output.push_str(line);
+                                        output.push_str("\n");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Ok(hyper::body::Bytes::from(output))
+                }
+                Err(e) => Err(e),
+            }
+        })
+        .boxed();
+
+    Ok(converted_stream)
 }
