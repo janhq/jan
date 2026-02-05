@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::pin::Pin;
-use std::task::{Context, Poll};
 
-use futures_util::{Stream, StreamExt, TryStreamExt};
+use futures_util::{StreamExt};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
-use tokio_util::bytes::Bytes;
 use uuid::Uuid;
 
 use crate::core::state::{AppState, ProviderConfig};
@@ -71,28 +69,6 @@ pub struct Usage {
     pub prompt_tokens: i32,
     pub completion_tokens: i32,
     pub total_tokens: i32,
-}
-
-/// Convert ChatCompletion messages to Anthropic Messages API format
-pub fn convert_messages_to_anthropic(
-    messages: &[ChatMessage],
-) -> Vec<serde_json::Value> {
-    messages
-        .iter()
-        .map(|msg| {
-            let role = match msg.role.as_str() {
-                "user" => "user",
-                "assistant" => "assistant",
-                "system" => "system",
-                "tool" => "user", // Anthropic uses user for tool results
-                _ => "user",
-            };
-            serde_json::json!({
-                "role": role,
-                "content": msg.content
-            })
-        })
-        .collect()
 }
 
 /// Convert OpenAI chat completions chunk to Anthropic messages format
@@ -173,10 +149,14 @@ pub async fn register_provider_config(
         provider: request.provider.clone(),
         api_key: request.api_key,
         base_url: request.base_url,
-        custom_headers: request.custom_headers.into_iter().map(|h| crate::core::state::ProviderCustomHeader {
-            header: h.header,
-            value: h.value,
-        }).collect(),
+        custom_headers: request
+            .custom_headers
+            .into_iter()
+            .map(|h| crate::core::state::ProviderCustomHeader {
+                header: h.header,
+                value: h.value,
+            })
+            .collect(),
         models: request.models, // Models will be added when they are configured
     };
 
@@ -230,7 +210,6 @@ pub async fn list_provider_configs(
 /// Remote chat completion (non-streaming)
 #[tauri::command]
 pub async fn remote_chat_completion(
-    app: AppHandle,
     state: State<'_, AppState>,
     request: RemoteChatCompletionRequest,
 ) -> Result<RemoteChatCompletionResponse, String> {
@@ -285,8 +264,13 @@ pub async fn remote_chat_completion(
 
     // Convert to our response format
     let id = response_json["id"].as_str().unwrap_or_default().to_string();
-    let model = response_json["model"].as_str().unwrap_or(&request.model).to_string();
-    let created = response_json["created"].as_i64().unwrap_or(chrono::Utc::now().timestamp());
+    let model = response_json["model"]
+        .as_str()
+        .unwrap_or(&request.model)
+        .to_string();
+    let created = response_json["created"]
+        .as_i64()
+        .unwrap_or(chrono::Utc::now().timestamp());
 
     let choices: Vec<Choice> = response_json["choices"]
         .as_array()
@@ -309,9 +293,18 @@ pub async fn remote_chat_completion(
 
     let usage = if let Some(usage) = response_json["usage"].as_object() {
         Some(Usage {
-            prompt_tokens: usage.get("prompt_tokens").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-            completion_tokens: usage.get("completion_tokens").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-            total_tokens: usage.get("total_tokens").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+            prompt_tokens: usage
+                .get("prompt_tokens")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0) as i32,
+            completion_tokens: usage
+                .get("completion_tokens")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0) as i32,
+            total_tokens: usage
+                .get("total_tokens")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0) as i32,
         })
     } else {
         None
@@ -353,15 +346,19 @@ pub async fn remote_chat_completion_stream(
     let error_request_id = request_id.clone();
 
     tauri::async_runtime::spawn(async move {
-        let result = stream_remote_chat(&app_handle, &provider_configs, &request, &request_id_clone).await;
+        let result =
+            stream_remote_chat(&app_handle, &provider_configs, &request, &request_id_clone).await;
 
         if let Err(e) = result {
             log::error!("Remote stream error for {request_id_clone}: {e}");
             // Emit error event
-            let _ = app_handle.emit("remote-stream-error", serde_json::json!({
-                "requestId": error_request_id,
-                "error": e,
-            }));
+            let _ = app_handle.emit(
+                "remote-stream-error",
+                serde_json::json!({
+                    "requestId": error_request_id,
+                    "error": e,
+                }),
+            );
         }
     });
 
@@ -433,20 +430,26 @@ async fn stream_remote_chat(
                     let data = line.trim_start_matches("data:").trim();
                     if data == "[DONE]" {
                         // Emit final event
-                        let _ = app.emit("remote-stream-chunk", RemoteStreamChunk {
-                            request_id: request_id.to_string(),
-                            chunk: data.to_string(),
-                            done: true,
-                        });
+                        let _ = app.emit(
+                            "remote-stream-chunk",
+                            RemoteStreamChunk {
+                                request_id: request_id.to_string(),
+                                chunk: data.to_string(),
+                                done: true,
+                            },
+                        );
                         return Ok(());
                     }
 
                     // Parse and emit the chunk
-                    let _ = app.emit("remote-stream-chunk", RemoteStreamChunk {
-                        request_id: request_id.to_string(),
-                        chunk: data.to_string(),
-                        done: false,
-                    });
+                    let _ = app.emit(
+                        "remote-stream-chunk",
+                        RemoteStreamChunk {
+                            request_id: request_id.to_string(),
+                            chunk: data.to_string(),
+                            done: false,
+                        },
+                    );
                 }
             } else {
                 break;
@@ -455,11 +458,14 @@ async fn stream_remote_chat(
     }
 
     // Emit final event if we got here without [DONE]
-    let _ = app.emit("remote-stream-chunk", RemoteStreamChunk {
-        request_id: request_id.to_string(),
-        chunk: "".to_string(),
-        done: true,
-    });
+    let _ = app.emit(
+        "remote-stream-chunk",
+        RemoteStreamChunk {
+            request_id: request_id.to_string(),
+            chunk: "".to_string(),
+            done: true,
+        },
+    );
 
     Ok(())
 }
@@ -482,7 +488,10 @@ pub async fn stream_remote_chat_for_proxy(
     provider_config: &ProviderConfig,
     request: &RemoteChatCompletionRequest,
     endpoint: &str,
-) -> Result<Pin<Box<dyn futures_util::Stream<Item = Result<hyper::body::Bytes, std::io::Error>> + Send>>, String> {
+) -> Result<
+    Pin<Box<dyn futures_util::Stream<Item = Result<hyper::body::Bytes, std::io::Error>> + Send>>,
+    String,
+> {
     let base_url = provider_config
         .base_url
         .clone()
@@ -545,7 +554,10 @@ pub async fn stream_remote_chat_with_format_conversion(
     request: &RemoteChatCompletionRequest,
     target_endpoint: &str,
     output_format: &str,
-) -> Result<Pin<Box<dyn futures_util::Stream<Item = Result<hyper::body::Bytes, std::io::Error>> + Send>>, String> {
+) -> Result<
+    Pin<Box<dyn futures_util::Stream<Item = Result<hyper::body::Bytes, std::io::Error>> + Send>>,
+    String,
+> {
     let base_url = provider_config
         .base_url
         .clone()
@@ -588,9 +600,7 @@ pub async fn stream_remote_chat_with_format_conversion(
     // Convert stream with format conversion
     let converted_stream = response
         .bytes_stream()
-        .map(move |result| {
-            result.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
-        })
+        .map(move |result| result.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)))
         .map(move |result| {
             // Convert bytes to string, parse JSON, convert format
             match result {
@@ -615,7 +625,9 @@ pub async fn stream_remote_chat_with_format_conversion(
                                 match serde_json::from_str::<serde_json::Value>(data) {
                                     Ok(json) => {
                                         if output_format == "anthropic" {
-                                            if let Some(converted) = convert_stream_chunk(&json, &request_id, &model) {
+                                            if let Some(converted) =
+                                                convert_stream_chunk(&json, &request_id, &model)
+                                            {
                                                 output.push_str(&converted);
                                             }
                                         } else {

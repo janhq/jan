@@ -15,34 +15,6 @@ use tokio::sync::Mutex;
 
 use crate::core::state::{AppState, ServerHandle};
 
-/// Unified session info that can come from either backend
-#[derive(Clone)]
-pub struct UnifiedSessionInfo {
-    pub model_id: String,
-    pub port: i32,
-    pub api_key: String,
-}
-
-impl From<&LLamaBackendSession> for UnifiedSessionInfo {
-    fn from(session: &LLamaBackendSession) -> Self {
-        UnifiedSessionInfo {
-            model_id: session.info.model_id.clone(),
-            port: session.info.port,
-            api_key: session.info.api_key.clone(),
-        }
-    }
-}
-
-impl From<&MlxBackendSession> for UnifiedSessionInfo {
-    fn from(session: &MlxBackendSession) -> Self {
-        UnifiedSessionInfo {
-            model_id: session.info.model_id.clone(),
-            port: session.info.port,
-            api_key: session.info.api_key.clone(),
-        }
-    }
-}
-
 /// Configuration for the proxy server
 #[derive(Clone)]
 pub struct ProxyConfig {
@@ -51,24 +23,6 @@ pub struct ProxyConfig {
     pub trusted_hosts: Vec<Vec<String>>,
     pub host: String,
     pub port: u16,
-}
-
-/// Remote provider info for routing requests
-#[derive(Clone, Debug)]
-pub struct RemoteProviderInfo {
-    pub provider: String,
-    pub base_url: String,
-    pub api_key: Option<String>,
-}
-
-/// Payload for remote completion request event
-#[derive(Clone, Debug, serde::Serialize)]
-pub struct RemoteCompletionRequest {
-    pub request_id: String,
-    pub path: String,
-    pub model: String,
-    pub provider: String,
-    pub body: serde_json::Value,
 }
 
 /// Determines the final destination path based on the original request path
@@ -384,7 +338,7 @@ async fn proxy_request<R: tauri::Runtime>(
                         let state = app_handle.state::<AppState>();
                         let provider_configs = state.provider_configs.lock().await;
 
-                        // Find a provider that has this model configured
+                        // Try to find a provider that has this model configured
                         let provider_name = provider_configs
                             .iter()
                             .find(|(_, config)| {
@@ -395,7 +349,7 @@ async fn proxy_request<R: tauri::Runtime>(
                             .or_else(|| {
                                 // Try to find by provider name in model_id (e.g., "anthropic/claude-3-opus")
                                 if let Some(sep_pos) = model_id.find('/') {
-                                    let potential_provider = &model_id[..sep_pos];
+                                    let potential_provider: &str = &model_id[..sep_pos];
                                     if provider_configs.contains_key(potential_provider) {
                                         return Some(potential_provider.to_string());
                                     }
@@ -406,7 +360,7 @@ async fn proxy_request<R: tauri::Runtime>(
 
                         drop(provider_configs);
 
-                        if let Some(provider) = provider_name {
+                        if let Some(ref provider) = provider_name {
                             // Found a remote provider, stream the response directly
                             log::info!("Found remote provider '{provider}' for model '{model_id}'");
 
@@ -416,7 +370,7 @@ async fn proxy_request<R: tauri::Runtime>(
                             // Get the provider config
                             let state = app_handle.state::<AppState>();
                             let provider_configs = state.provider_configs.lock().await;
-                            let provider_config = provider_configs.get(&provider).cloned();
+                            let provider_config = provider_configs.get(provider.as_str()).cloned();
 
                             // Log registered providers for debugging
                             log::debug!(
@@ -545,17 +499,20 @@ async fn proxy_request<R: tauri::Runtime>(
                         // No remote provider found, check for local session
                         let sessions_guard = sessions.lock().await;
 
+                        // Use original model_id for local session lookup
+                        let sessions_find_model = model_id;
+
                         // Check both llama.cpp and MLX sessions
                         let llama_session = sessions_guard
                             .values()
-                            .find(|s| s.info.model_id == model_id);
+                            .find(|s| s.info.model_id == sessions_find_model);
 
                         let (mlx_session_info, mlx_count) = {
                             let mut mlx_session_info: Option<SessionInfo> = None;
                             let mut mlx_count = 0;
                             let mlx_guard = mlx_sessions.lock().await;
                             mlx_count = mlx_guard.len();
-                            if let Some(session) = mlx_guard.values().find(|s| s.info.model_id == model_id) {
+                            if let Some(session) = mlx_guard.values().find(|s| s.info.model_id == sessions_find_model) {
                                 // Clone just the SessionInfo since MlxBackendSession is not Clone
                                 mlx_session_info = Some(session.info.clone());
                             }

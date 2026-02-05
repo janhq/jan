@@ -24,6 +24,7 @@ import { useEffect, useState, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { getModelToStart } from '@/utils/getModelToStart'
 import { LogViewer } from '@/components/LogViewer'
+import { invoke } from '@tauri-apps/api/core'
 import {
   Popover,
   PopoverTrigger,
@@ -34,7 +35,12 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from '@/components/ui/collapsible'
-import { IconChevronDown, IconExternalLink, IconPlus, IconX } from '@tabler/icons-react'
+import {
+  IconChevronDown,
+  IconExternalLink,
+  IconPlus,
+  IconX,
+} from '@tabler/icons-react'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import Capabilities from '@/containers/Capabilities'
 import { getModelDisplayName } from '@/lib/utils'
@@ -74,7 +80,12 @@ function LocalAPIServerContent() {
   const setActiveModels = useAppState((state) => state.setActiveModels)
 
   // Helper card state (persisted to localStorage)
-  const { models: helperModels, setModel: setHelperModel, setEnvVars, setCustomCli } = useClaudeCodeModel()
+  const {
+    models: helperModels,
+    setModel: setHelperModel,
+    setEnvVars,
+    setCustomCli,
+  } = useClaudeCodeModel()
   const [isCustomCliDialogOpen, setIsCustomCliDialogOpen] = useState(false)
 
   useEffect(() => {
@@ -247,25 +258,62 @@ function LocalAPIServerContent() {
     }
   }
 
+  const handleLaunchClaudeCode = async () => {
+    // Do not append apiPrefix to claude code settings
+    const apiUrl = `http://${serverHost}:${serverPort}`
+    const modelBig = helperModels.big
+    const modelMedium = helperModels.medium
+    const modelSmall = helperModels.small
+    const customEnvVars = helperModels.envVars
+
+    try {
+      // Try to write directly to ~/.zshenv
+      await invoke('launch_claude_code_with_config', {
+        apiUrl,
+        apiKey: apiKey || undefined,
+        bigModel: modelBig || undefined,
+        mediumModel: modelMedium || undefined,
+        smallModel: modelSmall || undefined,
+        customEnvVars: customEnvVars.map((env) => ({
+          key: env.key,
+          value: env.value,
+        })),
+      })
+      toast.success(
+        'Environment variables updated. Please try relaunching Claude Code in a new terminal window.',
+        {
+          duration: 8000,
+        }
+      )
+    } catch (error) {
+      console.error('Failed to launch Claude Code:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      toast.error('Failed to configure env vars', {
+        description: errorMsg,
+      })
+    }
+  }
+
   const isServerRunning = serverStatus !== 'stopped'
 
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
         <div className="flex items-center justify-between w-full mr-2 pr-4">
-          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+          <span className="font-medium text-base font-studio">
+            {t('common:settings')}
+          </span>
           <Popover>
             <PopoverTrigger asChild>
-              <Button
-                size="sm"
-                variant="outline"
-                className="relative z-50"
-              >
+              <Button size="sm" variant="outline" className="relative z-50">
                 <IconSettings2 size={16} />
                 Configuration
               </Button>
             </PopoverTrigger>
-            <PopoverContent align='end' className="w-[480px] max-h-[70vh] overflow-y-auto">
+            <PopoverContent
+              align="end"
+              className="w-[480px] max-h-[70vh] overflow-y-auto"
+            >
               <div className="space-y-4">
                 <div className="flex items-center justify-between border-b pb-2">
                   <h2 className="font-semibold text-sm">
@@ -275,31 +323,46 @@ function LocalAPIServerContent() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <p className="text-sm font-medium">{t('settings:localApiServer.serverHost')}</p>
-                      <p className="text-xs text-muted-foreground">{t('settings:localApiServer.serverHostDesc')}</p>
+                      <p className="text-sm font-medium">
+                        {t('settings:localApiServer.serverHost')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('settings:localApiServer.serverHostDesc')}
+                      </p>
                     </div>
                     <div>
-
-                    <ServerHostSwitcher isServerRunning={isServerRunning} />
+                      <ServerHostSwitcher isServerRunning={isServerRunning} />
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <p className="text-sm font-medium">{t('settings:localApiServer.serverPort')}</p>
-                      <p className="text-xs text-muted-foreground">{t('settings:localApiServer.serverPortDesc')}</p>
+                      <p className="text-sm font-medium">
+                        {t('settings:localApiServer.serverPort')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('settings:localApiServer.serverPortDesc')}
+                      </p>
                     </div>
                     <PortInput isServerRunning={isServerRunning} />
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <p className="text-sm font-medium">{t('settings:localApiServer.apiPrefix')}</p>
-                      <p className="text-xs text-muted-foreground">{t('settings:localApiServer.apiPrefixDesc')}</p>
+                      <p className="text-sm font-medium">
+                        {t('settings:localApiServer.apiPrefix')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('settings:localApiServer.apiPrefixDesc')}
+                      </p>
                     </div>
                     <ApiPrefixInput isServerRunning={isServerRunning} />
                   </div>
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium">{t('settings:localApiServer.apiKey')}</p>
-                    <p className="text-xs text-muted-foreground">{t('settings:localApiServer.apiKeyDesc')}</p>
+                    <p className="text-sm font-medium">
+                      {t('settings:localApiServer.apiKey')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('settings:localApiServer.apiKeyDesc')}
+                    </p>
                     <div className="pt-1">
                       <ApiKeyInput
                         isServerRunning={isServerRunning}
@@ -309,16 +372,24 @@ function LocalAPIServerContent() {
                     </div>
                   </div>
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium">{t('settings:localApiServer.trustedHosts')}</p>
-                    <p className="text-xs text-muted-foreground">{t('settings:localApiServer.trustedHostsDesc')}</p>
+                    <p className="text-sm font-medium">
+                      {t('settings:localApiServer.trustedHosts')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('settings:localApiServer.trustedHostsDesc')}
+                    </p>
                     <div className="pt-1">
                       <TrustedHostsInput isServerRunning={isServerRunning} />
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <p className="text-sm font-medium">{t('settings:localApiServer.proxyTimeout')}</p>
-                      <p className="text-xs text-muted-foreground">{t('settings:localApiServer.proxyTimeoutDesc')}</p>
+                      <p className="text-sm font-medium">
+                        {t('settings:localApiServer.proxyTimeout')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('settings:localApiServer.proxyTimeoutDesc')}
+                      </p>
                     </div>
                     <ProxyTimeoutInput isServerRunning={isServerRunning} />
                   </div>
@@ -332,8 +403,12 @@ function LocalAPIServerContent() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <p className="text-sm font-medium">{t('settings:localApiServer.cors')}</p>
-                      <p className="text-xs text-muted-foreground">{t('settings:localApiServer.corsDesc')}</p>
+                      <p className="text-sm font-medium">
+                        {t('settings:localApiServer.cors')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('settings:localApiServer.corsDesc')}
+                      </p>
                     </div>
                     <Switch
                       checked={corsEnabled}
@@ -343,8 +418,12 @@ function LocalAPIServerContent() {
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <p className="text-sm font-medium">{t('settings:localApiServer.verboseLogs')}</p>
-                      <p className="text-xs text-muted-foreground">{t('settings:localApiServer.verboseLogsDesc')}</p>
+                      <p className="text-sm font-medium">
+                        {t('settings:localApiServer.verboseLogs')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('settings:localApiServer.verboseLogsDesc')}
+                      </p>
                     </div>
                     <Switch
                       checked={verboseLogs}
@@ -414,11 +493,12 @@ function LocalAPIServerContent() {
                       <div className="space-y-1">
                         <div>The server is currently running.</div>
                         <div className="text-xs font-mono">
-                          http://{serverHost}:{serverPort}{apiPrefix}
+                          http://{serverHost}:{serverPort}
+                          {apiPrefix}
                         </div>
                       </div>
                     ) : (
-                      "The server is stopped."
+                      'The server is stopped.'
                     )
                   }
                 />
@@ -431,7 +511,9 @@ function LocalAPIServerContent() {
                       href={`http://${serverHost}:${serverPort}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={cn(isServerRunning ? '' : 'pointer-events-none')}
+                      className={cn(
+                        isServerRunning ? '' : 'pointer-events-none'
+                      )}
                     >
                       <Button
                         variant="outline"
@@ -447,11 +529,11 @@ function LocalAPIServerContent() {
               </Card>
 
               {/* Helper Card */}
-              <Card title='Run with your Claude Code'>
+              <Card title="Run with your Claude Code">
                 <CardItem
                   title="Large Model"
                   description="Opus"
-                  actions ={
+                  actions={
                     <HelperModelSelector
                       providers={providers}
                       activeModels={activeModels}
@@ -464,7 +546,7 @@ function LocalAPIServerContent() {
                 <CardItem
                   title="Medium Model"
                   description="Sonnet"
-                  actions ={
+                  actions={
                     <HelperModelSelector
                       providers={providers}
                       activeModels={activeModels}
@@ -477,7 +559,7 @@ function LocalAPIServerContent() {
                 <CardItem
                   title="Small Model"
                   description="Haiku"
-                  actions ={
+                  actions={
                     <HelperModelSelector
                       providers={providers}
                       activeModels={activeModels}
@@ -487,16 +569,23 @@ function LocalAPIServerContent() {
                     />
                   }
                 />
-                <div className='flex mt-2 justify-between gap-2'>
-                  <Button size="sm" variant="outline" onClick={() => setIsCustomCliDialogOpen(true)}>
-                    <IconPlus className='text-muted-foreground' size={14} />
+                <div className="flex mt-2 justify-between gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsCustomCliDialogOpen(true)}
+                  >
+                    <IconPlus className="text-muted-foreground" size={14} />
                     Custom CLI
                   </Button>
-                  <Button size="sm">Launch claude code</Button>
+                  <Button size="sm" onClick={handleLaunchClaudeCode}>
+                    Enable Jan in Claude Code
+                  </Button>
                 </div>
 
                 {/* Display Custom CLI Configuration */}
-                {(helperModels.customCli || helperModels.envVars.length > 0) && (
+                {(helperModels.customCli ||
+                  helperModels.envVars.length > 0) && (
                   <div className="mt-3 text-sm text-muted-foreground">
                     {helperModels.customCli && (
                       <div>Command: {helperModels.customCli}</div>
@@ -504,7 +593,9 @@ function LocalAPIServerContent() {
                     {helperModels.envVars.length > 0 && (
                       <div className="break-all">
                         Env:{' '}
-                        {helperModels.envVars.map((env) => `${env.key}=******`).join(', ')}
+                        {helperModels.envVars
+                          .map((env) => `${env.key}=******`)
+                          .join(', ')}
                       </div>
                     )}
                   </div>
@@ -524,7 +615,7 @@ function LocalAPIServerContent() {
           />
           <div className="p-4 shrink-0">
             <Card>
-              <Collapsible defaultOpen={false} >
+              <Collapsible defaultOpen={false}>
                 <div className="flex items-center justify-between">
                   <CollapsibleTrigger className="flex items-center gap-2 hover:no-underline">
                     <IconChevronDown
@@ -625,12 +716,8 @@ function HelperModelSelector({
   }, [filteredModels])
 
   const currentModel = availableModels.find(
-    (m) => `${m.providerName}:${m.id}` === selectedModel
+    (m) => m.id === selectedModel
   )
-
-  const currentProvider = currentModel
-    ? providers.find((p) => p.provider === currentModel.providerName)
-    : null
 
   // Format model display name with size
   const formatModelWithSize = (model: NonNullable<typeof currentModel>) => {
@@ -640,8 +727,8 @@ function HelperModelSelector({
     return name
   }
 
-  const handleSelect = (model: typeof filteredModels[0]) => {
-    onSelect(`${model.providerName}:${model.id}`)
+  const handleSelect = (model: (typeof filteredModels)[0]) => {
+    onSelect(model.id)
     setOpen(false)
     setSearchValue('')
   }
@@ -658,16 +745,7 @@ function HelperModelSelector({
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className='max-w-[280px]'
-        >
-          {currentProvider && (
-            <div className="shrink-0">
-              <ProvidersAvatar provider={currentProvider} />
-            </div>
-          )}
+        <Button variant="outline" size="sm" className="max-w-[280px]">
           <span
             className={cn(
               'text-foreground truncate leading-normal',
@@ -737,19 +815,19 @@ function HelperModelSelector({
 
                       {/* Models for this provider */}
                       {models.map((model) => {
-                        const isSelected =
-                          selectedModel === `${model.providerName}:${model.id}`
+                        const isSelected = selectedModel === model.id
                         const capabilities = model.capabilities || []
 
                         return (
                           <div
-                            key={`${model.providerName}:${model.id}`}
+                            key={model.id}
                             title={model.id}
                             onClick={() => handleSelect(model)}
                             className={cn(
                               'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
                               'hover:bg-secondary/40',
-                              isSelected && 'bg-secondary/60 hover:bg-secondary/60'
+                              isSelected &&
+                                'bg-secondary/60 hover:bg-secondary/60'
                             )}
                           >
                             <div className="flex items-center gap-2 flex-1 min-w-0">
