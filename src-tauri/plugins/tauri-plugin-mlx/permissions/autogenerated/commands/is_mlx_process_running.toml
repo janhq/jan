@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-is-mlx-process-running"
+description = "Enables the is_mlx_process_running command without any pre-configured scope."
+commands.allow = ["is_mlx_process_running"]
+
+[[permission]]
+identifier = "deny-is-mlx-process-running"
+description = "Denies the is_mlx_process_running command without any pre-configured scope."
+commands.deny = ["is_mlx_process_running"]

@@ -1,0 +1,12 @@
+[default]
+description = "Default permissions for the MLX plugin"
+permissions = [
+    "allow-cleanup-mlx-processes",
+    "allow-load-mlx-model",
+    "allow-unload-mlx-model",
+    "allow-is-mlx-process-running",
+    "allow-get-mlx-random-port",
+    "allow-find-mlx-session-by-model",
+    "allow-get-mlx-loaded-models",
+    "allow-get-mlx-all-sessions",
+]

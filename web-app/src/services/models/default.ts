@@ -151,6 +151,38 @@ export class DefaultModelsService implements ModelsService {
       }
     })
 
+    // Extract safetensors files (MLX models)
+    const safetensorsFiles =
+      repo.siblings?.filter((file) =>
+        file.rfilename.toLowerCase().endsWith('.safetensors')
+      ) || []
+
+    // Check if this repository has MLX model files (safetensors + associated files)
+    const hasMlxFiles =
+      safetensorsFiles.length > 0 ||
+      repo.siblings?.some((file) => {
+        const name = file.rfilename.toLowerCase()
+        return (
+          name.endsWith('.json') || // config.json, tokenizer.json, etc.
+          name.endsWith('.md') || // README.md
+          name.endsWith('.py') || // model.py
+          name.endsWith('.jit') // .jit files
+        )
+      }) ||
+      false
+
+    const safetensorsModels = safetensorsFiles.map((file) => {
+      // Generate model_id from filename (remove .safetensors extension, case-insensitive)
+      const modelId = file.rfilename.replace(/\.safetensors$/i, '')
+
+      return {
+        model_id: sanitizeModelId(modelId),
+        path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
+        file_size: formatFileSize(file.size),
+        sha256: file.lfs?.sha256,
+      }
+    })
+
     return {
       model_name: repo.modelId,
       developer: repo.author,
@@ -160,6 +192,9 @@ export class DefaultModelsService implements ModelsService {
       quants: quants,
       num_mmproj: mmprojModels.length,
       mmproj_models: mmprojModels,
+      safetensors_files: safetensorsModels,
+      num_safetensors: safetensorsModels.length,
+      is_mlx: hasMlxFiles,
       readme: `https://huggingface.co/${repo.modelId}/resolve/main/README.md`,
       description: `**Tags**: ${repo.tags?.join(', ')}`,
     }
@@ -200,7 +235,7 @@ export class DefaultModelsService implements ModelsService {
     modelPath: string,
     mmprojPath?: string,
     hfToken?: string,
-    skipVerification?: boolean
+    skipVerification: boolean = true
   ): Promise<void> {
     let modelSha256: string | undefined
     let modelSize: number | undefined
@@ -282,8 +317,8 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
-  async deleteModel(id: string): Promise<void> {
-    return this.getEngine()?.delete(id)
+  async deleteModel(id: string, provider?: string): Promise<void> {
+    return this.getEngine(provider)?.delete(id)
   }
 
   async getActiveModels(provider?: string): Promise<string[]> {
@@ -298,8 +333,14 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async stopAllModels(): Promise<void> {
-    const models = await this.getActiveModels()
-    if (models) await Promise.all(models.map((model) => this.stopModel(model)))
+    const llamaCppModels = await this.getActiveModels('llamacpp')
+    if (llamaCppModels)
+      await Promise.all(
+        llamaCppModels.map((model) => this.stopModel(model, 'llamacpp'))
+      )
+    const mlxModels = await this.getActiveModels('mlx')
+    if (mlxModels)
+      await Promise.all(mlxModels.map((model) => this.stopModel(model, 'mlx')))
   }
 
   async startModel(

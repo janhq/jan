@@ -14,6 +14,34 @@ use tokio::sync::Mutex;
 
 use crate::core::state::ServerHandle;
 
+/// Unified session info that can come from either backend
+#[derive(Clone)]
+pub struct UnifiedSessionInfo {
+    pub model_id: String,
+    pub port: i32,
+    pub api_key: String,
+}
+
+impl From<&LLamaBackendSession> for UnifiedSessionInfo {
+    fn from(session: &LLamaBackendSession) -> Self {
+        UnifiedSessionInfo {
+            model_id: session.info.model_id.clone(),
+            port: session.info.port,
+            api_key: session.info.api_key.clone(),
+        }
+    }
+}
+
+impl From<&MlxBackendSession> for UnifiedSessionInfo {
+    fn from(session: &MlxBackendSession) -> Self {
+        UnifiedSessionInfo {
+            model_id: session.info.model_id.clone(),
+            port: session.info.port,
+            api_key: session.info.api_key.clone(),
+        }
+    }
+}
+
 /// Configuration for the proxy server
 #[derive(Clone)]
 pub struct ProxyConfig {
@@ -29,12 +57,15 @@ pub fn get_destination_path(original_path: &str, prefix: &str) -> String {
     remove_prefix(original_path, prefix)
 }
 
+use tauri_plugin_mlx::state::MlxBackendSession;
+
 /// Handles the proxy request logic
 async fn proxy_request(
     req: Request<Body>,
     client: Client,
     config: ProxyConfig,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
 ) -> Result<Response<Body>, hyper::Error> {
     if req.method() == hyper::Method::OPTIONS {
         log::debug!(
@@ -328,7 +359,30 @@ async fn proxy_request(
                         log::debug!("Extracted model_id: {model_id}");
                         let sessions_guard = sessions.lock().await;
 
-                        if sessions_guard.is_empty() {
+                        // Check both llama.cpp and MLX sessions
+                        let llama_session = sessions_guard
+                            .values()
+                            .find(|s| s.info.model_id == model_id);
+
+                        let (mlx_session_info, mlx_count) = {
+                            use tauri_plugin_mlx::state::SessionInfo;
+                            let mut mlx_session_info: Option<SessionInfo> = None;
+                            let mut mlx_count = 0;
+                            let mlx_guard = mlx_sessions.lock().await;
+                            mlx_count = mlx_guard.len();
+                            if let Some(session) = mlx_guard.values().find(|s| s.info.model_id == model_id) {
+                                // Clone just the SessionInfo since MlxBackendSession is not Clone
+                                mlx_session_info = Some(session.info.clone());
+                            }
+                            (mlx_session_info, mlx_count)
+                        };
+
+                        let total_sessions = sessions_guard.len() + mlx_count;
+
+                        // mlx_session_info is Option<SessionInfo>, use as_ref to get Option<&SessionInfo>
+                        let mlx_session = mlx_session_info.as_ref();
+
+                        if total_sessions == 0 {
                             log::warn!("Request for model '{model_id}' but no models are running.");
                             let mut error_response =
                                 Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
@@ -343,13 +397,14 @@ async fn proxy_request(
                                 .unwrap());
                         }
 
-                        if let Some(session) = sessions_guard
-                            .values()
-                            .find(|s| s.info.model_id == model_id)
-                        {
+                        if let Some(session) = llama_session {
                             target_port = Some(session.info.port);
                             session_api_key = Some(session.info.api_key.clone());
-                            log::debug!("Found session for model_id {model_id}");
+                            log::debug!("Found llama.cpp session for model_id {model_id}");
+                        } else if let Some(info) = mlx_session {
+                            target_port = Some(info.port);
+                            session_api_key = Some(info.api_key.clone());
+                            log::debug!("Found MLX session for model_id {model_id}");
                         } else {
                             log::warn!("No running session found for model_id: {model_id}");
                             let mut error_response =
@@ -402,7 +457,7 @@ async fn proxy_request(
             log::debug!("Handling GET /v1/models request");
             let sessions_guard = sessions.lock().await;
 
-            let models_data: Vec<_> = sessions_guard
+            let mut models_data: Vec<_> = sessions_guard
                 .values()
                 .map(|session| {
                     serde_json::json!({
@@ -413,6 +468,22 @@ async fn proxy_request(
                     })
                 })
                 .collect();
+
+            {
+                let mlx_guard = mlx_sessions.lock().await;
+                let mlx_models: Vec<_> = mlx_guard
+                    .values()
+                    .map(|session| {
+                        serde_json::json!({
+                            "id": session.info.model_id,
+                            "object": "model",
+                            "created": 1,
+                            "owned_by": "user"
+                        })
+                    })
+                    .collect();
+                models_data.extend(mlx_models);
+            }
 
             let response_json = serde_json::json!({
                 "object": "list",
@@ -720,6 +791,32 @@ pub async fn is_server_running(server_handle: Arc<Mutex<Option<ServerHandle>>>) 
 pub async fn start_server(
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+    host: String,
+    port: u16,
+    prefix: String,
+    proxy_api_key: String,
+    trusted_hosts: Vec<Vec<String>>,
+    proxy_timeout: u64,
+) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
+    start_server_internal(
+        server_handle,
+        sessions,
+        mlx_sessions,
+        host,
+        port,
+        prefix,
+        proxy_api_key,
+        trusted_hosts,
+        proxy_timeout,
+    )
+    .await
+}
+
+async fn start_server_internal(
+    server_handle: Arc<Mutex<Option<ServerHandle>>>,
+    sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
     host: String,
     port: u16,
     prefix: String,
@@ -754,10 +851,11 @@ pub async fn start_server(
         let client = client.clone();
         let config = config.clone();
         let sessions = sessions.clone();
+        let mlx_sessions = mlx_sessions.clone();
 
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
-                proxy_request(req, client.clone(), config.clone(), sessions.clone())
+                proxy_request(req, client.clone(), config.clone(), sessions.clone(), mlx_sessions.clone())
             }))
         }
     });

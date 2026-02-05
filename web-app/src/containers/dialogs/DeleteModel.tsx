@@ -41,7 +41,7 @@ export const DialogDeleteModel = ({
     deleteModelCache(selectedModelId)
     serviceHub
       .models()
-      .deleteModel(selectedModelId)
+      .deleteModel(selectedModelId, provider.provider)
       .then(() => {
         serviceHub
           .providers()

@@ -46,6 +46,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/shallow'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
+import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 
 type SearchParams = {
@@ -474,10 +475,16 @@ function HubContent() {
                                   modelSupportStatus={modelSupportStatus}
                                   onCheckModelSupport={checkModelSupport}
                                 />
-                                <DownloadButtonPlaceholder
-                                  model={filteredModels[virtualItem.index]}
-                                  handleUseModel={handleUseModel}
-                                />
+                                {filteredModels[virtualItem.index].is_mlx ? (
+                                  <MlxModelDownloadAction
+                                    model={filteredModels[virtualItem.index]}
+                                  />
+                                ) : (
+                                  <DownloadButtonPlaceholder
+                                    model={filteredModels[virtualItem.index]}
+                                    handleUseModel={handleUseModel}
+                                  />
+                                )}
                               </div>
                             </div>
                           }
@@ -665,12 +672,21 @@ function HubContent() {
                                               checkModelSupport
                                             }
                                           />
-                                          <ModelDownloadAction
-                                            variant={variant}
-                                            model={
-                                              filteredModels[virtualItem.index]
-                                            }
-                                          />
+                                          {filteredModels[virtualItem.index]
+                                            .is_mlx ? (
+                                            <MlxModelDownloadAction
+                                              model={
+                                                filteredModels[virtualItem.index]
+                                              }
+                                            />
+                                          ) : (
+                                            <ModelDownloadAction
+                                              variant={variant}
+                                              model={
+                                                filteredModels[virtualItem.index]
+                                              }
+                                            />
+                                          )}
                                         </div>
                                       }
                                     />

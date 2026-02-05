@@ -783,10 +783,10 @@ function ThreadDetail() {
                       <p className="text-sm text-muted-foreground">
                         {error.message}
                       </p>
-                      {(error.message.toLowerCase().includes('context') &&
-                        (error.message.toLowerCase().includes('size') ||
-                          error.message.toLowerCase().includes('length') ||
-                          error.message.toLowerCase().includes('limit'))) ||
+                      {(error.message?.toLowerCase().includes('context') &&
+                        (error.message?.toLowerCase().includes('size') ||
+                          error.message?.toLowerCase().includes('length') ||
+                          error.message?.toLowerCase().includes('limit'))) ||
                       error.message === OUT_OF_CONTEXT_SIZE ? (
                         <Button
                           variant="outline"
