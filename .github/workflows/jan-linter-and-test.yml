@@ -102,6 +102,9 @@ jobs:
           yarn --version
           yarn config set -H enableImmutableInstalls false
 
+      - name: Set up Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+
       - name: Linter and test
         run: |
           make test
@@ -209,11 +212,11 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      
+
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
-          tool-cache: false 
+          tool-cache: false
           android: true
           dotnet: true
           haskell: true
