@@ -1,0 +1,7 @@
+{
+  "title": "Błąd kontekstu",
+  "description": "Temu czatowi zaczyna brakować pamięci SI. To trochę jak tablica, która jest już zapisana. Można udostępnić więcej pamięci (zwiększyć rozmiar kontekstu), ale to zwiększy zużycie pamięci komputera. Można też przyciąć wejście, co oznacza zapomnienie części historii czatu, celem zwolnienia miejsca dla nowych wiadomości.",
+  "increaseContextSizeDescription": "Czy chcesz zwiększyć rozmiar kontekstu?",
+  "truncateInput": "Przytnij Wejście",
+  "increaseContextSize": "Zwiększ Rozmiar Kontekstu"
+}

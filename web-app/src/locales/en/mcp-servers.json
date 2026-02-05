@@ -1,0 +1,65 @@
+{
+  "editServer": "Edit MCP Server",
+  "addServer": "Add MCP Server",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Checking extension status..."
+    },
+    "notInstalled": {
+      "title": "Jan completes tasks in your browser",
+      "description": "Install the extension to give Jan browser access",
+      "getExtension": "Get Extension"
+    }
+  },
+  "serverName": "Server Name",
+  "enterServerName": "Enter server name",
+  "command": "Command",
+  "enterCommand": "Enter command (uvx or npx)",
+  "arguments": "Arguments",
+  "argument": "Argument {{index}}",
+  "envVars": "Environment Variables",
+  "key": "Key",
+  "value": "Value",
+  "save": "Save",
+  "status": "Status",
+  "connected": "Connected",
+  "disconnected": "Disconnected",
+  "deleteServer": {
+    "title": "Delete MCP Server",
+    "description": "Are you sure you want to delete the MCP server {{serverName}}? This action cannot be undone.",
+    "delete": "Delete",
+    "success": "MCP server {{serverName}} deleted successfully"
+  },
+  "editJson": {
+    "title": "Edit JSON for MCP Server: {{serverName}}",
+    "titleAll": "Edit All MCP Servers JSON",
+    "placeholder": "Enter JSON configuration",
+    "errorParse": "Failed to parse initial data",
+    "errorPaste": "Invalid JSON format in pasted content",
+    "errorFormat": "Invalid JSON format",
+    "errorServerName": "Server name is required and cannot be empty",
+    "errorMissingServerNameKey": "JSON must be structured as {\"serverName\": {config}} - missing server name key",
+    "errorInvalidType": "Invalid type '{{type}}' for server '{{serverName}}'. Type must be 'stdio', 'http', or 'sse'",
+    "save": "Save"
+  },
+  "checkParams": "Please check the parameters according to the tutorial.",
+  "title": "MCP Servers",
+  "experimental": "Experimental",
+  "editAllJson": "Edit All Servers JSON",
+  "findMore": "Find more MCP servers at",
+  "allowPermissions": "Allow All MCP Tool Permissions",
+  "allowPermissionsDesc": "When enabled, all MCP tool calls will be automatically approved without showing permission dialogs. This setting applies globally to all conversations, including new chats.",
+  "noServers": "No MCP servers found",
+  "args": "Args",
+  "env": "Env",
+  "serverStatusActive": "Server {{serverKey}} activated successfully",
+  "serverStatusInactive": "Server {{serverKey}} deactivated successfully",
+  "runtimeSettings": {
+    "title": "Runtime Settings",
+    "description": "Configure how Jan manages and retries MCP servers.",
+    "toolCallTimeout": "Tool call timeout (seconds)",
+    "toolCallTimeoutDesc": "Maximum time to wait for an MCP tool response before timing out."
+  },
+  "proactiveMode": "Browser Use Proactive Mode",
+  "proactiveModeDesc": "When enabled, automatically captures browser screenshots to provide additional context for browser automation tasks. Requires Jan Browser MCP with vision and tool use model."
+}

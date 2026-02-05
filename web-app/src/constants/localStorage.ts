@@ -1,0 +1,28 @@
+export const localStorageKey = {
+  LeftPanel: 'left-panel',
+  threads: 'threads',
+  messages: 'messages',
+  theme: 'theme',
+  modelProvider: 'model-provider',
+  modelSources: 'model-sources',
+  settingInterface: 'setting-appearance',
+  settingGeneral: 'setting-general',
+  settingCodeBlock: 'setting-code-block',
+  settingLocalApiServer: 'setting-local-api-server',
+  settingProxyConfig: 'setting-proxy-config',
+  settingHardware: 'setting-hardware',
+  settingVulkan: 'setting-vulkan',
+  productAnalyticPrompt: 'productAnalyticPrompt',
+  productAnalytic: 'productAnalytic',
+  toolApproval: 'tool-approval',
+  toolAvailability: 'tool-availability',
+  mcpGlobalPermissions: 'mcp-global-permissions',
+  lastUsedModel: 'last-used-model',
+  lastUsedAssistant: 'last-used-assistant',
+  favoriteModels: 'favorite-models',
+  setupCompleted: 'setup-completed',
+  threadManagement: 'thread-management',
+  modelSupportCache: 'jan_model_support_cache',
+}
+
+export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

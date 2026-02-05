@@ -1,0 +1,26 @@
+{
+  "anthropic": {
+    "title": "Anthropic"
+  },
+  "cohere": {
+    "title": "Cohere"
+  },
+  "google": {
+    "title": "Gemini"
+  },
+  "groq": {
+    "title": "Groq"
+  },
+  "mistralai": {
+    "title": "Mistral AI"
+  },
+  "openai": {
+    "title": "OpenAI"
+  },
+  "openrouter": {
+    "title": "OpenRouter"
+  },
+  "huggingface": {
+    "title": "Hugging Face"
+  }
+}

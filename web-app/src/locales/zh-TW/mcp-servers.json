@@ -1,0 +1,65 @@
+{
+  "editServer": "編輯 MCP 伺服器",
+  "addServer": "新增 MCP 伺服器",
+  "browserExtension": {
+    "connecting": {
+      "checking": "正在檢查擴充功能狀態..."
+    },
+    "notInstalled": {
+      "title": "Jan 在您的瀏覽器中完成任務",
+      "description": "安裝擴充功能以授予 Jan 瀏覽器存取權限",
+      "getExtension": "取得擴充功能"
+    }
+  },
+  "serverName": "伺服器名稱",
+  "enterServerName": "輸入伺服器名稱",
+  "command": "指令",
+  "enterCommand": "輸入指令 (uvx 或 npx)",
+  "arguments": "參數",
+  "argument": "參數 {{index}}",
+  "envVars": "環境變數",
+  "key": "鍵",
+  "value": "值",
+  "save": "儲存",
+  "status": "狀態",
+  "connected": "已連線",
+  "disconnected": "已斷線",
+  "deleteServer": {
+    "title": "刪除 MCP 伺服器",
+    "description": "您確定要刪除 MCP 伺服器 {{serverName}} 嗎？此操作無法復原。",
+    "delete": "刪除",
+    "success": "MCP 伺服器 {{serverName}} 刪除成功"
+  },
+  "editJson": {
+    "title": "編輯 MCP 伺服器的 JSON：{{serverName}}",
+    "titleAll": "編輯所有 MCP 伺服器的 JSON",
+    "placeholder": "輸入 JSON 設定",
+    "errorParse": "解析初始資料失敗",
+    "errorPaste": "貼上內容的 JSON 格式無效",
+    "errorFormat": "JSON 格式無效",
+    "errorServerName": "伺服器名稱為必填項目，不能為空",
+    "errorMissingServerNameKey": "JSON 必須依照 {\"serverName\": {config}} 結構 - 缺少伺服器名稱鍵值",
+    "errorInvalidType": "伺服器 '{{serverName}}' 的類型 '{{type}}' 無效。類型必須是 'stdio'、'http' 或 'sse'",
+    "save": "儲存"
+  },
+  "checkParams": "請根據教學檢查參數。",
+  "title": "MCP 伺服器",
+  "experimental": "實驗性",
+  "editAllJson": "編輯所有伺服器的 JSON",
+  "findMore": "在以下位置尋找更多 MCP 伺服器",
+  "allowPermissions": "允許所有 MCP 工具權限",
+  "allowPermissionsDesc": "啟用後，所有 MCP 工具呼叫將自動核准，而不會顯示權限對話方塊。此設定全域適用於所有對話，包括新聊天。",
+  "noServers": "找不到 MCP 伺服器",
+  "args": "參數",
+  "env": "環境",
+  "serverStatusActive": "伺服器 {{serverKey}} 啟用成功",
+  "serverStatusInactive": "伺服器 {{serverKey}} 停用成功",
+  "runtimeSettings": {
+    "title": "執行階段設定",
+    "description": "設定 Jan 如何管理及重試 MCP 伺服器。",
+    "toolCallTimeout": "工具呼叫逾時（秒）",
+    "toolCallTimeoutDesc": "等待 MCP 工具回應的最長時間，超過即逾時。"
+  },
+  "proactiveMode": "瀏覽器使用主動模式",
+  "proactiveModeDesc": "啟用後，會自動擷取瀏覽器螢幕截圖，為瀏覽器自動化工作提供額外的情境資訊。需要具備視覺與工具使用模型的 Jan Browser MCP。"
+}

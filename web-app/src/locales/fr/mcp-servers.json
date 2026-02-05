@@ -1,0 +1,65 @@
+{
+  "editServer": "Modifier le serveur MCP",
+  "addServer": "Ajouter un serveur MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Vérification du statut de l'extension..."
+    },
+    "notInstalled": {
+      "title": "Jan accomplit des tâches dans votre navigateur",
+      "description": "Installez l'extension pour donner à Jan l'accès au navigateur",
+      "getExtension": "Obtenir l'extension"
+    }
+  },
+  "serverName": "Nom du serveur",
+  "enterServerName": "Entrez le nom du serveur",
+  "command": "Commande",
+  "enterCommand": "Entrez la commande (uvx ou npx)",
+  "arguments": "Arguments",
+  "argument": "Argument {{index}}",
+  "envVars": "Variables d'environnement",
+  "key": "Clé",
+  "value": "Valeur",
+  "save": "Sauvegarder",
+  "status": "Statut",
+  "connected": "Connecté",
+  "disconnected": "Déconnecté",
+  "deleteServer": {
+    "title": "Supprimer le serveur MCP",
+    "description": "Êtes-vous sûr de vouloir supprimer le serveur MCP {{serverName}} ? Cette action ne peut pas être annulée.",
+    "delete": "Supprimer",
+    "success": "Serveur MCP {{serverName}} supprimé avec succès"
+  },
+  "editJson": {
+    "title": "Modifier le JSON pour le serveur MCP : {{serverName}}",
+    "titleAll": "Modifier le JSON de tous les serveurs MCP",
+    "placeholder": "Entrez la configuration JSON",
+    "errorParse": "Échec de l'analyse des données initiales",
+    "errorPaste": "Format JSON invalide dans le contenu collé",
+    "errorFormat": "Format JSON invalide",
+    "errorServerName": "Le nom du serveur est requis et ne peut pas être vide",
+    "errorMissingServerNameKey": "Le JSON doit être structuré comme {\"nomServeur\": {config}} - clé du nom du serveur manquante",
+    "errorInvalidType": "Type '{{type}}' invalide pour le serveur '{{serverName}}'. Le type doit être 'stdio', 'http', ou 'sse'",
+    "save": "Sauvegarder"
+  },
+  "checkParams": "Veuillez vérifier les paramètres conformément au tutoriel.",
+  "title": "Serveurs MCP",
+  "experimental": "Expérimental",
+  "editAllJson": "Modifier le JSON de tous les serveurs",
+  "findMore": "Trouvez plus de serveurs MCP sur",
+  "allowPermissions": "Autoriser toutes les permissions d'outils MCP",
+  "allowPermissionsDesc": "Lorsque cette option est activée, tous les appels d'outils MCP seront automatiquement approuvés sans afficher de boîtes de dialogue de permission. Ce paramètre s'applique globalement à toutes les conversations, y compris les nouvelles discussions.",
+  "noServers": "Aucun serveur MCP trouvé",
+  "args": "Args",
+  "env": "Env",
+  "serverStatusActive": "Serveur {{serverKey}} activé avec succès",
+  "serverStatusInactive": "Serveur {{serverKey}} désactivé avec succès",
+  "runtimeSettings": {
+    "title": "Paramètres d'exécution",
+    "description": "Configurez comment Jan gère et réessaye les serveurs MCP.",
+    "toolCallTimeout": "Délai d'appel d'outil (secondes)",
+    "toolCallTimeoutDesc": "Temps maximum d'attente pour une réponse d'outil MCP avant l'expiration du délai."
+  },
+  "proactiveMode": "Mode Proactif d'Utilisation du Navigateur",
+  "proactiveModeDesc": "Lorsqu'activé, capture automatiquement des captures d'écran du navigateur pour fournir un contexte supplémentaire pour les tâches d'automatisation du navigateur. Nécessite Jan Browser MCP avec un modèle de vision et d'utilisation d'outils."
+}

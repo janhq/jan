@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-all-sessions"
+description = "Enables the get_all_sessions command without any pre-configured scope."
+commands.allow = ["get_all_sessions"]
+
+[[permission]]
+identifier = "deny-get-all-sessions"
+description = "Denies the get_all_sessions command without any pre-configured scope."
+commands.deny = ["get_all_sessions"]

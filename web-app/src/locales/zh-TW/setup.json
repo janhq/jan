@@ -1,0 +1,13 @@
+{
+  "welcome": "歡迎來到 Jan",
+  "description": "若要開始使用，請使用 Jan Model 快速啟動，或選擇您自己的本機或遠端提供者",
+  "descriptionWeb": "若要開始使用，您需要使用 API 金鑰連線至雲端模型",
+  "quickStart": "使用 Jan Model 快速啟動",
+  "quickStartDescription": "無需設定",
+  "quickStartFailed": "發生錯誤。請重試。",
+  "downloading": "正在下載 Jan Model...",
+  "downloadingDescription": "請等待我們下載模型。這可能需要幾分鐘。",
+  "orDivider": "或",
+  "localModel": "設定本機模型",
+  "remoteProvider": "設定遠端提供者"
+}

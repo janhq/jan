@@ -1,0 +1,42 @@
+{
+  "name": "@jan/extensions-web",
+  "version": "1.0.0",
+  "description": "Web-specific extensions for Jan AI",
+  "main": "dist/index.mjs",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && vite build",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@janhq/core": "workspace:*",
+    "@tabler/icons-react": "^3.34.0",
+    "@types/react": "19.1.2",
+    "react": "19.0.0",
+    "typescript": "5.9.2",
+    "vite": "5.4.20",
+    "vitest": "2.1.9",
+    "zustand": "5.0.8"
+  },
+  "peerDependencies": {
+    "@janhq/core": "*",
+    "@tabler/icons-react": "*",
+    "react": "19.0.0",
+    "zustand": "5.0.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.17.5"
+  }
+}

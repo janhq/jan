@@ -1,0 +1,22 @@
+[env]
+# workaround needed to prevent `STATUS_ENTRYPOINT_NOT_FOUND` error in tests
+# see https://github.com/tauri-apps/tauri/pull/4383#issuecomment-1212221864
+__TAURI_WORKSPACE__ = "true"
+ENABLE_SYSTEM_TRAY_ICON = "false"
+
+[target.aarch64-linux-android]
+linker = "aarch64-linux-android21-clang"
+ar = "llvm-ar"
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+[target.armv7-linux-androideabi]
+linker = "armv7a-linux-androideabi21-clang"
+ar = "llvm-ar"
+
+[target.x86_64-linux-android]
+linker = "x86_64-linux-android21-clang"
+ar = "llvm-ar"
+
+[target.i686-linux-android]
+linker = "i686-linux-android21-clang"
+ar = "llvm-ar"

@@ -1,0 +1,17 @@
+{
+  "sortNewest": "新着順",
+  "sortMostDownloaded": "ダウンロード数順",
+  "newChat": "新しいチャット",
+  "download": "ダウンロード",
+  "downloaded": "ダウンロード済み",
+  "loadingModels": "モデルを読み込み中...",
+  "noModels": "モデルが見つかりません",
+  "by": "作成者",
+  "downloads": "ダウンロード",
+  "variants": "バリアント",
+  "showVariants": "バリアントを表示",
+  "useModel": "このモデルを使用",
+  "downloadModel": "モデルをダウンロード",
+  "tools": "ツール",
+  "searchPlaceholder": "Hugging Faceでモデルを検索..."
+}

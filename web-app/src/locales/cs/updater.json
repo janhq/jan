@@ -1,0 +1,10 @@
+{
+  "newVersion": "Nová verze {{version}}",
+  "updateAvailable": "Dostupná aktualizace",
+  "nightlyBuild": "Noční build",
+  "showReleaseNotes": "Zobrazit poznámky k vydání",
+  "hideReleaseNotes": "Skrýt poznámky k vydání",
+  "remindMeLater": "Připomenout později",
+  "downloading": "Stahování...",
+  "updateNow": "Aktualizovat nyní"
+}

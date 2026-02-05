@@ -1,0 +1,61 @@
+{
+  "refreshModelsError": "Provedor deve ter URL base e chave API configuradas para buscar modelos.",
+  "refreshModelsSuccess": "Adicionado {{count}} novo(s) modelo(s) de {{provider}}.",
+  "noNewModels": "Nenhum modelo novo encontrado. Todos os modelos disponíveis já foram adicionados.",
+  "refreshModelsFailed": "Falha ao buscar modelos de {{provider}}. Verifique sua chave de API e URL base.",
+  "models": "Modelos",
+  "refreshing": "Atualizando...",
+  "refresh": "Atualizar",
+  "import": "Importar",
+  "importModelSuccess": "Modelo {{provider}} foi importado com sucesso.",
+  "importModelError": "Falha ao importar modelo:",
+  "stop": "Parar",
+  "start": "Iniciar",
+  "noModelFound": "Nenhum modelo encontrado",
+  "noModelFoundDesc": "Modelos disponíveis serão listados aqui. Se você ainda não tem modelos, visite o Hub para baixar.",
+  "configuration": "Configuração",
+  "apiEndpoint": "Endpoint da API",
+  "testConnection": "Testar Conexão",
+  "addModel": {
+    "title": "Adicionar Novo Modelo",
+    "description": "Adicionar um novo modelo ao provedor {{provider}}.",
+    "modelId": "ID do Modelo",
+    "enterModelId": "Digite o ID do modelo",
+    "exploreModels": "Ver lista de modelos de {{provider}}",
+    "addModel": "Adicionar Modelo",
+    "modelExists": "Modelo já existe",
+    "modelExistsDesc": "Por favor, escolha um ID de modelo diferente."
+  },
+  "deleteModel": {
+    "title": "Remover Modelo: {{modelId}}",
+    "description": "Tem certeza de que deseja remover este modelo? Esta ação não pode ser desfeita.",
+    "success": "Modelo {{modelId}} foi removido permanentemente.",
+    "cancel": "Cancelar",
+    "delete": "Remover"
+  },
+  "deleteProvider": {
+    "title": "Remover Provedor",
+    "description": "Remover este provedor e todos os seus modelos. Esta ação não pode ser desfeita.",
+    "success": "Provedor {{provider}} foi removido permanentemente.",
+    "confirmTitle": "Remover Provedor: {{provider}}",
+    "confirmDescription": "Tem certeza de que deseja remover este provedor? Esta ação não pode ser desfeita.",
+    "cancel": "Cancelar",
+    "delete": "Remover"
+  },
+  "editModel": {
+    "title": "Editar Modelo: {{modelId}}",
+    "description": "Configure as capacidades do modelo alterando as opções abaixo.",
+    "capabilities": "Capacidades",
+    "tools": "Ferramentas",
+    "vision": "Visão",
+    "embeddings": "Embeddings",
+    "notAvailable": "Ainda não disponível",
+    "warning": {
+      "title": "Prossiga com Cautela",
+      "description": "Modificar capacidades do modelo pode afetar desempenho e funcionalidade. Configurações incorretas podem causar comportamento inesperado ou erros."
+    }
+  },
+  "addProvider": "Adicionar Provedor",
+  "addOpenAIProvider": "Adicionar Provedor OpenAI",
+  "enterNameForProvider": "Digite o nome para o provedor"
+}

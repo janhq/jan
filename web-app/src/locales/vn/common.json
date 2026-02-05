@@ -1,0 +1,376 @@
+{
+  "assistants": "Trợ lý",
+  "hardware": "Phần cứng",
+  "mcp-servers": "Máy chủ MCP",
+  "local_api_server": "Máy chủ API cục bộ",
+  "https_proxy": "Proxy HTTPS",
+  "extensions": "Tiện ích mở rộng",
+  "general": "Chung",
+  "settings": "Cài đặt",
+  "modelProviders": "Nhà cung cấp Mô hình",
+  "interface": "Giao diện",
+  "privacy": "Quyền riêng tư",
+  "keyboardShortcuts": "Phím tắt",
+  "newChat": "Trò chuyện Mới",
+  "favorites": "Yêu thích",
+  "recents": "Gần đây",
+  "hub": "Hub",
+  "helpSupport": "Trợ giúp & Hỗ trợ",
+  "helpUsImproveJan": "Giúp chúng tôi cải thiện Jan",
+  "unstarAll": "Bỏ gắn dấu sao tất cả",
+  "unstar": "Bỏ gắn dấu sao",
+  "deleteAll": "Xóa tất cả",
+  "star": "Gắn dấu sao",
+  "rename": "Đổi tên",
+  "delete": "Xóa",
+  "copied": "Đã sao chép!",
+  "dataFolder": "Thư mục Dữ liệu",
+  "others": "Khác",
+  "language": "Ngôn ngữ",
+  "login": "Đăng Nhập",
+  "loginWith": "Đăng Nhập Bằng {{provider}}",
+  "loginFailed": "Đăng Nhập Thất Bại",
+  "logout": "Đăng Xuất",
+  "loggingOut": "Đang Đăng Xuất...",
+  "loggedOut": "Đăng Xuất Thành Công",
+  "logoutFailed": "Đăng Xuất Thất Bại",
+  "profile": "Hồ Sơ",
+  "reset": "Đặt lại",
+  "search": "Tìm kiếm",
+  "name": "Tên",
+  "cancel": "Hủy",
+  "create": "Tạo",
+  "save": "Lưu",
+  "edit": "Chỉnh sửa",
+  "copy": "Sao chép",
+  "back": "Quay lại",
+  "close": "Đóng",
+  "next": "Tiếp theo",
+  "finish": "Hoàn thành",
+  "skip": "Bỏ qua",
+  "allow": "Cho phép",
+  "deny": "Từ chối",
+  "start": "Bắt đầu",
+  "stop": "Dừng",
+  "preview": "Xem trước",
+  "compactWidth": "Chiều rộng nhỏ gọn",
+  "fullWidth": "Chiều rộng đầy đủ",
+  "dark": "Tối",
+  "light": "Sáng",
+  "system": "Hệ thống",
+  "auto": "Tự động",
+  "english": "Tiếng Anh",
+  "medium": "Trung bình",
+  "newThread": "Chủ đề mới",
+  "noResultsFound": "Không tìm thấy kết quả nào",
+  "noThreadsYet": "Chưa có chủ đề nào",
+  "noThreadsYetDesc": "Bắt đầu một cuộc trò chuyện mới để xem lịch sử chủ đề của bạn ở đây.",
+  "downloads": "Tải xuống",
+  "downloading": "Đang tải xuống",
+  "cancelDownload": "Hủy tải xuống",
+  "downloadCancelled": "Đã hủy tải xuống",
+  "downloadComplete": "Tải xuống hoàn tất",
+  "thinking": "Đang suy nghĩ...",
+  "thought": "Suy nghĩ",
+  "callingTool": "Đang gọi công cụ",
+  "completed": "Đã hoàn thành",
+  "image": "Hình ảnh",
+  "vision": "Thị giác",
+  "embeddings": "Nhúng",
+  "tools": "Công cụ",
+  "webSearch": "Tìm kiếm trên web",
+  "reasoning": "Lý luận",
+  "proactive": "Chủ động",
+  "selectAModel": "Chọn một mô hình",
+  "noToolsAvailable": "Không có công cụ nào",
+  "noModelsFoundFor": "Không tìm thấy mô hình nào cho \"{{searchValue}}\"",
+  "failedToLoadModels": "Không thể tải mô hình",
+  "noModels": "Không tìm thấy mô hình nào",
+  "conversationNotAvailable": "Cuộc trò chuyện không khả dụng",
+  "conversationNotAvailableDescription": "Cuộc trò chuyện bạn đang cố gắng truy cập không khả dụng hoặc đã bị xóa.",
+  "temporaryChat": "Trò chuyện tạm thời",
+  "temporaryChatTooltip": "Trò chuyện tạm thời sẽ không xuất hiện trong lịch sử của bạn",
+  "generateAiResponse": "Tạo phản hồi AI",
+  "customAvatar": "Ảnh đại diện tùy chỉnh",
+  "editAssistant": "Chỉnh sửa Trợ lý",
+  "jan": "Jan",
+  "metadata": "Siêu dữ liệu",
+  "regenerate": "Tái tạo",
+  "threadImage": "Hình ảnh chủ đề",
+  "editMessage": "Chỉnh sửa tin nhắn",
+  "deleteMessage": "Xóa tin nhắn",
+  "deleteThread": "Xóa chủ đề",
+  "renameThread": "Đổi tên chủ đề",
+  "threadTitle": "Tiêu đề chủ đề",
+  "deleteAllThreads": "Xóa tất cả các chủ đề",
+  "allThreadsUnfavorited": "Tất cả các chủ đề đã được bỏ yêu thích",
+  "deleteAllThreadsConfirm": "Bạn có chắc chắn muốn xóa tất cả các chủ đề không? Hành động này không thể hoàn tác.",
+  "addProvider": "Thêm nhà cung cấp",
+  "addOpenAIProvider": "Thêm nhà cung cấp OpenAI",
+  "enterNameForProvider": "Nhập tên cho nhà cung cấp của bạn",
+  "providerAlreadyExists": "Nhà cung cấp có tên \"{{name}}\" đã tồn tại. Vui lòng chọn một tên khác.",
+  "adjustFontSize": "Điều chỉnh kích thước phông chữ",
+  "changeLanguage": "Thay đổi ngôn ngữ",
+  "editTheme": "Chỉnh sửa chủ đề",
+  "editCodeBlockStyle": "Chỉnh sửa kiểu khối mã",
+  "editServerHost": "Chỉnh sửa máy chủ lưu trữ",
+  "pickColorWindowBackground": "Chọn màu nền cửa sổ",
+  "pickColorAppMainView": "Chọn màu chế độ xem chính của ứng dụng",
+  "pickColorAppPrimary": "Chọn màu chính của ứng dụng",
+  "pickColorAppAccent": "Chọn màu nhấn của ứng dụng",
+  "pickColorAppDestructive": "Chọn màu hủy của ứng dụng",
+  "apiKeyRequired": "Yêu cầu khóa API",
+  "enterTrustedHosts": "Nhập máy chủ đáng tin cậy",
+  "placeholder": {
+    "chatInput": "Hỏi tôi bất cứ điều gì..."
+  },
+  "confirm": "Xác nhận",
+  "continue": "Tiếp tục",
+  "loading": "Đang tải...",
+  "error": "Lỗi",
+  "success": "Thành công",
+  "warning": "Cảnh báo",
+  "noResultsFoundDesc": "Chúng tôi không thể tìm thấy bất kỳ cuộc trò chuyện nào phù hợp với tìm kiếm của bạn. Hãy thử một từ khóa khác.",
+  "searchModels": "Tìm kiếm mô hình...",
+  "searchStyles": "Tìm kiếm kiểu...",
+  "createAssistant": "Tạo trợ lý",
+  "enterApiKey": "Nhập khóa API",
+  "scrollToBottom": "Cuộn xuống dưới cùng",
+  "addModel": {
+    "title": "Thêm mô hình",
+    "modelId": "ID mô hình",
+    "enterModelId": "Nhập ID mô hình",
+    "addModel": "Thêm mô hình",
+    "description": "Thêm một mô hình mới vào nhà cung cấp",
+    "exploreModels": "Xem danh sách mô hình từ nhà cung cấp"
+  },
+  "mcpServers": {
+    "editServer": "Chỉnh sửa máy chủ",
+    "addServer": "Thêm máy chủ",
+    "serverName": "Tên máy chủ",
+    "enterServerName": "Nhập tên máy chủ",
+    "command": "Lệnh",
+    "enterCommand": "Nhập lệnh",
+    "arguments": "Đối số",
+    "argument": "Đối số {{index}}",
+    "envVars": "Biến môi trường",
+    "key": "Khóa",
+    "value": "Giá trị",
+    "save": "Lưu"
+  },
+  "deleteServer": {
+    "title": "Xóa máy chủ",
+    "delete": "Xóa"
+  },
+  "editJson": {
+    "errorParse": "Không thể phân tích cú pháp JSON",
+    "errorPaste": "Không thể dán JSON",
+    "errorFormat": "Định dạng JSON không hợp lệ",
+    "titleAll": "Chỉnh sửa tất cả cấu hình máy chủ",
+    "placeholder": "Nhập cấu hình JSON...",
+    "save": "Lưu"
+  },
+  "editModel": {
+    "title": "Chỉnh sửa mô hình: {{modelId}}",
+    "description": "Định cấu hình khả năng của mô hình bằng cách chuyển đổi các tùy chọn bên dưới.",
+    "capabilities": "Khả năng",
+    "tools": "Công cụ",
+    "vision": "Thị giác",
+    "embeddings": "Nhúng",
+    "notAvailable": "Chưa có"
+  },
+  "outOfContextError": {
+    "truncateInput": "Cắt bớt đầu vào",
+    "title": "Lỗi hết ngữ cảnh",
+    "description": "Cuộc trò chuyện này đang đạt đến giới hạn bộ nhớ của AI, giống như một bảng trắng đang được lấp đầy. Chúng ta có thể mở rộng cửa sổ bộ nhớ (gọi là kích thước ngữ cảnh) để nó nhớ nhiều hơn, nhưng có thể sử dụng nhiều bộ nhớ máy tính của bạn hơn. Chúng ta cũng có thể cắt bớt đầu vào, có nghĩa là nó sẽ quên một số lịch sử trò chuyện để nhường chỗ cho các tin nhắn mới.",
+    "increaseContextSizeDescription": "Bạn có muốn tăng kích thước ngữ cảnh không?",
+    "increaseContextSize": "Tăng kích thước ngữ cảnh"
+  },
+  "toolApproval": {
+    "title": "Yêu cầu quyền truy cập công cụ",
+    "description": "Trợ lý muốn sử dụng <strong>{{toolName}}</strong>",
+    "securityNotice": "Chỉ cho phép các công cụ bạn tin tưởng. Các công cụ có thể truy cập hệ thống và dữ liệu của bạn.",
+    "deny": "Từ chối",
+    "allowOnce": "Cho phép một lần",
+    "alwaysAllow": "Luôn cho phép"
+  },
+  "deleteModel": {
+    "title": "Xóa mô hình: {{modelId}}",
+    "description": "Bạn có chắc chắn muốn xóa mô hình này không? Hành động này không thể hoàn tác.",
+    "success": "Mô hình {{modelId}} đã bị xóa vĩnh viễn.",
+    "cancel": "Hủy",
+    "delete": "Xóa"
+  },
+  "deleteProvider": {
+    "title": "Xóa nhà cung cấp",
+    "description": "Xóa nhà cung cấp này và tất cả các mô hình của nó. Hành động này không thể hoàn tác.",
+    "success": "Nhà cung cấp {{provider}} đã bị xóa vĩnh viễn.",
+    "confirmTitle": "Xóa nhà cung cấp: {{provider}}",
+    "confirmDescription": "Bạn có chắc chắn muốn xóa nhà cung cấp này không? Hành động này không thể hoàn tác.",
+    "cancel": "Hủy",
+    "delete": "Xóa"
+  },
+  "modelSettings": {
+    "title": "Cài đặt mô hình - {{modelId}}",
+    "description": "Định cấu hình cài đặt mô hình để tối ưu hóa hiệu suất và hành vi."
+  },
+  "projects": {
+    "title": "Dự án",
+    "addProject": "Thêm dự án",
+    "createNewProject": "Tạo dự án mới",
+    "editProject": "Chỉnh sửa dự án",
+    "deleteProject": "Xóa dự án",
+    "projectName": "Tên dự án",
+    "enterProjectName": "Nhập tên dự án",
+    "noProjectsYet": "Chưa có dự án nào",
+    "noProjectsYetDesc": "Tạo dự án đầu tiên của bạn để tổ chức các cuộc trò chuyện.",
+    "projectNotFound": "Không tìm thấy dự án",
+    "projectNotFoundDesc": "Dự án mà bạn đang tìm kiếm không tồn tại.",
+    "deleteProjectConfirm": "Bạn có chắc chắn muốn xóa dự án này không? Hành động này không thể hoàn tác.",
+    "addToProject": "Thêm vào dự án",
+    "removeFromProject": "Xóa khỏi dự án",
+    "noConversationsIn": "Chưa có cuộc trò chuyện nào trong {{projectName}}",
+    "startNewConversation": "Bắt đầu một cuộc trò chuyện mới với {{projectName}} bên dưới",
+    "conversationsIn": "Cuộc trò chuyện trong {{projectName}}",
+    "conversationsDescription": "Nhấp vào bất kỳ cuộc trò chuyện nào để tiếp tục trò chuyện hoặc bắt đầu một cuộc trò chuyện mới bên dưới.",
+    "thread": "chủ đề",
+    "threads": "chủ đề",
+    "updated": "Đã cập nhật:",
+    "collapseProject": "Thu gọn dự án",
+    "expandProject": "Mở rộng dự án",
+    "update": "Cập nhật",
+    "noProjectsAvailable": "Không có dự án nào",
+    "searchProjects": "Tìm kiếm dự án...",
+    "noProjectsFound": "Không tìm thấy dự án nào",
+    "tryDifferentSearch": "Thử từ khóa tìm kiếm khác",
+    "deleteProjectDialog": {
+      "title": "Xóa dự án",
+      "permanentDelete": "Điều này sẽ xóa vĩnh viễn tất cả các chủ đề.",
+      "permanentDeleteWarning": "Hành động này sẽ xóa vĩnh viễn TẤT CẢ các chủ đề trong dự án!",
+      "deleteEmptyProject": "Hành động này sẽ xóa dự án \"{{projectName}}\".",
+      "saveThreadsAdvice": "Để lưu các chủ đề, hãy di chuyển chúng vào danh sách chủ đề của bạn hoặc dự án khác trước khi xóa.",
+      "starredWarning": "Bạn vẫn có các chủ đề đã gắn dấu sao trong dự án.",
+      "deleteButton": "Xóa",
+      "successWithName": "Dự án \"{{projectName}}\" đã được xóa thành công",
+      "successWithoutName": "Dự án đã được xóa thành công",
+      "error": "Không thể xóa dự án. Vui lòng thử lại.",
+      "ariaLabel": "Xóa {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Tạo dự án mới",
+      "editTitle": "Chỉnh sửa dự án",
+      "nameLabel": "Tên dự án",
+      "namePlaceholder": "Nhập tên dự án...",
+      "createButton": "Tạo",
+      "updateButton": "Cập nhật",
+      "alreadyExists": "Dự án \"{{projectName}}\" đã tồn tại",
+      "createSuccess": "Dự án \"{{projectName}}\" đã được tạo thành công",
+      "renameSuccess": "Dự án đã được đổi tên từ \"{{oldName}}\" thành \"{{newName}}\""
+    }
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Thay đổi vị trí thư mục dữ liệu",
+      "description": "Bạn có chắc chắn muốn thay đổi vị trí thư mục dữ liệu không? Thao tác này sẽ di chuyển tất cả dữ liệu của bạn đến vị trí mới và khởi động lại ứng dụng.",
+      "currentLocation": "Vị trí hiện tại:",
+      "newLocation": "Vị trí mới:",
+      "cancel": "Hủy",
+      "changeLocation": "Thay đổi vị trí"
+    },
+    "deleteAllThreads": {
+      "title": "Xóa tất cả các chủ đề",
+      "description": "Tất cả các chủ đề sẽ bị xóa. Hành động này không thể hoàn tác."
+    },
+    "deleteThread": {
+      "description": "Bạn có chắc chắn muốn xóa cuộc trò chuyện này không? Hành động này không thể hoàn tác."
+    },
+    "editMessage": {
+      "title": "Chỉnh sửa tin nhắn"
+    },
+    "messageMetadata": {
+      "title": "Siêu dữ liệu tin nhắn"
+    }
+  },
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Tất cả các chủ đề đã được bỏ yêu thích",
+      "description": "Tất cả các chủ đề đã được xóa khỏi danh sách yêu thích của bạn."
+    },
+    "deleteAllThreads": {
+      "title": "Xóa tất cả các chủ đề",
+      "description": "Tất cả các chủ đề đã bị xóa vĩnh viễn."
+    },
+    "renameThread": {
+      "title": "Đổi tên chủ đề",
+      "description": "Tiêu đề chủ đề đã được đổi thành '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Xóa chủ đề",
+      "description": "Chủ đề này đã bị xóa vĩnh viễn."
+    },
+    "editMessage": {
+      "title": "Chỉnh sửa tin nhắn",
+      "description": "Tin nhắn đã được chỉnh sửa thành công. Vui lòng đợi mô hình phản hồi."
+    },
+    "appUpdateDownloaded": {
+      "title": "Đã tải xuống bản cập nhật ứng dụng",
+      "description": "Bản cập nhật ứng dụng đã được tải xuống thành công."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Tải xuống bản cập nhật ứng dụng thất bại",
+      "description": "Không thể tải xuống bản cập nhật ứng dụng. Vui lòng thử lại."
+    },
+    "downloadComplete": {
+      "title": "Tải xuống hoàn tất",
+      "description": "{{item}} đã được tải xuống"
+    },
+    "downloadCancelled": {
+      "title": "Đã hủy tải xuống",
+      "description": "Quá trình tải xuống đã bị hủy"
+    },
+    "downloadFailed": {
+      "title": "Tải xuống thất bại",
+      "description": "Tải xuống {{item}} thất bại"
+    },
+    "modelValidationStarted": {
+      "title": "Đang xác thực mô hình",
+      "description": "Đã tải xuống mô hình \"{{modelId}}\" thành công. Đang xác minh tính toàn vẹn..."
+    },
+    "modelValidationFailed": {
+      "title": "Xác thực mô hình thất bại",
+      "description": "Mô hình đã tải xuống \"{{modelId}}\" không vượt qua kiểm tra tính toàn vẹn và đã bị xóa. Tệp có thể bị hỏng hoặc bị giả mạo."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Tải xuống hoàn tất",
+      "description": "Mô hình \"{{item}}\" đã được tải xuống và xác minh thành công"
+    },
+    "projectCreated": {
+      "title": "Dự án đã được tạo",
+      "description": "Dự án \"{{projectName}}\" đã được tạo thành công"
+    },
+    "projectRenamed": {
+      "title": "Dự án đã được đổi tên",
+      "description": "Dự án đã được đổi tên từ \"{{oldName}}\" thành \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Dự án đã được xóa",
+      "description": "Dự án \"{{projectName}}\" đã được xóa thành công"
+    },
+    "projectAlreadyExists": {
+      "title": "Dự án đã tồn tại",
+      "description": "Dự án \"{{projectName}}\" đã tồn tại"
+    },
+    "projectDeleteFailed": {
+      "title": "Xóa thất bại",
+      "description": "Không thể xóa dự án. Vui lòng thử lại."
+    },
+    "threadAssignedToProject": {
+      "title": "Chủ đề đã được gán",
+      "description": "Chủ đề đã được gán cho \"{{projectName}}\" thành công"
+    },
+    "threadRemovedFromProject": {
+      "title": "Chủ đề đã được xóa",
+      "description": "Chủ đề đã được xóa khỏi \"{{projectName}}\" thành công"
+    }
+  }
+}

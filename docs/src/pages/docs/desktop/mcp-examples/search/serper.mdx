@@ -1,0 +1,179 @@
+---
+title: Serper Search MCP
+description: Connect Jan to real-time web search with Google results through Serper API.
+keywords:
+  [
+    Jan,
+    MCP,
+    Model Context Protocol,
+    Serper,
+    Google search,
+    web search,
+    real-time search,
+    tool calling,
+    Jan v1,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Serper Search MCP
+
+[Serper](https://serper.dev) provides Google search results through a simple API, making it perfect for giving AI models access to current web information. The Serper MCP integration enables Jan models to search the web and retrieve real-time information.
+
+## Available Tools
+
+- `google_search`: Search Google and retrieve results with snippets
+- `scrape`: Extract content from specific web pages
+
+## Prerequisites
+
+- Jan with experimental features enabled
+- Serper API key from [serper.dev](https://serper.dev)
+- Model with tool calling support (recommended: Jan v1)
+
+<Callout type="info">
+Serper offers 2,500 free searches upon signup - enough for extensive testing and personal use.
+</Callout>
+
+## Setup
+
+### Enable Experimental Features
+
+1. Go to **Settings** > **General**
+2. Toggle **Experimental Features** ON
+
+![Enable experimental features](../../_assets/enable_mcp.png)
+
+### Enable MCP
+
+1. Go to **Settings** > **MCP Servers**
+2. Toggle **Allow All MCP Tool Permission** ON
+
+![Turn on MCP](../../_assets/turn_on_mcp.png)
+
+### Get Serper API Key
+
+1. Visit [serper.dev](https://serper.dev)
+2. Sign up for a free account
+3. Copy your API key from the playground
+
+![Serper homepage](../../_assets/serper_page.png)
+
+![Serper playground with API key](../../_assets/serper_playground.png)
+
+### Configure MCP Server
+
+Click `+` in MCP Servers section:
+
+**Configuration:**
+- **Server Name**: `serper`
+- **Command**: `npx`
+- **Arguments**: `-y serper-search-scrape-mcp-server`
+- **Environment Variables**:
+  - Key: `SERPER_API_KEY`, Value: `your-api-key`
+
+![Serper MCP configuration in Jan](../../_assets/serper_janparams.png)
+
+### Download Jan v1
+
+Jan v1 is optimized for tool calling and works excellently with Serper:
+
+1. Go to the **Hub** tab
+2. Search for **Jan v1**
+3. Choose your preferred quantization
+4. Click **Download**
+
+![Download Jan v1 from Hub](../../_assets/download_janv1.png)
+
+### Enable Tool Calling
+
+1. Go to **Settings** > **Model Providers** > **Llama.cpp**
+2. Find Jan v1 in your models list
+3. Click the edit icon
+4. Toggle **Tools** ON
+
+![Enable tools for Jan v1](../../_assets/toggle_tools.png)
+
+## Usage
+
+### Start a New Chat
+
+With Jan v1 selected, you'll see the available Serper tools:
+
+![Chat view with Serper tools](../../_assets/chat_jan_v1.png)
+
+### Example Queries
+
+**Current Information:**
+```
+What are the latest developments in quantum computing this week?
+```
+
+**Comparative Analysis:**
+```
+What are the main differences between the Rust programming language and C++? Be spicy, hot takes are encouraged. 😌
+```
+![Jan v1 using Serper for web search](../../_assets/jan_v1_serper.png)
+
+![Jan v1 using Serper for web search](../../_assets/jan_v1_serper1.png)
+
+**Research Tasks:**
+```
+Find the current stock price of NVIDIA and recent news about their AI chips.
+```
+
+**Fact-Checking:**
+```
+Is it true that the James Webb telescope found signs of life on an exoplanet? What's the latest?
+```
+
+**Local Information:**
+```
+What restaurants opened in San Francisco this month? Focus on Japanese cuisine.
+```
+
+## How It Works
+
+1. **Query Processing**: Jan v1 analyzes your question and determines what to search
+2. **Web Search**: Calls Serper API to get Google search results
+3. **Content Extraction**: Can scrape specific pages for detailed information
+4. **Synthesis**: Combines search results into a comprehensive answer
+
+## Tips for Best Results
+
+- **Be specific**: "Tesla Model 3 2024 price Australia" works better than "Tesla price"
+- **Request recent info**: Add "latest", "current", or "2024/2025" to get recent results
+- **Ask follow-ups**: Jan v1 maintains context for deeper research
+- **Combine with analysis**: Ask for comparisons, summaries, or insights
+
+## Troubleshooting
+
+**No search results:**
+- Verify API key is correct
+- Check remaining credits at serper.dev
+- Ensure MCP server shows as active
+
+**Tools not appearing:**
+- Confirm experimental features are enabled
+- Verify tool calling is enabled for your model
+- Restart Jan after configuration changes
+
+**Poor search quality:**
+- Use more specific search terms
+- Try rephrasing your question
+- Check if Serper service is operational
+
+<Callout type="warning">
+Each search query consumes one API credit. Monitor usage at serper.dev dashboard.
+</Callout>
+
+## API Limits
+
+- **Free tier**: 2,500 searches
+- **Paid plans**: Starting at $50/month for 50,000 searches
+- **Rate limits**: 100 requests per second
+
+## Next Steps
+
+Serper MCP enables Jan v1 to access current web information, making it a powerful research assistant. Combine with other MCP tools for even more capabilities - use Serper for search, then E2B for data analysis, or Jupyter for visualization.

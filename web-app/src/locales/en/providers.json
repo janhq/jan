@@ -1,0 +1,62 @@
+{
+  "refreshModelsError": "Provider must have base URL and API key configured to fetch models.",
+  "refreshModelsSuccess": "Added {{count}} new model(s) from {{provider}}.",
+  "noNewModels": "No new models found. All available models are already added.",
+  "refreshModelsFailed": "Failed to fetch models from {{provider}}. Please check your API key and base URL.",
+  "models": "Models",
+  "refreshing": "Refreshing...",
+  "refresh": "Refresh",
+  "import": "Import",
+  "importModelSuccess": "Model {{provider}} has been imported successfully.",
+  "importModelError": "Failed to import model:",
+  "stop": "Stop",
+  "start": "Start",
+  "noModelFound": "No model found",
+  "noModelFoundDesc": "Available models will be listed here. If you don't have any models yet, visit the Hub to download.",
+  "configuration": "Configuration",
+  "apiEndpoint": "API Endpoint",
+  "testConnection": "Test Connection",
+  "addModel": {
+    "title": "Add New Model",
+    "description": "Add a new model to the {{provider}} provider.",
+    "modelId": "Model ID",
+    "enterModelId": "Enter model ID",
+    "exploreModels": "See model list from {{provider}}",
+    "addModel": "Add Model",
+    "modelExists": "Model already exists",
+    "modelExistsDesc": "Please choose a different model ID."
+  },
+  "deleteModel": {
+    "title": "Delete Model: {{modelId}}",
+    "description": "Are you sure you want to delete this model? This action cannot be undone.",
+    "success": "Model {{modelId}} has been permanently deleted.",
+    "cancel": "Cancel",
+    "delete": "Delete"
+  },
+  "deleteProvider": {
+    "title": "Delete Provider",
+    "description": "Delete this provider and all its models. This action cannot be undone.",
+    "success": "Provider {{provider}} has been permanently deleted.",
+    "confirmTitle": "Delete Provider: {{provider}}",
+    "confirmDescription": "Are you sure you want to delete this provider? This action cannot be undone.",
+    "cancel": "Cancel",
+    "delete": "Delete"
+  },
+  "editModel": {
+    "title": "Edit Model: {{modelId}}",
+    "description": "Configure model capabilities by toggling the options below.",
+    "capabilities": "Capabilities",
+    "tools": "Tools",
+    "vision": "Vision",
+    "proactive": "Proactive (Experimental)",
+    "embeddings": "Embeddings",
+    "notAvailable": "Not available yet",
+    "warning": {
+      "title": "Proceed with Caution",
+      "description": "Modifying model capabilities may affect performance and functionality. Incorrect settings could cause unexpected behavior or errors."
+    }
+  },
+  "addProvider": "Add Provider",
+  "addOpenAIProvider": "Add OpenAI Provider",
+  "enterNameForProvider": "Enter name for provider"
+}

@@ -1,0 +1,220 @@
+---
+title: Jan Data Folder
+description: A guide to Jan's data structure.
+sidebar_position: 2
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    quickstart,
+    getting started,
+    using AI model,
+  ]
+---
+
+import { Tabs } from 'nextra/components'
+import { Callout, Steps } from 'nextra/components'
+import { Settings, FolderOpen } from 'lucide-react'
+
+
+# Jan Data Folder
+Jan stores your data locally in JSON format. Your data is yours alone.
+
+## Open Jan Data Folder
+
+Via Jan:
+1. Settings (<Settings width={16} height={16} style={{display:"inline"}}/>) > Advanced Settings
+2. Click <FolderOpen width={16} height={16} style={{display:"inline"}}/>
+
+<br/>
+![Open Jan Data Folder](./_assets/settings-11.png)
+<br/>
+
+Via Terminal:
+
+```bash
+# Windows
+cd %APPDATA%/Jan/data
+
+# Mac
+cd ~/Library/Application\ Support/Jan/data
+
+# Linux
+cd $XDG_CONFIG_HOME/Jan/data  # Custom install
+cd ~/.config/Jan/data         # Default install
+```
+
+## Directory Structure
+
+<Callout type="info">
+Root directory: `~/jan`
+</Callout>
+
+```sh
+/assistants/
+  /jan/
+    assistant.json
+/engines/
+  /llama.cpp/
+/extensions/
+  extensions.json
+/@janhq/
+  /assistant-extension/
+    /conversational-extension/
+    /download-extension/
+    /engine-management-extension/
+    /hardware-management-extension/
+    /inference-cortex-extension/
+    /model-extension/
+/files/
+/logs/
+  app.log
+/models/
+  /huggingface.co/
+    /Model_Provider_A/
+      /Model_A
+        model_A.gguf
+        model_A.yaml
+/threads/
+  /thread_A/
+    messages.jsonl
+    thread.json
+
+```
+
+### `assistants/`
+Where AI personalities live. The default one (`/assistants/jan/`):
+
+```json
+{
+  "avatar": "👋",
+  "id": "jan",
+  "object": "assistant",
+  "created_at": 1750945742.536,
+  "name": "Jan",
+  "description": "Jan is a helpful AI assistant that can use tools and help complete tasks for its users.",
+  "model": "*",
+  "instructions": "You have access to a set of tools to help you answer the user’s question. You can use only one tool per message, and you’ll receive the result of that tool in the user’s next response. To complete a task, use tools step by step—each step should be guided by the outcome of the previous one.\nTool Usage Rules:\n1. Always provide the correct values as arguments when using tools. Do not pass variable names—use actual values instead.\n2. You may perform multiple tool steps to complete a task.\n3. Avoid repeating a tool call with exactly the same parameters to prevent infinite loops.",
+  "tools": [
+    {
+      "type": "retrieval",
+      "enabled": false,
+      "useTimeWeightedRetriever": false,
+      "settings": {
+        "top_k": 2,
+        "chunk_size": 1024,
+        "chunk_overlap": 64,
+        "retrieval_template": "Use the following pieces of context to answer the question at the end.\n----------------\nCONTEXT: {CONTEXT}\n----------------\nQUESTION: {QUESTION}\n----------------\nHelpful Answer:"
+      }
+    }
+  ],
+  "file_ids": []
+}
+```
+
+Parameters:
+
+| Parameter               | Description                                                  | Type    | Default |
+|------------------------|--------------------------------------------------------------|---------|---------|
+| id                     | Assistant identifier                                         | string  | jan     |
+| avatar                 | Assistant image                                              | string  | None    |
+| object                 | OpenAI API compatibility marker                              | string  | None    |
+| created_at             | Creation timestamp                                          | string  | None    |
+| name                   | Display name                                                | string  | Jan     |
+| description            | Role description                                            | string  | Default |
+| model                  | Allowed models (* = all)                                    | string  | *       |
+| instructions           | Default thread instructions                                 | string  | None    |
+| file_ids              | OpenAI compatibility field                                  | string  | None    |
+| tools                  | Available tools (retrieval only currently)                  | array   | retrieval|
+| type                   | Tool type                                                   | string  | retrieval|
+| enabled               | Tool status                                                 | boolean | true    |
+| useTimeWeightedRetriever| Time-weighted retrieval toggle                            | boolean | false   |
+| settings              | Tool configuration                                          | object  | None    |
+| top_k                 | Max retrieval results                                       | number  | 2       |
+| chunk_size            | Text chunk size                                             | number  | 1024    |
+| chunk_overlap         | Chunk overlap amount                                        | number  | 64      |
+| retrieval_template    | Response format template                                    | string  | None    |
+
+### `extensions/`
+Add-on central. Organization extensions live in `@janhq/`, solo ones in root.
+
+### `logs/`
+Debugging headquarters (`/logs/app.txt`):
+- **[APP]**: Core logs
+- **[SERVER]**: API drama
+- **[SPECS]**: Hardware confessions
+
+### `models/`
+The silicon brain collection. Each model has its own `model.json`.
+
+<Callout type="info">
+Full parameters: [here](/docs/desktop/model-parameters)
+</Callout>
+
+### `threads/`
+Chat archive. Each thread (`/threads/jan_unixstamp/`) contains:
+
+- `messages.jsonl`:
+```json
+  {
+    "completed_at": 0,
+    "content": [
+      {
+        "text": {
+          "annotations": [],
+          "value": "Hello! I can help you with various tasks. I can search for information on the internet, including news, videos, images, shopping, and more. I can also scrape webpages to extract specific information. Let me know what you need!"
+        },
+        "type": "text"
+      }
+    ],
+    "created_at": 1751012639307,
+    "id": "01JYR7S0JB5ZBGMJV52KWMW5VW",
+    "metadata": {
+      "assistant": {
+        "avatar": "👋",
+        "id": "jan",
+        "instructions": "You have access to a set of tools to help you answer the user's question. You can use only one tool per message, and you'll receive the result of that tool in the user's next response. To complete a task, use tools step by step—each step should be guided by the outcome of the previous one.\nTool Usage Rules:\n1. Always provide the correct values as arguments when using tools. Do not pass variable names—use actual values instead.\n2. You may perform multiple tool steps to complete a task.\n3. Avoid repeating a tool call with exactly the same parameters to prevent infinite loops.",
+        "name": "Jan",
+        "parameters": ""
+      },
+      "tokenSpeed": {
+        "lastTimestamp": 1751012637097,
+        "message": "01JYR7S0GW5M9PSHMRE7T8VQJM",
+        "tokenCount": 49,
+        "tokenSpeed": 22.653721682847895
+      }
+    },
+    "object": "thread.message",
+    "role": "assistant",
+    "status": "ready",
+    "thread_id": "8f2c9922-db49-4d1e-8620-279c05baf2d0",
+    "type": "text"
+  }
+```
+
+- `thread.json`:
+
+| Parameter   | Description                                    |
+|------------|------------------------------------------------|
+| assistants | Assistant configuration clone                  |
+| created    | Creation timestamp                             |
+| id         | Thread identifier                              |
+| metadata   | Additional thread data                         |
+| model      | Active model settings                          |
+| object     | OpenAI compatibility marker                    |
+| title      | Thread name                                    |
+| updated    | Updated timestamp                              |
+
+
+
+
+## Delete Jan Data
+Uninstall guides: [Mac](/docs/desktop/install/mac#step-2-clean-up-data-optional),
+[Windows](/docs/desktop/install/windows#step-2-handle-jan-data), or [Linux](docs/desktop/install/linux#uninstall-jan).

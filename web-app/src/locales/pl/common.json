@@ -1,0 +1,376 @@
+{
+  "assistants": "Asystenci",
+  "hardware": "Sprzęt",
+  "mcp-servers": "Serwery MCP",
+  "local_api_server": "Lokalny Serwer API",
+  "https_proxy": "Pośrednik HTTPS",
+  "extensions": "Rozszerzenia",
+  "general": "Ogólne",
+  "settings": "Ustawienia",
+  "modelProviders": "Dostawcy Modeli",
+  "interface": "Wygląd",
+  "privacy": "Prywatność",
+  "keyboardShortcuts": "Skróty",
+  "newChat": "Nowy Czat",
+  "favorites": "Ulubione",
+  "recents": "Ostatnie",
+  "hub": "Centrum Modeli",
+  "helpSupport": "Pomoc i Obsługa",
+  "helpUsImproveJan": "Pomóż nam ulepszyć Jan",
+  "unstarAll": "Usuń Wszystkim Gwiazdkę",
+  "unstar": "Usuń Gwiazdkę",
+  "deleteAll": "Usuń Wszystko",
+  "star": "Dodaj Gwiazdkę",
+  "rename": "Zmień Nazwę",
+  "delete": "Usuń",
+  "copied": "Skopiowano!",
+  "dataFolder": "Katalog Danych",
+  "others": "Inne",
+  "language": "Język",
+  "login": "Zaloguj",
+  "loginWith": "Zaloguj Przez {{provider}}",
+  "loginFailed": "Logowanie Nie Powiodło Się",
+  "logout": "Wyloguj",
+  "loggingOut": "Wylogowywanie...",
+  "loggedOut": "Pomyślnie Wylogowano",
+  "logoutFailed": "Wylogowanie Nie Powiodło Się",
+  "profile": "Profil",
+  "reset": "Przywróć",
+  "search": "Szukaj",
+  "name": "Nazwa",
+  "cancel": "Anuluj",
+  "create": "Utwórz",
+  "save": "Zapisz",
+  "edit": "Edytuj",
+  "copy": "Skopiuj",
+  "back": "Wstecz",
+  "close": "Zamknij",
+  "next": "Dalej",
+  "finish": "Zakończ",
+  "skip": "Pomiń",
+  "allow": "Pozwól",
+  "deny": "Odmów",
+  "start": "Uruchom",
+  "stop": "Zatrzymaj",
+  "preview": "Podgląd",
+  "compactWidth": "Zwarta Szerokość",
+  "fullWidth": "Pełna Szerokość",
+  "dark": "Ciemny",
+  "light": "Jasny",
+  "system": "Systemowy",
+  "auto": "Automatycznie",
+  "english": "Angielski",
+  "medium": "Średni",
+  "newThread": "Nowy Wątek",
+  "noResultsFound": "Brak wyników",
+  "noThreadsYet": "Brak wątków",
+  "noThreadsYetDesc": "Rozpocznij nową rozmowę aby zobaczyć tutaj historię wątków.",
+  "downloads": "Pobrane",
+  "downloading": "Pobieranie",
+  "cancelDownload": "Anuluj Pobieranie",
+  "downloadCancelled": "Pobieranie anulowane",
+  "downloadComplete": "Pobieranie zakończone",
+  "thinking": "Myślenie…",
+  "thought": "Myśl",
+  "callingTool": "Używanie narzędzia",
+  "completed": "Zakończono",
+  "image": "Obraz",
+  "vision": "Wizja",
+  "embeddings": "Osadzenia",
+  "tools": "Narzędzia",
+  "webSearch": "Szukanie w Sieci",
+  "reasoning": "Rozumowanie",
+  "proactive": "Proaktywny",
+  "selectAModel": "Wybierz Model",
+  "noToolsAvailable": "Brak narzędzi",
+  "noModelsFoundFor": "Brak modeli dla \"{{searchValue}}\"",
+  "customAvatar": "Własny awatar",
+  "editAssistant": "Edytuj Asystenta",
+  "jan": "Jan",
+  "metadata": "Metadane",
+  "regenerate": "Odtwórz",
+  "threadImage": "Obraz wątku",
+  "editMessage": "Edytuj Wiadomość",
+  "deleteMessage": "Usuń Wiadomość",
+  "deleteThread": "Usuń Wątek",
+  "renameThread": "Zmień Nazwę Wątku",
+  "threadTitle": "Tytuł Wątku",
+  "deleteAllThreads": "Usuń Wszystkie Wątki",
+  "allThreadsUnfavorited": "Usunięto wszystkie wątki z ulubionych",
+  "deleteAllThreadsConfirm": "Na pewno chcesz usunąć wszystkie wątki? Tej operacji nie można cofnąć.",
+  "addProvider": "Dodaj Dostawcę",
+  "addOpenAIProvider": "Dodaj Dostawcę OpenAI",
+  "enterNameForProvider": "Wprowadź nazwę dostawcy",
+  "providerAlreadyExists": "Dostawca o nazwie \"{{name}}\" już istnieje. Proszę podać inną nazwę.",
+  "adjustFontSize": "Dostosuj Rozmiar Fontu",
+  "changeLanguage": "Zmień Język",
+  "editTheme": "Edytuj schemat kolorystyczny",
+  "editCodeBlockStyle": "Edytuj styl bloków kodu",
+  "editServerHost": "Edytuj host serwera",
+  "pickColorWindowBackground": "Wybierz kolor tła okna",
+  "pickColorAppMainView": "Wybierz kolor głównego widoku aplikacji",
+  "pickColorAppPrimary": "Wybierz kolor dominujący aplikacji",
+  "pickColorAppAccent": "Wybierz kolor akcentowy",
+  "pickColorAppDestructive": "Wybierz kolor destrukcyjny",
+  "apiKeyRequired": "Wymagany jest klucz API",
+  "enterTrustedHosts": "Wprowadź zaufane hosty",
+  "placeholder": {
+    "chatInput": "Zapytaj mnie o cokolwiek…"
+  },
+  "confirm": "Potwierdź",
+  "continue": "Kontynuuj",
+  "loading": "Wczytywanie…",
+  "error": "Błąd",
+  "success": "Sukces",
+  "warning": "Ostrzeżenie",
+  "noResultsFoundDesc": "Nie znaleziono pasujących czatów. Spróbuj innego słowa kluczowego.",
+  "searchModels": "Szukaj modeli…",
+  "searchStyles": "Szukaj stylów…",
+  "createAssistant": "Utwórz Asystenta",
+  "enterApiKey": "Wprowadź klucz API",
+  "scrollToBottom": "Przewiń na sam dół",
+  "generateAiResponse": "Wygeneruj odpowiedź SI",
+  "addModel": {
+    "title": "Dodaj Model",
+    "modelId": "Identyfikator Modelu",
+    "enterModelId": "Wprowadź identyfikator modelu",
+    "addModel": "Dodaj Model",
+    "description": "Dodaj nowy model do dostawcy",
+    "exploreModels": "Zobacz listę modeli dostawcy"
+  },
+  "mcpServers": {
+    "editServer": "Edytuj Serwer",
+    "addServer": "Dodaj Serwer",
+    "serverName": "Nazwa Serwera",
+    "enterServerName": "Wprowadź nazwę serwera",
+    "command": "Polecenie",
+    "enterCommand": "Wprowadź polecenie",
+    "arguments": "Argumenty",
+    "argument": "{{index}}. argument",
+    "envVars": "Zmienne Środowiskowe",
+    "key": "Klucz",
+    "value": "Wartość",
+    "save": "Zapisz"
+  },
+  "deleteServer": {
+    "title": "Usuń Serwer",
+    "delete": "Usuń"
+  },
+  "editJson": {
+    "errorParse": "Błąd parsowania JSON",
+    "errorPaste": "Błąd wklejania JSON",
+    "errorFormat": "Niepoprawny format JSON",
+    "titleAll": "Edytuj Ustawienia Wszystkich Serwerów",
+    "placeholder": "Wprowadź konfigurację JSON…",
+    "save": "Zapisz"
+  },
+  "editModel": {
+    "title": "Edytuj Model: {{modelId}}",
+    "description": "Ustaw możliwości modelu za pomocą poniższych przełączników.",
+    "capabilities": "Możliwości",
+    "tools": "Narzędzia",
+    "vision": "Wizja",
+    "embeddings": "Osadzenia",
+    "notAvailable": "Jeszcze niedostępne"
+  },
+  "outOfContextError": {
+    "truncateInput": "Przytnij Wejście",
+    "title": "Błąd kontekstu",
+    "description": "Temu czatowi zaczyna brakować pamięci SI. To trochę jak tablica, która jest już zapisana. Można udostępnić więcej pamięci (zwiększyć rozmiar kontekstu), ale to zwiększy zużycie pamięci komputera. Można też przyciąć wejście, co oznacza zapomnienie części historii czatu, celem zwolnienia miejsca dla nowych wiadomości.",
+    "increaseContextSizeDescription": "Czy chcesz zwiększyć rozmiar kontekstu?",
+    "increaseContextSize": "Zwiększ Rozmiar Kontekstu"
+  },
+  "toolApproval": {
+    "title": "Prośba o Zatwierdzenie Narzędzia",
+    "description": "Asystent chce użyć narzędzia <strong>{{toolName}}</strong>",
+    "securityNotice": "Zgadzaj się tylko na narzędzia, którym ufasz. Narzędzia mają dostęp do Twojego systemu i danych.",
+    "deny": "Odmów",
+    "allowOnce": "Pozwól Raz",
+    "alwaysAllow": "Zawsze Pozwalaj"
+  },
+  "deleteModel": {
+    "title": "Usuń Model: {{modelId}}",
+    "description": "Na pewno chcesz usunąć ten model? Tej operacji nie można cofnąć.",
+    "success": "Model {{modelId}} został usunięty.",
+    "cancel": "Anuluj",
+    "delete": "Usuń"
+  },
+  "deleteProvider": {
+    "title": "Usuń Dostawcę",
+    "description": "Usuń dostawcę i wszystkie jego modele. Tej operacji nie można cofnąć.",
+    "success": "Dostawca {{provider}} został usunięty.",
+    "confirmTitle": "Usuń Dostawcę: {{provider}}",
+    "confirmDescription": "Na pewno chcesz usunąć tego dostawcę? Tej operacji nie można cofnąć.",
+    "cancel": "Anuluj",
+    "delete": "Usuń"
+  },
+  "modelSettings": {
+    "title": "Ustawienia Modelu - {{modelId}}",
+    "description": "Zmień ustawienia modelu aby poprawić jego wydajność i zachowanie"
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Zmień Położenie Katalogu Danych",
+      "description": "Na pewno chcesz zmienić położenie katalogu danych? Przeniesie to dane do nowego katalogu i uruchomi ponownie aplikację.",
+      "currentLocation": "Obecne Położenie:",
+      "newLocation": "Nowe Położenie:",
+      "cancel": "Anuluj",
+      "changeLocation": "Zmień Położenie"
+    },
+    "deleteAllThreads": {
+      "title": "Usuń Wszystkie Wątki",
+      "description": "Wszystkie wątki zostaną usunięte. Tej operacji nie można cofnąć."
+    },
+    "deleteThread": {
+      "description": "Na pewno chcesz usunąć ten wątek? Tej operacji nie można cofnąć."
+    },
+    "editMessage": {
+      "title": "Edytuj Wiadomość"
+    },
+    "messageMetadata": {
+      "title": "Metadane Wiadomości"
+    }
+  },
+  "projects": {
+    "title": "Projekty",
+    "addProject": "Dodaj Projekt",
+    "addToProject": "Dodaj do projektu",
+    "removeFromProject": "Usuń z projektu",
+    "createNewProject": "Utwórz Nowy Projekt",
+    "editProject": "Edytuj Projekt",
+    "deleteProject": "Usuń Projekt",
+    "projectName": "Nazwa Projektu",
+    "enterProjectName": "Wprowadź nazwę projektu...",
+    "noProjectsAvailable": "Brak dostępnych projektów",
+    "noProjectsYet": "Brak Projektów",
+    "noProjectsYetDesc": "Rozpocznij nowy projekt klikając przycisk Dodaj Projekt.",
+    "projectNotFound": "Projekt Nie Znaleziony",
+    "projectNotFoundDesc": "Projekt, którego szukasz nie istnieje lub został usunięty.",
+    "deleteProjectDialog": {
+      "title": "Usuń Projekt",
+      "description": "Na pewno chcesz usunąć ten projekt? Tej operacji nie można cofnąć.",
+      "permanentDelete": "To spowoduje trwałe usunięcie wszystkich wątków.",
+      "permanentDeleteWarning": "Ta operacja spowoduje trwałe usunięcie WSZYSTKICH wątków w projekcie!",
+      "deleteEmptyProject": "Ta operacja usunie projekt \"{{projectName}}\".",
+      "saveThreadsAdvice": "Aby zapisać wątki, przenieś je do listy wątków lub innego projektu przed usunięciem.",
+      "starredWarning": "Nadal masz oznaczone gwiazdką wątki w projekcie.",
+      "deleteButton": "Usuń",
+      "successWithName": "Projekt \"{{projectName}}\" został pomyślnie usunięty",
+      "successWithoutName": "Projekt został pomyślnie usunięty",
+      "error": "Nie udało się usunąć projektu. Spróbuj ponownie.",
+      "ariaLabel": "Usuń {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Utwórz Nowy Projekt",
+      "editTitle": "Edytuj Projekt",
+      "nameLabel": "Nazwa Projektu",
+      "namePlaceholder": "Wprowadź nazwę projektu...",
+      "createButton": "Utwórz",
+      "updateButton": "Aktualizuj",
+      "alreadyExists": "Projekt \"{{projectName}}\" już istnieje",
+      "createSuccess": "Projekt \"{{projectName}}\" został pomyślnie utworzony",
+      "renameSuccess": "Projekt zmieniono z \"{{oldName}}\" na \"{{newName}}\""
+    },
+    "noConversationsIn": "Brak Rozmów w {{projectName}}",
+    "startNewConversation": "Rozpocznij nową rozmowę z {{projectName}} poniżej",
+    "conversationsIn": "Rozmowy w {{projectName}}",
+    "conversationsDescription": "Kliknij na dowolną rozmowę aby kontynuować czat, lub rozpocznij nową poniżej.",
+    "thread": "wątek",
+    "threads": "wątki",
+    "updated": "Zaktualizowano:",
+    "collapseProject": "Zwiń projekt",
+    "expandProject": "Rozwiń projekt",
+    "update": "Aktualizuj",
+    "searchProjects": "Szukaj projektów...",
+    "noProjectsFound": "Nie znaleziono projektów",
+    "tryDifferentSearch": "Spróbuj innego wyszukiwania"
+  },
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Wszystkie Wątki Usunięte z Ulubionych",
+      "description": "Wszystkie wątki zostały usunięte z ulubionych."
+    },
+    "deleteAllThreads": {
+      "title": "Usuń Wszystkie Wątki",
+      "description": "Wszystkie wątki zostały usunięte."
+    },
+    "renameThread": {
+      "title": "Zmień Tytuł Wątku",
+      "description": "Tytuł wątku został zmieniony na '{{title}}'."
+    },
+    "deleteThread": {
+      "title": "Usuń Wątek",
+      "description": "Wątek został usunięty."
+    },
+    "editMessage": {
+      "title": "Edytuj Wiadomość",
+      "description": "Pomyślnie edytowano wiadomość. Proszę poczekać na odpowiedź modelu."
+    },
+    "appUpdateDownloaded": {
+      "title": "Aktualizacja Aplikacji Pobrana",
+      "description": "Pomyślnie pobrano aktualizację aplikacji."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Błąd Pobierania Aktualizacji Aplikacji",
+      "description": "Nie udało się pobrać aktualizacji aplikacji. Proszę spróbować później."
+    },
+    "downloadComplete": {
+      "title": "Ukończono Pobieranie",
+      "description": "Model {{modelId}} został pobrany."
+    },
+    "downloadCancelled": {
+      "title": "Anulowano Pobieranie",
+      "description": "Pobieranie zostało anulowane."
+    },
+    "downloadFailed": {
+      "title": "Błąd Pobierania",
+      "description": "Błąd pobierania {{item}}"
+    },
+    "modelValidationStarted": {
+      "title": "Weryfikacja Modelu",
+      "description": "Pomyślnie pobrano model \"{{modelId}}\". Weryfikowanie integralności..."
+    },
+    "modelValidationFailed": {
+      "title": "Błąd Weryfikacji Modelu",
+      "description": "Pobrany model \"{{modelId}}\" nie przeszedł weryfikacji integralności i został usunięty. Plik może być uszkodzony lub zmodyfikowany."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Pobieranie Ukończone",
+      "description": "Model \"{{item}}\" został pobrany i pomyślnie zweryfikowany"
+    },
+    "projectCreated": {
+      "title": "Projekt Utworzony",
+      "description": "Projekt \"{{projectName}}\" został pomyślnie utworzony"
+    },
+    "projectRenamed": {
+      "title": "Projekt Zmieniony",
+      "description": "Projekt zmieniono z \"{{oldName}}\" na \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Projekt Usunięty",
+      "description": "Projekt \"{{projectName}}\" został pomyślnie usunięty"
+    },
+    "projectAlreadyExists": {
+      "title": "Projekt Już Istnieje",
+      "description": "Projekt \"{{projectName}}\" już istnieje"
+    },
+    "projectDeleteFailed": {
+      "title": "Błąd Usuwania",
+      "description": "Nie udało się usunąć projektu. Spróbuj ponownie."
+    },
+    "threadAssignedToProject": {
+      "title": "Wątek Przypisany",
+      "description": "Wątek został pomyślnie przypisany do \"{{projectName}}\""
+    },
+    "threadRemovedFromProject": {
+      "title": "Wątek Usunięty",
+      "description": "Wątek został pomyślnie usunięty z \"{{projectName}}\""
+    }
+  },
+  "failedToLoadModels": "Nie udało się wczytać modeli",
+  "noModels": "Nie znaleziono modeli",
+  "conversationNotAvailable": "Rozmowa niedostępna",
+  "conversationNotAvailableDescription": "Rozmowa, do której próbujesz uzyskać dostęp, nie jest dostępna lub została usunięta.",
+  "temporaryChat": "Tymczasowy Czat",
+  "temporaryChatTooltip": "Tymczasowy czat nie pojawi się w Twojej historii"
+}

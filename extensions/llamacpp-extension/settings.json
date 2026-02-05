@@ -1,0 +1,372 @@
+[
+  {
+    "key": "version_backend",
+    "title": "Version & Backend",
+    "description": "Version and Backend for llama.cpp",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "none",
+      "options": [],
+      "recommended": ""
+    }
+  },
+  {
+    "key": "llamacpp_env",
+    "title": "Environmental variables",
+    "description": "Environmental variables for llama.cpp(KEY=VALUE), separated by ';'",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "Eg. GGML_VK_VISIBLE_DEVICES=0,1",
+      "type": "text",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "auto_update_engine",
+    "title": "Auto update engine",
+    "description": "Automatically update llamacpp engine to latest version",
+    "controllerType": "checkbox",
+    "controllerProps": { "value": true }
+  },
+  {
+    "key": "auto_unload",
+    "title": "Auto-Unload Old Models",
+    "description": "Automatically unloads models that are not in use to free up memory. Ensure only one model is loaded at a time.",
+    "controllerType": "checkbox",
+    "controllerProps": { "value": true }
+  },
+  {
+    "key": "timeout",
+    "title": "Timeout for llamacpp",
+    "description": "Llamacpp connection and load timeout in seconds",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "600",
+      "placeholder": "e.g 600",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "memory_util",
+    "title": "Smart Memory utilization",
+    "description": "Smart memory utilization mode for running local GGUF models",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "high",
+      "options": [
+        { "value": "high", "name": "High" },
+        { "value": "medium", "name": "Medium" },
+        { "value": "low", "name": "Low" }
+      ],
+      "recommended": "high"
+    }
+  },
+  {
+    "key": "threads",
+    "title": "Threads",
+    "description": "Number of threads to use during generation (-1 for logical cores).",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": -1,
+      "placeholder": "-1",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "threads_batch",
+    "title": "Threads (Batch)",
+    "description": "Number of threads for batch and prompt processing (default: same as Threads).",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": -1,
+      "placeholder": "-1 (same as Threads)",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "ctx_shift",
+    "title": "Context Shift",
+    "description": "Allow model to cut text in the beginning to accommodate new text in its memory",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
+    "key": "n_predict",
+    "title": "Max Tokens to Predict",
+    "description": "Maximum number of tokens to generate (-1 = infinity).",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": -1,
+      "placeholder": "-1",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "ubatch_size",
+    "title": "uBatch Size",
+    "description": "Physical maximum batch size for processing prompts.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 512,
+      "placeholder": "512",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "device",
+    "title": "Devices for Offload",
+    "description": "Comma-separated list of devices to use for offloading (e.g., 'CUDA0', 'CUDA0,CUDA1'). Leave empty to use default/CPU only.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "CUDA0",
+      "type": "text"
+    }
+  },
+  {
+    "key": "split_mode",
+    "title": "GPU Split Mode",
+    "description": "How to split the model across multiple GPUs.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "layer",
+      "options": [
+        { "value": "none", "name": "None" },
+        { "value": "layer", "name": "Layer" },
+        { "value": "row", "name": "Row" }
+      ]
+    }
+  },
+  {
+    "key": "main_gpu",
+    "title": "Main GPU Index",
+    "description": "The GPU to use for the model (split-mode=none) or intermediate results (split-mode=row).",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "flash_attn",
+    "title": "Flash Attention",
+    "description": "Enable Flash Attention for optimized performance.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "auto",
+      "options": [
+        { "value": "auto", "name": "Auto" },
+        { "value": "on", "name": "On" },
+        { "value": "off", "name": "Off" }
+      ]
+    }
+  },
+  {
+    "key": "cont_batching",
+    "title": "Continuous Batching",
+    "description": "Enable continuous batching (a.k.a dynamic batching) for concurrent requests.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
+    "key": "no_mmap",
+    "title": "Disable mmap",
+    "description": "Do not memory-map model (slower load but may reduce pageouts if not using mlock).",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
+    "key": "mlock",
+    "title": "MLock",
+    "description": "Force system to keep model in RAM, preventing swapping/compression.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
+    "key": "cache_type_k",
+    "title": "KV Cache K Type",
+    "description": "KV cache data type for Keys (default: f16).",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "f16",
+      "options": [
+        { "value": "f32", "name": "f32" },
+        { "value": "f16", "name": "f16" },
+        { "value": "bf16", "name": "bf16" },
+        { "value": "q8_0", "name": "q8_0" },
+        { "value": "q4_0", "name": "q4_0" },
+        { "value": "q4_1", "name": "q4_1" },
+        { "value": "iq4_nl", "name": "iq4_nl" },
+        { "value": "q5_0", "name": "q5_0" },
+        { "value": "q5_1", "name": "q5_1" }
+      ]
+    }
+  },
+  {
+    "key": "cache_type_v",
+    "title": "KV Cache V Type",
+    "description": "KV cache data type for Values (default: f16).",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "f16",
+      "options": [
+        { "value": "f32", "name": "f32" },
+        { "value": "f16", "name": "f16" },
+        { "value": "bf16", "name": "bf16" },
+        { "value": "q8_0", "name": "q8_0" },
+        { "value": "q4_0", "name": "q4_0" },
+        { "value": "q4_1", "name": "q4_1" },
+        { "value": "iq4_nl", "name": "iq4_nl" },
+        { "value": "q5_0", "name": "q5_0" },
+        { "value": "q5_1", "name": "q5_1" }
+      ]
+    }
+  },
+  {
+    "key": "defrag_thold",
+    "title": "KV Cache Defragmentation Threshold",
+    "description": "Threshold for KV cache defragmentation (< 0 to disable).",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0.1,
+      "placeholder": "0.1",
+      "type": "number",
+      "textAlign": "right",
+      "step": 0.01
+    }
+  },
+  {
+    "key": "rope_scaling",
+    "title": "RoPE Scaling Method",
+    "description": "RoPE frequency scaling method.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "none",
+      "options": [
+        { "value": "none", "name": "None" },
+        { "value": "linear", "name": "Linear" },
+        { "value": "yarn", "name": "YaRN" }
+      ]
+    }
+  },
+  {
+    "key": "rope_scale",
+    "title": "RoPE Scale Factor",
+    "description": "RoPE context scaling factor.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 1.0,
+      "placeholder": "1.0",
+      "type": "number",
+      "textAlign": "right",
+      "min": 0,
+      "step": 0.01
+    }
+  },
+  {
+    "key": "rope_freq_base",
+    "title": "RoPE Frequency Base",
+    "description": "RoPE base frequency (0 = loaded from model).",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0 (model default)",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "rope_freq_scale",
+    "title": "RoPE Frequency Scale Factor",
+    "description": "RoPE frequency scaling factor.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 1.0,
+      "placeholder": "1.0",
+      "type": "number",
+      "textAlign": "right",
+      "min": 0,
+      "step": 0.01
+    }
+  },
+  {
+    "key": "mirostat",
+    "title": "Mirostat Mode",
+    "description": "Use Mirostat sampling (0: disabled, 1: Mirostat V1, 2: Mirostat V2).",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": 0,
+      "options": [
+        { "value": 0, "name": "Disabled" },
+        { "value": 1, "name": "Mirostat V1" },
+        { "value": 2, "name": "Mirostat V2" }
+      ]
+    }
+  },
+  {
+    "key": "mirostat_lr",
+    "title": "Mirostat Learning Rate",
+    "description": "Mirostat learning rate (eta).",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0.1,
+      "placeholder": "0.1",
+      "type": "number",
+      "textAlign": "right",
+      "min": 0,
+      "step": 0.01
+    }
+  },
+  {
+    "key": "mirostat_ent",
+    "title": "Mirostat Target Entropy",
+    "description": "Mirostat target entropy (tau).",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 5.0,
+      "placeholder": "5.0",
+      "type": "number",
+      "textAlign": "right",
+      "min": 0,
+      "step": 0.01
+    }
+  },
+  {
+    "key": "grammar_file",
+    "title": "Grammar File",
+    "description": "Path to a BNF-like grammar file to constrain generations.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "path/to/grammar.gbnf",
+      "type": "text"
+    }
+  },
+  {
+    "key": "json_schema_file",
+    "title": "JSON Schema File",
+    "description": "Path to a JSON schema file to constrain generations.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "path/to/schema.json",
+      "type": "text"
+    }
+  }
+]

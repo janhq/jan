@@ -1,0 +1,125 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@/styles/font.css';
+@import '@/styles/markdown.css';
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-editorialnew: 'PPEditorialNew', serif;
+  --color-app: var(--app-bg);
+  --color-left-panel-fg: var(--app-left-panel-fg);
+  --color-main-view: var(--app-main-view);
+  --color-main-view-fg: var(--app-main-view-fg);
+  --color-primary: var(--app-primary);
+  --color-primary-fg: var(--app-primary-fg);
+  --color-accent: var(--app-accent);
+  --color-accent-fg: var(--app-accent-fg);
+  --color-destructive: var(--app-destructive);
+  --color-destructive-fg: var(--app-destructive-fg);
+
+  /* Font scale based on --font-size-base */
+  --text-xs: calc(var(--font-size-base) * 0.75); /* ~12px */
+  --text-sm: calc(var(--font-size-base) * 0.875); /* ~14px */
+  --text-base: var(--font-size-base); /* ~16px */
+  --text-lg: calc(var(--font-size-base) * 1.125); /* ~18px */
+  --text-xl: calc(var(--font-size-base) * 1.25); /* ~20px */
+  --text-2xl: calc(var(--font-size-base) * 1.5); /* ~24px */
+  --text-3xl: calc(var(--font-size-base) * 1.875); /* ~30px */
+  --text-4xl: calc(var(--font-size-base) * 2.25); /* ~36px */
+  --text-5xl: calc(var(--font-size-base) * 3); /* ~48px */
+  --text-6xl: calc(var(--font-size-base) * 3.75); /* ~60px */
+  --text-7xl: calc(var(--font-size-base) * 4.5); /* ~72px */
+  --text-8xl: calc(var(--font-size-base) * 6); /* ~96px */
+  --text-9xl: calc(var(--font-size-base) * 8); /* ~128px */
+}
+
+:root {
+  /* Button */
+  --radius: 0.625rem;
+  --font-size-base: 15px;
+  --app-bg: '';
+  --app-left-panel-fg: '';
+  --app-main-view: '';
+  --app-main-view-fg: '';
+  --app-primary: '';
+  --app-primary-fg: '';
+  --app-accent: '';
+  --app-accent-fg: '';
+  --app-destructive: '';
+  --app-destructive-fg: '';
+}
+
+@layer base {
+  body {
+    @apply overflow-hidden;
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      border-radius: 10px;
+      margin-left: 2px;
+      @apply bg-main-view-fg/10;
+    }
+  }
+
+  svg {
+    stroke-width: 1.5;
+  }
+
+  a {
+    @apply !text-accent;
+  }
+
+  ::-ms-reveal {
+    display: none;
+  }
+
+  .reset-heading {
+    :is(h1, h2, h3, h4, h5, h6) {
+      font-weight: 600;
+      font-size: 14px !important;
+      margin-top: 0 !important;
+      margin-bottom: 0.5em;
+    }
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Hide scrollbar for IE, Edge and Firefox */
+  .scrollbar-hide {
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+}
+
+@layer components {
+  .search-highlight {
+    @apply font-bold;
+    color: color-mix(in srgb, currentColor 80%, white 20%);
+  }
+  .epr-main {
+    input {
+      @apply border !border-main-view-fg/10 !h-9 !text-sm !bg-main-view;
+    }
+    input:focus {
+      @apply !bg-main-view;
+    }
+  }
+}

@@ -1,0 +1,209 @@
+---
+title: "Run OpenAI's gpt-oss locally in 5 mins (Beginner Guide)"
+description: "Complete 5-minute beginner guide to running OpenAI's gpt-oss locally. Step-by-step setup with Jan AI for private, offline AI conversations."
+tags: OpenAI, gpt-oss, local AI, Jan, privacy, Apache-2.0, llama.cpp, Ollama, LM Studio
+categories: guides
+date: 2025-08-06
+ogImage: assets/images/general/gpt-oss locally.jpeg   
+twitter:
+  card: summary_large_image
+  site: "@jandotai"
+  title: "Run OpenAI's gpt-oss Locally in 5 Minutes (Beginner Guide)"
+  description: "Complete 5-minute beginner guide to running OpenAI's gpt-oss locally with Jan AI for private, offline conversations."
+  image: assets/images/general/gpt-oss locally.jpeg
+---
+import { Callout } from 'nextra/components'
+import CTABlog from '@/components/Blog/CTA'
+
+# Run OpenAI's gpt-oss Locally in 5 mins
+
+OpenAI launched [gpt-oss](https://openai.com/index/introducing-gpt-oss/), marking their return to open-source AI after GPT-2. This model is designed to run locally on consumer hardware. This guide shows you how to install and run gpt-oss on your computer for private, offline AI conversations.
+
+## What is gpt-oss?
+
+gpt-oss is OpenAI's open-source large language model, released under the Apache-2.0 license. Unlike ChatGPT, gpt-oss:
+
+- Runs completely offline - No internet required after setup
+- 100% private - Your conversations never leave your device  
+- Unlimited usage - No token limits or rate limiting
+- Free forever - No subscription fees
+- Commercial use allowed - Apache-2.0 license permits business use
+
+Running AI models locally means everything happens on your own hardware, giving you complete control over your data and conversations.
+
+## gpt-oss System Requirements
+
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| **RAM** | 16 GB | 32 GB+ |
+| **Storage** | 11+ GB free | 25 GB+ free |
+| **CPU** | 4 cores | 8+ cores |
+| **GPU** | Optional | Modern GPU with 6GB+ VRAM recommended |
+| **OS** | Windows 10+, macOS 11+, Linux | Latest versions |
+
+**Installation apps available:**
+- **Jan** (Recommended - easiest setup) 
+- **llama.cpp** (Command line)
+- **Ollama** (Docker-based)
+- **LM Studio** (GUI alternative)
+
+## How to install gpt-oss locally with Jan (5 mins)
+
+### Step 1: Download Jan
+
+First download Jan to run gpt-oss locally: [Download Jan AI](https://jan.ai/)
+
+<Callout type="info">
+Jan is the simplest way to run AI models locally. It automatically handles CPU/GPU optimization, provides a clean chat interface, and requires zero technical knowledge.
+</Callout>
+
+### Step 2: Install gpt-oss Model (2-3 minutes)
+
+![Jan Hub showing gpt-oss model in the hub](./_assets/jan%20hub%20gpt-oss%20locally.jpeg)
+
+1. Open Jan Hub -> search "gpt-oss" (it appears at the top)
+2. Click Download and wait for completion (~11GB download)
+3. Installation is automatic - Jan handles everything
+
+### Step 3: Start using gpt-oss offline (30 seconds)
+
+![Jan interface with gpt-oss model selected and ready to chat](./_assets/jan%20gpt-oss.jpeg)
+
+1. Go to New Chat → select gpt-oss-20b from model picker
+2. Start chatting - Jan automatically optimizes for your hardware
+3. You're done! Your AI conversations now stay completely private
+
+Success: Your gpt-oss setup is complete. No internet required for chatting, unlimited usage, zero subscription fees.
+
+## Jan with gpt-oss vs ChatGPT vs other Local AI Models
+
+| Feature | gpt-oss (Local) | ChatGPT Plus | Claude Pro | Other Local Models |
+|---------|----------------|--------------|------------|-------------------|
+| Cost | Free forever | $20/month | $20/month | Free |
+| Privacy | 100% private | Data sent to OpenAI | Data sent to Anthropic | 100% private |
+| Internet | Offline after setup | Requires internet | Requires internet | Offline |
+| Usage limits | Unlimited | Rate limited | Rate limited | Unlimited |
+| Performance | Good (hardware dependent) | Excellent | Excellent | Varies |
+| Setup difficulty | Easy with Jan | None | None | Varies |
+
+## Alternative Installation Methods
+
+### Option 1: Jan (Recommended)
+
+- Best for: Complete beginners, users wanting GUI interface
+- Setup time: 5 minutes
+- Difficulty: Very Easy
+
+Already covered above - [Download Jan](https://jan.ai/)
+
+### Option 2: llama.cpp (Command Line)
+
+- Best for: Developers, terminal users, custom integrations  
+- Setup time: 10-15 minutes  
+- Difficulty: Intermediate
+
+```bash
+# macOS
+brew install llama-cpp
+
+# Windows: grab Windows exe from releases
+curl -L -o gpt-oss-20b.gguf https://huggingface.co/openai/gpt-oss-20b-gguf/resolve/main/gpt-oss-20b.gguf
+./main -m gpt-oss-20b.gguf --chat-simple
+
+# Add GPU acceleration (adjust -ngl value based on your GPU VRAM)
+./main -m gpt-oss-20b.gguf --chat-simple -ngl 20
+```
+
+### Option 3: Ollama (Docker-Based)
+
+Best for: Docker users, server deployments  
+Setup time: 5-10 minutes  
+Difficulty: Intermediate
+
+```bash
+# Install from https://ollama.com
+ollama run gpt-oss:20b
+```
+
+### Option 4: LM Studio (GUI Alternative)
+
+Best for: Users wanting GUI but not Jan  
+Setup time: 10 minutes  
+Difficulty: Easy
+
+1. Download LM Studio from official website
+2. Go to Models → search "gpt-oss-20b (GGUF)"
+3. Download the model (wait for completion)
+4. Go to Chat tab → select the model and start chatting
+
+## gpt-oss Performance & Troubleshooting
+
+### Expected Performance Benchmarks
+
+| Hardware Setup | First Response | Subsequent Responses | Tokens/Second |
+|---------------|---------------|---------------------|---------------|
+| **16GB RAM + CPU only** | 30-45 seconds | 3-6 seconds | 3-8 tokens/sec |
+| **32GB RAM + RTX 3060** | 15-25 seconds | 1-3 seconds | 15-25 tokens/sec |
+| **32GB RAM + RTX 4080+** | 8-15 seconds | 1-2 seconds | 25-45 tokens/sec |
+
+### Common Issues & Solutions
+
+Performance optimization tips:
+- First response is slow: Normal - kernels compile once, then speed up dramatically
+- Out of VRAM error: Reduce context length in settings or switch to CPU mode
+- Out of memory: Close memory-heavy apps (Chrome, games, video editors)
+- Slow responses: Check if other apps are using GPU/CPU heavily
+
+Quick fixes:
+1. Restart Jan if responses become slow
+2. Lower context window from 4096 to 2048 tokens
+3. Enable CPU mode if GPU issues persist
+4. Free up RAM by closing unused applications
+
+## Frequently Asked Questions (FAQ)
+
+### Is gpt-oss completely free?
+Yes! gpt-oss is 100% free under Apache-2.0 license. No subscription fees, no token limits, no hidden costs.
+
+### How much internet data does gpt-oss use?
+Only for the initial 11GB download. After installation, gpt-oss works completely offline with zero internet usage.
+
+### Can I use gpt-oss for commercial projects?
+Absolutely! The Apache-2.0 license permits commercial use, modification, and distribution.
+
+### Is gpt-oss better than ChatGPT?
+gpt-oss offers different advantages: complete privacy, unlimited usage, offline capability, and no costs. ChatGPT may have better performance but requires internet and subscriptions.
+
+### What happens to my conversations with gpt-oss?
+Your conversations stay 100% on your device. Nothing is sent to OpenAI, Jan, or any external servers.
+
+### Can I run gpt-oss on a Mac with 8GB RAM?
+No, gpt-oss requires minimum 16GB RAM. Consider upgrading your RAM or using cloud-based alternatives.
+
+### How do I update gpt-oss to newer versions?
+Jan automatically notifies you of updates. Simply click update in Jan Hub when new versions are available.
+
+## Why Choose gpt-oss Over ChatGPT Plus?
+
+gpt-oss advantages:
+- $0/month vs $20/month for ChatGPT Plus
+- 100% private - no data leaves your device  
+- Unlimited usage - no rate limits or restrictions
+- Works offline - no internet required after setup
+- Commercial use allowed - build businesses with it
+
+When to choose ChatGPT Plus instead:
+- You need the absolute best performance
+- You don't want to manage local installation
+- You have less than 16GB RAM
+
+## Get started with gpt-oss today
+
+![gpt-oss running locally with complete privacy](./_assets/run%20gpt-oss%20locally%20in%20jan.jpeg)
+
+Ready to try gpt-oss?
+- Download Jan: [https://jan.ai/](https://jan.ai/)
+- View source code: [https://github.com/janhq/jan](https://github.com/janhq/jan)
+- Need help? Check our [local AI guide](/post/run-ai-models-locally) for beginners
+
+<CTABlog />

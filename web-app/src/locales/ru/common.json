@@ -1,0 +1,387 @@
+{
+  "assistants": "Ассистенты",
+  "hardware": "Оборудование",
+  "mcp-servers": "Серверы MCP",
+  "local_api_server": "Локальный API-сервер",
+  "https_proxy": "HTTPS-прокси",
+  "extensions": "Расширения",
+  "attachments": "Вложения",
+  "general": "Общие",
+  "settings": "Настройки",
+  "modelProviders": "Поставщики моделей",
+  "interface": "Интерфейс",
+  "privacy": "Конфиденциальность",
+  "keyboardShortcuts": "Сочетания клавиш",
+  "newChat": "Новый чат",
+  "favorites": "Избранное",
+  "recents": "Недавние",
+  "hub": "Хаб",
+  "helpSupport": "Справка и поддержка",
+  "helpUsImproveJan": "Помогите нам улучшить Jan",
+  "unstarAll": "Очистить избранное",
+  "unstar": "Удалить из избранного",
+  "deleteAll": "Удалить все",
+  "star": "В избранное",
+  "rename": "Переименовать",
+  "delete": "Удалить",
+  "copied": "Скопировано",
+  "dataFolder": "Папка данных",
+  "others": "Другое",
+  "language": "Язык",
+  "login": "Войти",
+  "loginWith": "Войти через {{provider}}",
+  "loginFailed": "Не удалось войти в систему",
+  "logout": "Выйти",
+  "loggingOut": "Выход из системы…",
+  "loggedOut": "Выход выполнен успешно",
+  "logoutFailed": "Не удалось выйти из системы",
+  "profile": "Профиль",
+  "reset": "Сбросить",
+  "search": "Поиск",
+  "name": "Имя",
+  "cancel": "Отмена",
+  "create": "Создать",
+  "save": "Сохранить",
+  "edit": "Редактировать",
+  "copy": "Копировать",
+  "back": "Назад",
+  "close": "Закрыть",
+  "next": "Далее",
+  "finish": "Готово",
+  "skip": "Пропустить",
+  "allow": "Разрешить",
+  "deny": "Запретить",
+  "start": "Начать",
+  "stop": "Остановить",
+  "preview": "Предварительный просмотр",
+  "compactWidth": "Компактная ширина",
+  "fullWidth": "Полная ширина",
+  "dark": "Тёмная",
+  "light": "Светлая",
+  "system": "Системная",
+  "auto": "Авто",
+  "english": "Английский",
+  "medium": "Средний",
+  "newThread": "Новое обсуждение",
+  "noResultsFound": "Результаты не найдены",
+  "noThreadsYet": "Обсуждений пока нет",
+  "noThreadsYetDesc": "Начните новый диалог, чтобы увидеть историю ваших обсуждений.",
+  "downloads": "Загрузки",
+  "downloading": "Загрузка",
+  "cancelDownload": "Отменить загрузку",
+  "downloadCancelled": "Загрузка отменена",
+  "downloadComplete": "Загрузка завершена",
+  "thinking": "Размышление...",
+  "thought": "Размышление",
+  "callingTool": "Вызов инструмента",
+  "completed": "Завершено",
+  "image": "Изображение",
+  "vision": "Зрение",
+  "embeddings": "Эмбеддинги",
+  "tools": "Инструменты",
+  "webSearch": "Веб-поиск",
+  "reasoning": "Рассуждение",
+  "proactive": "Проактивность",
+  "selectAModel": "Выберите модель",
+  "noToolsAvailable": "Нет доступных инструментов",
+  "noModelsFoundFor": "Не найдены модели для \"{{searchValue}}\"",
+  "failedToLoadModels": "Не удалось загрузить модели",
+  "noModels": "Модели не найдены",
+  "customAvatar": "Свой аватар",
+  "editAssistant": "Редактировать ассистента",
+  "jan": "Jan",
+  "metadata": "Метаданные",
+  "regenerate": "Сгенерировать заново",
+  "threadImage": "Изображение обсуждения",
+  "editMessage": "Редактировать сообщение",
+  "deleteMessage": "Удалить сообщение",
+  "deleteThread": "Удалить обсуждение",
+  "renameThread": "Переименовать обсуждение",
+  "threadTitle": "Заголовок обсуждения",
+  "deleteAllThreads": "Удалить все обсуждения",
+  "allThreadsUnfavorited": "Все обсуждения удалены из избранного",
+  "deleteAllThreadsConfirm": "Вы уверены, что хотите удалить все обсуждения? Это действие нельзя отменить.",
+  "addProvider": "Добавить поставщика",
+  "addOpenAIProvider": "Добавить поставщика OpenAI",
+  "enterNameForProvider": "Введите имя для вашего поставщика",
+  "providerAlreadyExists": "Поставщик с именем \"{{name}}\" уже существует. Пожалуйста, выберите другое имя.",
+  "adjustFontSize": "Изменить размер шрифта",
+  "changeLanguage": "Изменить язык",
+  "editTheme": "Редактировать тему",
+  "editCodeBlockStyle": "Редактировать стиль блока кода",
+  "editServerHost": "Редактировать адрес хоста",
+  "pickColorWindowBackground": "Выберите цвет фона окна",
+  "pickColorAppMainView": "Выберите цвет главного окна",
+  "pickColorAppPrimary": "Выберите основной цвет приложения",
+  "pickColorAppAccent": "Выберите цвет акцента приложения",
+  "pickColorAppDestructive": "Выберите цвет опасных действий",
+  "apiKeyRequired": "Необходим ключ API",
+  "enterTrustedHosts": "Введите доверенные хосты",
+  "placeholder": {
+    "chatInput": "Спрашивайте что угодно…"
+  },
+  "confirm": "Подтвердить",
+  "continue": "Продолжить",
+  "loading": "Загрузка…",
+  "error": "Ошибка",
+  "success": "Успешно",
+  "warning": "Предупреждение",
+  "conversationNotAvailable": "Диалог недоступен",
+  "conversationNotAvailableDescription": "Диалог, к которому вы пытаетесь получить доступ, недоступен или был удалён.",
+  "temporaryChat": "Временный чат",
+  "temporaryChatTooltip": "Временный чат не появится в вашей истории",
+  "noResultsFoundDesc": "Мы не смогли найти чаты по вашему запросу. Попробуйте другое ключевое слово.",
+  "searchModels": "Поиск моделей…",
+  "searchStyles": "Поиск стилей…",
+  "createAssistant": "Создать ассистента",
+  "enterApiKey": "Введите ключ API",
+  "scrollToBottom": "Прокрутить вниз",
+  "generateAiResponse": "Сгенерировать ответ ИИ",
+  "continueAiResponse": "Продолжить с ответом ИИ",
+  "addModel": {
+    "title": "Добавить модель",
+    "modelId": "ID модели",
+    "enterModelId": "Введите ID модели",
+    "addModel": "Добавить модель",
+    "description": "Добавить новую модель к поставщику",
+    "exploreModels": "Список моделей от поставщика"
+  },
+  "mcpServers": {
+    "editServer": "Редактировать сервер",
+    "addServer": "Добавить сервер",
+    "serverName": "Имя сервера",
+    "enterServerName": "Введите имя сервера",
+    "command": "Команда",
+    "enterCommand": "Введите команду",
+    "arguments": "Аргументы",
+    "argument": "Аргумент {{index}}",
+    "envVars": "Переменные окружения",
+    "key": "Ключ",
+    "value": "Значение",
+    "save": "Сохранить"
+  },
+  "deleteServer": {
+    "title": "Удалить сервер",
+    "delete": "Удалить"
+  },
+  "editJson": {
+    "errorParse": "Не удалось разобрать JSON",
+    "errorPaste": "Не удалось вставить JSON",
+    "errorFormat": "Неверный формат JSON",
+    "titleAll": "Редактировать конфигурацию всех серверов",
+    "placeholder": "Введите конфигурацию JSON",
+    "save": "Сохранить"
+  },
+  "editModel": {
+    "title": "Редактирование модели: {{modelId}}",
+    "description": "Настройте возможности модели, переключив нужные параметры ниже.",
+    "capabilities": "Возможности",
+    "tools": "Инструменты",
+    "vision": "Зрение",
+    "embeddings": "Эмбеддинги",
+    "notAvailable": "Пока недоступно"
+  },
+  "outOfContextError": {
+    "truncateInput": "Обрезка ввода",
+    "title": "Ошибка: выход за пределы контекста",
+    "description": "Этот чат достигает лимита памяти ИИ, подобно тому как заканчивается место на доске. Мы можем расширить окно памяти (размер контекста), чтобы он запоминал больше, но это потребует больше оперативной памяти вашего компьютера. Мы также можем обрезать ввод: часть истории чата будет забыта, чтобы освободить место для новых сообщений.",
+    "increaseContextSizeDescription": "Вы хотите увеличить размер контекста?",
+    "increaseContextSize": "Увеличить размер контекста"
+  },
+  "toolApproval": {
+    "title": "Запрос разрешения на использование инструмента",
+    "description": "Ассистент хочет использовать <strong>{{toolName}}</strong>",
+    "securityNotice": "Разрешайте только проверенные инструменты. Инструменты могут получить доступ к вашей системе и данным.",
+    "deny": "Запретить",
+    "allowOnce": "Разрешить один раз",
+    "alwaysAllow": "Всегда разрешать"
+  },
+  "deleteModel": {
+    "title": "Удаление модели: {{modelId}}",
+    "description": "Вы уверены, что хотите удалить эту модель? Это действие нельзя отменить.",
+    "success": "Модель {{modelId}} удалена безвозвратно.",
+    "cancel": "Отмена",
+    "delete": "Удалить"
+  },
+  "deleteProvider": {
+    "title": "Удалить поставщика",
+    "description": "Удалить этого поставщика и все его модели. Это действие нельзя отменить.",
+    "success": "Поставщик {{provider}} удалён безвозвратно.",
+    "confirmTitle": "Удаление поставщика: {{provider}}",
+    "confirmDescription": "Вы уверены, что хотите удалить этого поставщика? Это действие нельзя отменить.",
+    "cancel": "Отмена",
+    "delete": "Удалить"
+  },
+  "modelSettings": {
+    "title": "Настройки модели - {{modelId}}",
+    "description": "Настройте параметры модели для оптимизации производительности и поведения."
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Изменение папки с данными",
+      "description": "Вы уверены, что хотите изменить расположение папки данных? Это переместит все ваши данные в новое место и перезапустит приложение.",
+      "currentLocation": "Текущее расположение:",
+      "newLocation": "Новое расположение:",
+      "cancel": "Отмена",
+      "changeLocation": "Изменить расположение"
+    },
+    "deleteAllThreads": {
+      "title": "Удаление всех обсуждений",
+      "description": "Все обсуждения будут удалены. Это действие нельзя отменить."
+    },
+    "deleteThread": {
+      "description": "Вы уверены, что хотите удалить это обсуждение? Это действие нельзя отменить."
+    },
+    "editMessage": {
+      "title": "Редактирование сообщения"
+    },
+    "messageMetadata": {
+      "title": "Метаданные сообщения"
+    }
+  },
+  "projects": {
+    "title": "Проекты",
+    "addProject": "Добавить проект",
+    "addToProject": "Добавить в проект",
+    "removeFromProject": "Удалить из проекта",
+    "createNewProject": "Создать новый проект",
+    "editProject": "Редактировать проект",
+    "deleteProject": "Удалить проект",
+    "projectName": "Название проекта",
+    "enterProjectName": "Введите название проекта...",
+    "noProjectsAvailable": "Нет доступных проектов",
+    "noProjectsYet": "Проектов пока нет",
+    "noProjectsYetDesc": "Начните новый проект, нажав кнопку Добавить проект.",
+    "projectNotFound": "Проект не найден",
+    "projectNotFoundDesc": "Проект, который вы ищете, не существует или был удалён.",
+    "deleteProjectDialog": {
+      "title": "Удалить проект",
+      "permanentDelete": "Это навсегда удалит все обсуждения.",
+      "permanentDeleteWarning": "Это действие навсегда удалит ВСЕ обсуждения в проекте!",
+      "deleteEmptyProject": "Это действие удалит проект \"{{projectName}}\".",
+      "saveThreadsAdvice": "Чтобы сохранить обсуждения, переместите их в общий список или в другой проект перед удалением.",
+      "starredWarning": "В этом проекте остались избранные обсуждения.",
+      "deleteButton": "Удалить",
+      "successWithName": "Проект \"{{projectName}}\" успешно удалён",
+      "successWithoutName": "Проект успешно удалён",
+      "error": "Не удалось удалить проект. Пожалуйста, попробуйте ещё раз.",
+      "ariaLabel": "Удалить {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Создать новый проект",
+      "editTitle": "Редактировать проект",
+      "nameLabel": "Название проекта",
+      "namePlaceholder": "Введите название проекта...",
+      "createButton": "Создать",
+      "updateButton": "Обновить",
+      "alreadyExists": "Проект \"{{projectName}}\" уже существует",
+      "createSuccess": "Проект \"{{projectName}}\" успешно создан",
+      "renameSuccess": "Проект переименован с \"{{oldName}}\" на \"{{newName}}\""
+    },
+    "noConversationsIn": "В проекте {{projectName}} нет диалогов",
+    "startNewConversation": "Начните новый диалог с {{projectName}} ниже",
+    "conversationsIn": "Диалоги в {{projectName}}",
+    "conversationsDescription": "Нажмите на любой диалог, чтобы продолжить общение, или начните новый ниже.",
+    "thread": "обсуждение",
+    "threads": "обсуждения",
+    "updated": "Обновлено:",
+    "collapseProject": "Свернуть проект",
+    "expandProject": "Развернуть проект",
+    "update": "Обновить",
+    "searchProjects": "Поиск проектов...",
+    "noProjectsFound": "Проекты не найдены",
+    "tryDifferentSearch": "Попробуйте другой поисковый запрос"
+  },
+  "attachmentsIngestion": {
+    "title": "Выберите способ обработки вложений",
+    "description": "Выберите, вставить содержимое файлов непосредственно в чат или индексировать их как эмбеддинги.",
+    "inline": "Вставить в чат",
+    "embeddings": "Использовать эмбеддинги"
+  },
+  "attachmentInjectedIndicator": "Вставлено в чат",
+  "attachmentEmbeddedIndicator": "Эмбеддинг для RAG",
+  "viewInjectedContent": "Просмотреть вставленный контент",
+  "injectedContentTitle": "Содержимое файла",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Все обсуждения удалены из избранного",
+      "description": "Все обсуждения удалены из избранного."
+    },
+    "deleteAllThreads": {
+      "title": "Удаление всех обсуждений",
+      "description": "Все обсуждения были удалены безвозвратно."
+    },
+    "renameThread": {
+      "title": "Переименование обсуждения",
+      "description": "Заголовок обсуждения переименован в '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Удаление обсуждения",
+      "description": "Это обсуждение было удалено безвозвратно."
+    },
+    "editMessage": {
+      "title": "Редактирование сообщения",
+      "description": "Сообщение успешно отредактировано. Пожалуйста, подождите ответа модели."
+    },
+    "appUpdateDownloaded": {
+      "title": "Обновление приложения загружено",
+      "description": "Обновление приложения успешно загружено."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Ошибка загрузки обновления приложения",
+      "description": "Не удалось загрузить обновление приложения. Пожалуйста, попробуйте ещё раз."
+    },
+    "downloadComplete": {
+      "title": "Загрузка завершена",
+      "description": "Загружено: {{item}}"
+    },
+    "downloadCancelled": {
+      "title": "Загрузка отменена",
+      "description": "Процесс загрузки был отменен."
+    },
+    "downloadFailed": {
+      "title": "Ошибка загрузки",
+      "description": "Не удалось загрузить {{item}}"
+    },
+    "modelValidationStarted": {
+      "title": "Проверка модели",
+      "description": "Модель \"{{modelId}}\" успешно загружена. Проверка целостности…"
+    },
+    "modelValidationFailed": {
+      "title": "Проверка модели не пройдена",
+      "description": "Загруженная модель \"{{modelId}}\" не прошла проверку целостности и была удалена. Файл может быть повреждён или изменён."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Загрузка завершена",
+      "description": "Модель \"{{item}}\" успешно загружена и проверена."
+    },
+    "projectCreated": {
+      "title": "Проект создан",
+      "description": "Проект \"{{projectName}}\" успешно создан"
+    },
+    "projectRenamed": {
+      "title": "Проект переименован",
+      "description": "Проект переименован с \"{{oldName}}\" на \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Проект удалён",
+      "description": "Проект \"{{projectName}}\" успешно удалён."
+    },
+    "projectAlreadyExists": {
+      "title": "Проект уже существует",
+      "description": "Проект \"{{projectName}}\" уже существует"
+    },
+    "projectDeleteFailed": {
+      "title": "Не удалось удалить",
+      "description": "Не удалось удалить проект. Пожалуйста, попробуйте ещё раз."
+    },
+    "threadAssignedToProject": {
+      "title": "Обсуждение назначено",
+      "description": "Обсуждение успешно назначено проекту \"{{projectName}}\""
+    },
+    "threadRemovedFromProject": {
+      "title": "Обсуждение удалено",
+      "description": "Обсуждение успешно удалено из проекта \"{{projectName}}\""
+    }
+  }
+}

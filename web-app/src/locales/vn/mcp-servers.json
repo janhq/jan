@@ -1,0 +1,65 @@
+{
+  "editServer": "Chỉnh sửa máy chủ MCP",
+  "addServer": "Thêm máy chủ MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Đang kiểm tra trạng thái tiện ích..."
+    },
+    "notInstalled": {
+      "title": "Jan hoàn thành các tác vụ trong trình duyệt của bạn",
+      "description": "Cài đặt tiện ích để cho phép Jan truy cập trình duyệt",
+      "getExtension": "Tải tiện ích"
+    }
+  },
+  "serverName": "Tên máy chủ",
+  "enterServerName": "Nhập tên máy chủ",
+  "command": "Lệnh",
+  "enterCommand": "Nhập lệnh (uvx hoặc npx)",
+  "arguments": "Đối số",
+  "argument": "Đối số {{index}}",
+  "envVars": "Biến môi trường",
+  "key": "Khóa",
+  "value": "Giá trị",
+  "save": "Lưu",
+  "status": "Trạng thái",
+  "connected": "Đã kết nối",
+  "disconnected": "Đã ngắt kết nối",
+  "deleteServer": {
+    "title": "Xóa máy chủ MCP",
+    "description": "Bạn có chắc chắn muốn xóa máy chủ MCP {{serverName}} không? Hành động này không thể hoàn tác.",
+    "delete": "Xóa",
+    "success": "Máy chủ MCP {{serverName}} đã được xóa thành công"
+  },
+  "editJson": {
+    "title": "Chỉnh sửa JSON cho máy chủ MCP: {{serverName}}",
+    "titleAll": "Chỉnh sửa tất cả JSON của máy chủ MCP",
+    "placeholder": "Nhập cấu hình JSON",
+    "errorParse": "Không thể phân tích cú pháp dữ liệu ban đầu",
+    "errorPaste": "Định dạng JSON không hợp lệ trong nội dung đã dán",
+    "errorFormat": "Định dạng JSON không hợp lệ",
+    "errorServerName": "Tên máy chủ là bắt buộc và không được để trống",
+    "errorMissingServerNameKey": "JSON phải có cấu trúc {\"serverName\": {config}} - thiếu khóa tên máy chủ",
+    "errorInvalidType": "Loại '{{type}}' cho máy chủ '{{serverName}}' không hợp lệ. Loại phải là 'stdio', 'http' hoặc 'sse'",
+    "save": "Lưu"
+  },
+  "checkParams": "Vui lòng kiểm tra các tham số theo hướng dẫn.",
+  "title": "Máy chủ MCP",
+  "experimental": "Thử nghiệm",
+  "editAllJson": "Chỉnh sửa tất cả JSON của máy chủ",
+  "findMore": "Tìm thêm máy chủ MCP tại",
+  "allowPermissions": "Cho phép tất cả các quyền của công cụ MCP",
+  "allowPermissionsDesc": "Khi được bật, tất cả các lệnh gọi công cụ MCP sẽ được tự động phê duyệt mà không hiển thị hộp thoại cấp phép.",
+  "noServers": "Không tìm thấy máy chủ MCP nào",
+  "args": "Đối số",
+  "env": "Môi trường",
+  "serverStatusActive": "Máy chủ {{serverKey}} đã được kích hoạt thành công",
+  "serverStatusInactive": "Máy chủ {{serverKey}} đã được hủy kích hoạt thành công",
+  "runtimeSettings": {
+    "title": "Cài đặt thời gian chạy",
+    "description": "Cấu hình cách Jan quản lý và thử lại các máy chủ MCP.",
+    "toolCallTimeout": "Thời gian chờ lệnh (giây)",
+    "toolCallTimeoutDesc": "Thời gian tối đa chờ phản hồi từ công cụ MCP trước khi hết thời gian."
+  },
+  "proactiveMode": "Chế độ Chủ động Sử dụng Trình duyệt",
+  "proactiveModeDesc": "Khi được bật, tự động chụp ảnh màn hình trình duyệt để cung cấp ngữ cảnh bổ sung cho các tác vụ tự động hóa trình duyệt. Yêu cầu Jan Browser MCP với mô hình vision và sử dụng công cụ."
+}

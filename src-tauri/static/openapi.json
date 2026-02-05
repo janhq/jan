@@ -1,0 +1,690 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Jan API Server Endpoints",
+    "description": "Jan API server provides a REST API interface for seamless interaction with large language models (LLMs) for third party apps. Compatible with the OpenAI API spec, it enables straightforward API access of models available in Jan.",
+    "version": "1.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:1337/v1",
+      "description": "Jan API server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Models",
+      "description": "Endpoints for model discovery and management"
+    },
+    {
+      "name": "Inference",
+      "description": "Endpoint for generating completions (chat or text) from a model"
+    }
+  ],
+  "paths": {
+    "/models": {
+      "get": {
+        "summary": "List loaded models",
+        "description": "Returns information about the loaded model(s). The list always contains a single element describing the current model. See the OpenAI *Models* API documentation for details.",
+        "operationId": "listModels",
+        "tags": ["Models"],
+        "responses": {
+          "200": {
+            "description": "A list containing a single model object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListModelsResponseDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/completions": {
+      "post": {
+        "summary": "Create chat completion",
+        "description": "Generates a completion for the supplied prompt. Streaming mode is supported. All extra options described in the documentation are optional and follow the OpenAI‑compatible naming.",
+        "operationId": "createChatCompletion",
+        "tags": ["Inference"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChatCompletionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completion result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatCompletionResponseDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "API-Key",
+        "description": "API key required for all endpoints."
+      }
+    },
+    "schemas": {
+      "ModelDto": {
+        "type": "object",
+        "description": "Model metadata as returned by `/v1/models`.",
+        "properties": {
+          "source_url": {
+            "type": "string",
+            "description": "URL to the source of the model."
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for the model (normally the file path)."
+          },
+          "object": {
+            "type": "string",
+            "enum": ["model"]
+          },
+          "name": {
+            "type": "string",
+            "description": "Human‑readable name of the model."
+          },
+          "version": {
+            "type": "string",
+            "default": "1.0",
+            "description": "Version string of the model."
+          },
+          "description": {
+            "type": "string",
+            "description": "Long description of the model."
+          },
+          "format": {
+            "type": "string",
+            "description": "File format (e.g., gguf)."
+          },
+          "ctx_len": {
+            "type": "integer",
+            "description": "Context length the model was trained with."
+          },
+          "prompt_template": {
+            "type": "string",
+            "description": "Template used to build prompts."
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Default temperature for generation."
+          },
+          "top_p": {
+            "type": "number",
+            "description": "Default nucleus‑sampling probability."
+          },
+          "stream": {
+            "type": "boolean",
+            "description": "Whether streaming is enabled by default."
+          },
+          "max_tokens": {
+            "type": "integer",
+            "description": "Maximum tokens the model can generate."
+          },
+          "stop": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Default stop sequences."
+          },
+          "frequency_penalty": {
+            "type": "number",
+            "description": "Default frequency penalty."
+          },
+          "presence_penalty": {
+            "type": "number",
+            "description": "Default presence penalty."
+          },
+          "author": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "size": {
+            "type": "integer"
+          },
+          "cover": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_url",
+          "id",
+          "object",
+          "name",
+          "version",
+          "description",
+          "format",
+          "ctx_len",
+          "prompt_template",
+          "temperature",
+          "top_p",
+          "stream",
+          "max_tokens",
+          "stop",
+          "frequency_penalty",
+          "presence_penalty",
+          "author",
+          "tags",
+          "size",
+          "cover",
+          "engine"
+        ]
+      },
+      "ListModelsResponseDto": {
+        "type": "object",
+        "description": "Response for `GET /v1/models` – a list that always contains a single model entry.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "enum": ["list"]
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelDto"
+            }
+          }
+        },
+        "required": ["object", "data"]
+      },
+      "CreateChatCompletionDto": {
+        "type": "object",
+        "description": "Request body for `POST /v1/chat/completion`. All fields follow the OpenAI naming; fields marked *optional* are not required.",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "The unique identifier of the model to use."
+          },
+          "messages": {
+            "type": "array",
+            "description": "Array of chat messages that form the prompt.",
+            "items": {
+              "$ref": "#/components/schemas/ChatCompletionMessage"
+            }
+          },
+          "stream": {
+            "type": "boolean",
+            "description": "If true, the server streams tokens as they are generated.",
+            "default": false
+          },
+          "max_tokens": {
+            "type": "integer",
+            "description": "Maximum number of tokens to generate."
+          },
+          "stop": {
+            "type": "array",
+            "description": "Stop sequences – generation stops before emitting any of these strings.",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Adjusts randomness of the output.",
+            "default": 0.8
+          },
+          "dynatemp_range": {
+            "type": "number",
+            "description": "Dynamic‑temperature range – final temperature is sampled from `[temperature‑range, temperature+range]`.",
+            "default": 0
+          },
+          "dynatemp_exponent": {
+            "type": "number",
+            "description": "Exponent for dynamic‑temperature scaling.",
+            "default": 1
+          },
+          "top_k": {
+            "type": "integer",
+            "description": "Restricts sampling to the K most probable tokens.",
+            "default": 40
+          },
+          "top_p": {
+            "type": "number",
+            "description": "Nucleus sampling cutoff (cumulative probability).",
+            "default": 0.95
+          },
+          "min_p": {
+            "type": "number",
+            "description": "Minimum probability for a token to be considered relative to the most likely token.",
+            "default": 0.05
+          },
+          "typical_p": {
+            "type": "number",
+            "description": "Enable locally typical sampling with parameter p.",
+            "default": 1.0
+          },
+          "n_predict": {
+            "type": "integer",
+            "description": "Maximum number of tokens to predict; -1 = unlimited, 0 = evaluate prompt only.",
+            "default": -1
+          },
+          "n_indent": {
+            "type": "integer",
+            "description": "Minimum line indentation for generated code.",
+            "default": 0
+          },
+          "n_keep": {
+            "type": "integer",
+            "description": "Tokens from the prompt to retain when context is exceeded. 0 = none, -1 = all.",
+            "default": 0
+          },
+          "presence_penalty": {
+            "type": "number",
+            "description": "Presence penalty (0.0 = disabled).",
+            "default": 0
+          },
+          "frequency_penalty": {
+            "type": "number",
+            "description": "Frequency penalty (0.0 = disabled).",
+            "default": 0
+          },
+          "repeat_penalty": {
+            "type": "number",
+            "description": "Repetition penalty for token sequences.",
+            "default": 1.1
+          },
+          "repeat_last_n": {
+            "type": "integer",
+            "description": "How many last tokens to consider for repeat penalty (0 = disabled, -1 = context size).",
+            "default": 64
+          },
+          "dry_multiplier": {
+            "type": "number",
+            "description": "DRY (Don’t Repeat Yourself) multiplier (0.0 = disabled).",
+            "default": 0
+          },
+          "dry_base": {
+            "type": "number",
+            "description": "DRY base value.",
+            "default": 1.75
+          },
+          "dry_allowed_length": {
+            "type": "integer",
+            "description": "Length after which DRY penalty grows exponentially.",
+            "default": 2
+          },
+          "dry_penalty_last_n": {
+            "type": "integer",
+            "description": "How many tokens to scan for DRY repetitions (0 = disabled, -1 = context size).",
+            "default": -1
+          },
+          "dry_sequence_breakers": {
+            "type": "array",
+            "description": "Sequence breakers for DRY sampling.",
+            "items": {
+              "type": "string"
+            },
+            "default": ["\\n", ":", "\"", "*"]
+          },
+          "xtc_probability": {
+            "type": "number",
+            "description": "Probability for token removal via XTC sampler (0.0 = disabled).",
+            "default": 0
+          },
+          "xtc_threshold": {
+            "type": "number",
+            "description": "Minimum probability threshold for XTC.",
+            "default": 0.1
+          },
+          "mirostat": {
+            "type": "integer",
+            "description": "Enable Mirostat sampling (0 = disabled, 1 = Mirostat, 2 = Mirostat 2.0).",
+            "default": 0
+          },
+          "mirostat_tau": {
+            "type": "number",
+            "description": "Target entropy for Mirostat.",
+            "default": 5
+          },
+          "mirostat_eta": {
+            "type": "number",
+            "description": "Learning rate for Mirostat.",
+            "default": 0.1
+          },
+          "grammar": {
+            "type": "string",
+            "description": "Grammar for grammar‑based sampling."
+          },
+          "json_schema": {
+            "type": "object",
+            "description": "JSON schema for grammar‑based sampling."
+          },
+          "seed": {
+            "type": "integer",
+            "description": "RNG seed; -1 = random.",
+            "default": -1
+          },
+          "ignore_eos": {
+            "type": "boolean",
+            "description": "Continue generating after EOS token.",
+            "default": false
+          },
+          "logit_bias": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "description": "Modify the likelihood of a token appearing. Accepts a JSON object mapping token IDs to a bias value from -100 to 100, or `false` to ban a token.",
+            "default": {}
+          },
+          "n_probs": {
+            "type": "integer",
+            "description": "If > 0, top-N token probabilities are returned.",
+            "default": 0
+          },
+          "min_keep": {
+            "type": "integer",
+            "description": "Force samplers to return at least N tokens.",
+            "default": 0
+          },
+          "t_max_predict_ms": {
+            "type": "integer",
+            "description": "Maximum generation time in milliseconds (0 = disabled).",
+            "default": 0
+          },
+          "id_slot": {
+            "type": "integer",
+            "description": "Assign the request to a specific inference slot (-1 = auto).",
+            "default": -1
+          },
+          "cache_prompt": {
+            "type": "boolean",
+            "description": "Reuse KV cache from previous requests when possible.",
+            "default": true
+          },
+          "return_tokens": {
+            "type": "boolean",
+            "description": "Include raw token IDs in the response.",
+            "default": false
+          },
+          "samplers": {
+            "type": "array",
+            "description": "Ordered list of samplers to apply.",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "dry",
+              "top_k",
+              "typ_p",
+              "top_p",
+              "min_p",
+              "xtc",
+              "temperature"
+            ]
+          },
+          "timings_per_token": {
+            "type": "boolean",
+            "description": "Include timing information per token.",
+            "default": false
+          },
+          "return_progress": {
+            "type": "boolean",
+            "description": "Include prompt‑processing progress when streaming.",
+            "default": false
+          },
+          "post_sampling_probs": {
+            "type": "boolean",
+            "description": "Return top‑N probabilities *after* sampling.",
+            "default": false
+          },
+          "response_fields": {
+            "type": "array",
+            "description": "Select which fields to include in the response.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lora": {
+            "type": "array",
+            "description": "LoRA adapters to apply for this request.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "scale": {
+                  "type": "number"
+                }
+              },
+              "required": ["id", "scale"]
+            }
+          },
+          "multimodal_data": {
+            "type": "array",
+            "description": "Base64‑encoded multimodal data (images, audio, …). Must match the number of `<__media__>` markers in the prompt.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["model", "messages"]
+      },
+      "ChatCompletionResponseDto": {
+        "type": "object",
+        "description": "Response from `POST /v1/chat/completion`.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for the completion."
+          },
+          "object": {
+            "type": "string",
+            "enum": ["chat.completion"]
+          },
+          "created": {
+            "type": "integer",
+            "description": "Unix timestamp of creation."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model used for the completion."
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChoiceDto"
+            },
+            "description": "List of generated choices."
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageDto"
+          },
+          "system_fingerprint": {
+            "type": "string",
+            "description": "Fingerprint of the system configuration used."
+          },
+          "generation_settings": {
+            "type": "object",
+            "description": "The generation settings used for the completion."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "The processed prompt."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True if the context size was exceeded."
+          },
+          "tokens_cached": {
+            "type": "integer",
+            "description": "Number of tokens from the prompt which were reused from a cache."
+          },
+          "tokens_evaluated": {
+            "type": "integer",
+            "description": "Number of tokens evaluated in total from the prompt."
+          }
+        },
+        "required": ["id", "object", "created", "model", "choices", "usage"]
+      },
+      "ChatCompletionMessage": {
+        "type": "object",
+        "description": "A single turn in a chat conversation.",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": ["system", "assistant", "user"],
+            "description": "Who sent the message."
+          },
+          "content": {
+            "type": "string",
+            "description": "The textual content of the message."
+          }
+        },
+        "required": ["role", "content"]
+      },
+      "ChoiceDto": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer"
+          },
+          "message": {
+            "$ref": "#/components/schemas/ChatCompletionMessage"
+          },
+          "finish_reason": {
+            "type": "string",
+            "description": "Why the generation stopped (e.g., `stop`, `length`, `model`)."
+          },
+          "logprobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatChoiceLogprobs"
+            },
+            "description": "Log probability information for the choice, if requested.",
+            "nullable": true
+          }
+        },
+        "required": ["index", "message", "finish_reason"]
+      },
+      "UsageDto": {
+        "type": "object",
+        "description": "Token usage statistics.",
+        "properties": {
+          "prompt_tokens": {
+            "type": "integer"
+          },
+          "completion_tokens": {
+            "type": "integer"
+          },
+          "total_tokens": {
+            "type": "integer"
+          }
+        },
+        "required": ["prompt_tokens", "completion_tokens", "total_tokens"]
+      },
+      "LogprobContent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The token ID."
+          },
+          "token": {
+            "type": "string",
+            "description": "The token string."
+          },
+          "logprob": {
+            "type": "number",
+            "description": "The log probability of this token."
+          },
+          "prob": {
+            "type": "number",
+            "description": "The probability of this token (if post_sampling_probs is true)."
+          },
+          "bytes": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "The token represented as a list of bytes."
+          }
+        }
+      },
+      "ChatChoiceLogprobs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The token ID."
+          },
+          "token": {
+            "type": "string",
+            "description": "The most likely token."
+          },
+          "logprob": {
+            "type": "number",
+            "description": "The log probability of the most likely token."
+          },
+          "prob": {
+            "type": "number",
+            "description": "The probability of the most likely token (if post_sampling_probs is true)."
+          },
+          "bytes": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "The most likely token represented as a list of bytes."
+          },
+          "top_logprobs": {
+            "type": "array",
+            "description": "List of the most likely tokens and their log probs.",
+            "items": {
+              "$ref": "#/components/schemas/LogprobContent"
+            }
+          },
+          "top_probs": {
+            "type": "array",
+            "description": "List of the most likely tokens and their probs (if post_sampling_probs is true).",
+            "items": {
+              "$ref": "#/components/schemas/LogprobContent"
+            }
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ]
+}

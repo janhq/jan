@@ -1,0 +1,84 @@
+@layer base {
+  body {
+    @apply antialiased;
+    font-size: 16px;
+  }
+
+  button {
+    &:focus-visible {
+      box-shadow: none !important;
+    }
+  }
+
+  img {
+    pointer-events: none;
+  }
+
+  // tweaks some class code hike
+  .ch-codeblock {
+    box-shadow: none !important;
+  }
+
+  .card-wrapper {
+    border-radius: 16px;
+    background: linear-gradient(180deg, #fafafa 0%, #ededed 100%);
+    box-shadow:
+      0px 4px 12px 0px rgba(0, 0, 0, 0.12),
+      0px -1px 1px 0px rgba(0, 0, 0, 0.1) inset,
+      0px 1px 1px 0px #fff inset;
+  }
+
+  .card-wrapper-dark {
+    border-radius: 12px;
+    background: var(
+      --Linear-dark,
+      linear-gradient(
+        268deg,
+        rgba(117, 117, 117, 0.38) 0%,
+        rgba(121, 119, 128, 0.33) 100%
+      )
+    );
+    box-shadow:
+      0px 4px 12px 0px rgba(0, 0, 0, 0.12),
+      0px -1px 1px 0px rgba(0, 0, 0, 0.1) inset,
+      0px 0.2px 1px 0px #fff inset;
+  }
+
+  // tweaks some class nextra
+  .nextra-banner-container {
+    padding-left: 8px !important;
+    background: radial-gradient(
+        58.83% 95.12% at 62.37% 97.91%,
+        rgba(238, 203, 255, 0.59) 0%,
+        rgba(255, 255, 255, 0) 100%
+      ),
+      linear-gradient(
+        249deg,
+        rgba(67, 119, 233, 0.8) 93.59%,
+        rgba(194, 226, 255, 0.8) 110.85%
+      ) !important;
+  }
+
+  footer {
+    background-color: transparent !important;
+  }
+
+  .nextra-wrap-container {
+    @apply mx-auto max-w-[90rem] pl-[max(env(safe-area-inset-left),1.5rem)] pr-[max(env(safe-area-inset-right),1.5rem)];
+  }
+
+  nav {
+    justify-content: flex-start;
+    > a {
+      @media (min-width: 768px) {
+        margin-right: 0 !important;
+      }
+    }
+    > a:nth-child(2) {
+      margin-left: 16px;
+    }
+    > a:nth-child(4) {
+      margin-right: auto !important;
+    }
+  }
+}

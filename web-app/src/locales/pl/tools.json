@@ -1,0 +1,12 @@
+{
+  "toolApproval": {
+    "title": "Wymagane Pozwolenie na Narzędzie",
+    "description": "Asystent chce użyć",
+    "securityNotice": "Złośliwe narzędzia lub treści rozmowy mają potencjał nakłonić agenta do szkodliwych działań. Dokładnie przejrzyj każdą prośbę o użycie narzędzia przed wyrażeniem zgody.",
+    "deny": "Odmów",
+    "allowOnce": "Pozwól Raz",
+    "alwaysAllow": "Pozwól w wątku",
+    "parameters": "Parametry Narzędzia",
+    "permissionScope": "Udzielone pozwolenia dotyczą tylko tej rozmowy."
+  }
+}

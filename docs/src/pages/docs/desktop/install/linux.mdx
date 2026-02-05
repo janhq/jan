@@ -1,0 +1,301 @@
+---
+title: Linux
+description: Download Jan on Linux to run AI models locally. Jan is a free, open-source ChatGPT alternative to run offline.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    Jan on Linux,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    quickstart,
+    getting started,
+    using AI model,
+    installation,
+    "desktop"
+  ]
+twitter:
+  card: summary_large_image
+  site: "@jandotai"
+  title: "Jan on Linux"
+  description: "Download Jan on Linux to run AI models locally. Jan is a free, open-source ChatGPT alternative to run offline."
+---
+
+import FAQBox from '@/components/FaqBox'
+import { Tabs, Callout, Steps } from 'nextra/components'
+import { Settings } from 'lucide-react'
+
+# Linux Installation
+Instructions for installing Jan on Linux.
+
+## Compatibility
+System requirements:
+
+<Tabs items={['OS', 'CPU', 'RAM', 'GPU', 'Disk']}>
+
+<Tabs.Tab>
+
+#### Debian-based (Supports `.deb` and `AppImage`)
+
+- Debian
+- Ubuntu and derivatives:
+  - Ubuntu Desktop LTS (official)/Ubuntu Server LTS (only for server)
+  - Edubuntu
+  - Kubuntu
+  - Lubuntu
+  - Ubuntu Budgie
+  - Ubuntu Cinnamon
+  - Ubuntu Kylin
+  - Ubuntu MATE
+  - Linux Mint
+  - Pop!_OS
+
+#### RHEL-based (Supports `.rpm` and `AppImage`)
+
+- RHEL-based (Server only)
+- Fedora
+
+#### Arch-based
+
+- Arch Linux
+- SteamOS
+
+#### Independent
+
+- openSUSE
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+- Haswell processors (Q2 2013) and newer
+- Tiger Lake (Q3 2020) and newer for Celeron and Pentium processors
+- Excavator processors (Q2 2015) and newer
+
+<Callout type="info">
+CPU must support AVX2. See [supported processors](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2).
+</Callout>
+</Tabs.Tab>
+
+<Tabs.Tab>
+- 8GB → up to 3B parameter models (int4)
+- 16GB → up to 7B parameter models (int4)
+- 32GB → up to 13B parameter models (int4)
+
+<Callout type="info">
+DDR3 or newer recommended.
+</Callout>
+</Tabs.Tab>
+
+<Tabs.Tab>
+- 6GB → up to 3B parameter models (int4)
+- 8GB → up to 7B parameter models (int4)
+- 12GB → up to 13B parameter models (int4)
+
+<Callout type="info">
+6GB VRAM minimum required.
+</Callout>
+</Tabs.Tab>
+
+<Tabs.Tab>
+Minimum 10GB of free disk space required.
+</Tabs.Tab>
+
+</Tabs>
+
+## Install Jan
+
+Installation steps:
+
+<Steps>
+
+### Step 1: Download Application
+
+Available releases:
+<Tabs items={['Stable Release', 'Beta Release', 'Nightly Release']}>
+<Tabs.Tab>
+Stable release:
+  - Ubuntu: [jan.deb](https://app.jan.ai/download/latest/linux-amd64-deb)
+  - Others: [Jan.AppImage](https://app.jan.ai/download/latest/linux-amd64-appimage)
+- Official Website: https://jan.ai/download
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+Beta release:
+  - Ubuntu: [jan.deb](https://app.jan.ai/download/beta/linux-amd64-deb)
+  - Others: [Jan.AppImage](https://app.jan.ai/download/beta/linux-amd64-appimage)
+
+<Callout type="info">
+May contain bugs. Use with caution.
+</Callout>
+</Tabs.Tab>
+<Tabs.Tab>
+
+Development build:
+ - Ubuntu: [jan.deb](https://app.jan.ai/download/nightly/linux-amd64-deb)
+ - Others: [Jan.AppImage](https://app.jan.ai/download/nightly/linux-amd64-appimage)
+
+<Callout type="info">
+Experimental version. Expect instability.
+</Callout>
+</Tabs.Tab>
+</Tabs>
+
+### Step 2: Install Application
+
+Installation commands:
+
+<Tabs items={['Ubuntu', 'Others']}>
+<Tabs.Tab>
+
+##### dpkg
+
+```bash
+sudo dpkg -i jan-linux-amd64-{version}.deb
+```
+
+##### apt-get
+
+```bash
+sudo apt-get install ./jan-linux-amd64-{version}.deb
+```
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+
+From the terminal, run the following commands:
+
+```bash
+chmod +x jan-linux-x86_64-{version}.AppImage
+./jan-linux-x86_64-{version}.AppImage
+```
+
+</Tabs.Tab>
+</Tabs>
+
+</Steps>
+
+
+## Data Folder
+
+Default locations:
+
+```bash
+# Custom installation directory
+$XDG_CONFIG_HOME = /home/username/custom_config
+
+# or
+
+# Default installation directory
+~/.config/Jan/data
+
+```
+See [Jan Data Folder](/docs/desktop/data-folder) for details.
+
+
+## GPU Acceleration
+Configuration for GPU support:
+
+<Tabs items={['NVIDIA GPU', 'AMD GPU', 'Intel Arc GPU']}>
+
+<Tabs.Tab>
+<Steps>
+
+### Step 1: Verify Hardware & Install Dependencies
+
+**1.1. Check GPU Detection**
+
+```sh
+lspci | grep -i nvidia
+```
+
+**1.2. Install Required components**
+
+**NVIDIA Driver:**
+
+1. Install the [NVIDIA Driver](https://www.nvidia.com/en-us/drivers/), ideally via your package manager.
+2. Verify:
+
+```sh
+nvidia-smi
+```
+
+**CUDA Toolkit:**
+
+1. Install the [CUDA toolkit](https://developer.nvidia.com/cuda-downloads), ideally from your package manager (**11.7+**)
+2. Verify:
+
+```sh
+nvcc --version
+```
+
+**Additional Requirements:**
+
+```sh
+sudo apt update
+sudo apt install gcc-11 g++-11 cpp-11
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
+```
+[Documentation](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions)
+
+### Step 2: Enable GPU Acceleration
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **Llama.cpp**
+2. Select appropriate backend in **llama-cpp Backend**. Details in our [llama.cpp guide](/docs/desktop/llama-cpp).
+
+<Callout type="info">
+CUDA offers better performance than Vulkan.
+</Callout>
+
+</Steps>
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+Requires Vulkan support.
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
+2. Select appropriate backend in **llama-cpp Backend**. Details in our [guide](/docs/desktop/local-engines/llama-cpp).
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+Requires Vulkan support.
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
+2. Select appropriate backend in **llama-cpp Backend**. Details in our [guide](/docs/desktop/local-engines/llama-cpp).
+</Tabs.Tab>
+
+</Tabs>
+
+## Uninstall Jan
+
+Removal commands:
+<Tabs items={['Ubuntu', 'Others']}>
+<Tabs.Tab>
+
+```bash
+sudo apt-get remove jan
+rm -rf Jan
+rm -rf ~/.config/Jan/data
+rm -rf ~/.config/Jan/cache
+```
+</Tabs.Tab>
+<Tabs.Tab>
+
+```bash
+rm jan-linux-x86_64-{version}.AppImage
+rm -rf ~/.config/Jan
+```
+</Tabs.Tab>
+</Tabs>
+
+<Callout type="warning">
+These commands permanently delete application data.
+</Callout>

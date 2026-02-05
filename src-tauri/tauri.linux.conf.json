@@ -1,0 +1,18 @@
+{
+  "bundle": {
+    "targets": ["deb", "appimage"],
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE"],
+    "externalBin": ["resources/bin/uv"],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false,
+        "files": {}
+      },
+      "deb": {
+        "files": {
+          "usr/bin/bun": "resources/bin/bun"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Jan",
+  "version": "0.6.599",
+  "identifier": "jan.ai.app",
+  "build": {
+    "frontendDist": "../web-app/dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "cross-env IS_TAURI=true IS_DEV=true yarn dev:web",
+    "beforeBuildCommand": "cross-env IS_TAURI=true yarn build:web"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Jan",
+        "width": 1024,
+        "minWidth": 375,
+        "minHeight": 667,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "zoomHotkeysEnabled": true,
+        "center": true,
+        "hiddenTitle": true,
+        "transparent": true,
+        "trafficLightPosition": {
+          "x": 12,
+          "y": 25
+        },
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "windowEffects": {
+          "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
+          "state": "active"
+        },
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "capabilities": [
+        "default",
+        "log-app-window",
+        "logs-window",
+        "system-monitor-window"
+      ],
+      "csp": {
+        "default-src": "'self' customprotocol: asset: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+        "connect-src": "'self' asset: ipc: http://asset.localhost http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https: http:",
+        "font-src": [
+          "https://fonts.gstatic.com blob: data: tauri://localhost http://tauri.localhost"
+        ],
+        "img-src": "'self' asset: http://asset.localhost blob: data: https:",
+        "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
+        "script-src": "'self' asset: $APPDATA/**.* http://asset.localhost https://eu-assets.i.posthog.com https://posthog.com"
+      },
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "requireLiteralLeadingDot": false,
+          "allow": ["**/*"]
+        }
+      }
+    }
+  },
+  "plugins": {
+    "os": {
+      "version": "latest",
+      "resolve": true
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJFNDEzMEVCMUEzNUFENDQKUldSRXJUVWE2ekJCTGc1Mm1BVXgrWmtES3huUlBFR0lCdG5qbWFvMzgyNDhGN3VTTko5Q1NtTW0K",
+      "endpoints": [
+        "https://github.com/janhq/jan/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
+  "bundle": {
+    "publisher": "Menlo Research Pte. Ltd.",
+    "active": true,
+    "createUpdaterArtifacts": false,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": ["resources/LICENSE"]
+  }
+}

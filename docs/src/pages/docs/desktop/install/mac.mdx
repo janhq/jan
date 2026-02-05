@@ -1,0 +1,170 @@
+---
+title: Mac
+description: Download Jan on Mac to run AI models locally. Jan is a free, open-source ChatGPT alternative to run offline.
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    Jan on Mac,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    quickstart,
+    getting started,
+    using AI model,
+    installation,
+    "desktop"
+  ]
+twitter:
+  card: summary_large_image
+  site: "@jandotai"
+  title: "Jan on Mac"
+  description: "Download Jan on Mac to run AI models locally. Jan is a free, open-source ChatGPT alternative to run offline."
+---
+
+import { Tabs } from 'nextra/components'
+import FAQBox from '@/components/FaqBox'
+import { Callout, Steps } from 'nextra/components'
+
+
+
+# Mac Installation
+Jan runs natively on both Apple Silicon and Intel-based Macs.
+
+## Compatibility
+### Minimum Requirements
+Your Mac needs:
+- **Operating System:** MacOSX 13.6 or higher
+- **Memory:**
+  - 8GB → up to 3B parameter models
+  - 16GB → up to 7B parameter models
+  - 32GB → up to 13B parameter models
+- **Storage:** 10GB+ free space
+
+### Mac Performance Guide
+<Callout type="info">
+**Apple Silicon Macs** use Metal for GPU acceleration, making them faster than **Apple Intel Macs**, which operate on CPU only.
+</Callout>
+**Apple Silicon (M1, M2, M3)**
+- Metal acceleration enabled by default
+- GPU-accelerated processing
+
+**Intel-based Mac**
+- CPU processing only
+- Standard performance
+
+_Check your Mac's processor: Apple menu → About This Mac_
+
+## Install Jan
+
+Installation steps:
+
+<Steps>
+
+### Step 1: Download Application
+
+Select version:
+<Tabs items={['Stable Release', 'Beta Release', 'Nightly Release']}>
+<Tabs.Tab>
+Get Jan from here:
+
+- [Download Jan's Stable Version](https://app.jan.ai/download/latest/mac-universal)
+- Official Website: https://jan.ai/download
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+Beta: New features with potential instability.
+
+[Download Jan's Beta Version](https://app.jan.ai/download/beta/mac-universal)
+
+<Callout type="warning">
+May contain bugs.
+</Callout>
+</Tabs.Tab>
+<Tabs.Tab>
+
+Nightly: Latest features, less stable.
+
+[Download Jan's Nightly Version](https://app.jan.ai/download/nightly/mac-universal)
+
+<Callout type="info">
+Expect potential instability.
+</Callout>
+</Tabs.Tab>
+</Tabs>
+
+
+### Step 2: Install Application
+
+1. Open the Jan installer (`.dmg` file)
+2. Drag Jan to **Applications**
+3. Wait a moment
+4. Launch Jan
+
+</Steps>
+
+
+## Jan Data Folder
+
+Default location:
+
+```sh
+# Default installation directory
+~/Library/Application\ Support/Jan/data
+```
+See [Jan Data Folder](/docs/desktop/data-folder) for details.
+
+
+## Uninstall Jan
+
+<Steps>
+
+### Step 1: Remove Application
+1. Close Jan if it's running
+2. Open **Finder**
+3. Go to **Applications**
+4. Find Jan
+5. Pick your removal method:
+  - Drag to **Trash**
+  - Right-click → **Move to Trash**
+  - **Command-Delete**
+
+### Step 2: Clean Up Data (Optional)
+
+Run this in **Terminal** to remove all data:
+```bash
+rm -rf ~/Library/Application\ Support/Jan/data
+```
+</Steps>
+
+<Callout type="warning">
+This permanently deletes all data. Create backups if needed.
+</Callout>
+
+{/* ## FAQs
+
+<FAQBox title="What are Nightly Releases, and how can I access them?">
+Nightly Releases allow you to test new features and previews of upcoming stable releases. You can download
+them from Jan's GitHub repository. However, remember that these builds might contain bugs and crash frequently.
+</FAQBox>
+<FAQBox title="Can I move the Jan data folder to a different location?">
+Yes, you can move the Jan data folder.
+</FAQBox>
+<FAQBox title="How do I enable GPU acceleration for better performance">
+Depending on your Mac type (Apple Silicon or Intel), you won't be able to utilize the GPU acceleration feature
+if you have a Mac with an Intel processor.
+</FAQBox>
+<FAQBox title="Can I recover the deleted Jan data folder after uninstallation?">
+No, it cannot be restored once you delete the Jan data folder during uninstallation.
+</FAQBox>
+
+<Callout type="info">
+💡 Warning: If you have any trouble during installation, please see our [Troubleshooting](/docs/desktop/troubleshooting)
+guide to resolve your problem.
+
+</Callout>
+*/}

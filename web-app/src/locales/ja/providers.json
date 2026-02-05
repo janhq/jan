@@ -1,0 +1,61 @@
+{
+  "refreshModelsError": "モデルを取得するには、プロバイダーにベースURLとAPIキーが設定されている必要があります。",
+  "refreshModelsSuccess": "{{provider}}から{{count}}個の新しいモデルを追加しました。",
+  "noNewModels": "新しいモデルは見つかりませんでした。利用可能なすべてのモデルは既に追加されています。",
+  "refreshModelsFailed": "{{provider}}からのモデルの取得に失敗しました。APIキーとベースURLを確認してください。",
+  "models": "モデル",
+  "refreshing": "更新中...",
+  "refresh": "更新",
+  "import": "インポート",
+  "importModelSuccess": "モデル{{provider}}は正常にインポートされました。",
+  "importModelError": "モデルのインポートに失敗しました:",
+  "stop": "停止",
+  "start": "開始",
+  "noModelFound": "モデルが見つかりません",
+  "noModelFoundDesc": "利用可能なモデルはここにリストされます。まだモデルがない場合は、ハブにアクセスしてダウンロードしてください。",
+  "configuration": "設定",
+  "apiEndpoint": "APIエンドポイント",
+  "testConnection": "接続をテスト",
+  "addModel": {
+    "title": "新しいモデルを追加",
+    "description": "{{provider}}プロバイダーに新しいモデルを追加します。",
+    "modelId": "モデルID",
+    "enterModelId": "モデルIDを入力",
+    "exploreModels": "{{provider}}のモデルリストを見る",
+    "addModel": "モデルを追加",
+    "modelExists": "モデルは既に存在します",
+    "modelExistsDesc": "別のモデルIDを選択してください。"
+  },
+  "deleteModel": {
+    "title": "モデルを削除: {{modelId}}",
+    "description": "本当にこのモデルを削除しますか？この操作は元に戻せません。",
+    "success": "モデル {{modelId}} は完全に削除されました。",
+    "cancel": "キャンセル",
+    "delete": "削除"
+  },
+  "deleteProvider": {
+    "title": "プロバイダーを削除",
+    "description": "このプロバイダーとすべてのモデルを削除します。この操作は元に戻せません。",
+    "success": "プロバイダー {{provider}} は完全に削除されました。",
+    "confirmTitle": "プロバイダーを削除: {{provider}}",
+    "confirmDescription": "本当にこのプロバイダーを削除しますか？この操作は元に戻せません。",
+    "cancel": "キャンセル",
+    "delete": "削除"
+  },
+  "editModel": {
+    "title": "モデルを編集: {{modelId}}",
+    "description": "以下のオプションを切り替えて、モデルの機能を設定します。",
+    "capabilities": "機能",
+    "tools": "ツール",
+    "vision": "画像認識",
+    "embeddings": "埋め込み",
+    "notAvailable": "まだ利用できません",
+    "warning": {
+      "title": "注意して進めてください",
+      "description": "モデルの機能を変更すると、パフォーマンスや機能に影響を与える可能性があります。不正な設定は、予期しない動作やエラーを引き起こす可能性があります。"
+    }
+  },
+  "addProvider": "プロバイダーを追加",
+  "addOpenAIProvider": "OpenAIプロバイダーを追加",
+  "enterNameForProvider": "プロバイダーの名前を入力してください"
+}

@@ -1,0 +1,12 @@
+{
+  "toolApproval": {
+    "title": "Vyžadováno schválení nástroje",
+    "description": "Asistent chce použít",
+    "securityNotice": "Škodlivé nástroje nebo obsah konverzace by mohly potenciálně oklamat asistenta k pokusu o škodlivé akce. Před schválením pečlivě zkontrolujte každé volání nástroje.",
+    "deny": "Zamítnout",
+    "allowOnce": "Povolit jednou",
+    "alwaysAllow": "Povolit ve vlákně",
+    "parameters": "Parametry nástroje",
+    "permissionScope": "Udělená oprávnění platí pouze pro tuto konverzaci."
+  }
+}

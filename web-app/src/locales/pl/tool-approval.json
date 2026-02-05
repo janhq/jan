@@ -1,0 +1,12 @@
+{
+  "title": "Prośba o Użycie Narzędzia",
+  "description": "Asystent chce użyć narzędzia: <strong>{{toolName}}</strong>",
+  "securityNotice": "<strong>Ostrzeżenie Bezpieczeństwa:</strong> Złośliwe narzędzia lub treści rozmowy mają potencjał nakłonić agenta do szkodliwych działań. Dokładnie przejrzyj każdą prośbę o użycie narzędzia przed wyrażeniem zgody.",
+  "deny": "Odmów",
+  "allowOnce": "Pozwól Raz",
+  "alwaysAllow": "Pozwól w wątku",
+  "permissions": "Pozwolenia",
+  "approve": "Zaakceptuj",
+  "reject": "Odrzuć",
+  "parameters": "Parametry Narzędzia"
+}

@@ -1,0 +1,376 @@
+{
+  "assistants": "助手",
+  "hardware": "硬件",
+  "mcp-servers": "MCP 服务",
+  "local_api_server": "本地 API 服务",
+  "https_proxy": "HTTPS 代理",
+  "extensions": "扩展",
+  "general": "通用",
+  "settings": "设置",
+  "modelProviders": "模型提供商",
+  "interface": "外观",
+  "privacy": "隐私",
+  "keyboardShortcuts": "快捷键",
+  "newChat": "新建聊天",
+  "favorites": "收藏",
+  "recents": "最近",
+  "hub": "中心",
+  "helpSupport": "帮助与支持",
+  "helpUsImproveJan": "帮助我们改进 Jan",
+  "unstarAll": "取消所有收藏",
+  "unstar": "取消收藏",
+  "deleteAll": "全部删除",
+  "star": "收藏",
+  "rename": "重命名",
+  "delete": "删除",
+  "copied": "已复制！",
+  "dataFolder": "数据文件夹",
+  "others": "其他",
+  "language": "语言",
+  "login": "登录",
+  "loginWith": "使用{{provider}}登录",
+  "loginFailed": "登录失败",
+  "logout": "退出登录",
+  "loggingOut": "正在退出...",
+  "loggedOut": "成功退出登录",
+  "logoutFailed": "退出登录失败",
+  "profile": "个人资料",
+  "reset": "重置",
+  "search": "搜索",
+  "name": "名称",
+  "cancel": "取消",
+  "create": "创建",
+  "save": "保存",
+  "edit": "编辑",
+  "copy": "复制",
+  "back": "返回",
+  "close": "关闭",
+  "next": "下一步",
+  "finish": "完成",
+  "skip": "跳过",
+  "allow": "允许",
+  "deny": "拒绝",
+  "start": "开始",
+  "stop": "停止",
+  "preview": "预览",
+  "compactWidth": "紧凑宽度",
+  "fullWidth": "全宽",
+  "dark": "深色",
+  "light": "浅色",
+  "system": "系统",
+  "auto": "自动",
+  "english": "英语",
+  "medium": "中等",
+  "newThread": "新会话",
+  "noResultsFound": "未找到结果",
+  "noThreadsYet": "暂无会话",
+  "noThreadsYetDesc": "开始新的对话以在此处查看您的会话历史记录。",
+  "downloads": "下载",
+  "downloading": "下载中",
+  "cancelDownload": "取消下载",
+  "downloadCancelled": "下载已取消",
+  "downloadComplete": "下载完成",
+  "thinking": "思考中...",
+  "thought": "思考",
+  "callingTool": "调用工具",
+  "completed": "已完成",
+  "image": "图片",
+  "vision": "视觉",
+  "embeddings": "嵌入",
+  "tools": "工具",
+  "webSearch": "网页搜索",
+  "reasoning": "推理",
+  "proactive": "主动模式",
+  "selectAModel": "选择一个模型",
+  "noToolsAvailable": "无可用工具",
+  "noModelsFoundFor": "未找到“{{searchValue}}”的模型",
+  "failedToLoadModels": "加载模型失败",
+  "noModels": "未找到模型",
+  "conversationNotAvailable": "对话不可用",
+  "conversationNotAvailableDescription": "您尝试访问的对话不可用或已被删除。",
+  "temporaryChat": "临时聊天",
+  "temporaryChatTooltip": "临时聊天不会出现在您的历史记录中",
+  "generateAiResponse": "生成AI响应",
+  "outOfContextError": {
+    "truncateInput": "截断输入",
+    "title": "上下文错误",
+    "description": "此聊天正在达到AI的内存限制，就像白板被填满一样。我们可以扩展内存窗口（称为上下文大小），以便它记住更多内容，但这可能会使用更多计算机内存。我们也可以截断输入，这意味着它将忘记一些聊天历史记录以为新消息腾出空间。",
+    "increaseContextSizeDescription": "您想要增加上下文大小吗？",
+    "increaseContextSize": "增加上下文大小"
+  },
+    "customAvatar": "自定义头像",
+  "editAssistant": "编辑助手",
+  "jan": "Jan",
+  "metadata": "元数据",
+  "regenerate": "重新生成",
+  "threadImage": "会话图片",
+  "editMessage": "编辑消息",
+  "deleteMessage": "删除消息",
+  "deleteThread": "删除会话",
+  "renameThread": "重命名会话",
+  "threadTitle": "会话标题",
+  "deleteAllThreads": "删除所有会话",
+  "allThreadsUnfavorited": "所有会话已取消收藏",
+  "deleteAllThreadsConfirm": "您确定要删除所有会话吗？此操作无法撤销。",
+  "addProvider": "添加提供商",
+  "addOpenAIProvider": "添加 OpenAI 提供商",
+  "enterNameForProvider": "为您的提供商输入一个名称",
+  "providerAlreadyExists": "名为“{{name}}”的提供商已存在。请选择其他名称。",
+  "adjustFontSize": "调整字号",
+  "changeLanguage": "更改语言",
+  "editTheme": "编辑主题",
+  "editCodeBlockStyle": "编辑代码块样式",
+  "editServerHost": "编辑服务器主机",
+  "pickColorWindowBackground": "选择窗口背景颜色",
+  "pickColorAppMainView": "选择应用主视图颜色",
+  "pickColorAppPrimary": "选择应用主颜色",
+  "pickColorAppAccent": "选择应用强调颜色",
+  "pickColorAppDestructive": "选择应用警示颜色",
+  "apiKeyRequired": "需要 API 密钥",
+  "enterTrustedHosts": "输入受信任的主机",
+  "placeholder": {
+    "chatInput": "随便问我什么..."
+  },
+  "confirm": "确认",
+  "continue": "继续",
+  "loading": "加载中...",
+  "error": "错误",
+  "success": "成功",
+  "warning": "警告",
+  "noResultsFoundDesc": "我们找不到任何与您的搜索匹配的聊天。请尝试其他关键字。",
+  "searchModels": "搜索模型...",
+  "searchStyles": "搜索样式...",
+  "createAssistant": "创建助手",
+  "enterApiKey": "输入 API 密钥",
+  "scrollToBottom": "滚动到底部",
+  "addModel": {
+    "title": "添加模型",
+    "modelId": "模型 ID",
+    "enterModelId": "输入模型 ID",
+    "addModel": "添加模型",
+    "description": "向提供商添加新模型",
+    "exploreModels": "查看提供商的模型列表"
+  },
+  "mcpServers": {
+    "editServer": "编辑服务器",
+    "addServer": "添加服务器",
+    "serverName": "服务器名称",
+    "enterServerName": "输入服务器名称",
+    "command": "命令",
+    "enterCommand": "输入命令",
+    "arguments": "参数",
+    "argument": "参数 {{index}}",
+    "envVars": "环境变量",
+    "key": "键",
+    "value": "值",
+    "save": "保存"
+  },
+  "deleteServer": {
+    "title": "删除服务器",
+    "delete": "删除"
+  },
+  "editJson": {
+    "errorParse": "解析 JSON 失败",
+    "errorPaste": "粘贴 JSON 失败",
+    "errorFormat": "JSON 格式无效",
+    "titleAll": "编辑所有服务器配置",
+    "placeholder": "输入 JSON 配置...",
+    "save": "保存"
+  },
+  "editModel": {
+    "title": "编辑模型：{{modelId}}",
+    "description": "通过切换以下选项来配置模型功能。",
+    "capabilities": "功能",
+    "tools": "工具",
+    "vision": "视觉",
+    "embeddings": "嵌入",
+    "notAvailable": "尚不可用"
+  },
+  "toolApproval": {
+    "title": "工具权限请求",
+    "description": "助手想要使用 <strong>{{toolName}}</strong>",
+    "securityNotice": "只允许您信任的工具。工具可以访问您的系统和数据。",
+    "deny": "拒绝",
+    "allowOnce": "允许一次",
+    "alwaysAllow": "始终允许"
+  },
+  "deleteModel": {
+    "title": "删除模型：{{modelId}}",
+    "description": "您确定要删除此模型吗？此操作无法撤销。",
+    "success": "模型 {{modelId}} 已被永久删除。",
+    "cancel": "取消",
+    "delete": "删除"
+  },
+  "deleteProvider": {
+    "title": "删除提供商",
+    "description": "删除此提供商及其所有模型。此操作无法撤销。",
+    "success": "提供商 {{provider}} 已被永久删除。",
+    "confirmTitle": "删除提供商：{{provider}}",
+    "confirmDescription": "您确定要删除此提供商吗？此操作无法撤销。",
+    "cancel": "取消",
+    "delete": "删除"
+  },
+  "modelSettings": {
+    "title": "模型设置 - {{modelId}}",
+    "description": "配置模型设置以优化性能和行为。"
+  },
+  "projects": {
+    "title": "项目",
+    "addProject": "添加项目",
+    "editProject": "编辑项目",
+    "deleteProject": "删除项目",
+    "projectName": "项目名称",
+    "enterProjectName": "输入项目名称",
+    "noProjectsYet": "还没有项目",
+    "noProjectsYetDesc": "创建您的第一个项目来组织对话。",
+    "projectNotFound": "未找到项目",
+    "projectNotFoundDesc": "您正在查找的项目不存在。",
+    "deleteProjectConfirm": "您确定要删除此项目吗？此操作无法撤销。",
+    "addToProject": "添加到项目",
+    "removeFromProject": "从项目中删除",
+    "noConversationsIn": "{{projectName}} 中还没有对话",
+    "startNewConversation": "在下方开始与 {{projectName}} 的新对话",
+    "conversationsIn": "{{projectName}} 中的对话",
+    "conversationsDescription": "点击任何对话以继续聊天，或在下方开始新的对话。",
+    "thread": "线程",
+    "threads": "线程",
+    "updated": "已更新：",
+    "collapseProject": "收起项目",
+    "expandProject": "展开项目",
+    "update": "更新",
+    "noProjectsAvailable": "没有可用的项目",
+    "searchProjects": "搜索项目...",
+    "noProjectsFound": "未找到项目",
+    "tryDifferentSearch": "尝试不同的搜索词",
+    "createNewProject": "创建新项目",
+    "deleteProjectDialog": {
+      "title": "删除项目",
+      "permanentDelete": "这将永久删除所有线程。",
+      "permanentDeleteWarning": "此操作将永久删除项目内的所有线程！",
+      "deleteEmptyProject": "此操作将删除项目\"{{projectName}}\"。",
+      "saveThreadsAdvice": "要保存线程，请在删除前将它们移动到您的线程列表或另一个项目中。",
+      "starredWarning": "您在项目中仍有收藏的线程。",
+      "deleteButton": "删除",
+      "successWithName": "项目\"{{projectName}}\"删除成功",
+      "successWithoutName": "项目删除成功",
+      "error": "删除项目失败。请重试。",
+      "ariaLabel": "删除{{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "创建新项目",
+      "editTitle": "编辑项目",
+      "nameLabel": "项目名称",
+      "namePlaceholder": "输入项目名称...",
+      "createButton": "创建",
+      "updateButton": "更新",
+      "alreadyExists": "项目\"{{projectName}}\"已存在",
+      "createSuccess": "项目\"{{projectName}}\"创建成功",
+      "renameSuccess": "项目从\"{{oldName}}\"重命名为\"{{newName}}\""
+    }
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "更改数据文件夹位置",
+      "description": "您确定要更改数据文件夹位置吗？这将把您的所有数据移动到新位置并重新启动应用程序。",
+      "currentLocation": "当前位置：",
+      "newLocation": "新位置：",
+      "cancel": "取消",
+      "changeLocation": "更改位置"
+    },
+    "deleteAllThreads": {
+      "title": "删除所有会话",
+      "description": "所有会话将被删除。此操作无法撤销。"
+    },
+    "deleteThread": {
+      "description": "您确定要删除此对话吗？此操作无法撤销。"
+    },
+    "editMessage": {
+      "title": "编辑消息"
+    },
+    "messageMetadata": {
+      "title": "消息元数据"
+    }
+  },
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "所有会话已取消收藏",
+      "description": "所有会话已从您的收藏中移除。"
+    },
+    "deleteAllThreads": {
+      "title": "删除所有会话",
+      "description": "所有会话已被永久删除。"
+    },
+    "renameThread": {
+      "title": "重命名会话",
+      "description": "会话标题已重命名为“{{title}}”"
+    },
+    "deleteThread": {
+      "title": "删除会话",
+      "description": "此会话已被永久删除。"
+    },
+    "editMessage": {
+      "title": "编辑消息",
+      "description": "消息编辑成功。请等待模型响应。"
+    },
+    "appUpdateDownloaded": {
+      "title": "应用更新已下载",
+      "description": "应用更新已成功下载。"
+    },
+    "appUpdateDownloadFailed": {
+      "title": "应用更新下载失败",
+      "description": "下载应用更新失败。请重试。"
+    },
+    "downloadComplete": {
+      "title": "下载完成",
+      "description": "{{item}} 已下载"
+    },
+    "downloadCancelled": {
+      "title": "下载已取消",
+      "description": "下载过程已取消"
+    },
+    "downloadFailed": {
+      "title": "下载失败",
+      "description": "{{item}} 下载失败"
+    },
+    "modelValidationStarted": {
+      "title": "正在验证模型",
+      "description": "模型 \"{{modelId}}\" 下载成功。正在验证完整性..."
+    },
+    "modelValidationFailed": {
+      "title": "模型验证失败",
+      "description": "已下载的模型 \"{{modelId}}\" 未通过完整性验证并已被删除。文件可能损坏或被篡改。"
+    },
+    "downloadAndVerificationComplete": {
+      "title": "下载完成",
+      "description": "模型 \"{{item}}\" 下载并验证成功"
+    },
+    "projectCreated": {
+      "title": "项目已创建",
+      "description": "项目\"{{projectName}}\"创建成功"
+    },
+    "projectRenamed": {
+      "title": "项目已重命名",
+      "description": "项目从\"{{oldName}}\"重命名为\"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "项目已删除",
+      "description": "项目\"{{projectName}}\"删除成功"
+    },
+    "projectAlreadyExists": {
+      "title": "项目已存在",
+      "description": "项目\"{{projectName}}\"已存在"
+    },
+    "projectDeleteFailed": {
+      "title": "删除失败",
+      "description": "删除项目失败。请重试。"
+    },
+    "threadAssignedToProject": {
+      "title": "线程已分配",
+      "description": "线程已成功分配到\"{{projectName}}\""
+    },
+    "threadRemovedFromProject": {
+      "title": "线程已移除",
+      "description": "线程已成功从\"{{projectName}}\"中移除"
+    }
+  }
+}

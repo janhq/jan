@@ -1,0 +1,18 @@
+{
+  "sortNewest": "Neueste",
+  "sortMostDownloaded": "Meist heruntergeladen",
+  "newChat": "Neuer Chat",
+  "download": "Herunterladen",
+  "downloaded": "Heruntergeladen",
+  "loadingModels": "Lade Modelle...",
+  "noModels": "Keine Modelle gefunden",
+  "by": "Von",
+  "downloads": "Downloads",
+  "variants": "Varianten",
+  "showVariants": "Zeige Varianten",
+  "useModel": "Nutze dieses Modell",
+  "downloadModel": "Modell herunterladen",
+  "tools": "Werkzeuge",
+  "searchPlaceholder": "Suche nach Modellen auf Hugging Face...",
+  "editTheme": "Bearbeite Erscheinungsbild"
+}

@@ -1,0 +1,51 @@
+/* PP Editorial New */
+@font-face {
+  font-family: 'PPEditorialNew';
+  font-display: swap;
+  src: url('/fonts/PPEditorialNew/PPEditorialNew-Regular.otf')
+    format('opentype');
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'PPEditorialNew';
+  font-display: swap;
+  src: url('/fonts/PPEditorialNew/PPEditorialNew-RegularItalic.otf')
+    format('opentype');
+  font-weight: 400;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: 'PPEditorialNew';
+  font-display: swap;
+  src: url('/fonts/PPEditorialNew/PPEditorialNew-Ultrabold.otf')
+    format('opentype');
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: 'PPEditorialNew';
+  font-display: swap;
+  src: url('/fonts/PPEditorialNew/PPEditorialNew-UltraboldItalic.otf')
+    format('opentype');
+  font-weight: 700;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: 'PPEditorialNew';
+  font-display: swap;
+  src: url('/fonts/PPEditorialNew/PPEditorialNew-Ultralight.otf')
+    format('opentype');
+  font-weight: 300;
+}
+
+@font-face {
+  font-family: 'PPEditorialNew';
+  font-display: swap;
+  src: url('/fonts/PPEditorialNew/PPEditorialNew-UltralightItalic.otf')
+    format('opentype');
+  font-weight: 300;
+  font-style: italic;
+}

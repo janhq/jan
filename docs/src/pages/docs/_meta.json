@@ -1,0 +1,10 @@
+{
+  "index": {
+    "type": "page",
+    "title": "Jan Overview"
+  },
+  "desktop": {
+    "type": "page",
+    "title": "Jan Desktop"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "newVersion": "Versi Baru {{version}}",
+  "updateAvailable": "Pembaruan Tersedia",
+  "nightlyBuild": "Build Malam",
+  "showReleaseNotes": "Tampilkan Catatan Rilis",
+  "hideReleaseNotes": "Sembunyikan Catatan Rilis",
+  "remindMeLater": "Ingatkan Saya Nanti",
+  "downloading": "Mengunduh...",
+  "updateNow": "Perbarui Sekarang"
+}

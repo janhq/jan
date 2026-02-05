@@ -1,0 +1,62 @@
+{
+  "refreshModelsError": "Penyedia harus memiliki URL dasar dan kunci API yang dikonfigurasi untuk mengambil model.",
+  "refreshModelsSuccess": "Menambahkan {{count}} model baru dari {{provider}}.",
+  "noNewModels": "Tidak ada model baru yang ditemukan. Semua model yang tersedia sudah ditambahkan.",
+  "refreshModelsFailed": "Gagal mengambil model dari {{provider}}. Silakan periksa kunci API dan URL dasar Anda.",
+  "models": "Model",
+  "refreshing": "Menyegarkan...",
+  "refresh": "Segarkan",
+  "import": "Impor",
+  "importModelSuccess": "Model {{provider}} telah berhasil diimpor.",
+  "importModelError": "Gagal mengimpor model:",
+  "stop": "Hentikan",
+  "start": "Mulai",
+  "noModelFound": "Tidak ada model yang ditemukan",
+  "noModelFoundDesc": "Model yang tersedia akan dicantumkan di sini. Jika Anda belum memiliki model, kunjungi Hub untuk mengunduh.",
+  "configuration": "Konfigurasi",
+  "apiEndpoint": "Titik Akhir API",
+  "testConnection": "Uji Koneksi",
+  "addModel": {
+    "title": "Tambah Model Baru",
+    "description": "Tambahkan model baru ke penyedia {{provider}}.",
+    "modelId": "ID Model",
+    "enterModelId": "Masukkan ID model",
+    "exploreModels": "Lihat daftar model dari {{provider}}",
+    "addModel": "Tambah Model",
+    "modelExists": "Model sudah ada",
+    "modelExistsDesc": "Silakan pilih ID model yang berbeda."
+  },
+  "deleteModel": {
+    "title": "Hapus Model: {{modelId}}",
+    "description": "Apakah Anda yakin ingin menghapus model ini? Tindakan ini tidak dapat dibatalkan.",
+    "success": "Model {{modelId}} telah dihapus secara permanen.",
+    "cancel": "Batal",
+    "delete": "Hapus"
+  },
+  "deleteProvider": {
+    "title": "Hapus Penyedia",
+    "description": "Hapus penyedia ini dan semua modelnya. Tindakan ini tidak dapat dibatalkan.",
+    "success": "Penyedia {{provider}} telah dihapus secara permanen.",
+    "confirmTitle": "Hapus Penyedia: {{provider}}",
+    "confirmDescription": "Apakah Anda yakin ingin menghapus penyedia ini? Tindakan ini tidak dapat dibatalkan.",
+    "cancel": "Batal",
+    "delete": "Hapus"
+  },
+  "editModel": {
+    "title": "Edit Model: {{modelId}}",
+    "description": "Konfigurasikan kemampuan model dengan mengalihkan opsi di bawah ini.",
+    "capabilities": "Kemampuan",
+    "tools": "Alat",
+    "vision": "Visi",
+    "proactive": "Proaktif (Eksperimental)",
+    "embeddings": "Embedding",
+    "notAvailable": "Belum tersedia",
+    "warning": {
+      "title": "Lanjutkan dengan Hati-hati",
+      "description": "Memodifikasi kemampuan model dapat mempengaruhi kinerja dan fungsionalitas. Pengaturan yang salah dapat menyebabkan perilaku atau kesalahan yang tidak terduga."
+    }
+  },
+  "addProvider": "Tambah Penyedia",
+  "addOpenAIProvider": "Tambah Penyedia OpenAI",
+  "enterNameForProvider": "Masukkan nama untuk penyedia"
+}

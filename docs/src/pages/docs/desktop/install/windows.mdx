@@ -1,0 +1,218 @@
+---
+title: Windows
+description: Download Jan on Windows to run AI models locally. Jan is a free, open-source ChatGPT alternative to run offline.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    Jan on Windows,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    quickstart,
+    getting started,
+    using AI model,
+    installation,
+    "desktop"
+  ]
+twitter:
+  card: summary_large_image
+  site: "@jandotai"
+  title: "Jan on Windows"
+  description: "Download Jan on Windows to run AI models locally. Jan is a free, open-source ChatGPT alternative to run offline."
+---
+
+import { Tabs, Callout, Steps } from 'nextra/components'
+import FAQBox from '@/components/FaqBox'
+import { Settings } from 'lucide-react'
+
+
+# Windows Installation
+
+## Compatibility
+
+**System requirements:**
+- **Operating System**: Windows 10 or higher.
+- **CPU**
+
+<Tabs items={['Intel', 'AMD']}>
+<Tabs.Tab>
+- Intel: Haswell (Q2 2013) or newer
+- Intel Celeron/Pentium: Tiger Lake (Q3 2020) or newer
+</Tabs.Tab>
+<Tabs.Tab>
+- Excavator processors (Q2 2015) and newer.
+</Tabs.Tab>
+</Tabs>
+
+<Callout type="info">
+Processor must support **AVX2 or newer**. See [full list of supported processors](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2).
+Performance is significantly degraded on AVX-only processors.
+</Callout>
+
+**Memory (RAM)**
+- 8GB → up to 3B parameter models (int4)
+- 16GB → up to 7B parameter models (int4)
+- 32GB → up to 13B parameter models (int4)
+
+<Callout type="info">
+Newer RAM generations provide better performance.
+</Callout>
+
+**GPU**:
+- 6GB → up to 3B parameter models
+- 8GB → up to 7B parameter models
+- 12GB → up to 13B parameter models
+
+<Callout type="info">
+Minimum 6GB VRAM recommended for NVIDIA, AMD, or Intel Arc GPUs.
+</Callout>
+
+**Storage:** 10GB free space minimum for app and models
+
+
+## Install Jan
+
+<Steps>
+
+### Step 1: Download Application
+
+<Tabs items={['Stable Release', 'Beta Release', 'Nightly Release']}>
+<Tabs.Tab>
+- [Download Stable Jan](https://app.jan.ai/download/latest/win-x64)
+- Official Website: [Download Jan](https://jan.ai/download)
+</Tabs.Tab>
+<Tabs.Tab>
+
+Beta: Contains newer features but may be unstable
+
+[Download Beta Jan](https://app.jan.ai/download/beta/win-x64)
+
+<Callout type="warning">
+May be unstable
+</Callout>
+</Tabs.Tab>
+<Tabs.Tab>
+
+Nightly: Development build with latest features
+
+[Download Nightly Jan](https://app.jan.ai/download/nightly/win-x64)
+
+<Callout type="warning">
+Unstable development build
+</Callout>
+</Tabs.Tab>
+</Tabs>
+
+### Step 2: Install Application
+
+1. Run the downloaded `.exe` file
+2. Wait for installation to complete
+3. Launch Jan
+
+</Steps>
+
+## Data Folder
+
+Default installation path:
+
+```sh
+# Default installation directory
+~\Users\<YourUsername>\AppData\Roaming\Jan\data
+```
+
+See [Jan Data Folder](/docs/desktop/data-folder) for complete folder structure details.
+
+
+## GPU Acceleration
+
+<Tabs items={['NVIDIA GPU', 'AMD GPU', 'Intel Arc GPU']}>
+
+<Tabs.Tab>
+
+<Steps>
+
+### Step 1: Verify Hardware & Install Dependencies
+**1.1. Check GPU Detection**
+
+Verify GPU is recognized:
+- Right-click desktop > NVIDIA Control Panel
+- Or check Device Manager > Display Adapters
+
+**1.2. Install Required components**
+**NVIDIA Driver:**
+1. Install [NVIDIA Driver](https://www.nvidia.com/en-us/drivers/) (version **470.63.01 or higher**)
+2. Verify installation:
+
+```sh
+nvidia-smi
+```
+
+**CUDA Toolkit:**
+1. Install [CUDA toolkit](https://developer.nvidia.com/cuda-downloads) (**11.7 or higher**)
+2. Verify installation:
+
+```sh
+nvcc --version
+```
+### Step 2: Enable GPU Acceleration
+
+Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
+and toggle the **ON** switch if not enabled.
+
+</Steps>
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+AMD GPUs require **Vulkan** support.
+
+Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
+and toggle the **ON** switch if not enabled.
+</Tabs.Tab>
+
+<Tabs.Tab>
+Intel Arc GPUs require **Vulkan** support.
+
+Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
+and toggle the **ON** switch if not enabled.
+</Tabs.Tab>
+</Tabs>
+
+
+## Uninstall Jan
+
+<Steps>
+
+### Step 1: Remove Application through Control Panel
+
+1. Open **Control Panels**
+2. Go to **Programs** section
+3. Click **Uninstall Program**
+4. Search for **Jan**
+5. Click the **Three Dots Icon** > **Uninstall**
+6. Click **Uninstall** again to confirm
+7. Click **OK**
+
+### Step 2: Clean Up Remaining Files
+
+Remove app data:
+
+1. Navigate to `C:\Users\[username]\AppData\Roaming`
+2. Delete Jan folder
+
+or via **Terminal**:
+
+```sh
+cd C:\Users\%USERNAME%\AppData\Roaming
+rmdir /S Jan
+```
+</Steps>
+
+<Callout type="warning">
+Deleted data folders cannot be recovered. Backup important data first.
+</Callout>

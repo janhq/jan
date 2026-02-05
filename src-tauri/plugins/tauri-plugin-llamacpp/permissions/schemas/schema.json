@@ -1,0 +1,666 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PermissionFile",
+  "description": "Permission file that can define a default permission, a set of permissions or a list of inlined permissions.",
+  "type": "object",
+  "properties": {
+    "default": {
+      "description": "The default permission set for the plugin",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/DefaultPermission"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "set": {
+      "description": "A list of permissions sets defined",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PermissionSet"
+      }
+    },
+    "permission": {
+      "description": "A list of inlined permissions",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Permission"
+      }
+    }
+  },
+  "definitions": {
+    "DefaultPermission": {
+      "description": "The default permission set of the plugin.\n\nWorks similarly to a permission with the \"default\" identifier.",
+      "type": "object",
+      "required": [
+        "permissions"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "PermissionSet": {
+      "description": "A set of direct permissions grouped together under a new name.",
+      "type": "object",
+      "required": [
+        "description",
+        "identifier",
+        "permissions"
+      ],
+      "properties": {
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does.",
+          "type": "string"
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PermissionKind"
+          }
+        }
+      }
+    },
+    "Permission": {
+      "description": "Descriptions of explicit privileges of commands.\n\nIt can enable commands to be accessible in the frontend of the application.\n\nIf the scope is defined it can be used to fine grain control the access of individual or multiple commands.",
+      "type": "object",
+      "required": [
+        "identifier"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri internal convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commands": {
+          "description": "Allowed or denied commands when using this permission.",
+          "default": {
+            "allow": [],
+            "deny": []
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Commands"
+            }
+          ]
+        },
+        "scope": {
+          "description": "Allowed or denied scoped when using this permission.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Scopes"
+            }
+          ]
+        },
+        "platforms": {
+          "description": "Target platforms this permission applies. By default all platforms are affected by this permission.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Target"
+          }
+        }
+      }
+    },
+    "Commands": {
+      "description": "Allowed and denied commands inside a permission.\n\nIf two commands clash inside of `allow` and `deny`, it should be denied by default.",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Allowed command.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deny": {
+          "description": "Denied command, which takes priority.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Scopes": {
+      "description": "An argument for fine grained behavior control of Tauri commands.\n\nIt can be of any serde serializable type and is used to allow or prevent certain actions inside a Tauri command. The configured scope is passed to the command and will be enforced by the command implementation.\n\n## Example\n\n```json { \"allow\": [{ \"path\": \"$HOME/**\" }], \"deny\": [{ \"path\": \"$HOME/secret.txt\" }] } ```",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Data that defines what is allowed by the scope.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        "deny": {
+          "description": "Data that defines what is denied by the scope. This should be prioritized by validation logic.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      }
+    },
+    "Value": {
+      "description": "All supported ACL values.",
+      "anyOf": [
+        {
+          "description": "Represents a null JSON value.",
+          "type": "null"
+        },
+        {
+          "description": "Represents a [`bool`].",
+          "type": "boolean"
+        },
+        {
+          "description": "Represents a valid ACL [`Number`].",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Number"
+            }
+          ]
+        },
+        {
+          "description": "Represents a [`String`].",
+          "type": "string"
+        },
+        {
+          "description": "Represents a list of other [`Value`]s.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        {
+          "description": "Represents a map of [`String`] keys to [`Value`]s.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      ]
+    },
+    "Number": {
+      "description": "A valid ACL number.",
+      "anyOf": [
+        {
+          "description": "Represents an [`i64`].",
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "description": "Represents a [`f64`].",
+          "type": "number",
+          "format": "double"
+        }
+      ]
+    },
+    "Target": {
+      "description": "Platform target.",
+      "oneOf": [
+        {
+          "description": "MacOS.",
+          "type": "string",
+          "enum": [
+            "macOS"
+          ]
+        },
+        {
+          "description": "Windows.",
+          "type": "string",
+          "enum": [
+            "windows"
+          ]
+        },
+        {
+          "description": "Linux.",
+          "type": "string",
+          "enum": [
+            "linux"
+          ]
+        },
+        {
+          "description": "Android.",
+          "type": "string",
+          "enum": [
+            "android"
+          ]
+        },
+        {
+          "description": "iOS.",
+          "type": "string",
+          "enum": [
+            "iOS"
+          ]
+        }
+      ]
+    },
+    "PermissionKind": {
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "Enables the check_backend_for_updates command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-check-backend-for-updates",
+          "markdownDescription": "Enables the check_backend_for_updates command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the check_backend_for_updates command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-check-backend-for-updates",
+          "markdownDescription": "Denies the check_backend_for_updates command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the cleanup_llama_processes command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cleanup-llama-processes",
+          "markdownDescription": "Enables the cleanup_llama_processes command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cleanup_llama_processes command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cleanup-llama-processes",
+          "markdownDescription": "Denies the cleanup_llama_processes command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the determine_supported_backends command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-determine-supported-backends",
+          "markdownDescription": "Enables the determine_supported_backends command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the determine_supported_backends command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-determine-supported-backends",
+          "markdownDescription": "Denies the determine_supported_backends command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the estimate_kv_cache_size command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-estimate-kv-cache-size",
+          "markdownDescription": "Enables the estimate_kv_cache_size command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the estimate_kv_cache_size command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-estimate-kv-cache-size",
+          "markdownDescription": "Denies the estimate_kv_cache_size command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the find_latest_version_for_backend command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-find-latest-version-for-backend",
+          "markdownDescription": "Enables the find_latest_version_for_backend command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the find_latest_version_for_backend command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-find-latest-version-for-backend",
+          "markdownDescription": "Denies the find_latest_version_for_backend command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the find_session_by_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-find-session-by-model",
+          "markdownDescription": "Enables the find_session_by_model command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the find_session_by_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-find-session-by-model",
+          "markdownDescription": "Denies the find_session_by_model command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the generate_api_key command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-generate-api-key",
+          "markdownDescription": "Enables the generate_api_key command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the generate_api_key command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-generate-api-key",
+          "markdownDescription": "Denies the generate_api_key command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_all_sessions command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-all-sessions",
+          "markdownDescription": "Enables the get_all_sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_all_sessions command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-all-sessions",
+          "markdownDescription": "Denies the get_all_sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_devices command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-devices",
+          "markdownDescription": "Enables the get_devices command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_devices command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-devices",
+          "markdownDescription": "Denies the get_devices command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_loaded_models command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-loaded-models",
+          "markdownDescription": "Enables the get_loaded_models command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_loaded_models command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-loaded-models",
+          "markdownDescription": "Denies the get_loaded_models command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_local_installed_backends command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-local-installed-backends",
+          "markdownDescription": "Enables the get_local_installed_backends command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_local_installed_backends command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-local-installed-backends",
+          "markdownDescription": "Denies the get_local_installed_backends command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_model_size command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-model-size",
+          "markdownDescription": "Enables the get_model_size command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_model_size command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-model-size",
+          "markdownDescription": "Denies the get_model_size command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_random_port command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-random-port",
+          "markdownDescription": "Enables the get_random_port command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_random_port command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-random-port",
+          "markdownDescription": "Denies the get_random_port command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_session_by_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-session-by-model",
+          "markdownDescription": "Enables the get_session_by_model command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_session_by_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-session-by-model",
+          "markdownDescription": "Denies the get_session_by_model command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_supported_features command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-supported-features",
+          "markdownDescription": "Enables the get_supported_features command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_supported_features command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-supported-features",
+          "markdownDescription": "Denies the get_supported_features command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the handle_setting_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-handle-setting-update",
+          "markdownDescription": "Enables the handle_setting_update command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the handle_setting_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-handle-setting-update",
+          "markdownDescription": "Denies the handle_setting_update command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the is_cuda_installed command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-is-cuda-installed",
+          "markdownDescription": "Enables the is_cuda_installed command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the is_cuda_installed command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-is-cuda-installed",
+          "markdownDescription": "Denies the is_cuda_installed command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the is_model_supported command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-is-model-supported",
+          "markdownDescription": "Enables the is_model_supported command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the is_model_supported command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-is-model-supported",
+          "markdownDescription": "Denies the is_model_supported command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the is_process_running command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-is-process-running",
+          "markdownDescription": "Enables the is_process_running command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the is_process_running command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-is-process-running",
+          "markdownDescription": "Denies the is_process_running command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_supported_backends command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-supported-backends",
+          "markdownDescription": "Enables the list_supported_backends command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_supported_backends command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-supported-backends",
+          "markdownDescription": "Denies the list_supported_backends command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the load_llama_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-load-llama-model",
+          "markdownDescription": "Enables the load_llama_model command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the load_llama_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-load-llama-model",
+          "markdownDescription": "Denies the load_llama_model command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the map_old_backend_to_new command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-map-old-backend-to-new",
+          "markdownDescription": "Enables the map_old_backend_to_new command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the map_old_backend_to_new command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-map-old-backend-to-new",
+          "markdownDescription": "Denies the map_old_backend_to_new command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the parse_backend_version command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-parse-backend-version",
+          "markdownDescription": "Enables the parse_backend_version command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the parse_backend_version command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-parse-backend-version",
+          "markdownDescription": "Denies the parse_backend_version command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the plan_model_load command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-plan-model-load",
+          "markdownDescription": "Enables the plan_model_load command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the plan_model_load command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-plan-model-load",
+          "markdownDescription": "Denies the plan_model_load command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the prioritize_backends command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-prioritize-backends",
+          "markdownDescription": "Enables the prioritize_backends command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the prioritize_backends command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-prioritize-backends",
+          "markdownDescription": "Denies the prioritize_backends command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the read_gguf_metadata command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-gguf-metadata",
+          "markdownDescription": "Enables the read_gguf_metadata command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_gguf_metadata command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-gguf-metadata",
+          "markdownDescription": "Denies the read_gguf_metadata command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the remove_old_backend_versions command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-remove-old-backend-versions",
+          "markdownDescription": "Enables the remove_old_backend_versions command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the remove_old_backend_versions command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-remove-old-backend-versions",
+          "markdownDescription": "Denies the remove_old_backend_versions command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the should_migrate_backend command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-should-migrate-backend",
+          "markdownDescription": "Enables the should_migrate_backend command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the should_migrate_backend command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-should-migrate-backend",
+          "markdownDescription": "Denies the should_migrate_backend command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the unload_llama_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-unload-llama-model",
+          "markdownDescription": "Enables the unload_llama_model command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the unload_llama_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-unload-llama-model",
+          "markdownDescription": "Denies the unload_llama_model command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the validate_backend_string command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-validate-backend-string",
+          "markdownDescription": "Enables the validate_backend_string command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the validate_backend_string command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-validate-backend-string",
+          "markdownDescription": "Denies the validate_backend_string command without any pre-configured scope."
+        },
+        {
+          "description": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`\n- `allow-estimate-kv-cache-size`\n- `allow-get-model-size`\n- `allow-is-model-supported`\n- `allow-plan-model-load`\n- `allow-map-old-backend-to-new`\n- `allow-get-local-installed-backends`\n- `allow-list-supported-backends`\n- `allow-determine-supported-backends`\n- `allow-get-supported-features`\n- `allow-is-cuda-installed`\n- `allow-find-latest-version-for-backend`\n- `allow-prioritize-backends`\n- `allow-parse-backend-version`\n- `allow-check-backend-for-updates`\n- `allow-remove-old-backend-versions`\n- `allow-validate-backend-string`\n- `allow-should-migrate-backend`\n- `allow-handle-setting-update`",
+          "type": "string",
+          "const": "default",
+          "markdownDescription": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`\n- `allow-estimate-kv-cache-size`\n- `allow-get-model-size`\n- `allow-is-model-supported`\n- `allow-plan-model-load`\n- `allow-map-old-backend-to-new`\n- `allow-get-local-installed-backends`\n- `allow-list-supported-backends`\n- `allow-determine-supported-backends`\n- `allow-get-supported-features`\n- `allow-is-cuda-installed`\n- `allow-find-latest-version-for-backend`\n- `allow-prioritize-backends`\n- `allow-parse-backend-version`\n- `allow-check-backend-for-updates`\n- `allow-remove-old-backend-versions`\n- `allow-validate-backend-string`\n- `allow-should-migrate-backend`\n- `allow-handle-setting-update`"
+        }
+      ]
+    }
+  }
+}

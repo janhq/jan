@@ -1,0 +1,37 @@
+{
+  "name": "@janhq/assistant-extension",
+  "productName": "Jan Assistant",
+  "version": "1.0.2",
+  "description": "Powers the default AI assistant that works with all your installed models.",
+  "main": "dist/index.js",
+  "node": "dist/node/index.js",
+  "author": "Jan <service@jan.ai>",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "build": "rolldown -c rolldown.config.mjs",
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
+  },
+  "devDependencies": {
+    "cpx": "1.5.0",
+    "rimraf": "6.0.1",
+    "rolldown": "1.0.0-beta.1",
+    "run-script-os": "1.1.6",
+    "typescript": "5.9.2"
+  },
+  "dependencies": {
+    "@janhq/core": "../../core/package.tgz",
+    "ts-loader": "^9.5.0"
+  },
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ],
+  "bundleDependencies": [
+    "@janhq/core"
+  ],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "packageManager": "yarn@4.5.3"
+}

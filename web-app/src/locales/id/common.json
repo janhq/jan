@@ -1,0 +1,376 @@
+{
+  "assistants": "Asisten",
+  "hardware": "Perangkat Keras",
+  "mcp-servers": "Server MCP",
+  "local_api_server": "Server API Lokal",
+  "https_proxy": "Proksi HTTPS",
+  "extensions": "Ekstensi",
+  "general": "Umum",
+  "settings": "Pengaturan",
+  "modelProviders": "Penyedia Model",
+  "interface": "Tampilan",
+  "privacy": "Privasi",
+  "keyboardShortcuts": "Pintasan",
+  "newChat": "Obrolan Baru",
+  "favorites": "Favorit",
+  "recents": "Terbaru",
+  "hub": "Hub",
+  "helpSupport": "Bantuan & Dukungan",
+  "helpUsImproveJan": "Bantu Kami Meningkatkan Jan",
+  "unstarAll": "Batal Bintangi Semua",
+  "unstar": "Batal Bintangi",
+  "deleteAll": "Hapus Semua",
+  "star": "Bintangi",
+  "rename": "Ubah Nama",
+  "delete": "Hapus",
+  "copied": "Tersalin!",
+  "dataFolder": "Folder Data",
+  "others": "Lainnya",
+  "language": "Bahasa",
+  "login": "Masuk",
+  "loginWith": "Masuk Dengan {{provider}}",
+  "loginFailed": "Gagal Masuk",
+  "logout": "Keluar",
+  "loggingOut": "Sedang Keluar...",
+  "loggedOut": "Berhasil Keluar",
+  "logoutFailed": "Gagal Keluar",
+  "profile": "Profil",
+  "reset": "Setel Ulang",
+  "search": "Cari",
+  "name": "Nama",
+  "cancel": "Batal",
+  "create": "Buat",
+  "save": "Simpan",
+  "edit": "Edit",
+  "copy": "Salin",
+  "back": "Kembali",
+  "close": "Tutup",
+  "next": "Berikutnya",
+  "finish": "Selesai",
+  "skip": "Lewati",
+  "allow": "Izinkan",
+  "deny": "Tolak",
+  "start": "Mulai",
+  "stop": "Hentikan",
+  "preview": "Pratinjau",
+  "compactWidth": "Lebar Ringkas",
+  "fullWidth": "Lebar Penuh",
+  "dark": "Gelap",
+  "light": "Terang",
+  "system": "Sistem",
+  "auto": "Otomatis",
+  "english": "Inggris",
+  "medium": "Sedang",
+  "newThread": "Utas Baru",
+  "noResultsFound": "Tidak ada hasil yang ditemukan",
+  "noThreadsYet": "Belum ada utas",
+  "noThreadsYetDesc": "Mulai percakapan baru untuk melihat riwayat utas Anda di sini.",
+  "downloads": "Unduhan",
+  "downloading": "Mengunduh",
+  "cancelDownload": "Batalkan unduhan",
+  "downloadCancelled": "Unduhan Dibatalkan",
+  "downloadComplete": "Unduhan Selesai",
+  "thinking": "Berpikir...",
+  "thought": "Pikiran",
+  "callingTool": "Memanggil alat",
+  "completed": "Selesai",
+  "image": "Gambar",
+  "vision": "Visi",
+  "embeddings": "Embedding",
+  "tools": "Alat",
+  "webSearch": "Pencarian Web",
+  "reasoning": "Penalaran",
+  "proactive": "Proaktif",
+  "selectAModel": "Pilih model",
+  "noToolsAvailable": "Tidak ada alat yang tersedia",
+  "noModelsFoundFor": "Tidak ada model yang ditemukan untuk \"{{searchValue}}\"",
+  "failedToLoadModels": "Gagal memuat model",
+  "noModels": "Tidak ada model yang ditemukan",
+  "customAvatar": "Avatar kustom",
+  "editAssistant": "Edit Asisten",
+  "jan": "Jan",
+  "metadata": "Metadata",
+  "regenerate": "Hasilkan Ulang",
+  "threadImage": "Gambar utas",
+  "editMessage": "Edit Pesan",
+  "deleteMessage": "Hapus Pesan",
+  "deleteThread": "Hapus Utas",
+  "renameThread": "Ubah Nama Utas",
+  "threadTitle": "Judul Utas",
+  "deleteAllThreads": "Hapus Semua Utas",
+  "allThreadsUnfavorited": "Semua Utas Batal Difavoritkan",
+  "deleteAllThreadsConfirm": "Apakah Anda yakin ingin menghapus semua utas? Tindakan ini tidak dapat dibatalkan.",
+  "addProvider": "Tambah Penyedia",
+  "addOpenAIProvider": "Tambah Penyedia OpenAI",
+  "enterNameForProvider": "Masukkan nama untuk penyedia Anda",
+  "providerAlreadyExists": "Penyedia dengan nama \"{{name}}\" sudah ada. Silakan pilih nama yang berbeda.",
+  "adjustFontSize": "Sesuaikan Ukuran Font",
+  "changeLanguage": "Ubah Bahasa",
+  "editTheme": "Edit Tema",
+  "editCodeBlockStyle": "Edit Gaya Blok Kode",
+  "editServerHost": "Edit Host Server",
+  "pickColorWindowBackground": "Pilih Warna Latar Belakang Jendela",
+  "pickColorAppMainView": "Pilih Warna Tampilan Utama Aplikasi",
+  "pickColorAppPrimary": "Pilih Warna Utama Aplikasi",
+  "pickColorAppAccent": "Pilih Warna Aksen Aplikasi",
+  "pickColorAppDestructive": "Pilih Warna Merusak Aplikasi",
+  "apiKeyRequired": "Kunci API diperlukan",
+  "enterTrustedHosts": "Masukkan host tepercaya",
+  "placeholder": {
+    "chatInput": "Tanyakan apa saja padaku..."
+  },
+  "confirm": "Konfirmasi",
+  "continue": "Lanjutkan",
+  "loading": "Memuat...",
+  "error": "Kesalahan",
+  "success": "Sukses",
+  "warning": "Peringatan",
+  "conversationNotAvailable": "Percakapan tidak tersedia",
+  "conversationNotAvailableDescription": "Percakapan yang Anda coba akses tidak tersedia atau telah dihapus.",
+  "temporaryChat": "Obrolan Sementara",
+  "temporaryChatTooltip": "Obrolan sementara tidak akan muncul di riwayat Anda",
+  "noResultsFoundDesc": "Kami tidak dapat menemukan obrolan yang cocok dengan pencarian Anda. Coba kata kunci yang berbeda.",
+  "searchModels": "Cari model...",
+  "searchStyles": "Cari gaya...",
+  "createAssistant": "Buat Asisten",
+  "enterApiKey": "Masukkan Kunci API",
+  "scrollToBottom": "Gulir ke bawah",
+  "generateAiResponse": "Hasilkan Respons AI",
+  "addModel": {
+    "title": "Tambah Model",
+    "modelId": "ID Model",
+    "enterModelId": "Masukkan ID Model",
+    "addModel": "Tambah Model",
+    "description": "Tambahkan model baru ke penyedia",
+    "exploreModels": "Lihat daftar model dari penyedia"
+  },
+  "mcpServers": {
+    "editServer": "Edit Server",
+    "addServer": "Tambah Server",
+    "serverName": "Nama Server",
+    "enterServerName": "Masukkan nama server",
+    "command": "Perintah",
+    "enterCommand": "Masukkan perintah",
+    "arguments": "Argumen",
+    "argument": "Argumen {{index}}",
+    "envVars": "Variabel Lingkungan",
+    "key": "Kunci",
+    "value": "Nilai",
+    "save": "Simpan"
+  },
+  "deleteServer": {
+    "title": "Hapus Server",
+    "delete": "Hapus"
+  },
+  "editJson": {
+    "errorParse": "Gagal mengurai JSON",
+    "errorPaste": "Gagal menempelkan JSON",
+    "errorFormat": "Format JSON tidak valid",
+    "titleAll": "Edit Semua Konfigurasi Server",
+    "placeholder": "Masukkan konfigurasi JSON...",
+    "save": "Simpan"
+  },
+  "editModel": {
+    "title": "Edit Model: {{modelId}}",
+    "description": "Konfigurasikan kemampuan model dengan mengalihkan opsi di bawah ini.",
+    "capabilities": "Kemampuan",
+    "tools": "Alat",
+    "vision": "Visi",
+    "embeddings": "Embedding",
+    "notAvailable": "Belum tersedia"
+  },
+  "outOfContextError": {
+    "truncateInput": "Potong Input",
+    "title": "Kesalahan konteks habis",
+    "description": "Obrolan ini mencapai batas memori AI, seperti papan tulis yang penuh. Kami dapat memperluas jendela memori (disebut ukuran konteks) agar lebih mengingat, tetapi mungkin akan menggunakan lebih banyak memori komputer Anda. Kami juga dapat memotong input, yang berarti akan melupakan sebagian riwayat obrolan untuk memberi ruang bagi pesan baru.",
+    "increaseContextSizeDescription": "Apakah Anda ingin meningkatkan ukuran konteks?",
+    "increaseContextSize": "Tingkatkan Ukuran Konteks"
+  },
+  "toolApproval": {
+    "title": "Permintaan Izin Alat",
+    "description": "Asisten ingin menggunakan <strong>{{toolName}}</strong>",
+    "securityNotice": "Hanya izinkan alat yang Anda percayai. Alat dapat mengakses sistem dan data Anda.",
+    "deny": "Tolak",
+    "allowOnce": "Izinkan Sekali",
+    "alwaysAllow": "Selalu Izinkan"
+  },
+  "deleteModel": {
+    "title": "Hapus Model: {{modelId}}",
+    "description": "Apakah Anda yakin ingin menghapus model ini? Tindakan ini tidak dapat dibatalkan.",
+    "success": "Model {{modelId}} telah dihapus secara permanen.",
+    "cancel": "Batal",
+    "delete": "Hapus"
+  },
+  "deleteProvider": {
+    "title": "Hapus Penyedia",
+    "description": "Hapus penyedia ini dan semua modelnya. Tindakan ini tidak dapat dibatalkan.",
+    "success": "Penyedia {{provider}} telah dihapus secara permanen.",
+    "confirmTitle": "Hapus Penyedia: {{provider}}",
+    "confirmDescription": "Apakah Anda yakin ingin menghapus penyedia ini? Tindakan ini tidak dapat dibatalkan.",
+    "cancel": "Batal",
+    "delete": "Hapus"
+  },
+  "modelSettings": {
+    "title": "Pengaturan Model - {{modelId}}",
+    "description": "Konfigurasikan pengaturan model untuk mengoptimalkan kinerja dan perilaku."
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Ubah Lokasi Folder Data",
+      "description": "Apakah Anda yakin ingin mengubah lokasi folder data? Ini akan memindahkan semua data Anda ke lokasi baru dan memulai ulang aplikasi.",
+      "currentLocation": "Lokasi Saat Ini:",
+      "newLocation": "Lokasi Baru:",
+      "cancel": "Batal",
+      "changeLocation": "Ubah Lokasi"
+    },
+    "deleteAllThreads": {
+      "title": "Hapus Semua Utas",
+      "description": "Semua utas akan dihapus. Tindakan ini tidak dapat dibatalkan."
+    },
+    "deleteThread": {
+      "description": "Apakah Anda yakin ingin menghapus thread ini? Tindakan ini tidak dapat dibatalkan."
+    },
+    "editMessage": {
+      "title": "Edit Pesan"
+    },
+    "messageMetadata": {
+      "title": "Metadata Pesan"
+    }
+  },
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Semua Utas Batal Difavoritkan",
+      "description": "Semua utas telah dihapus dari favorit Anda."
+    },
+    "deleteAllThreads": {
+      "title": "Hapus Semua Utas",
+      "description": "Semua utas telah dihapus secara permanen."
+    },
+    "renameThread": {
+      "title": "Ubah Nama Utas",
+      "description": "Judul utas telah diubah menjadi '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Hapus Utas",
+      "description": "Utas ini telah dihapus secara permanen."
+    },
+    "editMessage": {
+      "title": "Edit Pesan",
+      "description": "Pesan berhasil diedit. Silakan tunggu model merespons."
+    },
+    "appUpdateDownloaded": {
+      "title": "Pembaruan Aplikasi Diunduh",
+      "description": "Pembaruan aplikasi telah berhasil diunduh."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Gagal Mengunduh Pembaruan Aplikasi",
+      "description": "Gagal mengunduh pembaruan aplikasi. Silakan coba lagi."
+    },
+    "downloadComplete": {
+      "title": "Unduhan Selesai",
+      "description": "{{item}} telah diunduh"
+    },
+    "downloadCancelled": {
+      "title": "Unduhan Dibatalkan",
+      "description": "Proses unduhan telah dibatalkan"
+    },
+    "downloadFailed": {
+      "title": "Unduhan Gagal",
+      "description": "Unduhan {{item}} gagal"
+    },
+    "modelValidationStarted": {
+      "title": "Memvalidasi Model",
+      "description": "Model \"{{modelId}}\" berhasil diunduh. Memverifikasi integritas..."
+    },
+    "modelValidationFailed": {
+      "title": "Validasi Model Gagal",
+      "description": "Model yang diunduh \"{{modelId}}\" gagal verifikasi integritas dan telah dihapus. File mungkin rusak atau telah dimanipulasi."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Unduhan Selesai",
+      "description": "Model \"{{item}}\" berhasil diunduh dan diverifikasi"
+    },
+    "projectCreated": {
+      "title": "Proyek Dibuat",
+      "description": "Proyek \"{{projectName}}\" berhasil dibuat"
+    },
+    "projectRenamed": {
+      "title": "Proyek Diganti Nama",
+      "description": "Proyek diganti nama dari \"{{oldName}}\" ke \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Proyek Dihapus",
+      "description": "Proyek \"{{projectName}}\" berhasil dihapus"
+    },
+    "projectAlreadyExists": {
+      "title": "Proyek Sudah Ada",
+      "description": "Proyek \"{{projectName}}\" sudah ada"
+    },
+    "projectDeleteFailed": {
+      "title": "Penghapusan Gagal",
+      "description": "Gagal menghapus proyek. Silakan coba lagi."
+    },
+    "threadAssignedToProject": {
+      "title": "Thread Ditugaskan",
+      "description": "Thread berhasil ditugaskan ke \"{{projectName}}\""
+    },
+    "threadRemovedFromProject": {
+      "title": "Thread Dihapus",
+      "description": "Thread berhasil dihapus dari \"{{projectName}}\""
+    }
+  },
+  "projects": {
+    "title": "Proyek",
+    "addProject": "Tambah Proyek",
+    "addToProject": "Tambahkan ke proyek",
+    "removeFromProject": "Hapus dari proyek",
+    "createNewProject": "Buat Proyek Baru",
+    "editProject": "Edit Proyek",
+    "deleteProject": "Hapus Proyek",
+    "projectName": "Nama Proyek",
+    "enterProjectName": "Masukkan nama proyek...",
+    "noProjectsAvailable": "Tidak ada proyek tersedia",
+    "noProjectsYet": "Belum Ada Proyek",
+    "noProjectsYetDesc": "Mulai proyek baru dengan mengklik tombol Tambah Proyek.",
+    "projectNotFound": "Proyek Tidak Ditemukan",
+    "projectNotFoundDesc": "Proyek yang Anda cari tidak ada atau telah dihapus.",
+    "deleteProjectDialog": {
+      "title": "Hapus Proyek",
+      "permanentDelete": "Ini akan menghapus semua utas secara permanen.",
+      "permanentDeleteWarning": "Tindakan ini akan menghapus SEMUA utas dalam proyek secara permanen!",
+      "deleteEmptyProject": "Tindakan ini akan menghapus proyek \"{{projectName}}\".",
+      "saveThreadsAdvice": "Untuk menyimpan utas, pindahkan ke daftar utas Anda atau proyek lain sebelum menghapus.",
+      "starredWarning": "Anda masih memiliki utas yang dibintangi dalam proyek.",
+      "description": "Apakah Anda yakin ingin menghapus proyek ini? Tindakan ini tidak dapat dibatalkan.",
+      "deleteButton": "Hapus",
+      "successWithName": "Proyek \"{{projectName}}\" berhasil dihapus",
+      "successWithoutName": "Proyek berhasil dihapus",
+      "error": "Gagal menghapus proyek. Silakan coba lagi.",
+      "ariaLabel": "Hapus {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Buat Proyek Baru",
+      "editTitle": "Edit Proyek",
+      "nameLabel": "Nama Proyek",
+      "namePlaceholder": "Masukkan nama proyek...",
+      "createButton": "Buat",
+      "updateButton": "Perbarui",
+      "alreadyExists": "Proyek \"{{projectName}}\" sudah ada",
+      "createSuccess": "Proyek \"{{projectName}}\" berhasil dibuat",
+      "renameSuccess": "Proyek diubah dari \"{{oldName}}\" menjadi \"{{newName}}\""
+    },
+    "noConversationsIn": "Tidak Ada Percakapan di {{projectName}}",
+    "startNewConversation": "Mulai percakapan baru dengan {{projectName}} di bawah",
+    "conversationsIn": "Percakapan di {{projectName}}",
+    "conversationsDescription": "Klik percakapan mana pun untuk melanjutkan chatting, atau mulai yang baru di bawah.",
+    "thread": "utas",
+    "threads": "utas",
+    "updated": "Diperbarui:",
+    "collapseProject": "Tutup proyek",
+    "expandProject": "Buka proyek",
+    "update": "Perbarui",
+    "searchProjects": "Cari proyek...",
+    "noProjectsFound": "Tidak ada proyek ditemukan",
+    "tryDifferentSearch": "Coba kata kunci pencarian lain"
+  }
+}

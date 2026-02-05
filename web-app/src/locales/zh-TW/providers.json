@@ -1,0 +1,62 @@
+{
+  "refreshModelsError": "提供者必須設定基本 URL 和 API 金鑰才能擷取模型。",
+  "refreshModelsSuccess": "已從 {{provider}} 新增 {{count}} 個新模型。",
+  "noNewModels": "找不到新模型。所有可用的模型都已新增。",
+  "refreshModelsFailed": "從 {{provider}} 擷取模型失敗。請檢查您的 API 金鑰和基本 URL。",
+  "models": "模型",
+  "refreshing": "重新整理中...",
+  "refresh": "重新整理",
+  "import": "匯入",
+  "importModelSuccess": "模型 {{provider}} 已成功匯入。",
+  "importModelError": "匯入模型失敗：",
+  "stop": "停止",
+  "start": "開始",
+  "noModelFound": "找不到模型",
+  "noModelFoundDesc": "可用的模型將會在此處列出。如果您還沒有任何模型，請前往中心下載。",
+  "configuration": "設定",
+  "apiEndpoint": "API 端點",
+  "testConnection": "測試連線",
+  "addModel": {
+    "title": "新增模型",
+    "description": "將新模型新增至 {{provider}} 提供者。",
+    "modelId": "模型 ID",
+    "enterModelId": "輸入模型 ID",
+    "exploreModels": "查看 {{provider}} 的模型清單",
+    "addModel": "新增模型",
+    "modelExists": "模型已存在",
+    "modelExistsDesc": "請選擇不同的模型 ID。"
+  },
+  "deleteModel": {
+    "title": "刪除模型：{{modelId}}",
+    "description": "您確定要刪除此模型嗎？此操作無法復原。",
+    "success": "模型 {{modelId}} 已永久刪除。",
+    "cancel": "取消",
+    "delete": "刪除"
+  },
+  "deleteProvider": {
+    "title": "刪除提供者",
+    "description": "刪除此提供者及其所有模型。此操作無法復原。",
+    "success": "提供者 {{provider}} 已永久刪除。",
+    "confirmTitle": "刪除提供者：{{provider}}",
+    "confirmDescription": "您確定要刪除此提供者嗎？此操作無法復原。",
+    "cancel": "取消",
+    "delete": "刪除"
+  },
+  "editModel": {
+    "title": "編輯模型：{{modelId}}",
+    "description": "透過切換以下選項來設定模型功能。",
+    "capabilities": "功能",
+    "tools": "工具",
+    "vision": "視覺",
+    "proactive": "主動模式（實驗性）",
+    "embeddings": "嵌入",
+    "notAvailable": "尚不可用",
+    "warning": {
+      "title": "請謹慎操作",
+      "description": "修改模型功能可能會影響效能和功能。錯誤的設定可能導致意外行為或錯誤。"
+    }
+  },
+  "addProvider": "新增提供者",
+  "addOpenAIProvider": "新增 OpenAI 提供者",
+  "enterNameForProvider": "輸入提供者名稱"
+}

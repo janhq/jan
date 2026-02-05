@@ -1,0 +1,146 @@
+[package]
+name = "Jan"
+version = "0.6.599"
+description = "Use offline LLMs with your own data. Run open source models like Llama2 or Falcon on your internal computers/servers."
+authors = ["Jan <service@jan.ai>"]
+license = "MIT"
+repository = "https://github.com/janhq/jan"
+edition = "2021"
+rust-version = "1.77.2"
+resolver = "2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+default = [
+    "tauri/wry",
+    "tauri/common-controls-v6",
+    "tauri/x11",
+    "tauri/protocol-asset",
+    "tauri/macos-private-api",
+    "tauri/tray-icon",
+    "tauri/test",
+    "tauri/custom-protocol",
+    "desktop",
+]
+hardware = ["dep:tauri-plugin-hardware"]
+deep-link = ["dep:tauri-plugin-deep-link"]
+desktop = [
+    "deep-link",
+    "hardware"
+]
+mobile = [
+    "tauri/protocol-asset",
+    "tauri/test",
+    "tauri/wry",
+    "dep:sqlx",
+]
+test-tauri = [
+    "tauri/wry",
+    "tauri/x11",
+    "tauri/protocol-asset",
+    "tauri/macos-private-api",
+    "tauri/tray-icon",
+    "tauri/test",
+    "desktop",
+]
+
+[build-dependencies]
+tauri-build = { version = "2.0.2", features = [] }
+
+[dependencies]
+dirs = "6.0.0"
+env = "1.0.1"
+fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
+flate2 = "1.0"
+futures-util = "0.3.31"
+hyper = { version = "0.14", features = ["server"] }
+jan-utils = { path = "./utils" }
+libloading = "0.8.7"
+log = "0.4"
+rmcp = { version = "0.8.5", features = [
+    "client",
+    "transport-sse-client",
+    "transport-sse-client-reqwest",
+    "transport-streamable-http-client",
+    "transport-streamable-http-client-reqwest",
+    "transport-child-process",
+    "tower",
+    "reqwest",
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9.34"
+tar = "0.4"
+zip = "0.6"
+tauri-plugin-deep-link = { version = "2", optional = true }
+tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = true }
+tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp" }
+tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db" }
+tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag" }
+tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
+tauri-plugin-log = "2.0.0-rc"
+tauri-plugin-opener = "2.2.7"
+tauri-plugin-os = "2.2.1"
+tauri-plugin-shell = "2.2.0"
+tauri-plugin-store = "2"
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"], optional = true }
+thiserror = "2.0.12"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7.14"
+url = "2.5"
+uuid = { version = "1.7", features = ["v4"] }
+rfd = { version = "0.15.4", default-features = false, features = [
+  "tokio",
+  "xdg-portal",
+  "common-controls-v6",
+] }
+chrono = { version = "0.4", features = ["serde"] }
+hostname = "0.4"
+glob = "0.3"
+
+[dependencies.tauri]
+version = "2.8.5"
+default-features = false
+features = ["protocol-asset", "macos-private-api", "test"]
+
+[target.'cfg(windows)'.dev-dependencies]
+tempfile = "3.20.0"
+
+[target.'cfg(unix)'.dependencies]
+nix = "=0.30.1"
+
+[target.'cfg(windows)'.dependencies]
+libc = "0.2.172"
+windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+reqwest = { version = "0.11", features = ["json", "blocking", "stream", "native-tls-vendored"] }
+tauri-plugin-updater = "2"
+once_cell = "1.18"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+reqwest = { version = "0.11", features = ["json", "blocking", "stream", "rustls-tls"], default-features = false }
+tauri-plugin-dialog = { version = "2.2.1", default-features = false }
+tauri-plugin-http = { version = "2", default-features = false }
+tauri-plugin-log = { version = "2.0.0-rc", default-features = false }
+tauri-plugin-opener = { version = "2.2.7", default-features = false }
+tauri-plugin-os = { version = "2.2.1", default-features = false }
+tauri-plugin-shell = { version = "2.2.0", default-features = false }
+tauri-plugin-store = { version = "2", default-features = false }
+
+# Release profile optimizations for minimal binary size
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = "fat"         # Aggressive Link Time Optimization
+strip = "symbols"   # Strip debug symbols for smaller binary
+codegen-units = 1   # Reduce parallel codegen for better optimization
+panic = "abort"     # Don't unwind on panic, saves space
+overflow-checks = false  # Disable overflow checks for size
+debug = false       # No debug info
+debug-assertions = false  # No debug assertions
+incremental = false # Disable incremental compilation for release
+rpath = false       # Don't include rpath

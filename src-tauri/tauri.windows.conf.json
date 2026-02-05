@@ -1,0 +1,13 @@
+{
+  "bundle": {
+    "targets": ["nsis", "msi"],
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE"],
+    "externalBin": ["resources/bin/bun", "resources/bin/uv"],
+    "windows": {
+      "webviewInstallMode": {
+        "silent": true,
+        "type": "downloadBootstrapper"
+      }
+    }
+  }
+}

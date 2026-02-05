@@ -1,0 +1,46 @@
+{
+  "get-started-separator": {
+    "title": "Get started",
+    "type": "separator"
+  },
+  "index": "Overview",
+  "quickstart": "Quickstart",
+  "install": "Install 👋 Jan",
+  "jan-models": "Models",
+  "remote-models": "Cloud Providers",
+  "mcp-examples": "Tutorials",
+  "coreconcepts-separator": {
+    "title": "Core concepts",
+    "type": "separator"
+  },
+  "assistants": "Assistants",
+  "llama-cpp": "Local AI Engine",
+  "model-parameters": "Model Parameters",
+  "privacy-policy": {
+    "type": "page",
+    "display": "hidden",
+    "title": "Privacy Policy"
+  },
+  "advanced-separator": {
+    "title": "ADVANCED",
+    "type": "separator"
+  },
+  "manage-models": "Manage Models",
+  "mcp": "Model Context Protocol",
+  "localserver": {
+    "title": "LOCAL SERVER",
+    "type": "separator"
+  },
+  "api-server": "Server Setup",
+  "llama-cpp-server": "LlamaCpp Server",
+  "server-settings": "Server Settings",
+  "server-troubleshooting": "Server Troubleshooting",
+  "server-examples": "Integrations",
+  "reference-separator": {
+    "title": "REFERENCE",
+    "type": "separator"
+  },
+  "settings": "Settings",
+  "data-folder": "Jan Data Folder",
+  "troubleshooting": "Troubleshooting"
+}

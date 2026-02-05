@@ -1,0 +1,12 @@
+{
+  "title": "Yêu cầu gọi công cụ",
+  "description": "Trợ lý muốn sử dụng công cụ: <strong>{{toolName}}</strong>",
+  "securityNotice": "<strong>Thông báo bảo mật:</strong> Các công cụ độc hại hoặc nội dung cuộc trò chuyện có khả năng lừa trợ lý thực hiện các hành động có hại. Hãy xem xét kỹ từng lệnh gọi công cụ trước khi phê duyệt.",
+  "deny": "Từ chối",
+  "allowOnce": "Cho phép một lần",
+  "alwaysAllow": "Cho phép trong chuỗi",
+  "permissions": "Quyền",
+  "approve": "Phê duyệt",
+  "reject": "Từ chối",
+  "parameters": "Tham số công cụ"
+}

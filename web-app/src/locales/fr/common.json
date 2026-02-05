@@ -1,0 +1,380 @@
+{
+  "assistants": "Assistants",
+  "hardware": "Matériel",
+  "mcp-servers": "Serveurs MCP",
+  "local_api_server": "Serveur Local API",
+  "https_proxy": "Mandataire Proxy HTTPS",
+  "extensions": "Extensions",
+  "attachments": "Pièces jointes",
+  "general": "Général",
+  "settings": "Configurations",
+  "modelProviders": "Fournisseurs de Modèles",
+  "interface": "Interface",
+  "privacy": "Confidentialité",
+  "keyboardShortcuts": "Raccourcis Clavier",
+  "newChat": "Nouvelle discussion",
+  "favorites": "Favoris",
+  "recents": "Récents",
+  "hub": "Concentrateur Hub",
+  "helpSupport": "Aide & Support",
+  "helpUsImproveJan": "Aidez-nous à améliorer Jan",
+  "unstarAll": "Enlever toutes les étoiles",
+  "unstar": "Désélectionner",
+  "deleteAll": "Tout supprimer",
+  "star": "Étoile",
+  "rename": "Renommer",
+  "delete": "Supprimer",
+  "copied": "Copié!",
+  "dataFolder": "Dossier données",
+  "others": "Autre",
+  "language": "Langage",
+  "login": "Connexion",
+  "loginWith": "Connexion avec {{provider}}",
+  "loginFailed": "Échec de la connexion",
+  "logout": "Déconnexion",
+  "loggingOut": "Déconnexion en cours...",
+  "loggedOut": "Déconnexion réussie",
+  "logoutFailed": "Échec de la déconnexion",
+  "profile": "Profil",
+  "reset": "Réinitialiser",
+  "search": "Rechercher",
+  "name": "Nom",
+  "cancel": "Annuler",
+  "create": "Créer",
+  "save": "Sauvegarder",
+  "edit": "Modifier",
+  "copy": "Copier",
+  "back": "Retour",
+  "close": "Fermer",
+  "next": "Suivant",
+  "finish": "Terminer",
+  "skip": "Passer",
+  "allow": "Autoriser",
+  "deny": "Refuser",
+  "start": "Démarrer",
+  "stop": "Arrêter",
+  "preview": "Aperçu",
+  "compactWidth": "Largeur compacte",
+  "fullWidth": "Pleine largeur",
+  "dark": "Sombre",
+  "light": "Clair",
+  "system": "Système",
+  "auto": "Auto",
+  "english": "Anglais",
+  "medium": "Moyen",
+  "newThread": "Nouvelle discussion",
+  "noResultsFound": "Aucun résultat trouvé",
+  "noThreadsYet": "Aucune discussion pour le moment",
+  "noThreadsYetDesc": "Commencez une nouvelle conversation pour voir l'historique de vos discussions ici.",
+  "downloads": "Téléchargements",
+  "downloading": "Téléchargement en cours",
+  "cancelDownload": "Annuler le téléchargement",
+  "downloadCancelled": "Téléchargement annulé",
+  "downloadComplete": "Téléchargement terminé",
+  "thinking": "Réflexion...",
+  "thought": "Pensée",
+  "callingTool": "Appel de l'outil",
+  "completed": "Terminé",
+  "image": "Image",
+  "vision": "Vision",
+  "embeddings": "Embeddings",
+  "tools": "Outils",
+  "webSearch": "Recherche Web",
+  "reasoning": "Raisonnement",
+  "proactive": "Proactif",
+  "selectAModel": "Sélectionnez un modèle",
+  "noToolsAvailable": "Aucun outil disponible",
+  "noModelsFoundFor": "Aucun modèle trouvé pour \"{{searchValue}}\"",
+  "failedToLoadModels": "Échec du chargement des modèles",
+  "noModels": "Aucun modèle trouvé",
+  "customAvatar": "Avatar personnalisé",
+  "editAssistant": "Modifier l'assistant",
+  "jan": "Jan",
+  "metadata": "Métadonnées",
+  "regenerate": "Régénérer",
+  "threadImage": "Image de la discussion",
+  "editMessage": "Modifier le message",
+  "deleteMessage": "Supprimer le message",
+  "deleteThread": "Supprimer la discussion",
+  "renameThread": "Renommer la discussion",
+  "threadTitle": "Titre de la discussion",
+  "deleteAllThreads": "Supprimer toutes les discussions",
+  "allThreadsUnfavorited": "Toutes les discussions retirées des favoris",
+  "deleteAllThreadsConfirm": "Êtes-vous sûr de vouloir supprimer toutes les discussions ? Cette action ne peut pas être annulée.",
+  "addProvider": "Ajouter un fournisseur",
+  "addOpenAIProvider": "Ajouter un fournisseur OpenAI",
+  "enterNameForProvider": "Entrez un nom pour votre fournisseur",
+  "providerAlreadyExists": "Un fournisseur avec le nom \"{{name}}\" existe déjà. Veuillez choisir un nom différent.",
+  "adjustFontSize": "Ajuster la taille de la police",
+  "changeLanguage": "Changer de langue",
+  "editTheme": "Modifier le thème",
+  "editCodeBlockStyle": "Modifier le style du bloc de code",
+  "editServerHost": "Modifier l'hôte du serveur",
+  "pickColorWindowBackground": "Choisir la couleur de l'arrière-plan de la fenêtre",
+  "pickColorAppMainView": "Choisir la couleur de la vue principale de l'application",
+  "pickColorAppPrimary": "Choisir la couleur principale de l'application",
+  "pickColorAppAccent": "Choisir la couleur d'accentuation de l'application",
+  "pickColorAppDestructive": "Choisir la couleur destructive de l'application",
+  "apiKeyRequired": "La clé API est requise",
+  "enterTrustedHosts": "Entrez les hôtes de confiance",
+  "placeholder": {
+    "chatInput": "Demandez-moi n'importe quoi..."
+  },
+  "confirm": "Confirmer",
+  "continue": "Continuer",
+  "loading": "Chargement...",
+  "error": "Erreur",
+  "success": "Succès",
+  "warning": "Avertissement",
+  "conversationNotAvailable": "Conversation non disponible",
+  "conversationNotAvailableDescription": "La conversation que vous essayez d'accéder n'est pas disponible ou a été supprimée.",
+  "temporaryChat": "Discussion temporaire",
+  "temporaryChatTooltip": "La discussion temporaire n'apparaîtra pas dans votre historique",
+  "noResultsFoundDesc": "Nous n'avons trouvé aucune discussion correspondant à votre recherche. Essayez un autre mot-clé.",
+  "searchModels": "Rechercher des modèles...",
+  "searchStyles": "Rechercher des styles...",
+  "createAssistant": "Créer un assistant",
+  "enterApiKey": "Entrez la clé API",
+  "scrollToBottom": "Faire défiler vers le bas",
+  "generateAiResponse": "Générer une réponse de l'IA",
+  "addModel": {
+    "title": "Ajouter un modèle",
+    "modelId": "ID du modèle",
+    "enterModelId": "Entrez l'ID du modèle",
+    "addModel": "Ajouter un modèle",
+    "description": "Ajouter un nouveau modèle au fournisseur",
+    "exploreModels": "Voir la liste des modèles du fournisseur"
+  },
+  "mcpServers": {
+    "editServer": "Modifier le serveur",
+    "addServer": "Ajouter un serveur",
+    "serverName": "Nom du serveur",
+    "enterServerName": "Entrez le nom du serveur",
+    "command": "Commande",
+    "enterCommand": "Entrez la commande",
+    "arguments": "Arguments",
+    "argument": "Argument {{index}}",
+    "envVars": "Variables d'environnement",
+    "key": "Clé",
+    "value": "Valeur",
+    "save": "Sauvegarder"
+  },
+  "deleteServer": {
+    "title": "Supprimer le serveur",
+    "delete": "Supprimer"
+  },
+  "editJson": {
+    "errorParse": "Échec de l'analyse JSON",
+    "errorPaste": "Échec du collage JSON",
+    "errorFormat": "Format JSON invalide",
+    "titleAll": "Modifier la configuration de tous les serveurs",
+    "placeholder": "Entrez la configuration JSON...",
+    "save": "Sauvegarder"
+  },
+  "editModel": {
+    "title": "Modifier le modèle : {{modelId}}",
+    "description": "Configurez les capacités du modèle en activant/désactivant les options ci-dessous.",
+    "capabilities": "Capacités",
+    "tools": "Outils",
+    "vision": "Vision",
+    "embeddings": "Embeddings",
+    "notAvailable": "Pas encore disponible"
+  },
+  "outOfContextError": {
+    "truncateInput": "Tronquer l'entrée",
+    "title": "Erreur de contexte dépassé",
+    "description": "Cette discussion atteint la limite de mémoire de l'IA, comme un tableau blanc qui se remplit. Nous pouvons étendre la fenêtre de mémoire (appelée taille de contexte) pour qu'elle se souvienne de plus, mais cela peut utiliser plus de mémoire de votre ordinateur. Nous pouvons également tronquer l'entrée, ce qui signifie qu'elle oubliera une partie de l'historique de la discussion pour faire de la place aux nouveaux messages.",
+    "increaseContextSizeDescription": "Voulez-vous augmenter la taille du contexte ?",
+    "increaseContextSize": "Augmenter la taille du contexte"
+  },
+  "toolApproval": {
+    "title": "Demande d'autorisation d'outil",
+    "description": "L'assistant veut utiliser <strong>{{toolName}}</strong>",
+    "securityNotice": "N'autorisez que les outils auxquels vous faites confiance. Les outils peuvent accéder à votre système et à vos données.",
+    "deny": "Refuser",
+    "allowOnce": "Autoriser une fois",
+    "alwaysAllow": "Toujours autoriser"
+  },
+  "deleteModel": {
+    "title": "Supprimer le modèle : {{modelId}}",
+    "description": "Êtes-vous sûr de vouloir supprimer ce modèle ? Cette action ne peut pas être annulée.",
+    "success": "Le modèle {{modelId}} a été supprimé définitivement.",
+    "cancel": "Annuler",
+    "delete": "Supprimer"
+  },
+  "deleteProvider": {
+    "title": "Supprimer le fournisseur",
+    "description": "Supprimer ce fournisseur et tous ses modèles. Cette action ne peut pas être annulée.",
+    "success": "Le fournisseur {{provider}} a été supprimé définitivement.",
+    "confirmTitle": "Supprimer le fournisseur : {{provider}}",
+    "confirmDescription": "Êtes-vous sûr de vouloir supprimer ce fournisseur ? Cette action ne peut pas être annulée.",
+    "cancel": "Annuler",
+    "delete": "Supprimer"
+  },
+  "modelSettings": {
+    "title": "Paramètres du modèle - {{modelId}}",
+    "description": "Configurez les paramètres du modèle pour optimiser les performances et le comportement."
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Changer l'emplacement du dossier de données",
+      "description": "Êtes-vous sûr de vouloir changer l'emplacement du dossier de données ? Cela déplacera toutes vos données vers le nouvel emplacement et redémarrera l'application.",
+      "currentLocation": "Emplacement actuel :",
+      "newLocation": "Nouvel emplacement :",
+      "cancel": "Annuler",
+      "changeLocation": "Changer l'emplacement"
+    },
+    "deleteAllThreads": {
+      "title": "Supprimer toutes les discussions",
+      "description": "Toutes les discussions seront supprimées. Cette action ne peut pas être annulée."
+    },
+    "deleteThread": {
+      "description": "Êtes-vous sûr de vouloir supprimer cette discussion ? Cette action ne peut pas être annulée."
+    },
+    "editMessage": {
+      "title": "Modifier le message"
+    },
+    "messageMetadata": {
+      "title": "Métadonnées du message"
+    }
+  },
+  "projects": {
+    "title": "Projets",
+    "addProject": "Ajouter un projet",
+    "addToProject": "Ajouter au projet",
+    "removeFromProject": "Retirer du projet",
+    "createNewProject": "Créer un nouveau projet",
+    "editProject": "Modifier le projet",
+    "deleteProject": "Supprimer le projet",
+    "projectName": "Nom du projet",
+    "enterProjectName": "Entrez le nom du projet...",
+    "noProjectsAvailable": "Aucun projet disponible",
+    "noProjectsYet": "Aucun projet pour le moment",
+    "noProjectsYetDesc": "Commencez un nouveau projet en cliquant sur le bouton Ajouter un projet.",
+    "projectNotFound": "Projet non trouvé",
+    "projectNotFoundDesc": "Le projet que vous recherchez n'existe pas ou a été supprimé.",
+    "deleteProjectDialog": {
+      "title": "Supprimer le projet",
+      "permanentDelete": "Cela supprimera définitivement toutes les discussions.",
+      "permanentDeleteWarning": "Cette action supprimera définitivement TOUTES les discussions au sein du projet !",
+      "deleteEmptyProject": "Cette action supprimera le projet \"{{projectName}}\".",
+      "saveThreadsAdvice": "Pour sauvegarder les discussions, déplacez-les vers votre liste de discussions ou un autre projet avant de les supprimer.",
+      "starredWarning": "Vous avez encore des discussions favorites dans le projet.",
+      "deleteButton": "Supprimer",
+      "successWithName": "Le projet \"{{projectName}}\" a été supprimé avec succès",
+      "successWithoutName": "Projet supprimé avec succès",
+      "error": "Échec de la suppression du projet. Veuillez réessayer.",
+      "ariaLabel": "Supprimer {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Créer un nouveau projet",
+      "editTitle": "Modifier le projet",
+      "nameLabel": "Nom du projet",
+      "namePlaceholder": "Entrez le nom du projet...",
+      "createButton": "Créer",
+      "updateButton": "Mettre à jour",
+      "alreadyExists": "Le projet \"{{projectName}}\" existe déjà",
+      "createSuccess": "Le projet \"{{projectName}}\" a été créé avec succès",
+      "renameSuccess": "Projet renommé de \"{{oldName}}\" en \"{{newName}}\""
+    },
+    "noConversationsIn": "Aucune conversation dans {{projectName}}",
+    "startNewConversation": "Commencez une nouvelle conversation avec {{projectName}} ci-dessous",
+    "conversationsIn": "Conversations dans {{projectName}}",
+    "conversationsDescription": "Cliquez sur n'importe quelle conversation pour continuer à discuter, ou commencez-en une nouvelle ci-dessous.",
+    "thread": "discussion",
+    "threads": "discussions",
+    "updated": "Mis à jour :",
+    "collapseProject": "Réduire le projet",
+    "expandProject": "Développer le projet",
+    "update": "Mettre à jour",
+    "searchProjects": "Rechercher des projets...",
+    "noProjectsFound": "Aucun projet trouvé",
+    "tryDifferentSearch": "Essayez un autre terme de recherche"
+  },
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Toutes les discussions retirées des favoris",
+      "description": "Toutes les discussions ont été retirées de vos favoris."
+    },
+    "deleteAllThreads": {
+      "title": "Supprimer toutes les discussions",
+      "description": "Toutes les discussions ont été supprimées définitivement."
+    },
+    "renameThread": {
+      "title": "Renommer la discussion",
+      "description": "Le titre de la discussion a été renommé en '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Supprimer la discussion",
+      "description": "Cette discussion a été supprimée définitivement."
+    },
+    "editMessage": {
+      "title": "Modifier le message",
+      "description": "Message modifié avec succès. Veuillez attendre la réponse du modèle."
+    },
+    "appUpdateDownloaded": {
+      "title": "Mise à jour de l'application téléchargée",
+      "description": "La mise à jour de l'application a été téléchargée avec succès."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Échec du téléchargement de la mise à jour de l'application",
+      "description": "Échec du téléchargement de la mise à jour de l'application. Veuillez réessayer."
+    },
+    "downloadComplete": {
+      "title": "Téléchargement terminé",
+      "description": "{{item}} a été téléchargé"
+    },
+    "downloadCancelled": {
+      "title": "Téléchargement annulé",
+      "description": "Le processus de téléchargement a été annulé"
+    },
+    "downloadFailed": {
+      "title": "Échec du téléchargement",
+      "description": "Le téléchargement de {{item}} a échoué"
+    },
+    "modelValidationStarted": {
+      "title": "Validation du modèle",
+      "description": "Modèle \"{{modelId}}\" téléchargé avec succès. Vérification de l'intégrité..."
+    },
+    "modelValidationFailed": {
+      "title": "Échec de la validation du modèle",
+      "description": "Le modèle téléchargé \"{{modelId}}\" a échoué à la vérification d'intégrité et a été supprimé. Le fichier peut être corrompu ou altéré."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Téléchargement terminé",
+      "description": "Le modèle \"{{item}}\" a été téléchargé et vérifié avec succès"
+    },
+    "projectCreated": {
+      "title": "Projet créé",
+      "description": "Le projet \"{{projectName}}\" a été créé avec succès"
+    },
+    "projectRenamed": {
+      "title": "Projet renommé",
+      "description": "Projet renommé de \"{{oldName}}\" en \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Projet supprimé",
+      "description": "Le projet \"{{projectName}}\" a été supprimé avec succès"
+    },
+    "projectAlreadyExists": {
+      "title": "Le projet existe déjà",
+      "description": "Le projet \"{{projectName}}\" existe déjà"
+    },
+    "projectDeleteFailed": {
+      "title": "Échec de la suppression",
+      "description": "Échec de la suppression du projet. Veuillez réessayer."
+    },
+    "threadAssignedToProject": {
+      "title": "Discussion assignée",
+      "description": "Discussion assignée à \"{{projectName}}\" avec succès"
+    },
+    "threadRemovedFromProject": {
+      "title": "Discussion retirée",
+      "description": "Discussion retirée de \"{{projectName}}\" avec succès"
+    }
+  },
+  "attachmentInjectedIndicator": "Injecté dans la discussion",
+  "attachmentEmbeddedIndicator": "Intégré pour RAG",
+  "viewInjectedContent": "Voir le contenu injecté",
+  "injectedContentTitle": "Contenu du fichier injecté"
+}

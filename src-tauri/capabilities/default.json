@@ -1,0 +1,64 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://*"]
+  },
+  "permissions": [
+    "core:default",
+    "core:webview:allow-set-webview-zoom",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-theme",
+    "shell:allow-spawn",
+    "shell:allow-open",
+    "core:app:allow-set-app-theme",
+    "core:window:allow-set-focus",
+    "os:default",
+    "opener:default",
+    "log:default",
+    "core:webview:allow-create-webview-window",
+    "opener:allow-open-url",
+    "store:default",
+    "vector-db:default",
+    "rag:default",
+    "hardware:default",
+    "deep-link:default",
+    "llamacpp:default",
+    "updater:default",
+    "updater:allow-check",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://*:*"
+        },
+        {
+          "url": "http://*:*"
+        }
+      ],
+      "deny": []
+    },
+    {
+      "identifier": "shell:allow-execute",
+      "allow": []
+    },
+    {
+      "identifier": "opener:allow-open-url",
+      "description": "opens the default permissions for the core module",
+      "windows": ["*"],
+      "allow": [
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "http://127.0.0.1:*"
+        },
+        {
+          "url": "http://0.0.0.0:*"
+        }
+      ]
+    }
+  ]
+}

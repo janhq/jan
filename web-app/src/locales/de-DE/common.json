@@ -1,0 +1,376 @@
+{
+  "assistants": "Assistenten",
+  "hardware": "Hardware",
+  "mcp-servers": "Mcp Server",
+  "local_api_server": "Lokaler API Server",
+  "https_proxy": "HTTPS Proxy",
+  "extensions": "Erweiterungen",
+  "general": "Allgemein",
+  "settings": "Einstellungen",
+  "modelProviders": "Modell Anbieter",
+  "interface": "Erscheinung",
+  "privacy": "Privatsphäre",
+  "keyboardShortcuts": "Shortcuts",
+  "newChat": "Neuer Chat",
+  "favorites": "Favoriten",
+  "recents": "Kürzlich",
+  "hub": "Hub",
+  "helpSupport": "Hilfe & Support",
+  "helpUsImproveJan": "Hilf uns Jan zu verbessern",
+  "unstarAll": "Alle De-Favorisieren",
+  "unstar": "De-Favorisieren",
+  "deleteAll": "Alles löschen",
+  "star": "Favorisieren",
+  "rename": "Umbenennen",
+  "delete": "Löschen",
+  "copied": "Kopiert!",
+  "dataFolder": "Daten Ordner",
+  "others": "Andere",
+  "language": "Sprache",
+  "login": "Anmelden",
+  "loginWith": "Anmelden mit {{provider}}",
+  "loginFailed": "Anmeldung fehlgeschlagen",
+  "logout": "Abmelden",
+  "loggingOut": "Melde ab...",
+  "loggedOut": "Erfolgreich abgemeldet",
+  "logoutFailed": "Abmeldung fehlgeschlagen",
+  "profile": "Profil",
+  "reset": "Zurücksetzen",
+  "search": "Suchen",
+  "name": "Name",
+  "cancel": "Abbrechen",
+  "create": "Anlegen",
+  "save": "Speichern",
+  "edit": "Editieren",
+  "copy": "Kopieren",
+  "back": "Zurück",
+  "close": "Schließen",
+  "next": "Nächster",
+  "finish": "Abschließen",
+  "skip": "Überspringen",
+  "allow": "Erlauben",
+  "deny": "Verbieten",
+  "start": "Start",
+  "stop": "Stop",
+  "preview": "Vorschau",
+  "compactWidth": "Kompakte Breite",
+  "fullWidth": "Volle Breite",
+  "dark": "Dunkel",
+  "light": "Hell",
+  "system": "System",
+  "auto": "Automatisch",
+  "english": "Englisch",
+  "medium": "Medium",
+  "newThread": "Neuer Thread",
+  "noResultsFound": "Keine Ergebnisse gefunden",
+  "noThreadsYet": "Keine Threads bisher",
+  "noThreadsYetDesc": "Starte eine neue Unterhaltung, um deinen Threadverlauf hier anzuzeigen.",
+  "downloads": "Downloads",
+  "downloading": "Downloading",
+  "cancelDownload": "Download abbrechen",
+  "downloadCancelled": "Download wurde abgebrochen",
+  "downloadComplete": "Download abgeschlossen",
+  "thinking": "Denke nach...",
+  "thought": "Gedanke",
+  "callingTool": "Rufe Werkzeug auf",
+  "completed": "Abgeschlossen",
+  "image": "Bild",
+  "vision": "Vision",
+  "embeddings": "Einbettungen",
+  "tools": "Werkzeuge",
+  "webSearch": "Web Suche",
+  "reasoning": "Argumentation",
+  "proactive": "Proaktiv",
+  "selectAModel": "Wähle ein Modell",
+  "noToolsAvailable": "Keine Werkzeuge verfügbar",
+  "noModelsFoundFor": "Keine Modelle gefunden zu \"{{searchValue}}\"",
+  "failedToLoadModels": "Modelle konnten nicht geladen werden",
+  "noModels": "Keine Modelle gefunden",
+  "customAvatar": "Benutzerdefinierter Avatar",
+  "editAssistant": "Assistenten bearbeiten",
+  "jan": "Jan",
+  "metadata": "Metadaten",
+  "regenerate": "Neu generieren",
+  "threadImage": "Thread Bild",
+  "editMessage": "Nachricht bearbeiten",
+  "deleteMessage": "Nachricht löschen",
+  "deleteThread": "Thread löschen",
+  "renameThread": "Thread umbenennen",
+  "threadTitle": "Thread Titel",
+  "deleteAllThreads": "Alle Threads löschen",
+  "allThreadsUnfavorited": "Alle Threads defavorisieren",
+  "deleteAllThreadsConfirm": "Bist Du sicher, daß Du alle Threads löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
+  "addProvider": "Anbieter hinzufügen",
+  "addOpenAIProvider": "OpenAI Anbieter hinzufügen",
+  "enterNameForProvider": "Gib einen Namen ein für den Anbieter",
+  "providerAlreadyExists": "Ein Anbieter mit dem Namen \"{{name}}\" existiert bereits. Bitte wähle einen anderen Namen.",
+  "adjustFontSize": "Schriftgröße einstellen",
+  "changeLanguage": "Sprache wechseln",
+  "editTheme": " Vorlage bearbeiten",
+  "editCodeBlockStyle": "Code Block Stil bearbeiten",
+  "editServerHost": "Server Host bearbeiten",
+  "pickColorWindowBackground": "Fensterhintergrundfarbe wählen",
+  "pickColorAppMainView": "Farben wählen für das Hauptfenster",
+  "pickColorAppPrimary": "Wähle primäre App-Farbe",
+  "pickColorAppAccent": "Wähle hervorgehobene App-Farbe",
+  "pickColorAppDestructive": "Wähle destruktive App-Farbe",
+  "apiKeyRequired": "API Key ist erforderlich",
+  "enterTrustedHosts": "Vertraute Hosts eingeben",
+  "placeholder": {
+    "chatInput": "Frage mich etwas..."
+  },
+  "confirm": "Bestätige",
+  "continue": "Weiter",
+  "loading": "Lade...",
+  "error": "Fehler",
+  "success": "Erfolg",
+  "warning": "Warnung",
+  "conversationNotAvailable": "Konversation nicht verfügbar",
+  "conversationNotAvailableDescription": "Die Konversation, auf die du zugreifen möchtest, ist nicht verfügbar oder wurde gelöscht.",
+  "temporaryChat": "Temporärer Chat",
+  "temporaryChatTooltip": "Temporärer Chat erscheint nicht in deinem Verlauf",
+  "noResultsFoundDesc": "Wir konnten keinen Chat finden, welcher mit deiner Suche übereinstimmt. Versuche andere Schlüsselworte.",
+  "searchModels": "Suche Modelle...",
+  "searchStyles": "Suche Styles...",
+  "createAssistant": "Assistenten anlegen",
+  "enterApiKey": "API Key eingeben",
+  "scrollToBottom": "Zum Ende scrollen",
+  "generateAiResponse": "KI-Antwort generieren",
+  "addModel": {
+    "title": "Modell hinzufügen",
+    "modelId": "Modell ID",
+    "enterModelId": "Modell ID eingeben",
+    "addModel": "Modell hinzufügen",
+    "description": "Neues Modell zum Anbieter hinzufügen",
+    "exploreModels": "Modelle des Anbieters ansehen"
+  },
+  "mcpServers": {
+    "editServer": "Server bearbeiten",
+    "addServer": "Server hinzufügen",
+    "serverName": "Server Name",
+    "enterServerName": "Server Namen eingeben",
+    "command": "Kommando",
+    "enterCommand": "Kommando eingeben",
+    "arguments": "Argumente",
+    "argument": "Argument {{index}}",
+    "envVars": "Umgebungs Variable",
+    "key": "Schlüssel",
+    "value": "Wert",
+    "save": "Speichern"
+  },
+  "deleteServer": {
+    "title": "Server löschen",
+    "delete": "Löschen"
+  },
+  "editJson": {
+    "errorParse": "JSON-Parsing fehlgeschlagen",
+    "errorPaste": "JSON-Einfügen fehlgeschlagen",
+    "errorFormat": "Ungültiges JSON-Format",
+    "titleAll": "Alle Serverkonfigurationen bearbeiten",
+    "placeholder": "JSON-Konfiguration eingeben...",
+    "save": "Speichern"
+  },
+  "editModel": {
+    "title": "Modell bearbeiten: {{modelId}}",
+    "description": "Konfiguriere die Modelfähigkeiten durch Umschalten der untenstehenden Optionen.",
+    "capabilities": "Modelfähigkeiten",
+    "tools": "Werkzeuge",
+    "vision": "Vision",
+    "embeddings": "Einbettungen",
+    "notAvailable": "Nicht verfügbar bisher"
+  },
+  "outOfContextError": {
+    "truncateInput": "Input verkleinern",
+    "title": "Out of context error",
+    "description": "Dieser Chat erreicht das KI Speicher Limit. Wir können das Speicherfenster vergrößern (auch Kontextgröße genannt), so daß sich die KI an mehr erinnern kann, aber dies erfordert es mehr Speicher zu verwenden. Um Platz zu schaffen können wir auch den Input verkleinern, was bedeutet, daß die KI einen Teil seiner Chat-Historie vergisst.",
+    "increaseContextSizeDescription": "Möchtest Du die Kontextgröße erhöhen?",
+    "increaseContextSize": "Kontextgröße erhöhen"
+  },
+  "toolApproval": {
+    "title": "Anfrage für Werkzeugnutzung",
+    "description": "Der Assistant möchte <strong>{{toolName}}</strong> verwenden",
+    "securityNotice": "Erlaube nur Werkzeuge zu nutzen denen Du vertraust. Werkzeuge können auf deine Daten oder System zugreifen.",
+    "deny": "Ablehnen",
+    "allowOnce": "Einmal erlauben",
+    "alwaysAllow": "Immer erlauben"
+  },
+  "deleteModel": {
+    "title": "Modell löschen: {{modelId}}",
+    "description": "Bist Du sicher, daß Du dieses Modell löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
+    "success": "Modell {{modelId}} wurde permanent gelöscht.",
+    "cancel": "Abbrechen",
+    "delete": "Löschen"
+  },
+  "deleteProvider": {
+    "title": "Anbieter löschen",
+    "description": "Lösche diesen Anbieter und alle seine Modelle. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "success": "Anbieter {{provider}} wurde permanent gelöscht.",
+    "confirmTitle": "Anbieter löschen: {{provider}}",
+    "confirmDescription": "Bist Du sicher, daß Du diesen Anbieter löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
+    "cancel": "Abbrechen",
+    "delete": "Löschen"
+  },
+  "modelSettings": {
+    "title": "Modell Einstellungen - {{modelId}}",
+    "description": "Modeleinstellungen konfigurieren, um die Leistung und das Verhalten zu optimieren."
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Speicherort des Datenordners ändern",
+      "description": "Bist Du sicher den Speicherort des Datenordners zu ändern? Dies wird alle Daten zum neuen Speicherort verschieben und anschließend die Anwendung neu starten.",
+      "currentLocation": "Aktueller Speicherort:",
+      "newLocation": "Neuer Speicherort:",
+      "cancel": "Abbrechen",
+      "changeLocation": "Speicherort ändern"
+    },
+    "deleteAllThreads": {
+      "title": "Alle Threads löschen",
+      "description": "Alle Threads werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
+    },
+    "deleteThread": {
+      "description": "Bist Du sicher, daß Du diesen Thread löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden."
+    },
+    "editMessage": {
+      "title": "Nachricht bearbeiten"
+    },
+    "messageMetadata": {
+      "title": "Nachricht Metadaten"
+    }
+  },
+  "projects": {
+    "title": "Projekte",
+    "addProject": "Projekt hinzufügen",
+    "addToProject": "Zum Projekt hinzufügen",
+    "removeFromProject": "Vom Projekt entfernen",
+    "createNewProject": "Neues Projekt erstellen",
+    "editProject": "Projekt bearbeiten",
+    "deleteProject": "Projekt löschen",
+    "projectName": "Projektname",
+    "enterProjectName": "Projektname eingeben...",
+    "noProjectsAvailable": "Keine Projekte verfügbar",
+    "noProjectsYet": "Noch keine Projekte",
+    "noProjectsYetDesc": "Starten Sie ein neues Projekt, indem Sie auf die Schaltfläche Projekt hinzufügen klicken.",
+    "projectNotFound": "Projekt nicht gefunden",
+    "projectNotFoundDesc": "Das gesuchte Projekt existiert nicht oder wurde gelöscht.",
+    "deleteProjectDialog": {
+      "title": "Projekt löschen",
+      "permanentDelete": "Dies wird alle Threads permanent löschen.",
+      "permanentDeleteWarning": "Diese Aktion wird ALLE Threads innerhalb des Projekts permanent löschen!",
+      "deleteEmptyProject": "Diese Aktion wird das Projekt \"{{projectName}}\" löschen.",
+      "saveThreadsAdvice": "Um Threads zu speichern, verschiebe sie zu deiner Threadliste oder zu einem anderen Projekt, bevor du löschst.",
+      "starredWarning": "Du hast noch favorisierte Threads innerhalb des Projekts.",
+      "description": "Sind Sie sicher, dass Sie dieses Projekt löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
+      "deleteButton": "Löschen",
+      "successWithName": "Projekt \"{{projectName}}\" erfolgreich gelöscht",
+      "successWithoutName": "Projekt erfolgreich gelöscht",
+      "error": "Projekt konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.",
+      "ariaLabel": "{{projectName}} löschen"
+    },
+    "addProjectDialog": {
+      "createTitle": "Neues Projekt erstellen",
+      "editTitle": "Projekt bearbeiten",
+      "nameLabel": "Projektname",
+      "namePlaceholder": "Projektname eingeben...",
+      "createButton": "Erstellen",
+      "updateButton": "Aktualisieren",
+      "alreadyExists": "Projekt \"{{projectName}}\" existiert bereits",
+      "createSuccess": "Projekt \"{{projectName}}\" erfolgreich erstellt",
+      "renameSuccess": "Projekt von \"{{oldName}}\" zu \"{{newName}}\" umbenannt"
+    },
+    "noConversationsIn": "Keine Gespräche in {{projectName}}",
+    "startNewConversation": "Starten Sie ein neues Gespräch mit {{projectName}} unten",
+    "conversationsIn": "Gespräche in {{projectName}}",
+    "conversationsDescription": "Klicken Sie auf ein Gespräch, um weiterzuchatten, oder starten Sie unten ein neues.",
+    "thread": "Thread",
+    "threads": "Threads",
+    "updated": "Aktualisiert:",
+    "collapseProject": "Projekt einklappen",
+    "expandProject": "Projekt ausklappen",
+    "update": "Aktualisieren",
+    "searchProjects": "Projekte durchsuchen...",
+    "noProjectsFound": "Keine Projekte gefunden",
+    "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff"
+  },
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Alle Threads De-Favorisieren ",
+      "description": "Alle deine Threads wurden defavorisiert."
+    },
+    "projectCreated": {
+      "title": "Projekt erstellt",
+      "description": "Projekt \"{{projectName}}\" erfolgreich erstellt"
+    },
+    "projectRenamed": {
+      "title": "Projekt umbenannt",
+      "description": "Projekt von \"{{oldName}}\" zu \"{{newName}}\" umbenannt"
+    },
+    "projectDeleted": {
+      "title": "Projekt gelöscht",
+      "description": "Projekt \"{{projectName}}\" erfolgreich gelöscht"
+    },
+    "projectAlreadyExists": {
+      "title": "Projekt existiert bereits",
+      "description": "Projekt \"{{projectName}}\" existiert bereits"
+    },
+    "projectDeleteFailed": {
+      "title": "Löschen fehlgeschlagen",
+      "description": "Projekt konnte nicht gelöscht werden. Bitte versuchen Sie es erneut."
+    },
+    "threadAssignedToProject": {
+      "title": "Thread zugewiesen",
+      "description": "Thread erfolgreich zu \"{{projectName}}\" hinzugefügt"
+    },
+    "threadRemovedFromProject": {
+      "title": "Thread entfernt",
+      "description": "Thread erfolgreich von \"{{projectName}}\" entfernt"
+    },
+    "deleteAllThreads": {
+      "title": "Alle Threads löschen",
+      "description": "Alle deine Threads wurden permanent gelöscht."
+    },
+    "renameThread": {
+      "title": "Thread umbenennen",
+      "description": "Thread Titel wurde umbenannt zu '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Thread löschen",
+      "description": "This thread has been permanently deleted."
+    },
+    "editMessage": {
+      "title": "Nachricht bearbeiten",
+      "description": "Die Nachricht wurde erfolgreich bearbeitet. Bitte warte auf die Antwort des Models."
+    },
+    "appUpdateDownloaded": {
+      "title": "App Update heruntergeladen",
+      "description": "Das App-Update wurde erfolgreich heruntergeladen."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "App Update Download fehlgeschlagen",
+      "description": "Das App-Update konnte nicht heruntergeladen werden. Bitte versuche es noch einmal."
+    },
+    "downloadComplete": {
+      "title": "Download abgeschlossen",
+      "description": "{{item}} wurde heruntergeladen"
+    },
+    "downloadCancelled": {
+      "title": "Download abgebrochen",
+      "description": "Der Download-Prozess wurde abgebrochen"
+    },
+    "downloadFailed": {
+      "title": "Download fehlgeschlagen",
+      "description": "{{item}} Download fehlgeschlagen"
+    },
+    "modelValidationStarted": {
+      "title": "Modell wird validiert",
+      "description": "Modell \"{{modelId}}\" erfolgreich heruntergeladen. Integrität wird überprüft..."
+    },
+    "modelValidationFailed": {
+      "title": "Modellvalidierung fehlgeschlagen",
+      "description": "Das heruntergeladene Modell \"{{modelId}}\" ist bei der Integritätsprüfung fehlgeschlagen und wurde entfernt. Die Datei könnte beschädigt oder manipuliert worden sein."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Download abgeschlossen",
+      "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
+    }
+  }
+}

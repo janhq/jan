@@ -1,0 +1,7 @@
+{
+  "title": "Out of context error",
+  "description": "This chat is reaching the AI’s memory limit, like a whiteboard filling up. We can expand the memory window (called context size) so it remembers more, but it may use more of your computer’s memory. We can also truncate the input, which means it will forget some of the chat history to make room for new messages.",
+  "increaseContextSizeDescription": "Do you want to increase the context size?",
+  "truncateInput": "Truncate Input",
+  "increaseContextSize": "Increase Context Size"
+}

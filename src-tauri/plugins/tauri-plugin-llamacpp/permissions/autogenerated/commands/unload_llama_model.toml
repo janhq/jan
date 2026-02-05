@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-unload-llama-model"
+description = "Enables the unload_llama_model command without any pre-configured scope."
+commands.allow = ["unload_llama_model"]
+
+[[permission]]
+identifier = "deny-unload-llama-model"
+description = "Denies the unload_llama_model command without any pre-configured scope."
+commands.deny = ["unload_llama_model"]

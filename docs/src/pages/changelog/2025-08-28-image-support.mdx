@@ -1,0 +1,106 @@
+---
+title: "Jan v0.6.9: Image support, stable MCP, and powerful model tools"
+version: 0.6.9
+description: "Major multimodal support with image uploads, MCP out of experimental, auto-detect model capabilities, and enhanced tool calling"
+date: 2025-08-28
+ogImage: "https://catalog.jan.ai/docs/jan-images.gif"
+---
+
+import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
+import { Callout } from 'nextra/components'
+
+<ChangelogHeader title="Jan v0.6.9: Image support, stable MCP, and powerful model tools" date="2025-08-28" ogImage="https://catalog.jan.ai/docs/jan-images.gif" />
+
+## Highlights 🎉
+
+v0.6.9 delivers two highly requested features: **image support for multimodal models** and **stable MCP** (no more experimental flags!). Plus intelligent model capability detection, enhanced tool calling, and major UX improvements.
+
+### 🖼️ Multimodal AI is here
+
+**Image upload support** — Finally! Upload images directly in your chats and get visual understanding from compatible models:
+- **Local models**: Automatic support for Gemma3, Qwen3, and other vision-capable models
+- **Cloud models**: Manual toggle for GPT-4V, Claude 3.5 Sonnet, Gemini Pro Vision
+- **Smart detection**: Jan automatically identifies which models support images
+- **Privacy first**: Local models process images entirely offline
+
+The team has been working hard to bring this long-awaited capability to Jan, and it's been worth the wait.
+
+### 🔧 MCP is stable
+
+**Model Context Protocol** graduated from experimental to stable:
+- **No more experimental flags** — MCP tools work out of the box
+- **Better error handling** for smoother MCP server connections
+- **Cancel tool calls** mid-execution when needed
+- **Enhanced reliability** with improved server status tracking
+
+MCP unlocks powerful workflows: web search, code execution, productivity integrations, and more.
+
+### 🎯 Intelligent model management
+
+- **Auto-detect capabilities**: Jan identifies tool calling and vision support for local models
+- **Model compatibility checker**: Hub shows hardware requirements before download
+- **Favorite models**: Mark frequently used models for quick access
+- **Universal GGUF import**: Import any valid .gguf file regardless of extension
+- **Hardware-aware suggestions**: Get model recommendations based on your system specs
+
+### 🚀 Enhanced tool calling
+
+- **GPT-OSS models**: Upgraded llama.cpp brings tool calling to more open-source models
+- **Improved performance**: Better tool execution with upgraded engine
+- **Remote provider control**: Manual toggle for cloud model capabilities
+- **Streamlined workflows**: Cancel operations, better error handling
+
+## Major Features
+
+### 🖼️ Multimodal support
+- **Image uploads** work with compatible local and cloud models
+- **Automatic detection** for local model vision capabilities
+- **Manual toggle** for remote providers (GPT-4V, Claude, Gemini)
+- **Privacy-preserving** local image processing
+
+### 🔧 Stable MCP
+- **MCP Server stable release** — no more experimental flags needed
+- **Enhanced error handling** for MCP connections
+- **Tool cancellation** support during execution
+- **Improved server status** synchronization
+
+### 🎯 Smart model features
+- **Favorite models** — bookmark your go-to models
+- **Auto-capability detection** for local models
+- **Hardware compatibility** checks in Hub
+- **Universal GGUF import** regardless of file extension
+
+### ⚡ Enhanced engine
+- **Tool calling support** for GPT-OSS models
+- **Upgraded llama.cpp** version with stability improvements
+- **Better performance** across model types
+
+## Improvements
+
+### 🔄 API & automation
+- **Auto-start API server** on Jan startup (optional)
+- **Model auto-loading** when API server starts
+- **Ollama endpoint** support restored for custom configurations
+
+### 🎨 User experience
+- **Thinking windows** for OpenRouter models render correctly
+- **Better error messages** across MCP operations
+- **Improved import UX** with retired model cleanup
+- **CPU architecture** detection at runtime
+
+### 🔧 Technical enhancements
+- **Vulkan backend** re-enabled for integrated GPUs with sufficient memory
+- **Enhanced stability** with better error handling
+- **Performance optimizations** across the board
+
+## Thanks to our incredible team
+
+The engineering team delivered major features that users have been requesting for months. Image support required deep multimodal AI integration, while stabilizing MCP involved extensive testing and refinement. The auto-detection features showcase thoughtful UX design that makes AI more accessible.
+
+Special recognition to the contributors who made v0.6.9 possible through their dedication to bringing powerful, privacy-focused AI capabilities to everyone.
+
+---
+
+Update your Jan or [download the latest](https://jan.ai/).
+
+For the complete list of changes, see the [GitHub release notes](https://github.com/janhq/jan/releases/tag/v0.6.9).

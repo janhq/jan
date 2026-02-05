@@ -1,0 +1,7 @@
+{
+  "title": "Kesalahan kehabisan konteks",
+  "description": "Obrolan ini hampir mencapai batas memori AI, seperti papan tulis yang mulai penuh. Kita bisa memperluas jendela memori (disebut ukuran konteks) agar AI dapat mengingat lebih banyak, tetapi ini mungkin akan menggunakan lebih banyak memori komputer Anda. Kita juga bisa memotong input, artinya sebagian riwayat obrolan akan dilupakan untuk memberi ruang pada pesan baru.",
+  "increaseContextSizeDescription": "Apakah Anda ingin memperbesar ukuran konteks?",
+  "truncateInput": "Potong Input",
+  "increaseContextSize": "Perbesar Ukuran Konteks"
+}

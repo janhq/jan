@@ -1,0 +1,17 @@
+{
+  "sortNewest": "最新",
+  "sortMostDownloaded": "最多下載",
+  "newChat": "新對話",
+  "download": "下載",
+  "downloaded": "已下載",
+  "loadingModels": "正在載入模型...",
+  "noModels": "找不到模型",
+  "by": "由",
+  "downloads": "下載",
+  "variants": "變體",
+  "showVariants": "顯示變體",
+  "useModel": "使用此模型",
+  "downloadModel": "下載模型",
+  "tools": "工具",
+  "searchPlaceholder": "在 Hugging Face 上搜尋模型..."
+}

@@ -1,0 +1,379 @@
+{
+  "assistants": "Assistentes",
+  "hardware": "Hardware",
+  "mcp-servers": "Servidores MCP",
+  "local_api_server": "Servidor de API Local",
+  "https_proxy": "Proxy HTTPS",
+  "extensions": "Extensões",
+  "attachments": "Anexos",
+  "general": "Geral",
+  "settings": "Configurações",
+  "modelProviders": "Provedores de Modelo",
+  "appearance": "Aparência",
+  "privacy": "Privacidade",
+  "keyboardShortcuts": "Atalhos",
+  "newChat": "Novo Chat",
+  "favorites": "Favoritos",
+  "recents": "Recentes",
+  "hub": "Hub",
+  "helpSupport": "Ajuda e Suporte",
+  "helpUsImproveJan": "Ajude-nos a Melhorar o Jan",
+  "unstarAll": "Remover todos os favoritos",
+  "unstar": "Remover Favorito",
+  "deleteAll": "Apagar Tudo",
+  "star": "Favoritar",
+  "rename": "Renomear",
+  "delete": "Apagar",
+  "copied": "Copiado!",
+  "dataFolder": "Pasta de Dados",
+  "others": "Outros",
+  "language": "Idioma",
+  "login": "Entrar",
+  "loginWith": "Entrar com {{provider}}",
+  "loginFailed": "Falha ao Entrar",
+  "logout": "Sair",
+  "loggingOut": "Saindo...",
+  "loggedOut": "Saída Realizada com Sucesso",
+  "logoutFailed": "Falha ao Sair",
+  "profile": "Perfil",
+  "reset": "Redefinir",
+  "search": "Buscar",
+  "name": "Nome",
+  "cancel": "Cancelar",
+  "create": "Criar",
+  "save": "Salvar",
+  "edit": "Editar",
+  "copy": "Copiar",
+  "back": "Voltar",
+  "close": "Fechar",
+  "next": "Próximo",
+  "finish": "Finalizar",
+  "skip": "Pular",
+  "allow": "Permitir",
+  "deny": "Negar",
+  "start": "Iniciar",
+  "stop": "Parar",
+  "preview": "Visualizar",
+  "compactWidth": "Largura Compacta",
+  "fullWidth": "Largura Completa",
+  "dark": "Escuro",
+  "light": "Claro",
+  "system": "Sistema",
+  "auto": "Automático",
+  "english": "Inglês",
+  "medium": "Médio",
+  "newThread": "Nova Conversa",
+  "noResultsFound": "Nenhum resultado encontrado",
+  "noThreadsYet": "Nenhuma conversa ainda",
+  "noThreadsYetDesc": "Inicie uma nova conversa para ver seu histórico de conversas aqui.",
+  "downloads": "Downloads",
+  "downloading": "Baixando",
+  "cancelDownload": "Cancelar download",
+  "downloadCancelled": "Download Cancelado",
+  "downloadComplete": "Download Concluído",
+  "thinking": "Pensando...",
+  "thought": "Pensamento",
+  "callingTool": "Chamando ferramenta",
+  "completed": "Concluído",
+  "image": "Imagem",
+  "vision": "Visão",
+  "embeddings": "Embeddings",
+  "tools": "Ferramentas",
+  "webSearch": "Busca na Web",
+  "reasoning": "Raciocínio",
+  "selectAModel": "Selecione um modelo",
+  "noToolsAvailable": "Nenhuma ferramenta disponível",
+  "noModelsFoundFor": "Nenhum modelo encontrado para \"{{searchValue}}\"",
+  "failedToLoadModels": "Falha ao carregar modelos",
+  "noModels": "Nenhum modelo encontrado",
+  "customAvatar": "Avatar personalizado",
+  "editAssistant": "Editar Assistente",
+  "jan": "Jan",
+  "metadata": "Metadados",
+  "regenerate": "Regenerar",
+  "threadImage": "Imagem da conversa",
+  "editMessage": "Editar Mensagem",
+  "deleteMessage": "Apagar Mensagem",
+  "deleteThread": "Apagar Conversa",
+  "renameThread": "Renomear Conversa",
+  "threadTitle": "Título da Conversa",
+  "deleteAllThreads": "Apagar Todas as Conversas",
+  "allThreadsUnfavorited": "Todas as Conversas Removidas dos Favoritos",
+  "deleteAllThreadsConfirm": "Tem certeza de que deseja deletar todas as conversas? Esta ação não pode ser desfeita.",
+  "addProvider": "Adicionar Provedor",
+  "addOpenAIProvider": "Adicionar Provedor OpenAI",
+  "enterNameForProvider": "Digite um nome para seu provedor",
+  "providerAlreadyExists": "Provedor com nome \"{{name}}\" já existe. Por favor, escolha um nome diferente.",
+  "adjustFontSize": "Ajustar Tamanho da Fonte",
+  "changeLanguage": "Alterar Idioma",
+  "editTheme": "Editar Tema",
+  "editCodeBlockStyle": "Editar Estilo do Bloco de Código",
+  "editServerHost": "Editar Host do Servidor",
+  "pickColorWindowBackground": "Escolher Cor do Fundo da Janela",
+  "pickColorAppMainView": "Escolher Cor da Visualização Principal do App",
+  "pickColorAppPrimary": "Escolher Cor Primária do App",
+  "pickColorAppAccent": "Escolher Cor de Destaque do App",
+  "pickColorAppDestructive": "Escolher Cor Destrutiva do App",
+  "apiKeyRequired": "Chave API é obrigatória",
+  "enterTrustedHosts": "Digite os hosts confiáveis",
+  "placeholder": {
+    "chatInput": "Pergunte-me qualquer coisa..."
+  },
+  "confirm": "Confirmar",
+  "continue": "Continuar",
+  "loading": "Carregando...",
+  "error": "Erro",
+  "success": "Sucesso",
+  "warning": "Aviso",
+  "conversationNotAvailable": "Conversa não disponível",
+  "conversationNotAvailableDescription": "A conversa que você está tentando acessar não está disponível ou foi removida.",
+  "temporaryChat": "Chat Temporário",
+  "temporaryChatTooltip": "Chat temporário não aparecerá no seu histórico",
+  "noResultsFoundDesc": "Não conseguimos encontrar chats correspondentes à sua busca. Tente uma palavra-chave diferente.",
+  "searchModels": "Buscar modelos...",
+  "searchStyles": "Buscar estilos...",
+  "createAssistant": "Criar Assistente",
+  "enterApiKey": "Digite a Chave API",
+  "scrollToBottom": "Rolar até embaixo",
+  "generateAiResponse": "Gerar Resposta da IA",
+  "addModel": {
+    "title": "Adicionar Modelo",
+    "modelId": "ID do Modelo",
+    "enterModelId": "Digite o ID do Modelo",
+    "addModel": "Adicionar Modelo",
+    "description": "Adicionar um novo modelo ao provedor",
+    "exploreModels": "Ver lista de modelos do provedor"
+  },
+  "mcpServers": {
+    "editServer": "Editar Servidor",
+    "addServer": "Adicionar Servidor",
+    "serverName": "Nome do Servidor",
+    "enterServerName": "Digite o nome do servidor",
+    "command": "Comando",
+    "enterCommand": "Digite o comando",
+    "arguments": "Argumentos",
+    "argument": "Argumento {{index}}",
+    "envVars": "Variáveis de Ambiente",
+    "key": "Chave",
+    "value": "Valor",
+    "save": "Salvar"
+  },
+  "deleteServer": {
+    "title": "Remover Servidor",
+    "delete": "Remover"
+  },
+  "editJson": {
+    "errorParse": "Falha ao analisar JSON",
+    "errorPaste": "Falha ao colar JSON",
+    "errorFormat": "Formato JSON inválido",
+    "titleAll": "Editar Configuração de Todos os Servidores",
+    "placeholder": "Entre com a configuração do JSON...",
+    "save": "Salvar"
+  },
+  "editModel": {
+    "title": "Editar Modelo: {{modelId}}",
+    "description": "Configure as capacidades do modelo alterando as opções abaixo.",
+    "capabilities": "Capacidades",
+    "tools": "Ferramentas",
+    "vision": "Visão",
+    "embeddings": "Embeddings",
+    "notAvailable": "Ainda não disponível"
+  },
+  "outOfContextError": {
+    "truncateInput": "Truncar Entrada",
+    "title": "Erro de contexto esgotado",
+    "description": "Este chat está atingindo o limite de memória da IA, como um quadro branco ficando cheio. Podemos expandir a janela de memória (chamada tamanho do contexto) para que ela lembre mais, mas pode usar mais da memória do seu computador. Também podemos truncar a entrada, o que significa que ela esquecerá parte do histórico do chat para dar espaço a novas mensagens.",
+    "increaseContextSizeDescription": "Você quer aumentar o tamanho do contexto?",
+    "increaseContextSize": "Aumentar Tamanho do Contexto"
+  },
+  "toolApproval": {
+    "title": "Solicitação de Permissão para Ferramenta",
+    "description": "O assistente quer usar <strong>{{toolName}}</strong>",
+    "securityNotice": "Permita apenas ferramentas em que você confia. Ferramentas podem acessar seu sistema e dados.",
+    "deny": "Negar",
+    "allowOnce": "Permitir Uma Vez",
+    "alwaysAllow": "Sempre Permitir"
+  },
+  "deleteModel": {
+    "title": "Remover Modelo: {{modelId}}",
+    "description": "Tem certeza de que deseja remover este modelo? Esta ação não pode ser desfeita.",
+    "success": "Modelo {{modelId}} foi removido permanentemente.",
+    "cancel": "Cancelar",
+    "delete": "Remover"
+  },
+  "deleteProvider": {
+    "title": "Remover Provedor",
+    "description": "Remover este provedor e todos os seus modelos. Esta ação não pode ser desfeita.",
+    "success": "Provedor {{provider}} foi removido permanentemente.",
+    "confirmTitle": "Remover Provedor: {{provider}}",
+    "confirmDescription": "Tem certeza de que deseja remover este provedor? Esta ação não pode ser desfeita.",
+    "cancel": "Cancelar",
+    "delete": "Remover"
+  },
+  "modelSettings": {
+    "title": "Configurações do Modelo - {{modelId}}",
+    "description": "Configure as configurações do modelo para otimizar desempenho e comportamento."
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Alterar Localização da Pasta de Dados",
+      "description": "Tem certeza de que deseja alterar a localização da pasta de dados? Isso moverá todos os seus dados para a nova localização e reiniciará a aplicação.",
+      "currentLocation": "Localização Atual:",
+      "newLocation": "Nova Localização:",
+      "cancel": "Cancelar",
+      "changeLocation": "Alterar Localização"
+    },
+    "deleteAllThreads": {
+      "title": "Remover Todas as Conversas",
+      "description": "Todas as conversas serão removidas. Esta ação não pode ser desfeita."
+    },
+    "deleteThread": {
+      "description": "Tem certeza de que deseja remover esta conversa? Esta ação não pode ser desfeita."
+    },
+    "editMessage": {
+      "title": "Editar Mensagem"
+    },
+    "messageMetadata": {
+      "title": "Metadados da Mensagem"
+    }
+  },
+  "projects": {
+    "title": "Projetos",
+    "addProject": "Adicionar Projeto",
+    "addToProject": "Adicionar ao projeto",
+    "removeFromProject": "Remover do projeto",
+    "createNewProject": "Criar Novo Projeto",
+    "editProject": "Editar Projeto",
+    "deleteProject": "Remover Projeto",
+    "projectName": "Nome do Projeto",
+    "enterProjectName": "Digite o nome do projeto...",
+    "noProjectsAvailable": "Nenhum projeto disponível",
+    "noProjectsYet": "Nenhum Projeto Ainda",
+    "noProjectsYetDesc": "Inicie um novo projeto clicando no botão Adicionar Projeto.",
+    "projectNotFound": "Projeto Não Encontrado",
+    "projectNotFoundDesc": "O projeto que você está procurando não existe ou foi removido.",
+    "deleteProjectDialog": {
+      "title": "Remover Projeto",
+      "permanentDelete": "ThiIsso removerá permanentemente todas as conversas.",
+      "permanentDeleteWarning": "Esta ação removerá permanentemente TODAS as conversas dentro do projeto!",
+      "deleteEmptyProject": "Esta ação removerá o projeto \"{{projectName}}\".",
+      "saveThreadsAdvice": "Para salvar conversas, mova-as para sua lista de conversas ou outro projeto antes de remover.",
+      "starredWarning": "Você ainda tem conversas favoritadas dentro do projeto.",
+      "deleteButton": "Remover",
+      "successWithName": "Projeto \"{{projectName}}\" removido com sucesso",
+      "successWithoutName": "Projeto removido com sucesso",
+      "error": "Falha ao remover projeto. Tente novamente.",
+      "ariaLabel": "Remover {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Criar Novo Projeto",
+      "editTitle": "Editar Projeto",
+      "nameLabel": "Nome do Projeto",
+      "namePlaceholder": "Digite o nome do projeto...",
+      "createButton": "Criar",
+      "updateButton": "Atualizar",
+      "alreadyExists": "Projeto \"{{projectName}}\" já existe",
+      "createSuccess": "Projeto \"{{projectName}}\" criado com sucesso",
+      "renameSuccess": "Projeto renomeado de \"{{oldName}}\" para \"{{newName}}\""
+    },
+    "noConversationsIn": "Nenhuma Conversa em {{projectName}}",
+    "startNewConversation": "Inicie uma nova conversa com {{projectName}} abaixo",
+    "conversationsIn": "Conversas em {{projectName}}",
+    "conversationsDescription": "Clique em qualquer conversa para continuar o chat, ou inicie uma nova abaixo.",
+    "thread": "conversa",
+    "threads": "conversas",
+    "updated": "Atualizado:",
+    "collapseProject": "Recolher projeto",
+    "expandProject": "Expandir projeto",
+    "update": "Atualizar",
+    "searchProjects": "Buscar projetos...",
+    "noProjectsFound": "Nenhum projeto encontrado",
+    "tryDifferentSearch": "Tente um termo de busca diferente"
+  },
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "Todas as Conversas Removidas dos Favoritos",
+      "description": "Todas as conversas foram removidas dos seus favoritos."
+    },
+    "deleteAllThreads": {
+      "title": "Remover Todas as Conversas",
+      "description": "Todas as conversas foram removidas permanentemente."
+    },
+    "renameThread": {
+      "title": "Renomear Conversa",
+      "description": "Título da conversa foi renomeado para '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Remover Conversa",
+      "description": "Esta conversa foi removida permanentemente."
+    },
+    "editMessage": {
+      "title": "Editar Mensagem",
+      "description": "Mensagem editada com sucesso. Aguarde a resposta do modelo."
+    },
+    "appUpdateDownloaded": {
+      "title": "Atualização do App Baixada",
+      "description": "A atualização do app foi baixada com sucesso."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Falha no Download da Atualização do App",
+      "description": "Falha ao baixar a atualização do app. Tente novamente."
+    },
+    "downloadComplete": {
+      "title": "Download Concluído",
+      "description": " {{item}} foi baixado"
+    },
+    "downloadCancelled": {
+      "title": "Download Cancelado",
+      "description": "O processo de download foi cancelado"
+    },
+    "downloadFailed": {
+      "title": "Falha no Download",
+      "description": "Falha no download de {{item}}"
+    },
+    "modelValidationStarted": {
+      "title": "Validando Modelo",
+      "description": "Modelo \"{{modelId}}\" baixado com sucesso. Verificando integridade..."
+    },
+    "modelValidationFailed": {
+      "title": "Falha na Validação do Modelo",
+      "description": "O modelo baixado \"{{modelId}}\" falhou na verificação de integridade e foi removido. O arquivo pode estar corrompido ou adulterado."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Download Concluído",
+      "description": "Modelo \"{{item}}\" baixado e verificado com sucesso"
+    },
+    "projectCreated": {
+      "title": "Projeto Criado",
+      "description": "Projeto \"{{projectName}}\" criado com sucesso"
+    },
+    "projectRenamed": {
+      "title": "Projeto Renomeado",
+      "description": "Projeto renomeado de \"{{oldName}}\" para \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Projeto Removido",
+      "description": "Projeto \"{{projectName}}\" removido com sucesso"
+    },
+    "projectAlreadyExists": {
+      "title": "Projeto Já Existe",
+      "description": "Projeto \"{{projectName}}\" já existe"
+    },
+    "projectDeleteFailed": {
+      "title": "Falha ao Remover",
+      "description": "Falha ao remover projeto. Tente novamente."
+    },
+    "threadAssignedToProject": {
+      "title": "Conversa Atribuída",
+      "description": "Conversa atribuída a \"{{projectName}}\" com sucesso"
+    },
+    "threadRemovedFromProject": {
+      "title": "Conversa Removida",
+      "description": "Conversa removida de \"{{projectName}}\" com sucesso"
+    }
+  },
+  "attachmentInjectedIndicator": "Injetado no chat",
+  "attachmentEmbeddedIndicator": "Incorporado para RAG",
+  "viewInjectedContent": "Ver conteúdo injetado",
+  "injectedContentTitle": "Conteúdo de arquivo injetado"
+}
