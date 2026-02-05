@@ -113,6 +113,7 @@ endif
 	yarn test
 	yarn copy:assets:tauri
 	yarn build:icon
+	yarn build:mlx-server
 	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml

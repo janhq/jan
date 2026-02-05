@@ -245,7 +245,7 @@ export class ModelFactory {
         Origin: 'tauri://localhost',
       }),
       url: ({ path }) => {
-        const url = new URL(`http://localhost:${sessionInfo.port}/v1/${path}`)
+        const url = new URL(`http://localhost:${sessionInfo.port}/v1${path}`)
 
         return url.toString()
       },
