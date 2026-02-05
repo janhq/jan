@@ -99,9 +99,6 @@ pub fn run() {
         core::server::remote_provider_commands::unregister_provider_config,
         core::server::remote_provider_commands::get_provider_config,
         core::server::remote_provider_commands::list_provider_configs,
-        core::server::remote_provider_commands::remote_chat_completion,
-        core::server::remote_provider_commands::remote_chat_completion_stream,
-        core::server::remote_provider_commands::abort_remote_stream,
         // MCP commands
         core::mcp::commands::get_tools,
         core::mcp::commands::call_tool,
@@ -181,8 +178,6 @@ pub fn run() {
         core::server::remote_provider_commands::unregister_provider_config,
         core::server::remote_provider_commands::get_provider_config,
         core::server::remote_provider_commands::list_provider_configs,
-        core::server::remote_provider_commands::remote_chat_completion,
-        core::server::remote_provider_commands::remote_chat_completion_stream,
         core::server::remote_provider_commands::abort_remote_stream,
         // MCP commands
         core::mcp::commands::get_tools,

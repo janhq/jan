@@ -298,9 +298,9 @@ async fn proxy_request<R: tauri::Runtime>(
     let destination_path = get_destination_path(original_path, &config.prefix);
 
     // Initialize variables that will be set in the match
-    let mut target_port: Option<i32> = None;
     let mut session_api_key: Option<String> = None;
-    let mut buffered_body: Option<Bytes> = None;
+    let buffered_body: Option<Bytes>;
+    let mut target_base_url: Option<String> = None;
 
     match (method.clone(), destination_path.as_str()) {
         (hyper::Method::POST, "/chat/completions")
@@ -364,9 +364,6 @@ async fn proxy_request<R: tauri::Runtime>(
                             // Found a remote provider, stream the response directly
                             log::info!("Found remote provider '{provider}' for model '{model_id}'");
 
-                            // Clone model_id for use in the closure
-                            let model_id_str = model_id.to_string();
-
                             // Get the provider config
                             let state = app_handle.state::<AppState>();
                             let provider_configs = state.provider_configs.lock().await;
@@ -381,187 +378,98 @@ async fn proxy_request<R: tauri::Runtime>(
                             drop(provider_configs);
 
                             if let Some(provider_cfg) = provider_config {
-                                let origin_header = origin_header.clone();
-                                let json_body = json_body.clone();
-
-                                // Create the remote request
-                                let messages: Vec<serde_json::Value> = json_body
-                                    .get("messages")
-                                    .and_then(|v| v.as_array())
-                                    .cloned()
-                                    .unwrap_or_default();
-
-                                let request = crate::core::server::remote_provider_commands::RemoteChatCompletionRequest {
-                                    provider: provider.clone(),
-                                    model: model_id_str,
-                                    messages: messages.iter().map(|m| crate::core::server::remote_provider_commands::ChatMessage {
-                                        role: m.get("role").and_then(|v| v.as_str()).unwrap_or("user").to_string(),
-                                        content: m.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                        name: m.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                                    }).collect(),
-                                    stream: Some(true),
-                                    extra: None,
-                                };
-
-                                // Determine the endpoint path for the remote provider and output format
-                                let (remote_endpoint, output_format) = match destination_path.as_str() {
-                                    "/messages" | "/messages/count_tokens" => {
-                                        // For /messages, check if provider supports it; if not, use /chat/completions
-                                        // with format conversion
-                                        ("/chat/completions", "anthropic")
-                                    }
-                                    "/chat/completions" | "/completions" | "/embeddings" => {
-                                        ("/chat/completions", "openai")
-                                    }
-                                    _ => ("/chat/completions", "openai")
-                                };
-
-                                log::debug!("Routing {destination_path} to {remote_endpoint} with format {output_format}");
-
-                                // Stream the remote response with format conversion if needed
-                                let stream_result = if output_format == "anthropic" {
-                                    crate::core::server::remote_provider_commands::stream_remote_chat_with_format_conversion(
-                                        &provider_cfg,
-                                        &request,
-                                        remote_endpoint,
-                                        output_format,
-                                    ).await
+                                if let Some(api_url) = provider_cfg.base_url.clone() {
+                                    target_base_url = Some(format!("{api_url}{destination_path}"));
                                 } else {
-                                    crate::core::server::remote_provider_commands::stream_remote_chat_for_proxy(
-                                        &provider_cfg,
-                                        &request,
-                                        remote_endpoint,
-                                    ).await
-                                };
-
-                                match stream_result {
-                                    Ok(stream) => {
-                                        log::info!("Successfully started streaming from remote provider '{provider}'");
-
-                                        let mut response_builder =
-                                            Response::builder().status(StatusCode::OK);
-                                        response_builder = add_cors_headers_with_host_and_origin(
-                                            response_builder,
-                                            &host_header,
-                                            &origin_header,
-                                            &config.trusted_hosts,
-                                        );
-                                        response_builder = response_builder
-                                            .header(hyper::header::CONTENT_TYPE, "text/event-stream")
-                                            .header("Cache-Control", "no-cache")
-                                            .header("Connection", "keep-alive");
-
-                                        // Create channel for streaming
-                                        let (mut sender, body) = hyper::Body::channel();
-
-                                        // Spawn task to forward remote stream to client
-                                        tokio::spawn(async move {
-                                            let mut stream = stream;
-                                            while let Some(chunk_result) = stream.next().await {
-                                                match chunk_result {
-                                                    Ok(chunk) => {
-                                                        if sender.send_data(chunk).await.is_err() {
-                                                            log::debug!("Client disconnected during remote streaming");
-                                                            break;
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        log::error!("Remote stream error: {e}");
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                            log::debug!("Remote streaming complete to client");
-                                        });
-
-                                        return Ok(response_builder.body(body).unwrap());
-                                    }
-                                    Err(e) => {
-                                        log::error!("Failed to stream from remote provider '{provider}': {e}");
-                                        let mut error_response =
-                                            Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
-                                        error_response = add_cors_headers_with_host_and_origin(
-                                            error_response,
-                                            &host_header,
-                                            &origin_header,
-                                            &config.trusted_hosts,
-                                        );
-                                        return Ok(error_response
-                                            .body(Body::from(format!("Remote provider error: {e}")))
-                                            .unwrap());
-                                    }
+                                    target_base_url = None;
+                                }
+                                if let Some(api_key_value) = provider_cfg.api_key.clone() {
+                                    session_api_key = Some(api_key_value);
+                                } else {
+                                    session_api_key = None;
                                 }
                             } else {
                                 log::error!("Provider config not found for '{provider}'");
                             }
-                        }
-
-                        // No remote provider found, check for local session
-                        let sessions_guard = sessions.lock().await;
-
-                        // Use original model_id for local session lookup
-                        let sessions_find_model = model_id;
-
-                        // Check both llama.cpp and MLX sessions
-                        let llama_session = sessions_guard
-                            .values()
-                            .find(|s| s.info.model_id == sessions_find_model);
-
-                        let (mlx_session_info, mlx_count) = {
-                            let mut mlx_session_info: Option<SessionInfo> = None;
-                            let mut mlx_count = 0;
-                            let mlx_guard = mlx_sessions.lock().await;
-                            mlx_count = mlx_guard.len();
-                            if let Some(session) = mlx_guard.values().find(|s| s.info.model_id == sessions_find_model) {
-                                // Clone just the SessionInfo since MlxBackendSession is not Clone
-                                mlx_session_info = Some(session.info.clone());
-                            }
-                            (mlx_session_info, mlx_count)
-                        };
-
-                        let total_sessions = sessions_guard.len() + mlx_count;
-
-                        // mlx_session_info is Option<SessionInfo>, use as_ref to get Option<&SessionInfo>
-                        let mlx_session = mlx_session_info.as_ref();
-
-                        if total_sessions == 0 {
-                            log::warn!("Request for model '{model_id}' but no models are running.");
-                            let mut error_response =
-                                Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
-                            error_response = add_cors_headers_with_host_and_origin(
-                                error_response,
-                                &host_header,
-                                &origin_header,
-                                &config.trusted_hosts,
-                            );
-                            return Ok(error_response
-                                .body(Body::from("No models are available"))
-                                .unwrap());
-                        }
-
-                        if let Some(session) = llama_session {
-                            target_port = Some(session.info.port);
-                            session_api_key = Some(session.info.api_key.clone());
-                            log::debug!("Found llama.cpp session for model_id {model_id}");
-                        } else if let Some(info) = mlx_session {
-                            target_port = Some(info.port);
-                            session_api_key = Some(info.api_key.clone());
-                            log::debug!("Found MLX session for model_id {model_id}");
                         } else {
-                            log::warn!("No running session found for model_id: {model_id}");
-                            let mut error_response =
-                                Response::builder().status(StatusCode::NOT_FOUND);
-                            error_response = add_cors_headers_with_host_and_origin(
-                                error_response,
-                                &host_header,
-                                &origin_header,
-                                &config.trusted_hosts,
-                            );
-                            return Ok(error_response
-                                .body(Body::from(format!(
-                                    "No running session found for model '{model_id}'"
-                                )))
-                                .unwrap());
+                            // No remote provider found, check for local session
+                            let sessions_guard = sessions.lock().await;
+
+                            // Use original model_id for local session lookup
+                            let sessions_find_model = model_id;
+
+                            // Check both llama.cpp and MLX sessions
+                            let llama_session = sessions_guard
+                                .values()
+                                .find(|s| s.info.model_id == sessions_find_model);
+
+                            let (mlx_session_info, mlx_count) = {
+                                let mut mlx_session_info: Option<SessionInfo> = None;
+                                let mut mlx_count = 0;
+                                let mlx_guard = mlx_sessions.lock().await;
+                                mlx_count = mlx_guard.len();
+                                if let Some(session) = mlx_guard
+                                    .values()
+                                    .find(|s| s.info.model_id == sessions_find_model)
+                                {
+                                    // Clone just the SessionInfo since MlxBackendSession is not Clone
+                                    mlx_session_info = Some(session.info.clone());
+                                }
+                                (mlx_session_info, mlx_count)
+                            };
+
+                            let total_sessions = sessions_guard.len() + mlx_count;
+
+                            // mlx_session_info is Option<SessionInfo>, use as_ref to get Option<&SessionInfo>
+                            let mlx_session = mlx_session_info.as_ref();
+
+                            if total_sessions == 0 {
+                                log::warn!(
+                                    "Request for model '{model_id}' but no models are running."
+                                );
+                                let mut error_response =
+                                    Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
+                                error_response = add_cors_headers_with_host_and_origin(
+                                    error_response,
+                                    &host_header,
+                                    &origin_header,
+                                    &config.trusted_hosts,
+                                );
+                                return Ok(error_response
+                                    .body(Body::from("No models are available"))
+                                    .unwrap());
+                            }
+
+                            if let Some(session) = llama_session {
+                                let target_port = session.info.port;
+                                session_api_key = Some(session.info.api_key.clone());
+                                log::debug!("Found llama.cpp session for model_id {model_id}");
+                                target_base_url = Some(format!(
+                                    "http://127.0.0.1:{target_port}/v1{destination_path}"
+                                ));
+                            } else if let Some(info) = mlx_session {
+                                let target_port = info.port;
+                                session_api_key = Some(info.api_key.clone());
+                                log::debug!("Found MLX session for model_id {model_id}");
+                                target_base_url = Some(format!(
+                                    "http://127.0.0.1:{target_port}/v1{destination_path}"
+                                ));
+                            } else {
+                                log::warn!("No running session found for model_id: {model_id}");
+                                let mut error_response =
+                                    Response::builder().status(StatusCode::NOT_FOUND);
+                                error_response = add_cors_headers_with_host_and_origin(
+                                    error_response,
+                                    &host_header,
+                                    &origin_header,
+                                    &config.trusted_hosts,
+                                );
+                                return Ok(error_response
+                                    .body(Body::from(format!(
+                                        "No running session found for model '{model_id}'"
+                                    )))
+                                    .unwrap());
+                            }
                         }
                     } else {
                         log::warn!(
@@ -822,7 +730,7 @@ async fn proxy_request<R: tauri::Runtime>(
         }
     }
 
-    let port = match target_port {
+    let upstream_url = match target_base_url {
         Some(p) => p,
         None => {
             log::error!(
@@ -840,11 +748,11 @@ async fn proxy_request<R: tauri::Runtime>(
                 .unwrap());
         }
     };
-    log::info!("Proxying request to model server at port {port}, path: {destination_path}");
+    log::info!(
+        "Proxying request to model server at base URL {upstream_url}, path: {destination_path}"
+    );
 
-    let upstream_url = format!("http://127.0.0.1:{port}/v1{destination_path}");
-
-    let mut outbound_req = client.request(method.clone(), &upstream_url);
+    let mut outbound_req = client.request(method.clone(), upstream_url);
 
     for (name, value) in headers.iter() {
         if name != hyper::header::HOST && name != hyper::header::AUTHORIZATION {

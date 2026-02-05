@@ -190,50 +190,6 @@ export function DataProvider() {
     })
   }, [serviceHub, setProviders])
 
-  // Handle remote completion requests from the local API server
-  useEffect(() => {
-    const handleRemoteCompletion = async (event: Event) => {
-      const payload = (event as CustomEvent).detail as {
-        requestId: string
-        path: string
-        model: string
-        provider: string
-        body: Record<string, unknown>
-      }
-
-      console.log('Handling remote completion request:', payload)
-
-      try {
-        // Call the remote chat completion stream IPC command
-        const requestId = await invoke<string>('plugin:server|remote_chat_completion_stream', {
-          request: {
-            provider: payload.provider,
-            model: payload.model,
-            messages: payload.body.messages,
-            stream: true,
-            extra: {},
-          },
-        })
-
-        console.log('Remote completion stream started with requestId:', requestId)
-      } catch (error) {
-        console.error('Failed to handle remote completion:', error)
-
-        // Emit error event so the backend can respond
-        await invoke('plugin:server|abort_remote_stream', {
-          requestId: payload.requestId,
-        })
-      }
-    }
-
-    // Listen for remote completion requests from the backend
-    window.addEventListener('remote-completion-request', handleRemoteCompletion as EventListener)
-
-    return () => {
-      window.removeEventListener('remote-completion-request', handleRemoteCompletion as EventListener)
-    }
-  }, [])
-
   // Auto-start Local API Server on app startup if enabled
   useEffect(() => {
     if (enableOnStartup) {
