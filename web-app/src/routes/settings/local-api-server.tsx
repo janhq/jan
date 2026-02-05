@@ -449,7 +449,8 @@ function LocalAPIServerContent() {
               {/* Helper Card */}
               <Card title='Run with your Claude Code'>
                 <CardItem
-                  title="Big Model"
+                  title="Large Model"
+                  description="Opus"
                   actions ={
                     <HelperModelSelector
                       providers={providers}
@@ -462,6 +463,7 @@ function LocalAPIServerContent() {
                 />
                 <CardItem
                   title="Medium Model"
+                  description="Sonnet"
                   actions ={
                     <HelperModelSelector
                       providers={providers}
@@ -474,6 +476,7 @@ function LocalAPIServerContent() {
                 />
                 <CardItem
                   title="Small Model"
+                  description="Haiku"
                   actions ={
                     <HelperModelSelector
                       providers={providers}
