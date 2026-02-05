@@ -7,8 +7,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use ureq;
 
-use super::super::types::{GatewayResponse, Platform};
-use super::super::GatewayConfig;
+use super::super::GatewayResponse;
 
 /// Discord response sender configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

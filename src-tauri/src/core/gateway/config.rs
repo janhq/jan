@@ -51,6 +51,9 @@ impl GatewayConfigManager {
             discord_webhook_url: None,
             discord_bot_token: None,
             telegram_bot_token: None,
+            slack_bot_token: None,
+            accounts: std::collections::HashMap::new(),
+            auth_token: None,
         }
     }
 

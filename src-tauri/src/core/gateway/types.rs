@@ -20,6 +20,14 @@ pub struct GatewayConfig {
     pub discord_bot_token: Option<String>,
     /// Telegram bot token for sending messages to Telegram
     pub telegram_bot_token: Option<String>,
+    /// Slack bot token for sending messages to Slack
+    pub slack_bot_token: Option<String>,
+    /// Named accounts per platform (multi-account support)
+    #[serde(default)]
+    pub accounts: HashMap<String, Vec<PlatformAccount>>,
+    /// Authentication token for WebSocket connections
+    #[serde(default)]
+    pub auth_token: Option<String>,
 }
 
 impl Default for GatewayConfig {
@@ -34,6 +42,89 @@ impl Default for GatewayConfig {
             discord_webhook_url: None,
             discord_bot_token: None,
             telegram_bot_token: None,
+            slack_bot_token: None,
+            accounts: HashMap::new(),
+            auth_token: None,
+        }
+    }
+}
+
+/// Named platform account for multi-account support
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformAccount {
+    /// Unique account identifier (e.g., "work", "personal", "team-a")
+    pub id: String,
+    /// Human-readable name
+    pub name: String,
+    /// Platform type
+    pub platform: Platform,
+    /// Whether this account is enabled
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Bot/API token for this account
+    pub token: Option<String>,
+    /// Webhook URL (for Discord)
+    pub webhook_url: Option<String>,
+    /// Platform-specific settings
+    #[serde(default)]
+    pub settings: serde_json::Value,
+}
+
+fn default_true() -> bool { true }
+
+impl PlatformAccount {
+    /// Check if this account has valid credentials
+    pub fn is_configured(&self) -> bool {
+        self.token.is_some() || self.webhook_url.is_some()
+    }
+}
+
+impl GatewayConfig {
+    /// Get all accounts for a specific platform
+    pub fn get_platform_accounts(&self, platform: &str) -> Vec<&PlatformAccount> {
+        self.accounts
+            .get(platform)
+            .map(|accounts| accounts.iter().collect())
+            .unwrap_or_default()
+    }
+
+    /// Get a specific account by platform and ID
+    pub fn get_account(&self, platform: &str, account_id: &str) -> Option<&PlatformAccount> {
+        self.accounts
+            .get(platform)
+            .and_then(|accounts| accounts.iter().find(|a| a.id == account_id))
+    }
+
+    /// Get the token for a platform, checking named accounts first, then legacy fields
+    pub fn resolve_token(&self, platform: &Platform, account_id: &str) -> Option<String> {
+        // First try named accounts
+        if let Some(account) = self.get_account(platform.as_str(), account_id) {
+            if let Some(ref token) = account.token {
+                return Some(token.clone());
+            }
+        }
+
+        // Fall back to legacy single-token fields
+        match platform {
+            Platform::Discord => self.discord_bot_token.clone(),
+            Platform::Telegram => self.telegram_bot_token.clone(),
+            Platform::Slack => self.slack_bot_token.clone(),
+            Platform::Unknown => None,
+        }
+    }
+
+    /// Get the webhook URL for a platform, checking named accounts first
+    pub fn resolve_webhook_url(&self, platform: &Platform, account_id: &str) -> Option<String> {
+        if let Some(account) = self.get_account(platform.as_str(), account_id) {
+            if let Some(ref url) = account.webhook_url {
+                return Some(url.clone());
+            }
+        }
+
+        match platform {
+            Platform::Discord => self.discord_webhook_url.clone(),
+            _ => None,
         }
     }
 }

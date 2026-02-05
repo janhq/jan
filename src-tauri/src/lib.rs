@@ -140,6 +140,12 @@ pub fn run() {
         core::gateway::commands::gateway_start_discord_bot,
         core::gateway::commands::gateway_stop_discord_bot,
         core::gateway::commands::gateway_get_discord_bot_status,
+        // Channel management commands
+        core::gateway::commands::gateway_list_channels,
+        // Account management commands
+        core::gateway::commands::gateway_add_account,
+        core::gateway::commands::gateway_remove_account,
+        core::gateway::commands::gateway_list_accounts,
     ]);
 
     // Mobile: no updater commands

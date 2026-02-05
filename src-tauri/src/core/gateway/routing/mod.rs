@@ -8,10 +8,10 @@ pub mod config;
 pub mod resolver;
 pub mod agent_integration;
 
-pub use session_key::{SessionKey, PeerKind, SessionKeyBuilder, SessionKeyError, SessionKeyPattern};
-pub use config::{RouteConfig, AgentBinding, BindingType, Priority, CreateBindingRequest, UpdateBindingRequest};
-pub use resolver::{RouteResolver, RouteDecision, RouteStats, RouteResolverConfig};
-pub use agent_integration::{AgentRoutingService, AgentRoutingConfig, AgentRoutingResult, RoutingStats};
+pub use session_key::{SessionKey, PeerKind};
+pub use config::{RouteConfig, AgentBinding, Priority};
+pub use resolver::RouteResolver;
+pub use agent_integration::AgentRoutingService;
 
 /// Predefined priority constants
 pub mod priorities {

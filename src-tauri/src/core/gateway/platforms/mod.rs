@@ -2,12 +2,13 @@
 //!
 //! This module contains parsers and senders for each supported messaging platform:
 //! - Discord (parser + sender)
-//! - Slack (parser)
-//! - Telegram (parser + bot)
+//! - Slack (parser + sender)
+//! - Telegram (parser + bot/sender)
 
 pub mod discord;
 pub mod discord_sender;
 pub mod slack;
+pub mod slack_sender;
 pub mod telegram_parser;
 pub mod telegram;
 pub mod plugin;

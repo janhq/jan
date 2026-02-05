@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::core::gateway::types::{GatewayResponse, Platform};
+use crate::core::gateway::types::GatewayResponse;
 
 /// Telegram bot configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

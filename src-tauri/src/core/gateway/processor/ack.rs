@@ -265,6 +265,177 @@ pub async fn build_ack_response(
     })
 }
 
+/// Send a processing ACK to the platform (reaction/typing indicator).
+///
+/// - Discord: Add reaction emoji to the original message
+/// - Telegram: Send typing indicator (sendChatAction)
+/// - Slack: Add reaction emoji to the original message
+pub async fn send_processing_ack(
+    handler: &AckHandler,
+    message: &GatewayMessage,
+    config: &super::super::types::GatewayConfig,
+) -> Result<(), String> {
+    let ack_config = handler.get_config().await;
+    if !ack_config.enabled {
+        return Ok(());
+    }
+
+    let emoji = handler.get_ack_emoji(message.platform.clone()).await;
+
+    match message.platform {
+        Platform::Discord => {
+            // Discord: Add reaction to the message
+            if let Some(ref token) = config.discord_bot_token {
+                let url = format!(
+                    "https://discord.com/api/v10/channels/{}/messages/{}/reactions/{}/@me",
+                    message.channel_id,
+                    message.id,
+                    urlencoding_emoji(&emoji),
+                );
+                let client = reqwest::Client::new();
+                let resp = client
+                    .put(&url)
+                    .header("Authorization", format!("Bot {}", token))
+                    .send()
+                    .await
+                    .map_err(|e| format!("Discord ACK failed: {}", e))?;
+
+                if !resp.status().is_success() {
+                    let status = resp.status();
+                    let body = resp.text().await.unwrap_or_default();
+                    log::warn!("[ACK] Discord reaction failed: {} - {}", status, body);
+                } else {
+                    log::info!("[ACK] Discord reaction {} added to message {}", emoji, message.id);
+                }
+            }
+        }
+        Platform::Telegram => {
+            // Telegram: Send typing indicator
+            if ack_config.show_typing {
+                if let Some(ref token) = config.telegram_bot_token {
+                    let url = format!("https://api.telegram.org/bot{}/sendChatAction", token);
+                    let client = reqwest::Client::new();
+                    let _ = client
+                        .post(&url)
+                        .json(&serde_json::json!({
+                            "chat_id": message.channel_id,
+                            "action": "typing",
+                        }))
+                        .send()
+                        .await;
+                    log::info!("[ACK] Telegram typing indicator sent for chat {}", message.channel_id);
+                }
+            }
+        }
+        Platform::Slack => {
+            // Slack: Add reaction to the message
+            if let Some(ref token) = config.slack_bot_token {
+                // Slack reaction names don't include colons, strip them
+                let reaction_name = emoji.trim_matches(':');
+                match super::super::platforms::slack_sender::add_reaction(
+                    token,
+                    &message.channel_id,
+                    &message.id,
+                    reaction_name,
+                ).await {
+                    Ok(()) => {
+                        log::info!("[ACK] Slack reaction {} added to message {}", reaction_name, message.id);
+                    }
+                    Err(e) => {
+                        log::warn!("[ACK] Slack reaction failed: {}", e);
+                    }
+                }
+            }
+        }
+        Platform::Unknown => {}
+    }
+
+    // Register the ACK tracking
+    handler.register_message(&message.id, message.platform.clone(), &message.channel_id).await;
+
+    Ok(())
+}
+
+/// Send a completion ACK to the platform (change reaction from processing to done).
+///
+/// - Discord: Remove processing reaction, add completion reaction
+/// - Telegram: No specific action (typing stops automatically)
+/// - Slack: Remove processing reaction, add completion reaction
+pub async fn send_completion_ack(
+    handler: &AckHandler,
+    message: &GatewayMessage,
+    config: &super::super::types::GatewayConfig,
+) -> Result<(), String> {
+    let ack_config = handler.get_config().await;
+    if !ack_config.enabled {
+        return Ok(());
+    }
+
+    match message.platform {
+        Platform::Discord => {
+            if let Some(ref token) = config.discord_bot_token {
+                // Remove processing reaction (👀)
+                let processing_emoji = urlencoding_emoji("👀");
+                let remove_url = format!(
+                    "https://discord.com/api/v10/channels/{}/messages/{}/reactions/{}/@me",
+                    message.channel_id, message.id, processing_emoji,
+                );
+                let client = reqwest::Client::new();
+                let _ = client.delete(&remove_url)
+                    .header("Authorization", format!("Bot {}", token))
+                    .send().await;
+
+                // Add completion reaction (✅)
+                let done_emoji = urlencoding_emoji("✅");
+                let add_url = format!(
+                    "https://discord.com/api/v10/channels/{}/messages/{}/reactions/{}/@me",
+                    message.channel_id, message.id, done_emoji,
+                );
+                let _ = client.put(&add_url)
+                    .header("Authorization", format!("Bot {}", token))
+                    .send().await;
+
+                log::info!("[ACK] Discord completion reaction added to message {}", message.id);
+            }
+        }
+        Platform::Slack => {
+            if let Some(ref token) = config.slack_bot_token {
+                // Slack: just add the done reaction (✅), leave processing reaction
+                match super::super::platforms::slack_sender::add_reaction(
+                    token,
+                    &message.channel_id,
+                    &message.id,
+                    "white_check_mark",
+                ).await {
+                    Ok(()) => {
+                        log::info!("[ACK] Slack completion reaction added to message {}", message.id);
+                    }
+                    Err(e) => {
+                        log::warn!("[ACK] Slack completion reaction failed: {}", e);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    // Mark as delivered
+    handler.mark_delivered(&message.id).await;
+
+    Ok(())
+}
+
+/// URL-encode an emoji for Discord API reactions endpoint
+fn urlencoding_emoji(emoji: &str) -> String {
+    // For Unicode emojis, percent-encode them
+    let bytes = emoji.as_bytes();
+    let mut result = String::new();
+    for byte in bytes {
+        result.push_str(&format!("%{:02X}", byte));
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

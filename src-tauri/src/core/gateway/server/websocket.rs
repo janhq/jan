@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use tokio_tungstenite::accept_async;
 use futures_util::{StreamExt, SinkExt};
@@ -10,10 +11,16 @@ use tungstenite::protocol::Message;
 
 use super::super::{SharedGatewayManager, protocol::{ProtocolHandler, EventFrame}};
 use super::WsServerHandle;
-use crate::core::gateway::types::{WebSocketMessage, WebSocketOutgoing, Platform, GatewayMessage};
-use crate::core::gateway::protocol::frames::{ProtocolFrame};
+use crate::core::gateway::types::{WebSocketMessage, WebSocketOutgoing, Platform};
+use crate::core::gateway::protocol::frames::{ProtocolFrame, error_codes};
 
 type WsStream = tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>;
+
+/// Maximum buffered bytes before marking a client as slow
+const BACKPRESSURE_THRESHOLD: usize = 1024 * 512; // 512 KB
+
+/// Hello challenge timeout
+const HELLO_TIMEOUT_SECS: u64 = 10;
 
 /// WebSocket client session
 struct WsSession {
@@ -21,6 +28,12 @@ struct WsSession {
     client_id: String,
     subscribed_platforms: Vec<Platform>,
     last_activity: std::time::Instant,
+    /// Whether the client has completed the hello handshake
+    authenticated: bool,
+    /// Outbound buffer size tracking for backpressure
+    buffered_bytes: Arc<AtomicUsize>,
+    /// Client user-agent / identifier from hello
+    client_info: Option<String>,
 }
 
 impl WsSession {
@@ -30,11 +43,168 @@ impl WsSession {
             client_id: uuid::Uuid::new_v4().to_string(),
             subscribed_platforms: Vec::new(),
             last_activity: std::time::Instant::now(),
+            authenticated: false,
+            buffered_bytes: Arc::new(AtomicUsize::new(0)),
+            client_info: None,
         }
+    }
+
+    /// Check if client is slow (backpressure)
+    fn is_slow(&self) -> bool {
+        self.buffered_bytes.load(Ordering::Relaxed) > BACKPRESSURE_THRESHOLD
     }
 }
 
-/// Handle a WebSocket connection
+/// Hello handshake frame from client
+#[derive(serde::Deserialize)]
+struct HelloFrame {
+    #[serde(default)]
+    auth: Option<HelloAuth>,
+    #[serde(default)]
+    client: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct HelloAuth {
+    token: Option<String>,
+}
+
+/// Perform the hello challenge handshake
+///
+/// 1. Server sends `connect.challenge` event with nonce
+/// 2. Client must respond with `hello` frame containing auth token
+/// 3. Server validates and sends `hello-ok` or closes connection
+async fn perform_hello_handshake(
+    tx: &mut futures_util::stream::SplitSink<WsStream, Message>,
+    rx: &mut futures_util::stream::SplitStream<WsStream>,
+    session: &Arc<Mutex<WsSession>>,
+    manager: &SharedGatewayManager,
+) -> bool {
+    let client_id = session.lock().await.client_id.clone();
+    let nonce = uuid::Uuid::new_v4().to_string();
+    let server_time = chrono::Utc::now().timestamp_millis();
+
+    // Step 1: Send challenge
+    let challenge = EventFrame::new("connect.challenge", serde_json::json!({
+        "nonce": nonce,
+        "ts": server_time,
+        "protocolVersion": crate::core::gateway::protocol::PROTOCOL_VERSION,
+    }));
+    if tx.send(Message::Text(challenge.to_json().unwrap_or_default())).await.is_err() {
+        return false;
+    }
+
+    // Step 2: Wait for hello response with timeout
+    let hello_result = tokio::time::timeout(
+        Duration::from_secs(HELLO_TIMEOUT_SECS),
+        rx.next(),
+    ).await;
+
+    let hello_msg = match hello_result {
+        Ok(Some(Ok(Message::Text(text)))) => text,
+        Ok(Some(Ok(_))) => {
+            log::warn!("[WS] Client {} sent non-text message during handshake", client_id);
+            let _ = send_error(tx, "HANDSHAKE_FAILED", "Expected text frame for hello").await;
+            return false;
+        }
+        Ok(Some(Err(e))) => {
+            log::warn!("[WS] WebSocket error during hello from {}: {}", client_id, e);
+            return false;
+        }
+        Ok(None) => {
+            log::warn!("[WS] Client {} disconnected during hello", client_id);
+            return false;
+        }
+        Err(_) => {
+            log::warn!("[WS] Client {} hello timeout ({}s)", client_id, HELLO_TIMEOUT_SECS);
+            let _ = send_error(tx, "HELLO_TIMEOUT", "Hello handshake timed out").await;
+            return false;
+        }
+    };
+
+    // Step 3: Parse and validate hello
+    let hello: HelloFrame = match serde_json::from_str(&hello_msg) {
+        Ok(h) => h,
+        Err(e) => {
+            log::warn!("[WS] Client {} sent invalid hello: {}", client_id, e);
+            let _ = send_error(tx, "INVALID_HELLO", "Could not parse hello frame").await;
+            return false;
+        }
+    };
+
+    // Validate auth token if configured
+    let auth_required = {
+        let guard = manager.lock().await;
+        guard.config.as_ref().and_then(|c| c.auth_token.clone())
+    };
+
+    if let Some(ref expected_token) = auth_required {
+        let provided_token = hello.auth
+            .as_ref()
+            .and_then(|a| a.token.as_deref())
+            .unwrap_or("");
+
+        if provided_token != expected_token {
+            log::warn!("[WS] Client {} failed authentication", client_id);
+            let _ = send_error(tx, error_codes::UNAUTHORIZED, "Invalid auth token").await;
+            return false;
+        }
+    }
+
+    // Step 4: Send hello-ok
+    let mut sess = session.lock().await;
+    sess.authenticated = true;
+    sess.client_info = hello.client;
+
+    let hello_ok = EventFrame::new("hello-ok", serde_json::json!({
+        "clientId": client_id,
+        "connectedAt": chrono::Utc::now().timestamp_millis(),
+        "protocolVersion": crate::core::gateway::protocol::PROTOCOL_VERSION,
+        "authRequired": auth_required.is_some(),
+    }));
+    drop(sess);
+
+    if tx.send(Message::Text(hello_ok.to_json().unwrap_or_default())).await.is_err() {
+        return false;
+    }
+
+    log::info!("[WS] Client {} authenticated successfully", client_id);
+    true
+}
+
+/// Send an error frame and close hint
+async fn send_error(
+    tx: &mut futures_util::stream::SplitSink<WsStream, Message>,
+    code: &str,
+    message: &str,
+) -> Result<(), tungstenite::Error> {
+    let error_event = EventFrame::new("gateway.error", serde_json::json!({
+        "code": code,
+        "message": message,
+    }));
+    tx.send(Message::Text(error_event.to_json().unwrap_or_default())).await?;
+    tx.send(Message::Close(None)).await?;
+    Ok(())
+}
+
+/// Track outbound message bytes for backpressure
+async fn send_tracked(
+    tx: &mut futures_util::stream::SplitSink<WsStream, Message>,
+    session: &Arc<Mutex<WsSession>>,
+    text: String,
+) -> Result<(), tungstenite::Error> {
+    let bytes = text.len();
+    let buffered = session.lock().await.buffered_bytes.clone();
+    buffered.fetch_add(bytes, Ordering::Relaxed);
+
+    let result = tx.send(Message::Text(text)).await;
+
+    // Decrement after send completes (approximation — actual TCP buffer is separate)
+    buffered.fetch_sub(bytes, Ordering::Relaxed);
+    result
+}
+
+/// Handle a WebSocket connection with hello handshake and backpressure
 async fn handle_ws_connection(
     stream: tokio::net::TcpStream,
     manager: SharedGatewayManager,
@@ -52,25 +222,38 @@ async fn handle_ws_connection(
     let session = Arc::new(Mutex::new(WsSession::new(addr)));
     let client_id = session.lock().await.client_id.clone();
 
-    // Create protocol handler for this connection
+    log::info!("[WS] New connection from: {} (id: {})", addr, client_id);
+
+    // Perform hello handshake (auth + challenge)
+    if !perform_hello_handshake(&mut tx, &mut rx, &session, &manager).await {
+        log::warn!("[WS] Client {} failed handshake, closing", client_id);
+        return;
+    }
+
+    // Create protocol handler for this authenticated connection
     let protocol_handler = ProtocolHandler::new(manager.clone(), client_id.clone());
-
-    log::info!("WebSocket client connected: {} (id: {})", addr, client_id);
-
-    // Send connected event
-    let connected_event = EventFrame::new("gateway.connected", serde_json::json!({
-        "clientId": client_id,
-        "connectedAt": chrono::Utc::now().timestamp_millis(),
-        "protocolVersion": crate::core::gateway::protocol::PROTOCOL_VERSION
-    }));
-    let _ = tx.send(Message::Text(connected_event.to_json().unwrap_or_default())).await;
 
     // Main message loop
     while let Some(msg) = rx.next().await {
         match msg {
             Ok(msg) => {
                 if let Message::Text(text) = msg {
-                    session.lock().await.last_activity = std::time::Instant::now();
+                    {
+                        let mut sess = session.lock().await;
+                        sess.last_activity = std::time::Instant::now();
+                    }
+
+                    // Check backpressure before processing
+                    if session.lock().await.is_slow() {
+                        log::warn!("[WS] Client {} is slow, dropping message", client_id);
+                        // Send backpressure warning
+                        let warning = EventFrame::new("gateway.backpressure", serde_json::json!({
+                            "warning": "Client buffer full, some events may be dropped",
+                            "buffered_bytes": session.lock().await.buffered_bytes.load(Ordering::Relaxed),
+                        }));
+                        let _ = send_tracked(&mut tx, &session, warning.to_json().unwrap_or_default()).await;
+                        continue;
+                    }
 
                     // Try to parse as new protocol frame first
                     match ProtocolFrame::from_json(&text) {
@@ -78,7 +261,7 @@ async fn handle_ws_connection(
                             // Handle using new protocol handler
                             if let Some(response) = super::super::protocol::handler::process_frame(frame, &protocol_handler).await {
                                 let response_text = response.to_json().unwrap_or_default();
-                                let _ = tx.send(Message::Text(response_text)).await;
+                                let _ = send_tracked(&mut tx, &session, response_text).await;
                             }
                         }
                         Err(_) => {
@@ -97,7 +280,7 @@ async fn handle_ws_connection(
         }
     }
 
-    log::info!("WebSocket client {} disconnected", addr);
+    log::info!("[WS] Client {} disconnected", client_id);
 }
 
 /// Handle incoming WebSocket message (legacy format for backward compatibility)

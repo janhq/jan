@@ -1,14 +1,12 @@
 use std::sync::Arc;
 use tauri::{command, AppHandle, Emitter, State};
-use serde::{Serialize, Deserialize};
-use serde_json::Value;
 
 use super::SharedGatewayManager;
 use super::server::{http_server, websocket};
 use super::types::{GatewayStatus, GatewayResponse, ConnectionState, ThreadMapping, GatewayConfig, Platform, GatewayMessage};
 use super::platforms;
 use super::discord_bot;
-use super::channel::{ChannelConfig, ChannelStats};
+use super::channel::ChannelConfig;
 use super::processor::debounce::DebounceConfig;
 use super::processor::ack::AckConfig;
 use super::routing::agent_integration::AgentRoutingConfig;
@@ -29,6 +27,9 @@ pub async fn gateway_start_server(
 
     // Store the config
     guard.config = Some(config.clone());
+
+    // Initialize platform plugins
+    guard.init_plugins();
 
     // Configure Discord sender from config
     if config.discord_webhook_url.is_some() || config.discord_bot_token.is_some() {
@@ -110,10 +111,86 @@ pub async fn gateway_start_server(
 
     guard.consumer_task = Some(consumer_task);
 
+    // Auto-register channels from config
+    {
+        use super::channel::{ChannelConfig as ChanConfig, ConnectionState as ChanState};
+
+        // Register Discord channel if configured (legacy single-token)
+        if config.discord_webhook_url.is_some() || config.discord_bot_token.is_some() {
+            let chan_config = ChanConfig {
+                platform: Platform::Discord,
+                account_id: "default".to_string(),
+                display_name: "Discord".to_string(),
+                enabled: true,
+                ..ChanConfig::default()
+            };
+            guard.channel_manager.add_channel(chan_config).await;
+            guard.channel_manager.set_state(&Platform::Discord, "default", ChanState::Connected, None).await;
+            log::info!("[Gateway] Registered Discord channel (default)");
+        }
+
+        // Register Telegram channel if configured (legacy single-token)
+        if config.telegram_bot_token.is_some() {
+            let chan_config = ChanConfig {
+                platform: Platform::Telegram,
+                account_id: "default".to_string(),
+                display_name: "Telegram".to_string(),
+                enabled: true,
+                ..ChanConfig::default()
+            };
+            guard.channel_manager.add_channel(chan_config).await;
+            guard.channel_manager.set_state(&Platform::Telegram, "default", ChanState::Connected, None).await;
+            log::info!("[Gateway] Registered Telegram channel (default)");
+        }
+
+        // Register Slack channel if configured (legacy single-token)
+        if config.slack_bot_token.is_some() {
+            let chan_config = ChanConfig {
+                platform: Platform::Slack,
+                account_id: "default".to_string(),
+                display_name: "Slack".to_string(),
+                enabled: true,
+                ..ChanConfig::default()
+            };
+            guard.channel_manager.add_channel(chan_config).await;
+            guard.channel_manager.set_state(&Platform::Slack, "default", ChanState::Connected, None).await;
+            log::info!("[Gateway] Registered Slack channel (default)");
+        }
+
+        // Register named accounts from multi-account config
+        for (platform_str, accounts) in &config.accounts {
+            let platform_enum = Platform::from_str(platform_str);
+            if matches!(platform_enum, Platform::Unknown) {
+                log::warn!("[Gateway] Skipping unknown platform in accounts: {}", platform_str);
+                continue;
+            }
+            for account in accounts {
+                if !account.enabled || !account.is_configured() {
+                    log::info!("[Gateway] Skipping disabled/unconfigured account: {}:{}", platform_str, account.id);
+                    continue;
+                }
+                let chan_config = ChanConfig {
+                    platform: platform_enum.clone(),
+                    account_id: account.id.clone(),
+                    display_name: account.name.clone(),
+                    enabled: account.enabled,
+                    ..ChanConfig::default()
+                };
+                guard.channel_manager.add_channel(chan_config).await;
+                guard.channel_manager.set_state(&platform_enum, &account.id, ChanState::Connected, None).await;
+                log::info!("[Gateway] Registered named account: {}:{}", platform_str, account.id);
+            }
+        }
+
+        let stats = guard.channel_manager.get_stats().await;
+        log::info!("[Gateway] Channel manager: {} channels registered, {} connected",
+            stats.total_channels, stats.connected_channels);
+    }
+
     Ok(status)
 }
 
-/// Command to stop the gateway server
+/// Command to stop the gateway server with ordered graceful shutdown
 #[command]
 pub async fn gateway_stop_server(
     app: AppHandle,
@@ -125,24 +202,74 @@ pub async fn gateway_stop_server(
         return Err("Gateway is not running".to_string());
     }
 
-    // Stop HTTP server
-    if let Some(handle) = guard.http_server.take() {
-        handle.request_shutdown();
-    }
+    log::info!("[Shutdown] Starting ordered shutdown sequence...");
 
-    // Stop WebSocket server
+    // Step 1: Stop accepting new WebSocket connections
+    log::info!("[Shutdown] Step 1: Stopping WebSocket server (no new connections)");
     if let Some(handle) = guard.ws_server.take() {
         handle.request_shutdown();
     }
 
-    guard.running = false;
+    // Step 2: Stop channel monitors (set all channels to Disconnected)
+    log::info!("[Shutdown] Step 2: Stopping all channel monitors");
+    {
+        use super::channel::ConnectionState as ChanState;
+        let channels = guard.channel_manager.get_all_channels().await;
+        for (config, _) in &channels {
+            guard.channel_manager.set_state(
+                &config.platform,
+                &config.account_id,
+                ChanState::Disconnected,
+                Some("Gateway shutting down".to_string()),
+            ).await;
+        }
+    }
 
-    // Cancel consumer task
+    // Step 3: Stop Discord bot if running
+    log::info!("[Shutdown] Step 3: Stopping Discord bot");
+    if let Some(task) = guard.discord_bot_task.take() {
+        task.abort();
+    }
+
+    // Step 4: Stop ACK typing indicators
+    log::info!("[Shutdown] Step 4: Stopping ACK typing indicators");
+    guard.ack_handler.stop_all_typing().await;
+
+    // Step 5: Drain message queue (process remaining messages with timeout)
+    log::info!("[Shutdown] Step 5: Draining message queue");
+    let remaining = guard.message_queue.len();
+    if remaining > 0 {
+        log::info!("[Shutdown] {} messages remaining in queue, allowing drain...", remaining);
+        // Give the consumer a short grace period to process remaining messages
+        drop(guard); // Release lock so consumer can process
+        tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+        guard = state.lock().await;
+    }
+
+    // Step 6: Cancel consumer task
+    log::info!("[Shutdown] Step 6: Cancelling consumer task");
     if let Some(task) = guard.consumer_task.take() {
         task.abort();
     }
 
-    // Emit status change
+    // Step 7: Emit shutdown event to frontend
+    log::info!("[Shutdown] Step 7: Emitting shutdown event");
+    let _ = app.emit("gateway:shutdown", serde_json::json!({
+        "reason": "user_requested",
+        "timestamp": chrono::Utc::now().timestamp_millis(),
+    }));
+
+    // Step 8: Stop HTTP server
+    log::info!("[Shutdown] Step 8: Stopping HTTP server");
+    if let Some(handle) = guard.http_server.take() {
+        handle.request_shutdown();
+    }
+
+    // Step 9: Mark gateway as stopped
+    guard.running = false;
+    log::info!("[Shutdown] Gateway shutdown complete");
+
+    // Emit final status
     let status = guard.get_status();
     let _ = app.emit("gateway:status", &status);
 
@@ -205,6 +332,10 @@ pub async fn gateway_send_response(
     log::info!("[Commands] Full response content length: {} chars", response.content.len());
     log::info!("[Commands] Response preview (full): {}", response.content);
 
+    // Format and chunk the response content for the target platform
+    let chunks = super::formatter::format_and_chunk(&response.content, &response.target_platform);
+    log::info!("[Commands] Formatted response into {} chunk(s) for {}", chunks.len(), platform);
+
     // Route to appropriate platform sender
     match platform {
         "discord" => {
@@ -212,28 +343,103 @@ pub async fn gateway_send_response(
             let sender = guard.discord_sender.clone();
             drop(guard);
 
-            match platforms::discord_sender::send_discord_response(&sender, &response).await {
-                Ok(()) => {
-                    log::info!("[Commands] Discord response sent successfully");
+            for (i, chunk) in chunks.iter().enumerate() {
+                let chunk_response = GatewayResponse {
+                    content: chunk.clone(),
+                    // Only reply_to on first chunk
+                    reply_to: if i == 0 { response.reply_to.clone() } else { None },
+                    ..response.clone()
+                };
+
+                match platforms::discord_sender::send_discord_response(&sender, &chunk_response).await {
+                    Ok(()) => {
+                        log::info!("[Commands] Discord chunk {}/{} sent successfully", i + 1, chunks.len());
+                    }
+                    Err(e) => {
+                        log::error!("[Commands] Failed to send Discord response chunk {}: {}", i + 1, e);
+                        let _ = app.emit("gateway:response:error", serde_json::json!({
+                            "response": response,
+                            "error": e
+                        }));
+                        return Err(e);
+                    }
+                }
+            }
+            let _ = app.emit("gateway:response:success", &response);
+        }
+        "telegram" => {
+            let bot_token = {
+                let guard = state.lock().await;
+                guard.config.as_ref().and_then(|c| c.telegram_bot_token.clone())
+            };
+
+            match bot_token {
+                Some(token) if !token.is_empty() => {
+                    for (i, chunk) in chunks.iter().enumerate() {
+                        match platforms::telegram::send_message(
+                            &token,
+                            &response.target_channel_id,
+                            chunk,
+                            if i == 0 { response.reply_to.as_deref() } else { None },
+                        ).await {
+                            Ok(result) => {
+                                log::info!("[Commands] Telegram chunk {}/{} sent: msg_id={}",
+                                    i + 1, chunks.len(), result.message_id);
+                            }
+                            Err(e) => {
+                                log::error!("[Commands] Failed to send Telegram chunk {}: {}", i + 1, e);
+                                let _ = app.emit("gateway:response:error", serde_json::json!({
+                                    "response": response,
+                                    "error": e.to_string()
+                                }));
+                                return Err(format!("Telegram send failed: {}", e));
+                            }
+                        }
+                    }
                     let _ = app.emit("gateway:response:success", &response);
                 }
-                Err(e) => {
-                    log::error!("[Commands] Failed to send Discord response: {}", e);
-                    let _ = app.emit("gateway:response:error", serde_json::json!({
-                        "response": response,
-                        "error": e
-                    }));
-                    return Err(e);
+                _ => {
+                    log::error!("[Commands] Telegram bot token not configured");
+                    return Err("Telegram bot token not configured".to_string());
                 }
             }
         }
         "slack" => {
-            log::warn!("[Commands] Slack response sending not yet implemented");
-            let _ = app.emit("gateway:response", &response);
-        }
-        "telegram" => {
-            log::warn!("[Commands] Telegram response sending not yet implemented");
-            let _ = app.emit("gateway:response", &response);
+            let bot_token = {
+                let guard = state.lock().await;
+                guard.config.as_ref().and_then(|c| c.slack_bot_token.clone())
+            };
+
+            match bot_token {
+                Some(token) if !token.is_empty() => {
+                    for (i, chunk) in chunks.iter().enumerate() {
+                        match platforms::slack_sender::send_message(
+                            &token,
+                            &response.target_channel_id,
+                            chunk,
+                            if i == 0 { response.reply_to.as_deref() } else { None },
+                        ).await {
+                            Ok(result) => {
+                                log::info!("[Commands] Slack chunk {}/{} sent: ts={}",
+                                    i + 1, chunks.len(), result.ts);
+                            }
+                            Err(e) => {
+                                log::error!("[Commands] Failed to send Slack chunk {}: {}", i + 1, e);
+                                let _ = app.emit("gateway:response:error", serde_json::json!({
+                                    "response": response,
+                                    "error": e.to_string()
+                                }));
+                                return Err(format!("Slack send failed: {}", e));
+                            }
+                        }
+                    }
+                    let _ = app.emit("gateway:response:success", &response);
+                }
+                _ => {
+                    log::error!("[Commands] Slack bot token not configured");
+                    return Err("Slack bot token not configured".to_string());
+                }
+            }
         }
         _ => {
             log::error!("[Commands] Unknown platform: {}", platform);
@@ -863,6 +1069,36 @@ pub async fn gateway_get_channel_state(
     }
 }
 
+/// Command to list all registered channels with their status
+#[command]
+pub async fn gateway_list_channels(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<serde_json::Value, String> {
+    let guard = state.lock().await;
+    let channels = guard.channel_manager.get_all_channels().await;
+
+    let channel_list: Vec<serde_json::Value> = channels
+        .iter()
+        .map(|(config, conn_state)| {
+            serde_json::json!({
+                "platform": config.platform.as_str(),
+                "account_id": config.account_id,
+                "display_name": config.display_name,
+                "enabled": config.enabled,
+                "state": format!("{:?}", conn_state),
+            })
+        })
+        .collect();
+
+    // Also include plugin registry info
+    let plugins: Vec<&str> = guard.plugin_registry.ids();
+
+    Ok(serde_json::json!({
+        "channels": channel_list,
+        "registered_plugins": plugins,
+    }))
+}
+
 // ==================== Debouncer Commands ====================
 
 /// Command to configure message debouncing
@@ -1025,4 +1261,149 @@ pub async fn gateway_get_routing_stats(
         "cache_size": stats.cache_size,
         "binding_count": stats.binding_count,
     }))
+}
+
+// ==================== Account Management Commands ====================
+
+/// Command to add a named account for a platform
+#[command]
+pub async fn gateway_add_account(
+    state: State<'_, SharedGatewayManager>,
+    platform: String,
+    account_id: String,
+    name: String,
+    token: Option<String>,
+    webhook_url: Option<String>,
+) -> Result<(), String> {
+    let platform_enum = Platform::from_str(&platform);
+    if matches!(platform_enum, Platform::Unknown) {
+        return Err("Invalid platform".to_string());
+    }
+
+    let account = super::types::PlatformAccount {
+        id: account_id.clone(),
+        name: name.clone(),
+        platform: platform_enum.clone(),
+        enabled: true,
+        token,
+        webhook_url,
+        settings: serde_json::Value::Null,
+    };
+
+    let mut guard = state.lock().await;
+
+    // Add to config
+    if let Some(ref mut config) = guard.config {
+        config.accounts.entry(platform.clone()).or_default().push(account.clone());
+    }
+
+    // Register channel if configured
+    if account.is_configured() {
+        use super::channel::{ChannelConfig as ChanConfig, ConnectionState as ChanState};
+        let chan_config = ChanConfig {
+            platform: platform_enum.clone(),
+            account_id: account_id.clone(),
+            display_name: name,
+            enabled: true,
+            ..ChanConfig::default()
+        };
+        guard.channel_manager.add_channel(chan_config).await;
+        guard.channel_manager.set_state(&platform_enum, &account_id, ChanState::Connected, None).await;
+    }
+
+    log::info!("[Commands] Account added: {}:{}", platform, account_id);
+    Ok(())
+}
+
+/// Command to remove a named account
+#[command]
+pub async fn gateway_remove_account(
+    state: State<'_, SharedGatewayManager>,
+    platform: String,
+    account_id: String,
+) -> Result<bool, String> {
+    let platform_enum = Platform::from_str(&platform);
+    if matches!(platform_enum, Platform::Unknown) {
+        return Err("Invalid platform".to_string());
+    }
+
+    let mut guard = state.lock().await;
+
+    // Remove from config
+    let mut removed = false;
+    if let Some(ref mut config) = guard.config {
+        if let Some(accounts) = config.accounts.get_mut(&platform) {
+            let len_before = accounts.len();
+            accounts.retain(|a| a.id != account_id);
+            removed = accounts.len() < len_before;
+        }
+    }
+
+    // Remove channel
+    guard.channel_manager.remove_channel(&platform_enum, &account_id).await;
+
+    log::info!("[Commands] Account removed: {}:{} (found={})", platform, account_id, removed);
+    Ok(removed)
+}
+
+/// Command to list all accounts across all platforms
+#[command]
+pub async fn gateway_list_accounts(
+    state: State<'_, SharedGatewayManager>,
+) -> Result<serde_json::Value, String> {
+    let guard = state.lock().await;
+
+    let mut accounts_map = serde_json::Map::new();
+
+    if let Some(ref config) = guard.config {
+        // Legacy single-token accounts
+        let mut legacy_accounts = Vec::new();
+        if config.discord_bot_token.is_some() || config.discord_webhook_url.is_some() {
+            legacy_accounts.push(serde_json::json!({
+                "platform": "discord",
+                "id": "default",
+                "name": "Discord (default)",
+                "configured": true,
+                "source": "legacy",
+            }));
+        }
+        if config.telegram_bot_token.is_some() {
+            legacy_accounts.push(serde_json::json!({
+                "platform": "telegram",
+                "id": "default",
+                "name": "Telegram (default)",
+                "configured": true,
+                "source": "legacy",
+            }));
+        }
+        if config.slack_bot_token.is_some() {
+            legacy_accounts.push(serde_json::json!({
+                "platform": "slack",
+                "id": "default",
+                "name": "Slack (default)",
+                "configured": true,
+                "source": "legacy",
+            }));
+        }
+
+        // Named accounts
+        let mut named_accounts = Vec::new();
+        for (platform, accounts) in &config.accounts {
+            for account in accounts {
+                named_accounts.push(serde_json::json!({
+                    "platform": platform,
+                    "id": account.id,
+                    "name": account.name,
+                    "configured": account.is_configured(),
+                    "enabled": account.enabled,
+                    "source": "named",
+                }));
+            }
+        }
+
+        accounts_map.insert("legacy".to_string(), serde_json::Value::Array(legacy_accounts));
+        accounts_map.insert("named".to_string(), serde_json::Value::Array(named_accounts));
+    }
+
+    Ok(serde_json::Value::Object(accounts_map))
 }

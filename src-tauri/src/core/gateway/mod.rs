@@ -9,9 +9,10 @@ pub mod commands;
 pub mod platforms;
 pub mod discord_bot;
 pub mod capabilities;
-pub mod protocol; // NEW: WebSocket protocol with frame types
-pub mod routing;  // NEW: Agent routing system
-pub mod channel;  // NEW: Channel lifecycle management
+pub mod protocol;  // WebSocket protocol with frame types
+pub mod routing;   // Agent routing system
+pub mod channel;   // Channel lifecycle management
+pub mod formatter; // Outbound markdown formatting + chunking
 
 // Re-export commonly used types
 pub use types::{
@@ -33,6 +34,7 @@ use channel::ChannelManager;
 use processor::debounce::MessageDebouncer;
 use processor::ack::AckHandler;
 use routing::agent_integration::AgentRoutingService;
+use platforms::plugin::PluginRegistry;
 
 /// Main gateway manager that coordinates all gateway components
 #[derive(Debug)]
@@ -85,6 +87,9 @@ pub struct GatewayManager {
 
     /// Agent routing service
     pub agent_routing: AgentRoutingService,
+
+    /// Platform plugin registry
+    pub plugin_registry: PluginRegistry,
 }
 
 impl Default for GatewayManager {
@@ -114,7 +119,27 @@ impl GatewayManager {
             debouncer: MessageDebouncer::default(),
             ack_handler: AckHandler::new(),
             agent_routing: AgentRoutingService::new(),
+            plugin_registry: PluginRegistry::new(),
         }
+    }
+
+    /// Initialize the plugin registry with all built-in platform plugins.
+    /// Call this after creating the gateway manager.
+    ///
+    /// Uses standalone plugin modules from `platforms/plugin/`:
+    /// - `discord_plugin.rs` → DiscordPlugin
+    /// - `slack_plugin.rs` → SlackPlugin
+    /// - `telegram_plugin.rs` → TelegramPlugin
+    pub fn init_plugins(&mut self) {
+        use platforms::plugin::{DiscordPlugin, SlackPlugin, TelegramPlugin};
+
+        self.plugin_registry.register(Arc::new(DiscordPlugin));
+        self.plugin_registry.register(Arc::new(SlackPlugin));
+        self.plugin_registry.register(Arc::new(TelegramPlugin));
+
+        log::info!("[Gateway] Registered {} platform plugins: {:?}",
+            self.plugin_registry.ids().len(),
+            self.plugin_registry.ids());
     }
 
     /// Check if the gateway is running

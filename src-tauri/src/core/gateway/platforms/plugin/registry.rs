@@ -7,19 +7,32 @@ use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use serde_json::Value;
 
-use super::types::{ChannelPlugin, ChannelMeta, AccountConfig, PluginResult, PluginError, ChannelConfig, ChannelHealth, StartAccountParams, ChannelHandle, ChannelState, DefaultChannelState};
+use super::types::{ChannelPlugin, ChannelMeta, AccountConfig, PluginResult, PluginError, ChannelConfig, ChannelHandle};
 use crate::core::gateway::types::{Platform, GatewayMessage, GatewayResponse};
 
 /// Global plugin registry
 static PLUGIN_REGISTRY: Lazy<PluginRegistry> = Lazy::new(PluginRegistry::new);
 
 /// Plugin registry for managing platform plugins
-#[derive(Default)]
 pub struct PluginRegistry {
     /// Registered plugins by platform ID
     plugins: HashMap<String, Arc<dyn ChannelPlugin>>,
     /// Platform order for sorting
     order: Vec<String>,
+}
+
+impl Default for PluginRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Debug for PluginRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PluginRegistry")
+            .field("plugins", &self.order)
+            .finish()
+    }
 }
 
 impl PluginRegistry {

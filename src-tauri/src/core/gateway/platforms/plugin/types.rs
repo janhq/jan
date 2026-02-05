@@ -16,11 +16,11 @@ pub struct ChannelMeta {
     /// Unique identifier for the platform
     pub id: Platform,
     /// Human-readable name
-    pub name: String,
+    pub name: &'static str,
     /// Description of the platform
-    pub description: String,
+    pub description: &'static str,
     /// Icon identifier (for UI)
-    pub icon: String,
+    pub icon: &'static str,
     /// Whether this platform is in beta
     pub beta: bool,
     /// Order in platform lists (lower = first)
@@ -120,6 +120,58 @@ pub enum ChannelHealth {
     Unhealthy(String),
     /// Not connected
     Disconnected,
+}
+
+/// Context provided to plugins during start/stop operations.
+///
+/// Contains references to the gateway manager, message queue, and health callbacks
+/// so plugins can interact with the broader system.
+pub struct ChannelContext {
+    /// Account configuration
+    pub account: AccountConfig,
+    /// Gateway manager reference for shared state
+    pub gateway: std::sync::Arc<tokio::sync::Mutex<crate::core::gateway::GatewayManager>>,
+    /// Health change callback
+    pub on_health_change: Option<Box<dyn Fn(ChannelHealth) + Send + Sync>>,
+}
+
+impl std::fmt::Debug for ChannelContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChannelContext")
+            .field("account", &self.account)
+            .field("has_health_callback", &self.on_health_change.is_some())
+            .finish()
+    }
+}
+
+impl ChannelContext {
+    /// Create a new channel context
+    pub fn new(
+        account: AccountConfig,
+        gateway: std::sync::Arc<tokio::sync::Mutex<crate::core::gateway::GatewayManager>>,
+    ) -> Self {
+        Self {
+            account,
+            gateway,
+            on_health_change: None,
+        }
+    }
+
+    /// Set the health change callback
+    pub fn with_health_callback<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(ChannelHealth) + Send + Sync + 'static,
+    {
+        self.on_health_change = Some(Box::new(callback));
+        self
+    }
+
+    /// Notify health change
+    pub fn notify_health_change(&self, health: ChannelHealth) {
+        if let Some(ref callback) = self.on_health_change {
+            callback(health);
+        }
+    }
 }
 
 /// Parameters for starting an account
@@ -227,6 +279,18 @@ pub trait ChannelPlugin: Send + Sync {
 
     /// Send an outbound message
     async fn send_outbound(&self, handle: &ChannelHandle, response: &GatewayResponse) -> PluginResult<()>;
+
+    /// Format markdown content for this platform's native format.
+    /// Default implementation returns the markdown as-is.
+    fn format_outbound(&self, markdown: &str) -> String {
+        markdown.to_string()
+    }
+
+    /// Get the maximum message length for this platform.
+    /// Used by the chunker to split long messages.
+    fn chunk_limit(&self) -> usize {
+        4000
+    }
 
     /// Get the platform-specific event types this plugin can emit
     fn supported_events(&self) -> Vec<&'static str> {

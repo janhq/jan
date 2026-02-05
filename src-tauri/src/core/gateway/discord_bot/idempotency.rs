@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use chrono::{DateTime, Utc, TimeZone};
+use chrono::{DateTime, Utc};
 
 /// Represents a unique message identifier for idempotency checking
 #[derive(Debug, Clone, PartialEq, Eq)]
