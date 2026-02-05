@@ -14,6 +14,59 @@ import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import { getModelToStart } from '@/utils/getModelToStart'
 import { isDev } from '@/lib/utils'
+import { invoke } from '@tauri-apps/api/core'
+
+type ProviderCustomHeader = {
+  header: string
+  value: string
+}
+
+type RegisterProviderRequest = {
+  provider: string
+  api_key?: string
+  base_url?: string
+  custom_headers: ProviderCustomHeader[]
+  models: string[]
+}
+
+async function registerRemoteProvider(provider: ModelProvider) {
+  // Skip llamacpp - those are local models
+  if (provider.provider === 'llamacpp') return
+
+  // Skip providers without API key (they can't make requests)
+  if (!provider.api_key) {
+    console.log(`Provider ${provider.provider} has no API key, skipping registration`)
+    return
+  }
+
+  const request: RegisterProviderRequest = {
+    provider: provider.provider,
+    api_key: provider.api_key,
+    base_url: provider.base_url,
+    custom_headers: (provider.custom_header || []).map((h) => ({
+      header: h.header,
+      value: h.value,
+    })),
+    models: provider.models.map(e => e.id)
+  }
+
+  try {
+    await invoke('register_provider_config', { request })
+    console.log(`Registered remote provider: ${provider.provider}`)
+  } catch (error) {
+    console.error(`Failed to register provider ${provider.provider}:`, error)
+  }
+}
+
+// Effect to sync remote providers when providers change
+const syncRemoteProviders = () => {
+  const providers = useModelProvider.getState().providers
+  providers.forEach((provider) => {
+    if (provider.active && provider.provider !== 'llamacpp' && provider.api_key) {
+      registerRemoteProvider(provider)
+    }
+  })
+}
 
 export function DataProvider() {
   const { setProviders, selectedModel, selectedProvider, getProviderByName } =
@@ -44,7 +97,11 @@ export function DataProvider() {
 
   useEffect(() => {
     console.log('Initializing DataProvider...')
-    serviceHub.providers().getProviders().then(setProviders)
+    serviceHub.providers().getProviders().then((providers) => {
+      setProviders(providers)
+      // Register remote providers with the backend
+      providers.forEach(registerRemoteProvider)
+    })
     serviceHub
       .mcp()
       .getMCPConfig()
@@ -94,6 +151,12 @@ export function DataProvider() {
       })
   }, [serviceHub, setThreads])
 
+  // Sync remote providers with backend when providers change
+  const providers = useModelProvider.getState().providers
+  useEffect(() => {
+    syncRemoteProviders()
+  }, [providers])
+
   // Check for app updates - initial check and periodic interval
   useEffect(() => {
     // Only check for updates if the auto updater is not disabled
@@ -120,9 +183,56 @@ export function DataProvider() {
 
   useEffect(() => {
     events.on(AppEvent.onModelImported, () => {
-      serviceHub.providers().getProviders().then(setProviders)
+      serviceHub.providers().getProviders().then((providers) => {
+        setProviders(providers)
+        providers.forEach(registerRemoteProvider)
+      })
     })
   }, [serviceHub, setProviders])
+
+  // Handle remote completion requests from the local API server
+  useEffect(() => {
+    const handleRemoteCompletion = async (event: Event) => {
+      const payload = (event as CustomEvent).detail as {
+        requestId: string
+        path: string
+        model: string
+        provider: string
+        body: Record<string, unknown>
+      }
+
+      console.log('Handling remote completion request:', payload)
+
+      try {
+        // Call the remote chat completion stream IPC command
+        const requestId = await invoke<string>('plugin:server|remote_chat_completion_stream', {
+          request: {
+            provider: payload.provider,
+            model: payload.model,
+            messages: payload.body.messages,
+            stream: true,
+            extra: {},
+          },
+        })
+
+        console.log('Remote completion stream started with requestId:', requestId)
+      } catch (error) {
+        console.error('Failed to handle remote completion:', error)
+
+        // Emit error event so the backend can respond
+        await invoke('plugin:server|abort_remote_stream', {
+          requestId: payload.requestId,
+        })
+      }
+    }
+
+    // Listen for remote completion requests from the backend
+    window.addEventListener('remote-completion-request', handleRemoteCompletion as EventListener)
+
+    return () => {
+      window.removeEventListener('remote-completion-request', handleRemoteCompletion as EventListener)
+    }
+  }, [])
 
   // Auto-start Local API Server on app startup if enabled
   useEffect(() => {

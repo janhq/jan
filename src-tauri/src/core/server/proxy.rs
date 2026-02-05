@@ -9,10 +9,11 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tauri::Manager;
 use tauri_plugin_llamacpp::LLamaBackendSession;
 use tokio::sync::Mutex;
 
-use crate::core::state::ServerHandle;
+use crate::core::state::{AppState, ServerHandle};
 
 /// Unified session info that can come from either backend
 #[derive(Clone)]
@@ -52,20 +53,39 @@ pub struct ProxyConfig {
     pub port: u16,
 }
 
+/// Remote provider info for routing requests
+#[derive(Clone, Debug)]
+pub struct RemoteProviderInfo {
+    pub provider: String,
+    pub base_url: String,
+    pub api_key: Option<String>,
+}
+
+/// Payload for remote completion request event
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct RemoteCompletionRequest {
+    pub request_id: String,
+    pub path: String,
+    pub model: String,
+    pub provider: String,
+    pub body: serde_json::Value,
+}
+
 /// Determines the final destination path based on the original request path
 pub fn get_destination_path(original_path: &str, prefix: &str) -> String {
     remove_prefix(original_path, prefix)
 }
 
-use tauri_plugin_mlx::state::MlxBackendSession;
+use tauri_plugin_mlx::state::{MlxBackendSession, SessionInfo};
 
 /// Handles the proxy request logic
-async fn proxy_request(
+async fn proxy_request<R: tauri::Runtime>(
     req: Request<Body>,
     client: Client,
     config: ProxyConfig,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+    app_handle: tauri::AppHandle<R>,
 ) -> Result<Response<Body>, hyper::Error> {
     if req.method() == hyper::Method::OPTIONS {
         log::debug!(
@@ -320,11 +340,13 @@ async fn proxy_request(
         return Ok(error_response.body(Body::from("Not Found")).unwrap());
     }
 
-    let target_port: Option<i32>;
-    let session_api_key: Option<String>;
-    let buffered_body: Option<Bytes>;
     let original_path = parts.uri.path();
     let destination_path = get_destination_path(original_path, &config.prefix);
+
+    // Initialize variables that will be set in the match
+    let mut target_port: Option<i32> = None;
+    let mut session_api_key: Option<String> = None;
+    let mut buffered_body: Option<Bytes> = None;
 
     match (method.clone(), destination_path.as_str()) {
         (hyper::Method::POST, "/chat/completions")
@@ -357,6 +379,140 @@ async fn proxy_request(
                 Ok(json_body) => {
                     if let Some(model_id) = json_body.get("model").and_then(|v| v.as_str()) {
                         log::debug!("Extracted model_id: {model_id}");
+
+                        // First, check if there's a registered remote provider for this model
+                        let state = app_handle.state::<AppState>();
+                        let provider_configs = state.provider_configs.lock().await;
+
+                        // Find a provider that has this model configured
+                        let provider_name = provider_configs
+                            .iter()
+                            .find(|(_, config)| {
+                                // Check if any model in this provider matches
+                                config.models.iter().any(|m| m == model_id)
+                            })
+                            .map(|(_, config)| config.provider.clone())
+                            .or_else(|| {
+                                // Try to find by provider name in model_id (e.g., "anthropic/claude-3-opus")
+                                if let Some(sep_pos) = model_id.find('/') {
+                                    let potential_provider = &model_id[..sep_pos];
+                                    if provider_configs.contains_key(potential_provider) {
+                                        return Some(potential_provider.to_string());
+                                    }
+                                }
+                                // Also check if the model_id itself matches a provider name
+                                provider_configs.get(model_id).map(|c| c.provider.clone())
+                            });
+
+                        drop(provider_configs);
+
+                        if let Some(provider) = provider_name {
+                            // Found a remote provider, stream the response directly
+                            log::info!("Found remote provider '{provider}' for model '{model_id}'");
+
+                            // Clone model_id for use in the closure
+                            let model_id_str = model_id.to_string();
+
+                            // Get the provider config
+                            let state = app_handle.state::<AppState>();
+                            let provider_configs = state.provider_configs.lock().await;
+                            let provider_config = provider_configs.get(&provider).cloned();
+
+                            // Log registered providers for debugging
+                            log::debug!(
+                                "Registered providers: {:?}",
+                                provider_configs.keys().collect::<Vec<_>>()
+                            );
+
+                            drop(provider_configs);
+
+                            if let Some(provider_cfg) = provider_config {
+                                let origin_header = origin_header.clone();
+                                let json_body = json_body.clone();
+
+                                // Create the remote request
+                                let messages: Vec<serde_json::Value> = json_body
+                                    .get("messages")
+                                    .and_then(|v| v.as_array())
+                                    .cloned()
+                                    .unwrap_or_default();
+
+                                let request = crate::core::server::remote_provider_commands::RemoteChatCompletionRequest {
+                                    provider: provider.clone(),
+                                    model: model_id_str,
+                                    messages: messages.iter().map(|m| crate::core::server::remote_provider_commands::ChatMessage {
+                                        role: m.get("role").and_then(|v| v.as_str()).unwrap_or("user").to_string(),
+                                        content: m.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                        name: m.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    }).collect(),
+                                    stream: Some(true),
+                                    extra: None,
+                                };
+
+                                // Stream the remote response
+                                match crate::core::server::remote_provider_commands::stream_remote_chat_for_proxy(&provider_cfg, &request).await {
+                                    Ok(stream) => {
+                                        log::info!("Successfully started streaming from remote provider '{provider}'");
+
+                                        let mut response_builder =
+                                            Response::builder().status(StatusCode::OK);
+                                        response_builder = add_cors_headers_with_host_and_origin(
+                                            response_builder,
+                                            &host_header,
+                                            &origin_header,
+                                            &config.trusted_hosts,
+                                        );
+                                        response_builder = response_builder
+                                            .header(hyper::header::CONTENT_TYPE, "text/event-stream")
+                                            .header("Cache-Control", "no-cache")
+                                            .header("Connection", "keep-alive");
+
+                                        // Create channel for streaming
+                                        let (mut sender, body) = hyper::Body::channel();
+
+                                        // Spawn task to forward remote stream to client
+                                        tokio::spawn(async move {
+                                            let mut stream = stream;
+                                            while let Some(chunk_result) = stream.next().await {
+                                                match chunk_result {
+                                                    Ok(chunk) => {
+                                                        if sender.send_data(chunk).await.is_err() {
+                                                            log::debug!("Client disconnected during remote streaming");
+                                                            break;
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        log::error!("Remote stream error: {e}");
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            log::debug!("Remote streaming complete to client");
+                                        });
+
+                                        return Ok(response_builder.body(body).unwrap());
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to stream from remote provider '{provider}': {e}");
+                                        let mut error_response =
+                                            Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
+                                        error_response = add_cors_headers_with_host_and_origin(
+                                            error_response,
+                                            &host_header,
+                                            &origin_header,
+                                            &config.trusted_hosts,
+                                        );
+                                        return Ok(error_response
+                                            .body(Body::from(format!("Remote provider error: {e}")))
+                                            .unwrap());
+                                    }
+                                }
+                            } else {
+                                log::error!("Provider config not found for '{provider}'");
+                            }
+                        }
+
+                        // No remote provider found, check for local session
                         let sessions_guard = sessions.lock().await;
 
                         // Check both llama.cpp and MLX sessions
@@ -365,7 +521,6 @@ async fn proxy_request(
                             .find(|s| s.info.model_id == model_id);
 
                         let (mlx_session_info, mlx_count) = {
-                            use tauri_plugin_mlx::state::SessionInfo;
                             let mut mlx_session_info: Option<SessionInfo> = None;
                             let mut mlx_count = 0;
                             let mlx_guard = mlx_sessions.lock().await;
@@ -455,39 +610,68 @@ async fn proxy_request(
         }
         (hyper::Method::GET, "/models") => {
             log::debug!("Handling GET /v1/models request");
-            let sessions_guard = sessions.lock().await;
 
-            let mut models_data: Vec<_> = sessions_guard
+            // Get local llama.cpp sessions
+            let sessions_guard = sessions.lock().await;
+            let local_models: Vec<_> = sessions_guard
                 .values()
                 .map(|session| {
                     serde_json::json!({
                         "id": session.info.model_id,
                         "object": "model",
                         "created": 1,
-                        "owned_by": "user"
+                        "owned_by": "llama.cpp"
                     })
                 })
                 .collect();
+            drop(sessions_guard);
 
-            {
+            // Get MLX sessions
+            let mlx_models: Vec<_> = {
                 let mlx_guard = mlx_sessions.lock().await;
-                let mlx_models: Vec<_> = mlx_guard
+                mlx_guard
                     .values()
                     .map(|session| {
                         serde_json::json!({
                             "id": session.info.model_id,
                             "object": "model",
                             "created": 1,
-                            "owned_by": "user"
+                            "owned_by": "mlx"
                         })
                     })
-                    .collect();
-                models_data.extend(mlx_models);
-            }
+                    .collect()
+            };
+
+            // Get remote provider models
+            let state = app_handle.state::<AppState>();
+            let provider_configs = state.provider_configs.lock().await;
+            let remote_models: Vec<_> = provider_configs
+                .values()
+                .flat_map(|provider_cfg| provider_cfg.models.clone())
+                .map(|model_id| {
+                    serde_json::json!({
+                        "id": model_id,
+                        "object": "model",
+                        "created": 1,
+                        "owned_by": "remote"
+                    })
+                })
+                .collect();
+
+            // Store counts before moving
+            let local_count = local_models.len();
+            let mlx_count = mlx_models.len();
+            let remote_count = remote_models.len();
+
+            // Combine all models
+            let mut all_models = Vec::with_capacity(local_count + mlx_count + remote_count);
+            all_models.extend(local_models);
+            all_models.extend(mlx_models);
+            all_models.extend(remote_models);
 
             let response_json = serde_json::json!({
                 "object": "list",
-                "data": models_data
+                "data": all_models
             });
 
             let body_str =
@@ -502,6 +686,14 @@ async fn proxy_request(
                 &host_header,
                 &origin_header,
                 &config.trusted_hosts,
+            );
+
+            log::debug!(
+                "Returning {} models ({} llama.cpp, {} MLX, {} remote)",
+                all_models.len(),
+                local_count,
+                mlx_count,
+                remote_count
             );
 
             return Ok(response_builder.body(Body::from(body_str)).unwrap());
@@ -788,7 +980,7 @@ pub async fn is_server_running(server_handle: Arc<Mutex<Option<ServerHandle>>>) 
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn start_server(
+pub async fn start_server<R: tauri::Runtime>(
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
@@ -798,6 +990,7 @@ pub async fn start_server(
     proxy_api_key: String,
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
+    app_handle: tauri::AppHandle<R>,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     start_server_internal(
         server_handle,
@@ -809,11 +1002,12 @@ pub async fn start_server(
         proxy_api_key,
         trusted_hosts,
         proxy_timeout,
+        app_handle,
     )
     .await
 }
 
-async fn start_server_internal(
+async fn start_server_internal<R: tauri::Runtime>(
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
@@ -823,6 +1017,7 @@ async fn start_server_internal(
     proxy_api_key: String,
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
+    app_handle: tauri::AppHandle<R>,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     let mut handle_guard = server_handle.lock().await;
     if handle_guard.is_some() {
@@ -852,10 +1047,18 @@ async fn start_server_internal(
         let config = config.clone();
         let sessions = sessions.clone();
         let mlx_sessions = mlx_sessions.clone();
+        let app_handle = app_handle.clone();
 
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
-                proxy_request(req, client.clone(), config.clone(), sessions.clone(), mlx_sessions.clone())
+                proxy_request(
+                    req,
+                    client.clone(),
+                    config.clone(),
+                    sessions.clone(),
+                    mlx_sessions.clone(),
+                    app_handle.clone(),
+                )
             }))
         }
     });

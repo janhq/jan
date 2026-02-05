@@ -93,6 +93,14 @@ pub fn run() {
         core::server::commands::start_server,
         core::server::commands::stop_server,
         core::server::commands::get_server_status,
+        // Remote provider commands
+        core::server::remote_provider_commands::register_provider_config,
+        core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::get_provider_config,
+        core::server::remote_provider_commands::list_provider_configs,
+        core::server::remote_provider_commands::remote_chat_completion,
+        core::server::remote_provider_commands::remote_chat_completion_stream,
+        core::server::remote_provider_commands::abort_remote_stream,
         // MCP commands
         core::mcp::commands::get_tools,
         core::mcp::commands::call_tool,
@@ -166,6 +174,14 @@ pub fn run() {
         core::server::commands::start_server,
         core::server::commands::stop_server,
         core::server::commands::get_server_status,
+        // Remote provider commands
+        core::server::remote_provider_commands::register_provider_config,
+        core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::get_provider_config,
+        core::server::remote_provider_commands::list_provider_configs,
+        core::server::remote_provider_commands::remote_chat_completion,
+        core::server::remote_provider_commands::remote_chat_completion_stream,
+        core::server::remote_provider_commands::abort_remote_stream,
         // MCP commands
         core::mcp::commands::get_tools,
         core::mcp::commands::call_tool,
@@ -207,6 +223,8 @@ pub fn run() {
             mcp_monitoring_tasks: Arc::new(Mutex::new(HashMap::new())),
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
+            provider_configs: Arc::new(Mutex::new(HashMap::new())),
+            remote_streams: Arc::new(Mutex::new(HashMap::new())),
         })
         .setup(|app| {
             app.handle().plugin(
