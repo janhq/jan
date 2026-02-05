@@ -405,7 +405,7 @@ async fn proxy_request<R: tauri::Runtime>(
 
                             let (mlx_session_info, mlx_count) = {
                                 let mut mlx_session_info: Option<SessionInfo> = None;
-                                let mut mlx_count = 0;
+                                let mlx_count;
                                 let mlx_guard = mlx_sessions.lock().await;
                                 mlx_count = mlx_guard.len();
                                 if let Some(session) = mlx_guard
