@@ -1,0 +1,264 @@
+name: tauri-build-macos
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+        default: 'refs/heads/main'
+      public_provider:
+        required: true
+        type: string
+        default: none
+        description: 'none: build only, github: build and publish to github, aws s3: build and publish to aws s3'
+      new_version:
+        required: true
+        type: string
+        default: ''
+      cortex_api_port:
+        required: false
+        type: string
+        default: ''
+      upload_url:
+        required: false
+        type: string
+        default: ''
+      channel:
+        required: true
+        type: string
+        default: 'nightly'
+        description: 'The channel to use for this job'
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME:
+        required: false
+      DELTA_AWS_ACCESS_KEY_ID:
+        required: false
+      DELTA_AWS_SECRET_ACCESS_KEY:
+        required: false
+      CODE_SIGN_P12_BASE64:
+        required: false
+      CODE_SIGN_P12_PASSWORD:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_APP_SPECIFIC_PASSWORD:
+        required: false
+      DEVELOPER_ID:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+    outputs:
+      MAC_UNIVERSAL_SIG:
+        value: ${{ jobs.build-macos.outputs.MAC_UNIVERSAL_SIG }}
+      FILE_NAME:
+        value: ${{ jobs.build-macos.outputs.FILE_NAME }}
+      DMG_NAME:
+        value: ${{ jobs.build-macos.outputs.DMG_NAME }}
+      TAR_NAME:
+        value: ${{ jobs.build-macos.outputs.TAR_NAME }}
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    outputs:
+      MAC_UNIVERSAL_SIG: ${{ steps.metadata.outputs.MAC_UNIVERSAL_SIG }}
+      FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
+      DMG_NAME: ${{ steps.metadata.outputs.DMG_NAME }}
+      TAR_NAME: ${{ steps.metadata.outputs.TAR_NAME }}
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Replace Icons for Beta Build
+        if: inputs.channel != 'stable'
+        shell: bash
+        run: |
+          cp .github/scripts/icon-${{ inputs.channel }}.png src-tauri/icons/icon.png
+
+      - name: Installing node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Install ctoml
+        run: |
+          cargo install ctoml
+
+      - name: Update app version based on latest release tag with build number
+        run: |
+          echo "Version: ${{ inputs.new_version }}"
+          # Update tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
+          mv /tmp/package.json web-app/package.json
+
+          # Update tauri plugin versions
+
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
+          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
+          
+          echo "---------./src-tauri/plugins/tauri-plugin-hardware/package.json---------"
+          cat ./src-tauri/plugins/tauri-plugin-hardware/package.json
+
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-llamacpp/package.json > /tmp/package.json
+          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
+
+          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/package.json---------"
+          cat ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
+
+          ctoml ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml---------"
+          cat ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
+          
+          ctoml ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml---------"
+          cat ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
+
+          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/Cargo.toml---------"
+          cat ./src-tauri/Cargo.toml
+
+          # Temporarily enable devtool on prod build
+          ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
+          cat ./src-tauri/Cargo.toml
+
+          # Change app name for beta and nightly builds
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+
+            chmod +x .github/scripts/rename-tauri-app.sh
+            .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json ${{ inputs.channel }}
+
+            cat ./src-tauri/tauri.conf.json
+
+            # Update Cargo.toml
+            ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
+            ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
+            echo "------------------"
+            cat ./src-tauri/Cargo.toml
+
+            chmod +x .github/scripts/rename-workspace.sh
+            .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
+            cat ./package.json
+          fi
+      - name: Get key for notarize
+        run: base64 -d <<< "$NOTARIZE_P8_BASE64" > /tmp/notary-key.p8
+        shell: bash
+        env:
+          NOTARIZE_P8_BASE64: ${{ secrets.NOTARIZE_P8_BASE64 }}
+
+      - uses: apple-actions/import-codesign-certs@v2
+        continue-on-error: true
+        with:
+          p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+          p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+
+      - name: Build app
+        run: |
+          make build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_PATH: '.'
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          APPLE_CERTIFICATE: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.NOTARY_KEY_ID }}
+          APPLE_API_KEY_PATH: /tmp/notary-key.p8
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      # Publish app
+
+      ## Artifacts, for dev and test
+      - name: Upload Artifact
+        if: inputs.public_provider != 'github'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.dmg
+          path: |
+            ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+
+      ## Set output filename for mac
+      - name: Set output filename for mac
+        run: |
+          cd ./src-tauri/target/universal-apple-darwin/release/bundle/macos
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            zip -r jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip Jan-${{ inputs.channel }}.app
+            FILE_NAME=jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip
+            DMG_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
+            MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}.app.tar.gz.sig)
+            TAR_NAME=Jan-${{ inputs.channel }}.app.tar.gz
+          else
+            zip -r jan-mac-universal-${{ inputs.new_version }}.zip Jan.app
+            FILE_NAME=jan-mac-universal-${{ inputs.new_version }}.zip
+            MAC_UNIVERSAL_SIG=$(cat Jan.app.tar.gz.sig)
+            DMG_NAME=Jan_${{ inputs.new_version }}_universal.dmg
+            TAR_NAME=Jan.app.tar.gz
+          fi
+
+          echo "::set-output name=MAC_UNIVERSAL_SIG::$MAC_UNIVERSAL_SIG"
+          echo "::set-output name=FILE_NAME::$FILE_NAME"
+          echo "::set-output name=DMG_NAME::$DMG_NAME"
+          echo "::set-output name=TAR_NAME::$TAR_NAME"
+        id: metadata
+
+      ## Upload to s3 for nightly and beta
+      - name: upload to aws s3 if public provider is aws
+        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        run: |
+          cd ./src-tauri/target/universal-apple-darwin/release/bundle
+
+          # Upload for tauri updater
+          aws s3 cp ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
+          aws s3 cp ./macos/Jan-${{ inputs.channel }}.app.tar.gz s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}.app.tar.gz
+          aws s3 cp ./macos/Jan-${{ inputs.channel }}.app.tar.gz.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}.app.tar.gz.sig
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
+      - name: Upload release assert if public provider is github
+        if: inputs.public_provider == 'github'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/${{ steps.metadata.outputs.FILE_NAME }}
+          asset_name: ${{ steps.metadata.outputs.FILE_NAME }}
+          asset_content_type: application/gzip
+
+      - name: Upload release assert if public provider is github
+        if: inputs.public_provider == 'github'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/${{ steps.metadata.outputs.DMG_NAME }}
+          asset_name: ${{ steps.metadata.outputs.DMG_NAME }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload release assert if public provider is github
+        if: inputs.public_provider == 'github'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/${{ steps.metadata.outputs.TAR_NAME }}
+          asset_name: ${{ steps.metadata.outputs.TAR_NAME }}
+          asset_content_type: application/gzip

@@ -1,0 +1,327 @@
+name: tauri-build-windows-x64
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+        default: 'refs/heads/main'
+      public_provider:
+        required: true
+        type: string
+        default: none
+        description: 'none: build only, github: build and publish to github, aws s3: build and publish to aws s3'
+      new_version:
+        required: true
+        type: string
+        default: ''
+      cortex_api_port:
+        required: false
+        type: string
+        default: ''
+      upload_url:
+        required: false
+        type: string
+        default: ''
+      channel:
+        required: true
+        type: string
+        default: 'nightly'
+        description: 'The channel to use for this job'
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME:
+        required: false
+      DELTA_AWS_ACCESS_KEY_ID:
+        required: false
+      DELTA_AWS_SECRET_ACCESS_KEY:
+        required: false
+      AZURE_KEY_VAULT_URI:
+        required: false
+      AZURE_CLIENT_ID:
+        required: false
+      AZURE_TENANT_ID:
+        required: false
+      AZURE_CLIENT_SECRET:
+        required: false
+      AZURE_CERT_NAME:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+    outputs:
+      WIN_SIG:
+        value: ${{ jobs.build-windows-x64.outputs.WIN_SIG }}
+      FILE_NAME:
+        value: ${{ jobs.build-windows-x64.outputs.FILE_NAME }}
+      MSI_FILE_NAME:
+        value: ${{ jobs.build-windows-x64.outputs.MSI_FILE_NAME }}
+      PORTABLE_FILE_NAME:
+        value: ${{ jobs.build-windows-x64.outputs.PORTABLE_FILE_NAME }}
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    outputs:
+      WIN_SIG: ${{ steps.metadata.outputs.WIN_SIG }}
+      FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
+      MSI_FILE_NAME: ${{ steps.metadata.outputs.MSI_FILE_NAME }}
+      PORTABLE_FILE_NAME: ${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Replace Icons for Beta Build
+        if: inputs.channel != 'stable'
+        shell: bash
+        run: |
+          cp .github/scripts/icon-${{ inputs.channel }}.png src-tauri/icons/icon.png
+
+      - name: Installing node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Install ctoml
+        run: |
+          cargo install ctoml
+
+      - name: Update app version base on tag
+        id: version_update
+        shell: bash
+        run: |
+          echo "Version: ${{ inputs.new_version }}"
+          # Update tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+          jq '.bundle.windows.nsis.template = "tauri.bundle.windows.nsis.template"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
+          mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
+          mv /tmp/package.json web-app/package.json
+
+          # Add sign commands to tauri.windows.conf.json
+          jq '.bundle.windows.signCommand = "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
+          mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
+
+          # Update tauri plugin versions
+
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
+          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
+          
+          echo "---------./src-tauri/plugins/tauri-plugin-hardware/package.json---------"
+          cat ./src-tauri/plugins/tauri-plugin-hardware/package.json
+
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-llamacpp/package.json > /tmp/package.json
+          mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
+
+          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/package.json---------"
+          cat ./src-tauri/plugins/tauri-plugin-llamacpp/package.json
+
+          ctoml ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml---------"
+          cat ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
+          
+          ctoml ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml---------"
+          cat ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
+
+          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------./src-tauri/Cargo.toml---------"
+          cat ./src-tauri/Cargo.toml
+
+          generate_build_version() {
+              ### Example
+              ### input 0.5.6 output will be 0.5.6 and 0.5.6.0
+              ### input 0.5.6-rc2-beta output will be 0.5.6 and 0.5.6.2
+              ### input 0.5.6-1213 output will be 0.5.6 and and 0.5.6.1213
+              local new_version="$1"
+              local base_version
+              local t_value
+              # Check if it has a "-"
+              if [[ "$new_version" == *-* ]]; then
+                  base_version="${new_version%%-*}" # part before -
+                  suffix="${new_version#*-}"         # part after -
+                  # Check if it is rcX-beta
+                  if [[ "$suffix" =~ ^rc([0-9]+)-beta$ ]]; then
+                      t_value="${BASH_REMATCH[1]}"
+                  else
+                      t_value="$suffix"
+                  fi
+              else
+                  base_version="$new_version"
+                  t_value="0"
+              fi
+              # Export two values
+              new_base_version="$base_version"
+              new_build_version="${base_version}.${t_value}"
+          }
+          generate_build_version ${{ inputs.new_version }}
+          sed -i "s/jan_version/$new_base_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
+          sed -i "s/jan_build/$new_build_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
+          
+          echo "---------tauri.windows.conf.json---------"
+          cat ./src-tauri/tauri.windows.conf.json
+
+          # Temporarily enable devtool on prod build
+          ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
+          cat ./src-tauri/Cargo.toml
+
+          # Change app name for beta and nightly builds
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            # Update updater endpoint
+            jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+            
+            # Update product name
+            jq --arg name "Jan-${{ inputs.channel }}" '.productName = $name' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+
+            chmod +x .github/scripts/rename-tauri-app.sh
+            .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json ${{ inputs.channel }}
+
+            echo "---------tauri.conf.json---------"
+            cat ./src-tauri/tauri.conf.json
+
+            # Update Cargo.toml
+            ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
+            ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
+            echo "------------------"
+            cat ./src-tauri/Cargo.toml
+
+            chmod +x .github/scripts/rename-workspace.sh
+            .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
+            cat ./package.json
+            sed -i "s/jan_productname/Jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_mainbinaryname/jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
+          else
+            sed -i "s/jan_productname/Jan/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_mainbinaryname/jan/g" ./src-tauri/tauri.bundle.windows.nsis.template
+          fi
+          echo "---------nsis.template---------"
+          cat ./src-tauri/tauri.bundle.windows.nsis.template
+
+      - name: Install AzureSignTool
+        run: |
+          dotnet tool install --global --version 6.0.0 AzureSignTool
+
+      - name: Build app
+        shell: bash
+        run: |
+          make build
+        env:
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_MAX_ATTEMPTS: '5'
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Upload NSIS Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-windows-exe-${{ inputs.new_version }}
+          path: |
+            ./src-tauri/target/release/bundle/nsis/*.exe
+      - name: Upload MSI Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-windows-msi-${{ inputs.new_version }}
+          path: |
+            ./src-tauri/target/release/bundle/msi/*.msi
+      
+      - name: Upload Portable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-windows-portable-${{ inputs.new_version }}
+          path: |
+            ./src-tauri/target/release/Jan*.exe
+
+      ## Set output filename for windows
+      - name: Set output filename for windows
+        shell: bash
+        run: |
+          cd ./src-tauri/target/release/bundle/nsis
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe
+            WIN_SIG=$(cat Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig)
+
+            MSI_FILE="Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64_en-US.msi"
+            PORTABLE_FILE_NAME="Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-portable.exe"
+          else
+            FILE_NAME=Jan_${{ inputs.new_version }}_x64-setup.exe
+            WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
+            
+            MSI_FILE="Jan_${{ inputs.new_version }}_x64_en-US.msi"
+            PORTABLE_FILE_NAME="Jan_${{ inputs.new_version }}_x64-portable.exe"
+          fi
+          # go to ./src-tauri/target/release
+          cd ../..
+
+          # find the actual portable exe produced by the build
+          PORTABLE_SRC=$(ls -1 Jan*.exe | head -n 1)
+          if [ -z "$PORTABLE_SRC" ] || [ ! -f "$PORTABLE_SRC" ]; then
+            echo "Error: portable exe matching 'Jan*.exe' not found in $(pwd)" >&2
+            exit 1
+          fi
+          # copy to deterministic versioned filename
+          cp "$PORTABLE_SRC" "$PORTABLE_FILE_NAME"
+          echo "Portable exe: $PORTABLE_SRC -> $PORTABLE_FILE_NAME"
+
+          echo "::set-output name=WIN_SIG::$WIN_SIG"
+          echo "::set-output name=FILE_NAME::$FILE_NAME"
+          echo "::set-output name=MSI_FILE_NAME::$MSI_FILE"
+          echo "::set-output name=PORTABLE_FILE_NAME::$PORTABLE_FILE_NAME"
+        id: metadata
+
+      ## Upload to s3 for nightly and beta
+      - name: upload to aws s3 if public provider is aws
+        shell: bash
+        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        run: |
+          cd ./src-tauri/target/release/bundle/nsis
+
+          # Upload for tauri updater
+          aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}
+          aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }}.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}.sig
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
+      - name: Upload release assert if public provider is github
+        if: inputs.public_provider == 'github'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.FILE_NAME }}
+          asset_name: ${{ steps.metadata.outputs.FILE_NAME }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload portable exe to release (github)
+        if: inputs.public_provider == 'github'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/release/${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
+          asset_name: ${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
+          asset_content_type: application/octet-stream

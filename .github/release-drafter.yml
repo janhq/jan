@@ -1,0 +1,24 @@
+categories:
+  - title: "🚀 Features"
+    labels:
+      - "type: feature request"
+      - "type: enhancement"
+      - "type: epic"
+  - title: "🐛 Fixes"
+    labels:
+      - "type: bug"
+  - title: "🧰 Maintenance"
+    labels:
+      - "type: chore"
+      - "type: ci"
+      - "type: documentation"
+change-template: "- $TITLE @$AUTHOR (#$NUMBER)"
+change-title-escapes: '\<*_&' # You can add # and @ to disable mentions, and add ` to disable code blocks.
+template: |
+  ## Changes
+
+  $CHANGES
+
+  ## Contributor
+
+  $CONTRIBUTORS

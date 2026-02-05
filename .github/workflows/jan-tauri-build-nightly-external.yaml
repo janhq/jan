@@ -1,0 +1,46 @@
+name: Tauri Builder - Nightly / External PRs
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/jan-tauri-build-nightly-external.yaml'
+      - '.github/workflows/template-tauri-build-*-external.yml'
+      - 'src-tauri/**'
+      - 'core/**'
+      - 'web-app/**'
+      - 'extensions/**'
+      - 'scripts/**'
+      - 'pre-install/**'
+      - 'Makefile'
+      - 'package.json'
+
+jobs:
+  get-update-version:
+    uses: ./.github/workflows/template-get-update-version.yml
+
+  build-macos:
+    uses: ./.github/workflows/template-tauri-build-macos-external.yml
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: nightly
+
+  build-windows-x64:
+    uses: ./.github/workflows/template-tauri-build-windows-x64-external.yml
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: nightly
+
+  build-linux-x64:
+    uses: ./.github/workflows/template-tauri-build-linux-x64-external.yml
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: nightly
+      disable_updater: false

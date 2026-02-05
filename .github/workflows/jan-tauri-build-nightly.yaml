@@ -1,0 +1,253 @@
+name: Tauri Builder - Nightly / Manual
+
+on:
+  schedule:
+    - cron: '0 20 * * 1,2,3' # At 8 PM UTC on Monday, Tuesday, and Wednesday which is 3 AM UTC+7 Tuesday, Wednesday, and Thursday
+  workflow_dispatch:
+    inputs:
+      public_provider:
+        type: choice
+        description: 'Public Provider'
+        options:
+          - none
+          - aws-s3
+        default: none
+      disable_updater:
+        type: boolean
+        description: 'If true, builds both .deb and .appimage but disables auto-updater'
+        default: false
+  pull_request:
+    branches:
+      - release/**
+      - main
+    paths:
+      - '.github/workflows/jan-tauri-build-nightly.yaml'
+      - '.github/workflows/template-get-update-version.yml'
+      - '.github/workflows/template-tauri-build-macos.yml'
+      - '.github/workflows/template-tauri-build-windows-x64.yml'
+      - '.github/workflows/template-tauri-build-linux-x64.yml'
+      - '.github/workflows/template-noti-discord-and-update-url-readme.yml'
+      - 'src-tauri/**'
+      - 'core/**'
+      - 'web-app/**'
+      - 'extensions/**'
+      - 'scripts/**'
+      - 'pre-install/**'
+      - 'Makefile'
+      - 'package.json'
+
+
+jobs:
+  set-public-provider:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    outputs:
+      public_provider: ${{ steps.set-public-provider.outputs.public_provider }}
+      ref: ${{ steps.set-public-provider.outputs.ref }}
+    steps:
+      - name: Set public provider
+        id: set-public-provider
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "::set-output name=public_provider::${{ github.event.inputs.public_provider }}"
+            echo "::set-output name=ref::${{ github.ref }}"
+          else
+            if [ "${{ github.event_name }}" == "schedule" ]; then
+              echo "::set-output name=public_provider::aws-s3"
+              echo "::set-output name=ref::refs/heads/main"
+            elif [ "${{ github.event_name }}" == "push" ]; then
+              echo "::set-output name=public_provider::aws-s3"
+              echo "::set-output name=ref::${{ github.ref }}"
+            elif [ "${{ github.event_name }}" == "pull_request_review" ]; then
+              echo "::set-output name=public_provider::none"
+              echo "::set-output name=ref::${{ github.ref }}"
+            else
+              echo "::set-output name=public_provider::none"
+              echo "::set-output name=ref::${{ github.ref }}"
+            fi
+          fi
+  # Job create Update app version based on latest release tag with build number and save to output
+  get-update-version:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/template-get-update-version.yml
+
+  build-macos:
+    uses: ./.github/workflows/template-tauri-build-macos.yml
+    needs: [get-update-version, set-public-provider]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    secrets: inherit
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: nightly
+      cortex_api_port: '39261'
+
+  build-windows-x64:
+    uses: ./.github/workflows/template-tauri-build-windows-x64.yml
+    secrets: inherit
+    needs: [get-update-version, set-public-provider]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: nightly
+      cortex_api_port: '39261'
+  build-linux-x64:
+    uses: ./.github/workflows/template-tauri-build-linux-x64.yml
+    secrets: inherit
+    needs: [get-update-version, set-public-provider]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: nightly
+      cortex_api_port: '39261'
+      disable_updater: ${{ github.event.inputs.disable_updater == 'true' }}
+
+  sync-temp-to-latest:
+    needs:
+      [
+        get-update-version,
+        set-public-provider,
+        build-windows-x64,
+        build-linux-x64,
+        build-macos,
+      ]
+    runs-on: ubuntu-22.04
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+      - name: create latest.json file
+        run: |
+
+          VERSION=${{ needs.get-update-version.outputs.new_version }}
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+          LINUX_SIGNATURE="${{ needs.build-linux-x64.outputs.APPIMAGE_SIG }}"
+          LINUX_URL="https://delta.jan.ai/nightly/${{ needs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
+          WINDOWS_SIGNATURE="${{ needs.build-windows-x64.outputs.WIN_SIG }}"
+          WINDOWS_URL="https://delta.jan.ai/nightly/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
+          DARWIN_SIGNATURE="${{ needs.build-macos.outputs.MAC_UNIVERSAL_SIG }}"
+          DARWIN_URL="https://delta.jan.ai/nightly/Jan-nightly_${{ needs.get-update-version.outputs.new_version }}.app.tar.gz"
+
+          jq --arg version "$VERSION" \
+            --arg pub_date "$PUB_DATE" \
+            --arg linux_signature "$LINUX_SIGNATURE" \
+            --arg linux_url "$LINUX_URL" \
+            --arg windows_signature "$WINDOWS_SIGNATURE" \
+            --arg windows_url "$WINDOWS_URL" \
+            --arg darwin_arm_signature "$DARWIN_SIGNATURE" \
+            --arg darwin_arm_url "$DARWIN_URL" \
+            --arg darwin_amd_signature "$DARWIN_SIGNATURE" \
+            --arg darwin_amd_url "$DARWIN_URL" \
+            '.version = $version
+              | .pub_date = $pub_date
+              | .platforms["linux-x86_64"].signature = $linux_signature
+              | .platforms["linux-x86_64"].url = $linux_url
+              | .platforms["windows-x86_64"].signature = $windows_signature
+              | .platforms["windows-x86_64"].url = $windows_url
+              | .platforms["darwin-aarch64"].signature = $darwin_arm_signature
+              | .platforms["darwin-aarch64"].url = $darwin_arm_url
+              | .platforms["darwin-x86_64"].signature = $darwin_amd_signature
+              | .platforms["darwin-x86_64"].url = $darwin_amd_url' \
+            src-tauri/latest.json.template > latest.json
+            cat latest.json
+      - name: Sync temp to latest
+        if: ${{ needs.set-public-provider.outputs.public_provider == 'aws-s3' }}
+        run: |
+          aws s3 cp ./latest.json s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-nightly/latest.json
+          aws s3 sync s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-nightly/ s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/nightly/
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
+  # noti-discord-nightly-and-update-url-readme:
+  #   needs:
+  #     [
+  #       build-macos,
+  #       build-windows-x64,
+  #       build-linux-x64,
+  #       get-update-version,
+  #       set-public-provider,
+  #       sync-temp-to-latest,
+  #     ]
+  #   secrets: inherit
+  #   if: github.event_name == 'schedule'
+  #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
+  #   with:
+  #     ref: refs/heads/dev
+  #     build_reason: Nightly
+  #     push_to_branch: dev
+  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+
+  # noti-discord-pre-release-and-update-url-readme:
+  #   needs:
+  #     [
+  #       build-macos,
+  #       build-windows-x64,
+  #       build-linux-x64,
+  #       get-update-version,
+  #       set-public-provider,
+  #       sync-temp-to-latest,
+  #     ]
+  #   secrets: inherit
+  #   if: github.event_name == 'push'
+  #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
+  #   with:
+  #     ref: refs/heads/dev
+  #     build_reason: Pre-release
+  #     push_to_branch: dev
+  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+
+  # noti-discord-manual-and-update-url-readme:
+  #   needs:
+  #     [
+  #       build-macos,
+  #       build-windows-x64,
+  #       build-linux-x64,
+  #       get-update-version,
+  #       set-public-provider,
+  #       sync-temp-to-latest,
+  #     ]
+  #   secrets: inherit
+  #   if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'aws-s3'
+  #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
+  #   with:
+  #     ref: refs/heads/dev
+  #     build_reason: Manual
+  #     push_to_branch: dev
+  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+
+  comment-pr-build-url:
+    needs:
+      [
+        build-macos,
+        build-windows-x64,
+        build-linux-x64,
+        get-update-version,
+        set-public-provider,
+        sync-temp-to-latest,
+      ]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request_review'
+    steps:
+      - name: Set up GitHub CLI
+        run: |
+          curl -sSL https://github.com/cli/cli/releases/download/v2.33.0/gh_2.33.0_linux_amd64.tar.gz | tar xz
+          sudo cp gh_2.33.0_linux_amd64/bin/gh /usr/local/bin/
+
+      - name: Comment build URL on PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL=${{ github.event.pull_request.html_url }}
+          RUN_ID=${{ github.run_id }}
+          COMMENT="This is the build for this pull request. You can download it from the Artifacts section here: [Build URL](https://github.com/${{ github.repository }}/actions/runs/${RUN_ID})."
+          gh pr comment $PR_URL --body "$COMMENT"

@@ -1,0 +1,67 @@
+.env
+error.log
+node_modules
+*.tgz
+dist
+build
+.DS_Store
+package-lock.json
+coverage
+*.log
+core/lib/**
+.yarn
+.yarnrc
+*.tsbuildinfo
+test_results.html
+pre-install
+
+# docs
+GIT_WORKFLOW_BACKDATED.md
+GIT_CONTRIBUTION_GUIDE.md
+docs/yarn.lock
+src-tauri/resources/lib
+src-tauri/icons
+!src-tauri/icons/icon.png
+src-tauri/gen/apple
+src-tauri/gen/android
+src-tauri/resources/bin
+
+# Helper tools
+.opencode
+OpenCode.md
+Claude.md
+archive/
+.cache/
+
+# auto qa
+autoqa/trajectories
+autoqa/recordings
+autoqa/__pycache__
+
+# Astro / Starlight specific
+website/dist/
+website/.astro/
+website/src/content/config.ts.timestamp-*
+
+# Nextra specific
+docs/out/
+docs/.next/
+
+# General Node.js
+**/node_modules
+**/.env
+**/.env.*
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/pnpm-debug.log*
+
+## cargo
+target
+Cargo.lock
+src-tauri/resources/
+
+## test
+test-data
+llm-docs
+.claude/agents

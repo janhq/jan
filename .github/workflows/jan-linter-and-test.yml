@@ -1,0 +1,266 @@
+name: Linter & Test
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/jan-linter-and-test.yml
+      - 'web/**'
+      - 'joi/**'
+      - 'package.json'
+      - 'node_modules/**'
+      - 'yarn.lock'
+      - 'core/**'
+      - 'extensions/**'
+      - '!README.md'
+      - 'Makefile'
+
+  pull_request:
+    branches:
+      - main
+      - release/**
+    paths:
+      - .github/workflows/jan-linter-and-test.yml
+      - 'web/**'
+      - 'joi/**'
+      - 'package.json'
+      - 'node_modules/**'
+      - 'yarn.lock'
+      - 'Makefile'
+      - 'extensions/**'
+      - 'core/**'
+      - 'src-tauri/**'
+      - 'web-app/**'
+      - '!README.md'
+
+jobs:
+  base_branch_cov:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.base_ref }}
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: 'Cleanup cache'
+        continue-on-error: true
+        run: |
+          rm -rf ~/jan
+          make clean
+
+      - name: Install dependencies
+        run: |
+          make lint
+
+      - name: Run test coverage
+        run: |
+          yarn test:coverage
+
+      - name: Upload code coverage for ref branch
+        uses: actions/upload-artifact@v4
+        with:
+          name: ref-lcov.info
+          path: coverage/lcov.info
+
+  test-on-macos:
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'macos-latest' || 'macos-selfhosted-15-arm64' }}
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Installing node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: 'Cleanup cache'
+        continue-on-error: true
+        run: |
+          rm -rf ~/jan
+          make clean
+
+      - name: Linter and test
+        run: |
+          make test
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+  test-on-windows:
+    if: github.event_name == 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        antivirus-tools: ['mcafee', 'default-windows-security', 'bit-defender']
+    runs-on: windows-desktop-${{ matrix.antivirus-tools }}
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Installing node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      # Clean cache, continue on error
+      - name: 'Cleanup cache'
+        shell: powershell
+        continue-on-error: true
+        run: |
+          $path = "$Env:APPDATA\jan"
+          if (Test-Path $path) {
+              Remove-Item "\\?\$path" -Recurse -Force
+          } else {
+              Write-Output "Folder does not exist."
+          }
+          make clean
+
+      - name: Linter and test
+        shell: powershell
+        run: |
+          make test
+
+  test-on-windows-pr:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: 'windows-latest'
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: install dependencies
+        run: |
+          choco install --yes --no-progress make
+
+      - name: Installing node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: 'Cleanup cache'
+        shell: powershell
+        continue-on-error: true
+        run: |
+          $path = "$Env:APPDATA\jan"
+          if (Test-Path $path) {
+              Remove-Item "\\?\$path" -Recurse -Force
+          } else {
+              Write-Output "Folder does not exist."
+          }
+          make clean
+
+      - name: Install WebView2 Runtime (Bootstrapper)
+        shell: powershell
+        run: |
+          Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile 'setup.exe'
+          Start-Process -FilePath setup.exe -Verb RunAs -Wait
+
+      - name: Linter and test
+        shell: powershell
+        run: |
+          make test
+        env:
+          NODE_OPTIONS: '--max-old-space-size=2048'
+
+  test-on-ubuntu:
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || 'ubuntu-latest' }}
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false 
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Installing node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: Install Tauri dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 webkit2gtk-driver
+
+      - name: 'Cleanup cache'
+        continue-on-error: true
+        run: |
+          rm -rf ~/jan
+          make clean
+
+      - name: Linter and test
+        run: |
+          export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
+          echo -e "Display ID: $DISPLAY"
+          make test
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: electron/playwright-report/
+          retention-days: 2
+
+  coverage-check:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    needs: base_branch_cov
+    continue-on-error: true
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Installing node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+      - name: 'Cleanup cache'
+        continue-on-error: true
+        run: |
+          rm -rf ~/jan
+          make clean
+
+      - name: Install dependencies
+        run: |
+          make lint
+
+      - name: Run test coverage
+        run: |
+          yarn test:coverage
+
+      - name: Download code coverage report from base branch
+        uses: actions/download-artifact@v4
+        with:
+          name: ref-lcov.info
+      - name: Generate Code Coverage report
+        id: code-coverage
+        uses: barecheck/code-coverage-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          lcov-file: './coverage/lcov.info'
+          base-lcov-file: './lcov.info'
+          send-summary-comment: true
+          show-annotations: 'warning'

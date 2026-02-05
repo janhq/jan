@@ -1,0 +1,55 @@
+name: noti-discord-and-update-url-readme
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+        default: 'refs/heads/main'
+      build_reason:
+        required: true
+        type: string
+        default: 'Nightly'
+      push_to_branch:
+        required: true
+        type: string
+        default: 'main'
+      new_version:
+        required: true
+        type: string
+        default: ''
+    # secrets:
+    #   PAT_SERVICE_ACCOUNT:
+    #     required: false
+    #   DISCORD_WEBHOOK:
+    #     required: false
+
+jobs:
+  noti-discord-and-update-url-readme:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: '0'
+          token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+          ref: ${{ inputs.ref }}
+
+      - name: Set version to environment variable
+        run: |
+          echo "VERSION=${{ inputs.new_version }}" >> $GITHUB_ENV
+
+      - name: Notify Discord
+        uses: Ilshidur/action-discord@master
+        with:
+          args: |
+            Jan App ${{ inputs.build_reason }} build artifact version {{ VERSION }}:
+            - Windows: https://delta.jan.ai/nightly/Jan-nightly_{{ VERSION }}_x64-setup.exe
+            - macOS Universal: https://delta.jan.ai/nightly/Jan-nightly_{{ VERSION }}_universal.dmg
+            - Linux Deb: https://delta.jan.ai/nightly/Jan-nightly_{{ VERSION }}_amd64.deb
+            - Linux AppImage: https://delta.jan.ai/nightly/Jan-nightly_{{ VERSION }}_amd64.AppImage
+            - Github action run: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}

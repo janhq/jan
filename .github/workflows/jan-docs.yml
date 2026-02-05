@@ -1,0 +1,91 @@
+name: Jan Docs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - '.github/workflows/jan-docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '.github/workflows/jan-docs.yml'
+    # Review gh actions docs if you want to further define triggers, paths, etc
+    # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to CloudFlare Pages
+    env:
+      CLOUDFLARE_PROJECT_NAME: docs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      deployments: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: Install jq      
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Fill env vars
+        working-directory: docs
+        run: |
+          env_example_file=".env.example"
+          touch .env
+          while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ "$line" == *"="* ]]; then
+              var_name=$(echo $line | cut -d '=' -f 1)
+              echo $var_name
+              var_value="$(jq -r --arg key "$var_name" '.[$key]' <<< "$SECRETS")"
+              echo "$var_name=$var_value" >> .env
+            fi
+          done < "$env_example_file"
+        env:
+          SECRETS: '${{ toJson(secrets) }}'
+
+      - name: Install dependencies
+        working-directory: docs
+        run: yarn install
+      - name: Clean output directory
+        working-directory: docs
+        run: rm -rf out/* .next/*
+      - name: Build website
+        working-directory: docs
+        run: export NODE_ENV=production && yarn build && cp _redirects out/_redirects && cp _headers out/_headers
+
+      - name: Publish to Cloudflare Pages PR Preview and Staging
+        if: github.event_name == 'pull_request'
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: ${{ env.CLOUDFLARE_PROJECT_NAME }}
+          directory: ./docs/out
+          # Optional: Enable this if you want to have GitHub Deployments triggered
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+        id: deployCloudflarePages
+
+      - uses: mshick/add-pr-comment@v2
+        if: github.event_name == 'pull_request'
+        with:
+          message: |
+              Preview URL: ${{ steps.deployCloudflarePages.outputs.url }}
+
+      - name: Publish to Cloudflare Pages Production
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/release/'))
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: ${{ env.CLOUDFLARE_PROJECT_NAME }}
+          directory: ./docs/out
+          branch: main
+          # Optional: Enable this if you want to have GitHub Deployments triggered
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}

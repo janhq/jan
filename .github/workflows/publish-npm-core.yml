@@ -1,0 +1,51 @@
+name: Publish core Package to npmjs
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+-core']
+    paths: ['core/**', '.github/workflows/publish-npm-core.yml']
+  workflow_dispatch:
+jobs:
+  build-and-publish-plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: '0'
+          token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Extract tag name without v prefix
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV && echo "::set-output name=version::${GITHUB_REF#refs/tags/v}"
+        env:
+          GITHUB_REF: ${{ github.ref }}
+
+      - name: 'Get Semantic Version from tag'
+        if: github.event_name == 'push'
+        run: |
+          # Get the tag from the event
+          tag=${GITHUB_REF#refs/tags/v}
+          # remove the -core suffix
+          new_version=$(echo $tag | sed -n 's/-core//p')
+          echo $new_version
+          # Replace the old version with the new version in package.json
+          jq --arg version "$new_version" '.version = $version' core/package.json > /tmp/package.json && mv /tmp/package.json core/package.json
+
+          # Print the new version
+          echo "Updated package.json version to: $new_version"
+          cat core/package.json
+
+      # Setup .npmrc file to publish to npm
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: cd core && corepack enable && corepack prepare yarn@4.5.3 --activate && yarn --version && yarn config set -H enableImmutableInstalls false && yarn install && yarn build
+
+      - run: cd core && yarn publish --access public
+        if: github.event_name == 'push'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,62 @@
+name: get-update-version
+on:
+  workflow_call:
+    outputs:
+      new_version:
+        description: 'The new version of the app'
+        value: ${{ jobs.get-update-version.outputs.new_version }}
+
+jobs:
+  get-update-version:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.version_update.outputs.new_version }}
+    steps:
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Get tag
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        id: tag
+        uses: dawidd6/action-get-tag@v1
+
+      - name: Update app version based on latest release tag with build number
+        id: version_update
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Function to get the latest release tag
+          get_latest_tag() {
+            local retries=0
+            local max_retries=3
+            local tag
+            while [ $retries -lt $max_retries ]; do
+              tag=$(curl -H "Authorization: token ${GITHUB_TOKEN}" -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
+              if [ -n "$tag" ] && [ "$tag" != "null" ]; then
+                echo $tag
+                return
+              else
+                let retries++
+                echo "Retrying... ($retries/$max_retries)"
+                sleep 2
+              fi
+            done
+            echo "Failed to fetch latest tag after $max_retries attempts."
+            exit 1
+          }
+
+            if ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}; then
+            echo "Tag detected, set output follow tag"
+            sanitized_tag="${{ steps.tag.outputs.tag }}"
+            # Remove the 'v' prefix if it exists
+            sanitized_tag="${sanitized_tag#v}"
+            echo "::set-output name=new_version::$sanitized_tag"
+          else
+            # Get the latest release tag from GitHub API
+            LATEST_TAG=$(get_latest_tag)
+            
+            # Remove the 'v' and append the build number to the version
+            new_version="${LATEST_TAG#v}-${GITHUB_RUN_NUMBER}"
+            echo "New version: $new_version"
+            echo "::set-output name=new_version::$new_version"
+          fi

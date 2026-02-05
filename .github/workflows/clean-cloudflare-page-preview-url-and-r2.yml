@@ -1,0 +1,52 @@
+name: "Clean old cloudflare pages preview urls and nightly build"
+on:
+  schedule:
+    - cron: "0 0 * * *" # every day at 00:00
+  workflow_dispatch:
+
+jobs:
+  clean-cloudflare-pages-preview-urls:
+    strategy:
+      matrix:
+        project: ["nitro", "docs"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - name: install requests
+        run: |
+          python3 -m pip install requests pytz tqdm
+      - name: Python Inline script
+        uses: jannekem/run-python-script-action@v1
+        with: 
+          script: |
+            import requests
+            from datetime import datetime, UTC
+            from pytz import timezone
+            from tqdm import tqdm
+            
+            # Configuration
+            endpoint = "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/${{ matrix.project }}/deployments"
+            expiration_days = 3
+            headers = {
+                "Content-Type": "application/json;charset=UTF-8",
+                "Authorization": "Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}"
+            }
+            utc_tz = timezone('UTC')
+
+            # Fetch the list of deployments
+            response = requests.get(endpoint, headers=headers)
+            deployments = response.json()
+
+            for deployment in tqdm(deployments['result']):
+                # Calculate the age of the deployment
+                created_on = datetime.strptime(deployment['created_on'], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=utc_tz)
+                if (datetime.now(UTC) - created_on).days > expiration_days:
+                    # Delete the deployment
+                    delete_response = requests.delete(f"{endpoint}/{deployment['id']}", headers=headers)
+                    if delete_response.status_code == 200:
+                        print(f"Deleted deployment: {deployment['id']}")
+                    else:
+                        print(f"Failed to delete deployment: {deployment['id']}")
+
