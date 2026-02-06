@@ -410,7 +410,7 @@ async function executeOpenCodeDelegation(
     }, DELEGATION_TIMEOUT_MS)
 
     // Set up event listener BEFORE starting task
-    const unsubscribe = service.onEvent(taskId, async (message) => {
+    const { unsubscribe, ready: listenerReady } = service.onEvent(taskId, async (message) => {
       const timestamp = Date.now()
       console.log('[OpenCode Delegate] Received message:', message.type, taskId)
 
@@ -592,8 +592,9 @@ async function executeOpenCodeDelegation(
       }
     })
 
-    // Small delay to ensure listener is set up
-    setTimeout(async () => {
+    // Wait for the Tauri listener to be fully registered before starting the task.
+    // Without this, events emitted by the backend can be lost in a race condition.
+    listenerReady.then(async () => {
       try {
         await service.startTask({
           taskId,
@@ -630,7 +631,7 @@ async function executeOpenCodeDelegation(
           error: error instanceof Error ? error.message : String(error),
         })
       }
-    }, 50)
+    })
   })
 }
 

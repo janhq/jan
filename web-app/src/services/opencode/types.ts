@@ -153,9 +153,15 @@ export interface OpenCodeServiceInterface {
   runningTaskCount(): Promise<number>
 
   /**
-   * Subscribe to events for a specific task
+   * Subscribe to events for a specific task.
+   * Returns an object with:
+   * - `unsubscribe`: cleanup function to remove the listener
+   * - `ready`: a Promise that resolves when the listener is fully registered
    */
-  onEvent(taskId: string, handler: (message: OpenCodeMessage) => void): () => void
+  onEvent(taskId: string, handler: (message: OpenCodeMessage) => void): {
+    unsubscribe: () => void
+    ready: Promise<void>
+  }
 
   /**
    * Subscribe to status changes for a specific task

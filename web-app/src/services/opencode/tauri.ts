@@ -52,13 +52,15 @@ export function createOpenCodeService(): OpenCodeServiceInterface {
     onEvent(taskId, handler) {
       let unlisten: UnlistenFn | undefined
 
-      // Listen to task-specific events - immediately set up the listener
+      // Listen to task-specific events
       const listenerPromise = listen<OpenCodeMessage>(`opencode:event:${taskId}`, (event) => {
         console.log('[OpenCode Event]', taskId, event.payload)
         handler(event.payload)
       })
 
-      listenerPromise.then((fn) => {
+      // `ready` resolves only after the Tauri listener is fully registered.
+      // Callers must await this before starting the task to avoid lost events.
+      const ready = listenerPromise.then((fn) => {
         unlisten = fn
         // Track the listener for cleanup
         const existing = listeners.get(taskId) || []
@@ -66,8 +68,7 @@ export function createOpenCodeService(): OpenCodeServiceInterface {
         listeners.set(taskId, existing)
       })
 
-      // Return cleanup function
-      return () => {
+      const unsubscribe = () => {
         if (unlisten) {
           unlisten()
           // Remove from tracked listeners
@@ -89,6 +90,8 @@ export function createOpenCodeService(): OpenCodeServiceInterface {
           })
         }
       }
+
+      return { unsubscribe, ready }
     },
 
     onStatusChange(taskId, handler) {
