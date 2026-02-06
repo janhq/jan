@@ -43,7 +43,7 @@ import {
 } from '@tabler/icons-react'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import Capabilities from '@/containers/Capabilities'
-import { getModelDisplayName } from '@/lib/utils'
+import { getModelDisplayName, isLocalProvider } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -240,10 +240,10 @@ function LocalAPIServerContent() {
 
   const getButtonText = () => {
     if (isModelLoading) {
-      return t('settings:localApiServer.loadingModel') // TODO: Update this translation
+      return '...loading model'
     }
     if (serverStatus === 'pending' && !isModelLoading) {
-      return t('settings:localApiServer.startingServer') // TODO: Update this translation
+      return t('settings:localApiServer.startingServer') 
     }
     return isServerRunning
       ? t('settings:localApiServer.stopServer')
@@ -266,8 +266,100 @@ function LocalAPIServerContent() {
     const modelSmall = helperModels.small
     const customEnvVars = helperModels.envVars
 
+    // Helper function to start the server with selected models
+    const startServer = async (): Promise<void> => {
+      // Get helper models that need to be started
+      const helperModelsToStart = [
+        { id: helperModels.big, role: 'Big' },
+        { id: helperModels.medium, role: 'Medium' },
+        { id: helperModels.small, role: 'Small' },
+      ]
+        .filter((m) => m.id)
+        .map((m) => m.id as string)
+
+      // Check which helper models are already loaded
+      const loadedModels = (await serviceHub.models().getActiveModels()) || []
+      const modelsToStart = helperModelsToStart.filter(
+        (m) => !loadedModels.includes(m)
+      )
+
+      if (modelsToStart.length > 0) {
+        setIsModelLoading(true)
+        for (const modelId of modelsToStart) {
+          // Find the provider that has this model
+          const providerWithModel = providers.find((p) =>
+            p.models.some((m) => m.id === modelId)
+          )
+
+          if (providerWithModel) {
+            await serviceHub
+              .models()
+              .startModel(providerWithModel, modelId)
+              .then(() => {
+                console.log(`Model ${modelId} started successfully`)
+              })
+          }
+        }
+        setIsModelLoading(false)
+        await serviceHub
+          .models()
+          .getActiveModels()
+          .then((models) => setActiveModels(models || []))
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      } else if (loadedModels.length > 0) {
+        console.log(`Using already loaded models: ${loadedModels.join(', ')}`)
+      } else if (helperModelsToStart.length === 0) {
+        // No helper models selected, start default model if available
+        const modelToStart = getModelToStart({
+          selectedModel,
+          selectedProvider,
+          getProviderByName,
+        })
+
+        if (modelToStart) {
+          setIsModelLoading(true)
+          await serviceHub
+            .models()
+            .startModel(modelToStart.provider, modelToStart.model)
+            .then(() => {
+              console.log(`Model ${modelToStart.model} started successfully`)
+              setIsModelLoading(false)
+              serviceHub
+                .models()
+                .getActiveModels()
+                .then((models) => setActiveModels(models || []))
+              return new Promise((resolve) => setTimeout(resolve, 500))
+            })
+        }
+      }
+
+      const actualPort = await window.core?.api?.startServer({
+        host: serverHost,
+        port: serverPort,
+        prefix: apiPrefix,
+        apiKey,
+        trustedHosts,
+        isCorsEnabled: corsEnabled,
+        isVerboseEnabled: verboseLogs,
+        proxyTimeout: proxyTimeout,
+      })
+
+      if (actualPort && actualPort !== serverPort) {
+        setServerPort(actualPort)
+      }
+      setServerStatus('running')
+    }
+
     try {
-      // Try to write directly to ~/.zshenv
+      // If server is not running, start it first
+      if (serverStatus === 'stopped') {
+        toast.info('Starting server...', {
+          description: 'Preparing server for Claude Code',
+        })
+        await startServer()
+      }
+
+      // Now launch Claude Code with config
       await invoke('launch_claude_code_with_config', {
         apiUrl,
         apiKey: apiKey || undefined,
@@ -668,7 +760,7 @@ function HelperModelSelector({
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Get available models:
-  // - llamacpp (local): show only active/downloaded models
+  // - Local providers (llamacpp, mlx): show models (they're downloaded locally)
   // - Remote providers: show models only if API key is configured
   const availableModels = useMemo(() => {
     return providers
@@ -677,12 +769,12 @@ function HelperModelSelector({
         p.models.map((m) => ({
           ...m,
           providerName: p.provider,
-          isLocal: p.provider === 'llamacpp',
+          isLocal: isLocalProvider(p.provider),
           hasApiKey: !!p.api_key?.length,
         }))
       )
       .filter((m) => {
-        // llamacpp: only show active models
+        // Local providers: show all models (they're downloaded locally)
         if (m.isLocal) {
           return m.id
         }
@@ -748,8 +840,7 @@ function HelperModelSelector({
         <Button variant="outline" size="sm" className="max-w-[280px]">
           <span
             className={cn(
-              'text-foreground truncate leading-normal',
-              !selectedModel && 'text-muted-foreground'
+              'truncate leading-normal'
             )}
           >
             {selectedModel && currentModel
