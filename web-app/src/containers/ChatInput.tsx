@@ -163,6 +163,9 @@ const ChatInput = memo(function ChatInput({
   const [hasMmproj, setHasMmproj] = useState(false)
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
+
+  // Check if selected model is currently loaded/active
+  const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
   const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>()
 
   // Jan Browser Extension hook
@@ -1843,6 +1846,7 @@ const ChatInput = memo(function ChatInput({
       )}
 
       {selectedProvider === 'llamacpp' &&
+        isModelActive &&
         !tokenCounterCompact &&
         !initialMessage &&
         (threadMessages?.length > 0 || prompt.trim().length > 0) && (
