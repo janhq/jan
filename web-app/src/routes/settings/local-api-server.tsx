@@ -90,16 +90,22 @@ function LocalAPIServerContent() {
 
   useEffect(() => {
     const checkServerStatus = async () => {
-      serviceHub
-        .app()
-        .getServerStatus()
-        .then((running) => {
-          if (running) {
-            setServerStatus('running')
-          }
-        })
+      try {
+        const running = await serviceHub.app().getServerStatus()
+        console.log('Server status check:', running)
+        if (running) {
+          setServerStatus('running')
+        }
+      } catch (error) {
+        console.error('Failed to check server status:', error)
+      }
     }
     checkServerStatus()
+
+    // Also check when window gains focus (e.g., server started from another page)
+    const handleFocus = () => checkServerStatus()
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
   }, [serviceHub, setServerStatus])
 
   const handleApiKeyValidation = (isValid: boolean) => {
@@ -566,10 +572,6 @@ function LocalAPIServerContent() {
                     <Switch
                       checked={enableOnStartup}
                       onCheckedChange={(checked) => {
-                        if (!apiKey || apiKey.toString().trim().length === 0) {
-                          setShowApiKeyError(true)
-                          return
-                        }
                         setEnableOnStartup(checked)
                       }}
                     />

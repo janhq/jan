@@ -12,7 +12,6 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
-import { getModelToStart } from '@/utils/getModelToStart'
 import { isDev } from '@/lib/utils'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -69,7 +68,7 @@ const syncRemoteProviders = () => {
 }
 
 export function DataProvider() {
-  const { setProviders, selectedModel, selectedProvider, getProviderByName } =
+  const { setProviders } =
     useModelProvider()
 
   const { checkForUpdate } = useAppUpdater()
@@ -78,7 +77,6 @@ export function DataProvider() {
   const { setThreads } = useThreads()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
-  const setActiveModels = useAppState((state) => state.setActiveModels)
 
   // Local API Server hooks
   const {
@@ -193,58 +191,38 @@ export function DataProvider() {
   // Auto-start Local API Server on app startup if enabled
   useEffect(() => {
     if (enableOnStartup) {
-      // Validate API key before starting
-      if (!apiKey || apiKey.toString().trim().length === 0) {
-        console.warn('Cannot start Local API Server: API key is required')
-        return
-      }
-
-      const modelToStart = getModelToStart({
-        selectedModel,
-        selectedProvider,
-        getProviderByName,
-      })
-
-      // Only start server if we have a model to load
-      if (!modelToStart) {
-        console.warn(
-          'Cannot start Local API Server: No model available to load'
-        )
-        return
-      }
-
-      setServerStatus('pending')
-
-      // Start the model first
+      // Check if server is already running
       serviceHub
-        .models()
-        .startModel(modelToStart.provider, modelToStart.model)
-        .then(() => {
-          console.log(`Model ${modelToStart.model} started successfully`)
-          // Refresh active models after starting
-          serviceHub
-            .models()
-            .getActiveModels()
-            .then((models) => setActiveModels(models || []))
-
-          // Then start the server
-          return window.core?.api?.startServer({
-            host: serverHost,
-            port: serverPort,
-            prefix: apiPrefix,
-            apiKey,
-            trustedHosts,
-            isCorsEnabled: corsEnabled,
-            isVerboseEnabled: verboseLogs,
-            proxyTimeout: proxyTimeout,
-          })
-        })
-        .then((actualPort: number) => {
-          // Store the actual port that was assigned (important for mobile with port 0)
-          if (actualPort && actualPort !== serverPort) {
-            setServerPort(actualPort)
+        .app()
+        .getServerStatus()
+        .then((isRunning) => {
+          if (isRunning) {
+            console.log('Local API Server is already running')
+            setServerStatus('running')
+            return
           }
-          setServerStatus('running')
+
+          setServerStatus('pending')
+
+          // Start the server directly without checking for model
+          return window.core?.api
+            ?.startServer({
+              host: serverHost,
+              port: serverPort,
+              prefix: apiPrefix,
+              apiKey,
+              trustedHosts,
+              isCorsEnabled: corsEnabled,
+              isVerboseEnabled: verboseLogs,
+              proxyTimeout: proxyTimeout,
+            })
+            .then((actualPort: number) => {
+              // Store the actual port that was assigned (important for mobile with port 0)
+              if (actualPort && actualPort !== serverPort) {
+                setServerPort(actualPort)
+              }
+              setServerStatus('running')
+            })
         })
         .catch((error: unknown) => {
           console.error('Failed to start Local API Server on startup:', error)
