@@ -2,7 +2,7 @@ import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -101,14 +101,14 @@ type ChatInputProps = {
   chatStatus?: ChatStatus
 }
 
-const ChatInput = ({
+const ChatInput = memo(function ChatInput({
   className,
   initialMessage,
   projectId,
   onSubmit,
   onStop,
   chatStatus,
-}: ChatInputProps) => {
+}: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
@@ -1877,6 +1877,6 @@ const ChatInput = ({
       />
     </div>
   )
-}
+})
 
 export default ChatInput

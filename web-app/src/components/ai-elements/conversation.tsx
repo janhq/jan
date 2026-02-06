@@ -2,12 +2,12 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { IconArrowDown } from '@tabler/icons-react'
 import type { ComponentProps } from 'react'
-import { useCallback } from 'react'
+import { useCallback, memo } from 'react'
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom'
 
 export type ConversationProps = ComponentProps<typeof StickToBottom>
 
-export const Conversation = ({ className, ...props }: ConversationProps) => (
+export const Conversation = memo(({ className, ...props }: ConversationProps) => (
   <StickToBottom
     className={cn('relative flex-1 overflow-y-hidden', className)}
     initial="smooth"
@@ -15,19 +15,20 @@ export const Conversation = ({ className, ...props }: ConversationProps) => (
     role="log"
     {...props}
   />
-)
+))
+
+Conversation.displayName = 'Conversation'
 
 export type ConversationContentProps = ComponentProps<typeof StickToBottom.Content>
 
-export const ConversationContent = ({
-  className,
-  ...props
-}: ConversationContentProps) => (
+export const ConversationContent = memo(({ className, ...props }: ConversationContentProps) => (
   <StickToBottom.Content
     className={cn('flex flex-col gap-x-8 gap-y-2 px-2', className)}
     {...props}
   />
-)
+))
+
+ConversationContent.displayName = 'ConversationContent'
 
 export type ConversationEmptyStateProps = ComponentProps<'div'> & {
   title?: string
