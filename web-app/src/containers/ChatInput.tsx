@@ -2,7 +2,7 @@ import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -101,14 +101,14 @@ type ChatInputProps = {
   chatStatus?: ChatStatus
 }
 
-const ChatInput = ({
+const ChatInput = memo(function ChatInput({
   className,
   initialMessage,
   projectId,
   onSubmit,
   onStop,
   chatStatus,
-}: ChatInputProps) => {
+}: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
@@ -163,6 +163,9 @@ const ChatInput = ({
   const [hasMmproj, setHasMmproj] = useState(false)
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
+
+  // Check if selected model is currently loaded/active
+  const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
   const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>()
 
   // Jan Browser Extension hook
@@ -1843,6 +1846,7 @@ const ChatInput = ({
       )}
 
       {selectedProvider === 'llamacpp' &&
+        isModelActive &&
         !tokenCounterCompact &&
         !initialMessage &&
         (threadMessages?.length > 0 || prompt.trim().length > 0) && (
@@ -1877,6 +1881,6 @@ const ChatInput = ({
       />
     </div>
   )
-}
+})
 
 export default ChatInput
