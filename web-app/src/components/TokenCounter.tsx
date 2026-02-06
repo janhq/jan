@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState, useRef } from 'react'
+import { useMemo, useEffect, useState, useRef, memo } from 'react'
 import { cn } from '@/lib/utils'
 import {
   Tooltip,
@@ -23,12 +23,12 @@ interface TokenCounterProps {
   }>
 }
 
-export const TokenCounter = ({
+export const TokenCounter = memo(function TokenCounter({
   messages = [],
   className,
   additionalTokens = 0,
   uploadedFiles = [],
-}: TokenCounterProps) => {
+}: TokenCounterProps) {
   const { calculateTokens, ...tokenData } = useTokensCount(
     messages,
     uploadedFiles
@@ -228,4 +228,4 @@ export const TokenCounter = ({
       </Tooltip>
     </TooltipProvider>
   )
-}
+})

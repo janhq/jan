@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback, memo } from 'react'
 import {
   Popover,
   PopoverContent,
@@ -50,10 +50,10 @@ const setLastUsedModel = (provider: string, model: string) => {
   }
 }
 
-const DropdownModelProvider = ({
+const DropdownModelProvider = memo(function DropdownModelProvider({
   model,
   useLastUsedModel = false,
-}: DropdownModelProviderProps) => {
+}: DropdownModelProviderProps) {
   const {
     providers,
     getProviderByName,
@@ -661,6 +661,6 @@ const DropdownModelProvider = ({
       </PopoverContent>
     </Popover>
   )
-}
+})
 
 export default DropdownModelProvider

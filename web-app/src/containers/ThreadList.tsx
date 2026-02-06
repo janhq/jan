@@ -65,13 +65,9 @@ const ThreadItem = memo(
     // Fetch messages if not loaded yet
     useEffect(() => {
       const currentMessages = getMessages(thread.id)
-      if (currentMessages.length > 0) {
-        setLocalMessages(currentMessages)
-        messagesLengthRef.current = currentMessages.length
-        return
-      }
 
-      if (!messagesLoadedRef.current) {
+      // Initial load: no messages yet, fetch them
+      if (currentMessages.length === 0 && !messagesLoadedRef.current) {
         messagesLoadedRef.current = true
         serviceHub
           .messages()
@@ -86,6 +82,13 @@ const ThreadItem = memo(
           .catch(() => {
             messagesLoadedRef.current = false
           })
+        return
+      }
+
+      // Only update local state if messages length changed (prevents re-renders during streaming)
+      if (currentMessages.length !== messagesLengthRef.current) {
+        setLocalMessages(currentMessages)
+        messagesLengthRef.current = currentMessages.length
       }
     }, [thread.id, serviceHub, getMessages, setMessages])
 
