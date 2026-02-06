@@ -243,7 +243,7 @@ function LocalAPIServerContent() {
       return '...loading model'
     }
     if (serverStatus === 'pending' && !isModelLoading) {
-      return t('settings:localApiServer.startingServer') 
+      return t('settings:localApiServer.startingServer')
     }
     return isServerRunning
       ? t('settings:localApiServer.stopServer')
@@ -670,7 +670,7 @@ function LocalAPIServerContent() {
                       />
                     </svg>
                     <h1 className="text-foreground font-studio font-medium text-base">
-                      Run with your Claude Code
+                      Claude Code integration
                     </h1>
                   </div>
                 }
@@ -721,10 +721,10 @@ function LocalAPIServerContent() {
                     onClick={() => setIsCustomCliDialogOpen(true)}
                   >
                     <IconPlus className="text-muted-foreground" size={14} />
-                    Custom CLI
+                    Environment Variables
                   </Button>
                   <Button size="sm" onClick={handleLaunchClaudeCode}>
-                    Enable Jan in Claude Code
+                    Save & Enable
                   </Button>
                 </div>
 

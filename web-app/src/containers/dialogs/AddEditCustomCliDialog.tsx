@@ -92,12 +92,12 @@ export default function AddEditCustomCliDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>Custom CLI</DialogTitle>
+          <DialogTitle>Environment Variables</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           {/* Custom CLI Command */}
-          <div className="space-y-2">
+          {/* <div className="space-y-2">
             <label className="text-sm mb-2 inline-block">
               Command
             </label>
@@ -106,7 +106,7 @@ export default function AddEditCustomCliDialog({
               onChange={(e) => setCustomCli(e.target.value)}
               placeholder="Enter custom CLI command"
             />
-          </div>
+          </div> */}
 
           {/* Environment Variables */}
           <div className="space-y-2">
