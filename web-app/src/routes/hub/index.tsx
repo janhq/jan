@@ -378,7 +378,7 @@ function HubContent() {
       <>
         {/* Sort dropdown - always visible */}
         <DropdownMenu>
-          <DropdownMenuTrigger>
+          <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm">
               {
                 sortOptions.find((option) => option.value === sortSelected)
