@@ -11,7 +11,11 @@ use crate::core::mcp::helpers::{stop_mcp_servers_with_context, ShutdownContext};
 use crate::core::state::AppState;
 
 // Helper function to write env vars to zshenv
-fn write_env_to_zsh(zshenv_path: &str, env_vars: &[(String, String)], terminal_app: &str) -> Result<(), String> {
+fn write_env_to_zsh(
+    zshenv_path: &str,
+    env_vars: &[(String, String)],
+    terminal_app: &str,
+) -> Result<(), String> {
     let marker = "# Jan Local API Server - Claude Code Config";
     let new_entries: String = env_vars
         .iter()
@@ -29,12 +33,7 @@ fn write_env_to_zsh(zshenv_path: &str, env_vars: &[(String, String)], terminal_a
         })
         .collect();
 
-    let new_content = format!(
-        "{}\n{}\n{}\n",
-        marker,
-        new_entries,
-        marker
-    );
+    let new_content = format!("{}\n{}\n{}\n", marker, new_entries, marker);
 
     let final_content = cleaned.join("\n") + &new_content;
     std::fs::write(zshenv_path, &final_content).map_err(|e| e.to_string())?;
@@ -195,9 +194,10 @@ pub fn launch_claude_code_with_config(
     let mut env_vars: Vec<(String, String)> = Vec::with_capacity(8);
     env_vars.push(("ANTHROPIC_BASE_URL".to_string(), api_url));
 
-    if let Some(key) = api_key {
-        env_vars.push(("ANTHROPIC_API_KEY".to_string(), key));
-    }
+    env_vars.push((
+        "ANTHROPIC_AUTH_TOKEN".to_string(),
+        api_key.unwrap_or_else(|| "jan".to_string()),
+    ));
 
     if let Some(model) = big_model {
         env_vars.push(("ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(), model));
@@ -270,11 +270,7 @@ pub fn launch_claude_code_with_config(
                     .map(|(k, v)| format!("export {}='{}'\n", k, v))
                     .collect();
 
-                let new_block = format!(
-                    "{}\n{}",
-                    marker,
-                    env_content
-                );
+                let new_block = format!("{}\n{}", marker, env_content);
 
                 let final_content = cleaned.join("\n") + "\n" + &new_block + marker;
 
