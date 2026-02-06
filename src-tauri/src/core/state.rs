@@ -49,9 +49,6 @@ pub struct AppState {
     pub mcp_server_pids: Arc<Mutex<HashMap<String, u32>>>,
     /// Remote provider configurations (e.g., Anthropic, OpenAI, etc.)
     pub provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
-    /// Map of active remote streams for streaming responses
-    pub remote_streams:
-        Arc<Mutex<HashMap<String, tokio::sync::mpsc::Sender<Result<Vec<u8>, String>>>>>,
 }
 
 impl RunningServiceEnum {
