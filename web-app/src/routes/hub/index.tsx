@@ -11,10 +11,12 @@ import {
   ChangeEvent,
   useCallback,
   useRef,
+  lazy,
+  Suspense,
+  useTransition,
 } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
-import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { extractModelName, extractDescription } from '@/lib/models'
 import {
   IconDownload,
@@ -39,7 +41,7 @@ import {
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel } from '@/services/models/types'
 import HeaderPage from '@/containers/HeaderPage'
-import { Loader } from 'lucide-react'
+import { ChevronsUpDown, Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Fuse from 'fuse.js'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -48,6 +50,21 @@ import { useShallow } from 'zustand/shallow'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
+import { Button } from '@/components/ui/button'
+
+// Lazy load heavy components
+const RenderMarkdown = lazy(() =>
+  import('@/containers/RenderMarkdown').then((mod) => ({ default: mod.RenderMarkdown }))
+)
+
+// Eagerly prefetch on first user interaction
+let hasPrefetched = false
+const prefetchHubResources = () => {
+  if (hasPrefetched) return
+  hasPrefetched = true
+  // Prefetch the lazy component
+  import('@/containers/RenderMarkdown')
+}
 
 type SearchParams = {
   repo: string
@@ -61,22 +78,31 @@ export const Route = createFileRoute(route.hub.index as any)({
 })
 
 function HubContent() {
+  const [isPending, startTransition] = useTransition()
   const parentRef = useRef(null)
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const serviceHub = useServiceHub()
 
   const { t } = useTranslation()
+
   const sortOptions = [
     { value: 'newest', name: t('hub:sortNewest') },
     { value: 'most-downloaded', name: t('hub:sortMostDownloaded') },
+    ...(IS_MACOS
+      ? [
+          { value: 'mlx', name: 'MLX' },
+          { value: 'gguf', name: 'GGUF' },
+        ]
+      : []),
   ]
-  const searchOptions = useMemo(() => {
-    return {
+  const searchOptions = useMemo(
+    () => ({
       includeScore: true,
       // Search in `author` and in `tags` array
       keys: ['model_name', 'quants.model_id'],
-    }
-  }, [])
+    }),
+    []
+  )
 
   const { sources, fetchSources, loading } = useModelSources(
     useShallow((state) => ({
@@ -99,29 +125,38 @@ function HubContent() {
   const [modelSupportStatus, setModelSupportStatus] = useState<
     Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING'>
   >({})
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   )
 
-  const toggleModelExpansion = (modelId: string) => {
+  const toggleModelExpansion = useCallback((modelId: string) => {
     setExpandedModels((prev) => ({
       ...prev,
       [modelId]: !prev[modelId],
     }))
-  }
+  }, [])
 
   // Sorting functionality
   const sortedModels = useMemo(() => {
-    return [...sources].sort((a, b) => {
-      if (sortSelected === 'most-downloaded') {
-        return (b.downloads || 0) - (a.downloads || 0)
-      } else {
-        return (
-          new Date(b.created_at || 0).getTime() -
-          new Date(a.created_at || 0).getTime()
-        )
-      }
-    })
+    let sorted = [...sources]
+
+    // Apply MLX/GGUF filter first (only on Mac)
+    if (sortSelected === 'mlx') {
+      sorted = sorted.filter((m) => m.is_mlx)
+    } else if (sortSelected === 'gguf') {
+      sorted = sorted.filter((m) => !m.is_mlx)
+    }
+
+    // Apply sorting
+    if (sortSelected === 'most-downloaded') {
+      return sorted.sort((a, b) => (b.downloads || 0) - (a.downloads || 0))
+    }
+    return sorted.sort(
+      (a, b) =>
+        new Date(b.created_at || 0).getTime() -
+        new Date(a.created_at || 0).getTime()
+    )
   }, [sortSelected, sources])
 
   // Filtered models (debounced search)
@@ -151,12 +186,18 @@ function HubContent() {
       filtered = filtered
         ?.map((model) => ({
           ...model,
-          quants: model.quants.filter((variant) =>
-            useModelProvider
+          quants: model.quants.filter((variant) => {
+            // Check both llamacpp and mlx providers
+            const isLlamaCppDownloaded = useModelProvider
               .getState()
               .getProviderByName('llamacpp')
               ?.models.some((m: { id: string }) => m.id === variant.model_id)
-          ),
+            const isMlxDownloaded = useModelProvider
+              .getState()
+              .getProviderByName('mlx')
+              ?.models.some((m: { id: string }) => m.id === variant.model_id)
+            return isLlamaCppDownloaded || isMlxDownloaded
+          }),
         }))
         .filter((model) => model.quants.length > 0)
     }
@@ -173,16 +214,52 @@ function HubContent() {
     searchOptions,
   ])
 
-  // The virtualizer
-  const rowVirtualizer = useVirtualizer({
-    count: filteredModels.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 35,
-  })
+  // Dynamic estimate size based on model state
+  const estimateSize = useCallback(
+    (index: number) => {
+      const model = filteredModels[index]
+      if (!model) return 100
+      // Base height + variants height if expanded
+      const baseHeight = 95
+      const variantHeight = 36
+      const expanded = expandedModels[model.model_name]
+      return expanded && model.quants.length > 1
+        ? baseHeight + model.quants.length * variantHeight
+        : baseHeight
+    },
+    [expandedModels, filteredModels]
+  )
+
+  // The virtualizer - only enable when we have models
+  const rowVirtualizer = useVirtualizer(
+    filteredModels.length > 0
+      ? {
+          count: filteredModels.length,
+          getScrollElement: () => parentRef.current,
+          estimateSize,
+          overscan: 5,
+        }
+      : { count: 0, getScrollElement: () => null, estimateSize: () => 0 }
+  )
 
   useEffect(() => {
-    fetchSources()
+    // Prefetch lazy components immediately
+    prefetchHubResources()
+
+    // Use startTransition to keep UI responsive during data fetch
+    startTransition(() => {
+      fetchSources()
+    })
   }, [fetchSources])
+
+  // Reset initial load state after data loads or on filter change
+  useEffect(() => {
+    if (!isInitialLoad) return
+
+    // Hide skeleton after a short delay to show loading state
+    const timer = setTimeout(() => setIsInitialLoad(false), 150)
+    return () => clearTimeout(timer)
+  }, [isInitialLoad, filteredModels.length])
 
   const fetchHuggingFaceModel = async (searchValue: string) => {
     if (
@@ -299,36 +376,40 @@ function HubContent() {
   const renderFilter = () => {
     return (
       <>
-        {searchValue.length === 0 && (
-          <DropdownMenu>
-            <DropdownMenuTrigger>
-              <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm text-sm outline-none text-foreground font-medium">
-                {
-                  sortOptions.find((option) => option.value === sortSelected)
-                    ?.name
-                }
-              </span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="bottom" align="end">
-              {sortOptions.map((option) => (
-                <DropdownMenuItem
-                  className={cn(
-                    'cursor-pointer my-0.5',
-                    sortSelected === option.value && 'bg-secondary'
-                  )}
-                  key={option.value}
-                  onClick={() => setSortSelected(option.value)}
-                >
-                  {option.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        {/* Sort dropdown - always visible */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm">
+              {
+                sortOptions.find((option) => option.value === sortSelected)
+                  ?.name
+              }
+              <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="bottom" align="end">
+            {sortOptions.map((option) => (
+              <DropdownMenuItem
+                className={cn(
+                  'cursor-pointer my-0.5',
+                  sortSelected === option.value && 'bg-secondary'
+                )}
+                key={option.value}
+                onClick={() => {
+                  setIsInitialLoad(true)
+                  setSortSelected(option.value)
+                }}
+              >
+                {option.name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <div className="flex items-center gap-2">
           <Switch
             checked={showOnlyDownloaded}
             onCheckedChange={(checked) => {
+              setIsInitialLoad(true)
               setShowOnlyDownloaded(checked)
               if (checked) {
                 setHuggingFaceRepo(null)
@@ -347,120 +428,126 @@ function HubContent() {
   }
 
   return (
-    <>
-      <div className="flex h-full w-full">
-        <div className="flex flex-col h-full w-full ">
-          <HeaderPage>
-            <div className="pr-4 py-3  h-10 w-full flex items-center justify-between relative z-20">
-              <div className="flex items-center gap-2 w-full">
-                {isSearching ? (
-                  <Loader className="shrink-0 size-4 animate-spin text-muted-foreground" />
-                ) : (
-                  <IconSearch
-                    className="shrink-0 text-muted-foreground"
-                    size={14}
-                  />
-                )}
-                <input
-                  placeholder={t('hub:searchPlaceholder')}
-                  value={searchValue}
-                  onChange={handleSearchChange}
-                  className="w-full focus:outline-none"
-                />
-              </div>
-              <div className="sm:flex items-center gap-2 shrink-0 hidden">
-                {renderFilter()}
-              </div>
-            </div>
-          </HeaderPage>
-          <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto! first-step-setup-local-provider">
-            <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto">
-              {loading && !filteredModels.length ? (
-                <div className="flex items-center justify-center">
-                  <div className="text-center text-muted-foreground">
-                    {t('hub:loadingModels')}
-                  </div>
-                </div>
-              ) : filteredModels.length === 0 ? (
-                <div className="flex items-center justify-center">
-                  <div className="text-center text-muted-foreground">
-                    {t('hub:noModels')}
-                  </div>
-                </div>
+    <div className="flex flex-col h-svh w-full">
+      <div className="flex flex-col h-full w-full ">
+        <HeaderPage>
+          <div className="pr-4 py-3  h-10 w-full flex items-center justify-between relative z-20">
+            <div className="flex items-center gap-2 w-full">
+              {isSearching ? (
+                <Loader className="shrink-0 size-4 animate-spin text-muted-foreground" />
               ) : (
-                <div className="flex flex-col pb-2 mb-2 gap-2" ref={parentRef}>
-                  <div className="flex items-center gap-2 justify-end sm:hidden">
-                    {renderFilter()}
-                  </div>
+                <IconSearch
+                  className="shrink-0 text-muted-foreground"
+                  size={14}
+                />
+              )}
+              <input
+                placeholder={t('hub:searchPlaceholder')}
+                value={searchValue}
+                onChange={handleSearchChange}
+                className="w-full focus:outline-none"
+              />
+            </div>
+            <div className="sm:flex items-center gap-2 shrink-0 hidden">
+              {renderFilter()}
+            </div>
+          </div>
+        </HeaderPage>
+        <div className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider">
+          <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto">
+            {/* Show skeleton immediately on navigation, then show actual content when loaded */}
+            {(isInitialLoad || (loading && !filteredModels.length)) ? (
+              // Skeleton loading state for better perceived performance
+              <div className="flex flex-col gap-3 animate-pulse">
+                {[...Array(5)].map((_, i) => (
                   <div
-                    style={{
-                      height: `${rowVirtualizer.getTotalSize()}px`,
-                      width: '100%',
-                      position: 'relative',
-                    }}
+                    key={i}
+                    className="bg-card border border-border rounded-lg p-4"
                   >
-                    {rowVirtualizer.getVirtualItems().map((virtualItem) => (
-                      <div key={virtualItem.key} className="mb-2">
-                        <Card
-                          header={
-                            <div className="flex items-center justify-between gap-x-2">
-                              <div
-                                className="cursor-pointer"
-                                onClick={() => {
-                                  navigate({
-                                    to: route.hub.model,
-                                    params: {
-                                      modelId:
-                                        filteredModels[virtualItem.index]
-                                          .model_name,
-                                    },
-                                  })
-                                }}
+                    <div className="flex items-center justify-between gap-x-2">
+                      <div className="h-5 bg-muted rounded w-1/3" />
+                      <div className="flex items-center gap-3">
+                        <div className="h-4 bg-muted rounded w-20" />
+                        <div className="h-8 w-8 bg-muted rounded" />
+                      </div>
+                    </div>
+                    <div className="mt-3 h-4 bg-muted rounded w-full" />
+                    <div className="mt-2 h-4 bg-muted rounded w-2/3" />
+                    <div className="flex items-center gap-4 mt-3">
+                      <div className="h-4 bg-muted rounded w-16" />
+                      <div className="h-4 bg-muted rounded w-16" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : filteredModels.length === 0 ? (
+              <div className="flex items-center justify-center">
+                <div className="text-center text-muted-foreground">
+                  {t('hub:noModels')}
+                </div>
+              </div>
+            ) : (
+              <div
+                className={cn(
+                  'flex flex-col pb-2 mb-2 gap-2 transition-opacity duration-200',
+                  isPending ? 'opacity-70' : 'opacity-100'
+                )}
+                ref={parentRef}
+              >
+                <div className="flex items-center gap-2 justify-end sm:hidden">
+                  {renderFilter()}
+                </div>
+                <div
+                  style={{
+                    height: `${rowVirtualizer.getTotalSize()}px`,
+                    width: '100%',
+                    position: 'relative',
+                  }}
+                >
+                  {rowVirtualizer.getVirtualItems().map((virtualItem) => (
+                    <div key={virtualItem.key} className="mb-2">
+                      <Card
+                        header={
+                          <div className="flex items-center justify-between gap-x-2">
+                            <div
+                              className="cursor-pointer"
+                              onClick={() => {
+                                navigate({
+                                  to: route.hub.model,
+                                  params: {
+                                    modelId:
+                                      filteredModels[virtualItem.index]
+                                        .model_name,
+                                  },
+                                })
+                              }}
+                            >
+                              <h1
+                                className={cn(
+                                  'text-foreground font-medium text-base capitalize sm:max-w-none',
+                                  isRecommendedModel(
+                                    filteredModels[virtualItem.index]
+                                      .model_name
+                                  )
+                                    ? 'hub-model-card-step'
+                                    : ''
+                                )}
+                                title={
+                                  extractModelName(
+                                    filteredModels[virtualItem.index]
+                                      .model_name
+                                  ) || ''
+                                }
                               >
-                                <h1
-                                  className={cn(
-                                    'text-foreground font-medium text-base capitalize sm:max-w-none',
-                                    isRecommendedModel(
-                                      filteredModels[virtualItem.index]
-                                        .model_name
-                                    )
-                                      ? 'hub-model-card-step'
-                                      : ''
-                                  )}
-                                  title={
-                                    extractModelName(
-                                      filteredModels[virtualItem.index]
-                                        .model_name
-                                    ) || ''
-                                  }
-                                >
-                                  {extractModelName(
-                                    filteredModels[virtualItem.index].model_name
-                                  ) || ''}
-                                </h1>
-                              </div>
-                              <div className="shrink-0 space-x-3 flex items-center">
-                                <span className="text-muted-foreground font-medium text-xs">
-                                  {
-                                    (
-                                      filteredModels[
-                                        virtualItem.index
-                                      ].quants.find((m) =>
-                                        DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                          m.model_id.toLowerCase().includes(e)
-                                        )
-                                      ) ??
-                                      filteredModels[virtualItem.index]
-                                        .quants?.[0]
-                                    )?.file_size
-                                  }
-                                </span>
-                                <ModelInfoHoverCard
-                                  model={filteredModels[virtualItem.index]}
-                                  defaultModelQuantizations={
-                                    DEFAULT_MODEL_QUANTIZATIONS
-                                  }
-                                  variant={
+                                {extractModelName(
+                                  filteredModels[virtualItem.index].model_name
+                                ) || ''}
+                              </h1>
+                            </div>
+                            <div className="shrink-0 space-x-3 flex items-center">
+                              <span className="text-muted-foreground font-medium text-xs">
+                                {
+                                  (
                                     filteredModels[
                                       virtualItem.index
                                     ].quants.find((m) =>
@@ -470,26 +557,49 @@ function HubContent() {
                                     ) ??
                                     filteredModels[virtualItem.index]
                                       .quants?.[0]
-                                  }
-                                  isDefaultVariant={true}
-                                  modelSupportStatus={modelSupportStatus}
-                                  onCheckModelSupport={checkModelSupport}
+                                  )?.file_size
+                                }
+                              </span>
+                              <ModelInfoHoverCard
+                                model={filteredModels[virtualItem.index]}
+                                defaultModelQuantizations={
+                                  DEFAULT_MODEL_QUANTIZATIONS
+                                }
+                                variant={
+                                  filteredModels[
+                                    virtualItem.index
+                                  ].quants.find((m) =>
+                                    DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
+                                      m.model_id.toLowerCase().includes(e)
+                                    )
+                                  ) ??
+                                  filteredModels[virtualItem.index]
+                                    .quants?.[0]
+                                }
+                                isDefaultVariant={true}
+                                modelSupportStatus={modelSupportStatus}
+                                onCheckModelSupport={checkModelSupport}
+                              />
+                              {filteredModels[virtualItem.index].is_mlx ? (
+                                <MlxModelDownloadAction
+                                  model={filteredModels[virtualItem.index]}
                                 />
-                                {filteredModels[virtualItem.index].is_mlx ? (
-                                  <MlxModelDownloadAction
-                                    model={filteredModels[virtualItem.index]}
-                                  />
-                                ) : (
-                                  <DownloadButtonPlaceholder
-                                    model={filteredModels[virtualItem.index]}
-                                    handleUseModel={handleUseModel}
-                                  />
-                                )}
-                              </div>
+                              ) : (
+                                <DownloadButtonPlaceholder
+                                  model={filteredModels[virtualItem.index]}
+                                  handleUseModel={handleUseModel}
+                                />
+                              )}
                             </div>
-                          }
-                        >
-                          <div className="line-clamp-2 mt-3 text-muted-foreground leading-normal">
+                          </div>
+                        }
+                      >
+                        <div className="line-clamp-2 mt-3 text-muted-foreground leading-normal">
+                          <Suspense
+                            fallback={
+                              <div className="animate-pulse h-4 bg-muted rounded w-3/4" />
+                            }
+                          >
                             <RenderMarkdown
                               className="select-none reset-heading"
                               components={{
@@ -507,203 +617,203 @@ function HubContent() {
                                 ) || ''
                               }
                             />
-                          </div>
-                          <div className="flex items-center gap-2 mt-2">
-                            <span className="capitalize text-foreground">
-                              {t('hub:by')}{' '}
-                              {filteredModels[virtualItem.index]?.developer}
-                            </span>
-                            <div className="flex items-center gap-4 ml-2">
-                              <div className="flex items-center gap-1">
-                                <IconDownload
-                                  size={18}
-                                  className="text-muted-foreground"
-                                  title={t('hub:downloads')}
-                                />
-                                <span className="text-foreground">
-                                  {filteredModels[virtualItem.index]
-                                    .downloads || 0}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <IconFileCode
-                                  size={20}
-                                  className="text-muted-foreground"
-                                  title={t('hub:variants')}
-                                />
-                                <span className="text-foreground">
-                                  {filteredModels[virtualItem.index].quants
-                                    ?.length || 0}
-                                </span>
-                              </div>
-                              <div className="flex gap-1.5 items-center">
-                                {filteredModels[virtualItem.index].num_mmproj >
-                                  0 && (
-                                  <div className="flex items-center gap-1">
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <div>
-                                          <IconEye
-                                            size={17}
-                                            className="text-muted-foreground"
-                                          />
-                                        </div>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>{t('vision')}</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </div>
-                                )}
-                                {filteredModels[virtualItem.index].tools && (
-                                  <div className="flex items-center gap-1">
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <div>
-                                          <IconTool
-                                            size={17}
-                                            className="text-muted-foreground"
-                                          />
-                                        </div>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>{t('tools')}</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </div>
-                                )}
-                              </div>
-                              {filteredModels[virtualItem.index].quants.length >
-                                1 && (
-                                <div className="flex items-center gap-2 hub-show-variants-step">
-                                  <Switch
-                                    checked={
-                                      !!expandedModels[
-                                        filteredModels[virtualItem.index]
-                                          .model_name
-                                      ]
-                                    }
-                                    onCheckedChange={() =>
-                                      toggleModelExpansion(
-                                        filteredModels[virtualItem.index]
-                                          .model_name
-                                      )
-                                    }
-                                  />
-                                  <p className="text-muted-foreground">
-                                    {t('hub:showVariants')}
-                                  </p>
+                          </Suspense>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="capitalize text-foreground">
+                            {t('hub:by')}{' '}
+                            {filteredModels[virtualItem.index]?.developer}
+                          </span>
+                          <div className="flex items-center gap-4 ml-2">
+                            <div className="flex items-center gap-1">
+                              <IconDownload
+                                size={18}
+                                className="text-muted-foreground"
+                                title={t('hub:downloads')}
+                              />
+                              <span className="text-foreground">
+                                {filteredModels[virtualItem.index]
+                                  .downloads || 0}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <IconFileCode
+                                size={20}
+                                className="text-muted-foreground"
+                                title={t('hub:variants')}
+                              />
+                              <span className="text-foreground">
+                                {filteredModels[virtualItem.index].quants
+                                  ?.length || 0}
+                              </span>
+                            </div>
+                            <div className="flex gap-1.5 items-center">
+                              {filteredModels[virtualItem.index].num_mmproj >
+                                0 && (
+                                <div className="flex items-center gap-1">
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div>
+                                        <IconEye
+                                          size={17}
+                                          className="text-muted-foreground"
+                                        />
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>{t('vision')}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </div>
+                              )}
+                              {filteredModels[virtualItem.index].tools && (
+                                <div className="flex items-center gap-1">
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div>
+                                        <IconTool
+                                          size={17}
+                                          className="text-muted-foreground"
+                                        />
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>{t('tools')}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
                                 </div>
                               )}
                             </div>
+                            {filteredModels[virtualItem.index].quants.length >
+                              1 && (
+                              <div className="flex items-center gap-2 hub-show-variants-step">
+                                <Switch
+                                  checked={
+                                    !!expandedModels[
+                                      filteredModels[virtualItem.index]
+                                        .model_name
+                                    ]
+                                  }
+                                  onCheckedChange={() =>
+                                    toggleModelExpansion(
+                                      filteredModels[virtualItem.index]
+                                        .model_name
+                                    )
+                                  }
+                                />
+                                <p className="text-muted-foreground">
+                                  {t('hub:showVariants')}
+                                </p>
+                              </div>
+                            )}
                           </div>
-                          {expandedModels[
-                            filteredModels[virtualItem.index].model_name
-                          ] &&
-                            filteredModels[virtualItem.index].quants.length >
-                              0 && (
-                              <div className="mt-5">
-                                {filteredModels[virtualItem.index].quants.map(
-                                  (variant) => (
-                                    <CardItem
-                                      key={variant.model_id}
-                                      title={
-                                        <>
-                                          <div className="flex items-center gap-1">
-                                            <span className="mr-2">
-                                              {variant.model_id}
-                                            </span>
-                                            {filteredModels[virtualItem.index]
-                                              .num_mmproj > 0 && (
-                                              <div className="flex items-center gap-1">
-                                                <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                    <div>
-                                                      <IconEye
-                                                        size={17}
-                                                        className="text-muted-foreground"
-                                                      />
-                                                    </div>
-                                                  </TooltipTrigger>
-                                                  <TooltipContent>
-                                                    <p>{t('vision')}</p>
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              </div>
-                                            )}
-                                            {filteredModels[virtualItem.index]
-                                              .tools && (
-                                              <div className="flex items-center gap-1">
-                                                <Tooltip>
-                                                  <TooltipTrigger asChild>
-                                                    <div>
-                                                      <IconTool
-                                                        size={17}
-                                                        className="text-muted-foreground"
-                                                      />
-                                                    </div>
-                                                  </TooltipTrigger>
-                                                  <TooltipContent>
-                                                    <p>{t('tools')}</p>
-                                                  </TooltipContent>
-                                                </Tooltip>
-                                              </div>
-                                            )}
-                                          </div>
-                                        </>
-                                      }
-                                      actions={
-                                        <div className="flex items-center gap-2">
-                                          <p className="text-muted-foreground font-medium text-xs">
-                                            {variant.file_size}
-                                          </p>
-                                          <ModelInfoHoverCard
+                        </div>
+                        {expandedModels[
+                          filteredModels[virtualItem.index].model_name
+                        ] &&
+                          filteredModels[virtualItem.index].quants.length >
+                            0 && (
+                            <div className="mt-5">
+                              {filteredModels[virtualItem.index].quants.map(
+                                (variant) => (
+                                  <CardItem
+                                    key={variant.model_id}
+                                    title={
+                                      <>
+                                        <div className="flex items-center gap-1">
+                                          <span className="mr-2">
+                                            {variant.model_id}
+                                          </span>
+                                          {filteredModels[virtualItem.index]
+                                            .num_mmproj > 0 && (
+                                            <div className="flex items-center gap-1">
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                  <div>
+                                                    <IconEye
+                                                      size={17}
+                                                      className="text-muted-foreground"
+                                                    />
+                                                  </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                  <p>{t('vision')}</p>
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            </div>
+                                          )}
+                                          {filteredModels[virtualItem.index]
+                                            .tools && (
+                                            <div className="flex items-center gap-1">
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                  <div>
+                                                    <IconTool
+                                                      size={17}
+                                                      className="text-muted-foreground"
+                                                    />
+                                                  </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                  <p>{t('tools')}</p>
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </>
+                                    }
+                                    actions={
+                                      <div className="flex items-center gap-2">
+                                        <p className="text-muted-foreground font-medium text-xs">
+                                          {variant.file_size}
+                                        </p>
+                                        <ModelInfoHoverCard
+                                          model={
+                                            filteredModels[virtualItem.index]
+                                          }
+                                          variant={variant}
+                                          defaultModelQuantizations={
+                                            DEFAULT_MODEL_QUANTIZATIONS
+                                          }
+                                          modelSupportStatus={
+                                            modelSupportStatus
+                                          }
+                                          onCheckModelSupport={
+                                            checkModelSupport
+                                          }
+                                        />
+                                        {filteredModels[virtualItem.index]
+                                          .is_mlx ? (
+                                          <MlxModelDownloadAction
                                             model={
                                               filteredModels[virtualItem.index]
                                             }
+                                          />
+                                        ) : (
+                                          <ModelDownloadAction
                                             variant={variant}
-                                            defaultModelQuantizations={
-                                              DEFAULT_MODEL_QUANTIZATIONS
-                                            }
-                                            modelSupportStatus={
-                                              modelSupportStatus
-                                            }
-                                            onCheckModelSupport={
-                                              checkModelSupport
+                                            model={
+                                              filteredModels[virtualItem.index]
                                             }
                                           />
-                                          {filteredModels[virtualItem.index]
-                                            .is_mlx ? (
-                                            <MlxModelDownloadAction
-                                              model={
-                                                filteredModels[virtualItem.index]
-                                              }
-                                            />
-                                          ) : (
-                                            <ModelDownloadAction
-                                              variant={variant}
-                                              model={
-                                                filteredModels[virtualItem.index]
-                                              }
-                                            />
-                                          )}
-                                        </div>
-                                      }
-                                    />
-                                  )
-                                )}
-                              </div>
-                            )}
-                        </Card>
-                      </div>
-                    ))}
-                  </div>
+                                        )}
+                                      </div>
+                                    }
+                                  />
+                                )
+                              )}
+                            </div>
+                          )}
+                      </Card>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
-    </>
+    </div>
   )
 }
