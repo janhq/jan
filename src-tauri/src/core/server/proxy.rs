@@ -1327,8 +1327,6 @@ async fn proxy_request<R: tauri::Runtime>(
     // For Anthropic /messages, we need to track if we should transform the response
     let destination_path = path.clone();
 
-    // Track if it's an Anthropic request with a remote provider
-    let is_anthropic_remote = is_anthropic_messages && provider_name.is_some();
 
     match outbound_req_with_body.send().await {
         Ok(response) => {
@@ -1336,9 +1334,9 @@ async fn proxy_request<R: tauri::Runtime>(
 
             let is_error = !status.is_success();
 
-            // For Anthropic /messages requests with errors, try /chat/completions on same provider
-            if is_anthropic_remote && is_error {
-                log::warn!("Remote provider failed for /messages with status {status}, trying /chat/completions...");
+            // For Anthropic /messages requests with errors, try /chat/completions
+            if is_error {
+                log::warn!("Request failed for /messages with status {status}, trying /chat/completions...");
 
                 // Clone what we need for the fallback request
                 let fallback_url = target_base_url.clone().map(|url| {
