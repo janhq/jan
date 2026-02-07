@@ -73,9 +73,6 @@ function LocalAPIServerContent() {
   const { providers, selectedModel, selectedProvider, getProviderByName } =
     useModelProvider()
   const [showApiKeyError, setShowApiKeyError] = useState(false)
-  const [, setIsApiKeyEmpty] = useState(
-    !apiKey || apiKey.toString().trim().length === 0
-  )
   const { activeModels } = useAppState()
   const setActiveModels = useAppState((state) => state.setActiveModels)
 
@@ -107,10 +104,6 @@ function LocalAPIServerContent() {
     window.addEventListener('focus', handleFocus)
     return () => window.removeEventListener('focus', handleFocus)
   }, [serviceHub, setServerStatus])
-
-  const handleApiKeyValidation = (isValid: boolean) => {
-    setIsApiKeyEmpty(!isValid)
-  }
 
   const [isModelLoading, setIsModelLoading] = useState(false)
 
@@ -465,7 +458,6 @@ function LocalAPIServerContent() {
                       <ApiKeyInput
                         isServerRunning={isServerRunning}
                         showError={showApiKeyError}
-                        onValidationChange={handleApiKeyValidation}
                       />
                     </div>
                   </div>
