@@ -46,6 +46,7 @@ pub async fn start_server<R: Runtime>(
         api_key,
         vec![trusted_hosts],
         proxy_timeout,
+        app_handle,
     )
     .await
     .map_err(|e| e.to_string())?;

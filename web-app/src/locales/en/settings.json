@@ -184,7 +184,7 @@
     "openDocs": "Open Docs",
     "startupConfiguration": "Startup Configuration",
     "runOnStartup": "Auto start",
-    "runOnStartupDesc": "Automatically start the Local API Server when the application launches. Uses last used model, or picks the first available model if unavailable.",
+    "runOnStartupDesc": "Automatically start the Local API Server when the application launches.",
     "serverConfiguration": "Server Configuration",
     "serverHost": "Server Host",
     "serverHostDesc": "Network address for the server.",

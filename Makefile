@@ -52,6 +52,7 @@ install-ios-rust-targets:
 
 dev: install-and-build
 	yarn download:bin
+	make build-mlx-server
 	yarn dev
 
 # Web application targets
