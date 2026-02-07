@@ -6,7 +6,6 @@ export const WindowControls = () => {
   const appWindow = getCurrentWebviewWindow()
 
   const handleMinimize = async () => {
-    console.log('Minimizing window')
     await appWindow.minimize()
   }
 
