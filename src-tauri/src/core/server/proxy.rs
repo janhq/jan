@@ -814,6 +814,7 @@ async fn proxy_request<R: tauri::Runtime>(
                             }
                         }
                     } else {
+                        let error_msg = "Request body must contain a 'model' field";
                         log::warn!("POST body for /messages missing 'model' field");
                         let mut error_response =
                             Response::builder().status(StatusCode::BAD_REQUEST);
@@ -824,7 +825,7 @@ async fn proxy_request<R: tauri::Runtime>(
                             &config.trusted_hosts,
                         );
                         return Ok(error_response
-                            .body(Body::from("Request body must contain a 'model' field"))
+                            .body(Body::from(error_msg))
                             .unwrap());
                     }
                 }
@@ -837,8 +838,9 @@ async fn proxy_request<R: tauri::Runtime>(
                         &origin_header,
                         &config.trusted_hosts,
                     );
+                    let error_msg = format!("Invalid JSON body: {}", e);
                     return Ok(error_response
-                        .body(Body::from("Invalid JSON body"))
+                        .body(Body::from(error_msg))
                         .unwrap());
                 }
             }
@@ -1011,6 +1013,7 @@ async fn proxy_request<R: tauri::Runtime>(
                             }
                         }
                     } else {
+                        let error_msg = "Request body must contain a 'model' field";
                         log::warn!(
                             "POST body for {destination_path} is missing 'model' field or it's not a string"
                         );
@@ -1023,7 +1026,7 @@ async fn proxy_request<R: tauri::Runtime>(
                             &config.trusted_hosts,
                         );
                         return Ok(error_response
-                            .body(Body::from("Request body must contain a 'model' field"))
+                            .body(Body::from(error_msg))
                             .unwrap());
                     }
                 }
@@ -1036,8 +1039,9 @@ async fn proxy_request<R: tauri::Runtime>(
                         &origin_header,
                         &config.trusted_hosts,
                     );
+                    let error_msg = format!("Invalid JSON body: {}", e);
                     return Ok(error_response
-                        .body(Body::from("Invalid JSON body"))
+                        .body(Body::from(error_msg))
                         .unwrap());
                 }
             }
@@ -1335,8 +1339,11 @@ async fn proxy_request<R: tauri::Runtime>(
             let is_error = !status.is_success();
 
             // For Anthropic /messages requests with errors, try /chat/completions
-            if is_error {
+            if is_error && is_anthropic_messages {
                 log::warn!("Request failed for /messages with status {status}, trying /chat/completions...");
+
+                // Read the error body to return to client if fallback fails
+                let error_body = response.text().await.unwrap_or_else(|e| format!("Failed to read error body: {}", e));
 
                 // Clone what we need for the fallback request
                 let fallback_url = target_base_url.clone().map(|url| {
@@ -1390,7 +1397,23 @@ async fn proxy_request<R: tauri::Runtime>(
 
                     if let Ok(res) = fallback_response {
                         let fallback_status = res.status();
-                        log::info!("Chat completions fallback succeeded with status: {fallback_status}");
+
+                        if !fallback_status.is_success() {
+                            // Return fallback error to client
+                            let fallback_error = res.text().await.unwrap_or_else(|e| format!("Failed to read error: {}", e));
+
+                            // Return the error to client
+                            let mut error_response = Response::builder().status(fallback_status);
+                            error_response = add_cors_headers_with_host_and_origin(
+                                error_response,
+                                &host_header,
+                                &origin_header,
+                                &config.trusted_hosts,
+                            );
+                            return Ok(error_response
+                                .body(Body::from(fallback_error))
+                                .unwrap());
+                        }
 
                         let mut builder = Response::builder().status(fallback_status);
                         for (name, value) in res.headers() {
@@ -1418,8 +1441,35 @@ async fn proxy_request<R: tauri::Runtime>(
                         log::error!("Chat completions fallback failed: {}", err);
                     }
                 }
+
+                // If fallback failed or wasn't attempted, return error to client
+                let mut error_response = Response::builder().status(status);
+                error_response = add_cors_headers_with_host_and_origin(
+                    error_response,
+                    &host_header,
+                    &origin_header,
+                    &config.trusted_hosts,
+                );
+                return Ok(error_response
+                    .body(Body::from(error_body))
+                    .unwrap());
+            } else if is_error {
+                // Non-/messages error - return error response with body
+                let error_body = response.text().await.unwrap_or_else(|e| format!("Failed to read error body: {}", e));
+
+                let mut error_response = Response::builder().status(status);
+                error_response = add_cors_headers_with_host_and_origin(
+                    error_response,
+                    &host_header,
+                    &origin_header,
+                    &config.trusted_hosts,
+                );
+                return Ok(error_response
+                    .body(Body::from(error_body))
+                    .unwrap());
             }
 
+            // Success case - stream the response
             let mut builder = Response::builder().status(status);
 
             for (name, value) in response.headers() {
