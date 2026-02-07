@@ -29,7 +29,7 @@
           "x": 20,
           "y": 32
         },
-        "decorations": true,
+        "decorations": false,
         "titleBarStyle": "Overlay",
         "windowEffects": {
           "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],

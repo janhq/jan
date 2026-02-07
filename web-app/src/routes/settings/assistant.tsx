@@ -53,8 +53,10 @@ function AssistantContent() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div className="flex items-center justify-between w-full mr-2 pr-4">
-          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+        <div className="flex items-center justify-between w-full mr-2 pr-30">
+          <span className="font-medium text-base font-studio">
+            {t('common:settings')}
+          </span>
           <Button
             onClick={() => {
               setEditingKey(null)
@@ -129,7 +131,9 @@ function AssistantContent() {
             onOpenChange={setOpen}
             editingKey={editingKey}
             initialData={
-              editingKey ? assistants.find((a) => a.id === editingKey) : undefined
+              editingKey
+                ? assistants.find((a) => a.id === editingKey)
+                : undefined
             }
             onSave={handleSave}
           />
