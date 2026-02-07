@@ -296,7 +296,7 @@ actor ModelRunner {
             return (nil, fullPrompt)
         }
 
-        let cache: PromptCache
+        var cache: PromptCache
         if let existingCache = promptCache.object(forKey: modelName as NSString) {
             cache = existingCache
         } else {
@@ -309,12 +309,22 @@ actor ModelRunner {
 
         /// Remove prefix from prompt that is already in cache
         if let suffix = cache.getUncachedSuffix(prompt: fullPrompt.text.tokens) {
-            lmInput = LMInput(text: LMInput.Text(tokens: suffix))
+            // If suffix is empty, the entire prompt is cached, but we're regenerating
+            // Create a new cache to force fresh generation
+            if suffix.size == 0 {
+                let newCache = PromptCache(cache: context.model.newCache(parameters: parameters))
+                self.promptCache.setObject(newCache, forKey: modelName as NSString)
+                cache = newCache
+                lmInput = fullPrompt
+            } else {
+                lmInput = LMInput(text: LMInput.Text(tokens: suffix))
+            }
         } else {
             // If suffix is nil, the cache is inconsistent with the new prompt
             // and the cache doesn't support trimming so create a new one here.
             let newCache = PromptCache(cache: context.model.newCache(parameters: parameters))
             self.promptCache.setObject(newCache, forKey: modelName as NSString)
+            cache = newCache
             lmInput = fullPrompt
         }
 

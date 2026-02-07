@@ -49,7 +49,18 @@ public class PromptCache: @unchecked Sendable {
 
         if comPrefixLength == self.tokens.size {
             let suffix = prompt[comPrefixLength ..< prompt.size]
-            self.tokens = concatenated([self.tokens, suffix], axis: 0)
+
+            // If suffix is empty (prompt == cached tokens), nothing to add
+            if suffix.size == 0 {
+                return suffix
+            }
+
+            // Avoid concatenating with empty array - MLX can't infer shape for reshape
+            if self.tokens.size == 0 {
+                self.tokens = suffix
+            } else {
+                self.tokens = concatenated([self.tokens, suffix], axis: 0)
+            }
             return suffix
         } else if comPrefixLength < self.tokens.size {
             if isTrimmable() {
@@ -59,7 +70,18 @@ public class PromptCache: @unchecked Sendable {
                 }
                 self.tokens = self.tokens[0 ..< comPrefixLength]
                 let suffix = prompt[comPrefixLength ..< prompt.size]
-                self.tokens = concatenated([self.tokens, suffix], axis: 0)
+
+                // If suffix is empty, we've just trimmed to match
+                if suffix.size == 0 {
+                    return suffix
+                }
+
+                // Avoid concatenating with empty array - MLX can't infer shape for reshape
+                if self.tokens.size == 0 {
+                    self.tokens = suffix
+                } else {
+                    self.tokens = concatenated([self.tokens, suffix], axis: 0)
+                }
                 return suffix
             } else {
                 // Caller must create a new cache
