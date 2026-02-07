@@ -1,5 +1,7 @@
 use super::models::{DownloadEvent, DownloadItem, ProgressTracker, ProxyConfig};
 use crate::core::app::commands::get_jan_data_folder_path;
+use crate::core::updater::session::get_session_id;
+use crate::core::updater::hmac_client::SignedRequestHeaders;
 use futures_util::StreamExt;
 use jan_utils::normalize_path;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
@@ -12,10 +14,73 @@ use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
+// ===== CONSTANTS =====
+
+/// Jan mirror prefix for HuggingFace downloads
+/// - Stable builds: https://apps.jan.ai/
+/// - Nightly builds: https://apps-nightly.jan.ai/
+const JAN_MIRROR_PREFIX_STABLE: &str = "https://apps.jan.ai/";
+const JAN_MIRROR_PREFIX_NIGHTLY: &str = "https://apps-nightly.jan.ai/";
+
+/// Domains that should use mirror download with fallback
+const MIRROR_DOMAINS: &[&str] = &["huggingface.co"];
+
+/// Check if this is a nightly build based on package name
+fn is_nightly_build() -> bool {
+    let pkg_name = env!("CARGO_PKG_NAME");
+    pkg_name.to_lowercase().contains("nightly")
+}
+
+/// Get the appropriate mirror prefix based on build type
+fn get_mirror_prefix() -> &'static str {
+    if is_nightly_build() {
+        JAN_MIRROR_PREFIX_NIGHTLY
+    } else {
+        JAN_MIRROR_PREFIX_STABLE
+    }
+}
+
+/// Secret key for HMAC request authentication
+/// - In CI: Set JAN_SIGNING_KEY environment variable at build time
+/// - In local dev: Falls back to a test key
+const SECRET_KEY: &str = match option_env!("JAN_SIGNING_KEY") {
+    Some(key) => key,
+    None => "local-dev-test-key-not-for-production",
+};
+
 // ===== UTILITY FUNCTIONS =====
 
 pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {e}")
+}
+
+/// Converts a URL to Jan mirror URL if applicable
+/// e.g., https://huggingface.co/... -> https://apps.jan.ai/huggingface.co/...
+/// or for nightly: https://huggingface.co/... -> https://apps-nightly.jan.ai/huggingface.co/...
+pub fn convert_to_mirror_url(url: &str) -> Option<String> {
+    let parsed = Url::parse(url).ok()?;
+    let host = parsed.host_str()?;
+    
+    // Check if the domain should use mirror
+    if MIRROR_DOMAINS.iter().any(|domain| host == *domain || host.ends_with(&format!(".{}", domain))) {
+        // Remove the scheme (https://) and prepend mirror prefix
+        let url_without_scheme = url
+            .strip_prefix("https://")
+            .or_else(|| url.strip_prefix("http://"))?;
+        Some(format!("{}{}", get_mirror_prefix(), url_without_scheme))
+    } else {
+        None
+    }
+}
+
+/// Get session identifier for request signing
+fn get_download_nonce_seed() -> String {
+    get_session_id()
+}
+
+/// Get current app version from Cargo.toml
+fn get_app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
 }
 
 // ===== VALIDATION FUNCTIONS =====
@@ -519,7 +584,7 @@ async fn download_single_file(
     let mut download_delta = 0u64;
     let mut initial_progress = 0u64;
 
-    let resp = if should_resume {
+    let (resp, actual_url) = if should_resume {
         let downloaded_size = tmp_save_path.metadata().map_err(err_to_string)?.len();
         match _get_maybe_resume(&client, &item.url, downloaded_size).await {
             Ok(resp) => {
@@ -544,18 +609,25 @@ async fn download_single_file(
                 };
                 app.emit(&evt_name, evt).unwrap();
 
-                resp
+                (resp, item.url.clone())
             }
             Err(e) => {
-                // fallback to normal download
+                // fallback to normal download with proxy support
                 log::warn!("Failed to resume download: {e}");
                 should_resume = false;
-                _get_maybe_resume(&client, &item.url, 0).await?
+                _get_maybe_resume_with_fallback(&client, &item.url, 0).await?
             }
         }
     } else {
-        _get_maybe_resume(&client, &item.url, 0).await?
+        // Use mirror fallback for new downloads
+        _get_maybe_resume_with_fallback(&client, &item.url, 0).await?
     };
+    
+    // Log which URL is being used for download
+    if actual_url != item.url {
+        log::info!("Downloading via Jan mirror: {}", actual_url);
+    }
+    
     let mut stream = resp.bytes_stream();
 
     let file = if should_resume {
@@ -642,6 +714,112 @@ async fn download_single_file(
 }
 
 // ===== HTTP CLIENT HELPER FUNCTIONS =====
+
+/// Attempts to download from mirror URL first, falls back to original URL if mirror fails
+/// When using mirror URL, adds HMAC headers for request authentication
+pub async fn _get_maybe_resume_with_fallback(
+    client: &reqwest::Client,
+    url: &str,
+    start_bytes: u64,
+) -> Result<(reqwest::Response, String), String> {
+    // Try mirror URL first if applicable
+    if let Some(mirror_url) = convert_to_mirror_url(url) {
+        log::info!("Attempting download from Jan mirror: {}", mirror_url);
+        match _get_maybe_resume_with_hmac(client, &mirror_url, start_bytes).await {
+            Ok(resp) => {
+                log::info!("Successfully connected to Jan mirror");
+                return Ok((resp, mirror_url));
+            }
+            Err(e) => {
+                log::warn!("Jan mirror download failed: {}. Falling back to original URL...", e);
+            }
+        }
+    }
+    
+    // Fallback to original URL (no HMAC headers needed)
+    log::info!("Downloading from original URL: {}", url);
+    let resp = _get_maybe_resume_internal(client, url, start_bytes).await?;
+    Ok((resp, url.to_string()))
+}
+
+/// Download from URL with HMAC headers for Jan mirror authentication
+async fn _get_maybe_resume_with_hmac(
+    client: &reqwest::Client,
+    url: &str,
+    start_bytes: u64,
+) -> Result<reqwest::Response, String> {
+    // Generate HMAC headers for request authentication
+    let nonce_seed = get_download_nonce_seed();
+    let app_version = get_app_version();
+    let signed_headers = SignedRequestHeaders::new(SECRET_KEY, &nonce_seed, app_version);
+    
+    let mut request = if start_bytes > 0 {
+        client
+            .get(url)
+            .header("Range", format!("bytes={start_bytes}-"))
+    } else {
+        client.get(url)
+    };
+    
+    // Add HMAC headers
+    for (key, value) in signed_headers.to_header_pairs() {
+        request = request.header(key, value);
+    }
+    
+    let resp = request.send().await.map_err(err_to_string)?;
+    
+    if start_bytes > 0 {
+        if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+            return Err(format!(
+                "Failed to resume download: HTTP status {}, {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            ));
+        }
+    } else if !resp.status().is_success() {
+        return Err(format!(
+            "Failed to download: HTTP status {}, {}",
+            resp.status(),
+            resp.text().await.unwrap_or_default()
+        ));
+    }
+    
+    Ok(resp)
+}
+
+/// Internal function to attempt download from a single URL (without HMAC)
+async fn _get_maybe_resume_internal(
+    client: &reqwest::Client,
+    url: &str,
+    start_bytes: u64,
+) -> Result<reqwest::Response, String> {
+    if start_bytes > 0 {
+        let resp = client
+            .get(url)
+            .header("Range", format!("bytes={start_bytes}-"))
+            .send()
+            .await
+            .map_err(err_to_string)?;
+        if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+            return Err(format!(
+                "Failed to resume download: HTTP status {}, {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            ));
+        }
+        Ok(resp)
+    } else {
+        let resp = client.get(url).send().await.map_err(err_to_string)?;
+        if !resp.status().is_success() {
+            return Err(format!(
+                "Failed to download: HTTP status {}, {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            ));
+        }
+        Ok(resp)
+    }
+}
 
 pub async fn _get_maybe_resume(
     client: &reqwest::Client,
