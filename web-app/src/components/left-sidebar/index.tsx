@@ -11,13 +11,14 @@ import {
   SidebarHeader,
   SidebarRail,
 } from '@/components/ui/sidebar'
+import { cn } from '@/lib/utils'
 
 export function LeftSidebar() {
   return (
     <Sidebar variant="floating" collapsible="offcanvas">
       <SidebarHeader className="flex px-1">
-        <div className="flex items-center w-full justify-between">
-          <span className="ml-2 font-medium font-studio">Jan</span>
+        <div className={cn("flex items-center w-full justify-between", IS_MACOS && "justify-end")}>
+          {!IS_MACOS && <span className="ml-2 font-medium font-studio">Jan</span>}
           <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5" />
         </div>
         <NavMain />

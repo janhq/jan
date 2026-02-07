@@ -12,6 +12,7 @@ import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
 import SettingsMenu from '@/containers/SettingsMenu'
+import { cn } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.assistant as any)({
@@ -53,7 +54,7 @@ function AssistantContent() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div className="flex items-center justify-between w-full mr-2 pr-30">
+        <div className={cn("flex items-center justify-between w-full mr-2 pr-3", !IS_MACOS && "pr-30")}>
           <span className="font-medium text-base font-studio">
             {t('common:settings')}
           </span>

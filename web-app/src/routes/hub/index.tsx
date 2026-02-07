@@ -431,7 +431,7 @@ function HubContent() {
     <div className="flex flex-col h-svh w-full">
       <div className="flex flex-col h-full w-full ">
         <HeaderPage>
-          <div className="pr-4 py-3  h-10 w-full flex items-center justify-between relative z-20">
+          <div className={cn("pr-3 py-3  h-10 w-full flex items-center justify-between relative z-20", !IS_MACOS && "pr-30")}>
             <div className="flex items-center gap-2 w-full">
               {isSearching ? (
                 <Loader className="shrink-0 size-4 animate-spin text-muted-foreground" />

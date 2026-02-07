@@ -30,6 +30,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 
 // Function to mask sensitive URL parameters
@@ -363,7 +364,7 @@ function MCPServersDesktop() {
     <Fragment>
       <div className="flex flex-col h-svh w-full">
         <HeaderPage>
-          <div className="flex items-center gap-2 w-full justify-between pr-4">
+          <div className={cn("flex items-center justify-between w-full mr-2 pr-3", !IS_MACOS && "pr-30")}>
             <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
             <Button variant="secondary" size="sm" onClick={() => handleOpenDialog()}>
               <IconPlus size={18} className="text-muted-foreground" />
