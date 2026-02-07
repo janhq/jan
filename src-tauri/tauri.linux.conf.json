@@ -1,4 +1,33 @@
 {
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Jan",
+        "width": 1200,
+        "minWidth": 1024,
+        "height": 800,
+        "minHeight": 740,
+        "resizable": true,
+        "fullscreen": false,
+        "zoomHotkeysEnabled": true,
+        "center": true,
+        "hiddenTitle": true,
+        "transparent": true,
+        "trafficLightPosition": {
+          "x": 20,
+          "y": 32
+        },
+        "decorations": false,
+        "titleBarStyle": "Overlay",
+        "windowEffects": {
+          "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
+          "state": "active"
+        },
+        "dragDropEnabled": false
+      }
+    ]
+  },
   "bundle": {
     "targets": ["deb", "appimage"],
     "resources": ["resources/pre-install/**/*", "resources/LICENSE"],
