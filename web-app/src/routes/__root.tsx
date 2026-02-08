@@ -25,9 +25,9 @@ import { useEffect } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LeftSidebar } from '@/components/left-sidebar'
-
+import { WindowControls } from '@/components/WindowControls'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -45,7 +45,7 @@ const AppLayout = () => {
   } = useLeftPanel()
 
   return (
-    <div className='bg-neutral-50 dark:bg-background size-full'>
+    <div className="bg-neutral-50 dark:bg-background size-full relative">
       <SidebarProvider
         open={isLeftPanelOpen}
         onOpenChange={setLeftPanel}
@@ -55,21 +55,19 @@ const AppLayout = () => {
         <AnalyticProvider />
         <KeyboardShortcutsProvider />
         {/* Fake absolute panel top to enable window drag */}
-        {IS_MACOS &&
-          <div className="fixed w-full h-3 z-20 top-0" data-tauri-drag-region />
-        }
+        {!IS_MACOS && <WindowControls />}
+        <div className="fixed w-full h-3 z-20 top-0" data-tauri-drag-region />
         <DialogAppUpdater />
         <BackendUpdater />
         <LeftSidebar />
-        <SidebarInset >
-          <div className='bg-neutral-50 dark:bg-background size-full'>
+        <SidebarInset>
+          <div className="bg-neutral-50 dark:bg-background size-full">
             <Outlet />
           </div>
         </SidebarInset>
 
         {productAnalyticPrompt && <PromptAnalytic />}
         {showJanModelPrompt && <PromptJanModel />}
-
       </SidebarProvider>
     </div>
   )
