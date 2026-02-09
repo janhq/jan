@@ -1,4 +1,4 @@
-use super::process::OpenCodeProcessManager;
+use super::process::{OpenCodeProcessManager, SessionId};
 use super::types::*;
 use std::sync::Arc;
 use tauri::{command, AppHandle, Emitter, State};
@@ -11,6 +11,8 @@ pub type SharedOpenCodeManager = Arc<Mutex<OpenCodeProcessManager>>;
 /// Spawn a new OpenCode task
 ///
 /// # Arguments
+/// * `task_id` - Optional task ID (will be generated if not provided)
+/// * `session_id` - Optional session ID for conversation continuity
 /// * `project_path` - Path to the project directory
 /// * `prompt` - The task prompt/instruction
 /// * `agent` - Optional agent type (build, plan, explore)
@@ -26,6 +28,7 @@ pub async fn opencode_spawn_task(
     app: AppHandle,
     state: State<'_, SharedOpenCodeManager>,
     task_id: Option<String>,
+    session_id: Option<String>,
     project_path: String,
     prompt: String,
     agent: Option<String>,
@@ -37,29 +40,48 @@ pub async fn opencode_spawn_task(
     // Use provided task_id or generate a new one
     let task_id = task_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     info!(
-        "Creating OpenCode task {} for project: {} (provider: {:?}, model: {:?})",
-        task_id, project_path, provider_id, model_id
+        "Creating OpenCode task {} in session {:?} for project: {} (provider: {:?}, model: {:?})",
+        task_id, session_id, project_path, provider_id, model_id
     );
 
     // Create event channel
     let (event_tx, mut event_rx) = mpsc::channel::<(TaskId, OpenCodeToJan)>(100);
 
-    // Spawn the task
+    // Spawn the task (with session support)
     {
         let manager = state.lock().await;
-        manager
-            .spawn_task(
-                task_id.clone(),
-                project_path.clone(),
-                prompt,
-                agent,
-                api_key,
-                provider_id,
-                model_id,
-                base_url,
-                event_tx,
-            )
-            .await?;
+        if let Some(ref sess_id) = session_id {
+            // Use session-based spawning (reuses processes)
+            manager
+                .spawn_task_with_session(
+                    sess_id.clone(),
+                    task_id.clone(),
+                    project_path.clone(),
+                    prompt,
+                    agent.clone(),
+                    api_key.clone(),
+                    provider_id.clone(),
+                    model_id.clone(),
+                    base_url.clone(),
+                    event_tx,
+                )
+                .await?;
+        } else {
+            // Legacy spawn (new process per task)
+            manager
+                .spawn_task(
+                    task_id.clone(),
+                    project_path.clone(),
+                    prompt,
+                    agent,
+                    api_key,
+                    provider_id,
+                    model_id,
+                    base_url,
+                    event_tx,
+                )
+                .await?;
+        }
     }
 
     // Forward events to frontend via Tauri events
@@ -177,4 +199,24 @@ pub async fn opencode_running_task_count(
 ) -> Result<usize, String> {
     let manager = state.lock().await;
     Ok(manager.running_task_count().await)
+}
+
+/// Get the count of active sessions
+#[command]
+pub async fn opencode_session_count(
+    state: State<'_, SharedOpenCodeManager>,
+) -> Result<usize, String> {
+    let manager = state.lock().await;
+    Ok(manager.session_count().await)
+}
+
+/// End a specific session
+#[command]
+pub async fn opencode_end_session(
+    state: State<'_, SharedOpenCodeManager>,
+    session_id: String,
+) -> Result<(), String> {
+    info!("Ending OpenCode session: {}", session_id);
+    let manager = state.lock().await;
+    manager.end_session(&session_id).await
 }

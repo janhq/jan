@@ -156,6 +156,7 @@ export interface DelegationStartedData {
   task: string
   agent: OpenCodeAgentType
   projectPath: string
+  sessionId?: string
 }
 
 export interface DelegationCompletedData {
@@ -203,6 +204,7 @@ export interface ActiveDelegation {
   task: string
   agent: OpenCodeAgentType
   projectPath: string
+  sessionId?: string
   startedAt: number
 }
 

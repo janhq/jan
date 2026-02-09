@@ -16,6 +16,7 @@ import type {
 import type { PermissionRequestPayload } from '@/services/opencode/types'
 import { getOpenCodeService } from '@/services/opencode'
 import { useOrchestratorState } from '@/hooks/useOrchestratorState'
+import { useOpenCodeSession } from '@/hooks/useOpenCodeSession'
 
 // ============================================================================
 // Types
@@ -51,38 +52,33 @@ export interface DelegateContext {
 
   /** Base URL for the provider API */
   baseUrl?: string
+
+  /** Optional session ID for maintaining conversation context */
+  sessionId?: string
 }
 
 // ============================================================================
 // Tool Description
 // ============================================================================
 
-const TOOL_DESCRIPTION = `Delegate complex coding tasks to the OpenCode agent.
+const TOOL_DESCRIPTION = `Delegate ALL coding and file operations to the OpenCode agent.
 
-USE THIS TOOL WHEN THE TASK INVOLVES:
-- Writing, modifying, or refactoring code
-- Creating or editing files in a codebase
-- Running shell commands (npm, git, cargo, make, build tools, etc.)
-- Debugging or fixing bugs in code
-- Code review and analysis requiring file changes
-- File system operations on source code
+This tool MUST be used for ANY task involving:
+- File operations (create, read, write, edit, delete)
+- Shell commands (npm, git, cargo, make, pytest, etc.)
+- Code writing or modification
+- Running tests or builds
 - Multi-step development workflows
-- Creating new components, modules, or features
+- Bug fixes or refactoring
+- Creating components, modules, or features
 
-DO NOT USE THIS TOOL FOR:
-- Simple questions about code (answer directly)
-- Explaining code concepts (answer directly)
-- Web searches or research (use other tools)
-- Document/knowledge base queries (use RAG tools)
-- General conversation
+The OpenCode agent has full access to:
+- Read/write files in the project
+- Execute shell commands
+- Search and navigate codebase
+- Make autonomous decisions about implementation
 
-The OpenCode agent will autonomously execute the task with full access to:
-- Read/write files
-- Run shell commands
-- Search codebase
-- Make code changes
-
-You will receive a summary of changes made when the task completes.`
+Return a summary when complete.`
 
 // ============================================================================
 // Helper Functions
@@ -261,14 +257,30 @@ function mapOpenCodeEventToUnified(
 // ============================================================================
 
 /**
- * Execute delegation to OpenCode subprocess
+ * Execute delegation to OpenCode subprocess with session support
  */
 async function executeOpenCodeDelegation(
   task: string,
   context: DelegateContext
 ): Promise<OpenCodeDelegateResult> {
-  const { projectPath, agent = 'build', apiKey, providerId, modelId, baseUrl, onProgress, onPermissionRequest, autoApproveReadOnly } = context
+  const { projectPath, agent = 'build', apiKey, providerId, modelId, baseUrl, onProgress, onPermissionRequest, autoApproveReadOnly, sessionId } = context
   const service = getOpenCodeService()
+
+  // Get or create session for conversation continuity
+  const sessionState = useOpenCodeSession.getState()
+  const effectiveSessionId = sessionId ?? sessionState.getActiveSession()?.sessionId ?? null
+
+  // Build contextual prompt with conversation history if session exists
+  let contextualTask = task
+  if (effectiveSessionId) {
+    const session = sessionState.getSession(effectiveSessionId)
+    if (session && session.conversationHistory.length > 0) {
+      const conversationContext = sessionState.getConversationContext(effectiveSessionId)
+      contextualTask = `# Previous Conversation Context:\n${conversationContext}\n\n# Current Request:\n${task}`
+
+      console.log('[OpenCode Delegate] Using session:', effectiveSessionId, 'with history:', session.conversationHistory.length, 'entries')
+    }
+  }
 
   // Pre-flight check: verify Jan's local API server is reachable
   if (baseUrl) {
@@ -339,6 +351,7 @@ async function executeOpenCodeDelegation(
       task,
       agent,
       projectPath,
+      sessionId: effectiveSessionId,
     },
   }
   // Update orchestrator state
@@ -528,6 +541,22 @@ async function executeOpenCodeDelegation(
           setActiveDelegation(null)
           setStatus('completed')
 
+          // Update session history if we have an active session
+          if (effectiveSessionId) {
+            sessionState.appendToHistory(effectiveSessionId, 'user', task)
+            sessionState.appendToHistory(effectiveSessionId, 'assistant', summary || 'Task completed')
+
+            // Update files modified in session
+            if (filesChanged.length > 0) {
+              const session = sessionState.getSession(effectiveSessionId)
+              if (session) {
+                sessionState.updateSession(effectiveSessionId, {
+                  filesModified: [...new Set([...session.filesModified, ...filesChanged])],
+                })
+              }
+            }
+          }
+
           // Emit completion event
           const completionEvent: UnifiedAgentEvent = {
             id: `delegation-complete-${taskId}`,
@@ -598,8 +627,9 @@ async function executeOpenCodeDelegation(
       try {
         await service.startTask({
           taskId,
+          sessionId: effectiveSessionId ?? undefined,
           projectPath,
-          prompt: task,
+          prompt: contextualTask,
           agent,
           apiKey,
           providerId,

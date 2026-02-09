@@ -10,9 +10,10 @@ export function createOpenCodeService(): OpenCodeServiceInterface {
   const listeners = new Map<string, UnlistenFn[]>()
 
   return {
-    async startTask({ taskId, projectPath, prompt, agent, apiKey, providerId, modelId, baseUrl }) {
+    async startTask({ taskId, sessionId, projectPath, prompt, agent, apiKey, providerId, modelId, baseUrl }) {
       const resultTaskId = await invoke<string>('opencode_spawn_task', {
         taskId,
+        sessionId,
         projectPath,
         prompt,
         agent,
@@ -47,6 +48,14 @@ export function createOpenCodeService(): OpenCodeServiceInterface {
 
     async runningTaskCount() {
       return await invoke<number>('opencode_running_task_count')
+    },
+
+    async sessionCount() {
+      return await invoke<number>('opencode_session_count')
+    },
+
+    async endSession(sessionId) {
+      await invoke('opencode_end_session', { sessionId })
     },
 
     onEvent(taskId, handler) {

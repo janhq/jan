@@ -71,47 +71,74 @@ export type ServiceHub = {
 // Constants
 // ============================================================================
 
-const UNIFIED_SYSTEM_PROMPT = `You are Jan, an intelligent AI assistant.
+const UNIFIED_SYSTEM_PROMPT = `You are Jan, an intelligent AI assistant with specialized agent capabilities.
 
-You have access to multiple tools:
-1. **opencode_delegate** - For coding tasks (write, modify, debug, run code)
-2. **RAG tools** - For searching your knowledge base
-3. **MCP tools** - For various integrations (filesystem, browser, database, etc.)
+# CRITICAL DELEGATION POLICY
 
-## When to respond directly:
-- Simple greetings and small talk
-- General knowledge questions not requiring tools
-- Short explanations without needing to search or modify files
+## ALWAYS Use opencode_delegate For:
+You MUST delegate to opencode_delegate when the user's request involves:
+- ANY file creation, modification, or deletion
+- ANY shell command execution (npm, git, cargo, pytest, etc.)
+- ANY code writing, refactoring, or debugging
+- Multi-file operations or codebase changes
+- Running tests, builds, or development workflows
+- Creating components, modules, or features
+- Bug fixes, refactoring, or code improvements
 
-## When to use tools:
+IMPORTANT: Even if the task seems "simple" (like creating a single file),
+you MUST use opencode_delegate. Do NOT attempt to write code yourself.
 
-### Use opencode_delegate when:
-- Writing new code or files
-- Modifying existing code
-- Running shell commands (npm, git, cargo, make, etc.)
-- Debugging or fixing bugs
-- Creating new components, modules, or features
-- File system operations on source code
-- Multi-step development workflows
+## Direct Response For:
+- Pure Q&A about concepts (no file/code changes)
+- Explanations and tutorials
+- General conversation
+- Simple greetings
 
-### Use RAG tools when:
-- Questions about uploaded documents
-- Searching your knowledge base
-- Finding information in previous conversations
+## Use RAG tools when:
+- Searching uploaded documents
+- Querying knowledge base
 
-### Use MCP tools when:
-- Actions on connected services
+## Use MCP tools when:
 - Database queries
 - Browser automation
-- Other service integrations
+- External service integrations
 
-## Decision guidelines:
-- If the user asks to write, modify, or debug code → use opencode_delegate
-- If the user asks about uploaded documents or knowledge → use RAG tools
-- If the user asks to perform actions (send message, query DB) → use MCP tools
-- If the query is simple (greetings, basic questions) → respond directly
+When in doubt between direct response and opencode_delegate, choose opencode_delegate.`
 
-Always choose the most appropriate approach.`
+// ============================================================================
+// Intent Classification
+// ============================================================================
+
+type UserIntent = 'coding' | 'qa' | 'other'
+
+function classifyUserIntent(message: string): UserIntent {
+  const codingKeywords = [
+    'create', 'write', 'build', 'implement', 'add', 'modify',
+    'edit', 'fix', 'debug', 'refactor', 'test', 'run', 'execute',
+    'install', 'deploy', 'setup', 'configure', 'file', 'component',
+    'delete', 'remove', 'rename', 'move', 'copy', 'update',
+    'change', 'refactor', 'optimize', 'improve', 'analyze',
+  ]
+
+  const lowerMsg = message.toLowerCase()
+  const hasCodingKeyword = codingKeywords.some((kw) => lowerMsg.includes(kw))
+
+  // Check for file paths or code snippets
+  const hasFilePath = /[./]\w+\.(ts|js|py|rs|go|java|cpp|c|h|vue|jsx|tsx)/.test(message)
+  const hasCodeBlock = message.includes('```')
+
+  if (hasCodingKeyword || hasFilePath || hasCodeBlock) {
+    return 'coding'
+  }
+
+  // Q&A patterns
+  const qaKeywords = ['what is', 'how does', 'explain', 'tell me about', 'why', 'describe']
+  if (qaKeywords.some((kw) => lowerMsg.includes(kw))) {
+    return 'qa'
+  }
+
+  return 'other'
+}
 
 // ============================================================================
 // Agent Transport Class
@@ -142,6 +169,11 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
   private projectPath: string | null = null
   private defaultAgent: 'build' | 'plan' | 'explore' = 'build'
   private autoApproveReadOnly: boolean = true
+
+  // Session management for conversation continuity
+  private currentSessionId: string | null = null
+  private previousProjectPath: string | null = null
+  private sessionTimeoutMs = 10 * 60 * 1000 // 10 minutes
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
@@ -378,21 +410,40 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
     )
 
     // Get provider info from the current model settings for OpenCode to use.
-    // OpenCode always connects to Jan's inference server (local API server) which
-    // proxies all models — both local (llama.cpp) and remote (Anthropic, OpenAI, etc.).
+    // OpenCode must use the SAME provider configuration as the main Jan chat:
+    // - For local models: Jan's local API server (llama.cpp)
+    // - For remote providers: Direct connection to provider API with same base_url and api_key
     const currentProvider = useModelProvider.getState().getProviderByName(
       useModelProvider.getState().selectedProvider
     )
     const providerName = useModelProvider.getState().selectedProvider
     const selectedModelId = useModelProvider.getState().selectedModel?.id
 
-    // Construct the Jan server URL from local API server settings
+    // Determine if this is a local model or remote provider
     const localServer = useLocalApiServer.getState()
     const host = localServer.serverHost || '127.0.0.1'
     const port = localServer.serverPort || 1337
     const prefix = localServer.apiPrefix || '/v1'
-    const providerBaseUrl = currentProvider?.base_url || `http://${host}:${port}${prefix}`
-    const providerApiKey = currentProvider?.api_key || localServer.apiKey || undefined
+    const localServerUrl = `http://${host}:${port}${prefix}`
+
+    // Use provider's base_url if it's a remote provider, otherwise use local server
+    // Remote providers have base_url like https://api.anthropic.com, https://api.openai.com, etc.
+    const isLocalProvider = !currentProvider?.base_url ||
+      currentProvider.base_url.includes('127.0.0.1') ||
+      currentProvider.base_url.includes('localhost')
+    const providerBaseUrl = isLocalProvider ? localServerUrl : currentProvider?.base_url
+    // Use provider's API key for remote providers, local server's API key for local models
+    const providerApiKey = isLocalProvider
+      ? (localServer.apiKey || undefined)
+      : (currentProvider?.api_key || undefined)
+
+    // Determine if we should continue the existing session or create a new one
+    const shouldContinueSession =
+      this.currentSessionId &&
+      this.previousProjectPath === this.projectPath &&
+      // Check if session is still active (we'd need to track this via the session store)
+
+    const effectiveSessionId = shouldContinueSession ? this.currentSessionId : null
 
     // Create agent delegate tool if project path is set
     const opencodeTool = this.projectPath
@@ -404,8 +455,17 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
           providerId: providerName,
           modelId: selectedModelId,
           baseUrl: providerBaseUrl,
+          sessionId: effectiveSessionId ?? undefined,
           onProgress: (event: UnifiedAgentEvent) => {
             addEvent(event)
+
+            // Track session creation from OpenCode events
+            if (event.type === 'delegation.started' && event.data.taskId) {
+              // If we had a session, this task is part of it
+            }
+            if (event.type === 'delegation.completed' && event.data.taskId && effectiveSessionId) {
+              // Task completed in session
+            }
           },
           onPermissionRequest: async (request) => {
             // Set up pending approval in state for UI
@@ -464,12 +524,21 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
 
     console.log('[AgentTransport] Starting with tools:', Object.keys(allTools))
 
+    // Get the last user message for intent classification
+    const lastUserMessage = options.messages.findLast((m) => m.role === 'user')
+    const userIntent = lastUserMessage ? classifyUserIntent(lastUserMessage.content) : 'other'
+
+    // Use 'required' for coding tasks to force delegation, 'auto' otherwise
+    const toolChoice: 'auto' | 'required' = userIntent === 'coding' ? 'required' : 'auto'
+
+    console.log('[AgentTransport] User intent:', userIntent, '-> toolChoice:', toolChoice)
+
     const result = streamText({
       model: this.model,
       messages: modelMessages,
       abortSignal: options.abortSignal,
       tools: allTools,
-      toolChoice: 'auto',  // LLM decides when to use tools
+      toolChoice,
       stopWhen: stepCountIs(20),  // Allow multi-step tool loop so tool results feed back to the model
       system: systemPrompt,
       onStepFinish: ({ toolCalls, toolResults }) => {

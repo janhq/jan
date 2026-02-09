@@ -1,8 +1,9 @@
 use super::types::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, RwLock};
@@ -20,6 +21,9 @@ enum LaunchMode {
     },
 }
 
+/// Session ID type
+pub type SessionId = String;
+
 /// Handle for a running OpenCode task
 struct OpenCodeTaskHandle {
     #[allow(dead_code)]
@@ -28,10 +32,29 @@ struct OpenCodeTaskHandle {
     cancel_tx: Option<oneshot::Sender<()>>,
 }
 
-/// Manages OpenCode subprocess lifecycle
+/// Handle for a long-lived session process
+struct OpenCodeSessionHandle {
+    session_id: SessionId,
+    project_path: String,
+    child: Child,
+    stdin_tx: mpsc::Sender<String>,
+    active_tasks: Arc<RwLock<HashSet<TaskId>>>,
+    last_activity: Arc<RwLock<Instant>>,
+    agent: Option<String>,
+    api_key: Option<String>,
+    provider_id: Option<String>,
+    model_id: Option<String>,
+    base_url: Option<String>,
+}
+
+/// Manages OpenCode subprocess lifecycle with session support
 pub struct OpenCodeProcessManager {
     tasks: Arc<RwLock<HashMap<TaskId, OpenCodeTaskHandle>>>,
+    /// Sessions: reusable long-lived processes keyed by session ID
+    sessions: Arc<RwLock<HashMap<SessionId, OpenCodeSessionHandle>>>,
     launch_mode: LaunchMode,
+    /// Idle session timeout (10 minutes)
+    idle_timeout: Duration,
 }
 
 impl OpenCodeProcessManager {
@@ -39,7 +62,9 @@ impl OpenCodeProcessManager {
     pub fn with_binary(path: PathBuf) -> Self {
         Self {
             tasks: Arc::new(RwLock::new(HashMap::new())),
+            sessions: Arc::new(RwLock::new(HashMap::new())),
             launch_mode: LaunchMode::Binary(path),
+            idle_timeout: Duration::from_secs(10 * 60), // 10 minutes
         }
     }
 
@@ -47,11 +72,317 @@ impl OpenCodeProcessManager {
     pub fn with_bun_dev(bun_path: PathBuf, opencode_dir: PathBuf) -> Self {
         Self {
             tasks: Arc::new(RwLock::new(HashMap::new())),
+            sessions: Arc::new(RwLock::new(HashMap::new())),
             launch_mode: LaunchMode::BunDev { bun_path, opencode_dir },
+            idle_timeout: Duration::from_secs(10 * 60), // 10 minutes
         }
     }
 
-    /// Spawn a new OpenCode task
+    /// Get or create a session for the given project path
+    async fn get_or_create_session(
+        &self,
+        session_id: &SessionId,
+        project_path: String,
+        agent: Option<String>,
+        api_key: Option<String>,
+        provider_id: Option<String>,
+        model_id: Option<String>,
+        base_url: Option<String>,
+    ) -> Result<(), String> {
+        let mut sessions = self.sessions.write().await;
+
+        // Check if session already exists
+        if let Some(existing_session) = sessions.get(session_id) {
+            info!("Reusing existing session: {}", session_id);
+            // Update last activity
+            *existing_session.last_activity.write().await = Instant::now();
+            return Ok(());
+        }
+
+        // Create new session process
+        info!("Creating new session: {} for project: {}", session_id, project_path);
+
+        // Build the command
+        let mut cmd = match &self.launch_mode {
+            LaunchMode::Binary(binary_path) => {
+                let mut c = Command::new(binary_path);
+                c.args(["stdio", "--project", &project_path, "--session-mode"]);
+                c
+            }
+            LaunchMode::BunDev { bun_path, opencode_dir } => {
+                let mut c = Command::new(bun_path);
+                c.current_dir(opencode_dir);
+                c.args([
+                    "run",
+                    "--conditions=browser",
+                    "./src/index.ts",
+                    "stdio",
+                    "--project",
+                    &project_path,
+                    "--session-mode",
+                ]);
+                c
+            }
+        };
+
+        if let Some(agent_name) = &agent {
+            cmd.args(["--agent", agent_name]);
+        }
+
+        // Build OPENCODE_CONFIG_CONTENT
+        {
+            let model_name = model_id.as_deref().unwrap_or("default");
+            let server_url = base_url.as_deref().unwrap_or("http://127.0.0.1:1337/v1");
+            let provider_name = provider_id.as_deref().unwrap_or("jan");
+
+            let (npm_package, opencode_provider_id, provider_display_name) = match provider_name.to_lowercase().as_str() {
+                "anthropic" => ("@ai-sdk/anthropic", "anthropic", "Anthropic"),
+                "openai" => ("@ai-sdk/openai", "openai", "OpenAI"),
+                "azure" => ("@ai-sdk/azure", "azure", "Azure OpenAI"),
+                "google" | "gemini" => ("@ai-sdk/google", "google", "Google AI"),
+                "mistral" => ("@ai-sdk/mistral", "mistral", "Mistral"),
+                "groq" => ("@ai-sdk/groq", "groq", "Groq"),
+                "cohere" => ("@ai-sdk/cohere", "cohere", "Cohere"),
+                "xai" => ("@ai-sdk/xai", "xai", "xAI"),
+                "openrouter" => ("@openrouter/ai-sdk-provider", "openrouter", "OpenRouter"),
+                "togetherai" | "together" => ("@ai-sdk/togetherai", "togetherai", "Together AI"),
+                "deepinfra" => ("@ai-sdk/deepinfra", "deepinfra", "DeepInfra"),
+                "perplexity" => ("@ai-sdk/perplexity", "perplexity", "Perplexity"),
+                _ => ("@ai-sdk/openai-compatible", "jan", "Jan Server"),
+            };
+
+            let mut config = serde_json::Map::new();
+            config.insert(
+                "model".to_string(),
+                serde_json::Value::String(format!("{}/{}", opencode_provider_id, model_name)),
+            );
+
+            let mut provider_config = serde_json::Map::new();
+            let mut provider_entry = serde_json::Map::new();
+            provider_entry.insert("npm".to_string(), serde_json::Value::String(npm_package.to_string()));
+            provider_entry.insert("name".to_string(), serde_json::Value::String(provider_display_name.to_string()));
+
+            let mut options = serde_json::Map::new();
+            match npm_package {
+                "@ai-sdk/anthropic" => {
+                    if !server_url.contains("api.anthropic.com") {
+                        options.insert("baseURL".to_string(), serde_json::Value::String(server_url.to_string()));
+                    }
+                }
+                "@ai-sdk/openai" => {
+                    if !server_url.contains("api.openai.com") {
+                        options.insert("baseURL".to_string(), serde_json::Value::String(server_url.to_string()));
+                    }
+                }
+                _ => {
+                    options.insert("baseURL".to_string(), serde_json::Value::String(server_url.to_string()));
+                }
+            }
+            if let Some(ref key) = api_key {
+                options.insert("apiKey".to_string(), serde_json::Value::String(key.clone()));
+            }
+            provider_entry.insert("options".to_string(), serde_json::Value::Object(options));
+
+            let mut models = serde_json::Map::new();
+            let mut model_entry = serde_json::Map::new();
+            model_entry.insert("name".to_string(), serde_json::Value::String(model_name.to_string()));
+            models.insert(model_name.to_string(), serde_json::Value::Object(model_entry));
+            provider_entry.insert("models".to_string(), serde_json::Value::Object(models));
+
+            provider_config.insert(opencode_provider_id.to_string(), serde_json::Value::Object(provider_entry));
+            config.insert("provider".to_string(), serde_json::Value::Object(provider_config));
+
+            let config_json = serde_json::to_string(&serde_json::Value::Object(config))
+                .unwrap_or_else(|_| "{}".to_string());
+            cmd.env("OPENCODE_CONFIG_CONTENT", &config_json);
+            cmd.env("OPENCODE_DISABLE_PROJECT_CONFIG", "true");
+        }
+
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to spawn opencode session process: {}", e))?;
+
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Failed to get stdin handle".to_string())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "Failed to get stdout handle".to_string())?;
+        let stderr = child.stderr.take();
+
+        let (stdin_tx, mut stdin_rx) = mpsc::channel::<String>(32);
+        let active_tasks = Arc::new(RwLock::new(HashSet::new()));
+        let last_activity = Arc::new(RwLock::new(Instant::now()));
+
+        // Store session handle
+        let session_handle = OpenCodeSessionHandle {
+            session_id: session_id.clone(),
+            project_path: project_path.clone(),
+            child,
+            stdin_tx: stdin_tx.clone(),
+            active_tasks: active_tasks.clone(),
+            last_activity: last_activity.clone(),
+            agent: agent.clone(),
+            api_key: api_key.clone(),
+            provider_id: provider_id.clone(),
+            model_id: model_id.clone(),
+            base_url: base_url.clone(),
+        };
+
+        sessions.insert(session_id.clone(), session_handle);
+
+        // Clone for async tasks
+        let sessions_ref = self.sessions.clone();
+        let session_id_for_stdout = session_id.clone();
+        let session_id_for_stderr = session_id.clone();
+
+        // Spawn stdout reader for session
+        tokio::spawn(async move {
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+
+            while let Ok(Some(line)) = lines.next_line().await {
+                if line.trim().is_empty() {
+                    continue;
+                }
+
+                match serde_json::from_str::<OpenCodeToJan>(&line) {
+                    Ok(msg) => {
+                        info!("OpenCode session [{}] -> {:?}", session_id_for_stdout, msg);
+                        // Session messages are handled by the caller via event channel
+                    }
+                    Err(e) => {
+                        error!("Failed to parse OpenCode session message {}: {}", session_id_for_stdout, e);
+                    }
+                }
+            }
+
+            // Session stdout closed - remove session
+            info!("Session {} stdout closed, removing", session_id_for_stdout);
+            let mut sessions = sessions_ref.write().await;
+            sessions.remove(&session_id_for_stdout);
+        });
+
+        // Spawn stderr reader
+        if let Some(stderr) = stderr {
+            tokio::spawn(async move {
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if !line.trim().is_empty() {
+                        warn!("OpenCode session stderr [{}]: {}", session_id_for_stderr, line);
+                    }
+                }
+            });
+        }
+
+        // Spawn stdin writer for session
+        let stdin_task_id = session_id.clone();
+        tokio::spawn(async move {
+            let mut stdin = stdin;
+            loop {
+                tokio::select! {
+                    msg = stdin_rx.recv() => {
+                        match msg {
+                            Some(data) => {
+                                if let Err(e) = stdin.write_all(data.as_bytes()).await {
+                                    error!("Failed to write to stdin for session {}: {}", stdin_task_id, e);
+                                    break;
+                                }
+                                if let Err(e) = stdin.write_all(b"\n").await {
+                                    error!("Failed to write newline for session {}: {}", stdin_task_id, e);
+                                    break;
+                                }
+                                if let Err(e) = stdin.flush().await {
+                                    error!("Failed to flush stdin for session {}: {}", stdin_task_id, e);
+                                    break;
+                                }
+                                // Update last activity
+                                last_activity.write().await.clone_from(&Instant::now());
+                            }
+                            None => {
+                                info!("Stdin channel closed for session {}", stdin_task_id);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Send a task to an existing session
+    async fn send_task_to_session(
+        &self,
+        session_id: &SessionId,
+        task_id: TaskId,
+        prompt: String,
+        event_tx: mpsc::Sender<(TaskId, OpenCodeToJan)>,
+    ) -> Result<(), String> {
+        let sessions = self.sessions.read().await;
+        let session = sessions.get(session_id)
+            .ok_or_else(|| format!("Session {} not found", session_id))?;
+
+        // Add task to active set
+        session.active_tasks.write().await.insert(task_id.clone());
+
+        // Send task message
+        let task_msg = JanToOpenCode::Task {
+            id: task_id.clone(),
+            payload: TaskPayload {
+                session_id: Some(session_id.clone()),
+                project_path: session.project_path.clone(),
+                prompt,
+                agent: session.agent.clone(),
+            },
+        };
+
+        let json = serde_json::to_string(&task_msg)
+            .map_err(|e| format!("Failed to serialize task message: {}", e))?;
+
+        session.stdin_tx.send(json).await
+            .map_err(|e| format!("Failed to send task to session: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Clean up idle sessions (internal helper)
+    async fn cleanup_idle_sessions_internal(&self) {
+        let mut sessions = self.sessions.write().await;
+        let now = Instant::now();
+
+        let mut to_remove = Vec::new();
+
+        for (session_id, handle) in sessions.iter() {
+            let last_activity = *handle.last_activity.read().await;
+            let idle_duration = now.duration_since(last_activity);
+
+            if idle_duration > self.idle_timeout {
+                let active_count = handle.active_tasks.read().await.len();
+                if active_count == 0 {
+                    info!("Cleaning up idle session {} (idle for {:?})", session_id, idle_duration);
+                    to_remove.push(session_id.clone());
+                }
+            }
+        }
+
+        for session_id in to_remove {
+            if let Some(mut handle) = sessions.remove(&session_id) {
+                let _ = handle.child.kill().await;
+            }
+        }
+    }
+
+    /// Spawn a new OpenCode task (legacy - spawns new process per task)
     ///
     /// # Arguments
     /// * `task_id` - Unique identifier for this task
@@ -111,32 +442,69 @@ impl OpenCodeProcessManager {
         }
 
         // Build OPENCODE_CONFIG_CONTENT to override OpenCode's global config
-        // (~/.config/opencode/opencode.jsonc). OpenCode always uses Jan's selected
-        // model via an OpenAI-compatible endpoint — regardless of whether the model
-        // is local (llama.cpp) or remote (Anthropic, OpenAI, etc.).
-        // Jan's inference server exposes all models through http://127.0.0.1:1337/v1.
+        // (~/.config/opencode/opencode.jsonc). OpenCode uses Jan's selected model
+        // with the appropriate SDK based on the provider type:
+        // - Local models (llama.cpp): @ai-sdk/openai-compatible via local server
+        // - Remote providers: Native SDK if available, otherwise openai-compatible
         {
             let model_name = model_id.as_deref().unwrap_or("default");
             let server_url = base_url.as_deref().unwrap_or("http://127.0.0.1:1337/v1");
-            let jan_provider_id = "jan";
+            let provider_name = provider_id.as_deref().unwrap_or("jan");
+
+            // Map well-known providers to their native AI SDK packages
+            // These providers require their native SDK for proper API compatibility
+            let (npm_package, opencode_provider_id, provider_display_name) = match provider_name.to_lowercase().as_str() {
+                "anthropic" => ("@ai-sdk/anthropic", "anthropic", "Anthropic"),
+                "openai" => ("@ai-sdk/openai", "openai", "OpenAI"),
+                "azure" => ("@ai-sdk/azure", "azure", "Azure OpenAI"),
+                "google" | "gemini" => ("@ai-sdk/google", "google", "Google AI"),
+                "mistral" => ("@ai-sdk/mistral", "mistral", "Mistral"),
+                "groq" => ("@ai-sdk/groq", "groq", "Groq"),
+                "cohere" => ("@ai-sdk/cohere", "cohere", "Cohere"),
+                "xai" => ("@ai-sdk/xai", "xai", "xAI"),
+                "openrouter" => ("@openrouter/ai-sdk-provider", "openrouter", "OpenRouter"),
+                "togetherai" | "together" => ("@ai-sdk/togetherai", "togetherai", "Together AI"),
+                "deepinfra" => ("@ai-sdk/deepinfra", "deepinfra", "DeepInfra"),
+                "perplexity" => ("@ai-sdk/perplexity", "perplexity", "Perplexity"),
+                // For local models or unknown providers, use OpenAI-compatible
+                _ => ("@ai-sdk/openai-compatible", "jan", "Jan Server"),
+            };
 
             let mut config = serde_json::Map::new();
 
             // Set model in "provider/model" format
             config.insert(
                 "model".to_string(),
-                serde_json::Value::String(format!("{}/{}", jan_provider_id, model_name)),
+                serde_json::Value::String(format!("{}/{}", opencode_provider_id, model_name)),
             );
 
-            // Configure the "jan" provider as OpenAI-compatible
+            // Configure the provider with appropriate SDK
             let mut provider_config = serde_json::Map::new();
             let mut provider_entry = serde_json::Map::new();
-            provider_entry.insert("npm".to_string(), serde_json::Value::String("@ai-sdk/openai-compatible".to_string()));
-            provider_entry.insert("name".to_string(), serde_json::Value::String("Jan Server".to_string()));
+            provider_entry.insert("npm".to_string(), serde_json::Value::String(npm_package.to_string()));
+            provider_entry.insert("name".to_string(), serde_json::Value::String(provider_display_name.to_string()));
 
-            // Provider options
+            // Provider options - the option key varies by provider
             let mut options = serde_json::Map::new();
-            options.insert("baseURL".to_string(), serde_json::Value::String(server_url.to_string()));
+            // Most providers use baseURL, but some use different keys
+            match npm_package {
+                "@ai-sdk/anthropic" => {
+                    // Anthropic uses baseURL for custom endpoints
+                    if !server_url.contains("api.anthropic.com") {
+                        options.insert("baseURL".to_string(), serde_json::Value::String(server_url.to_string()));
+                    }
+                }
+                "@ai-sdk/openai" => {
+                    // OpenAI uses baseURL for custom endpoints
+                    if !server_url.contains("api.openai.com") {
+                        options.insert("baseURL".to_string(), serde_json::Value::String(server_url.to_string()));
+                    }
+                }
+                _ => {
+                    // OpenAI-compatible and most others always need baseURL
+                    options.insert("baseURL".to_string(), serde_json::Value::String(server_url.to_string()));
+                }
+            }
             if let Some(ref key) = api_key {
                 options.insert("apiKey".to_string(), serde_json::Value::String(key.clone()));
             }
@@ -149,14 +517,14 @@ impl OpenCodeProcessManager {
             models.insert(model_name.to_string(), serde_json::Value::Object(model_entry));
             provider_entry.insert("models".to_string(), serde_json::Value::Object(models));
 
-            provider_config.insert(jan_provider_id.to_string(), serde_json::Value::Object(provider_entry));
+            provider_config.insert(opencode_provider_id.to_string(), serde_json::Value::Object(provider_entry));
             config.insert("provider".to_string(), serde_json::Value::Object(provider_config));
 
             let config_json = serde_json::to_string(&serde_json::Value::Object(config))
                 .unwrap_or_else(|_| "{}".to_string());
             cmd.env("OPENCODE_CONFIG_CONTENT", &config_json);
             cmd.env("OPENCODE_DISABLE_PROJECT_CONFIG", "true");
-            info!("Set OPENCODE_CONFIG_CONTENT: {}", config_json);
+            info!("Set OPENCODE_CONFIG_CONTENT for provider '{}': {}", provider_name, config_json);
         }
 
         cmd.stdin(Stdio::piped())
@@ -420,6 +788,123 @@ impl OpenCodeProcessManager {
                 warn!("Failed to kill process for task {}: {}", task_id, e);
             }
         }
+    }
+
+    // ============================================================================
+    // Session-based methods (Issue 2 & 3: Conversation continuity + process reuse)
+    // ============================================================================
+
+    /// Spawn a task using session-based process reuse
+    ///
+    /// This method reuses existing session processes when possible, maintaining
+    /// conversation context and avoiding process spawn overhead.
+    ///
+    /// # Arguments
+    /// * `session_id` - Unique session identifier (should be consistent across related tasks)
+    /// * `task_id` - Unique identifier for this specific task
+    /// * `project_path` - Path to the project directory
+    /// * `prompt` - The task prompt/instruction
+    /// * `agent` - Optional agent type (build, plan, explore)
+    /// * `api_key` - Optional API key for the LLM provider
+    /// * `provider_id` - Optional provider identifier
+    /// * `model_id` - Optional model identifier
+    /// * `base_url` - Optional base URL for the provider API
+    /// * `event_tx` - Channel to send events back to the caller
+    ///
+    /// # Returns
+    /// * `Ok(())` if task started successfully
+    /// * `Err(String)` if spawn failed
+    pub async fn spawn_task_with_session(
+        &self,
+        session_id: SessionId,
+        task_id: TaskId,
+        project_path: String,
+        prompt: String,
+        agent: Option<String>,
+        api_key: Option<String>,
+        provider_id: Option<String>,
+        model_id: Option<String>,
+        base_url: Option<String>,
+        event_tx: mpsc::Sender<(TaskId, OpenCodeToJan)>,
+    ) -> Result<(), String> {
+        info!(
+            "Spawning OpenCode task {} in session {} for project: {}",
+            task_id, session_id, project_path
+        );
+
+        // Get or create session (this spawns a long-lived process if needed)
+        self.get_or_create_session(
+            &session_id,
+            project_path.clone(),
+            agent.clone(),
+            api_key.clone(),
+            provider_id.clone(),
+            model_id.clone(),
+            base_url.clone(),
+        ).await?;
+
+        // Send task to the session
+        self.send_task_to_session(&session_id, task_id.clone(), prompt, event_tx.clone()).await?;
+
+        // Clone for async tasks
+        let task_id_clone = task_id.clone();
+        let session_id_clone = session_id.clone();
+        let sessions_clone = self.sessions.clone();
+
+        // Track task completion and cleanup
+        tokio::spawn(async move {
+            // Periodically check if task is still active in session
+            let mut interval = tokio::time::interval(Duration::from_secs(5));
+            let mut completed = false;
+
+            loop {
+                interval.tick().await;
+
+                let sessions = sessions_clone.read().await;
+                if let Some(session) = sessions.get(&session_id_clone) {
+                    let active_tasks = session.active_tasks.read().await;
+                    if !active_tasks.contains(&task_id_clone) && !completed {
+                        // Task completed - trigger one final check
+                        completed = true;
+                    } else if active_tasks.contains(&task_id_clone) {
+                        // Task still running, update activity
+                        *session.last_activity.write().await = Instant::now();
+                    }
+                } else {
+                    // Session gone
+                    break;
+                }
+            }
+        });
+
+        info!("Task {} started in session {}", task_id, session_id);
+        Ok(())
+    }
+
+    /// Get the number of active sessions
+    pub async fn session_count(&self) -> usize {
+        let sessions = self.sessions.read().await;
+        sessions.len()
+    }
+
+    /// End a specific session and kill its process
+    pub async fn end_session(&self, session_id: &SessionId) -> Result<(), String> {
+        let mut sessions = self.sessions.write().await;
+
+        if let Some(mut handle) = sessions.remove(session_id) {
+            info!("Ending session {}", session_id);
+            if let Err(e) = handle.child.kill().await {
+                warn!("Failed to kill session process {}: {}", session_id, e);
+            }
+            Ok(())
+        } else {
+            Err(format!("Session {} not found", session_id))
+        }
+    }
+
+    /// Clean up all idle sessions
+    pub async fn cleanup_idle_sessions(&self) {
+        self.cleanup_idle_sessions_internal().await
     }
 }
 

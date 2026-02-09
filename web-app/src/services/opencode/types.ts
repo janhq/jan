@@ -110,9 +110,11 @@ export interface OpenCodeServiceInterface {
   /**
    * Start a new OpenCode task
    * @param taskId - Optional task ID (will be generated if not provided)
+   * @param sessionId - Optional session ID for conversation continuity (reuses process)
    */
   startTask(params: {
     taskId?: string
+    sessionId?: string
     projectPath: string
     prompt: string
     agent?: 'build' | 'plan' | 'explore'
@@ -151,6 +153,16 @@ export interface OpenCodeServiceInterface {
    * Get count of running tasks
    */
   runningTaskCount(): Promise<number>
+
+  /**
+   * Get count of active sessions
+   */
+  sessionCount(): Promise<number>
+
+  /**
+   * End a specific session
+   */
+  endSession(sessionId: string): Promise<void>
 
   /**
    * Subscribe to events for a specific task.
