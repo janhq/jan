@@ -119,7 +119,7 @@ const Home = () => {
                   </h1>
                 </div>
                 <p className="px-4 lg:px-0 mt-2 text-lg lg:text-2xl font-medium leading-relaxed text-white animate-fade-in-up delay-500 -tracking-[0.6px]">
-                  Your Personal Intelligence that answers only to you
+                  Personal Intelligence that answers only to you
                 </p>
               </div>
               <div className="flex px-4 flex-col lg:flex-row items-start gap-4 w-full justify-center text-center animate-fade-in-up delay-600 mt-8 lg:mt-10">
