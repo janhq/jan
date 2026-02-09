@@ -27,9 +27,11 @@ default = [
 ]
 hardware = ["dep:tauri-plugin-hardware"]
 deep-link = ["dep:tauri-plugin-deep-link"]
+mlx = ["dep:tauri-plugin-mlx"]
 desktop = [
     "deep-link",
-    "hardware"
+    "hardware",
+    "mlx"
 ]
 mobile = [
     "tauri/protocol-asset",
@@ -82,6 +84,7 @@ zip = "0.6"
 tauri-plugin-deep-link = { version = "2", optional = true }
 tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = true }
 tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp" }
+tauri-plugin-mlx = { path = "./plugins/tauri-plugin-mlx", optional = true }
 tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db" }
 tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag" }
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }

@@ -12,6 +12,7 @@ import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
 import SettingsMenu from '@/containers/SettingsMenu'
+import { cn } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.assistant as any)({
@@ -53,15 +54,17 @@ function AssistantContent() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div className="flex items-center justify-between w-full mr-2 pr-4">
-          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+        <div className={cn("flex items-center justify-between w-full mr-2 pr-3", !IS_MACOS && "pr-30")}>
+          <span className="font-medium text-base font-studio">
+            {t('common:settings')}
+          </span>
           <Button
             onClick={() => {
               setEditingKey(null)
               setOpen(true)
             }}
             size="sm"
-            variant="secondary"
+            variant="outline"
             className="relative z-50"
           >
             <IconCirclePlus size={16} />
@@ -129,7 +132,9 @@ function AssistantContent() {
             onOpenChange={setOpen}
             editingKey={editingKey}
             initialData={
-              editingKey ? assistants.find((a) => a.id === editingKey) : undefined
+              editingKey
+                ? assistants.find((a) => a.id === editingKey)
+                : undefined
             }
             onSave={handleSave}
           />

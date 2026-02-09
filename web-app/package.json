@@ -9,13 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest --run",
-    "test:coverage": "vitest --coverage --run",
-    "dev:web": "vite --config vite.config.web.ts",
-    "build:web": "yarn tsc -b tsconfig.web.json && vite build --config vite.config.web.ts",
-    "preview:web": "vite preview --config vite.config.web.ts --outDir dist-web",
-    "serve:web": "npx serve dist-web -p 3001 -s",
-    "serve:web:alt": "npx http-server dist-web -p 3001 --proxy http://localhost:3001? -o",
-    "build:serve:web": "yarn build:web && yarn serve:web"
+    "test:coverage": "vitest --coverage --run"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.0",
@@ -75,6 +69,7 @@
     "motion": "^12.29.2",
     "next-themes": "0.4.6",
     "posthog-js": "1.255.1",
+    "radix-ui": "^1.4.3",
     "react": "19.0.0",
     "react-colorful": "5.6.1",
     "react-dom": "19.0.0",

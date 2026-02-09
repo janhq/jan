@@ -54,12 +54,7 @@ mod tests {
 
     #[test]
     fn test_messages_subpath_not_in_exact_whitelist() {
-        let whitelisted_paths = [
-            "/",
-            "/openapi.json",
-            "/favicon.ico",
-            "/messages",
-        ];
+        let whitelisted_paths = ["/", "/openapi.json", "/favicon.ico", "/messages"];
         // Only exact match
         assert!(!whitelisted_paths.contains(&"/messages/threads"));
         assert!(!whitelisted_paths.contains(&"/messages/api"));
@@ -194,9 +189,7 @@ mod tests {
             .map(|token| token == api_key)
             .unwrap_or(false);
 
-        let api_key_valid = x_api_key_header
-            .map(|key| key == api_key)
-            .unwrap_or(false);
+        let api_key_valid = x_api_key_header.map(|key| key == api_key).unwrap_or(false);
 
         assert!(auth_valid || api_key_valid);
     }
@@ -212,9 +205,7 @@ mod tests {
             .map(|token| token == api_key)
             .unwrap_or(false);
 
-        let api_key_valid = x_api_key_header
-            .map(|key| key == api_key)
-            .unwrap_or(false);
+        let api_key_valid = x_api_key_header.map(|key| key == api_key).unwrap_or(false);
 
         assert!(auth_valid || api_key_valid);
     }
@@ -230,9 +221,7 @@ mod tests {
             .map(|token| token == api_key)
             .unwrap_or(false);
 
-        let api_key_valid = x_api_key_header
-            .map(|key| key == api_key)
-            .unwrap_or(false);
+        let api_key_valid = x_api_key_header.map(|key| key == api_key).unwrap_or(false);
 
         assert!(!auth_valid && !api_key_valid);
     }
@@ -248,9 +237,7 @@ mod tests {
             .map(|token| token == api_key)
             .unwrap_or(false);
 
-        let api_key_valid = x_api_key_header
-            .map(|key| key == api_key)
-            .unwrap_or(false);
+        let api_key_valid = x_api_key_header.map(|key| key == api_key).unwrap_or(false);
 
         assert!(!auth_valid && !api_key_valid);
     }
@@ -267,9 +254,7 @@ mod tests {
             .map(|token| token == api_key)
             .unwrap_or(false);
 
-        let api_key_valid = x_api_key_header
-            .map(|key| key == api_key)
-            .unwrap_or(false);
+        let api_key_valid = x_api_key_header.map(|key| key == api_key).unwrap_or(false);
 
         // Should pass if either is valid
         assert!(auth_valid || api_key_valid);

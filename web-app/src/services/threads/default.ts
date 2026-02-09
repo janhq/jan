@@ -2,7 +2,6 @@
  * Default Threads Service - Web implementation
  */
 
-import { defaultAssistant } from '@/hooks/useAssistant'
 import { ExtensionManager } from '@/lib/extension'
 import { ConversationalExtension, ExtensionTypeEnum } from '@janhq/core'
 import type { ThreadsService } from './types'
@@ -21,6 +20,18 @@ export class DefaultThreadsService implements ThreadsService {
           const filteredThreads = threads.filter((e) => e.id !== TEMPORARY_CHAT_ID)
 
           return filteredThreads.map((e) => {
+            // Model is always stored in assistants[0].model
+            const model = e.assistants?.[0]?.model
+              ? {
+                  id: e.assistants[0].model.id,
+                  provider: e.assistants[0].model.engine,
+                }
+              : undefined
+
+            // Check if this is a "real" assistant (has instructions) or just model storage
+            const hasRealAssistant = e.assistants?.[0]?.instructions
+            const assistants = hasRealAssistant ? e.assistants : []
+
             return {
               ...e,
               updated:
@@ -29,11 +40,8 @@ export class DefaultThreadsService implements ThreadsService {
                   : (e.updated ?? 0),
               order: e.metadata?.order,
               isFavorite: e.metadata?.is_favorite,
-              model: {
-                id: e.assistants?.[0]?.model?.id,
-                provider: e.assistants?.[0]?.model?.engine,
-              },
-              assistants: e.assistants ?? [defaultAssistant],
+              model,
+              assistants,
               metadata: {
                 ...e.metadata,
                 // Override extracted fields to avoid duplication
@@ -56,35 +64,62 @@ export class DefaultThreadsService implements ThreadsService {
       return thread
     }
 
+    // Build assistants payload - always include model info
+    // If there's a real assistant (with instructions), include full assistant data
+    // Otherwise, just include minimal model-only entry for storage
+    const hasRealAssistant = thread.assistants && thread.assistants.length > 0 && thread.assistants[0]?.instructions
+    const assistantsPayload = hasRealAssistant
+      ? [
+          {
+            ...thread.assistants![0],
+            model: {
+              id: thread.model?.id ?? '*',
+              engine: thread.model?.provider ?? 'llamacpp',
+            },
+          },
+        ]
+      : [
+          {
+            // Minimal entry just to store model info
+            id: 'model-only',
+            name: 'Model',
+            model: {
+              id: thread.model?.id ?? '*',
+              engine: thread.model?.provider ?? 'llamacpp',
+            },
+          },
+        ]
+
     return (
       ExtensionManager.getInstance()
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
         ?.createThread({
           ...thread,
-          assistants: [
-            {
-              ...(thread.assistants?.[0] ?? defaultAssistant),
-              model: {
-                id: thread.model?.id ?? '*',
-                engine: thread.model?.provider ?? 'llamacpp',
-              },
-            },
-          ],
+          assistants: assistantsPayload,
           metadata: {
             ...thread.metadata,
             order: thread.order,
           },
         })
         .then((e) => {
+          // Model is always stored in assistants[0].model
+          const model = e.assistants?.[0]?.model
+            ? {
+                id: e.assistants[0].model.id,
+                provider: e.assistants[0].model.engine,
+              }
+            : thread.model
+
+          // Check if this is a "real" assistant (has instructions) or just model storage
+          const hasRealAssistant = e.assistants?.[0]?.instructions
+          const assistants = hasRealAssistant ? e.assistants : []
+
           return {
             ...e,
             updated: e.updated,
-            model: {
-              id: e.assistants?.[0]?.model?.id,
-              provider: e.assistants?.[0]?.model?.engine,
-            },
+            model,
             order: e.metadata?.order ?? thread.order,
-            assistants: e.assistants ?? [defaultAssistant],
+            assistants,
           } as Thread
         })
         .catch(() => thread) ?? thread

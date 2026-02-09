@@ -35,7 +35,7 @@ export function NavChats() {
       <SidebarGroupLabel>Chats</SidebarGroupLabel>
       <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
         <DropdownMenuTrigger asChild>
-          <SidebarGroupAction>
+          <SidebarGroupAction className="hover:bg-sidebar-foreground/8">
             <MoreHorizontal className="text-muted-foreground" />
             <span className="sr-only">More</span>
           </SidebarGroupAction>

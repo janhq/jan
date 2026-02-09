@@ -68,6 +68,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/jan.png'
     case 'llamacpp':
       return '/images/model-provider/llamacpp.svg'
+    case 'mlx':
+      return '/images/model-provider/mlx.png'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
@@ -97,6 +99,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Jan'
     case 'llamacpp':
       return 'Llama.cpp'
+    case 'mlx':
+      return 'MLX'
     case 'openai':
       return 'OpenAI'
     case 'openrouter':

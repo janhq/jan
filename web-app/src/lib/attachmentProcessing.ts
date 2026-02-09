@@ -7,6 +7,7 @@ type AttachmentProcessingStatus = 'processing' | 'done' | 'error' | 'clear_all'
 type AttachmentProcessingOptions = {
   attachments: Attachment[]
   threadId: string
+  projectId?: string
   serviceHub: ServiceHub
   selectedProvider?: string
   contextThreshold?: number
@@ -73,6 +74,7 @@ export const processAttachmentsForSend = async (
   const {
     attachments,
     threadId,
+    projectId,
     serviceHub,
     contextThreshold,
     estimateTokens,
@@ -147,7 +149,12 @@ export const processAttachmentsForSend = async (
         targetPreference === 'inline' ? 'inline' : 'embeddings'
       let parsedContent: string | undefined
 
-      const canInline = targetPreference !== 'embeddings' && !!doc.path
+      // Project files always use embeddings, never inline
+      if (projectId) {
+        targetMode = 'embeddings'
+      }
+
+      const canInline = !projectId && targetPreference !== 'embeddings' && !!doc.path
 
       if (canInline) {
         try {
@@ -162,10 +169,12 @@ export const processAttachmentsForSend = async (
       if (targetPreference === 'auto') {
         // Check if user made a per-file choice for this document
         const userChoice = perFileChoices?.get(doc.path || '')
-        targetMode = userChoice ?? autoFallbackMode ?? 'embeddings'
+        // Project files always use embeddings
+        const effectiveMode = projectId ? 'embeddings' : (userChoice ?? autoFallbackMode ?? 'embeddings')
+        targetMode = effectiveMode
 
-        // Only do auto-detection if no user choice was made
-        if (!userChoice && parsedContent && estimateTokens) {
+        // Only do auto-detection if no user choice was made and not project file
+        if (!projectId && !userChoice && parsedContent && estimateTokens) {
           const estimatedTokens = await estimateTokens(parsedContent)
           const tokenCount =
             typeof estimatedTokens === 'number' &&
@@ -185,11 +194,11 @@ export const processAttachmentsForSend = async (
               `Attachment ${doc.name}: token estimate unavailable or non-positive; defaulting to ${targetMode}`
             )
           }
-        } else if (!userChoice && !parsedContent) {
+        } else if (!projectId && !userChoice && !parsedContent) {
           console.debug(
             `Attachment ${doc.name}: parsed content unavailable for token estimation; defaulting to ${targetMode}`
           )
-        } else if (!userChoice) {
+        } else if (!projectId && !userChoice) {
           console.debug(
             `Attachment ${doc.name}: token estimator unavailable; defaulting to ${targetMode}`
           )
@@ -197,7 +206,8 @@ export const processAttachmentsForSend = async (
       } else if (targetPreference === 'prompt') {
         // Check if user made a per-file choice for this document
         const userChoice = perFileChoices?.get(doc.path || '')
-        targetMode = userChoice ?? autoFallbackMode ?? 'embeddings'
+        // Project files always use embeddings
+        targetMode = projectId ? 'embeddings' : (userChoice ?? autoFallbackMode ?? 'embeddings')
       }
 
       if (targetMode === 'inline' && parsedContent) {
@@ -221,7 +231,9 @@ export const processAttachmentsForSend = async (
       // Default: ingest as embeddings
       notifyUpdate(doc.name, 'processing')
 
-      const res = await serviceHub.uploads().ingestFileAttachment(threadId, doc)
+      const res = projectId
+        ? await serviceHub.uploads().ingestFileAttachmentForProject(projectId, doc)
+        : await serviceHub.uploads().ingestFileAttachment(threadId, doc)
 
       processedAttachments.push({
         ...doc,

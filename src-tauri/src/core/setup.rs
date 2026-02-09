@@ -6,9 +6,7 @@ use std::{
     sync::Arc,
 };
 use tar::Archive;
-use tauri::{
-    App, Emitter, Manager, Runtime, Wry, WindowEvent
-};
+use tauri::{App, Emitter, Manager, Runtime, WindowEvent, Wry};
 
 #[cfg(desktop)]
 use tauri::{
@@ -17,9 +15,9 @@ use tauri::{
 };
 use tauri_plugin_store::Store;
 
+use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::mcp::constants::DEFAULT_MCP_CONFIG;
 use crate::core::mcp::helpers::add_server_config;
-use crate::core::app::commands::get_jan_data_folder_path;
 
 use super::{
     extensions::commands::get_jan_extensions_path, mcp::helpers::run_mcp_commands, state::AppState,
@@ -214,16 +212,13 @@ pub fn migrate_mcp_servers(
 fn migrate_exa_to_http(app_handle: tauri::AppHandle) -> Result<(), String> {
     let config_path = get_jan_data_folder_path(app_handle).join("mcp_config.json");
 
-    let config_str = fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read MCP config: {e}"))?;
+    let config_str =
+        fs::read_to_string(&config_path).map_err(|e| format!("Failed to read MCP config: {e}"))?;
 
     let mut config: serde_json::Value = serde_json::from_str(&config_str)
         .map_err(|e| format!("Failed to parse MCP config: {e}"))?;
 
-    if let Some(servers) = config
-        .get_mut("mcpServers")
-        .and_then(|s| s.as_object_mut())
-    {
+    if let Some(servers) = config.get_mut("mcpServers").and_then(|s| s.as_object_mut()) {
         servers.insert(
             "exa".to_string(),
             serde_json::json!({

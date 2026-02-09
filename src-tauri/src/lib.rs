@@ -43,6 +43,11 @@ pub fn run() {
         app_builder = app_builder.plugin(tauri_plugin_deep_link::init());
     }
 
+    #[cfg(feature = "mlx")]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_mlx::init());
+    }
+
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         app_builder = app_builder.plugin(tauri_plugin_hardware::init());
@@ -86,10 +91,16 @@ pub fn run() {
         core::system::commands::factory_reset,
         core::system::commands::read_logs,
         core::system::commands::is_library_available,
+        core::system::commands::launch_claude_code_with_config,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
         core::server::commands::get_server_status,
+        // Remote provider commands
+        core::server::remote_provider_commands::register_provider_config,
+        core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::get_provider_config,
+        core::server::remote_provider_commands::list_provider_configs,
         // MCP commands
         core::mcp::commands::get_tools,
         core::mcp::commands::call_tool,
@@ -186,10 +197,17 @@ pub fn run() {
         core::system::commands::factory_reset,
         core::system::commands::read_logs,
         core::system::commands::is_library_available,
+        core::system::commands::launch_claude_code_with_config,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
         core::server::commands::get_server_status,
+        // Remote provider commands
+        core::server::remote_provider_commands::register_provider_config,
+        core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::get_provider_config,
+        core::server::remote_provider_commands::list_provider_configs,
+        core::server::remote_provider_commands::abort_remote_stream,
         // MCP commands
         core::mcp::commands::get_tools,
         core::mcp::commands::call_tool,
@@ -243,6 +261,7 @@ pub fn run() {
             mcp_monitoring_tasks: Arc::new(Mutex::new(HashMap::new())),
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
+            provider_configs: Arc::new(Mutex::new(HashMap::new())),
         })
         .manage(opencode_manager)
         .manage(gateway_manager)
@@ -488,6 +507,16 @@ pub fn run() {
                         let manager = opencode_state.lock().await;
                         manager.cancel_all_tasks().await;
                         log::info!("Agent subprocesses cleaned up successfully");
+                    }
+
+                    #[cfg(feature = "mlx")]
+                    {
+                        use tauri_plugin_mlx::cleanup_mlx_processes;
+                        if let Err(e) = cleanup_mlx_processes(app_handle.clone()).await {
+                            log::warn!("Failed to cleanup MLX processes: {}", e);
+                        } else {
+                            log::info!("MLX processes cleaned up successfully");
+                        }
                     }
 
                     log::info!("App cleanup completed");

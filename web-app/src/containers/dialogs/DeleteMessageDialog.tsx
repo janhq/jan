@@ -52,7 +52,7 @@ export function DeleteMessageDialog({ onDelete }: DeleteMessageDialogProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogTrigger>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent
         onOpenAutoFocus={(e) => {
           e.preventDefault()

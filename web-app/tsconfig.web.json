@@ -1,9 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    // Relax some strict rules for web version to handle platform-specific code
-    "noUnusedParameters": false,
-    "noUnusedLocals": false,
-    "skipLibCheck": true
-  }
-}

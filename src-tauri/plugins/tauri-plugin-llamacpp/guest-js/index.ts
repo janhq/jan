@@ -39,7 +39,9 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     timeout: asNumber(config.timeout, 600),
 
     llamacpp_env: asString(config.llamacpp_env),
-    memory_util: asString(config.memory_util),
+    fit: asBool(config.fit),
+    fit_target: asString(config.fit_target),
+    fit_ctx: asString(config.fit_ctx),
     chat_template: asString(config.chat_template),
 
     n_gpu_layers: asNumber(config.n_gpu_layers),
@@ -185,27 +187,6 @@ export async function isModelSupported(
   return await invoke('plugin:llamacpp|is_model_supported', {
     path,
     ctxSize,
-  })
-}
-
-export async function planModelLoadInternal(
-  path: string,
-  memoryMode: string,
-  mmprojPath?: string,
-  requestedContext?: number
-): Promise<{
-  gpuLayers: number
-  maxContextLength: number
-  noOffloadKVCache: boolean
-  offloadMmproj?: boolean
-  batchSize: number
-  mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
-}> {
-  return await invoke('plugin:llamacpp|plan_model_load', {
-    path,
-    memoryMode,
-    mmprojPath,
-    requestedContext,
   })
 }
 

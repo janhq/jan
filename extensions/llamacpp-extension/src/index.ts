@@ -46,10 +46,8 @@ import {
   readGgufMetadata,
   getModelSize,
   isModelSupported,
-  planModelLoadInternal,
   unloadLlamaModel,
   LlamacppConfig,
-  ModelPlan,
   DownloadItem,
   ModelConfig,
   EmbeddingResponse,
@@ -112,7 +110,6 @@ export default class llamacpp_extension extends AIEngine {
   autoUnload: boolean = true
   timeout: number = 600
   llamacpp_env: string = ''
-  memoryMode: string = ''
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
@@ -145,7 +142,6 @@ export default class llamacpp_extension extends AIEngine {
     this.autoUnload = this.config.auto_unload
     this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env
-    this.memoryMode = this.config.memory_util || 'high'
 
     // This sets the base directory where model files for this provider are stored.
     this.getProviderPath()
@@ -722,8 +718,6 @@ export default class llamacpp_extension extends AIEngine {
       this.autoUnload = value as boolean
     } else if (key === 'llamacpp_env') {
       this.llamacpp_env = value as string
-    } else if (key === 'memory_util') {
-      this.memoryMode = value as string
     } else if (key === 'timeout') {
       this.timeout = value as number
     }
@@ -1411,7 +1405,8 @@ export default class llamacpp_extension extends AIEngine {
   override async load(
     modelId: string,
     overrideSettings?: Partial<LlamacppConfig>,
-    isEmbedding: boolean = false
+    isEmbedding: boolean = false,
+    bypassAutoUnload: boolean = false
   ): Promise<SessionInfo> {
     const sInfo = await this.findSessionByModel(modelId)
     if (sInfo) {
@@ -1427,7 +1422,8 @@ export default class llamacpp_extension extends AIEngine {
     const loadingPromise = this.performLoad(
       modelId,
       overrideSettings,
-      isEmbedding
+      isEmbedding,
+      bypassAutoUnload
     )
     this.loadingModels.set(modelId, loadingPromise)
 
@@ -1442,7 +1438,8 @@ export default class llamacpp_extension extends AIEngine {
   private async performLoad(
     modelId: string,
     overrideSettings?: Partial<LlamacppConfig>,
-    isEmbedding: boolean = false
+    isEmbedding: boolean = false,
+    bypassAutoUnload: boolean = false
   ): Promise<SessionInfo> {
     const loadedModels = await this.getLoadedModels()
 
@@ -1454,6 +1451,7 @@ export default class llamacpp_extension extends AIEngine {
     if (
       this.autoUnload &&
       !isEmbedding &&
+      !bypassAutoUnload &&
       (loadedModels.length > 0 || otherLoadingPromises.length > 0)
     ) {
       // Wait for OTHER loading models to finish, then unload everything
@@ -1533,6 +1531,9 @@ export default class llamacpp_extension extends AIEngine {
     if (modelConfig.mmproj_path) {
       mmprojPath = await joinPath([janDataFolderPath, modelConfig.mmproj_path])
     }
+
+    // Migrate old env vars
+    if(typeof cfg.fit === 'string') cfg.fit = true
 
     logger.info(
       'Calling Tauri command load_llama_model with config:',
@@ -2062,85 +2063,6 @@ export default class llamacpp_extension extends AIEngine {
     return (await readGgufMetadata(modelPath)).metadata?.[
       'tokenizer.chat_template'
     ]?.includes('tools')
-  }
-  /**
-   * Get total system memory including both VRAM and RAM
-   */
-  private async getTotalSystemMemory(): Promise<SystemMemory> {
-    const devices = await this.getDevices()
-    let totalVRAM = 0
-
-    if (devices.length > 0) {
-      // Sum total VRAM across all GPUs
-      totalVRAM = devices
-        .map((d) => d.mem * 1024 * 1024)
-        .reduce((a, b) => a + b, 0)
-    }
-
-    // Get system RAM
-    const sys = await getSystemUsage()
-    const totalRAM = sys.used_memory * 1024 * 1024
-
-    const totalMemory = totalVRAM + totalRAM
-
-    logger.info(
-      `Total VRAM: ${totalVRAM} bytes, Total RAM: ${totalRAM} bytes, Total Memory: ${totalMemory} bytes`
-    )
-
-    return {
-      totalVRAM,
-      totalRAM,
-      totalMemory,
-    }
-  }
-
-  private async getLayerSize(
-    path: string,
-    meta: Record<string, string>
-  ): Promise<{ layerSize: number; totalLayers: number }> {
-    const modelSize = await getModelSize(path)
-    const arch = meta['general.architecture']
-    const totalLayers = Number(meta[`${arch}.block_count`]) + 2 // 1 for lm_head layer and 1 for embedding layer
-    if (!totalLayers) throw new Error('Invalid metadata: block_count not found')
-    return { layerSize: modelSize / totalLayers, totalLayers }
-  }
-
-  private isAbsolutePath(p: string): boolean {
-    // Normalize back‑slashes to forward‑slashes first.
-    const norm = p.replace(/\\/g, '/')
-    return (
-      norm.startsWith('/') || // POSIX absolute
-      /^[a-zA-Z]:/.test(norm) || // Drive‑letter Windows (C: or D:)
-      /^\/\/[^/]+/.test(norm) // UNC path //server/share
-    )
-  }
-  /*
-    * if (!this.isAbsolutePath(path))
-      path = await joinPath([await getJanDataFolderPath(), path])
-    if (mmprojPath && !this.isAbsolutePath(mmprojPath))
-      mmprojPath = await joinPath([await getJanDataFolderPath(), path])
-  */
-  async planModelLoad(
-    path: string,
-    mmprojPath?: string,
-    requestedCtx?: number
-  ): Promise<ModelPlan> {
-    if (!this.isAbsolutePath(path)) {
-      path = await joinPath([await getJanDataFolderPath(), path])
-    }
-    if (mmprojPath && !this.isAbsolutePath(mmprojPath))
-      mmprojPath = await joinPath([await getJanDataFolderPath(), path])
-    try {
-      const result = await planModelLoadInternal(
-        path,
-        this.memoryMode,
-        mmprojPath,
-        requestedCtx
-      )
-      return result
-    } catch (e) {
-      throw new Error(String(e))
-    }
   }
 
   /**

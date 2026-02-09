@@ -94,6 +94,9 @@ jobs:
         run: |
           cargo install ctoml
 
+      - name: Set up Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+
       - name: Update app version based on latest release tag with build number
         run: |
           echo "Version: ${{ inputs.new_version }}"
@@ -107,7 +110,7 @@ jobs:
 
           jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
           mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
-          
+
           echo "---------./src-tauri/plugins/tauri-plugin-hardware/package.json---------"
           cat ./src-tauri/plugins/tauri-plugin-hardware/package.json
 
@@ -120,7 +123,7 @@ jobs:
           ctoml ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
           echo "---------./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml---------"
           cat ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-          
+
           ctoml ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
           echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml---------"
           cat ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml

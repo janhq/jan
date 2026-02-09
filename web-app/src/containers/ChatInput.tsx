@@ -2,7 +2,7 @@ import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -14,6 +14,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
@@ -27,6 +30,7 @@ import {
   IconLoader2,
   IconWorld,
   IconBrandChrome,
+  IconUser,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -47,6 +51,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
+import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
@@ -96,14 +101,14 @@ type ChatInputProps = {
   chatStatus?: ChatStatus
 }
 
-const ChatInput = ({
+const ChatInput = memo(function ChatInput({
   className,
   initialMessage,
   projectId,
   onSubmit,
   onStop,
   chatStatus,
-}: ChatInputProps) => {
+}: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
@@ -116,6 +121,10 @@ const ChatInput = ({
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
+  const currentThread = useThreads((state) => state.getCurrentThread())
+  const updateCurrentThreadAssistant = useThreads(
+    (state) => state.updateCurrentThreadAssistant
+  )
   const updateCurrentThreadModel = useThreads(
     (state) => state.updateCurrentThreadModel
   )
@@ -129,7 +138,6 @@ const ChatInput = ({
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
-  const currentAssistant = useAssistant((state) => state.currentAssistant)
   const assistants = useAssistant((state) => state.assistants)
 
   // Get current thread messages for token counting
@@ -155,6 +163,10 @@ const ChatInput = ({
   const [hasMmproj, setHasMmproj] = useState(false)
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
+
+  // Check if selected model is currently loaded/active
+  const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
+  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>()
 
   // Jan Browser Extension hook
   const {
@@ -364,14 +376,12 @@ const ChatInput = ({
           params: { threadId: TEMPORARY_CHAT_ID },
         })
       } else {
-        // Create a new thread and navigate to it
-        const assistant =
-          assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
-
-        // Get project metadata if projectId is provided
+        // Get project metadata and assistant if projectId is provided
         let projectMetadata:
           | { id: string; name: string; updated_at: number }
           | undefined
+        let projectAssistantId: string | undefined
+
         if (projectId) {
           try {
             const project = await serviceHub
@@ -383,11 +393,18 @@ const ChatInput = ({
                 name: project.name,
                 updated_at: project.updated_at,
               }
+              projectAssistantId = project.assistantId
             }
           } catch (e) {
             console.warn('Failed to fetch project metadata:', e)
           }
         }
+
+        // Only use assistant when chatting via project with an assigned assistant
+        // When no projectId, use the selected assistant from dropdown (if any)
+        const assistant = projectAssistantId
+          ? assistants.find((a) => a.id === projectAssistantId)
+          : selectedAssistant
 
         const newThread = await createThread(
           {
@@ -398,6 +415,9 @@ const ChatInput = ({
           assistant,
           projectMetadata
         )
+
+        // Clear selected assistant after creating thread
+        setSelectedAssistant(undefined)
 
         // Store the initial message for the new thread
         sessionStorage.setItem(
@@ -785,7 +805,7 @@ const ChatInput = ({
       }
     } catch (e) {
       console.error('Failed to attach documents:', e)
-      const desc = e instanceof Error ? e.message : String(e)
+      const desc = e instanceof Error ? e.message : JSON.stringify(e)
       toast.error('Failed to attach documents', { description: desc })
     }
   }
@@ -1334,7 +1354,7 @@ const ChatInput = ({
 
           <div
             className={cn(
-              'relative z-20 px-0 pb-10 border rounded-3xl border-input dark:bg-input/30',
+              'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30',
               isFocused && 'ring-1 ring-ring/50',
               isDragOver && 'ring-2 ring-ring/50 border-primary'
             )}
@@ -1521,6 +1541,72 @@ const ChatInput = ({
                           : 'Add documents or files'}
                       </span>
                     </DropdownMenuItem>
+                    {/* Use Assistant - only show when no projectId */}
+                    {!projectId && (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <IconUser size={18} className="text-muted-foreground" />
+                          <span>Use Assistant</span>
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          <DropdownMenuItem
+                            className={!selectedAssistant && !currentThread?.assistants?.length ? 'bg-accent' : ''}
+                            onClick={() => {
+                              setSelectedAssistant(undefined)
+                              if (currentThreadId) {
+                                updateCurrentThreadAssistant(undefined as unknown as Assistant)
+                              }
+                            }}
+                          >
+                            <div className="flex items-center gap-2 w-full">
+                              <span className="text-muted-foreground">—</span>
+                              <span>None</span>
+                              {!selectedAssistant && !currentThread?.assistants?.length && (
+                                <span className="ml-auto text-xs text-muted-foreground">✓</span>
+                              )}
+                            </div>
+                          </DropdownMenuItem>
+                          {assistants.length > 0 ? (
+                            assistants.map((assistant) => {
+                              const isSelected = selectedAssistant?.id === assistant.id ||
+                                currentThread?.assistants?.some((a) => a.id === assistant.id)
+                              return (
+                                <DropdownMenuItem
+                                  key={assistant.id}
+                                  className={isSelected ? 'bg-accent' : ''}
+                                  onClick={() => {
+                                    setSelectedAssistant(assistant)
+                                    if (currentThreadId) {
+                                      updateCurrentThreadAssistant(assistant)
+                                    }
+                                  }}
+                                >
+                                  <div className="flex items-center gap-2 w-full">
+                                    <AvatarEmoji
+                                      avatar={assistant.avatar}
+                                      imageClassName="w-4 h-4 object-contain"
+                                      textClassName="text-sm"
+                                    />
+                                    <span>{assistant.name || 'Unnamed Assistant'}</span>
+                                    {isSelected && (
+                                      <span className="ml-auto text-xs text-muted-foreground">
+                                        ✓
+                                      </span>
+                                    )}
+                                  </div>
+                                </DropdownMenuItem>
+                              )
+                            })
+                          ) : (
+                            <DropdownMenuItem disabled>
+                              <span className="text-muted-foreground">
+                                No assistants available
+                              </span>
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
                 {/* {model?.provider === 'llamacpp' && loadingModel ? (
@@ -1760,6 +1846,7 @@ const ChatInput = ({
       )}
 
       {selectedProvider === 'llamacpp' &&
+        isModelActive &&
         !tokenCounterCompact &&
         !initialMessage &&
         (threadMessages?.length > 0 || prompt.trim().length > 0) && (
@@ -1794,6 +1881,6 @@ const ChatInput = ({
       />
     </div>
   )
-}
+})
 
 export default ChatInput

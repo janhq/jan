@@ -15,7 +15,7 @@ import ProvidersAvatar from '@/containers/ProvidersAvatar'
 
 const SettingsMenu = () => {
   const { t } = useTranslation()
-  const [expandedProviders, setExpandedProviders] = useState(true)
+  const [expandedProviders, setExpandedProviders] = useState(false)
   const matches = useMatches()
   const navigate = useNavigate()
 

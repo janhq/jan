@@ -314,7 +314,7 @@ export const MessageItem = memo(
             {part.state === 'output-error' && (
               <ToolOutput
                 output={undefined}
-                errorText={part.error || 'Tool execution failed'}
+                errorText={part.error || part.errorText || 'Tool execution failed'}
                 resolver={(input) => Promise.resolve(input)}
               />
             )}
