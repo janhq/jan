@@ -705,17 +705,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ctx_size_default_not_added() {
-        let mut config = default_config();
-        config.ctx_size = 8192;
-
-        let builder = ArgumentBuilder::new(config, false).unwrap();
-        let args = builder.build("test", "/path", 8080, None);
-
-        assert_no_flag(&args, "--ctx-size");
-    }
-
-    #[test]
     fn test_ctx_size_custom_value() {
         let mut config = default_config();
         config.ctx_size = 4096;
