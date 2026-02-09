@@ -14,6 +14,7 @@ import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useAssistant } from '@/hooks/useAssistant'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -186,7 +187,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
-
     // Ensure tools updated before sending messages
     await this.refreshTools()
 
@@ -200,11 +200,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           .getState()
           .getProviderByName(providerId)
 
+        // Get assistant parameters from current assistant
+        const currentAssistant = useAssistant.getState().currentAssistant
+        const inferenceParams = currentAssistant?.parameters
+
         // Create the model using the factory
         // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
         this.model = await ModelFactory.createModel(
           modelId,
-          updatedProvider ?? provider
+          updatedProvider ?? provider,
+          inferenceParams ?? {}
         )
       } catch (error) {
         console.error('Failed to create model:', error)
@@ -270,7 +275,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           // Use llama.cpp's tokens per second if available, otherwise calculate from duration
           let tokenSpeed: number
           if (durationSec > 0 && outputTokens > 0) {
-            tokenSpeed = tokensPerSecond > 0 ? tokensPerSecond : outputTokens / durationSec
+            tokenSpeed =
+              tokensPerSecond > 0 ? tokensPerSecond : outputTokens / durationSec
           } else {
             tokenSpeed = 0
           }
