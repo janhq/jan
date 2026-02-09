@@ -356,14 +356,14 @@ export const useThreads = create<ThreadState>()((set, get) => ({
           .threads()
           .updateThread({
             ...currentThread,
-            assistants: [{ ...assistant, model: currentThread.model }],
+            assistants: assistant ? [{ ...assistant, model: currentThread.model }] : [],
           })
       return {
         threads: {
           ...state.threads,
           [state.currentThreadId as string]: {
             ...state.threads[state.currentThreadId as string],
-            assistants: [assistant],
+            assistants: assistant ? [assistant] : [],
             updated: Date.now() / 1000,
           },
         },
