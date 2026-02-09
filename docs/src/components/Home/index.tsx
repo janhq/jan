@@ -577,7 +577,7 @@ const Home = () => {
             <div className="container relative z-10">
               <div className="mt-10 flex flex-col lg:flex-row justify-between items-center gap-8">
                 <div className="relative animate-on-scroll" data-delay="200">
-                  <h1 className="text-4xl text-center lg:text-left lg:text-[64px] mx-auto font-semibold -tracking-[1.6px] text-white">
+                  <h1 className="text-4xl text-center lg:text-left lg:text-5xl mx-auto font-semibold -tracking-[1.6px] text-white">
                     Ask Jan anything
                   </h1>
                 </div>

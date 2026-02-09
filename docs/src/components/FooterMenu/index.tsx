@@ -21,7 +21,7 @@ const FOOTER_MENUS: FooterMenu[] = [
       //   href: '/handbook/why/open-superintelligence',
       // },
       // { name: 'Handbook', href: '/handbook' },
-      { name: 'Community', href: 'https://discord.com/invite/FTk2MvZwJH' },
+      // { name: 'Community', href: 'https://discord.com/invite/FTk2MvZwJH' },
       { name: 'Careers', href: 'https://menlo.bamboohr.com/careers' },
       { name: 'Discord', href: 'https://discord.com/invite/FTk2MvZwJH' },
       { name: 'GitHub', href: 'https://github.com/janhq/jan' },
