@@ -1434,8 +1434,8 @@ const ChatInput = memo(function ChatInput({
                               onClick={() => handleRemoveAttachment(idx)}
                             >
                               <IconX
-                                className="text-destructive-fg"
-                                size={16}
+                                className="text-neutral-200"
+                                size={14}
                               />
                             </div>
                           )}
