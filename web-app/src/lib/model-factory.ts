@@ -281,16 +281,45 @@ export class ModelFactory {
       throw new Error(`No running MLX session found for model: ${modelId}`)
     }
 
-    const customFetch = createCustomFetch(httpFetch, parameters)
+    const baseUrl = `http://localhost:${sessionInfo.port}`
+    const authHeaders = {
+      Authorization: `Bearer ${sessionInfo.api_key}`,
+      Origin: 'tauri://localhost',
+    }
+
+    // Custom fetch that merges parameters and calls /cancel on abort
+    const customFetch: typeof httpFetch = async (
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      if (init?.method === 'POST' || !init?.method) {
+        const body = init?.body ? JSON.parse(init.body as string) : {}
+        const mergedBody = { ...body, ...parameters }
+        init = { ...init, body: JSON.stringify(mergedBody) }
+      }
+
+      // When the request is aborted, also call the server's /cancel endpoint
+      // to stop MLX inference immediately
+      if (init?.signal) {
+        init.signal.addEventListener('abort', () => {
+          httpFetch(`${baseUrl}/v1/cancel`, {
+            method: 'POST',
+            headers: { ...authHeaders, 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+          }).catch(() => {
+            // Ignore cancel request errors
+          })
+        })
+      }
+
+      return httpFetch(input, init)
+    }
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'mlx',
-      headers: () => ({
-        Authorization: `Bearer ${sessionInfo.api_key}`,
-        Origin: 'tauri://localhost',
-      }),
+      headers: () => authHeaders,
       url: ({ path }) => {
-        const url = new URL(`http://localhost:${sessionInfo.port}/v1${path}`)
+        const url = new URL(`${baseUrl}/v1${path}`)
         return url.toString()
       },
       fetch: customFetch,
