@@ -154,7 +154,7 @@ function LocalAPIServerContent() {
             // Start the model first
             return serviceHub
               .models()
-              .startModel(modelToStart.provider, modelToStart.model)
+              .startModel(modelToStart.provider, modelToStart.model, true)
               .then(() => {
                 console.log(`Model ${modelToStart.model} started successfully`)
                 setIsModelLoading(false) // Model loaded, stop loading state
@@ -293,7 +293,7 @@ function LocalAPIServerContent() {
           if (providerWithModel) {
             await serviceHub
               .models()
-              .startModel(providerWithModel, modelId)
+              .startModel(providerWithModel, modelId, true)
               .then(() => {
                 console.log(`Model ${modelId} started successfully`)
               })
@@ -319,7 +319,7 @@ function LocalAPIServerContent() {
           setIsModelLoading(true)
           await serviceHub
             .models()
-            .startModel(modelToStart.provider, modelToStart.model)
+            .startModel(modelToStart.provider, modelToStart.model, true)
             .then(() => {
               console.log(`Model ${modelToStart.model} started successfully`)
               setIsModelLoading(false)

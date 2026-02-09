@@ -345,7 +345,8 @@ export class DefaultModelsService implements ModelsService {
 
   async startModel(
     provider: ProviderObject,
-    model: string
+    model: string,
+    bypassAutoUnload: boolean = false
   ): Promise<SessionInfo | undefined> {
     const engine = this.getEngine(provider.provider)
     if (!engine) return undefined
@@ -374,7 +375,7 @@ export class DefaultModelsService implements ModelsService {
         )
       : undefined
 
-    return engine.load(model, settings).catch((error) => {
+    return engine.load(model, settings, false, bypassAutoUnload).catch((error) => {
       console.error(
         `Failed to start model ${model} for provider ${provider.provider}:`,
         error
