@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { IconEye, IconSquareCheck } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import HeaderPage from './HeaderPage'
 
 type CacheEntry = {
   status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
@@ -393,13 +394,14 @@ function SetupScreen() {
 
   return (
     <div className="flex h-full flex-col justify-center">
+      <HeaderPage />
       <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center ">
         <div className="w-full mx-auto">
           <div className="mb-4 text-center">
             <h1 className="font-studio font-medium text-2xl mb-1">
               {isDownloading ?  'Sit tight, Jan is getting ready...' : 'Welcome to Jan!'}
             </h1>
-            <p className='text-muted-foreground w-full md:w-1/2 mx-auto mt-1'>{isDownloading ? 'Jan is getting ready to work on your device. This may take a few minutes.' : 'To get started, Jan needs to download a model to your device. This only takes a few minutes.'}</p>
+            <p className='text-muted-foreground w-full md:w-1/2 mx-auto mt-1'>{isDownloading ? 'This may take a few minutes.' : 'To get started, Jan needs to download a model to your device first.'}</p>
           </div>
           <div className="flex gap-4 flex-col mt-6">
             {/* Quick Start Button - Highlighted */}
