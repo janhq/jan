@@ -164,10 +164,10 @@ export class ModelFactory {
         return this.createMlxModel(modelId, provider, parameters)
 
       case 'anthropic':
-        return this.createAnthropicModel(modelId, provider, parameters)
+        return this.createAnthropicModel(modelId, provider)
 
       case 'openai':
-        return this.createOpenAIModel(modelId, provider, parameters)
+        return this.createOpenAIModel(modelId, provider)
       case 'google':
       case 'gemini':
       case 'azure':
@@ -179,8 +179,9 @@ export class ModelFactory {
       case 'cohere':
       case 'perplexity':
       case 'moonshot':
-      default:
         return this.createOpenAICompatibleModel(modelId, provider, parameters)
+      default:
+        return this.createOpenAICompatibleModel(modelId, provider)
     }
   }
 
