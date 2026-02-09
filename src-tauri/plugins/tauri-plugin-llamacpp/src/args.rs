@@ -261,8 +261,7 @@ impl ArgumentBuilder {
     }
 
     fn add_text_generation_args(&mut self) {
-        if self.config.ctx_size > 0 && self.config.ctx_size != 8192 && !self.config.fit {
-            // set only when default values change
+        if self.config.ctx_size > 0 && !self.config.fit {
             self.args.push("--ctx-size".to_string());
             self.args.push(self.config.ctx_size.to_string());
         }
