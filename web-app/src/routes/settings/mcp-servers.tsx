@@ -366,7 +366,7 @@ function MCPServersDesktop() {
         <HeaderPage>
           <div className={cn("flex items-center justify-between w-full mr-2 pr-3", !IS_MACOS && "pr-30")}>
             <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
-            <Button variant="secondary" size="sm" onClick={() => handleOpenDialog()}>
+            <Button variant="outline" size="sm" onClick={() => handleOpenDialog()}>
               <IconPlus size={18} className="text-muted-foreground" />
               {t('mcp-servers:addServer')}
             </Button>

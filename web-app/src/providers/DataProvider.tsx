@@ -12,11 +12,63 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
-import { getModelToStart } from '@/utils/getModelToStart'
 import { isDev } from '@/lib/utils'
+import { invoke } from '@tauri-apps/api/core'
+
+type ProviderCustomHeader = {
+  header: string
+  value: string
+}
+
+type RegisterProviderRequest = {
+  provider: string
+  api_key?: string
+  base_url?: string
+  custom_headers: ProviderCustomHeader[]
+  models: string[]
+}
+
+async function registerRemoteProvider(provider: ModelProvider) {
+  // Skip llamacpp - those are local models
+  if (provider.provider === 'llamacpp') return
+
+  // Skip providers without API key (they can't make requests)
+  if (!provider.api_key) {
+    console.log(`Provider ${provider.provider} has no API key, skipping registration`)
+    return
+  }
+
+  const request: RegisterProviderRequest = {
+    provider: provider.provider,
+    api_key: provider.api_key,
+    base_url: provider.base_url,
+    custom_headers: (provider.custom_header || []).map((h) => ({
+      header: h.header,
+      value: h.value,
+    })),
+    models: provider.models.map(e => e.id)
+  }
+
+  try {
+    await invoke('register_provider_config', { request })
+    console.log(`Registered remote provider: ${provider.provider}`)
+  } catch (error) {
+    console.error(`Failed to register provider ${provider.provider}:`, error)
+  }
+}
+
+// Effect to sync remote providers when providers change
+const syncRemoteProviders = () => {
+  const providers = useModelProvider.getState().providers
+  providers.forEach((provider) => {
+    if (provider.active && provider.provider !== 'llamacpp' && provider.api_key) {
+      registerRemoteProvider(provider)
+    }
+  })
+}
 
 export function DataProvider() {
-  const { setProviders, selectedModel, selectedProvider, getProviderByName } =
+  const { setProviders } =
     useModelProvider()
 
   const { checkForUpdate } = useAppUpdater()
@@ -25,7 +77,6 @@ export function DataProvider() {
   const { setThreads } = useThreads()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
-  const setActiveModels = useAppState((state) => state.setActiveModels)
 
   // Local API Server hooks
   const {
@@ -44,7 +95,11 @@ export function DataProvider() {
 
   useEffect(() => {
     console.log('Initializing DataProvider...')
-    serviceHub.providers().getProviders().then(setProviders)
+    serviceHub.providers().getProviders().then((providers) => {
+      setProviders(providers)
+      // Register remote providers with the backend
+      providers.forEach(registerRemoteProvider)
+    })
     serviceHub
       .mcp()
       .getMCPConfig()
@@ -94,6 +149,12 @@ export function DataProvider() {
       })
   }, [serviceHub, setThreads])
 
+  // Sync remote providers with backend when providers change
+  const providers = useModelProvider.getState().providers
+  useEffect(() => {
+    syncRemoteProviders()
+  }, [providers])
+
   // Check for app updates - initial check and periodic interval
   useEffect(() => {
     // Only check for updates if the auto updater is not disabled
@@ -120,65 +181,48 @@ export function DataProvider() {
 
   useEffect(() => {
     events.on(AppEvent.onModelImported, () => {
-      serviceHub.providers().getProviders().then(setProviders)
+      serviceHub.providers().getProviders().then((providers) => {
+        setProviders(providers)
+        providers.forEach(registerRemoteProvider)
+      })
     })
   }, [serviceHub, setProviders])
 
   // Auto-start Local API Server on app startup if enabled
   useEffect(() => {
     if (enableOnStartup) {
-      // Validate API key before starting
-      if (!apiKey || apiKey.toString().trim().length === 0) {
-        console.warn('Cannot start Local API Server: API key is required')
-        return
-      }
-
-      const modelToStart = getModelToStart({
-        selectedModel,
-        selectedProvider,
-        getProviderByName,
-      })
-
-      // Only start server if we have a model to load
-      if (!modelToStart) {
-        console.warn(
-          'Cannot start Local API Server: No model available to load'
-        )
-        return
-      }
-
-      setServerStatus('pending')
-
-      // Start the model first
+      // Check if server is already running
       serviceHub
-        .models()
-        .startModel(modelToStart.provider, modelToStart.model)
-        .then(() => {
-          console.log(`Model ${modelToStart.model} started successfully`)
-          // Refresh active models after starting
-          serviceHub
-            .models()
-            .getActiveModels()
-            .then((models) => setActiveModels(models || []))
-
-          // Then start the server
-          return window.core?.api?.startServer({
-            host: serverHost,
-            port: serverPort,
-            prefix: apiPrefix,
-            apiKey,
-            trustedHosts,
-            isCorsEnabled: corsEnabled,
-            isVerboseEnabled: verboseLogs,
-            proxyTimeout: proxyTimeout,
-          })
-        })
-        .then((actualPort: number) => {
-          // Store the actual port that was assigned (important for mobile with port 0)
-          if (actualPort && actualPort !== serverPort) {
-            setServerPort(actualPort)
+        .app()
+        .getServerStatus()
+        .then((isRunning) => {
+          if (isRunning) {
+            console.log('Local API Server is already running')
+            setServerStatus('running')
+            return
           }
-          setServerStatus('running')
+
+          setServerStatus('pending')
+
+          // Start the server directly without checking for model
+          return window.core?.api
+            ?.startServer({
+              host: serverHost,
+              port: serverPort,
+              prefix: apiPrefix,
+              apiKey,
+              trustedHosts,
+              isCorsEnabled: corsEnabled,
+              isVerboseEnabled: verboseLogs,
+              proxyTimeout: proxyTimeout,
+            })
+            .then((actualPort: number) => {
+              // Store the actual port that was assigned (important for mobile with port 0)
+              if (actualPort && actualPort !== serverPort) {
+                setServerPort(actualPort)
+              }
+              setServerStatus('running')
+            })
         })
         .catch((error: unknown) => {
           console.error('Failed to start Local API Server on startup:', error)

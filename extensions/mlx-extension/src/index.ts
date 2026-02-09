@@ -216,7 +216,8 @@ export default class mlx_extension extends AIEngine {
   override async load(
     modelId: string,
     overrideSettings?: any,
-    isEmbedding: boolean = false
+    isEmbedding: boolean = false,
+    bypassAutoUnload: boolean = false
   ): Promise<SessionInfo> {
     const sInfo = await this.findSessionByModel(modelId)
     if (sInfo) {
@@ -230,7 +231,8 @@ export default class mlx_extension extends AIEngine {
     const loadingPromise = this.performLoad(
       modelId,
       overrideSettings,
-      isEmbedding
+      isEmbedding,
+      bypassAutoUnload
     )
     this.loadingModels.set(modelId, loadingPromise)
 
@@ -244,7 +246,8 @@ export default class mlx_extension extends AIEngine {
   private async performLoad(
     modelId: string,
     overrideSettings?: any,
-    isEmbedding: boolean = false
+    isEmbedding: boolean = false,
+    bypassAutoUnload: boolean = false
   ): Promise<SessionInfo> {
     const loadedModels = await this.getLoadedModels()
 
@@ -256,6 +259,7 @@ export default class mlx_extension extends AIEngine {
     if (
       this.autoUnload &&
       !isEmbedding &&
+      !bypassAutoUnload &&
       (loadedModels.length > 0 || otherLoadingPromises.length > 0)
     ) {
       if (otherLoadingPromises.length > 0) {

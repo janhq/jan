@@ -64,7 +64,7 @@ function AssistantContent() {
               setOpen(true)
             }}
             size="sm"
-            variant="secondary"
+            variant="outline"
             className="relative z-50"
           >
             <IconCirclePlus size={16} />

@@ -262,8 +262,12 @@ export abstract class AIEngine extends BaseExtension {
 
   /**
    * Loads a model into memory
+   * @param modelId - The model identifier
+   * @param settings - Optional settings for loading
+   * @param isEmbedding - Whether this is an embedding model (skips auto-unload)
+   * @param bypassAutoUnload - When true, prevents unloading other models (useful for API server)
    */
-  abstract load(modelId: string, settings?: any): Promise<SessionInfo>
+  abstract load(modelId: string, settings?: any, isEmbedding?: boolean, bypassAutoUnload?: boolean): Promise<SessionInfo>
 
   /**
    * Unloads a model from memory

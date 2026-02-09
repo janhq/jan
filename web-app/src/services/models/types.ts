@@ -141,7 +141,8 @@ export interface ModelsService {
   stopAllModels(): Promise<void>
   startModel(
     provider: ProviderObject,
-    model: string
+    model: string,
+    bypassAutoUnload?: boolean
   ): Promise<SessionInfo | undefined>
   isToolSupported(modelId: string): Promise<boolean>
   checkMmprojExistsAndUpdateOffloadMMprojSetting(

@@ -89,10 +89,16 @@ pub fn run() {
         core::system::commands::factory_reset,
         core::system::commands::read_logs,
         core::system::commands::is_library_available,
+        core::system::commands::launch_claude_code_with_config,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
         core::server::commands::get_server_status,
+        // Remote provider commands
+        core::server::remote_provider_commands::register_provider_config,
+        core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::get_provider_config,
+        core::server::remote_provider_commands::list_provider_configs,
         // MCP commands
         core::mcp::commands::get_tools,
         core::mcp::commands::call_tool,
@@ -162,10 +168,17 @@ pub fn run() {
         core::system::commands::factory_reset,
         core::system::commands::read_logs,
         core::system::commands::is_library_available,
+        core::system::commands::launch_claude_code_with_config,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
         core::server::commands::get_server_status,
+        // Remote provider commands
+        core::server::remote_provider_commands::register_provider_config,
+        core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::get_provider_config,
+        core::server::remote_provider_commands::list_provider_configs,
+        core::server::remote_provider_commands::abort_remote_stream,
         // MCP commands
         core::mcp::commands::get_tools,
         core::mcp::commands::call_tool,
@@ -207,6 +220,7 @@ pub fn run() {
             mcp_monitoring_tasks: Arc::new(Mutex::new(HashMap::new())),
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
+            provider_configs: Arc::new(Mutex::new(HashMap::new())),
         })
         .setup(|app| {
             app.handle().plugin(
