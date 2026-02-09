@@ -120,11 +120,11 @@ const Home = () => {
                     />
                   </span>
                   <h1 className="text-[40px] lg:text-[80px] font-semibold -tracking-[2px] text-white">
-                    Ask Jan
+                    Meet Jan
                   </h1>
                 </div>
                 <p className="px-4 lg:px-0 mt-2 text-lg lg:text-2xl font-medium leading-relaxed text-white animate-fade-in-up delay-500 -tracking-[0.6px]">
-                  The best of open-source AI in an easy-to-use product.
+                  Your Personal Intelligence that answers only to you
                 </p>
               </div>
               <div className="flex px-4 flex-col lg:flex-row items-start gap-4 w-full justify-center text-center animate-fade-in-up delay-600 mt-8 lg:mt-10">
@@ -250,19 +250,18 @@ const Home = () => {
           <div className="container mx-auto relative z-10">
             <div className="md:mt-10">
               <div className="lg:w-3/5 mx-auto">
-                <div className="relative text-center md:text-left">
+                <div className="relative text-center">
                   <h1
                     className="text-4xl lg:text-[50px] font-semibold -tracking-[1.3px] animate-on-scroll leading-tight"
                     data-delay="200"
                   >
-                    Towards Open Superintelligence
+                    Jan is built in public
                   </h1>
                   <p
-                    className="-tracking-[0.6px] mt-4 text-xl text-neutral-700 animate-on-scroll lg:max-w-[512px]"
+                    className="-tracking-[0.6px] mt-4 text-xl text-neutral-700 animate-on-scroll lg:max-w-[512px] mx-auto"
                     data-delay="400"
                   >
-                    Jan takes the best of open source AI and packages it into an
-                    easy-to-use product.
+                    We believe AI should be open, and grow <br/> through the people who build and use it
                   </p>
                 </div>
                 <div
@@ -283,7 +282,7 @@ const Home = () => {
                         <FaGithub className="size-8" />
                       </span>
                       <span className="flex items-start flex-col">
-                        <span className="font-bold text-lg">Github</span>
+                        <span className="font-bold text-lg">GitHub</span>
                         <span className="text-sm mt-1">
                           {formatCompactNumber(stars)} stars
                         </span>
@@ -331,7 +330,7 @@ const Home = () => {
                       </span>
                       <span className="flex items-start flex-col">
                         <span className="font-bold text-lg">HuggingFace</span>
-                        <span className="text-sm mt-1">71 models</span>
+                        <span className="text-sm mt-1">123 models</span>
                       </span>
                     </Button>
                   </a>
@@ -354,7 +353,7 @@ const Home = () => {
       <FavoriteModels />
 
       {/* Developer Community */}
-      <section className="px-3 pt-3">
+      {/* <section className="px-3 pt-3">
         <div className="bg-[#93B3EF] lg:h-[1000px] relative pb-16 pt-8 md:pt-16 rounded-2xl overflow-hidden">
           <div className="container mx-auto relative z-10">
             <div className="text-center text-black my-12 mt-10">
@@ -455,9 +454,9 @@ const Home = () => {
                             <IoMdPeople className="size-5" />
                             <span className="text-sm">
                               15k+
-                              {/* {formatCompactNumber(
+                              {formatCompactNumber(
                                 discordWidget.presence_count
-                              )} */}
+                              )}
                             </span>
                           </div>
                         </Button>
@@ -491,9 +490,9 @@ const Home = () => {
                             <IoMdPeople className="size-5" />
                             <span className="text-sm">
                               15k+
-                              {/* {formatCompactNumber(
+                              {formatCompactNumber(
                                 discordWidget.presence_count
-                              )} */}
+                              )}
                             </span>
                           </div>
                         </Button>
@@ -574,7 +573,7 @@ const Home = () => {
             />
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* Call to action */}
       <section className="px-3 pt-3">
@@ -584,10 +583,7 @@ const Home = () => {
               <div className="mt-10 flex flex-col lg:flex-row justify-between items-center gap-8">
                 <div className="relative animate-on-scroll" data-delay="200">
                   <h1 className="text-4xl text-center lg:text-left lg:text-[64px] mx-auto font-semibold -tracking-[1.6px] text-white">
-                    Ask Jan,
-                    <br />
-                    <br />
-                    get things done
+                    Ask Jan anything
                   </h1>
                 </div>
                 <div

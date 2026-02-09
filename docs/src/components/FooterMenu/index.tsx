@@ -16,13 +16,17 @@ const FOOTER_MENUS: FooterMenu[] = [
   {
     title: 'Company',
     links: [
-      {
-        name: 'Open Superintelligence',
-        href: '/handbook/why/open-superintelligence',
-      },
-      { name: 'Handbook', href: '/handbook' },
+      // {
+      //   name: 'Open Superintelligence',
+      //   href: '/handbook/why/open-superintelligence',
+      // },
+      // { name: 'Handbook', href: '/handbook' },
       { name: 'Community', href: 'https://discord.com/invite/FTk2MvZwJH' },
       { name: 'Careers', href: 'https://menlo.bamboohr.com/careers' },
+      { name: 'Discord', href: 'https://discord.com/invite/FTk2MvZwJH' },
+      { name: 'GitHub', href: 'https://github.com/janhq/jan' },
+      { name: 'LinkedIn', href: 'https://www.linkedin.com/company/opensuperintelligence' },
+      { name: 'X', href: 'https://x.com/jandotai' },
     ],
   },
   {
@@ -32,16 +36,16 @@ const FOOTER_MENUS: FooterMenu[] = [
       { name: 'Docs', href: '/docs' },
       { name: 'Changelog', href: '/changelog' },
       { name: 'API Reference', href: '/docs/desktop/api-server' },
-      { name: 'Jan Exam', href: '/', comingSoon: true },
+      // { name: 'Jan Exam', href: '/', comingSoon: true },
     ],
   },
-  {
-    title: 'Store',
-    links: [
-      { name: 'Model Store', href: '/', comingSoon: true },
-      { name: 'MCP Store', href: '/', comingSoon: true },
-    ],
-  },
+  // {
+  //   title: 'Store',
+  //   links: [
+  //     { name: 'Model Store', href: '/', comingSoon: true },
+  //     { name: 'MCP Store', href: '/', comingSoon: true },
+  //   ],
+  // },
 ]
 
 export default function Footer() {
