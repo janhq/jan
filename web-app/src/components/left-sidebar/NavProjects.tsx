@@ -1,5 +1,6 @@
 import {
   FolderEditIcon,
+  FolderIcon,
   FolderOpenIcon,
   MoreHorizontal,
   Trash2,
@@ -23,8 +24,9 @@ import {
 } from "@/components/ui/sidebar"
 import { useThreadManagement } from "@/hooks/useThreadManagement"
 import { Link, useNavigate } from "@tanstack/react-router"
-import { FoldersIcon, type FoldersIconHandle } from "@/components/animated-icon/folders"
-import { useRef, useState } from "react"
+
+
+import { useState } from "react"
 import type { ThreadFolder } from "@/services/projects/types"
 import AddProjectDialog from "@/containers/dialogs/AddProjectDialog"
 import { DeleteProjectDialog } from "@/containers/dialogs/DeleteProjectDialog"
@@ -40,7 +42,7 @@ function ProjectItem({
   onEdit: (project: ThreadFolder) => void
   onDelete: (project: ThreadFolder) => void
 }) {
-  const iconRef = useRef<FoldersIconHandle>(null)
+
   const navigate = useNavigate()
 
   return (
@@ -49,10 +51,8 @@ function ProjectItem({
         <Link
           to="/project/$projectId"
           params={{ projectId: item.id }}
-          onMouseEnter={() => iconRef.current?.startAnimation()}
-          onMouseLeave={() => iconRef.current?.stopAnimation()}
         >
-          <FoldersIcon ref={iconRef} className="text-foreground/70" size={16} />
+          <FolderIcon  className="text-foreground/70" size={16} />
           <span>{item.name}</span>
         </Link>
       </SidebarMenuButton>
