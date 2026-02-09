@@ -1516,6 +1516,7 @@ export default class llamacpp_extension extends AIEngine {
     const api_key = await this.generateApiKey(modelId, String(port))
     envs['LLAMA_API_KEY'] = api_key
     envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
+    envs['LLAMA_ARG_N_PARALLEL'] = "1"
 
     // Set user envs
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
