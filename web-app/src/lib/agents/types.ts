@@ -70,6 +70,7 @@ export type UnifiedEventType =
   | 'delegation.error'
   | 'session.started'
   | 'reasoning.delta'
+  | 'permission.request'
 
 /**
  * Base unified event structure
@@ -100,6 +101,7 @@ export type UnifiedEventData =
   | DelegationErrorData
   | SessionStartedData
   | ReasoningDeltaData
+  | PermissionRequestData
 
 export interface ToolStartedData {
   tool: string
@@ -130,6 +132,22 @@ export interface ToolApprovalRespondedData {
   tool: string
   approved: boolean
   message?: string
+}
+
+export interface PermissionRequestData {
+  permissionId: string
+  taskId: string
+  tool: string
+  description?: string
+  input: Record<string, unknown>
+  patterns?: string[]
+  riskLevel: 'low' | 'medium' | 'high'
+  responded: boolean
+  response?: {
+    action: 'allow_once' | 'allow_always' | 'deny'
+    message?: string
+    timestamp: number
+  }
 }
 
 export interface TextDeltaData {

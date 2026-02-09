@@ -17,6 +17,7 @@ import type { PermissionRequestPayload } from '@/services/opencode/types'
 import { getOpenCodeService } from '@/services/opencode'
 import { useOrchestratorState } from '@/hooks/useOrchestratorState'
 import { useOpenCodeSession } from '@/hooks/useOpenCodeSession'
+import { getPermissionCoordinator, createPermissionMessage, shouldAutoApprove } from '@/utils/permission-coordinator'
 
 // ============================================================================
 // Types
@@ -459,7 +460,7 @@ async function executeOpenCodeDelegation(
         }
 
         case 'permission_request': {
-          // Handle permission request
+          // Handle permission request using PermissionCoordinator (event-based)
           const permRequest = message.payload
 
           // Emit approval requested event
@@ -477,8 +478,8 @@ async function executeOpenCodeDelegation(
           }
           onProgress?.(approvalEvent)
 
-          // Check if auto-approve is enabled for read-only
-          if (autoApproveReadOnly && isReadOnlyOperation(permRequest.permission)) {
+          // Check if auto-approve is enabled for read-only operations
+          if (autoApproveReadOnly && shouldAutoApprove(permRequest.permission)) {
             await service.respondToPermission(
               taskId,
               permRequest.permissionId,
@@ -497,8 +498,9 @@ async function executeOpenCodeDelegation(
               },
             }
             onProgress?.(autoApproveEvent)
+            console.log('[OpenCode Delegate] Auto-approved read-only permission:', permRequest.permission)
           } else if (onPermissionRequest) {
-            // Request user approval
+            // Use the callback (legacy polling-based approach)
             setStatus('waiting_approval')
             const response = await onPermissionRequest(permRequest)
 
@@ -526,6 +528,19 @@ async function executeOpenCodeDelegation(
           } else {
             // No permission handler - deny by default
             await service.respondToPermission(taskId, permRequest.permissionId, 'deny')
+            const denyEvent: UnifiedAgentEvent = {
+              id: `approval-response-${permRequest.permissionId}`,
+              source: 'opencode',
+              timestamp: Date.now(),
+              type: 'tool.approval_responded',
+              data: {
+                toolCallId: permRequest.permissionId,
+                tool: permRequest.permission,
+                approved: false,
+                message: 'No permission handler - denied',
+              },
+            }
+            onProgress?.(denyEvent)
           }
           break
         }
