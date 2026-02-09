@@ -39,6 +39,9 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     timeout: asNumber(config.timeout, 600),
 
     llamacpp_env: asString(config.llamacpp_env),
+    fit: asString(config.fit),
+    fit_target: asString(config.fit_target),
+    fit_ctx: asString(config.fit_ctx),
     memory_util: asString(config.memory_util),
     chat_template: asString(config.chat_template),
 
