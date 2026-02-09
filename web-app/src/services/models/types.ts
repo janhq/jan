@@ -91,14 +91,6 @@ export interface ModelValidationResult {
   metadata?: GgufMetadata
 }
 
-export interface ModelPlan {
-  gpuLayers: number
-  maxContextLength: number
-  noOffloadKVCache: boolean
-  offloadMmproj: boolean
-  batchSize: number
-  mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
-}
 
 export type PreflightReason =
   | 'AUTH_REQUIRED'
@@ -159,10 +151,5 @@ export interface ModelsService {
     ctxSize?: number
   ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
   validateGgufFile(filePath: string): Promise<ModelValidationResult>
-  planModelLoad(
-    modelPath: string,
-    mmprojPath?: string,
-    requestedCtx?: number
-  ): Promise<ModelPlan>
   getTokensCount(modelId: string, messages: ThreadMessage[]): Promise<number>
 }

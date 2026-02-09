@@ -738,8 +738,6 @@ function ThreadDetail() {
 
   const threadModel = useMemo(() => thread?.model, [thread])
 
-  if (!threadModel) return null
-
   return (
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>

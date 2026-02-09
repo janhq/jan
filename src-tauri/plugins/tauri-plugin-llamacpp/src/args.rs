@@ -7,10 +7,9 @@ pub struct LlamacppConfig {
     pub auto_unload: bool,
     pub timeout: i32,
     pub llamacpp_env: String,
-    pub fit: String,
+    pub fit: bool,
     pub fit_target: String,
     pub fit_ctx: String,
-    pub memory_util: String, // TODO: Remove after fit implementation
     pub chat_template: String,
     pub n_gpu_layers: i32,
     pub offload_mmproj: bool,
@@ -262,7 +261,7 @@ impl ArgumentBuilder {
     }
 
     fn add_text_generation_args(&mut self) {
-        if self.config.ctx_size > 0 && self.config.ctx_size != 8192 {
+        if self.config.ctx_size > 0 && self.config.ctx_size != 8192 && !self.config.fit {
             // set only when default values change
             self.args.push("--ctx-size".to_string());
             self.args.push(self.config.ctx_size.to_string());
@@ -320,14 +319,14 @@ impl ArgumentBuilder {
 
     fn add_fit_settings(&mut self) {
         // Handle fit on/off
-        if self.config.fit == "off" {
+        if !self.config.fit {
             self.args.push("--fit".to_string());
             self.args.push("off".to_string());
-        } else if self.config.fit == "on" {
+        } else if self.config.fit {
             self.args.push("--fit".to_string());
             self.args.push("on".to_string());
         }
-        if self.config.fit == "on" {
+        if self.config.fit {
             if !self.config.fit_ctx.is_empty() && self.config.fit_ctx != "4096" {
                 self.args.push("--fit-ctx".to_string());
                 self.args.push(self.config.fit_ctx.clone());
@@ -352,10 +351,9 @@ mod tests {
             auto_unload: false,
             timeout: 120,
             llamacpp_env: String::new(),
-            fit: String::new(),
+            fit: false,
             fit_ctx: String::new(),
             fit_target: String::new(),
-            memory_util: String::new(),
             chat_template: String::new(),
             n_gpu_layers: 100,
             offload_mmproj: true,
@@ -910,7 +908,7 @@ mod tests {
     #[test]
     fn test_fit_off() {
         let mut config = default_config();
-        config.fit = "off".to_string();
+        config.fit = false;
 
         let builder = ArgumentBuilder::new(config, false).unwrap();
         let args = builder.build("test", "/path", 8080, None);
@@ -923,7 +921,7 @@ mod tests {
     #[test]
     fn test_fit_on_with_defaults() {
         let mut config = default_config();
-        config.fit = "on".to_string();
+        config.fit = true;
         config.fit_ctx = "4096".to_string();
         config.fit_target = "1024".to_string();
 
@@ -938,7 +936,7 @@ mod tests {
     #[test]
     fn test_fit_on_with_custom_values() {
         let mut config = default_config();
-        config.fit = "on".to_string();
+        config.fit = true;
         config.fit_ctx = "8192".to_string();
         config.fit_target = "2048".to_string();
 
@@ -954,7 +952,7 @@ mod tests {
     fn test_fit_not_added_for_ik_backend() {
         let mut config = default_config();
         config.version_backend = "v1.0/ik-backend".to_string();
-        config.fit = "on".to_string();
+        config.fit = true;
 
         let builder = ArgumentBuilder::new(config, false).unwrap();
         let args = builder.build("test", "/path", 8080, None);
