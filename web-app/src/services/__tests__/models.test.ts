@@ -267,7 +267,7 @@ describe('DefaultModelsService', () => {
       expect(mockEngine.load).toHaveBeenCalledWith(model, {
         ctx_size: 4096,
         n_gpu_layers: 32,
-      })
+      }, false, false)
     })
 
     it('should handle start model error', async () => {
