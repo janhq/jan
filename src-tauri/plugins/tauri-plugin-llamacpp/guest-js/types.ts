@@ -33,10 +33,9 @@ export type LlamacppConfig = {
   auto_unload: boolean
   timeout: number
   llamacpp_env: string
-  fit: string
+  fit: boolean
   fit_target: string
   fit_ctx: string
-  memory_util: string
   chat_template: string
   n_gpu_layers: number
   offload_mmproj: boolean

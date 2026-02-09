@@ -1,7 +1,7 @@
 {
   "name": "@janhq/llamacpp-extension",
   "productName": "llama.cpp Inference Engine",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "This extension enables llama.cpp chat completion API calls",
   "main": "dist/index.js",
   "module": "dist/module.js",

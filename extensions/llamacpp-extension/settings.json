@@ -52,14 +52,9 @@
     "key": "fit",
     "title": "Fit (auto-adjust to device memory)",
     "description": "Whether to adjust unset arguments to fit in device memory ('on' or 'off'). (env: LLAMA_ARG_FIT)",
-    "controllerType": "dropdown",
+    "controllerType": "checkbox",
     "controllerProps": {
-      "value": "on",
-      "options": [
-        { "value": "on", "name": "On" },
-        { "value": "off", "name": "Off" }
-      ],
-      "recommended": "on"
+      "value": true
     }
   },
   {
@@ -84,21 +79,6 @@
       "placeholder": "4096",
       "type": "number",
       "textAlign": "right"
-    }
-  },
-  {
-    "key": "memory_util",
-    "title": "Smart Memory utilization",
-    "description": "Smart memory utilization mode for running local GGUF models",
-    "controllerType": "dropdown",
-    "controllerProps": {
-      "value": "high",
-      "options": [
-        { "value": "high", "name": "High" },
-        { "value": "medium", "name": "Medium" },
-        { "value": "low", "name": "Low" }
-      ],
-      "recommended": "high"
     }
   },
   {
