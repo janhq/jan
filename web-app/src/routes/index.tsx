@@ -65,7 +65,7 @@ function Index() {
     setCurrentThreadId(undefined)
   }, [setCurrentThreadId])
 
-  if (hasValidProviders) {
+  if (!hasValidProviders) {
     return <SetupScreen />
   }
 
