@@ -616,6 +616,7 @@ describe('DefaultModelsService', () => {
       last_modified: '2021-12-01T00:00:00Z',
       private: false,
       disabled: false,
+      library_name: "mlx",
       gated: false,
       author: 'microsoft',
       siblings: [
