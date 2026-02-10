@@ -22,15 +22,19 @@ export const useModelSources = create<ModelSourcesState>()(
       fetchSources: async () => {
         set({ loading: true, error: null })
         try {
-          const newSources = await getServiceHub().models().fetchModelCatalog().then((catalogs) =>
-            catalogs.map((catalog) => ({
-              ...catalog,
-              quants: catalog.quants.map((quant) => ({
-                ...quant,
-                model_id: sanitizeModelId(quant.model_id),
-              })),
-            }))
-          )
+          const newSources = await getServiceHub()
+            .models()
+            .fetchModelCatalog()
+            .then((catalogs) =>
+              catalogs.map((catalog) => ({
+                ...catalog,
+                quants: catalog.quants?.map((quant) => ({
+                  ...quant,
+                  model_id: sanitizeModelId(quant.model_id),
+                })),
+                is_mlx: catalog.library_name === 'mlx',
+              })).filter(e => IS_MACOS ? true : !e.is_mlx)
+            )
 
           set({
             sources: newSources.length ? newSources : get().sources,

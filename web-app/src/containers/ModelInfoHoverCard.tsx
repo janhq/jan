@@ -27,7 +27,7 @@ export const ModelInfoHoverCard = ({
 }: ModelInfoHoverCardProps) => {
   const displayVariant =
     variant ||
-    model.quants.find((m: ModelQuant) =>
+    model.quants?.find((m: ModelQuant) =>
       defaultModelQuantizations.some((e) =>
         m.model_id.toLowerCase().includes(e)
       )
@@ -152,7 +152,7 @@ export const ModelInfoHoverCard = ({
           </div>
 
           {/* Features Section */}
-          {(model.num_mmproj > 0 || model.tools || (model.num_mmproj > 0 && model.tools)) && (
+          {((model.num_mmproj ?? 0) > 0 || model.tools || ((model.num_mmproj ?? 0) > 0 && model.tools)) && (
             <div className="border-t  pt-3">
               <h5 className="text-xs font-medium text-muted-foreground mb-2">
                 Features
@@ -165,14 +165,14 @@ export const ModelInfoHoverCard = ({
                     </span>
                   </div>
                 )}
-                {model.num_mmproj > 0 && (
+                {(model.num_mmproj ?? 0) > 0 && (
                   <div className="flex items-center gap-1.5 px-2 py-1 bg-secondary rounded-sm">
                     <span className="text-xs font-medium">
                       Vision
                     </span>
                   </div>
                 )}
-                {model.num_mmproj > 0 && model.tools && (
+                {(model.num_mmproj ?? 0) > 0 && model.tools && (
                   <div className="flex items-center gap-1.5 px-2 py-1 bg-secondary rounded-sm">
                     <span className="text-xs font-medium">
                       Proactive

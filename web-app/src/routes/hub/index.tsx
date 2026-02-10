@@ -171,7 +171,7 @@ function HubContent() {
       filtered = filtered
         ?.map((model) => ({
           ...model,
-          quants: model.quants.filter((variant) => {
+          quants: model.quants?.filter((variant) => {
             // Check both llamacpp and mlx providers
             const isLlamaCppDownloaded = useModelProvider
               .getState()
@@ -184,7 +184,7 @@ function HubContent() {
             return isLlamaCppDownloaded || isMlxDownloaded
           }),
         }))
-        .filter((model) => model.quants.length > 0)
+        .filter((model) => (model.quants?.length ?? 0) > 0)
     }
     // Add HuggingFace repo at the beginning if available
     if (huggingFaceRepo) {
@@ -208,8 +208,8 @@ function HubContent() {
       const baseHeight = 95
       const variantHeight = 36
       const expanded = expandedModels[model.model_name]
-      return expanded && model.quants.length > 1
-        ? baseHeight + model.quants.length * variantHeight
+      return expanded && (model.quants?.length ?? 0) > 1
+        ? baseHeight + (model.quants?.length ?? 0) * variantHeight
         : baseHeight
     },
     [expandedModels, filteredModels]
@@ -271,7 +271,7 @@ function HubContent() {
               (s) =>
                 catalogModel.model_name.trim().split('/').pop() ===
                   s.model_name.trim() &&
-                catalogModel.developer.trim() === s.developer?.trim()
+                catalogModel.developer?.trim() === s.developer?.trim()
             )
           ) {
             setHuggingFaceRepo(catalogModel)
@@ -544,7 +544,7 @@ function HubContent() {
                                   (
                                     filteredModels[
                                       virtualItem.index
-                                    ].quants.find((m) =>
+                                    ].quants?.find((m) =>
                                       DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
                                         m.model_id.toLowerCase().includes(e)
                                       )
@@ -562,7 +562,7 @@ function HubContent() {
                                 variant={
                                   filteredModels[
                                     virtualItem.index
-                                  ].quants.find((m) =>
+                                  ].quants?.find((m) =>
                                     DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
                                       m.model_id.toLowerCase().includes(e)
                                     )
@@ -636,7 +636,7 @@ function HubContent() {
                               </span>
                             </div>
                             <div className="flex gap-1.5 items-center">
-                              {filteredModels[virtualItem.index].num_mmproj >
+                              {(filteredModels[virtualItem.index].num_mmproj ?? 0) >
                                 0 && (
                                 <div className="flex items-center gap-1">
                                   <Tooltip>
@@ -672,7 +672,7 @@ function HubContent() {
                                 </div>
                               )}
                             </div>
-                            {filteredModels[virtualItem.index].quants.length >
+                            {(filteredModels[virtualItem.index].quants?.length ?? 0) >
                               1 && (
                               <div className="flex items-center gap-2 hub-show-variants-step">
                                 <Switch
@@ -699,10 +699,10 @@ function HubContent() {
                         {expandedModels[
                           filteredModels[virtualItem.index].model_name
                         ] &&
-                          filteredModels[virtualItem.index].quants.length >
+                          (filteredModels[virtualItem.index].quants?.length ?? 0) >
                             0 && (
                             <div className="mt-5">
-                              {filteredModels[virtualItem.index].quants.map(
+                              {filteredModels[virtualItem.index].quants?.map(
                                 (variant) => (
                                   <CardItem
                                     key={variant.model_id}
@@ -712,8 +712,7 @@ function HubContent() {
                                           <span className="mr-2">
                                             {variant.model_id}
                                           </span>
-                                          {filteredModels[virtualItem.index]
-                                            .num_mmproj > 0 && (
+                                          {(filteredModels[virtualItem.index].num_mmproj ?? 0) > 0 && (
                                             <div className="flex items-center gap-1">
                                               <Tooltip>
                                                 <TooltipTrigger asChild>
