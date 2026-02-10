@@ -75,20 +75,21 @@ export function convertUIMessageToThreadMessage(
   const toolCalls = (uiMessage.parts as any[])
     .filter((part) => part.type.startsWith('tool'))
     .map((part) => {
+      const toolName = part.type.replace('tool-', '')
       return {
         tool: {
-          id: part.toolInvocationId,
+          id: part.toolCallId || part.toolInvocationId,
           type: 'function' as const,
           function: {
-            name: part.toolName,
+            name: toolName,
             arguments:
-              typeof part.args === 'string'
-                ? part.args
-                : JSON.stringify(part.args),
+              typeof part.input === 'string'
+                ? part.input
+                : JSON.stringify(part.input ?? part.args),
           },
         },
-        state: part.state === 'result' ? 'completed' : 'pending',
-        response: part.result,
+        state: part.state === 'output-available' ? 'completed' : 'pending',
+        response: part.output ?? part.result,
       }
     })
 
@@ -501,14 +502,23 @@ export function convertThreadMessageToUIMessage(
       })
     } else if (content.type === 'tool_call') {
       // Handle tool call content items - direct conversion from flat structure
-      parts.push({
-        type: `tool-${content.tool_name}`,
-        toolInvocationId: content.tool_call_id,
-        toolName: content.tool_name,
-        input: content.input,
-        state: content.output ? 'result' : 'call',
-        output: content.output,
-      })
+      // Use AI SDK v5 UIToolInvocation format: toolCallId, state: 'output-available'/'input-available'
+      if (content.output != null) {
+        parts.push({
+          type: `tool-${content.tool_name}`,
+          toolCallId: content.tool_call_id,
+          input: content.input,
+          state: 'output-available',
+          output: content.output,
+        })
+      } else {
+        parts.push({
+          type: `tool-${content.tool_name}`,
+          toolCallId: content.tool_call_id,
+          input: content.input,
+          state: 'input-available',
+        })
+      }
     }
   }
 
@@ -531,17 +541,29 @@ export function convertThreadMessageToUIMessage(
       }
 
       const toolName = tc.tool?.function?.name || tc.name
-      parts.push({
-        type: `tool-${toolName}`,
-        toolInvocationId: tc.tool?.id || tc.id,
-        toolName: toolName,
-        input:
-          typeof tc.tool?.function?.arguments === 'string'
-            ? JSON.parse(tc.tool.function.arguments)
-            : tc.tool?.function?.arguments || tc.args,
-        state: tc.state === 'ready' ? 'result' : tc.state === 'pending' ? 'call' : tc.state,
-        output: result,
-      })
+      const toolInput =
+        typeof tc.tool?.function?.arguments === 'string'
+          ? JSON.parse(tc.tool.function.arguments)
+          : tc.tool?.function?.arguments || tc.args
+      const toolCallId = tc.tool?.id || tc.id
+
+      // Use AI SDK v5 UIToolInvocation format
+      if (result != null || tc.state === 'ready' || tc.state === 'completed' || tc.state === 'result') {
+        parts.push({
+          type: `tool-${toolName}`,
+          toolCallId,
+          input: toolInput,
+          state: 'output-available',
+          output: result,
+        })
+      } else {
+        parts.push({
+          type: `tool-${toolName}`,
+          toolCallId,
+          input: toolInput,
+          state: 'input-available',
+        })
+      }
     }
   }
 
@@ -626,7 +648,7 @@ export function extractContentPartsFromUIMessage(message: UIMessage): ThreadCont
     } else if (part.type.startsWith('tool-')) {
       // Handle tool call parts - flatten structure to match parts format
       const toolName = (part.type as string).replace('tool-', '')
-      const toolCallId = part.toolInvocationId || part.toolCallId
+      const toolCallId = part.toolCallId || part.toolInvocationId
       const input = part.input || part.args
       const output = part.output || part.result
 
