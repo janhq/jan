@@ -168,6 +168,13 @@ const ChatInput = memo(function ChatInput({
   const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
   const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>()
 
+  // Initialize selectedAssistant to first assistant when initialMessage is true
+  useEffect(() => {
+    if (initialMessage && assistants.length > 0 && !selectedAssistant) {
+      setSelectedAssistant(assistants[0])
+    }
+  }, [initialMessage, assistants, selectedAssistant])
+
   // Jan Browser Extension hook
   const {
     hasConfig: hasJanBrowserMCPConfig,
@@ -1552,9 +1559,18 @@ const ChatInput = memo(function ChatInput({
                           <DropdownMenuItem
                             className={!selectedAssistant && !currentThread?.assistants?.length ? 'bg-accent' : ''}
                             onClick={() => {
-                              setSelectedAssistant(undefined)
-                              if (currentThreadId) {
-                                updateCurrentThreadAssistant(undefined as unknown as Assistant)
+                              const firstAssistant = assistants[0]
+                              // For initialMessage or when no assistant is selected yet, prefer first assistant
+                              if (firstAssistant && (initialMessage || !selectedAssistant)) {
+                                setSelectedAssistant(firstAssistant)
+                                if (currentThreadId) {
+                                  updateCurrentThreadAssistant(firstAssistant)
+                                }
+                              } else {
+                                setSelectedAssistant(undefined)
+                                if (currentThreadId) {
+                                  updateCurrentThreadAssistant(undefined as unknown as Assistant)
+                                }
                               }
                             }}
                           >
@@ -1567,9 +1583,10 @@ const ChatInput = memo(function ChatInput({
                             </div>
                           </DropdownMenuItem>
                           {assistants.length > 0 ? (
-                            assistants.map((assistant) => {
+                            assistants.map((assistant, index) => {
                               const isSelected = selectedAssistant?.id === assistant.id ||
-                                (assistant && currentThread?.assistants?.some((a) => a.id === assistant.id))
+                                (assistant && currentThread?.assistants?.some((a) => a.id === assistant.id)) ||
+                                (initialMessage && !selectedAssistant && !currentThread?.assistants?.length && index === 0)
                               return (
                                 <DropdownMenuItem
                                   key={assistant.id}
