@@ -18,6 +18,13 @@ export interface MMProjModel {
   file_size: string
 }
 
+export interface SafetensorsFile {
+  model_id: string
+  path: string
+  file_size: string
+  sha256?: string
+}
+
 export interface CatalogModel {
   model_name: string
   description: string
@@ -27,9 +34,12 @@ export interface CatalogModel {
   quants: ModelQuant[]
   mmproj_models?: MMProjModel[]
   num_mmproj: number
+  safetensors_files?: SafetensorsFile[]
+  num_safetensors: number
   created_at?: string
   readme?: string
   tools?: boolean
+  is_mlx?: boolean
 }
 
 export type ModelCatalog = CatalogModel[]
@@ -81,14 +91,6 @@ export interface ModelValidationResult {
   metadata?: GgufMetadata
 }
 
-export interface ModelPlan {
-  gpuLayers: number
-  maxContextLength: number
-  noOffloadKVCache: boolean
-  offloadMmproj: boolean
-  batchSize: number
-  mode: 'GPU' | 'Hybrid' | 'CPU' | 'Unsupported'
-}
 
 export type PreflightReason =
   | 'AUTH_REQUIRED'
@@ -125,13 +127,14 @@ export interface ModelsService {
     skipVerification?: boolean
   ): Promise<void>
   abortDownload(id: string): Promise<void>
-  deleteModel(id: string): Promise<void>
+  deleteModel(id: string, provider?: string): Promise<void>
   getActiveModels(provider?: string): Promise<string[]>
   stopModel(model: string, provider?: string): Promise<UnloadResult | undefined>
   stopAllModels(): Promise<void>
   startModel(
     provider: ProviderObject,
-    model: string
+    model: string,
+    bypassAutoUnload?: boolean
   ): Promise<SessionInfo | undefined>
   isToolSupported(modelId: string): Promise<boolean>
   checkMmprojExistsAndUpdateOffloadMMprojSetting(
@@ -148,10 +151,5 @@ export interface ModelsService {
     ctxSize?: number
   ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
   validateGgufFile(filePath: string): Promise<ModelValidationResult>
-  planModelLoad(
-    modelPath: string,
-    mmprojPath?: string,
-    requestedCtx?: number
-  ): Promise<ModelPlan>
   getTokensCount(modelId: string, messages: ThreadMessage[]): Promise<number>
 }

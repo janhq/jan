@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-cleanup-mlx-processes"
+description = "Enables the cleanup_mlx_processes command without any pre-configured scope."
+commands.allow = ["cleanup_mlx_processes"]
+
+[[permission]]
+identifier = "deny-cleanup-mlx-processes"
+description = "Denies the cleanup_mlx_processes command without any pre-configured scope."
+commands.deny = ["cleanup_mlx_processes"]

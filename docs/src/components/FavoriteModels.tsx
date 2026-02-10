@@ -69,7 +69,7 @@ export default function FavoriteModels() {
           viewport={{ once: true, amount: 0.3 }}
           transition={{ duration: 0.6, delay: 0.2 }}
         >
-          Best of open-source AI in one app
+          All the tools you need to make Jan yours
         </motion.h2>
 
         {/* Step 1: Use any model you want */}

@@ -259,14 +259,14 @@ export const MessageItem = memo(
           <ReasoningTrigger />
           <div className="relative">
             {isStreaming && (
-              <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-background to-transparent pointer-events-none z-10" />
+              <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-neutral-50 mask-t-from-98% dark:from-background to-transparent pointer-events-none z-10" />
             )}
             <div
               ref={isStreaming ? reasoningContainerRef : null}
               className={twMerge(
                 'w-full overflow-auto relative',
                 isStreaming
-                  ? 'max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+                  ? 'max-h-32 opacity-70 mt-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
                   : 'h-auto opacity-100'
               )}
             >
@@ -314,7 +314,7 @@ export const MessageItem = memo(
             {part.state === 'output-error' && (
               <ToolOutput
                 output={undefined}
-                errorText={part.error || 'Tool execution failed'}
+                errorText={part.error || part.errorText || 'Tool execution failed'}
                 resolver={(input) => Promise.resolve(input)}
               />
             )}

@@ -68,22 +68,7 @@ export function useChat(
   }, [systemMessage])
 
   // Set up streaming token speed callback to update global state
-  const setTokenSpeed = useAppState((state) => state.setTokenSpeed)
   const resetTokenSpeed = useAppState((state) => state.resetTokenSpeed)
-
-  const handleStreamingTokenSpeed = useCallback(
-    (tokenCount: number, elapsedMs: number) => {
-      const elapsedSec = elapsedMs / 1000
-      const speed = elapsedSec > 0 ? tokenCount / elapsedSec : 0
-      // Use a minimal ThreadMessage-like object for the state update
-      setTokenSpeed(
-        { id: sessionId || '' } as Parameters<typeof setTokenSpeed>[0],
-        speed,
-        tokenCount
-      )
-    },
-    [sessionId, setTokenSpeed]
-  )
 
   // Update the token usage callback when it changes
   useEffect(() => {
@@ -91,12 +76,6 @@ export function useChat(
       transportRef.current.setOnTokenUsage(onTokenUsage)
     }
   }, [onTokenUsage])
-
-  useEffect(() => {
-    if (transportRef.current) {
-      transportRef.current.setOnStreamingTokenSpeed(handleStreamingTokenSpeed)
-    }
-  }, [handleStreamingTokenSpeed])
 
   // Memoize to prevent calling ensureSession (which has side effects) on every render
   const chat = useMemo(() => {

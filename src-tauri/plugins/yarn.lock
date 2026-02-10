@@ -52,6 +52,18 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@janhq/tauri-plugin-mlx-api@workspace:tauri-plugin-mlx":
+  version: 0.0.0-use.local
+  resolution: "@janhq/tauri-plugin-mlx-api@workspace:tauri-plugin-mlx"
+  dependencies:
+    "@rollup/plugin-typescript": "npm:^12.0.0"
+    "@tauri-apps/api": "npm:>=2.0.0-beta.6"
+    rollup: "npm:^4.9.6"
+    tslib: "npm:^2.6.2"
+    typescript: "npm:^5.3.3"
+  languageName: unknown
+  linkType: soft
+
 "@janhq/tauri-plugin-rag-api@workspace:tauri-plugin-rag":
   version: 0.0.0-use.local
   resolution: "@janhq/tauri-plugin-rag-api@workspace:tauri-plugin-rag"

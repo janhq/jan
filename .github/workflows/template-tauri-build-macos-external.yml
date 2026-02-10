@@ -42,6 +42,9 @@ jobs:
         run: |
           cargo install ctoml
 
+      - name: Set up Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+
       - name: Update app version
         run: |
           echo "Version: ${{ inputs.new_version }}"
@@ -49,12 +52,12 @@ jobs:
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
           mv /tmp/package.json web-app/package.json
-          
+
           # Update tauri plugin versions
 
           jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
           mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
-          
+
           echo "---------./src-tauri/plugins/tauri-plugin-hardware/package.json---------"
           cat ./src-tauri/plugins/tauri-plugin-hardware/package.json
 
@@ -67,7 +70,7 @@ jobs:
           ctoml ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
           echo "---------./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml---------"
           cat ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-          
+
           ctoml ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
           echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml---------"
           cat ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
@@ -75,9 +78,9 @@ jobs:
           ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
           echo "---------./src-tauri/Cargo.toml---------"
           cat ./src-tauri/Cargo.toml
-          
+
           ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
-          
+
           if [ "${{ inputs.channel }}" != "stable" ]; then
             if [[ "${{ inputs.channel }}" == "nightly" ]]; then
               jq '.plugins.updater.endpoints = ["https://apps-nightly.jan.ai/update-check", "https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
@@ -103,10 +106,10 @@ jobs:
       - name: Build app
         run: |
           make build
-        env:  
+        env:
           NODE_OPTIONS: "--max-old-space-size=4196"
           APP_PATH: '.'
-      
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:

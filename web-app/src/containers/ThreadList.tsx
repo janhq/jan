@@ -1,6 +1,9 @@
 import { Folder, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
 import { useThreads } from '@/hooks/useThreads'
+import { useMessages } from '@/hooks/useMessages'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useEffect, useRef } from 'react'
 
 import {
   DropdownMenu,
@@ -24,6 +27,7 @@ import { Link } from '@tanstack/react-router'
 import { RenameThreadDialog, DeleteThreadDialog } from '@/containers/dialogs'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { ThreadMessage } from '@janhq/core'
 
 const ThreadItem = memo(
   ({
@@ -43,6 +47,58 @@ const ThreadItem = memo(
     const { t } = useTranslation()
     const [renameOpen, setRenameOpen] = useState(false)
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+
+    const serviceHub = useServiceHub()
+    const getMessages = useMessages((state) => state.getMessages)
+    const setMessages = useMessages((state) => state.setMessages)
+
+    // Use a ref to track if messages have been loaded
+    const messagesLoadedRef = useRef(false)
+    // Track current messages for comparison
+    const messagesLengthRef = useRef(0)
+
+    // Get messages reactively via ref tracking (to avoid infinite re-renders)
+    const [messages, setLocalMessages] = useState<ThreadMessage[]>(() =>
+      getMessages(thread.id)
+    )
+
+    // Fetch messages if not loaded yet
+    useEffect(() => {
+      const currentMessages = getMessages(thread.id)
+
+      // Initial load: no messages yet, fetch them
+      if (currentMessages.length === 0 && !messagesLoadedRef.current) {
+        messagesLoadedRef.current = true
+        serviceHub
+          .messages()
+          .fetchMessages(thread.id)
+          .then((fetchedMessages) => {
+            if (fetchedMessages) {
+              setMessages(thread.id, fetchedMessages)
+              setLocalMessages(fetchedMessages)
+              messagesLengthRef.current = fetchedMessages.length
+            }
+          })
+          .catch(() => {
+            messagesLoadedRef.current = false
+          })
+        return
+      }
+
+      // Only update local state if messages length changed (prevents re-renders during streaming)
+      if (currentMessages.length !== messagesLengthRef.current) {
+        setLocalMessages(currentMessages)
+        messagesLengthRef.current = currentMessages.length
+      }
+    }, [thread.id, serviceHub, getMessages, setMessages])
+
+    const lastUserMessageText = useMemo(() => {
+      const userMessages = messages.filter((m) => m.role === 'user')
+      const lastUserMessage = userMessages[userMessages.length - 1]
+      if (!lastUserMessage) return undefined
+      const textContent = lastUserMessage.content?.find((c) => c.type === 'text')
+      return textContent?.text?.value
+    }, [messages])
 
     const plainTitleForRename = useMemo(() => {
       return (thread.title || '').replace(/<span[^>]*>|<\/span>/g, '')
@@ -80,16 +136,27 @@ const ThreadItem = memo(
 
     return (
       <SidebarMenuItem>
-        <SidebarMenuButton asChild>
-          <Link to="/threads/$threadId" params={{ threadId: thread.id }} className={cn(currentProjectId && "bg-secondary dark:bg-secondary/20 px-4 py-5 hover:bg-secondary/30 rounded-lg")}>
-            <span>{thread.title || t('common:newThread')}</span>
+        {currentProjectId ? 
+          <Link to="/threads/$threadId" params={{ threadId: thread.id }} className="bg-card dark:bg-secondary/20 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block">
+              <span>{thread.title || t('common:newThread')}</span>
+              {currentProjectId && lastUserMessageText && (
+                <div className="text-muted-foreground text-xs mt-1 line-clamp-1 pr-10">
+                  {lastUserMessageText}
+                </div>
+              )}
           </Link>
-        </SidebarMenuButton>
+          : 
+          <SidebarMenuButton asChild>
+            <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
+              <span>{thread.title || t('common:newThread')}</span>
+            </Link>
+          </SidebarMenuButton>
+        }
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuAction
               showOnHover
-              className={cn("hover:bg-sidebar-foreground/8", currentProjectId && 'mt-1 mr-2')}
+              className={cn("hover:bg-sidebar-foreground/8", currentProjectId && 'mt-4 mr-2')}
             >
               <MoreHorizontal />
               <span className="sr-only">More</span>

@@ -7,8 +7,8 @@ import { useEffect } from 'react'
 type ThreadManagementState = {
   folders: ThreadFolder[]
   setFolders: (folders: ThreadFolder[]) => void
-  addFolder: (name: string) => Promise<ThreadFolder>
-  updateFolder: (id: string, name: string) => Promise<void>
+  addFolder: (name: string, assistantId?: string) => Promise<ThreadFolder>
+  updateFolder: (id: string, name: string, assistantId?: string) => Promise<void>
   deleteFolder: (id: string) => Promise<void>
   deleteFolderWithThreads: (id: string) => Promise<void>
   getFolderById: (id: string) => ThreadFolder | undefined
@@ -22,17 +22,17 @@ const useThreadManagementStore = create<ThreadManagementState>()((set, get) => (
     set({ folders })
   },
 
-  addFolder: async (name) => {
+  addFolder: async (name, assistantId) => {
     const projectsService = getServiceHub().projects()
-    const newFolder = await projectsService.addProject(name)
+    const newFolder = await projectsService.addProject(name, assistantId)
     const updatedProjects = await projectsService.getProjects()
     set({ folders: updatedProjects })
     return newFolder
   },
 
-  updateFolder: async (id, name) => {
+  updateFolder: async (id, name, assistantId) => {
     const projectsService = getServiceHub().projects()
-    await projectsService.updateProject(id, name)
+    await projectsService.updateProject(id, name, assistantId)
     const updatedProjects = await projectsService.getProjects()
     set({ folders: updatedProjects })
   },

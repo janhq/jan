@@ -3,13 +3,13 @@ import { cn } from '@/lib/utils'
 import {
   IconLayoutSidebar,
 } from '@tabler/icons-react'
-import { ReactNode } from 'react'
+import { ReactNode, memo } from 'react'
 import { Button } from "@/components/ui/button"
 
 type HeaderPageProps = {
   children?: ReactNode
 }
-const HeaderPage = ({ children }: HeaderPageProps) => {
+const HeaderPage = memo(function HeaderPage({ children }: HeaderPageProps) {
   const { open, setLeftPanel } = useLeftPanel()
 
   return (
@@ -48,6 +48,6 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
       </div>
     </div>
   )
-}
+})
 
 export default HeaderPage

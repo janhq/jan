@@ -33,7 +33,9 @@ export type LlamacppConfig = {
   auto_unload: boolean
   timeout: number
   llamacpp_env: string
-  memory_util: string
+  fit: boolean
+  fit_target: string
+  fit_ctx: string
   chat_template: string
   n_gpu_layers: number
   offload_mmproj: boolean
@@ -79,6 +81,7 @@ export interface DownloadItem {
   proxy?: Record<string, string | string[] | boolean>
   sha256?: string
   size?: number
+  model_id?: string
 }
 
 export interface ModelConfig {
@@ -90,6 +93,7 @@ export interface ModelConfig {
   sha256?: string
   mmproj_sha256?: string
   mmproj_size_bytes?: number
+  embedding?: boolean
 }
 
 export interface EmbeddingResponse {

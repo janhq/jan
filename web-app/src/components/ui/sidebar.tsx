@@ -398,8 +398,8 @@ const SidebarRail = React.forwardRef<
 				"cursor-ew-resize group-data-[side=left]:cursor-ew-resize group-data-[side=right]:cursor-ew-resize",
 				"[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
 				"group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full hover:group-data-[collapsible=offcanvas]:bg-sidebar",
-				"[[data-side=left][data-collapsible=offcanvas]_&]:-right-2",
-				"[[data-side=right][data-collapsible=offcanvas]_&]:-left-2",
+				"[[data-side=left][data-collapsible=offcanvas]_&]:-right-1",
+				"[[data-side=right][data-collapsible=offcanvas]_&]:-left-1",
 				// Adjust for floating variant - match the rounded corners and padding
 				"group-data-[variant=floating]:inset-y-2 group-data-[side=left]:group-data-[variant=floating]:-right-4 group-data-[variant=floating]:after:rounded-lg group-data-[variant=floating]:mt-4 group-data-[variant=floating]:h-[calc(100%-4rem)]",
 				className,

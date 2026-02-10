@@ -22,7 +22,6 @@ import type {
   HuggingFaceRepo,
   CatalogModel,
   ModelValidationResult,
-  ModelPlan,
 } from './types'
 
 // TODO: Replace this with the actual provider later
@@ -151,6 +150,38 @@ export class DefaultModelsService implements ModelsService {
       }
     })
 
+    // Extract safetensors files (MLX models)
+    const safetensorsFiles =
+      repo.siblings?.filter((file) =>
+        file.rfilename.toLowerCase().endsWith('.safetensors')
+      ) || []
+
+    // Check if this repository has MLX model files (safetensors + associated files)
+    const hasMlxFiles =
+      safetensorsFiles.length > 0 ||
+      repo.siblings?.some((file) => {
+        const name = file.rfilename.toLowerCase()
+        return (
+          name.endsWith('.json') || // config.json, tokenizer.json, etc.
+          name.endsWith('.md') || // README.md
+          name.endsWith('.py') || // model.py
+          name.endsWith('.jit') // .jit files
+        )
+      }) ||
+      false
+
+    const safetensorsModels = safetensorsFiles.map((file) => {
+      // Generate model_id from filename (remove .safetensors extension, case-insensitive)
+      const modelId = file.rfilename.replace(/\.safetensors$/i, '')
+
+      return {
+        model_id: sanitizeModelId(modelId),
+        path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
+        file_size: formatFileSize(file.size),
+        sha256: file.lfs?.sha256,
+      }
+    })
+
     return {
       model_name: repo.modelId,
       developer: repo.author,
@@ -160,6 +191,9 @@ export class DefaultModelsService implements ModelsService {
       quants: quants,
       num_mmproj: mmprojModels.length,
       mmproj_models: mmprojModels,
+      safetensors_files: safetensorsModels,
+      num_safetensors: safetensorsModels.length,
+      is_mlx: hasMlxFiles,
       readme: `https://huggingface.co/${repo.modelId}/resolve/main/README.md`,
       description: `**Tags**: ${repo.tags?.join(', ')}`,
     }
@@ -200,7 +234,7 @@ export class DefaultModelsService implements ModelsService {
     modelPath: string,
     mmprojPath?: string,
     hfToken?: string,
-    skipVerification?: boolean
+    skipVerification: boolean = true
   ): Promise<void> {
     let modelSha256: string | undefined
     let modelSize: number | undefined
@@ -282,8 +316,8 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
-  async deleteModel(id: string): Promise<void> {
-    return this.getEngine()?.delete(id)
+  async deleteModel(id: string, provider?: string): Promise<void> {
+    return this.getEngine(provider)?.delete(id)
   }
 
   async getActiveModels(provider?: string): Promise<string[]> {
@@ -298,13 +332,20 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async stopAllModels(): Promise<void> {
-    const models = await this.getActiveModels()
-    if (models) await Promise.all(models.map((model) => this.stopModel(model)))
+    const llamaCppModels = await this.getActiveModels('llamacpp')
+    if (llamaCppModels)
+      await Promise.all(
+        llamaCppModels.map((model) => this.stopModel(model, 'llamacpp'))
+      )
+    const mlxModels = await this.getActiveModels('mlx')
+    if (mlxModels)
+      await Promise.all(mlxModels.map((model) => this.stopModel(model, 'mlx')))
   }
 
   async startModel(
     provider: ProviderObject,
-    model: string
+    model: string,
+    bypassAutoUnload: boolean = false
   ): Promise<SessionInfo | undefined> {
     const engine = this.getEngine(provider.provider)
     if (!engine) return undefined
@@ -333,7 +374,7 @@ export class DefaultModelsService implements ModelsService {
         )
       : undefined
 
-    return engine.load(model, settings).catch((error) => {
+    return engine.load(model, settings, false, bypassAutoUnload).catch((error) => {
       console.error(
         `Failed to start model ${model} for provider ${provider.provider}:`,
         error
@@ -516,60 +557,6 @@ export class DefaultModelsService implements ModelsService {
       return {
         isValid: false,
         error: error instanceof Error ? error.message : 'Unknown error',
-      }
-    }
-  }
-
-  async planModelLoad(
-    modelPath: string,
-    mmprojPath?: string,
-    requestedCtx?: number
-  ): Promise<ModelPlan> {
-    try {
-      const engine = this.getEngine('llamacpp') as AIEngine & {
-        planModelLoad?: (
-          path: string,
-          mmprojPath?: string,
-          requestedCtx?: number
-        ) => Promise<ModelPlan>
-      }
-
-      if (engine && typeof engine.planModelLoad === 'function') {
-        // Get the full absolute path to the model file
-        const janDataFolderPath = await import('@janhq/core').then((core) =>
-          core.getJanDataFolderPath()
-        )
-        const joinPath = await import('@janhq/core').then(
-          (core) => core.joinPath
-        )
-        const fullModelPath = await joinPath([janDataFolderPath, modelPath])
-        // mmprojPath is currently unused, but included for compatibility
-        return await engine.planModelLoad(
-          fullModelPath,
-          mmprojPath,
-          requestedCtx
-        )
-      }
-
-      // Fallback if method is not available
-      console.warn('planModelLoad method not available in llamacpp engine')
-      return {
-        gpuLayers: 100,
-        maxContextLength: 2048,
-        noOffloadKVCache: false,
-        offloadMmproj: false,
-        batchSize: 2048,
-        mode: 'Unsupported',
-      }
-    } catch (error) {
-      console.error(`Error planning model load for path ${modelPath}:`, error)
-      return {
-        gpuLayers: 100,
-        maxContextLength: 2048,
-        noOffloadKVCache: false,
-        offloadMmproj: false,
-        batchSize: 2048,
-        mode: 'Unsupported',
       }
     }
   }

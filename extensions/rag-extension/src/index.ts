@@ -125,7 +125,9 @@ export default class RagExtension extends RAGExtension {
     args: Record<string, unknown>
   ): Promise<MCPToolCallResult> {
     const threadId = String(args['thread_id'] || '')
-    if (!threadId) {
+    const scope = String(args['scope'] || 'thread')
+
+    if (!threadId && scope === 'thread') {
       return {
         error: 'Missing thread_id',
         content: [{ type: 'text', text: 'Missing thread_id' }],
@@ -135,7 +137,7 @@ export default class RagExtension extends RAGExtension {
       const vec = window.core?.extensionManager.get(
         ExtensionTypeEnum.VectorDB
       ) as unknown as VectorDBExtension
-      if (!vec?.listAttachments) {
+      if (!vec?.listAttachments && !vec?.listAttachmentsForProject) {
         return {
           error: 'Vector DB extension missing listAttachments',
           content: [
@@ -146,7 +148,14 @@ export default class RagExtension extends RAGExtension {
           ],
         }
       }
-      const files = await vec.listAttachments(threadId)
+
+      let files: AttachmentFileInfo[] = []
+      if (scope === 'project' && vec.listAttachmentsForProject) {
+        files = await vec.listAttachmentsForProject(threadId)
+      } else if (vec.listAttachments) {
+        files = await vec.listAttachments(threadId)
+      }
+
       return {
         error: '',
         content: [
@@ -154,16 +163,17 @@ export default class RagExtension extends RAGExtension {
             type: 'text',
             text: JSON.stringify({
               thread_id: threadId,
+              scope,
               attachments: files || [],
             }),
           },
         ],
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = e instanceof Error ? e.message : JSON.stringify(e)
       return {
         error: msg,
-        content: [{ type: 'text', text: `List attachments failed: ${msg}` }],
+        content: [{ type: 'text', text: `List attachments failed: ${JSON.stringify(msg)}` }],
       }
     }
   }
@@ -172,8 +182,13 @@ export default class RagExtension extends RAGExtension {
     args: Record<string, unknown>
   ): Promise<MCPToolCallResult> {
     const threadId = String(args['thread_id'] || '')
+    const projectId = String(args['project_id'] || '')
     const query = String(args['query'] || '')
     const fileIds = args['file_ids'] as string[] | undefined
+    const scope = String(args['scope'] || 'thread')
+
+    // Use project_id as threadId when scope is project
+    const effectiveThreadId = scope === 'project' ? projectId || threadId : threadId
 
     const s = this.config
     const topK = (args['top_k'] as number) || s.retrievalLimit || 3
@@ -191,9 +206,9 @@ export default class RagExtension extends RAGExtension {
         ],
       }
     }
-    if (!threadId || !query) {
+    if (!query || (!threadId && scope === 'thread') || (scope === 'project' && !effectiveThreadId)) {
       return {
-        error: 'Missing thread_id or query',
+        error: 'Missing thread_id, project_id, or query',
         content: [{ type: 'text', text: 'Missing required parameters' }],
       }
     }
@@ -203,7 +218,7 @@ export default class RagExtension extends RAGExtension {
       const vec = window.core?.extensionManager.get(
         ExtensionTypeEnum.VectorDB
       ) as unknown as VectorDBExtension
-      if (!vec?.searchCollection) {
+      if (!vec?.searchCollection && !vec?.searchCollectionForProject) {
         return {
           error: 'RAG dependencies not available',
           content: [
@@ -220,17 +235,31 @@ export default class RagExtension extends RAGExtension {
         }
       }
 
-      const results = await vec.searchCollection(
-        threadId,
-        queryEmb,
-        topK,
-        threshold,
-        mode,
-        fileIds
-      )
+      let results
+      if (scope === 'project' && vec.searchCollectionForProject) {
+        results = await vec.searchCollectionForProject(
+          effectiveThreadId,
+          queryEmb,
+          topK,
+          threshold,
+          mode,
+          fileIds
+        )
+      } else {
+        results = await vec.searchCollection!(
+          effectiveThreadId,
+          queryEmb,
+          topK,
+          threshold,
+          mode,
+          fileIds
+        )
+      }
 
       const payload = {
         thread_id: threadId,
+        project_id: projectId,
+        scope,
         query,
         citations:
           results?.map((r: any) => ({
@@ -270,12 +299,13 @@ export default class RagExtension extends RAGExtension {
     const fileId = String(args['file_id'] || '')
     const startOrder = args['start_order'] as number | undefined
     const endOrder = args['end_order'] as number | undefined
+    const scope = String(args['scope'] || 'thread')
 
     if (
-      !threadId ||
       !fileId ||
       startOrder === undefined ||
-      endOrder === undefined
+      endOrder === undefined ||
+      (!threadId && scope === 'thread')
     ) {
       return {
         error: 'Missing thread_id, file_id, start_order, or end_order',
@@ -287,7 +317,7 @@ export default class RagExtension extends RAGExtension {
       const vec = window.core?.extensionManager.get(
         ExtensionTypeEnum.VectorDB
       ) as unknown as VectorDBExtension
-      if (!vec?.getChunks) {
+      if (!vec?.getChunks && !vec?.getChunksForProject) {
         return {
           error: 'Vector DB extension not available',
           content: [
@@ -296,10 +326,16 @@ export default class RagExtension extends RAGExtension {
         }
       }
 
-      const chunks = await vec.getChunks(threadId, fileId, startOrder, endOrder)
+      let chunks
+      if (scope === 'project' && vec.getChunksForProject) {
+        chunks = await vec.getChunksForProject(threadId, fileId, startOrder, endOrder)
+      } else {
+        chunks = await vec.getChunks!(threadId, fileId, startOrder, endOrder)
+      }
 
       const payload = {
         thread_id: threadId,
+        scope,
         file_id: fileId,
         chunks: chunks || [],
       }
@@ -316,7 +352,65 @@ export default class RagExtension extends RAGExtension {
     }
   }
 
-  // Desktop-only ingestion by file paths
+  // Desktop-only ingestion by file paths for a project
+  async ingestAttachmentsForProject(
+    projectId: string,
+    files: AttachmentInput[]
+  ): Promise<{
+    filesProcessed: number
+    chunksInserted: number
+    files: AttachmentFileInfo[]
+  }> {
+    if (!projectId || !Array.isArray(files) || files.length === 0) {
+      return { filesProcessed: 0, chunksInserted: 0, files: [] }
+    }
+
+    // Respect feature flag: do nothing when disabled
+    if (this.config.enabled === false) {
+      return { filesProcessed: 0, chunksInserted: 0, files: [] }
+    }
+
+    const vec = window.core?.extensionManager.get(
+      ExtensionTypeEnum.VectorDB
+    ) as unknown as VectorDBExtension
+    if (!vec?.ingestFileForProject) {
+      throw new Error('Vector DB extension does not support project-level ingestion')
+    }
+
+    // Load settings
+    const s = this.config
+    const maxSize = (s?.enabled === false ? 0 : s?.maxFileSizeMB) || undefined
+    const chunkSize = s?.chunkSizeChars as number | undefined
+    const chunkOverlap = s?.overlapChars as number | undefined
+
+    let totalChunks = 0
+    const processedFiles: AttachmentFileInfo[] = []
+
+    for (const f of files) {
+      if (!f?.path) continue
+      if (maxSize && f.size && f.size > maxSize * 1024 * 1024) {
+        throw new Error(
+          `File '${f.name}' exceeds size limit (${f.size} bytes > ${maxSize} MB).`
+        )
+      }
+
+      const fileName = f.name || f.path.split(/[\\/]/).pop()
+      const info = await (vec as VectorDBExtension).ingestFileForProject(
+        projectId,
+        { path: f.path, name: fileName, type: f.type, size: f.size },
+        { chunkSize: chunkSize ?? 512, chunkOverlap: chunkOverlap ?? 64 }
+      )
+      totalChunks += Number(info?.chunk_count || 0)
+      processedFiles.push(info)
+    }
+
+    return {
+      filesProcessed: processedFiles.length,
+      chunksInserted: totalChunks,
+      files: processedFiles,
+    }
+  }
+
   async ingestAttachments(
     threadId: string,
     files: AttachmentInput[]

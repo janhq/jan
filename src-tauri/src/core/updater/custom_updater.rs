@@ -1,11 +1,11 @@
 /**
  * Custom Updater for Jan with HMAC request signing
- * 
+ *
  * This module provides a custom update checker that:
  * 1. Reads endpoints from tauri.conf.json (plugins.updater.endpoints)
  * 2. First endpoint is treated as PRIMARY - uses HMAC request signing
  * 3. Remaining endpoints are FALLBACK - no signing needed
- * 
+ *
  * Convention: The first endpoint in the list should be the signed endpoint
  * (e.g., https://apps.jan.ai/update-check)
  */
@@ -189,7 +189,11 @@ impl CustomUpdater {
     }
 
     /// Check endpoint without signing (for fallback endpoints)
-    async fn check_without_signing(&self, endpoint: &str, app_version: &str) -> Result<UpdateInfo, UpdateError> {
+    async fn check_without_signing(
+        &self,
+        endpoint: &str,
+        app_version: &str,
+    ) -> Result<UpdateInfo, UpdateError> {
         let response = self
             .client
             .get(endpoint)
@@ -220,10 +224,7 @@ impl CustomUpdater {
         let current = current.trim_start_matches('v');
         let latest = latest.trim_start_matches('v');
 
-        let current_parts: Vec<u32> = current
-            .split('.')
-            .filter_map(|s| s.parse().ok())
-            .collect();
+        let current_parts: Vec<u32> = current.split('.').filter_map(|s| s.parse().ok()).collect();
         let latest_parts: Vec<u32> = latest.split('.').filter_map(|s| s.parse().ok()).collect();
 
         for i in 0..std::cmp::max(current_parts.len(), latest_parts.len()) {
@@ -263,4 +264,3 @@ mod tests {
         assert!(updater.is_update_available("v1.0.0", "v1.0.1"));
     }
 }
-

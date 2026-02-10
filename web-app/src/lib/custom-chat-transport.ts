@@ -14,6 +14,7 @@ import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useAssistant } from '@/hooks/useAssistant'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -47,7 +48,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   public model: LanguageModel | null = null
   private tools: Record<string, Tool> = {}
   private onTokenUsage?: TokenUsageCallback
-  private onStreamingTokenSpeed?: StreamingTokenSpeedCallback
   private hasDocuments = false
   private modelSupportsTools = false
   private ragFeatureAvailable = false
@@ -55,10 +55,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private serviceHub: ServiceHub | null
   private threadId?: string
 
-  constructor(
-    systemMessage?: string,
-    threadId?: string
-  ) {
+  constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
     this.threadId = threadId
     this.serviceHub = useServiceStore.getState().serviceHub
@@ -67,10 +64,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
   updateSystemMessage(systemMessage: string | undefined) {
     this.systemMessage = systemMessage
-  }
-
-  setOnStreamingTokenSpeed(callback: StreamingTokenSpeedCallback | undefined) {
-    this.onStreamingTokenSpeed = callback
   }
 
   setOnTokenUsage(callback: TokenUsageCallback | undefined) {
@@ -194,7 +187,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
-
     // Ensure tools updated before sending messages
     await this.refreshTools()
 
@@ -208,11 +200,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           .getState()
           .getProviderByName(providerId)
 
+        // Get assistant parameters from current assistant
+        const currentAssistant = useAssistant.getState().currentAssistant
+        const inferenceParams = currentAssistant?.parameters
+
         // Create the model using the factory
         // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
         this.model = await ModelFactory.createModel(
           modelId,
-          updatedProvider ?? provider
+          updatedProvider ?? provider,
+          inferenceParams ?? {}
         )
       } catch (error) {
         console.error('Failed to create model:', error)
@@ -235,7 +232,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     // Track stream timing and token count for token speed calculation
     let streamStartTime: number | undefined
-    let textDeltaCount = 0
 
     const result = streamText({
       model: this.model,
@@ -246,22 +242,19 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       system: this.systemMessage,
     })
 
+    let tokensPerSecond = 0
+
     return result.toUIMessageStream({
       messageMetadata: ({ part }) => {
-        if (!streamStartTime) {
+        // Track stream start time on start
+        if (part.type === 'start' && !streamStartTime) {
           streamStartTime = Date.now()
         }
-        // Track stream start time on first text delta
-        if (part.type === 'text-delta') {
-          // Count text deltas as a rough token approximation
-          // Each delta typically represents one token in streaming
-          textDeltaCount++
 
-          // Report streaming token speed in real-time
-          if (this.onStreamingTokenSpeed) {
-            const elapsedMs = Date.now() - streamStartTime
-            this.onStreamingTokenSpeed(textDeltaCount, elapsedMs)
-          }
+        if (part.type === 'finish-step') {
+          tokensPerSecond =
+            (part.providerMetadata?.providerMetadata
+              ?.tokensPerSecond as number) || 0
         }
 
         // Add usage and token speed to metadata on finish
@@ -270,32 +263,20 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             type: 'finish'
             totalUsage: LanguageModelUsage
             finishReason: string
-            providerMetadata?: {
-              llamacpp?: {
-                promptTokens?: number | null
-                completionTokens?: number | null
-                tokensPerSecond?: number | null
-              }
-            }
           }
           const usage = finishPart.totalUsage
-          const llamacppMeta = finishPart.providerMetadata?.llamacpp
           const durationMs = streamStartTime ? Date.now() - streamStartTime : 0
           const durationSec = durationMs / 1000
 
           // Use provider's outputTokens, or llama.cpp completionTokens, or fall back to text delta count
-          const outputTokens =
-            usage?.outputTokens ??
-            llamacppMeta?.completionTokens ??
-            textDeltaCount
-          const inputTokens = usage?.inputTokens ?? llamacppMeta?.promptTokens
+          const outputTokens = usage?.outputTokens ?? 0
+          const inputTokens = usage?.inputTokens
 
           // Use llama.cpp's tokens per second if available, otherwise calculate from duration
           let tokenSpeed: number
-          if (llamacppMeta?.tokensPerSecond != null) {
-            tokenSpeed = llamacppMeta.tokensPerSecond
-          } else if (durationSec > 0 && outputTokens > 0) {
-            tokenSpeed = outputTokens / durationSec
+          if (durationSec > 0 && outputTokens > 0) {
+            tokenSpeed =
+              tokensPerSecond > 0 ? tokensPerSecond : outputTokens / durationSec
           } else {
             tokenSpeed = 0
           }
