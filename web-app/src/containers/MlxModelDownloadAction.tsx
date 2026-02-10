@@ -8,7 +8,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
 import { CatalogModel } from '@/services/models/types'
 import { cn } from '@/lib/utils'
-import { DownloadEvent, events } from '@janhq/core'
+import { DownloadEvent, EngineManager, events } from '@janhq/core'
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useNavigate } from '@tanstack/react-router'
@@ -108,29 +108,14 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
       }
 
       // Filter relevant model files for MLX
-      const modelFiles = repoInfo.siblings.filter((file) => {
-        const name = file.rfilename.toLowerCase()
-        // Include files starting with model. or known config files
-        if (name.startsWith('model.')) return true
-        if (name === 'config.json') return true
-        if (name === 'tokenizer.json') return true
-        if (name === 'tokenizer_config.json') return true
-        if (name === 'special_tokens_map.json') return true
-        if (name === 'README.md') return true
-        if (name === 'chat_template.jinja') return true
-        if (name === 'preprocessor_config.json') return true
-        if (name === 'image_processor_config.json') return true
-        if (name === 'generation_config.json') return true
-        if (name === 'model.py') return true
-        return false
-      })
+      const modelFiles = repoInfo.siblings
 
       if (modelFiles.length === 0) {
         throw new Error('No MLX model files found in repository')
       }
 
       // Get the MLX engine and import
-      const engine = (await import('@janhq/core')).EngineManager.instance().get(
+      const engine = EngineManager.instance().get(
         'mlx'
       )
       if (!engine) {
@@ -158,13 +143,9 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
           filename: file.rfilename,
         }))
 
-      await engine.import(modelId, {
+      return engine.import(modelId, {
         modelPath: modelUrl,
         files: extraFiles,
-      })
-
-      toast.success('MLX model downloaded successfully', {
-        description: `${modelId} has been downloaded and is ready to use`,
       })
     } catch (error) {
       console.error('Error downloading MLX model:', error)
