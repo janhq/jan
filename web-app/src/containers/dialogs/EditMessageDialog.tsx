@@ -17,6 +17,7 @@ import {
   injectFilesIntoPrompt,
   FileMetadata,
 } from '@/lib/fileMetadata'
+import { useModelProvider } from '@/hooks/useModelProvider'
 
 interface EditMessageDialogProps {
   message: string
@@ -41,6 +42,7 @@ export function EditMessageDialog({
   const [keptImages, setKeptImages] = useState<string[]>(imageUrls || [])
   const [keptFiles, setKeptFiles] = useState<FileMetadata[]>(initialFiles)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const selectedModel = useModelProvider((state) => state.selectedModel)
 
   useEffect(() => {
     const { files, cleanPrompt } = extractFilesFromPrompt(message)
@@ -83,6 +85,7 @@ export function EditMessageDialog({
       size="icon-xs"
       role="button"
       tabIndex={0}
+      disabled={!selectedModel}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
