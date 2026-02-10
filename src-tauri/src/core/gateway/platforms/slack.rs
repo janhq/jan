@@ -117,10 +117,10 @@ fn parse_event(event: SlackEvent) -> Result<GatewayMessage, String> {
     }
 
     // Extract mentions from text
-    let mentions = extract_mentions(&event.text);
+    let _mentions = extract_mentions(&event.text);
 
     // Extract attachments
-    let attachments = extract_files(&event.files);
+    let _attachments = extract_files(&event.files);
 
     // Build metadata
     let mut metadata = HashMap::new();

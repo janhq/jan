@@ -13,6 +13,7 @@ pub mod client;
 pub mod handler;
 pub mod idempotency;
 
+#[allow(unused)]
 pub use self::idempotency::{IdempotencyCache, SharedIdempotencyCache};
 
 use serde::{Deserialize, Serialize};

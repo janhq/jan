@@ -47,7 +47,7 @@ pub struct EventDispatcher {
 
 impl EventDispatcher {
     /// Create a new event dispatcher
-    pub fn new(subscriptions: Arc<SubscriptionManager>, config: Option<EventDispatcherConfig>) -> Self {
+    pub fn new(subscriptions: Arc<SubscriptionManager>, _config: Option<EventDispatcherConfig>) -> Self {
         Self {
             subscriptions,
             client_subscriptions: Arc::new(Mutex::new(HashMap::new())),

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::path::PathBuf;
 
 use super::types::GatewayConfig;
@@ -59,16 +61,16 @@ impl GatewayConfigManager {
 
     /// Validate configuration
     pub fn validate(&self, config: &GatewayConfig) -> Result<(), String> {
-        if config.http_port < 1024 || config.http_port > 65535 {
+        if config.http_port < 1024 {
             return Err(format!(
-                "Invalid HTTP port: {}. Must be between 1024 and 65535.",
+                "Invalid HTTP port: {}. Must be 1024 or higher.",
                 config.http_port
             ));
         }
 
-        if config.ws_port < 1024 || config.ws_port > 65535 {
+        if config.ws_port < 1024 {
             return Err(format!(
-                "Invalid WebSocket port: {}. Must be between 1024 and 65535.",
+                "Invalid WebSocket port: {}. Must be 1024 or higher.",
                 config.ws_port
             ));
         }

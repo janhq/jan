@@ -4,6 +4,14 @@ import { persist } from 'zustand/middleware'
 export type AgentType = 'build' | 'plan' | 'explore'
 
 /**
+ * Working directory mode for the agent
+ */
+export type WorkingDirectoryMode =
+  | 'custom'    // User-selected project path
+  | 'current'   // Current running directory
+  | 'workspace' // Jan's data directory
+
+/**
  * Simplified agent state for unified mode.
  *
  * The AI SDK ToolLoopAgent automatically decides when to use tools.
@@ -13,6 +21,7 @@ interface AgentModeState {
   // State
   currentAgent: AgentType
   projectPath: string | null
+  workingDirectoryMode: WorkingDirectoryMode
 
   // Settings
   autoApproveReadOnly: boolean
@@ -20,7 +29,9 @@ interface AgentModeState {
   // Actions
   setCurrentAgent: (agent: AgentType) => void
   setProjectPath: (path: string | null) => void
+  setWorkingDirectoryMode: (mode: WorkingDirectoryMode) => void
   setAutoApproveReadOnly: (autoApprove: boolean) => void
+  clearProjectPath: () => void
 }
 
 export const useAgentMode = create<AgentModeState>()(
@@ -28,19 +39,31 @@ export const useAgentMode = create<AgentModeState>()(
     (set) => ({
       currentAgent: 'build',
       projectPath: null,
+      workingDirectoryMode: 'custom',
       autoApproveReadOnly: true,
 
       setCurrentAgent: (agent) => set({ currentAgent: agent }),
 
-      setProjectPath: (path) => set({ projectPath: path }),
+      setProjectPath: (path) => set({
+        projectPath: path,
+        workingDirectoryMode: path ? 'custom' : 'current',
+      }),
+
+      setWorkingDirectoryMode: (mode) => set({ workingDirectoryMode: mode }),
 
       setAutoApproveReadOnly: (autoApprove) => set({ autoApproveReadOnly: autoApprove }),
+
+      clearProjectPath: () => set({
+        projectPath: null,
+        workingDirectoryMode: 'current', // Default to current directory
+      }),
     }),
     {
       name: 'jan-agent-mode',
       partialize: (state) => ({
         currentAgent: state.currentAgent,
         projectPath: state.projectPath,
+        workingDirectoryMode: state.workingDirectoryMode,
         autoApproveReadOnly: state.autoApproveReadOnly,
       }),
     }
@@ -66,6 +89,13 @@ export function useProjectPath() {
 }
 
 /**
+ * Get the working directory mode
+ */
+export function useWorkingDirectoryMode() {
+  return useAgentMode((state) => state.workingDirectoryMode)
+}
+
+/**
  * Get auto-approve read-only setting
  */
 export function useAutoApproveReadOnly() {
@@ -78,17 +108,23 @@ export function useAutoApproveReadOnly() {
 export function useAgentConfig() {
   return useAgentMode((state) => ({
     projectPath: state.projectPath,
+    workingDirectoryMode: state.workingDirectoryMode,
     defaultAgent: state.currentAgent,
     autoApproveReadOnly: state.autoApproveReadOnly,
   }))
 }
 
 /**
- * Check if agent mode is "enabled" (project path is set)
+ * Check if agent mode is "enabled" (working directory is configured)
  *
  * Note: In unified mode, this indicates whether OpenCode is available.
- * Without a project path, OpenCode tool is not included.
+ * Without a working directory configured, OpenCode tool is not included.
+ * A working directory is considered configured if:
+ * - projectPath is set, OR
+ * - workingDirectoryMode is 'current' or 'workspace'
  */
 export function useIsAgentEnabled() {
-  return useAgentMode((state) => state.projectPath !== null)
+  return useAgentMode((state) =>
+    state.projectPath !== null || state.workingDirectoryMode !== 'custom'
+  )
 }

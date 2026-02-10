@@ -2,13 +2,14 @@
 //!
 //! Manages the registration and discovery of platform plugins.
 
+#[allow(unused)]
 use std::sync::Arc;
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use serde_json::Value;
 
-use super::types::{ChannelPlugin, ChannelMeta, AccountConfig, PluginResult, PluginError, ChannelConfig, ChannelHandle};
-use crate::core::gateway::types::{Platform, GatewayMessage, GatewayResponse};
+use super::types::{ChannelPlugin, ChannelMeta, AccountConfig, PluginResult, PluginError};
+use crate::core::gateway::types::Platform;
 
 /// Global plugin registry
 static PLUGIN_REGISTRY: Lazy<PluginRegistry> = Lazy::new(PluginRegistry::new);

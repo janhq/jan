@@ -1,6 +1,10 @@
 'use client'
 
-import { useAgentMode, type AgentType } from '@/hooks/useAgentMode'
+import {
+  useAgentMode,
+  type AgentType,
+} from '@/hooks/useAgentMode'
+import { useAgentWorkingDirectory } from '@/hooks/useAgentWorkingDirectory'
 import { cn } from '@/lib/utils'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { useCallback, useState } from 'react'
@@ -25,6 +29,9 @@ import {
   IconCode,
   IconFileSearch,
   IconListCheck,
+  IconBox,
+  IconTerminal,
+  IconX,
 } from '@tabler/icons-react'
 import { useServiceHub } from '@/hooks/useServiceHub'
 
@@ -65,9 +72,13 @@ export function AgentModeToggle({
 }: AgentModeToggleProps) {
   const currentAgent = useAgentMode((s) => s.currentAgent)
   const projectPath = useAgentMode((s) => s.projectPath)
+  const workingDirectoryMode = useAgentMode((s) => s.workingDirectoryMode)
   const setCurrentAgent = useAgentMode((s) => s.setCurrentAgent)
   const setProjectPath = useAgentMode((s) => s.setProjectPath)
+  const setWorkingDirectoryMode = useAgentMode((s) => s.setWorkingDirectoryMode)
+  const clearProjectPath = useAgentMode((s) => s.clearProjectPath)
 
+  const { getDataDirectory, getCurrentDirectory } = useAgentWorkingDirectory()
   const serviceHub = useServiceHub()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [tooltipOpen, setTooltipOpen] = useState(false)
@@ -91,8 +102,26 @@ export function AgentModeToggle({
     return null
   }, [setProjectPath, serviceHub])
 
+  const handleUseCurrentDir = useCallback(async () => {
+    const dir = await getCurrentDirectory()
+    if (dir) {
+      setWorkingDirectoryMode('current')
+    }
+  }, [setWorkingDirectoryMode, getCurrentDirectory])
+
+  const handleUseWorkspace = useCallback(async () => {
+    const dir = await getDataDirectory()
+    if (dir) {
+      setWorkingDirectoryMode('workspace')
+    }
+  }, [setWorkingDirectoryMode, getDataDirectory])
+
+  const handleClear = useCallback(() => {
+    clearProjectPath()
+  }, [clearProjectPath])
+
   const currentAgentOption = agentOptions.find((o) => o.value === currentAgent)
-  const hasProject = !!projectPath
+  const isAgentEnabled = projectPath !== null || workingDirectoryMode !== 'custom'
 
   return (
     <div className={cn('flex items-center gap-1', className)}>
@@ -112,40 +141,92 @@ export function AgentModeToggle({
                     className={cn(
                       'h-7 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer',
                       dropdownOpen && 'bg-main-view-fg/10',
-                      hasProject && 'bg-primary/10'
+                      isAgentEnabled && 'bg-primary/10'
                     )}
                   >
                     <IconRobot
                       size={18}
                       className={cn(
                         'text-main-view-fg/50',
-                        hasProject && 'text-primary'
+                        isAgentEnabled && 'text-primary'
                       )}
                     />
                   </div>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuContent align="start" className="w-64">
                   <DropdownMenuLabel className="text-xs text-muted-foreground">
-                    Project Settings
+                    Working Directory
                   </DropdownMenuLabel>
 
+                  {/* Custom project folder */}
                   <DropdownMenuItem
                     onClick={handleSelectProject}
                     className="flex items-center gap-2"
                   >
                     <IconFolder size={16} className="text-muted-foreground" />
                     <div className="flex-1 min-w-0">
-                      {projectPath ? (
-                        <div className="flex flex-col">
-                          <span className="text-xs truncate">{projectPath}</span>
-                        </div>
-                      ) : (
-                        <span>Select project folder...</span>
-                      )}
+                      <span className="text-xs truncate">
+                        {workingDirectoryMode === 'custom'
+                          ? projectPath || 'Select project folder...'
+                          : 'Custom project folder...'}
+                      </span>
                     </div>
+                    {workingDirectoryMode === 'custom' && (
+                      <IconCheck size={14} className="text-primary" />
+                    )}
                   </DropdownMenuItem>
 
-                  {hasProject && (
+                  {/* Use current directory */}
+                  <DropdownMenuItem
+                    onClick={handleUseCurrentDir}
+                    className="flex items-center gap-2"
+                    disabled={!isPlatformTauri()}
+                  >
+                    <IconTerminal size={16} className="text-muted-foreground" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs">Current Directory</span>
+                      <p className="text-[10px] text-muted-foreground truncate">
+                        Where Jan is running
+                      </p>
+                    </div>
+                    {workingDirectoryMode === 'current' && (
+                      <IconCheck size={14} className="text-primary" />
+                    )}
+                  </DropdownMenuItem>
+
+                  {/* Use Jan workspace */}
+                  <DropdownMenuItem
+                    onClick={handleUseWorkspace}
+                    className="flex items-center gap-2"
+                    disabled={!isPlatformTauri()}
+                  >
+                    <IconBox size={16} className="text-muted-foreground" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs">Jan Workspace</span>
+                      <p className="text-[10px] text-muted-foreground truncate">
+                        Jan data directory
+                      </p>
+                    </div>
+                    {workingDirectoryMode === 'workspace' && (
+                      <IconCheck size={14} className="text-primary" />
+                    )}
+                  </DropdownMenuItem>
+
+                  {/* Clear selection */}
+                  {isAgentEnabled && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={handleClear}
+                        className="flex items-center gap-2 text-destructive"
+                      >
+                        <IconX size={16} />
+                        <span className="text-xs">Disable Agent</span>
+                      </DropdownMenuItem>
+                    </>
+                  )}
+
+                  {isAgentEnabled && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuLabel className="text-xs text-muted-foreground">
@@ -177,9 +258,9 @@ export function AgentModeToggle({
           </TooltipTrigger>
           <TooltipContent>
             <p>
-              {hasProject
+              {isAgentEnabled
                 ? `Agent: ${currentAgentOption?.label || 'Build'}`
-                : 'Select a project to enable agent'}
+                : 'Select a working directory to enable agent'}
             </p>
           </TooltipContent>
         </Tooltip>

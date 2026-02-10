@@ -100,8 +100,8 @@ pub fn parse_payload(payload: &serde_json::Value) -> Result<GatewayMessage, Stri
     // Extract mentions from metadata
     let mentions = extract_mentions(&discord_payload);
 
-    // Extract attachments
-    let attachments = extract_attachments(&discord_payload);
+    // Extract attachments (stored in metadata, not directly used)
+    let _ = extract_attachments(&discord_payload);
 
     // Build metadata
     let mut metadata = HashMap::new();

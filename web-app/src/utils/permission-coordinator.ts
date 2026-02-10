@@ -322,3 +322,29 @@ export function usePermissionCoordinator() {
     removeListener: coordinator.removeListener.bind(coordinator),
   }
 }
+
+// ============================================================================
+// Auto-approve helper
+// ============================================================================
+
+/**
+ * Check if a permission should be auto-approved (e.g., read-only operations)
+ */
+export function shouldAutoApprove(permission: string): boolean {
+  const readOnlyTools = [
+    'read',
+    'glob',
+    'grep',
+    'search',
+    'find',
+    'list',
+    'ls',
+    'cat',
+    'head',
+    'tail',
+    'view',
+    'show',
+  ]
+  const lowerPermission = permission.toLowerCase()
+  return readOnlyTools.some((tool) => lowerPermission.includes(tool))
+}

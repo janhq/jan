@@ -116,11 +116,11 @@ impl ProtocolHandler {
     }
 
     /// Register the default set of protocol handlers
-    fn register_default_handlers(&mut self, manager: SharedGatewayManager) {
+    fn register_default_handlers(&mut self, _manager: SharedGatewayManager) {
         let rt = self.registry.clone();
 
         // Register ping handler
-        rt.register(super::methods::PING, |_, _| {
+        let _ = rt.register(super::methods::PING, |_, _| {
             Box::pin(async move {
                 let now = chrono::Utc::now().timestamp_millis() as u64;
                 Ok(serde_json::json!({
@@ -131,7 +131,7 @@ impl ProtocolHandler {
         });
 
         // Register status handler
-        rt.register(super::methods::STATUS, move |ctx, _| {
+        let _ = rt.register(super::methods::STATUS, move |ctx, _| {
             let manager = ctx.manager.clone();
             Box::pin(async move {
                 let guard = manager.lock().await;
@@ -148,7 +148,7 @@ impl ProtocolHandler {
         });
 
         // Register config handler
-        rt.register(super::methods::CONFIG, move |ctx, _| {
+        let _ = rt.register(super::methods::CONFIG, move |ctx, _| {
             let manager = ctx.manager.clone();
             Box::pin(async move {
                 let guard = manager.lock().await;
@@ -164,7 +164,7 @@ impl ProtocolHandler {
         });
 
         // Register platform list handler
-        rt.register(super::methods::PLATFORM_LIST, |_, _| {
+        let _ = rt.register(super::methods::PLATFORM_LIST, |_, _| {
             Box::pin(async move {
                 Ok(serde_json::json!({
                     "platforms": ["discord", "slack", "telegram"]

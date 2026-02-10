@@ -1,7 +1,6 @@
 //! Telegram HTML formatter
 //!
 //! Converts markdown to Telegram's supported HTML subset.
-//! Modeled after clawdbot's markdownToTelegramHtml.
 //!
 //! Telegram supports: <b>, <i>, <u>, <s>, <code>, <pre>, <a href="">,
 //! <tg-spoiler>, <blockquote>

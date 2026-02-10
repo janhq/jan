@@ -14,7 +14,7 @@ use tokio::{
     io::AsyncReadExt,
     process::Command,
     sync::Mutex,
-    time::{sleep, timeout},
+    time::sleep,
 };
 
 use crate::core::{
@@ -157,73 +157,6 @@ pub async fn run_mcp_commands<R: Runtime>(
     );
 
     Ok(())
-}
-
-/// Monitor MCP server health without removing it from the HashMap
-pub async fn monitor_mcp_server_handle(
-    servers_state: SharedMcpServers,
-    name: String,
-    shutdown_flag: Arc<Mutex<bool>>,
-) -> Option<rmcp::service::QuitReason> {
-    log::info!("Monitoring MCP server {name} health");
-
-    // Monitor server health with periodic checks
-    loop {
-        // Small delay between health checks
-        sleep(Duration::from_secs(5)).await;
-
-        {
-            let shutdown = shutdown_flag.lock().await;
-            if *shutdown {
-                return Some(rmcp::service::QuitReason::Closed);
-            }
-        }
-
-        let health_check_result = {
-            let servers = servers_state.lock().await;
-            if let Some(service) = servers.get(&name) {
-                // Try to list tools as a health check with a short timeout
-                match timeout(Duration::from_secs(2), service.list_all_tools()).await {
-                    Ok(Ok(_)) => {
-                        // Server responded successfully
-                        true
-                    }
-                    Ok(Err(e)) => {
-                        log::warn!("MCP server {name} health check failed: {e}");
-                        false
-                    }
-                    Err(_) => {
-                        log::warn!("MCP server {name} health check timed out");
-                        false
-                    }
-                }
-            } else {
-                // Server was removed from HashMap (e.g., by deactivate_mcp_server)
-                log::info!("MCP server {name} no longer in running services");
-                return Some(rmcp::service::QuitReason::Closed);
-            }
-        };
-
-        if !health_check_result {
-            // Server failed health check - remove it and return
-            log::error!("MCP server {name} failed health check, removing from active servers");
-            let mut servers = servers_state.lock().await;
-            if let Some(service) = servers.remove(&name) {
-                // Try to cancel the service gracefully
-                match service {
-                    RunningServiceEnum::NoInit(service) => {
-                        log::info!("Stopping server {name}...");
-                        let _ = service.cancel().await;
-                    }
-                    RunningServiceEnum::WithInit(service) => {
-                        log::info!("Stopping server {name} with initialization...");
-                        let _ = service.cancel().await;
-                    }
-                }
-            }
-            return Some(rmcp::service::QuitReason::Closed);
-        }
-    }
 }
 
 /// Starts an MCP server

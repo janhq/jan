@@ -46,7 +46,7 @@ impl ConfigAdapter {
 
     /// Resolve account configuration from global gateway config.
     ///
-    /// Resolution order (like clawdbot):
+    /// Resolution order:
     /// 1. Named accounts from config.accounts map
     /// 2. Legacy single-token fields (discord_bot_token, etc.)
     /// 3. Environment variables (DISCORD_BOT_TOKEN, etc.)

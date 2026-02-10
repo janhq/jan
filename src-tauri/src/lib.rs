@@ -130,13 +130,18 @@ pub fn run() {
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
-        // Agent subprocess commands (desktop only)
+        // OpenCode subprocess commands (desktop only)
         core::opencode::commands::opencode_spawn_task,
         core::opencode::commands::opencode_respond_permission,
         core::opencode::commands::opencode_cancel_task,
         core::opencode::commands::opencode_send_input,
         core::opencode::commands::opencode_is_task_running,
         core::opencode::commands::opencode_running_task_count,
+        core::opencode::commands::opencode_session_count,
+        core::opencode::commands::opencode_end_session,
+        // Directory detection commands (desktop only)
+        core::opencode::commands::get_app_data_dir,
+        core::opencode::commands::get_current_dir,
         // Gateway commands (desktop only)
         core::gateway::commands::gateway_start_server,
         core::gateway::commands::gateway_stop_server,
@@ -236,7 +241,7 @@ pub fn run() {
         core::downloads::commands::cancel_download_task,
     ]);
 
-    // Create agent subprocess manager (desktop only)
+    // Create OpenCode subprocess manager (desktop only)
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let opencode_manager: SharedOpenCodeManager =
         Arc::new(Mutex::new(OpenCodeProcessManager::default()));
@@ -500,13 +505,13 @@ pub fn run() {
                         log::info!("Llama processes cleaned up successfully");
                     }
 
-                    // Cleanup agent subprocesses
+                    // Cleanup OpenCode subprocesses
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     {
                         let opencode_state = app_handle.state::<SharedOpenCodeManager>();
                         let manager = opencode_state.lock().await;
                         manager.cancel_all_tasks().await;
-                        log::info!("Agent subprocesses cleaned up successfully");
+                        log::info!("OpenCode subprocesses cleaned up successfully");
                     }
 
                     #[cfg(feature = "mlx")]

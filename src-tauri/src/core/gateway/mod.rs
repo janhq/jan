@@ -1,4 +1,7 @@
-/// Gateway module for connecting messaging platforms to Jan's chat system.
+//! Gateway module for connecting messaging platforms to Jan's chat system.
+//! Note: This module contains work-in-progress features that are not yet fully integrated.
+#![allow(dead_code)]
+
 pub mod types;
 pub mod config;
 pub mod server;
@@ -17,21 +20,17 @@ pub mod hooks;     // Hook mappings for webhook routing
 pub mod timestamps;// Timestamp injection for performance tracking
 
 // Re-export commonly used types
-pub use types::{
-    GatewayConfig, GatewayMessage, GatewayResponse, GatewayStatus,
-    Platform, ThreadMapping, WhitelistConfig,
-};
+pub use types::{GatewayConfig, GatewayResponse};
 
 /// Shared gateway manager type
 pub type SharedGatewayManager = std::sync::Arc<tokio::sync::Mutex<GatewayManager>>;
 
 use std::sync::Arc;
-use tauri::Manager;
 use tokio::sync::Mutex;
 use platforms::discord_sender::DiscordSenderState;
-use platforms::telegram::{TelegramBotConfig, TelegramBotState, SharedTelegramBotState, create_telegram_bot_state};
-use discord_bot::{DiscordBotConfig, DiscordBotState, SharedDiscordBotState, create_discord_bot_state};
-use jan::{JanIntegrationService, SharedJanIntegration};
+use platforms::telegram::{SharedTelegramBotState, create_telegram_bot_state};
+use discord_bot::{SharedDiscordBotState, create_discord_bot_state};
+use jan::SharedJanIntegration;
 use channel::ChannelManager;
 use processor::debounce::MessageDebouncer;
 use processor::ack::AckHandler;
@@ -42,6 +41,7 @@ use platforms::plugin::PluginRegistry;
 
 /// Main gateway manager that coordinates all gateway components
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct GatewayManager {
     /// Server handles
     pub http_server: Option<server::HttpServerHandle>,
@@ -108,6 +108,7 @@ impl Default for GatewayManager {
     }
 }
 
+#[allow(dead_code)]
 impl GatewayManager {
     /// Create a new gateway manager
     pub fn new() -> Self {

@@ -6,9 +6,8 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use super::resolver::{RouteResolver, RouteDecision};
+use super::resolver::RouteResolver;
 use super::session_key::{SessionKey, PeerKind};
 use super::config::{RouteConfig, AgentBinding, BindingType, Priority};
 use crate::core::gateway::types::{GatewayMessage, Platform};

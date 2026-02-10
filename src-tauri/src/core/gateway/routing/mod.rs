@@ -8,10 +8,8 @@ pub mod config;
 pub mod resolver;
 pub mod agent_integration;
 
-pub use session_key::{SessionKey, PeerKind};
 pub use config::{RouteConfig, AgentBinding, Priority};
 pub use resolver::RouteResolver;
-pub use agent_integration::AgentRoutingService;
 
 /// Predefined priority constants
 pub mod priorities {
@@ -28,13 +26,14 @@ pub mod priorities {
 }
 
 /// Create a default route resolver with common bindings
-pub fn create_default_resolver() -> RouteResolver {
-    let mut resolver = RouteResolver::new();
+#[allow(dead_code)]
+pub async fn create_default_resolver() -> RouteResolver {
+    let resolver = RouteResolver::new();
     let mut config = RouteConfig::new();
 
     // Default binding (fallback)
     config.add_binding(AgentBinding::default_agent("default"));
 
-    resolver.update_config(config);
+    resolver.update_config(config).await;
     resolver
 }

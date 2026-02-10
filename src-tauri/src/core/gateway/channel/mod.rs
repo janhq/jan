@@ -1,14 +1,12 @@
 //! Channel Lifecycle Management
 //!
 //! Manages channel/account states, connection health, and reconnection logic.
-//! Similar to clawdbot's channel manager system.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Mutex, broadcast};
 use tokio::time::Instant;
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use super::types::Platform;

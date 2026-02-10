@@ -18,9 +18,11 @@ import {
 import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
+import type { WorkingDirectoryMode } from '@/hooks/useAgentMode'
 
 type AgentConfig = {
   projectPath: string | null
+  workingDirectoryMode: WorkingDirectoryMode
   defaultAgent?: 'build' | 'plan' | 'explore'
   autoApproveReadOnly?: boolean
 }
@@ -75,7 +77,9 @@ export function useChat(
   // Update agent config when it changes
   useEffect(() => {
     if (transportRef.current && transportRef.current instanceof AgentChatTransport) {
-      transportRef.current.setAgentConfig(agentConfig ?? { projectPath: null })
+      transportRef.current.setAgentConfig(
+        agentConfig ?? { projectPath: null, workingDirectoryMode: 'custom' }
+      )
     }
   }, [agentConfig])
 

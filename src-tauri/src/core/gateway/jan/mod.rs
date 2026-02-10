@@ -2,6 +2,7 @@
 //!
 //! This module provides integration between the gateway and Jan's chat system.
 //! Messages are emitted as events to the frontend for processing via Tauri commands.
+#![allow(dead_code)]
 
 pub mod thread_manager;
 pub mod message_handler;
@@ -37,7 +38,7 @@ impl JanIntegration {
         &mut self,
         message: NormalizedMessage,
         auto_create_threads: bool,
-        default_assistant_id: Option<&str>,
+        _default_assistant_id: Option<&str>,
     ) -> Result<(String, bool, NormalizedMessage), String> {
         // Check for existing thread
         let thread_id = self.thread_manager.get_thread_id(

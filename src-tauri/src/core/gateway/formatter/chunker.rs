@@ -1,7 +1,6 @@
 //! Message chunker
 //!
 //! Splits messages that exceed platform character limits.
-//! Modeled after clawdbot's chunkMarkdownTextWithMode.
 //!
 //! Split priority:
 //! 1. Paragraph boundaries (double newline)

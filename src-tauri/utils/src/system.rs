@@ -90,7 +90,7 @@ pub fn setup_library_path(library_path: Option<&Path>, command: &mut tokio::proc
     }
 }
 
-pub fn binary_requires_cuda(bin_path: &Path) -> bool {
+pub fn binary_requires_cuda(_bin_path: &Path) -> bool {
     #[cfg(target_os = "windows")]
     return binary_requires_cuda_windows(bin_path);
 
@@ -147,6 +147,7 @@ fn binary_requires_cuda_linux(bin_path: &Path) -> bool {
 }
 
 /// Adds CUDA paths to the command's environment based on the OS.
+#[allow(unused)]
 pub fn add_cuda_paths(command: &mut tokio::process::Command) -> bool {
     #[cfg(target_os = "windows")]
     return add_cuda_paths_windows(command);

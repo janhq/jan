@@ -1,7 +1,6 @@
 //! Gateway Protocol Module
 //!
-//! Implements a WebSocket-based protocol with request/response/event frames,
-//! similar to clawdbot's JSON frame protocol.
+//! Implements a WebSocket-based protocol with request/response/event frames.
 //!
 //! Frame Types:
 //! - RequestFrame: Client requests to the server
@@ -19,9 +18,8 @@ use uuid::Uuid;
 
 use crate::core::gateway::types::Platform;
 
-pub use frames::{RequestFrame, ResponseFrame, EventFrame, ErrorShape, Payload};
-pub use codec::{ProtocolCodec, MessageType};
-pub use handler::{ProtocolHandler, ProtocolContext, MethodHandler};
+pub use frames::{EventFrame, ErrorShape};
+pub use handler::ProtocolHandler;
 
 /// Generate a new correlation ID for request/response matching
 pub fn generate_correlation_id() -> String {

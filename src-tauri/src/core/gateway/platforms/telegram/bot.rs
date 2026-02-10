@@ -157,7 +157,6 @@ pub enum TelegramError {
 }
 
 /// Format markdown to Telegram HTML
-/// Based on clawdbot's markdownToTelegramHtmlChunks
 pub fn format_to_telegram_html(text: &str) -> String {
     // Simple markdown to Telegram HTML conversion
     let mut result = text.to_string();

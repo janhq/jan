@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Task ID for tracking OpenCode processes
+/// Task ID for tracking code assistant processes
 pub type TaskId = String;
 
-/// Status of a running OpenCode task
+/// Status of a running code assistant task
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {

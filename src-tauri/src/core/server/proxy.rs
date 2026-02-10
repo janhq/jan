@@ -697,9 +697,11 @@ async fn proxy_request<R: tauri::Runtime>(
 
     // Initialize variables that will be set in the match
     let mut session_api_key: Option<String> = None;
+    #[allow(unused_assignments)]
     let mut buffered_body: Option<Bytes> = None;
     let mut target_base_url: Option<String> = None;
     let mut is_anthropic_messages = false;
+    #[allow(unused_assignments)]
     let mut provider_name: Option<String> = None;
 
     match (method.clone(), destination_path.as_str()) {

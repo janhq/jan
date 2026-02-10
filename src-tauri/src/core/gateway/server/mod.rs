@@ -1,4 +1,5 @@
 //! Server module for HTTP and WebSocket handling
+#![allow(dead_code)]
 
 pub mod http_server;
 pub mod websocket;

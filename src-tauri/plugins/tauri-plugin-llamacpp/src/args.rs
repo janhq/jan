@@ -6,38 +6,100 @@ pub struct LlamacppConfig {
     pub auto_update_engine: bool,
     pub auto_unload: bool,
     pub timeout: i32,
+    #[serde(default)]
     pub llamacpp_env: String,
+    #[serde(default)]
     pub fit: bool,
+    #[serde(default)]
     pub fit_target: String,
+    #[serde(default)]
     pub fit_ctx: String,
+    #[serde(default)]
     pub chat_template: String,
     pub n_gpu_layers: i32,
+    #[serde(default = "default_true")]
     pub offload_mmproj: bool,
+    #[serde(default)]
     pub cpu_moe: bool,
+    #[serde(default)]
     pub n_cpu_moe: i32,
+    #[serde(default)]
     pub override_tensor_buffer_t: String,
     pub ctx_size: i32,
+    #[serde(default)]
     pub threads: i32,
+    #[serde(default)]
     pub threads_batch: i32,
+    #[serde(default)]
     pub n_predict: i32,
+    #[serde(default)]
     pub batch_size: i32,
+    #[serde(default)]
     pub ubatch_size: i32,
+    #[serde(default)]
     pub device: String,
+    #[serde(default = "default_split_mode")]
     pub split_mode: String,
+    #[serde(default)]
     pub main_gpu: i32,
+    #[serde(default = "default_flash_attn")]
     pub flash_attn: String,
+    #[serde(default)]
     pub cont_batching: bool,
+    #[serde(default)]
     pub no_mmap: bool,
+    #[serde(default)]
     pub mlock: bool,
+    #[serde(default)]
     pub no_kv_offload: bool,
+    #[serde(default = "default_cache_type")]
     pub cache_type_k: String,
+    #[serde(default = "default_cache_type")]
     pub cache_type_v: String,
+    #[serde(default = "default_defrag_thold")]
     pub defrag_thold: f32,
+    #[serde(default = "default_rope_scaling")]
     pub rope_scaling: String,
+    #[serde(default = "default_rope_scale")]
     pub rope_scale: f32,
+    #[serde(default)]
     pub rope_freq_base: f32,
+    #[serde(default = "default_rope_freq_scale")]
     pub rope_freq_scale: f32,
+    #[serde(default)]
     pub ctx_shift: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_split_mode() -> String {
+    "layer".to_string()
+}
+
+fn default_flash_attn() -> String {
+    "auto".to_string()
+}
+
+fn default_cache_type() -> String {
+    "f16".to_string()
+}
+
+fn default_defrag_thold() -> f32 {
+    0.1
+}
+
+fn default_rope_scaling() -> String {
+    "none".to_string()
+}
+
+fn default_rope_scale() -> f32 {
+    1.0
+}
+
+fn default_rope_freq_scale() -> f32 {
+    1.0
 }
 
 pub struct ArgumentBuilder {

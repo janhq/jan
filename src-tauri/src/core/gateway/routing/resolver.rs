@@ -3,13 +3,14 @@
 //! Implements priority-based agent route resolution.
 //! Routes are checked in priority order: peer -> peer.parent -> guild -> team -> account -> channel -> default -> fallback
 
+#[allow(unused)]
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 use super::session_key::{SessionKey, PeerKind};
-use super::config::{RouteConfig, AgentBinding, BindingType, Priority};
+use super::config::{RouteConfig, AgentBinding};
 
 /// Route resolution result
 #[derive(Debug, Clone)]
@@ -206,7 +207,7 @@ impl RouteResolver {
         platform: &str,
         account_id: &str,
         channel_id: &str,
-        user_id: &str,
+        _user_id: &str,
         guild_id: Option<&str>,
     ) -> RouteDecision {
         // Determine peer kind from context

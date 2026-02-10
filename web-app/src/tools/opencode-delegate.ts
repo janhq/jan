@@ -17,7 +17,7 @@ import type { PermissionRequestPayload } from '@/services/opencode/types'
 import { getOpenCodeService } from '@/services/opencode'
 import { useOrchestratorState } from '@/hooks/useOrchestratorState'
 import { useOpenCodeSession } from '@/hooks/useOpenCodeSession'
-import { getPermissionCoordinator, createPermissionMessage, shouldAutoApprove } from '@/utils/permission-coordinator'
+import { shouldAutoApprove } from '@/utils/permission-coordinator'
 
 // ============================================================================
 // Types
@@ -84,28 +84,6 @@ Return a summary when complete.`
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Check if a tool operation is read-only
- */
-function isReadOnlyOperation(toolName: string): boolean {
-  const readOnlyTools = [
-    'read',
-    'glob',
-    'grep',
-    'search',
-    'find',
-    'list',
-    'ls',
-    'cat',
-    'head',
-    'tail',
-    'view',
-    'show',
-  ]
-  const lowerName = toolName.toLowerCase()
-  return readOnlyTools.some((t) => lowerName.includes(t))
-}
 
 /**
  * Map OpenCode events to unified event format

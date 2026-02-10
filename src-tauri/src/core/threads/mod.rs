@@ -9,6 +9,7 @@
    - This design ensures that only one operation can write to a thread's messages.jsonl file at a time, preventing race conditions.
    - As a result, the messages.jsonl file for each thread is always consistent and never corrupted, even under concurrent access.
 */
+#![allow(dead_code)]
 
 pub mod commands;
 mod constants;
@@ -25,11 +26,10 @@ use std::io::Write;
 use tauri::Runtime;
 use uuid::Uuid;
 use super::threads::helpers::{
-    get_lock_for_thread, read_messages_from_file, should_use_sqlite, update_thread_metadata,
-    write_messages_to_file,
+    get_lock_for_thread, should_use_sqlite,
 };
 use super::threads::utils::{
-    ensure_data_dirs, ensure_thread_dir_exists, get_data_dir, get_messages_path,
+    ensure_data_dirs, ensure_thread_dir_exists, get_messages_path,
     get_thread_dir, get_thread_metadata_path,
 };
 

@@ -88,7 +88,7 @@ impl InboundAdapter {
         let chars: Vec<char> = content.chars().collect();
         while i < chars.len() {
             if i + 2 < chars.len() && chars[i] == '<' && chars[i + 1] == '@' {
-                let start = i;
+                let _start = i;
                 let skip_bang = if i + 2 < chars.len() && chars[i + 2] == '!' { 1 } else { 0 };
                 let id_start = i + 2 + skip_bang;
                 let mut id_end = id_start;

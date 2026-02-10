@@ -129,7 +129,7 @@ async fn send_via_webhook(
         avatar_url: Option<&'a str>,
     }
 
-    let payload = WebhookPayload {
+    let _payload = WebhookPayload {
         content,
         username: Some("Jan AI"),
         avatar_url: None,

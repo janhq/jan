@@ -87,12 +87,13 @@ function ThreadDetail() {
   // Agent mode state (unified - LLM decides when to use tools)
   const isAgentEnabled = useIsAgentEnabled()
   const agentProjectPath = useAgentMode((s) => s.projectPath)
+  const agentWorkingDirectoryMode = useAgentMode((s) => s.workingDirectoryMode)
   const agentCurrentAgent = useAgentMode((s) => s.currentAgent)
 
   // Debug: Log agent mode state changes
   useEffect(() => {
-    console.log('[Agent Mode State]', { isAgentEnabled, agentProjectPath, agentCurrentAgent })
-  }, [isAgentEnabled, agentProjectPath, agentCurrentAgent])
+    console.log('[Agent Mode State]', { isAgentEnabled, agentProjectPath, agentWorkingDirectoryMode, agentCurrentAgent })
+  }, [isAgentEnabled, agentProjectPath, agentWorkingDirectoryMode, agentCurrentAgent])
 
   // Get attachments for this thread
   const attachmentsKey = threadId ?? NEW_THREAD_ATTACHMENT_KEY
@@ -145,13 +146,21 @@ function ThreadDetail() {
 
   // Build agent config for unified mode (LLM decides when to use tools)
   const agentConfig = useMemo(() => {
-    if (!agentProjectPath) return null
+    // Check if agent is enabled: custom mode with projectPath OR current/workspace mode
+    const isEnabled =
+      (agentWorkingDirectoryMode === 'custom' && agentProjectPath) ||
+      agentWorkingDirectoryMode === 'current' ||
+      agentWorkingDirectoryMode === 'workspace'
+
+    if (!isEnabled) return null
+
     return {
       projectPath: agentProjectPath,
+      workingDirectoryMode: agentWorkingDirectoryMode,
       defaultAgent: agentCurrentAgent as 'build' | 'plan' | 'explore',
       autoApproveReadOnly: false,
     }
-  }, [agentProjectPath, agentCurrentAgent])
+  }, [agentProjectPath, agentWorkingDirectoryMode, agentCurrentAgent])
 
   // Use the AI SDK chat hook
   const {

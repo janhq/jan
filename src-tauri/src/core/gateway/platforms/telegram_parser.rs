@@ -176,7 +176,7 @@ pub fn parse_payload(payload: &serde_json::Value) -> Result<GatewayMessage, Stri
 /// Parse a Telegram message into a GatewayMessage
 fn parse_message(update_id: u64, message: TelegramMessage) -> Result<GatewayMessage, String> {
     // Get user info
-    let (user_id, username) = match &message.from {
+    let (user_id, _username) = match &message.from {
         Some(user) => (user.id.to_string(), user.username.clone()),
         None => ("unknown".to_string(), None),
     };
@@ -205,10 +205,10 @@ fn parse_message(update_id: u64, message: TelegramMessage) -> Result<GatewayMess
     });
 
     // Extract mentions from entities
-    let mentions = extract_mentions(&content, &message.entities);
+    let _mentions = extract_mentions(&content, &message.entities);
 
     // Extract attachments
-    let attachments = extract_attachments(&message);
+    let _attachments = extract_attachments(&message);
 
     // Build metadata
     let mut metadata = HashMap::new();

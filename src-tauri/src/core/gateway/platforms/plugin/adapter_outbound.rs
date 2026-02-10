@@ -3,11 +3,15 @@
 //! Normalizes outbound messages by applying platform-specific formatting and chunking
 //! before sending via the plugin's send_outbound method.
 
+#[allow(unused)]
 use std::sync::Arc;
+#[allow(unused)]
 use serde_json::Value;
 
+#[allow(unused)]
 use crate::core::gateway::types::{Platform, GatewayResponse};
 use crate::core::gateway::formatter;
+#[allow(unused)]
 use super::types::{ChannelPlugin, PluginResult, PluginError, ChannelHandle};
 
 /// Outbound message adapter that wraps formatting, chunking, and delivery.

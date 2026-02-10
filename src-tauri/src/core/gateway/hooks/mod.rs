@@ -7,15 +7,11 @@ pub mod mapping;
 pub mod template;
 
 pub use mapping::HookMapping;
-pub use mapping::HookMapper;
 pub use mapping::HookMatchResult;
-pub use template::{TemplateEngine, TemplateContext, TemplateError};
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
-use regex::Regex;
 
 /// Hook mapping configuration (frontend-compatible)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

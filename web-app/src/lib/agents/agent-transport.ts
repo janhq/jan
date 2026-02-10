@@ -111,7 +111,12 @@ When in doubt between direct response and opencode_delegate, choose opencode_del
 
 type UserIntent = 'coding' | 'qa' | 'other'
 
-function classifyUserIntent(message: string): UserIntent {
+function classifyUserIntent(message: string | undefined): UserIntent {
+  // Handle undefined or empty message
+  if (!message) {
+    return 'other'
+  }
+
   const codingKeywords = [
     'create', 'write', 'build', 'implement', 'add', 'modify',
     'edit', 'fix', 'debug', 'refactor', 'test', 'run', 'execute',
@@ -167,6 +172,7 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
 
   // Agent configuration (project path for agent)
   private projectPath: string | null = null
+  private workingDirectoryMode: 'custom' | 'current' | 'workspace' = 'custom'
   private defaultAgent: 'build' | 'plan' | 'explore' = 'build'
   private autoApproveReadOnly: boolean = true
 
@@ -209,12 +215,45 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
    */
   setAgentConfig(config: {
     projectPath: string | null
+    workingDirectoryMode: 'custom' | 'current' | 'workspace'
     defaultAgent?: 'build' | 'plan' | 'explore'
     autoApproveReadOnly?: boolean
   }) {
     this.projectPath = config.projectPath ?? null
+    this.workingDirectoryMode = config.workingDirectoryMode
     this.defaultAgent = config.defaultAgent ?? 'build'
     this.autoApproveReadOnly = config.autoApproveReadOnly ?? true
+  }
+
+  /**
+   * Resolve the effective working directory path
+   */
+  private async getEffectiveWorkingDirectory(): Promise<string | null> {
+    // If custom mode with a path, use it
+    if (this.workingDirectoryMode === 'custom' && this.projectPath) {
+      return this.projectPath
+    }
+
+    // For current or workspace modes, resolve at runtime
+    if (this.workingDirectoryMode === 'current') {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        return await invoke<string | null>('get_current_dir')
+      } catch {
+        return null
+      }
+    }
+
+    if (this.workingDirectoryMode === 'workspace') {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        return await invoke<string | null>('get_app_data_dir')
+      } catch {
+        return null
+      }
+    }
+
+    return null
   }
 
   /**
@@ -438,17 +477,24 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
       : (currentProvider?.api_key || undefined)
 
     // Determine if we should continue the existing session or create a new one
-    const shouldContinueSession =
-      this.currentSessionId &&
-      this.previousProjectPath === this.projectPath &&
-      // Check if session is still active (we'd need to track this via the session store)
+    // Note: Session continuity requires same project path
+    const shouldContinueSession = !!(
+      this.currentSessionId && this.previousProjectPath === this.projectPath
+    )
 
     const effectiveSessionId = shouldContinueSession ? this.currentSessionId : null
 
-    // Create agent delegate tool if project path is set
-    const opencodeTool = this.projectPath
+    // Create agent delegate tool if working directory is configured
+    // Working directory is configured if: custom mode with projectPath OR current/workspace mode
+    const isWorkingDirectoryConfigured =
+      (this.workingDirectoryMode === 'custom' && this.projectPath) ||
+      this.workingDirectoryMode === 'current' ||
+      this.workingDirectoryMode === 'workspace'
+
+    const effectiveProjectPath = await this.getEffectiveWorkingDirectory()
+    const opencodeTool = isWorkingDirectoryConfigured && effectiveProjectPath
       ? createOpenCodeDelegateTool({
-          projectPath: this.projectPath,
+          projectPath: effectiveProjectPath,
           agent: this.defaultAgent,
           autoApproveReadOnly: this.autoApproveReadOnly,
           apiKey: providerApiKey,

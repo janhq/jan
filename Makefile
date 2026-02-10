@@ -52,7 +52,7 @@ install-ios-rust-targets:
 
 dev: install-and-build
 	yarn download:bin
-	make build-mlx-server
+	-make build-mlx-server || echo "Skipping MLX server build (not required for dev)"
 	yarn dev
 
 # Web application targets

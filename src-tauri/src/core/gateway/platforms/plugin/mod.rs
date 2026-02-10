@@ -21,24 +21,7 @@ pub mod discord_plugin;
 pub mod slack_plugin;
 pub mod telegram_plugin;
 
-pub use types::{
-    ChannelPlugin, ChannelMeta, ChannelConfig, ChannelHandle, ChannelHealth,
-    StartAccountParams, StopAccountParams, ChannelContext, AccountConfig,
-    PluginError, PluginResult,
-};
 pub use registry::PluginRegistry;
-pub use adapter_inbound::InboundAdapter;
-pub use adapter_outbound::OutboundAdapter;
-pub use adapter_config::ConfigAdapter;
 pub use discord_plugin::DiscordPlugin;
 pub use slack_plugin::SlackPlugin;
 pub use telegram_plugin::TelegramPlugin;
-
-/// Plugin module re-exports
-pub mod prelude {
-    pub use super::types::{ChannelPlugin, ChannelMeta, ChannelConfig, ChannelHandle, ChannelHealth, ChannelContext};
-    pub use super::registry::PluginRegistry;
-    pub use super::adapter_inbound::InboundAdapter;
-    pub use super::adapter_outbound::OutboundAdapter;
-    pub use super::adapter_config::ConfigAdapter;
-}

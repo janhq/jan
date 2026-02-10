@@ -2,9 +2,6 @@
 //!
 //! Converts markdown from agent responses to platform-specific formats,
 //! and splits messages that exceed platform character limits.
-//!
-//! Architecture mirrors clawdbot's shared markdown IR:
-//! markdown -> format_for_platform() -> chunk_message() -> send
 
 pub mod discord;
 pub mod telegram;

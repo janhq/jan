@@ -1,7 +1,7 @@
 //! Session Key System
 //!
 //! Defines structured session keys for routing messages to agents based on
-//! platform, account, and conversation context. Similar to clawdbot's routing system.
+//! platform, account, and conversation context.
 //!
 //! Session Key Format:
 //! `agent:{agentId}:{platform}:{accountId}:{peerKind}:{peerId}`
@@ -167,15 +167,15 @@ impl SessionKey {
         }
     }
 
-    /// Create a partial key (fewer specificity)
-    pub fn to_partial(&self, _depth: usize) {
-        // Simplified - functionality removed
-    }
 }
 
 impl fmt::Display for SessionKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(
+            f,
+            "{}:{}:{}:{:?}:{}",
+            self.agent_id, self.platform, self.account_id, self.peer_kind, self.peer_id
+        )
     }
 }
 

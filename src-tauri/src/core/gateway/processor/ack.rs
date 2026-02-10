@@ -1,11 +1,10 @@
 //! ACK (Acknowledgement) Handler
 //!
 //! Handles delivery confirmations and typing indicators for platform responses.
-//! Similar to clawdbot's ACK reaction system.
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::Mutex;
 use tokio::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
@@ -67,8 +66,6 @@ struct PendingAck {
     state: Arc<Mutex<AckState>>,
     /// Expiration time for cleanup
     expires_at: Instant,
-    #[allow(dead_code)]
-    tx: oneshot::Sender<AckState>,
 }
 
 /// ACK handler for tracking message delivery and displaying feedback
@@ -119,14 +116,12 @@ impl AckHandler {
             read: false,
         }));
 
-        let (tx, _) = oneshot::channel();
         let mut guard = self.pending_acks.lock().await;
         guard.insert(
             message_id.to_string(),
             PendingAck {
                 state: state.clone(),
                 expires_at: Instant::now() + Duration::from_secs(300),
-                tx,
             },
         );
 
@@ -181,7 +176,7 @@ impl AckHandler {
     pub async fn get_typing_channel(&self, channel_id: &str) -> tokio::sync::broadcast::Receiver<bool> {
         let mut guard = self.typing_senders.lock().await;
         if !guard.contains_key(channel_id) {
-            let (tx, rx) = tokio::sync::broadcast::channel(10);
+            let (tx, _rx) = tokio::sync::broadcast::channel(10);
             guard.insert(channel_id.to_string(), tx);
         }
         guard
@@ -192,7 +187,7 @@ impl AckHandler {
 
     /// Send typing start notification
     pub async fn start_typing(&self, channel_id: &str) {
-        let mut guard = self.typing_senders.lock().await;
+        let guard = self.typing_senders.lock().await;
         if let Some(sender) = guard.get(channel_id) {
             let _ = sender.send(true);
         }
@@ -200,7 +195,7 @@ impl AckHandler {
 
     /// Send typing stop notification
     pub async fn stop_typing(&self, channel_id: &str) {
-        let mut guard = self.typing_senders.lock().await;
+        let guard = self.typing_senders.lock().await;
         if let Some(sender) = guard.get(channel_id) {
             let _ = sender.send(false);
         }

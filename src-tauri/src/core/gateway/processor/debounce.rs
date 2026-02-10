@@ -1,7 +1,7 @@
 //! Message Debouncing
 //!
 //! Groups rapid messages from the same user within a time window to prevent
-//! spam and reduce unnecessary agent invocations. Similar to clawdbot's inbound-debounce.ts.
+//! spam and reduce unnecessary agent invocations.
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -151,7 +151,7 @@ impl MessageDebouncer {
     pub async fn start(&self) {
         let batches = self.batches.clone();
         let stats = self.stats.clone();
-        let config = self.config.clone();
+        let _config = self.config.clone();
 
         let handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(30));

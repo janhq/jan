@@ -1532,8 +1532,11 @@ export default class llamacpp_extension extends AIEngine {
       mmprojPath = await joinPath([janDataFolderPath, modelConfig.mmproj_path])
     }
 
-    // Migrate old env vars
+    // Migrate old env vars and ensure fit fields have defaults
     if(typeof cfg.fit === 'string') cfg.fit = true
+    if(cfg.fit === undefined || cfg.fit === null) cfg.fit = false
+    if(!cfg.fit_target) cfg.fit_target = ''
+    if(!cfg.fit_ctx) cfg.fit_ctx = ''
 
     logger.info(
       'Calling Tauri command load_llama_model with config:',

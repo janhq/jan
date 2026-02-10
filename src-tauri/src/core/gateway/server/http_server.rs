@@ -1,7 +1,9 @@
+#![allow(dead_code)]
+
 use hyper::{Body, Request, Response, Server, StatusCode};
 use hyper::service::{make_service_fn, service_fn};
 use serde_json::json;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
 
 use super::super::{GatewayManager, SharedGatewayManager, GatewayConfig};
@@ -13,6 +15,9 @@ use crate::core::gateway::discord_bot::IdempotencyCache;
 
 /// Shared idempotency cache type
 type SharedIdempotencyCache = Arc<Mutex<IdempotencyCache>>;
+
+/// Global idempotency cache using OnceLock for safe initialization
+static IDEMPOTENCY_CACHE: OnceLock<Mutex<IdempotencyCache>> = OnceLock::new();
 
 pub fn response_json(status: StatusCode, body: serde_json::Value) -> Response<Body> {
     let body_str = body.to_string();
@@ -126,16 +131,10 @@ async fn negotiate_handler(
 }
 
 /// Get idempotency cache from manager, creating one if needed
-fn get_or_create_idempotency_cache(manager: &GatewayManager) -> &mut IdempotencyCache {
+fn get_or_create_idempotency_cache(_manager: &GatewayManager) -> &Mutex<IdempotencyCache> {
     // Note: In a real implementation, we'd store this in GatewayManager
-    // For now, we create a static cache
-    static mut CACHE: Option<IdempotencyCache> = None;
-    unsafe {
-        if CACHE.is_none() {
-            CACHE = Some(IdempotencyCache::new());
-        }
-        CACHE.as_mut().unwrap()
-    }
+    // For now, we use a global cache with OnceLock for safe initialization
+    IDEMPOTENCY_CACHE.get_or_init(|| Mutex::new(IdempotencyCache::new()))
 }
 
 async fn webhook_handler(
@@ -170,7 +169,7 @@ async fn webhook_handler(
     };
 
     log::info!("[FLOW-2] [HTTP] 🔍 Parsing {} payload...", platform_str);
-    let mut message = match parse_platform_payload(platform, &raw_payload) {
+    let message = match parse_platform_payload(platform, &raw_payload) {
         Ok(msg) => {
             log::info!("[FLOW-2] [HTTP] ✅ Parsed {} message:", platform_str);
             log::info!("[FLOW-2] [HTTP]    - message_id: {}", msg.id);
@@ -231,7 +230,7 @@ async fn webhook_handler(
     let platform_for_log = msg_clone.platform.as_str();
 
     log::info!("[FLOW-3] [HTTP] 📤 Queueing message {} to gateway queue", msg_clone.id);
-    let mut manager_guard = manager.lock().await;
+    let manager_guard = manager.lock().await;
     if let Err(e) = manager_guard.message_queue.send(message).await {
         log::error!("[FLOW-3] [HTTP] ❌ Failed to queue message {}: {}", msg_clone.id, e);
         return Ok(response_json(StatusCode::INTERNAL_SERVER_ERROR, json!({

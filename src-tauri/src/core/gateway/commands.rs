@@ -3,14 +3,14 @@ use tauri::{command, AppHandle, Emitter, State};
 
 use super::SharedGatewayManager;
 use super::server::{http_server, websocket};
-use super::types::{GatewayStatus, GatewayResponse, ConnectionState, ThreadMapping, GatewayConfig, Platform, GatewayMessage};
+use super::types::{GatewayStatus, ConnectionState, ThreadMapping, GatewayConfig, Platform, GatewayMessage, GatewayResponse};
 use super::platforms;
 use super::discord_bot;
 use super::channel::ChannelConfig;
+use super::jan::JanIntegrationService;
 use super::processor::debounce::DebounceConfig;
 use super::processor::ack::AckConfig;
 use super::routing::agent_integration::AgentRoutingConfig;
-use super::jan::JanIntegrationService;
 
 /// Command to start the gateway server
 #[command]
@@ -580,7 +580,7 @@ pub async fn gateway_replay_state(
 
     // Emit all thread mappings
     log::info!("[Commands] Replaying {} thread mappings", guard.thread_mappings.len());
-    for ((platform, _), mapping) in &guard.thread_mappings {
+    for ((platform, _), _mapping) in &guard.thread_mappings {
         let event_name = format!("gateway:message:{}", platform.as_str());
         log::info!("[Commands] Re-emitting thread mapping for {}", event_name);
     }
@@ -615,7 +615,7 @@ pub async fn gateway_start_discord_bot(
 
     // Store config in state
     {
-        let mut guard = state.lock().await;
+        let guard = state.lock().await;
         guard.discord_bot_state.lock().await.configure(bot_config.clone());
     }
 
@@ -819,18 +819,18 @@ async fn discord_bot_event_processor(
         // Queue the message for processing
         {
             let guard = state.lock().await;
-            guard.message_queue.send(message.clone()).await;
+            let _ = guard.message_queue.send(message.clone()).await;
         }
 
         // Process via Jan integration service if available
         if let Some(ref integration) = jan_integration {
-            let integration = (*integration).lock().await;
+            let _integration = (*integration).lock().await;
             let config = {
                 let guard = state.lock().await;
                 guard.config.clone()
             };
-            let auto_create_threads = config.as_ref().map(|c| c.auto_create_threads).unwrap_or(true);
-            let default_assistant_id = config.as_ref().and_then(|c| c.default_assistant_id.as_ref().map(|s| s.as_str()));
+            let _auto_create_threads = config.as_ref().map(|c| c.auto_create_threads).unwrap_or(true);
+            let _default_assistant_id = config.as_ref().and_then(|c| c.default_assistant_id.as_ref().map(|s| s.as_str()));
 
             // Note: We can't call process_message here because it needs &mut self
             // and we're holding a read lock on state. The frontend handles the actual
@@ -855,8 +855,6 @@ async fn discord_bot_event_processor(
 }
 
 // ==================== Telegram Commands ====================
-
-use super::platforms::telegram::{TelegramBotConfig, SharedTelegramBotState, create_telegram_bot_state};
 
 /// Command to configure Telegram bot
 #[command]
@@ -989,7 +987,7 @@ pub async fn gateway_stop_telegram(
 ) -> Result<(), String> {
     log::info!("[Commands] Stopping Telegram bot...");
 
-    let mut guard = state.lock().await;
+    let guard = state.lock().await;
     let mut bot_state = guard.telegram_bot_state.lock().await;
 
     bot_state.running = false;
@@ -1525,7 +1523,7 @@ pub async fn gateway_is_timestamps_enabled(
 /// Command to create a timing context for testing
 #[command]
 pub async fn gateway_create_timing_context(
-    state: State<'_, SharedGatewayManager>,
+    _state: State<'_, SharedGatewayManager>,
 ) -> Result<serde_json::Value, String> {
     use super::timestamps::TimestampInjector;
     let ctx = TimestampInjector::create_record();
@@ -1539,7 +1537,7 @@ pub async fn gateway_create_timing_context(
 /// Command to get timing context stage
 #[command]
 pub async fn gateway_get_timing_context_stage(
-    state: State<'_, SharedGatewayManager>,
+    _state: State<'_, SharedGatewayManager>,
     stage: String,
 ) -> Result<serde_json::Value, String> {
     use super::timestamps::TimingStage;

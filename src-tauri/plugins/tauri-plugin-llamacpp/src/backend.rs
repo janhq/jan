@@ -181,12 +181,6 @@ pub struct SystemFeatures {
     vulkan: bool,
 }
 
-#[derive(Serialize)]
-pub struct SupportedBackendsResult {
-    supported_backend_names: Vec<String>,
-    merged_backends: Vec<BackendInfo>,
-}
-
 #[tauri::command]
 pub fn determine_supported_backends(
     os_type: String,
@@ -301,11 +295,13 @@ pub struct GpuInfo {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct NvidiaInfo {
     compute_capability: String,
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct VulkanInfo {
     api_version: String,
 }

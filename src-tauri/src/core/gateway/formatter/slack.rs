@@ -1,7 +1,6 @@
 //! Slack mrkdwn formatter
 //!
 //! Converts markdown to Slack's mrkdwn format.
-//! Modeled after clawdbot's markdownToSlackMrkdwn.
 //!
 //! Slack mrkdwn uses:
 //! - *bold* (not **bold**)

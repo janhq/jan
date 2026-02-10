@@ -1,28 +1,32 @@
-use super::process::{OpenCodeProcessManager, SessionId};
+use super::process::OpenCodeProcessManager;
 use super::types::*;
-use std::sync::Arc;
-use tauri::{command, AppHandle, Emitter, State};
-use tokio::sync::{mpsc, Mutex};
 use log::info;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tauri::{command, AppHandle, Emitter, Runtime, State};
+use tokio::sync::{mpsc, Mutex};
 
 /// Shared OpenCode process manager type
 pub type SharedOpenCodeManager = Arc<Mutex<OpenCodeProcessManager>>;
 
+/// Get Jan's application data directory (where models, extensions are stored)
+#[command]
+pub fn get_app_data_dir<R: Runtime>(app: AppHandle<R>) -> String {
+    use crate::core::app::commands::get_jan_data_folder_path;
+    let data_dir = get_jan_data_folder_path(app);
+    data_dir.to_string_lossy().into_owned()
+}
+
+/// Get the current working directory of the running process
+#[command]
+pub fn get_current_dir() -> String {
+    std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("/"))
+        .to_string_lossy()
+        .into_owned()
+}
+
 /// Spawn a new OpenCode task
-///
-/// # Arguments
-/// * `task_id` - Optional task ID (will be generated if not provided)
-/// * `session_id` - Optional session ID for conversation continuity
-/// * `project_path` - Path to the project directory
-/// * `prompt` - The task prompt/instruction
-/// * `agent` - Optional agent type (build, plan, explore)
-/// * `api_key` - Optional API key for the LLM provider
-/// * `provider_id` - Optional provider identifier (e.g., "anthropic", "openai")
-/// * `model_id` - Optional model identifier (e.g., "claude-sonnet-4-20250514")
-/// * `base_url` - Optional base URL for the provider API
-///
-/// # Returns
-/// * Task ID string on success
 #[command]
 pub async fn opencode_spawn_task(
     app: AppHandle,
@@ -217,6 +221,7 @@ pub async fn opencode_end_session(
     session_id: String,
 ) -> Result<(), String> {
     info!("Ending OpenCode session: {}", session_id);
+
     let manager = state.lock().await;
     manager.end_session(&session_id).await
 }

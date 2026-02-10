@@ -1,11 +1,10 @@
-/**
- * Session Management Module
- * 
- * Manages persistent session identifier for request signing and caching.
- * Uses tauri-plugin-store for persistence (compatible with TypeScript).
- * 
- * Storage location: {app_data_dir}/updater.json
- */
+//! Session Management Module
+//!
+//! Manages persistent session identifier for request signing and caching.
+//! Uses tauri-plugin-store for persistence (compatible with TypeScript).
+//!
+//! Storage location: {app_data_dir}/updater.json
+#![allow(dead_code)]
 
 use std::sync::OnceLock;
 use tauri::{AppHandle, Runtime};

@@ -6,6 +6,7 @@
 //! - Message normalization
 //! - Thread routing
 //! - ACK handling
+#![allow(dead_code)]
 
 pub mod whitelist;
 pub mod debounce;
@@ -72,7 +73,7 @@ impl ProcessingResult {
 pub async fn process_message(
     message: GatewayMessage,
     whitelist_config: &WhitelistConfig,
-    auto_create_threads: bool,
+    _auto_create_threads: bool,
 ) -> ProcessingResult {
     // Stage 1: Whitelist validation
     let whitelist_result = whitelist::validate(&message, whitelist_config);
