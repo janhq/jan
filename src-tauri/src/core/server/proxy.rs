@@ -145,8 +145,7 @@ fn convert_messages(
                 let mut tool_calls: Vec<serde_json::Value> = Vec::new();
 
                 for block in content_array {
-                    let block_type =
-                        block.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    let block_type = block.get("type").and_then(|v| v.as_str()).unwrap_or("");
                     match block_type {
                         "text" => {
                             if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
@@ -201,8 +200,7 @@ fn convert_messages(
                 let mut tool_results: Vec<(String, String)> = Vec::new();
 
                 for block in content_array {
-                    let block_type =
-                        block.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    let block_type = block.get("type").and_then(|v| v.as_str()).unwrap_or("");
                     match block_type {
                         "tool_result" => {
                             let tool_use_id = block
@@ -210,14 +208,11 @@ fn convert_messages(
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .to_string();
-                            let result_content =
-                                extract_tool_result_content(block.get("content"));
+                            let result_content = extract_tool_result_content(block.get("content"));
                             tool_results.push((tool_use_id, result_content));
                         }
                         "text" => {
-                            if let Some(text) =
-                                block.get("text").and_then(|v| v.as_str())
-                            {
+                            if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
                                 text_parts.push(serde_json::json!({
                                     "type": "text",
                                     "text": text
@@ -269,9 +264,7 @@ fn convert_messages(
 fn text_parts_to_content(parts: &[serde_json::Value]) -> serde_json::Value {
     if parts.is_empty() {
         serde_json::Value::String(String::new())
-    } else if parts.len() == 1
-        && parts[0].get("type").and_then(|t| t.as_str()) == Some("text")
-    {
+    } else if parts.len() == 1 && parts[0].get("type").and_then(|t| t.as_str()) == Some("text") {
         serde_json::Value::String(
             parts[0]
                 .get("text")
@@ -345,9 +338,10 @@ fn transform_openai_response_to_anthropic(response: &serde_json::Value) -> serde
     let mut content_blocks: Vec<serde_json::Value> = Vec::new();
 
     // Add text content
-    if let Some(text) = message
-        .and_then(|m| m.get("content"))
-        .and_then(|c| if c.is_null() { None } else { c.as_str() })
+    if let Some(text) =
+        message
+            .and_then(|m| m.get("content"))
+            .and_then(|c| if c.is_null() { None } else { c.as_str() })
     {
         if !text.is_empty() {
             content_blocks.push(serde_json::json!({
@@ -731,16 +725,13 @@ async fn proxy_request<R: tauri::Runtime>(
             match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
                 Ok(json_body) => {
                     if let Some(model_id) = json_body.get("model").and_then(|v| v.as_str()) {
-
                         let state = app_handle.state::<AppState>();
                         let provider_configs = state.provider_configs.lock().await;
 
                         // Try to find a provider for this model
                         provider_name = provider_configs
                             .iter()
-                            .find(|(_, config)| {
-                                config.models.iter().any(|m| m == model_id)
-                            })
+                            .find(|(_, config)| config.models.iter().any(|m| m == model_id))
                             .map(|(_, config)| config.provider.clone())
                             .or_else(|| {
                                 if let Some(sep_pos) = model_id.find('/') {
@@ -785,17 +776,13 @@ async fn proxy_request<R: tauri::Runtime>(
                             if let Some(session) = llama_session {
                                 let target_port = session.info.port;
                                 session_api_key = Some(session.info.api_key.clone());
-                                target_base_url = Some(format!(
-                                    "http://127.0.0.1:{}/v1/messages",
-                                    target_port
-                                ));
+                                target_base_url =
+                                    Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
                             } else if let Some(info) = mlx_session_info {
                                 let target_port = info.port;
                                 session_api_key = Some(info.api_key.clone());
-                                target_base_url = Some(format!(
-                                    "http://127.0.0.1:{}/v1/messages",
-                                    target_port
-                                ));
+                                target_base_url =
+                                    Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
                             } else {
                                 log::warn!("No running session found for model_id: {model_id}");
                                 let mut error_response =
@@ -824,9 +811,7 @@ async fn proxy_request<R: tauri::Runtime>(
                             &origin_header,
                             &config.trusted_hosts,
                         );
-                        return Ok(error_response
-                            .body(Body::from(error_msg))
-                            .unwrap());
+                        return Ok(error_response.body(Body::from(error_msg)).unwrap());
                     }
                 }
                 Err(e) => {
@@ -839,9 +824,7 @@ async fn proxy_request<R: tauri::Runtime>(
                         &config.trusted_hosts,
                     );
                     let error_msg = format!("Invalid JSON body: {}", e);
-                    return Ok(error_response
-                        .body(Body::from(error_msg))
-                        .unwrap());
+                    return Ok(error_response.body(Body::from(error_msg)).unwrap());
                 }
             }
         }
@@ -1025,9 +1008,7 @@ async fn proxy_request<R: tauri::Runtime>(
                             &origin_header,
                             &config.trusted_hosts,
                         );
-                        return Ok(error_response
-                            .body(Body::from(error_msg))
-                            .unwrap());
+                        return Ok(error_response.body(Body::from(error_msg)).unwrap());
                     }
                 }
                 Err(e) => {
@@ -1040,9 +1021,7 @@ async fn proxy_request<R: tauri::Runtime>(
                         &config.trusted_hosts,
                     );
                     let error_msg = format!("Invalid JSON body: {}", e);
-                    return Ok(error_response
-                        .body(Body::from(error_msg))
-                        .unwrap());
+                    return Ok(error_response.body(Body::from(error_msg)).unwrap());
                 }
             }
         }
@@ -1294,6 +1273,7 @@ async fn proxy_request<R: tauri::Runtime>(
     log::info!(
         "Proxying request to model server at base URL {upstream_url}, path: {destination_path}"
     );
+    log::info!("Fallback api key: {:?}", session_api_key.clone());
 
     let mut outbound_req = client.request(method.clone(), upstream_url);
 
@@ -1331,7 +1311,6 @@ async fn proxy_request<R: tauri::Runtime>(
     // For Anthropic /messages, we need to track if we should transform the response
     let destination_path = path.clone();
 
-
     match outbound_req_with_body.send().await {
         Ok(response) => {
             let status = response.status();
@@ -1343,11 +1322,16 @@ async fn proxy_request<R: tauri::Runtime>(
                 log::warn!("Request failed for /messages with status {status}, trying /chat/completions...");
 
                 // Read the error body to return to client if fallback fails
-                let error_body = response.text().await.unwrap_or_else(|e| format!("Failed to read error body: {}", e));
+                let error_body = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|e| format!("Failed to read error body: {}", e));
 
                 // Clone what we need for the fallback request
                 let fallback_url = target_base_url.clone().map(|url| {
-                    url.trim_end_matches("/messages").trim_end_matches('/').to_string()
+                    url.trim_end_matches("/messages")
+                        .trim_end_matches('/')
+                        .to_string()
                 });
                 let fallback_api_key = session_api_key.clone();
                 let fallback_body = buffered_body.clone();
@@ -1428,12 +1412,27 @@ async fn proxy_request<R: tauri::Runtime>(
                             &config.trusted_hosts,
                         );
 
+                        let is_streaming = openai_body
+                            .get("stream")
+                            .and_then(|s| s.as_bool())
+                            .unwrap_or(false);
+
                         let (sender, body) = hyper::Body::channel();
                         let dest_path = destination_path.clone();
 
                         tokio::spawn(async move {
-                            let stream = res.bytes_stream();
-                            transform_and_forward_stream(stream, sender, &dest_path).await;
+                            if is_streaming {
+                                let stream = res.bytes_stream();
+                                transform_and_forward_stream(stream, sender, &dest_path).await;
+                            } else {
+                                let response_body = res.bytes().await;
+                                forward_non_streaming(
+                                    response_body,
+                                    sender,
+                                    &dest_path,
+                                )
+                                .await;
+                            }
                         });
 
                         return Ok(builder.body(body).unwrap());
@@ -1450,12 +1449,13 @@ async fn proxy_request<R: tauri::Runtime>(
                     &origin_header,
                     &config.trusted_hosts,
                 );
-                return Ok(error_response
-                    .body(Body::from(error_body))
-                    .unwrap());
+                return Ok(error_response.body(Body::from(error_body)).unwrap());
             } else if is_error {
                 // Non-/messages error - return error response with body
-                let error_body = response.text().await.unwrap_or_else(|e| format!("Failed to read error body: {}", e));
+                let error_body = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|e| format!("Failed to read error body: {}", e));
 
                 let mut error_response = Response::builder().status(status);
                 error_response = add_cors_headers_with_host_and_origin(
@@ -1464,9 +1464,7 @@ async fn proxy_request<R: tauri::Runtime>(
                     &origin_header,
                     &config.trusted_hosts,
                 );
-                return Ok(error_response
-                    .body(Body::from(error_body))
-                    .unwrap());
+                return Ok(error_response.body(Body::from(error_body)).unwrap());
             }
 
             // Success case - stream the response
@@ -1485,51 +1483,27 @@ async fn proxy_request<R: tauri::Runtime>(
                 &config.trusted_hosts,
             );
 
-            // Check if streaming
-            let is_streaming = serde_json::from_slice::<serde_json::Value>(&buffered_body.unwrap_or_default())
-                .ok()
-                .and_then(|b| b.get("stream").and_then(|s| s.as_bool()))
-                .unwrap_or(false);
-
             let mut stream = response.bytes_stream();
             let (mut sender, body) = hyper::Body::channel();
 
             tokio::spawn(async move {
-                if is_anthropic_messages && is_streaming {
-                    transform_and_forward_stream(stream, sender, &destination_path).await;
-                } else if is_anthropic_messages {
-                    // For non-streaming Anthropic, collect response first
-                    let mut response_body = Vec::new();
-                    while let Some(chunk_result) = stream.next().await {
-                        match chunk_result {
-                            Ok(chunk) => {
-                                response_body.extend_from_slice(&chunk);
-                            }
-                            Err(e) => {
-                                log::error!("Stream error: {e}");
-                                return;
-                            }
-                        }
-                    }
-                    forward_non_streaming(Ok(Bytes::from(response_body)), sender, &destination_path).await;
-                } else {
-                    // Regular passthrough
-                    while let Some(chunk_result) = stream.next().await {
-                        match chunk_result {
-                            Ok(chunk) => {
-                                if sender.send_data(chunk).await.is_err() {
-                                    log::debug!("Client disconnected during streaming");
-                                    break;
-                                }
-                            }
-                            Err(e) => {
-                                log::error!("Stream error: {e}");
+                // Regular passthrough - when /messages succeeds directly,
+                // the response is already in the correct format
+                while let Some(chunk_result) = stream.next().await {
+                    match chunk_result {
+                        Ok(chunk) => {
+                            if sender.send_data(chunk).await.is_err() {
+                                log::debug!("Client disconnected during streaming");
                                 break;
                             }
                         }
+                        Err(e) => {
+                            log::error!("Stream error: {e}");
+                            break;
+                        }
                     }
-                    log::debug!("Streaming complete to client");
                 }
+                log::debug!("Streaming complete to client");
             });
 
             Ok(builder.body(body).unwrap())
@@ -1749,8 +1723,7 @@ async fn transform_and_forward_stream<S>(
                                 return;
                             }
                         }
-                        let mut tool_indices: Vec<usize> =
-                            tool_blocks.values().copied().collect();
+                        let mut tool_indices: Vec<usize> = tool_blocks.values().copied().collect();
                         tool_indices.sort();
                         for idx in tool_indices {
                             let stop =
@@ -1765,8 +1738,7 @@ async fn transform_and_forward_stream<S>(
                         } else {
                             "tool_use"
                         };
-                        let output_tokens =
-                            accumulated_content.split_whitespace().count() as u64;
+                        let output_tokens = accumulated_content.split_whitespace().count() as u64;
 
                         let delta_event = serde_json::json!({
                             "type": "message_delta",
@@ -1802,8 +1774,7 @@ async fn transform_and_forward_stream<S>(
                         None => continue,
                     };
                     let finish_reason = choice.and_then(|c| c.get("finish_reason"));
-                    let has_finish =
-                        finish_reason.is_some() && !finish_reason.unwrap().is_null();
+                    let has_finish = finish_reason.is_some() && !finish_reason.unwrap().is_null();
 
                     // First chunk: send message_start
                     if is_first {
@@ -1840,9 +1811,10 @@ async fn transform_and_forward_stream<S>(
                     }
 
                     // Handle text content
-                    if let Some(text) = delta
-                        .get("content")
-                        .and_then(|c| if c.is_null() { None } else { c.as_str() })
+                    if let Some(text) =
+                        delta
+                            .get("content")
+                            .and_then(|c| if c.is_null() { None } else { c.as_str() })
                     {
                         if !text.is_empty() {
                             // Open text block if needed
@@ -1856,11 +1828,7 @@ async fn transform_and_forward_stream<S>(
                                     "index": idx,
                                     "content_block": { "type": "text", "text": "" }
                                 });
-                                if sender
-                                    .send_data(sse_event(&block_start))
-                                    .await
-                                    .is_err()
-                                {
+                                if sender.send_data(sse_event(&block_start)).await.is_err() {
                                     return;
                                 }
                             }
@@ -1871,20 +1839,14 @@ async fn transform_and_forward_stream<S>(
                                 "index": text_block_index.unwrap(),
                                 "delta": { "type": "text_delta", "text": text }
                             });
-                            if sender
-                                .send_data(sse_event(&delta_event))
-                                .await
-                                .is_err()
-                            {
+                            if sender.send_data(sse_event(&delta_event)).await.is_err() {
                                 return;
                             }
                         }
                     }
 
                     // Handle tool calls
-                    if let Some(tool_calls) =
-                        delta.get("tool_calls").and_then(|tc| tc.as_array())
-                    {
+                    if let Some(tool_calls) = delta.get("tool_calls").and_then(|tc| tc.as_array()) {
                         // Close text block before tool blocks
                         if let Some(idx) = text_block_index.take() {
                             let stop = serde_json::json!(
@@ -1896,11 +1858,8 @@ async fn transform_and_forward_stream<S>(
                         }
 
                         for tc in tool_calls {
-                            let tc_index = tc
-                                .get("index")
-                                .and_then(|i| i.as_u64())
-                                .unwrap_or(0)
-                                as usize;
+                            let tc_index =
+                                tc.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
 
                             // New tool call (has id + function.name)
                             if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
@@ -1924,11 +1883,7 @@ async fn transform_and_forward_stream<S>(
                                         "input": {}
                                     }
                                 });
-                                if sender
-                                    .send_data(sse_event(&block_start))
-                                    .await
-                                    .is_err()
-                                {
+                                if sender.send_data(sse_event(&block_start)).await.is_err() {
                                     return;
                                 }
                             }
@@ -1949,10 +1904,7 @@ async fn transform_and_forward_stream<S>(
                                                 "partial_json": args
                                             }
                                         });
-                                        if sender
-                                            .send_data(sse_event(&delta_event))
-                                            .await
-                                            .is_err()
+                                        if sender.send_data(sse_event(&delta_event)).await.is_err()
                                         {
                                             return;
                                         }
@@ -1974,8 +1926,7 @@ async fn transform_and_forward_stream<S>(
                             }
                         }
                         // Close all tool blocks
-                        let mut tool_indices: Vec<usize> =
-                            tool_blocks.values().copied().collect();
+                        let mut tool_indices: Vec<usize> = tool_blocks.values().copied().collect();
                         tool_indices.sort();
                         for idx in tool_indices {
                             let stop = serde_json::json!(
@@ -1995,8 +1946,7 @@ async fn transform_and_forward_stream<S>(
                             "tool_calls" => "tool_use",
                             _ => reason,
                         };
-                        let output_tokens =
-                            accumulated_content.split_whitespace().count() as u64;
+                        let output_tokens = accumulated_content.split_whitespace().count() as u64;
 
                         let delta_event = serde_json::json!({
                             "type": "message_delta",
@@ -2045,7 +1995,11 @@ async fn forward_non_streaming(
         if destination_path == "/messages" {
             // Transform to Anthropic format
             let anthropic_response = transform_openai_response_to_anthropic(&json_response);
-            if sender.send_data(Bytes::from(anthropic_response.to_string())).await.is_err() {
+            if sender
+                .send_data(Bytes::from(anthropic_response.to_string()))
+                .await
+                .is_err()
+            {
                 log::debug!("Client disconnected");
             }
         } else {
