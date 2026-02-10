@@ -22,7 +22,7 @@ export function AccentColorPicker() {
                 'ring-2 ring-offset-2 ring-primary border-none'
             )}
             style={{
-              backgroundColor: color.thumb,
+              backgroundColor: color.thumb === "#3F3F46" ? 'var(--background)' : color.thumb,
             }}
           />
         )
