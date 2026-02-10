@@ -317,36 +317,21 @@ pub fn launch_claude_code_with_config(
             }
         }
     } else {
-        // On Windows, write to a batch file
-        let env_export: String = env_vars
-            .iter()
-            .map(|(k, v)| format!("set \"{}={}\"", k, v))
-            .collect();
+        // On Windows, set persistent user environment variables using setx
+        for (key, value) in &env_vars {
+            let output = std::process::Command::new("setx")
+                .arg(key)
+                .arg(value)
+                .output()
+                .map_err(|e| e.to_string())?;
 
-        let batch_content = format!(
-            r#"@echo off
-REM Jan Local API Server - Claude Code Config
-{}
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Failed to set env var {}: {}", key, stderr));
+            }
+        }
 
-echo Run: claude
-pause
-"#,
-            env_export
-        );
-
-        let batch_file = "C:\\Users\\Public\\claude_code_env.bat";
-        std::fs::write(batch_file, &batch_content).map_err(|e| e.to_string())?;
-
-        std::process::Command::new("cmd")
-            .arg("/c")
-            .arg("start")
-            .arg("Claude Code")
-            .arg("/K")
-            .arg(format!("{} && claude", env_export))
-            .spawn()
-            .map_err(|e| e.to_string())?;
-
-        log::info!("Env vars exported. Claude Code should now use them.");
+        log::info!("Environment variables set permanently in Windows registry.");
         return Ok(());
     }
 }
