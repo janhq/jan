@@ -10,9 +10,28 @@ use crate::core::app::models::AppConfiguration;
 use crate::core::mcp::helpers::{stop_mcp_servers_with_context, ShutdownContext};
 use crate::core::state::AppState;
 
-// Helper function to write env vars to zshenv
-fn write_env_to_zsh(
-    zshenv_path: &str,
+/// Detect the user's default shell and return the appropriate env file path.
+/// Returns (shell_name, env_file_path).
+fn detect_shell_env_file(home_dir: &str, is_macos: bool) -> (&'static str, String) {
+    let shell = std::env::var("SHELL").unwrap_or_default();
+    if shell.ends_with("/bash") {
+        // macOS uses login shells in Terminal, so ~/.bash_profile is sourced.
+        // Linux interactive shells source ~/.bashrc.
+        let file = if is_macos {
+            format!("{}/.bash_profile", home_dir)
+        } else {
+            format!("{}/.bashrc", home_dir)
+        };
+        ("bash", file)
+    } else {
+        // Default to zsh (macOS default since Catalina)
+        ("zsh", format!("{}/.zshenv", home_dir))
+    }
+}
+
+// Helper function to write env vars to a shell config file
+fn write_env_to_shell(
+    env_file_path: &str,
     env_vars: &[(String, String)],
 ) -> Result<(), String> {
     let marker = "# Jan Local API Server - Claude Code Config";
@@ -21,7 +40,7 @@ fn write_env_to_zsh(
         .map(|(k, v)| format!("export {}='{}'\n", k, v))
         .collect();
 
-    let existing_content = std::fs::read_to_string(zshenv_path).unwrap_or_default();
+    let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
     let cleaned: Vec<&str> = existing_content
         .split('\n')
         .filter(|line| {
@@ -35,7 +54,7 @@ fn write_env_to_zsh(
     let new_content = format!("{}\n{}\n{}\n", marker, new_entries, marker);
 
     let final_content = cleaned.join("\n") + &new_content;
-    std::fs::write(zshenv_path, &final_content).map_err(|e| e.to_string())?;
+    std::fs::write(env_file_path, &final_content).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -213,31 +232,28 @@ pub fn launch_claude_code_with_config(
     );
 
     // Build the command environment
-    // Export environment variables to ~/.zshenv (always sourced by zsh)
+    // Export environment variables to the user's shell config file
 
     if cfg!(target_os = "macos") {
-        // On macOS, write to ~/.zshenv
         let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
-        let zshenv_path = format!("{}/.zshenv", home_dir);
+        let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, true);
+        log::info!("Detected shell: {}, writing env to: {}", shell_name, env_file_path);
 
         // Try direct write first
         match std::fs::OpenOptions::new()
             .write(true)
             .create(true)
-            .open(&zshenv_path)
+            .open(&env_file_path)
         {
             Ok(_) => {
-                write_env_to_zsh(&zshenv_path, &env_vars)?;
+                write_env_to_shell(&env_file_path, &env_vars)?;
                 return Ok(());
             }
             Err(_) => {
                 // Use admin privileges to write
-                let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
-                let zshenv_path = format!("{}/.zshenv", home_dir);
-
-                // Read and clean existing file
                 let marker = "# Jan Local API Server - Claude Code Config";
-                let existing_content = std::fs::read_to_string(&zshenv_path).unwrap_or_default();
+                let existing_content =
+                    std::fs::read_to_string(&env_file_path).unwrap_or_default();
                 let cleaned: Vec<&str> = existing_content
                     .split('\n')
                     .filter(|line| {
@@ -257,13 +273,13 @@ pub fn launch_claude_code_with_config(
                 let final_content = cleaned.join("\n") + "\n" + &new_block + marker;
 
                 // Write to a temp file first, then use osascript to move it
-                let temp_script_path = format!("{}/.jan_zshenv_update.sh", home_dir);
+                let temp_script_path = format!("{}/.jan_env_update.sh", home_dir);
                 std::fs::write(&temp_script_path, &final_content).map_err(|e| e.to_string())?;
 
-                // Use admin privileges to move the temp file to .zshenv
+                // Use admin privileges to move the temp file
                 let script = format!(
-                    r#"do shell script "cp '{}' '{}' && rm '{}' && echo 'Env vars written to ~/.zshenv'" with administrator privileges"#,
-                    temp_script_path, zshenv_path, temp_script_path
+                    r#"do shell script "cp '{}' '{}' && rm '{}' && echo 'Env vars written to {}'" with administrator privileges"#,
+                    temp_script_path, env_file_path, temp_script_path, env_file_path
                 );
 
                 std::process::Command::new("osascript")
@@ -272,29 +288,28 @@ pub fn launch_claude_code_with_config(
                     .output()
                     .map_err(|e| e.to_string())?;
 
-                log::info!("Env vars written to ~/.zshenv with admin privileges");
+                log::info!("Env vars written to {} with admin privileges", env_file_path);
                 return Ok(());
             }
         }
     } else if cfg!(target_os = "linux") {
-        // On Linux, write to ~/.zshenv
         let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
-        let zshenv_path = format!("{}/.zshenv", home_dir);
+        let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, false);
+        log::info!("Detected shell: {}, writing env to: {}", shell_name, env_file_path);
 
-        // Try to write to ~/.zshenv
         match std::fs::OpenOptions::new()
             .write(true)
             .create(true)
-            .open(&zshenv_path)
+            .open(&env_file_path)
         {
             Ok(_) => {
-                write_env_to_zsh(&zshenv_path, &env_vars)?;
+                write_env_to_shell(&env_file_path, &env_vars)?;
                 return Ok(());
             }
             Err(_) => {
-                // Return special message for frontend to show dialog
                 let jan_config_dir = format!("{}/.config/jan", home_dir);
-                let env_file = format!("{}/claude-code-env.zsh", jan_config_dir);
+                let ext = if shell_name == "bash" { "bash" } else { "zsh" };
+                let env_file = format!("{}/claude-code-env.{}", jan_config_dir, ext);
                 return Err(format!("NEED_PERMISSION:{}", env_file));
             }
         }
