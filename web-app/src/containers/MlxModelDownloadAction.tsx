@@ -9,11 +9,11 @@ import { useTranslation } from '@/i18n'
 import { CatalogModel } from '@/services/models/types'
 import { cn } from '@/lib/utils'
 import { DownloadEvent, events } from '@janhq/core'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useNavigate } from '@tanstack/react-router'
 
-export const MlxModelDownloadAction = ({ model }: { model: CatalogModel }) => {
+export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) => {
   const serviceHub = useServiceHub()
   const { t } = useTranslation()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
@@ -27,12 +27,7 @@ export const MlxModelDownloadAction = ({ model }: { model: CatalogModel }) => {
     localDownloadingModels,
     addLocalDownloadingModel,
     removeLocalDownloadingModel,
-  } = useDownloadStore((state) => ({
-    downloads: state.downloads,
-    localDownloadingModels: state.localDownloadingModels,
-    addLocalDownloadingModel: state.addLocalDownloadingModel,
-    removeLocalDownloadingModel: state.removeLocalDownloadingModel,
-  }))
+  } = useDownloadStore()
 
   // Construct the model ID - use just the sanitized model name if developer is same as org
   // e.g., "mlx-community/Qwen3-VL-2B-Thinking-4bit" -> "Qwen3-VL-2B-Thinking-4bit"
@@ -178,7 +173,7 @@ export const MlxModelDownloadAction = ({ model }: { model: CatalogModel }) => {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
     }
-  }, [serviceHub, model, huggingfaceToken, addLocalDownloadingModel, modelId])
+  }, [serviceHub, model, huggingfaceToken, addLocalDownloadingModel, removeLocalDownloadingModel, modelId])
 
   return (
     <div className="flex items-center">
@@ -212,7 +207,7 @@ export const MlxModelDownloadAction = ({ model }: { model: CatalogModel }) => {
       )}
     </div>
   )
-}
+})
 
 // Helper function to sanitize model ID
 function sanitizeModelId(id: string): string {
