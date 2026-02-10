@@ -158,17 +158,7 @@ export class DefaultModelsService implements ModelsService {
 
     // Check if this repository has MLX model files (safetensors + associated files)
     const hasMlxFiles =
-      safetensorsFiles.length > 0 ||
-      repo.siblings?.some((file) => {
-        const name = file.rfilename.toLowerCase()
-        return (
-          name.endsWith('.json') || // config.json, tokenizer.json, etc.
-          name.endsWith('.md') || // README.md
-          name.endsWith('.py') || // model.py
-          name.endsWith('.jit') // .jit files
-        )
-      }) ||
-      false
+      repo.library_name === 'mlx' || repo.tags?.includes('mlx')
 
     const safetensorsModels = safetensorsFiles.map((file) => {
       // Generate model_id from filename (remove .safetensors extension, case-insensitive)
@@ -374,13 +364,15 @@ export class DefaultModelsService implements ModelsService {
         )
       : undefined
 
-    return engine.load(model, settings, false, bypassAutoUnload).catch((error) => {
-      console.error(
-        `Failed to start model ${model} for provider ${provider.provider}:`,
-        error
-      )
-      throw error
-    })
+    return engine
+      .load(model, settings, false, bypassAutoUnload)
+      .catch((error) => {
+        console.error(
+          `Failed to start model ${model} for provider ${provider.provider}:`,
+          error
+        )
+        throw error
+      })
   }
 
   async isToolSupported(modelId: string): Promise<boolean> {
