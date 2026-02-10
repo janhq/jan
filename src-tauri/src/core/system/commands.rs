@@ -14,12 +14,11 @@ use crate::core::state::AppState;
 fn write_env_to_zsh(
     zshenv_path: &str,
     env_vars: &[(String, String)],
-    terminal_app: &str,
 ) -> Result<(), String> {
     let marker = "# Jan Local API Server - Claude Code Config";
     let new_entries: String = env_vars
         .iter()
-        .map(|(k, v)| format!("export {}='{}'", k, v))
+        .map(|(k, v)| format!("export {}='{}'\n", k, v))
         .collect();
 
     let existing_content = std::fs::read_to_string(zshenv_path).unwrap_or_default();
@@ -37,23 +36,6 @@ fn write_env_to_zsh(
 
     let final_content = cleaned.join("\n") + &new_content;
     std::fs::write(zshenv_path, &final_content).map_err(|e| e.to_string())?;
-
-    if terminal_app == "Terminal" {
-        let script = r#"echo "Jan Local API Server: Env vars configured in ~/.zshenv"
-echo "Please restart your terminal or run: source ~/.zshenv"
-echo ""
-echo "Then run: claude""#;
-
-        std::process::Command::new("osascript")
-            .arg("-e")
-            .arg(&format!(
-                r#"tell application "Terminal" to do script "{}""#,
-                script.replace("\"", "\\\"")
-            ))
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-
     Ok(())
 }
 
@@ -245,7 +227,7 @@ pub fn launch_claude_code_with_config(
             .open(&zshenv_path)
         {
             Ok(_) => {
-                write_env_to_zsh(&zshenv_path, &env_vars, "Terminal")?;
+                write_env_to_zsh(&zshenv_path, &env_vars)?;
                 return Ok(());
             }
             Err(_) => {
@@ -306,7 +288,7 @@ pub fn launch_claude_code_with_config(
             .open(&zshenv_path)
         {
             Ok(_) => {
-                write_env_to_zsh(&zshenv_path, &env_vars, "")?;
+                write_env_to_zsh(&zshenv_path, &env_vars)?;
                 return Ok(());
             }
             Err(_) => {
