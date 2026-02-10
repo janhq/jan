@@ -1273,7 +1273,6 @@ async fn proxy_request<R: tauri::Runtime>(
     log::info!(
         "Proxying request to model server at base URL {upstream_url}, path: {destination_path}"
     );
-    log::info!("Fallback api key: {:?}", session_api_key.clone());
 
     let mut outbound_req = client.request(method.clone(), upstream_url);
 
