@@ -97,11 +97,12 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
   const handleDownloadMlxModel = useCallback(async () => {
     addLocalDownloadingModel(modelId)
 
+    const modelPath = `${model.developer}/${modelName}`
     try {
       // Fetch repository info to get all files
       const repoInfo = await serviceHub
         .models()
-        .fetchHuggingFaceRepo(model.model_name, huggingfaceToken)
+        .fetchHuggingFaceRepo(modelPath, huggingfaceToken)
 
       if (!repoInfo || !repoInfo.siblings) {
         throw new Error('Failed to fetch repository files')
@@ -132,14 +133,14 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
         throw new Error('No safetensors file found in repository')
       }
 
-      const modelUrl = `https://huggingface.co/${model.model_name}/resolve/main/${mainSafetensorsFile.rfilename}`
+      const modelUrl = `https://huggingface.co/${modelPath}/resolve/main/${mainSafetensorsFile.rfilename}`
 
       // Prepare additional files to download (all model files except main safetensors)
       // Don't pass sha256/size to skip verification for MLX models
       const extraFiles = modelFiles
         .filter((f) => f.rfilename !== mainSafetensorsFile.rfilename)
         .map((file) => ({
-          url: `https://huggingface.co/${model.model_name}/resolve/main/${file.rfilename}`,
+          url: `https://huggingface.co/${modelPath}/resolve/main/${file.rfilename}`,
           filename: file.rfilename,
         }))
 

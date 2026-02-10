@@ -143,7 +143,7 @@ function SetupScreen() {
       >()
 
       for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-        const variant = janNewModel.quants.find((quant) =>
+        const variant = janNewModel.quants?.find((quant) =>
           quant.model_id.toLowerCase().includes(quantization)
         )
 
@@ -201,7 +201,7 @@ function SetupScreen() {
 
     for (const status of priorityOrder) {
       for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-        const variant = janNewModel.quants.find((quant) =>
+        const variant = janNewModel.quants?.find((quant) =>
           quant.model_id.toLowerCase().includes(quantization)
         )
 
@@ -214,7 +214,7 @@ function SetupScreen() {
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
       if (quantization === 'q8_0') continue
 
-      const variant = janNewModel.quants.find((quant) =>
+      const variant = janNewModel.quants?.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
       )
 
@@ -224,7 +224,7 @@ function SetupScreen() {
     }
 
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-      const variant = janNewModel.quants.find((quant) =>
+      const variant = janNewModel.quants?.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
       )
 
@@ -234,13 +234,13 @@ function SetupScreen() {
     }
 
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-      const variant = janNewModel.quants.find((quant) =>
+      const variant = janNewModel.quants?.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
       )
       if (variant) return variant
     }
 
-    return janNewModel.quants[0]
+    return janNewModel.quants?.[0]
   }, [janNewModel, supportedVariants])
 
   const downloadProcesses = useMemo(
