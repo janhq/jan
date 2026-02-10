@@ -11,8 +11,6 @@ import {
   ChangeEvent,
   useCallback,
   useRef,
-  lazy,
-  Suspense,
   useTransition,
 } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -51,20 +49,7 @@ import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { Button } from '@/components/ui/button'
-
-// Lazy load heavy components
-const RenderMarkdown = lazy(() =>
-  import('@/containers/RenderMarkdown').then((mod) => ({ default: mod.RenderMarkdown }))
-)
-
-// Eagerly prefetch on first user interaction
-let hasPrefetched = false
-const prefetchHubResources = () => {
-  if (hasPrefetched) return
-  hasPrefetched = true
-  // Prefetch the lazy component
-  import('@/containers/RenderMarkdown')
-}
+import { RenderMarkdown } from '@/containers/RenderMarkdown'
 
 type SearchParams = {
   repo: string
@@ -237,15 +222,13 @@ function HubContent() {
           count: filteredModels.length,
           getScrollElement: () => parentRef.current,
           estimateSize,
-          overscan: 5,
+          overscan: 8,
+          measureElement: (el: HTMLElement) => el.getBoundingClientRect().height,
         }
       : { count: 0, getScrollElement: () => null, estimateSize: () => 0 }
   )
 
   useEffect(() => {
-    // Prefetch lazy components immediately
-    prefetchHubResources()
-
     // Use startTransition to keep UI responsive during data fetch
     startTransition(() => {
       fetchSources()
@@ -453,7 +436,7 @@ function HubContent() {
             </div>
           </div>
         </HeaderPage>
-        <div className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider">
+        <div ref={parentRef} className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider">
           <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto">
             {/* Show skeleton immediately on navigation, then show actual content when loaded */}
             {(isInitialLoad || (loading && !filteredModels.length)) ? (
@@ -489,10 +472,9 @@ function HubContent() {
             ) : (
               <div
                 className={cn(
-                  'flex flex-col pb-2 mb-2 gap-2 transition-opacity duration-200',
+                  'flex flex-col pb-2 mb-2 transition-opacity duration-200',
                   isPending ? 'opacity-70' : 'opacity-100'
                 )}
-                ref={parentRef}
               >
                 <div className="flex items-center gap-2 justify-end sm:hidden">
                   {renderFilter()}
@@ -505,7 +487,19 @@ function HubContent() {
                   }}
                 >
                   {rowVirtualizer.getVirtualItems().map((virtualItem) => (
-                    <div key={virtualItem.key} className="mb-2">
+                    <div
+                      key={virtualItem.key}
+                      data-index={virtualItem.index}
+                      ref={rowVirtualizer.measureElement}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualItem.start}px)`,
+                        paddingBottom: 8,
+                      }}
+                    >
                       <Card
                         header={
                           <div className="flex items-center justify-between gap-x-2">
@@ -595,29 +589,23 @@ function HubContent() {
                         }
                       >
                         <div className="line-clamp-2 mt-3 text-muted-foreground leading-normal">
-                          <Suspense
-                            fallback={
-                              <div className="animate-pulse h-4 bg-muted rounded w-3/4" />
+                          <RenderMarkdown
+                            className="select-none reset-heading"
+                            components={{
+                              a: ({ ...props }) => (
+                                <a
+                                  {...props}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                />
+                              ),
+                            }}
+                            content={
+                              extractDescription(
+                                filteredModels[virtualItem.index]?.description
+                              ) || ''
                             }
-                          >
-                            <RenderMarkdown
-                              className="select-none reset-heading"
-                              components={{
-                                a: ({ ...props }) => (
-                                  <a
-                                    {...props}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  />
-                                ),
-                              }}
-                              content={
-                                extractDescription(
-                                  filteredModels[virtualItem.index]?.description
-                                ) || ''
-                              }
-                            />
-                          </Suspense>
+                          />
                         </div>
                         <div className="flex items-center gap-2 mt-2">
                           <span className="capitalize text-foreground">
