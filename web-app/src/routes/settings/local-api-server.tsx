@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/collapsible'
 import {
   IconChevronDown,
+  IconChevronUp,
   IconExternalLink,
   IconPlus,
   IconX,
@@ -756,11 +757,9 @@ function LocalAPIServerContent() {
             <Card>
               <Collapsible defaultOpen={false}>
                 <div className="flex items-center justify-between">
-                  <CollapsibleTrigger className="flex items-center gap-2 hover:no-underline">
-                    <IconChevronDown
-                      size={16}
-                      className="transition-transform data-[state=open]:rotate-180"
-                    />
+                  <CollapsibleTrigger className="flex items-center gap-2 hover:no-underline data-[state=open]:[&>svg.chevron-down]:hidden data-[state=closed]:[&>svg.chevron-up]:hidden">
+                    <IconChevronDown size={16} className="chevron-down" />
+                    <IconChevronUp size={16} className="chevron-up" />
                     <span className="font-medium text-sm">Server Log</span>
                   </CollapsibleTrigger>
                   <Button
