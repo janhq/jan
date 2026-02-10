@@ -22,8 +22,17 @@ export const MlxModelDownloadAction = ({ model }: { model: CatalogModel }) => {
 
   const [isDownloaded, setDownloaded] = useState(false)
 
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore()
+  const {
+    downloads,
+    localDownloadingModels,
+    addLocalDownloadingModel,
+    removeLocalDownloadingModel,
+  } = useDownloadStore((state) => ({
+    downloads: state.downloads,
+    localDownloadingModels: state.localDownloadingModels,
+    addLocalDownloadingModel: state.addLocalDownloadingModel,
+    removeLocalDownloadingModel: state.removeLocalDownloadingModel,
+  }))
 
   // Construct the model ID - use just the sanitized model name if developer is same as org
   // e.g., "mlx-community/Qwen3-VL-2B-Thinking-4bit" -> "Qwen3-VL-2B-Thinking-4bit"
@@ -164,6 +173,7 @@ export const MlxModelDownloadAction = ({ model }: { model: CatalogModel }) => {
       })
     } catch (error) {
       console.error('Error downloading MLX model:', error)
+      removeLocalDownloadingModel(modelId)
       toast.error('Failed to download MLX model', {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
