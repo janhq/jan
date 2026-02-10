@@ -171,7 +171,11 @@ pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<ToolWithServer>
         // List tools with timeout
         let tools_future = service.list_all_tools();
         let tools = match timeout(timeout_duration, tools_future).await {
-            Ok(result) => result.map_err(|e| e.to_string())?,
+            Ok(Ok(tools)) => tools,
+            Ok(Err(e)) => {
+                log::warn!("MCP server {} failed to list tools: {}", server_name, e);
+                continue;
+            }
             Err(_) => {
                 log::warn!(
                     "Listing tools timed out after {} seconds",
