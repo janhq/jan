@@ -293,11 +293,13 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async abortDownload(id: string): Promise<void> {
-    const engine = this.getEngine()
+    const llamacppEngine = this.getEngine('llamacpp')
+    const mlxEngine = this.getEngine('mlx')
     try {
-      if (engine) {
-        await engine.abortImport(id)
-      }
+      await Promise.allSettled([
+        llamacppEngine?.abortImport(id),
+        mlxEngine?.abortImport(id),
+      ].filter(Boolean))
     } finally {
       events.emit(DownloadEvent.onFileDownloadStopped, {
         modelId: id,
