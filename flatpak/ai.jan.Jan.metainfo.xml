@@ -108,6 +108,11 @@
   </keywords>
 
   <releases>
+    <release version="0.7.7" date="2026-02-11">
+      <description>
+        <p>Native MLX support for Apple silicon, app-wide UI refresh, file uploads in Projects, and improved API server capabilities</p>
+      </description>
+    </release>
     <release version="0.7.6" date="2026-01-27">
     <description>
       <p>Unified interface seamlessly integrated with the groundbreaking Jan V3 model, delivering an unparalleled AI experience</p>
