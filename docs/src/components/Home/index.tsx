@@ -208,7 +208,7 @@ const Home = () => {
           </div>
         </div>
 
-        <div className="hidden size-4/5 xl:size-3/5 bg-black rounded-[20px] mx-auto relative -mt-40 lg:flex p-3 animate-scale-in delay-300">
+        <div className="hidden size-4/5 xl:size-3/5 rounded-[20px] mx-auto relative -mt-40 lg:flex animate-scale-in delay-300">
           <div className="rounded-md size-full overflow-hidden">
             <img
               src={AppJanPNG.src}
@@ -218,7 +218,7 @@ const Home = () => {
           </div>
         </div>
 
-        <div className="lg:hidden size-full bg-black rounded-2xl mx-auto relative mt-10 flex p-2 animate-scale-in delay-300">
+        <div className="lg:hidden size-full rounded-2xl mx-auto relative mt-10 flex animate-scale-in delay-300">
           <div className="rounded-lg size-full overflow-hidden">
             <img
               src={AppJanPNG.src}
