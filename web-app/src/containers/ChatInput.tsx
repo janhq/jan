@@ -1570,7 +1570,7 @@ const ChatInput = memo(function ChatInput({
                           </DropdownMenuItem>
                           {assistants.length > 0 ? (
                             assistants.map((assistant) => {
-                              const isSelected = selectedAssistant?.id === assistant.id ||
+                              const isSelected = initialMessage && selectedAssistant?.id === assistant.id ||
                                 (assistant && currentThread?.assistants?.some((a) => a.id === assistant.id))
                               return (
                                 <DropdownMenuItem
