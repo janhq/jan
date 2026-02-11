@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/collapsible'
 import {
   IconChevronDown,
+  IconChevronUp,
   IconExternalLink,
   IconPlus,
   IconX,
@@ -390,7 +391,7 @@ function LocalAPIServerContent() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div className="flex items-center justify-between w-full mr-2 pr-4">
+        <div className={cn("flex items-center justify-between w-full mr-2 pr-3", !IS_MACOS && "pr-30")}>
           <span className="font-medium text-base font-studio">
             {t('common:settings')}
           </span>
@@ -756,11 +757,9 @@ function LocalAPIServerContent() {
             <Card>
               <Collapsible defaultOpen={false}>
                 <div className="flex items-center justify-between">
-                  <CollapsibleTrigger className="flex items-center gap-2 hover:no-underline">
-                    <IconChevronDown
-                      size={16}
-                      className="transition-transform data-[state=open]:rotate-180"
-                    />
+                  <CollapsibleTrigger className="flex items-center gap-2 hover:no-underline data-[state=open]:[&>svg.chevron-down]:hidden data-[state=closed]:[&>svg.chevron-up]:hidden">
+                    <IconChevronDown size={16} className="chevron-down" />
+                    <IconChevronUp size={16} className="chevron-up" />
                     <span className="font-medium text-sm">Server Log</span>
                   </CollapsibleTrigger>
                   <Button

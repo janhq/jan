@@ -28,14 +28,15 @@ export interface SafetensorsFile {
 export interface CatalogModel {
   model_name: string
   description: string
-  developer: string
+  library_name?: string
+  developer?: string
   downloads: number
-  num_quants: number
-  quants: ModelQuant[]
+  num_quants?: number
+  quants?: ModelQuant[]
   mmproj_models?: MMProjModel[]
-  num_mmproj: number
+  num_mmproj?: number
   safetensors_files?: SafetensorsFile[]
-  num_safetensors: number
+  num_safetensors?: number
   created_at?: string
   readme?: string
   tools?: boolean

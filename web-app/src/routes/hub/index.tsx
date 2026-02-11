@@ -11,8 +11,6 @@ import {
   ChangeEvent,
   useCallback,
   useRef,
-  lazy,
-  Suspense,
   useTransition,
 } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -51,20 +49,7 @@ import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { Button } from '@/components/ui/button'
-
-// Lazy load heavy components
-const RenderMarkdown = lazy(() =>
-  import('@/containers/RenderMarkdown').then((mod) => ({ default: mod.RenderMarkdown }))
-)
-
-// Eagerly prefetch on first user interaction
-let hasPrefetched = false
-const prefetchHubResources = () => {
-  if (hasPrefetched) return
-  hasPrefetched = true
-  // Prefetch the lazy component
-  import('@/containers/RenderMarkdown')
-}
+import { RenderMarkdown } from '@/containers/RenderMarkdown'
 
 type SearchParams = {
   repo: string
@@ -186,7 +171,7 @@ function HubContent() {
       filtered = filtered
         ?.map((model) => ({
           ...model,
-          quants: model.quants.filter((variant) => {
+          quants: model.quants?.filter((variant) => {
             // Check both llamacpp and mlx providers
             const isLlamaCppDownloaded = useModelProvider
               .getState()
@@ -199,7 +184,7 @@ function HubContent() {
             return isLlamaCppDownloaded || isMlxDownloaded
           }),
         }))
-        .filter((model) => model.quants.length > 0)
+        .filter((model) => (model.quants?.length ?? 0) > 0)
     }
     // Add HuggingFace repo at the beginning if available
     if (huggingFaceRepo) {
@@ -223,8 +208,8 @@ function HubContent() {
       const baseHeight = 95
       const variantHeight = 36
       const expanded = expandedModels[model.model_name]
-      return expanded && model.quants.length > 1
-        ? baseHeight + model.quants.length * variantHeight
+      return expanded && (model.quants?.length ?? 0) > 1
+        ? baseHeight + (model.quants?.length ?? 0) * variantHeight
         : baseHeight
     },
     [expandedModels, filteredModels]
@@ -237,15 +222,13 @@ function HubContent() {
           count: filteredModels.length,
           getScrollElement: () => parentRef.current,
           estimateSize,
-          overscan: 5,
+          overscan: 8,
+          measureElement: (el: HTMLElement) => el.getBoundingClientRect().height,
         }
       : { count: 0, getScrollElement: () => null, estimateSize: () => 0 }
   )
 
   useEffect(() => {
-    // Prefetch lazy components immediately
-    prefetchHubResources()
-
     // Use startTransition to keep UI responsive during data fetch
     startTransition(() => {
       fetchSources()
@@ -288,7 +271,7 @@ function HubContent() {
               (s) =>
                 catalogModel.model_name.trim().split('/').pop() ===
                   s.model_name.trim() &&
-                catalogModel.developer.trim() === s.developer?.trim()
+                catalogModel.developer?.trim() === s.developer?.trim()
             )
           ) {
             setHuggingFaceRepo(catalogModel)
@@ -453,7 +436,7 @@ function HubContent() {
             </div>
           </div>
         </HeaderPage>
-        <div className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider">
+        <div ref={parentRef} className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider">
           <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto">
             {/* Show skeleton immediately on navigation, then show actual content when loaded */}
             {(isInitialLoad || (loading && !filteredModels.length)) ? (
@@ -489,10 +472,9 @@ function HubContent() {
             ) : (
               <div
                 className={cn(
-                  'flex flex-col pb-2 mb-2 gap-2 transition-opacity duration-200',
+                  'flex flex-col pb-2 mb-2 transition-opacity duration-200',
                   isPending ? 'opacity-70' : 'opacity-100'
                 )}
-                ref={parentRef}
               >
                 <div className="flex items-center gap-2 justify-end sm:hidden">
                   {renderFilter()}
@@ -505,7 +487,19 @@ function HubContent() {
                   }}
                 >
                   {rowVirtualizer.getVirtualItems().map((virtualItem) => (
-                    <div key={virtualItem.key} className="mb-2">
+                    <div
+                      key={virtualItem.key}
+                      data-index={virtualItem.index}
+                      ref={rowVirtualizer.measureElement}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualItem.start}px)`,
+                        paddingBottom: 8,
+                      }}
+                    >
                       <Card
                         header={
                           <div className="flex items-center justify-between gap-x-2">
@@ -550,7 +544,7 @@ function HubContent() {
                                   (
                                     filteredModels[
                                       virtualItem.index
-                                    ].quants.find((m) =>
+                                    ].quants?.find((m) =>
                                       DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
                                         m.model_id.toLowerCase().includes(e)
                                       )
@@ -568,7 +562,7 @@ function HubContent() {
                                 variant={
                                   filteredModels[
                                     virtualItem.index
-                                  ].quants.find((m) =>
+                                  ].quants?.find((m) =>
                                     DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
                                       m.model_id.toLowerCase().includes(e)
                                     )
@@ -595,29 +589,23 @@ function HubContent() {
                         }
                       >
                         <div className="line-clamp-2 mt-3 text-muted-foreground leading-normal">
-                          <Suspense
-                            fallback={
-                              <div className="animate-pulse h-4 bg-muted rounded w-3/4" />
+                          <RenderMarkdown
+                            className="select-none reset-heading"
+                            components={{
+                              a: ({ ...props }) => (
+                                <a
+                                  {...props}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                />
+                              ),
+                            }}
+                            content={
+                              extractDescription(
+                                filteredModels[virtualItem.index]?.description
+                              ) || ''
                             }
-                          >
-                            <RenderMarkdown
-                              className="select-none reset-heading"
-                              components={{
-                                a: ({ ...props }) => (
-                                  <a
-                                    {...props}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  />
-                                ),
-                              }}
-                              content={
-                                extractDescription(
-                                  filteredModels[virtualItem.index]?.description
-                                ) || ''
-                              }
-                            />
-                          </Suspense>
+                          />
                         </div>
                         <div className="flex items-center gap-2 mt-2">
                           <span className="capitalize text-foreground">
@@ -648,7 +636,7 @@ function HubContent() {
                               </span>
                             </div>
                             <div className="flex gap-1.5 items-center">
-                              {filteredModels[virtualItem.index].num_mmproj >
+                              {(filteredModels[virtualItem.index].num_mmproj ?? 0) >
                                 0 && (
                                 <div className="flex items-center gap-1">
                                   <Tooltip>
@@ -684,7 +672,7 @@ function HubContent() {
                                 </div>
                               )}
                             </div>
-                            {filteredModels[virtualItem.index].quants.length >
+                            {(filteredModels[virtualItem.index].quants?.length ?? 0) >
                               1 && (
                               <div className="flex items-center gap-2 hub-show-variants-step">
                                 <Switch
@@ -711,10 +699,10 @@ function HubContent() {
                         {expandedModels[
                           filteredModels[virtualItem.index].model_name
                         ] &&
-                          filteredModels[virtualItem.index].quants.length >
+                          (filteredModels[virtualItem.index].quants?.length ?? 0) >
                             0 && (
                             <div className="mt-5">
-                              {filteredModels[virtualItem.index].quants.map(
+                              {filteredModels[virtualItem.index].quants?.map(
                                 (variant) => (
                                   <CardItem
                                     key={variant.model_id}
@@ -724,8 +712,7 @@ function HubContent() {
                                           <span className="mr-2">
                                             {variant.model_id}
                                           </span>
-                                          {filteredModels[virtualItem.index]
-                                            .num_mmproj > 0 && (
+                                          {(filteredModels[virtualItem.index].num_mmproj ?? 0) > 0 && (
                                             <div className="flex items-center gap-1">
                                               <Tooltip>
                                                 <TooltipTrigger asChild>

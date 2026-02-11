@@ -145,7 +145,6 @@ export function DownloadManagement() {
 
   const onFileDownloadUpdate = useCallback(
     async (state: DownloadState) => {
-      console.debug('onFileDownloadUpdate', state)
       updateProgress(
         state.modelId,
         state.percent,
@@ -441,7 +440,7 @@ export function DownloadManagement() {
                           title="Cancel download"
                           onClick={() => {
                             // TODO: Consolidate cancellation logic
-                            if (download.id.startsWith('llamacpp')) {
+                            if (download.id.startsWith('llamacpp') || download.id.startsWith('mlx')) {
                               const downloadManager =
                                 window.core.extensionManager.getByName(
                                   '@janhq/download-extension'

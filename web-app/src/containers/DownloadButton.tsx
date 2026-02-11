@@ -39,11 +39,11 @@ export function DownloadButtonPlaceholder({
   const [isDownloaded, setDownloaded] = useState<boolean>(false)
 
   const quant =
-    model.quants.find((e) =>
+    model.quants?.find((e) =>
       DEFAULT_MODEL_QUANTIZATIONS.some((m) =>
         e.model_id.toLowerCase().includes(m)
       )
-    ) ?? model.quants[0]
+    ) ?? model.quants?.[0]
 
   const modelId = quant?.model_id || model.model_name
 
@@ -82,7 +82,7 @@ export function DownloadButtonPlaceholder({
       'jan-nano-gguf') as boolean
   }, [])
 
-  if (model.quants.length === 0) {
+  if ((model.quants?.length ?? 0) === 0) {
     return (
       <div className="flex items-center gap-2">
         <a
