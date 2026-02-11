@@ -206,7 +206,7 @@ actor ModelRunner {
         log("[mlx] Model ready: \(modelId)")
 
         // Clear out the promptCache for new model load
-        promptCache.removeObject(forKey: modelId as NSString)
+        // promptCache.removeObject(forKey: modelId as NSString)
     }
 
     /// Build Chat.Message array from ChatMessages, including images and videos
@@ -372,9 +372,9 @@ actor ModelRunner {
             // Get the prompt cache and adjust new prompt to remove
             // prefix already in cache, trim cache if cache is
             // inconsistent with new prompt.
-            let (cache, lmInput) = await getPromptCache(
-                fullPrompt: fullInput, parameters: generateParameters, context: context,
-                modelName: modelId)
+            // let (cache, lmInput) = await getPromptCache(
+            //     fullPrompt: fullInput, parameters: generateParameters, context: context,
+            //     modelName: modelId)
 
             var output = ""
             var completionTokenCount = 0
@@ -383,7 +383,7 @@ actor ModelRunner {
 
             do {
                 for await generation in try MLXLMCommon.generate(
-                    input: lmInput, cache: cache?.cache, parameters: generateParameters, context: context
+                    input: fullInput, cache: nil, parameters: generateParameters, context: context
                 ) {
                     // Check if the task was cancelled (client disconnected)
                     try Task.checkCancellation()
@@ -495,9 +495,9 @@ actor ModelRunner {
                         // Get the prompt cache and adjust new prompt to remove
                         // prefix already in cache, trim cache if cache is
                         // inconsistent with new prompt.
-                        let (cache, lmInput) = await getPromptCache(
-                            fullPrompt: fullInput, parameters: generateParameters, context: context,
-                            modelName: modelId)
+                        // let (cache, lmInput) = await getPromptCache(
+                        //     fullPrompt: fullInput, parameters: generateParameters, context: context,
+                        //     modelName: modelId)
 
                         var completionTokenCount = 0
                         var accumulated = ""
@@ -505,7 +505,7 @@ actor ModelRunner {
 
                         do {
                             for await generation in try MLXLMCommon.generate(
-                                input: lmInput, cache: cache?.cache, parameters: generateParameters, context: context
+                                input: fullInput, cache: nil, parameters: generateParameters, context: context
                             ) {
                                 // Check if the task was cancelled (client disconnected)
                                 if Task.isCancelled {
