@@ -39,7 +39,7 @@ export const useAgentMode = create<AgentModeState>()(
     (set) => ({
       currentAgent: 'build',
       projectPath: null,
-      workingDirectoryMode: 'custom',
+      workingDirectoryMode: 'current', // Default to current directory so OpenCode is available
       autoApproveReadOnly: true,
 
       setCurrentAgent: (agent) => set({ currentAgent: agent }),

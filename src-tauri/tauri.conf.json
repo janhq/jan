@@ -64,6 +64,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["resources/LICENSE"]
+    "resources": [
+      "resources/LICENSE",
+      "resources/bin/opencode",
+      "resources/bin/opencode-aarch64-apple-darwin",
+      "resources/bin/opencode-x86_64-apple-darwin",
+      "resources/bin/opencode-x86_64-unknown-linux-gnu",
+      "resources/bin/opencode-x86_64-pc-windows-msvc.exe"
+    ]
   }
 }

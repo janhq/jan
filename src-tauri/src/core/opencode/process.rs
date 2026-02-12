@@ -1017,22 +1017,11 @@ impl OpenCodeProcessManager {
         let exe_path = std::env::current_exe().ok();
         let exe_dir = exe_path.as_ref().and_then(|p| p.parent());
 
-        // Determine platform-specific binary name and directory
-        let (platform_dir, binary_name) = if cfg!(target_os = "windows") {
-            ("opencode-windows-x64", "opencode.exe")
-        } else if cfg!(target_os = "macos") {
-            if cfg!(target_arch = "aarch64") {
-                ("opencode-darwin-arm64", "opencode")
-            } else {
-                ("opencode-darwin-x64", "opencode")
-            }
+        // Determine platform-specific binary name
+        let binary_name = if cfg!(target_os = "windows") {
+            "opencode.exe"
         } else {
-            // Linux
-            if cfg!(target_arch = "aarch64") {
-                ("opencode-linux-arm64", "opencode")
-            } else {
-                ("opencode-linux-x64", "opencode")
-            }
+            "opencode"
         };
 
         if let Some(bin_dir) = exe_dir {
@@ -1043,68 +1032,26 @@ impl OpenCodeProcessManager {
                 .and_then(|p| p.parent());
 
             if let Some(root) = project_root {
-                let assistant_pkg_dir = root.join("opencode").join("packages").join("opencode");
-                let assistant_entry = assistant_pkg_dir.join("src").join("index.ts");
-
-                // Priority 1: Dev mode - use bun to run source directly
-                if assistant_entry.exists() {
-                    // Find bun binary
-                    let bun_candidates: Vec<PathBuf> = vec![
-                        PathBuf::from(std::env::var("HOME").unwrap_or_default())
-                            .join(".bun/bin/bun"),
-                        PathBuf::from("/opt/homebrew/bin/bun"),
-                        PathBuf::from("/usr/local/bin/bun"),
-                        PathBuf::from("/usr/bin/bun"),
-                    ];
-
-                    for bun_path in bun_candidates {
-                        if bun_path.exists() {
-                            info!(
-                                "Using bun dev mode: {} in {}",
-                                bun_path.display(),
-                                assistant_pkg_dir.display()
-                            );
-                            return Self::with_bun_dev(bun_path, assistant_pkg_dir);
-                        }
-                    }
-
-                    // Try bun from PATH via `which`
-                    if let Ok(output) = std::process::Command::new("which").arg("bun").output() {
-                        if output.status.success() {
-                            let bun_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                            if !bun_path.is_empty() {
-                                let bun_path = PathBuf::from(&bun_path);
-                                info!(
-                                    "Using bun dev mode (from PATH): {} in {}",
-                                    bun_path.display(),
-                                    assistant_pkg_dir.display()
-                                );
-                                return Self::with_bun_dev(bun_path, assistant_pkg_dir);
-                            }
-                        }
-                    }
-                }
-
-                // Priority 2: Built binary from dist/
-                let built_binary = assistant_pkg_dir
-                    .join("dist")
-                    .join(platform_dir)
+                // Priority 1: Downloaded binary in src-tauri/resources/bin/ (dev mode)
+                // This is where scripts/download-opencode.mjs places the binary
+                let dev_binary = root
+                    .join("src-tauri")
+                    .join("resources")
                     .join("bin")
                     .join(binary_name);
 
-                if built_binary.exists() {
+                if dev_binary.exists() {
                     info!(
-                        "Found built OpenCode binary at: {}",
-                        built_binary.display()
+                        "Found downloaded OpenCode binary at: {}",
+                        dev_binary.display()
                     );
-                    return Self::with_binary(built_binary);
+                    return Self::with_binary(dev_binary);
                 }
             }
 
-            // Priority 3: Bundled binary in resources (production)
+            // Priority 2: Bundled binary in resources (production - macOS app bundle)
             let bundled_binary = bin_dir
                 .join("resources")
-                .join("opencode")
                 .join("bin")
                 .join(binary_name);
 
@@ -1116,8 +1063,23 @@ impl OpenCodeProcessManager {
                 return Self::with_binary(bundled_binary);
             }
 
-            // Alternative: next to executable
-            let adjacent_binary = bin_dir.join("opencode").join("bin").join(binary_name);
+            // Alternative bundled location
+            let bundled_binary_alt = bin_dir
+                .join("resources")
+                .join("opencode")
+                .join("bin")
+                .join(binary_name);
+
+            if bundled_binary_alt.exists() {
+                info!(
+                    "Found bundled OpenCode binary at: {}",
+                    bundled_binary_alt.display()
+                );
+                return Self::with_binary(bundled_binary_alt);
+            }
+
+            // Adjacent to executable
+            let adjacent_binary = bin_dir.join(binary_name);
             if adjacent_binary.exists() {
                 info!(
                     "Found adjacent OpenCode binary at: {}",
@@ -1127,7 +1089,7 @@ impl OpenCodeProcessManager {
             }
         }
 
-        // Priority 4: System-installed binary
+        // Priority 3: System-installed binary
         let binary_candidates = [
             "/opt/homebrew/bin/opencode",
             "/usr/local/bin/opencode",

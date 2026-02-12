@@ -80,19 +80,51 @@ async function main() {
   console.log('Extracting...')
   await tar.x({ file: archivePath, cwd: tempDir })
 
+  // Find the correct binary based on platform/arch
+  // macOS universal builds have opencode-arm64 and opencode-x64
+  // Linux/Windows have just opencode or opencode.exe
+  let extractedBinary
+  if (platform === 'darwin') {
+    // Use architecture-specific binary from universal build
+    const archBinary = arch === 'arm64' ? 'opencode-arm64' : 'opencode-x64'
+    extractedBinary = path.join(tempDir, archBinary)
+    if (!fs.existsSync(extractedBinary)) {
+      // Fallback to generic name
+      extractedBinary = path.join(tempDir, binaryName)
+    }
+  } else {
+    extractedBinary = path.join(tempDir, binaryName)
+  }
+
+  if (!fs.existsSync(extractedBinary)) {
+    // List what's in the temp dir for debugging
+    const files = fs.readdirSync(tempDir)
+    throw new Error(`Binary not found at ${extractedBinary}. Available files: ${files.join(', ')}`)
+  }
+
   // Copy binary to bin directory
-  const extractedBinary = path.join(tempDir, binaryName)
   fs.copyFileSync(extractedBinary, binaryPath)
   fs.chmodSync(binaryPath, 0o755)
 
   // Create platform-specific copies for Tauri sidecar
-  const tauriTarget = target.replace('universal-apple-darwin', 'aarch64-apple-darwin')
-  const tauriBinaryPath = path.join(binDir, `opencode-${tauriTarget}${platform === 'win32' ? '.exe' : ''}`)
-  fs.copyFileSync(binaryPath, tauriBinaryPath)
-
   if (platform === 'darwin') {
-    // Also create x86_64 copy for universal binary
-    fs.copyFileSync(binaryPath, path.join(binDir, 'opencode-x86_64-apple-darwin'))
+    // For macOS, copy both arch-specific binaries
+    const arm64Binary = path.join(tempDir, 'opencode-arm64')
+    const x64Binary = path.join(tempDir, 'opencode-x64')
+
+    if (fs.existsSync(arm64Binary)) {
+      fs.copyFileSync(arm64Binary, path.join(binDir, 'opencode-aarch64-apple-darwin'))
+      fs.chmodSync(path.join(binDir, 'opencode-aarch64-apple-darwin'), 0o755)
+    }
+    if (fs.existsSync(x64Binary)) {
+      fs.copyFileSync(x64Binary, path.join(binDir, 'opencode-x86_64-apple-darwin'))
+      fs.chmodSync(path.join(binDir, 'opencode-x86_64-apple-darwin'), 0o755)
+    }
+  } else {
+    // For Linux/Windows, create platform-specific copy
+    const tauriTarget = target
+    const tauriBinaryPath = path.join(binDir, `opencode-${tauriTarget}${platform === 'win32' ? '.exe' : ''}`)
+    fs.copyFileSync(binaryPath, tauriBinaryPath)
   }
 
   console.log(`OpenCode ${OPENCODE_VERSION} installed successfully`)
