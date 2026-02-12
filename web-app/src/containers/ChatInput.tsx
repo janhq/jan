@@ -86,6 +86,7 @@ import {
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
+import { AgentModeToggle } from './AgentModeToggle'
 
 type ChatInputProps = {
   className?: string
@@ -1744,6 +1745,9 @@ const ChatInput = memo(function ChatInput({
                       </TooltipContent>
                     </Tooltip>
                   ))}
+
+                {/* Agent Mode Toggle for OpenCode working directory */}
+                <AgentModeToggle />
 
                 {selectedModel?.capabilities?.includes('web_search') && (
                   <Tooltip>

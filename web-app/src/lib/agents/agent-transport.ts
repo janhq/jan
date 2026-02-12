@@ -27,6 +27,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useOrchestratorState } from '@/hooks/useOrchestratorState'
 import { createOpenCodeDelegateTool } from '@/tools/opencode-delegate'
+import { useOpenCodeSession } from '@/hooks/useOpenCodeSession'
 import type {
   UnifiedAgentEvent,
 } from './types'
@@ -478,11 +479,32 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
 
     // Determine if we should continue the existing session or create a new one
     // Note: Session continuity requires same project path
+    const effectiveProjectPath = await this.getEffectiveWorkingDirectory()
+
+    // Check for existing session in our state or in the store
+    const existingSession = useOpenCodeSession.getState().getActiveSession()
     const shouldContinueSession = !!(
-      this.currentSessionId && this.previousProjectPath === this.projectPath
+      (this.currentSessionId || existingSession?.sessionId) &&
+      this.previousProjectPath === effectiveProjectPath
     )
 
-    const effectiveSessionId = shouldContinueSession ? this.currentSessionId : null
+    let effectiveSessionId: string | null | undefined = undefined
+
+    if (shouldContinueSession) {
+      // Continue with existing session
+      effectiveSessionId = this.currentSessionId ?? existingSession?.sessionId ?? null
+    } else if (effectiveProjectPath) {
+      // Create a new session for this project
+      const newSessionId = useOpenCodeSession.getState().createSession(
+        effectiveProjectPath,
+        this.defaultAgent
+      )
+      // Update our tracking state
+      this.currentSessionId = newSessionId
+      this.previousProjectPath = effectiveProjectPath
+      effectiveSessionId = newSessionId
+      console.log('[AgentTransport] Created new session:', newSessionId)
+    }
 
     // Create agent delegate tool if working directory is configured
     // Working directory is configured if: custom mode with projectPath OR current/workspace mode
@@ -491,7 +513,6 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
       this.workingDirectoryMode === 'current' ||
       this.workingDirectoryMode === 'workspace'
 
-    const effectiveProjectPath = await this.getEffectiveWorkingDirectory()
     const opencodeTool = isWorkingDirectoryConfigured && effectiveProjectPath
       ? createOpenCodeDelegateTool({
           projectPath: effectiveProjectPath,
@@ -505,12 +526,15 @@ export class AgentChatTransport implements ChatTransport<UIMessage> {
           onProgress: (event: UnifiedAgentEvent) => {
             addEvent(event)
 
-            // Track session creation from OpenCode events
-            if (event.type === 'delegation.started' && event.data.taskId) {
-              // If we had a session, this task is part of it
+            // Update session state based on delegation events
+            if (event.type === 'delegation.started' && event.data.taskId && effectiveSessionId) {
+              console.log('[AgentTransport] Delegation started in session:', effectiveSessionId)
             }
             if (event.type === 'delegation.completed' && event.data.taskId && effectiveSessionId) {
-              // Task completed in session
+              // Update session activity timestamp after completion
+              useOpenCodeSession.getState().updateSession(effectiveSessionId, {
+                lastActivityAt: Date.now(),
+              })
             }
           },
           onPermissionRequest: async (request) => {
