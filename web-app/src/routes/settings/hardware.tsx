@@ -124,9 +124,9 @@ function HardwareContent() {
         <div className={cn("flex items-center justify-between w-full mr-2 pr-3", !IS_MACOS && "pr-30")}>
           <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
           <Button
-            variant="secondary"
+            variant="outline"
             size="sm"
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 relative z-50"
             onClick={handleClickSystemMonitor}
           >
             <IconDeviceDesktopAnalytics className="text-muted-foreground size-5" />

@@ -433,43 +433,43 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <div className="border px-4 py-1.5 flex items-center gap-1.5 rounded-full">
         <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-50"
-          >
-            {provider && (
-              <div className="shrink-0">
-                <ProvidersAvatar provider={provider} />
-              </div>
-            )}
-            <span
-              className={cn(
-                'text-foreground truncate leading-normal',
-                !selectedModel?.id && 'text-muted-foreground'
-              )}
+          <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full">
+            <button
+              type="button"
+              className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-50"
             >
-              {displayModel}
-            </span>
-            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
-          </button>
+              {provider && (
+                <div className="shrink-0">
+                  <ProvidersAvatar provider={provider} />
+                </div>
+              )}
+              <span
+                className={cn(
+                  'text-foreground truncate leading-normal',
+                  !selectedModel?.id && 'text-muted-foreground'
+                )}
+              >
+                {displayModel}
+              </span>
+              <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+            </button>
+          {currentModel?.settings &&
+            provider &&
+            provider.provider === 'llamacpp' && (
+              <ModelSetting
+                model={currentModel as Model}
+                provider={provider}
+              />
+            )}
+          <ModelSupportStatus
+            modelId={selectedModel?.id}
+            provider={selectedProvider}
+            contextSize={getContextSize()}
+            className="ml-0.5 shrink-0"
+          />
+        </div>
         </PopoverTrigger>
-        {currentModel?.settings &&
-          provider &&
-          provider.provider === 'llamacpp' && (
-            <ModelSetting
-              model={currentModel as Model}
-              provider={provider}
-            />
-          )}
-        <ModelSupportStatus
-          modelId={selectedModel?.id}
-          provider={selectedProvider}
-          contextSize={getContextSize()}
-          className="ml-0.5 shrink-0"
-        />
-      </div>
 
       <PopoverContent
         className={cn(
@@ -477,8 +477,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           searchValue.length === 0 && 'h-80'
         )}
         align="start"
-        sideOffset={16}
-        alignOffset={-10}
+        // sideOffset={16}
+        // alignOffset={-10}
         side="bottom"
         avoidCollisions={searchValue.length === 0 ? true : false}
       >

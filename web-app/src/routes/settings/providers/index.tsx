@@ -8,7 +8,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useNavigate } from '@tanstack/react-router'
 import { IconCirclePlus, IconSettings } from '@tabler/icons-react'
-import { getProviderTitle } from '@/lib/utils'
+import { cn, getProviderTitle } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { AddProviderDialog } from '@/containers/dialogs'
 import { Switch } from '@/components/ui/switch'
@@ -61,8 +61,18 @@ function ModelProviders() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div className="flex items-center gap-2 w-full">
+        <div className={cn("flex items-center justify-between w-full mr-2 pr-3", !IS_MACOS && "pr-30")}>
           <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+          <AddProviderDialog onCreateProvider={createProvider}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2 relative z-20"
+            >
+              <IconCirclePlus size={16} />
+              <span>{t('provider:addProvider')}</span>
+            </Button>
+          </AddProviderDialog>
         </div>
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">
@@ -76,16 +86,6 @@ function ModelProviders() {
                   <span className="font-medium text-base font-studio text-foreground">
                     {t('common:modelProviders')}
                   </span>
-                  <AddProviderDialog onCreateProvider={createProvider}>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="flex items-center gap-2"
-                    >
-                      <IconCirclePlus size={16} />
-                      <span>{t('provider:addProvider')}</span>
-                    </Button>
-                  </AddProviderDialog>
                 </div>
               }
             >
