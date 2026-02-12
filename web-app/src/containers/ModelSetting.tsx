@@ -125,7 +125,15 @@ export function ModelSetting({
         </SheetHeader>
 
         <div className="px-4 space-y-8 pb-4">
-          {Object.entries(model.settings || {}).map(([key, value]) => {
+          {Object.entries(model.settings || {})
+          .filter(([key]) => {
+            // MLX models only support context size setting
+            if (provider.provider === 'mlx') {
+              return key === 'ctx_len'
+            }
+            return true
+          })
+          .map(([key, value]) => {
             const config = value as ProviderSetting
             return (
               <div key={key} className="space-y-2">

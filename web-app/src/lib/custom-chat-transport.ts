@@ -14,6 +14,11 @@ import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useAssistant } from '@/hooks/useAssistant'
+import { useThreads } from '@/hooks/useThreads'
+import { useAttachments } from '@/hooks/useAttachments'
+import { ExtensionManager } from '@/lib/extension'
+import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -107,18 +112,50 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       useToolAvailable.getState().getDisabledToolsForThread
     const disabledToolKeys = this.threadId
       ? getDisabledToolsForThread(this.threadId)
-      : []
-
+      : useToolAvailable.getState().getDefaultDisabledTools()
     // Helper to check if a tool is disabled
     const isToolDisabled = (serverName: string, toolName: string): boolean => {
       const toolKey = `${serverName}::${toolName}`
       return disabledToolKeys.includes(toolKey)
     }
 
+    const selectedModel = useModelProvider.getState().selectedModel
+    const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
+
     // Only load tools if model supports them
-    if (this.modelSupportsTools) {
+    if (modelSupportsTools) {
+      let hasDocuments = this.hasDocuments
+      let ragFeatureAvailable = this.ragFeatureAvailable
+
+      if (!hasDocuments && this.threadId) {
+        const thread = useThreads.getState().threads[this.threadId]
+        const hasThreadDocuments = Boolean(thread?.metadata?.hasDocuments)
+
+        const projectId = thread?.metadata?.project?.id
+        if (projectId) {
+          try {
+            const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
+              ExtensionTypeEnum.VectorDB
+            )
+            if (ext?.listAttachmentsForProject) {
+              const projectFiles = await ext.listAttachmentsForProject(projectId)
+              hasDocuments = hasThreadDocuments || projectFiles.length > 0
+            }
+          } catch (error) {
+            console.warn('Failed to check project files:', error)
+            hasDocuments = hasThreadDocuments
+          }
+        } else {
+          hasDocuments = hasThreadDocuments
+        }
+      }
+
+      if (!ragFeatureAvailable) {
+        ragFeatureAvailable = Boolean(useAttachments.getState().enabled)
+      }
+
       // Load RAG tools if documents are available
-      if (this.hasDocuments && this.ragFeatureAvailable) {
+      if (hasDocuments && ragFeatureAvailable) {
         try {
           const ragTools = await this.serviceHub.rag().getTools()
           if (Array.isArray(ragTools) && ragTools.length > 0) {
@@ -186,7 +223,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
-
     // Ensure tools updated before sending messages
     await this.refreshTools()
 
@@ -200,11 +236,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           .getState()
           .getProviderByName(providerId)
 
+        // Get assistant parameters from current assistant
+        const currentAssistant = useAssistant.getState().currentAssistant
+        const inferenceParams = currentAssistant?.parameters
+
         // Create the model using the factory
         // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
         this.model = await ModelFactory.createModel(
           modelId,
-          updatedProvider ?? provider
+          updatedProvider ?? provider,
+          inferenceParams ?? {}
         )
       } catch (error) {
         console.error('Failed to create model:', error)
@@ -224,7 +265,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     // Include tools only if we have tools loaded AND model supports them
     const hasTools = Object.keys(this.tools).length > 0
-    const shouldEnableTools = hasTools && this.modelSupportsTools
+    const selectedModel = useModelProvider.getState().selectedModel
+    const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
+    const shouldEnableTools = hasTools && modelSupportsTools
 
     // Track stream timing and token count for token speed calculation
     let streamStartTime: number | undefined
@@ -271,7 +314,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           // Use llama.cpp's tokens per second if available, otherwise calculate from duration
           let tokenSpeed: number
           if (durationSec > 0 && outputTokens > 0) {
-            tokenSpeed = tokensPerSecond > 0 ? tokensPerSecond : outputTokens / durationSec
+            tokenSpeed =
+              tokensPerSecond > 0 ? tokensPerSecond : outputTokens / durationSec
           } else {
             tokenSpeed = 0
           }

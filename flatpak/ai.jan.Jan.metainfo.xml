@@ -4,10 +4,6 @@
   <metadata_license>FSFAP</metadata_license>
   <project_license>Apache-2.0</project_license>
   <developer_name>Menlo Research Pte. Ltd.</developer_name>
-  <url type="homepage">https://jan.ai/</url>
-  <url type="bugtracker">https://github.com/janhq/jan/issues</url>
-  <url type="vcs-browser">https://github.com/janhq/jan</url>
-
 
   <name>Jan</name>
   <icon type="stock">ai.jan.Jan</icon>
@@ -108,6 +104,11 @@
   </keywords>
 
   <releases>
+    <release version="0.7.7" date="2026-02-11">
+      <description>
+        <p>Native MLX support for Apple silicon, app-wide UI refresh, file uploads in Projects, and improved API server capabilities</p>
+      </description>
+    </release>
     <release version="0.7.6" date="2026-01-27">
     <description>
       <p>Unified interface seamlessly integrated with the groundbreaking Jan V3 model, delivering an unparalleled AI experience</p>

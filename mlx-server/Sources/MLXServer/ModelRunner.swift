@@ -206,7 +206,7 @@ actor ModelRunner {
         log("[mlx] Model ready: \(modelId)")
 
         // Clear out the promptCache for new model load
-        promptCache.removeObject(forKey: modelId as NSString)
+        // promptCache.removeObject(forKey: modelId as NSString)
     }
 
     /// Build Chat.Message array from ChatMessages, including images and videos
@@ -372,9 +372,9 @@ actor ModelRunner {
             // Get the prompt cache and adjust new prompt to remove
             // prefix already in cache, trim cache if cache is
             // inconsistent with new prompt.
-            let (cache, lmInput) = await getPromptCache(
-                fullPrompt: fullInput, parameters: generateParameters, context: context,
-                modelName: modelId)
+            // let (cache, lmInput) = await getPromptCache(
+            //     fullPrompt: fullInput, parameters: generateParameters, context: context,
+            //     modelName: modelId)
 
             var output = ""
             var completionTokenCount = 0
@@ -383,8 +383,11 @@ actor ModelRunner {
 
             do {
                 for await generation in try MLXLMCommon.generate(
-                    input: lmInput, cache: cache?.cache, parameters: generateParameters, context: context
+                    input: fullInput, cache: nil, parameters: generateParameters, context: context
                 ) {
+                    // Check if the task was cancelled (client disconnected)
+                    try Task.checkCancellation()
+
                     switch generation {
                     case .chunk(let chunk):
                         output += chunk
@@ -395,8 +398,8 @@ actor ModelRunner {
                         // Note: info.promptTokenCount is the tokens processed in this call (may be less due to caching)
                         // We report the full promptTokenCount in usage for accurate tracking
                         log("[mlx] Generation info: \(info.promptTokenCount) processed prompt tokens, \(info.generationTokenCount) generated tokens")
-                        log("[mlx]   Prompt: \(String(format: "%.1f", info.promptTokensPerSecond)) tokens/sec")
-                        log("[mlx]   Generation: \(String(format: "%.1f", info.tokensPerSecond)) tokens/sec")
+                        log("[mlx] Prompt: \(String(format: "%.1f", info.promptTokensPerSecond)) tokens/sec")
+                        log("[mlx] Generation: \(String(format: "%.1f", info.tokensPerSecond)) tokens/sec")
 
                     case .toolCall(let toolCall):
                         let argsData = try JSONSerialization.data(
@@ -416,6 +419,9 @@ actor ModelRunner {
                         log("[mlx] Tool call: \(toolCall.function.name)(\(argsString))")
                     }
                 }
+            } catch is CancellationError {
+                log("[mlx] Generation cancelled by client")
+                throw CancellationError()
             } catch {
                 log("[mlx] Error during generation: \(error.localizedDescription)")
                 throw error
@@ -455,7 +461,7 @@ actor ModelRunner {
         tools: [AnyCodable]? = nil
     ) -> AsyncThrowingStream<StreamEvent, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 guard let container = self.container else {
                     log("[mlx] Error: generateStream() called but no model is loaded")
                     continuation.finish(throwing: MLXServerError.modelNotLoaded)
@@ -489,9 +495,9 @@ actor ModelRunner {
                         // Get the prompt cache and adjust new prompt to remove
                         // prefix already in cache, trim cache if cache is
                         // inconsistent with new prompt.
-                        let (cache, lmInput) = await getPromptCache(
-                            fullPrompt: fullInput, parameters: generateParameters, context: context,
-                            modelName: modelId)
+                        // let (cache, lmInput) = await getPromptCache(
+                        //     fullPrompt: fullInput, parameters: generateParameters, context: context,
+                        //     modelName: modelId)
 
                         var completionTokenCount = 0
                         var accumulated = ""
@@ -499,8 +505,14 @@ actor ModelRunner {
 
                         do {
                             for await generation in try MLXLMCommon.generate(
-                                input: lmInput, cache: cache?.cache, parameters: generateParameters, context: context
+                                input: fullInput, cache: nil, parameters: generateParameters, context: context
                             ) {
+                                // Check if the task was cancelled (client disconnected)
+                                if Task.isCancelled {
+                                    log("[mlx] Stream generation cancelled by client")
+                                    break
+                                }
+
                                 switch generation {
                                 case .chunk(let chunk):
                                     accumulated += chunk
@@ -548,19 +560,31 @@ actor ModelRunner {
                                 }
                             }
                         } catch {
-                            log("[mlx] Error during stream generation: \(error.localizedDescription)")
-                            throw error
+                            if Task.isCancelled {
+                                log("[mlx] Stream generation cancelled by client")
+                            } else {
+                                log("[mlx] Error during stream generation: \(error.localizedDescription)")
+                                throw error
+                            }
                         }
 
-                        // If no .info was received, send done with fallback usage
-                        // The .info case already yields .done, so only send if we haven't
                         log("[mlx] Stream complete: \(accumulated.count) chars")
                         continuation.finish()
                     }
                 } catch {
-                    log("[mlx] Error in stream: \(error.localizedDescription)")
-                    continuation.finish(throwing: error)
+                    if Task.isCancelled {
+                        log("[mlx] Stream cancelled by client")
+                        continuation.finish()
+                    } else {
+                        log("[mlx] Error in stream: \(error.localizedDescription)")
+                        continuation.finish(throwing: error)
+                    }
                 }
+            }
+
+            // Cancel the generation task when the stream consumer stops (client disconnect)
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
             }
         }
     }

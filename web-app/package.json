@@ -102,7 +102,7 @@
   },
   "devDependencies": {
     "@eslint/js": "8.57.0",
-    "@tanstack/router-plugin": "1.117.0",
+    "@tanstack/router-plugin": "1.121.34",
     "@testing-library/dom": "10.4.1",
     "@testing-library/jest-dom": "6.8.0",
     "@testing-library/react": "16.3.0",

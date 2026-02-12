@@ -323,8 +323,7 @@ impl ArgumentBuilder {
     }
 
     fn add_text_generation_args(&mut self) {
-        if self.config.ctx_size > 0 && self.config.ctx_size != 8192 && !self.config.fit {
-            // set only when default values change
+        if self.config.ctx_size > 0 && !self.config.fit {
             self.args.push("--ctx-size".to_string());
             self.args.push(self.config.ctx_size.to_string());
         }
@@ -765,17 +764,6 @@ mod tests {
         assert_no_flag(&args, "--no-mmap");
         assert_no_flag(&args, "--mlock");
         assert_no_flag(&args, "--no-kv-offload");
-    }
-
-    #[test]
-    fn test_ctx_size_default_not_added() {
-        let mut config = default_config();
-        config.ctx_size = 8192;
-
-        let builder = ArgumentBuilder::new(config, false).unwrap();
-        let args = builder.build("test", "/path", 8080, None);
-
-        assert_no_flag(&args, "--ctx-size");
     }
 
     #[test]

@@ -135,7 +135,7 @@ function ThreadDetail() {
 
   // Get system message from thread's assistant instructions (if thread has an assigned assistant)
   // Only use assistant instructions if the thread was created with one (e.g., via a project)
-  const threadAssistant = !projectId && thread?.assistants?.[0]
+  const threadAssistant = thread?.assistants?.[0]
   const systemMessage = threadAssistant?.instructions
     ? renderInstructions(threadAssistant.instructions)
     : undefined

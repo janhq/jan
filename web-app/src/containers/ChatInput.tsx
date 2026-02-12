@@ -166,7 +166,9 @@ const ChatInput = memo(function ChatInput({
 
   // Check if selected model is currently loaded/active
   const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
-  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>()
+  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>(assistants[0])
+
+  // No auto-selection: let the user explicitly pick an assistant
 
   // Jan Browser Extension hook
   const {
@@ -1434,8 +1436,8 @@ const ChatInput = memo(function ChatInput({
                               onClick={() => handleRemoveAttachment(idx)}
                             >
                               <IconX
-                                className="text-destructive-fg"
-                                size={16}
+                                className="text-neutral-200"
+                                size={14}
                               />
                             </div>
                           )}
@@ -1568,8 +1570,8 @@ const ChatInput = memo(function ChatInput({
                           </DropdownMenuItem>
                           {assistants.length > 0 ? (
                             assistants.map((assistant) => {
-                              const isSelected = selectedAssistant?.id === assistant.id ||
-                                currentThread?.assistants?.some((a) => a.id === assistant.id)
+                              const isSelected = initialMessage && selectedAssistant?.id === assistant.id ||
+                                (assistant && currentThread?.assistants?.some((a) => a.id === assistant.id))
                               return (
                                 <DropdownMenuItem
                                   key={assistant.id}

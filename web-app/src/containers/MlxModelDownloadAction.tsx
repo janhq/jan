@@ -8,12 +8,12 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
 import { CatalogModel } from '@/services/models/types'
 import { cn } from '@/lib/utils'
-import { DownloadEvent, events } from '@janhq/core'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { DownloadEvent, EngineManager, events } from '@janhq/core'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useNavigate } from '@tanstack/react-router'
 
-export const MlxModelDownloadAction = ({ model }: { model: CatalogModel }) => {
+export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) => {
   const serviceHub = useServiceHub()
   const { t } = useTranslation()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
@@ -22,8 +22,12 @@ export const MlxModelDownloadAction = ({ model }: { model: CatalogModel }) => {
 
   const [isDownloaded, setDownloaded] = useState(false)
 
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore()
+  const {
+    downloads,
+    localDownloadingModels,
+    addLocalDownloadingModel,
+    removeLocalDownloadingModel,
+  } = useDownloadStore()
 
   // Construct the model ID - use just the sanitized model name if developer is same as org
   // e.g., "mlx-community/Qwen3-VL-2B-Thinking-4bit" -> "Qwen3-VL-2B-Thinking-4bit"
@@ -93,40 +97,26 @@ export const MlxModelDownloadAction = ({ model }: { model: CatalogModel }) => {
   const handleDownloadMlxModel = useCallback(async () => {
     addLocalDownloadingModel(modelId)
 
+    const modelPath = `${model.developer}/${modelName}`
     try {
       // Fetch repository info to get all files
       const repoInfo = await serviceHub
         .models()
-        .fetchHuggingFaceRepo(model.model_name, huggingfaceToken)
+        .fetchHuggingFaceRepo(modelPath, huggingfaceToken)
 
       if (!repoInfo || !repoInfo.siblings) {
         throw new Error('Failed to fetch repository files')
       }
 
       // Filter relevant model files for MLX
-      const modelFiles = repoInfo.siblings.filter((file) => {
-        const name = file.rfilename.toLowerCase()
-        // Include files starting with model. or known config files
-        if (name.startsWith('model.')) return true
-        if (name === 'config.json') return true
-        if (name === 'tokenizer.json') return true
-        if (name === 'tokenizer_config.json') return true
-        if (name === 'special_tokens_map.json') return true
-        if (name === 'README.md') return true
-        if (name === 'chat_template.jinja') return true
-        if (name === 'preprocessor_config.json') return true
-        if (name === 'image_processor_config.json') return true
-        if (name === 'generation_config.json') return true
-        if (name === 'model.py') return true
-        return false
-      })
+      const modelFiles = repoInfo.siblings
 
       if (modelFiles.length === 0) {
         throw new Error('No MLX model files found in repository')
       }
 
       // Get the MLX engine and import
-      const engine = (await import('@janhq/core')).EngineManager.instance().get(
+      const engine = EngineManager.instance().get(
         'mlx'
       )
       if (!engine) {
@@ -143,32 +133,29 @@ export const MlxModelDownloadAction = ({ model }: { model: CatalogModel }) => {
         throw new Error('No safetensors file found in repository')
       }
 
-      const modelUrl = `https://huggingface.co/${model.model_name}/resolve/main/${mainSafetensorsFile.rfilename}`
+      const modelUrl = `https://huggingface.co/${modelPath}/resolve/main/${mainSafetensorsFile.rfilename}`
 
       // Prepare additional files to download (all model files except main safetensors)
       // Don't pass sha256/size to skip verification for MLX models
       const extraFiles = modelFiles
         .filter((f) => f.rfilename !== mainSafetensorsFile.rfilename)
         .map((file) => ({
-          url: `https://huggingface.co/${model.model_name}/resolve/main/${file.rfilename}`,
+          url: `https://huggingface.co/${modelPath}/resolve/main/${file.rfilename}`,
           filename: file.rfilename,
         }))
 
-      await engine.import(modelId, {
+      return engine.import(modelId, {
         modelPath: modelUrl,
         files: extraFiles,
       })
-
-      toast.success('MLX model downloaded successfully', {
-        description: `${modelId} has been downloaded and is ready to use`,
-      })
     } catch (error) {
       console.error('Error downloading MLX model:', error)
+      removeLocalDownloadingModel(modelId)
       toast.error('Failed to download MLX model', {
         description: error instanceof Error ? error.message : 'Unknown error',
       })
     }
-  }, [serviceHub, model, huggingfaceToken, addLocalDownloadingModel, modelId])
+  }, [serviceHub, model, huggingfaceToken, addLocalDownloadingModel, removeLocalDownloadingModel, modelId])
 
   return (
     <div className="flex items-center">
@@ -202,7 +189,7 @@ export const MlxModelDownloadAction = ({ model }: { model: CatalogModel }) => {
       )}
     </div>
   )
-}
+})
 
 // Helper function to sanitize model ID
 function sanitizeModelId(id: string): string {

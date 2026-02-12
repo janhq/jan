@@ -88,10 +88,7 @@ export default class mlx_extension extends AIEngine {
   async getProviderPath(): Promise<string> {
     if (!this.providerPath) {
       // Use mlx folder for models
-      this.providerPath = await joinPath([
-        await getJanDataFolderPath(),
-        'mlx',
-      ])
+      this.providerPath = await joinPath([await getJanDataFolderPath(), 'mlx'])
     }
     return this.providerPath
   }
@@ -110,10 +107,7 @@ export default class mlx_extension extends AIEngine {
     }
   }
 
-  private async generateApiKey(
-    modelId: string,
-    port: string
-  ): Promise<string> {
+  private async generateApiKey(modelId: string, port: string): Promise<string> {
     // Reuse the llamacpp plugin's API key generation
     const hash = await invoke<string>('plugin:llamacpp|generate_api_key', {
       modelId: modelId + port,
@@ -293,15 +287,15 @@ export default class mlx_extension extends AIEngine {
 
     // Resolve model path - could be absolute or relative
     let modelPath: string
-    if (modelConfig.model_path.startsWith('/') || modelConfig.model_path.includes(':')) {
+    if (
+      modelConfig.model_path.startsWith('/') ||
+      modelConfig.model_path.includes(':')
+    ) {
       // Absolute path
       modelPath = modelConfig.model_path
     } else {
       // Relative path - resolve from Jan data folder
-      modelPath = await joinPath([
-        janDataFolderPath,
-        modelConfig.model_path,
-      ])
+      modelPath = await joinPath([janDataFolderPath, modelConfig.model_path])
     }
 
     const mlxConfig: MlxConfig = {
@@ -366,10 +360,9 @@ export default class mlx_extension extends AIEngine {
 
   private async findSessionByModel(modelId: string): Promise<SessionInfo> {
     try {
-      return await invoke<SessionInfo>(
-        'plugin:mlx|find_mlx_session_by_model',
-        { modelId }
-      )
+      return await invoke<SessionInfo>('plugin:mlx|find_mlx_session_by_model', {
+        modelId,
+      })
     } catch (e) {
       logger.error(e)
       throw new Error(String(e))
@@ -405,7 +398,7 @@ export default class mlx_extension extends AIEngine {
     const url = `${baseUrl}/chat/completions`
     const headers = {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${sessionInfo.api_key}`,
+      'Authorization': `Bearer ${sessionInfo.api_key}`,
     }
 
     const body = JSON.stringify(opts)
@@ -525,11 +518,17 @@ export default class mlx_extension extends AIEngine {
     })
 
     // Check if model_path is a relative path within mlx folder
-    if (!modelConfig.model_path.startsWith('/') && !modelConfig.model_path.includes(':')) {
+    if (
+      !modelConfig.model_path.startsWith('/') &&
+      !modelConfig.model_path.includes(':')
+    ) {
       // Model file is at {janDataFolder}/{model_path}
       // Delete the parent folder containing the actual model file
       const janDataFolderPath = await getJanDataFolderPath()
-      const modelPath = await joinPath([janDataFolderPath, modelConfig.model_path])
+      const modelPath = await joinPath([
+        janDataFolderPath,
+        modelConfig.model_path,
+      ])
       const parentDir = modelPath.substring(0, modelPath.lastIndexOf('/'))
       // Only delete if it's different from modelDir (i.e., not the same folder)
       if (parentDir !== modelDir) {
@@ -606,7 +605,12 @@ export default class mlx_extension extends AIEngine {
     if (sourcePath.startsWith('https://')) {
       // Download from URL to mlx models folder
       const janDataFolderPath = await getJanDataFolderPath()
-      const modelDir = await joinPath([janDataFolderPath, 'mlx', 'models', modelId])
+      const modelDir = await joinPath([
+        janDataFolderPath,
+        'mlx',
+        'models',
+        modelId,
+      ])
       const localPath = await joinPath([modelDir, 'model.safetensors'])
 
       const downloadManager = window.core.extensionManager.getByName(
@@ -635,7 +639,7 @@ export default class mlx_extension extends AIEngine {
 
       await downloadManager.downloadFiles(
         downloadItems,
-        `mlx/${modelId}`,
+        this.createDownloadTaskId(modelId),
         (transferred: number, total: number) => {
           events.emit(DownloadEvent.onFileDownloadUpdate, {
             modelId,
@@ -744,8 +748,51 @@ export default class mlx_extension extends AIEngine {
     }
   }
 
+  private createDownloadTaskId(modelId: string) {
+    // prepend provider to make taksId unique across providers
+    const cleanModelId = modelId.includes('.')
+      ? modelId.slice(0, modelId.indexOf('.'))
+      : modelId
+    return `${this.provider}/${cleanModelId}`
+  }
+
   override async abortImport(modelId: string): Promise<void> {
-    // Not applicable for MLX - imports go through llamacpp extension
+    // Cancel any active download task
+    // prepend provider name to avoid name collision
+    const taskId = this.createDownloadTaskId(modelId)
+    const downloadManager = window.core.extensionManager.getByName(
+      '@janhq/download-extension'
+    )
+
+    try {
+      await downloadManager.cancelDownload(taskId)
+    } catch (cancelError) {
+      logger.warn('Failed to cancel download task:', cancelError)
+    }
+
+    // Delete the entire model folder if it exists (for validation failures)
+    await this.deleteModelFolder(modelId)
+  }
+
+  /**
+   * Deletes the entire model folder for a given modelId
+   * @param modelId The model ID to delete
+   */
+  private async deleteModelFolder(modelId: string): Promise<void> {
+    try {
+      const modelDir = await joinPath([
+        await this.getProviderPath(),
+        'models',
+        modelId,
+      ])
+
+      if (await fs.existsSync(modelDir)) {
+        logger.info(`Cleaning up model directory: ${modelDir}`)
+        await fs.rm(modelDir)
+      }
+    } catch (deleteError) {
+      logger.warn('Failed to delete model directory:', deleteError)
+    }
   }
 
   override async getLoadedModels(): Promise<string[]> {
@@ -778,30 +825,49 @@ export default class mlx_extension extends AIEngine {
         const archString = architectures[0]?.toString().toLowerCase() ?? ''
         // Common VLM architecture suffixes
         const vlmPatterns = [
-          'vl', 'vlm', 'vision', 'llava', 'qwen2vl', 'qwen3vl',
-          'idefics', 'fuyu', 'paligemma', 'clip', 'siglip'
+          'vl',
+          'vlm',
+          'vision',
+          'llava',
+          'qwen2vl',
+          'qwen3vl',
+          'idefics',
+          'fuyu',
+          'paligemma',
+          'clip',
+          'siglip',
         ]
-        if (vlmPatterns.some(pattern => archString.includes(pattern))) {
-          logger.info(`Vision support detected from config.json: ${architectures[0]}`)
+        if (vlmPatterns.some((pattern) => archString.includes(pattern))) {
+          logger.info(
+            `Vision support detected from config.json: ${architectures[0]}`
+          )
           return true
         }
       }
 
       // Check for vision-related configuration fields
       if (config.visual_architectures || config.vision_config) {
-        logger.info('Vision support detected from visual_architectures/vision_config')
+        logger.info(
+          'Vision support detected from visual_architectures/vision_config'
+        )
         return true
       }
 
       // Check for image processor config
-      const imageProcessorPath = await joinPath([modelDir, 'image_processor_config.json'])
+      const imageProcessorPath = await joinPath([
+        modelDir,
+        'image_processor_config.json',
+      ])
       if (await fs.existsSync(imageProcessorPath)) {
         logger.info('Vision support detected from image_processor_config.json')
         return true
       }
 
       // Check preprocessor config for vision
-      const preprocessorConfigPath = await joinPath([modelDir, 'preprocessor_config.json'])
+      const preprocessorConfigPath = await joinPath([
+        modelDir,
+        'preprocessor_config.json',
+      ])
       if (await fs.existsSync(preprocessorConfigPath)) {
         try {
           const preprocessorConfig = await invoke<string>('read_file_sync', {
@@ -838,7 +904,10 @@ export default class mlx_extension extends AIEngine {
 
     // model_path could be absolute or relative
     let modelPath: string
-    if (modelConfig.model_path.startsWith('/') || modelConfig.model_path.includes(':')) {
+    if (
+      modelConfig.model_path.startsWith('/') ||
+      modelConfig.model_path.includes(':')
+    ) {
       // Absolute path
       modelPath = modelConfig.model_path
     } else {
@@ -854,19 +923,29 @@ export default class mlx_extension extends AIEngine {
     // For safetensors models, check multiple sources for tool support
     if (isSafetensors) {
       // Check 1: tokenizer_config.json (common for tool-capable models)
-      const tokenizerConfigPath = await joinPath([modelDir, 'tokenizer_config.json'])
+      const tokenizerConfigPath = await joinPath([
+        modelDir,
+        'tokenizer_config.json',
+      ])
       if (await fs.existsSync(tokenizerConfigPath)) {
         try {
-          const tokenizerConfigContent = await invoke<string>('read_file_sync', {
-            args: [tokenizerConfigPath],
-          })
+          const tokenizerConfigContent = await invoke<string>(
+            'read_file_sync',
+            {
+              args: [tokenizerConfigPath],
+            }
+          )
           // Check for tool/function calling indicators
           const tcLower = tokenizerConfigContent.toLowerCase()
-          if (tcLower.includes('function_call') ||
-              tcLower.includes('tool_use') ||
-              tcLower.includes('tools') ||
-              tcLower.includes('assistant')) {
-            logger.info(`Tool support detected from tokenizer_config.json for ${modelId}`)
+          if (
+            tcLower.includes('function_call') ||
+            tcLower.includes('tool_use') ||
+            tcLower.includes('tools') ||
+            tcLower.includes('assistant')
+          ) {
+            logger.info(
+              `Tool support detected from tokenizer_config.json for ${modelId}`
+            )
             return true
           }
         } catch (e) {
@@ -884,20 +963,22 @@ export default class mlx_extension extends AIEngine {
           // Common tool/function calling template patterns
           const ctLower = chatTemplateContent.toLowerCase()
           const toolPatterns = [
-            /\{\%.*tool.*\%\}/,           // {% tool ... %}
-            /\{\%.*function.*\%\}/,       // {% function ... %}
+            /\{\%.*tool.*\%\}/, // {% tool ... %}
+            /\{\%.*function.*\%\}/, // {% function ... %}
             /\{\%.*tool_call/,
             /\{\%.*tools\./,
             /\{[-]?#.*tool/,
             /\{[-]?%.*tool/,
-            /"tool_calls"/,               // "tool_calls" JSON key
-            /'tool_calls'/,               // 'tool_calls' JSON key
+            /"tool_calls"/, // "tool_calls" JSON key
+            /'tool_calls'/, // 'tool_calls' JSON key
             /function_call/,
             /tool_use/,
           ]
           for (const pattern of toolPatterns) {
             if (pattern.test(chatTemplateContent)) {
-              logger.info(`Tool support detected from chat_template.jinja for ${modelId}`)
+              logger.info(
+                `Tool support detected from chat_template.jinja for ${modelId}`
+              )
               return true
             }
           }
@@ -907,7 +988,11 @@ export default class mlx_extension extends AIEngine {
       }
 
       // Check 3: Look for tool-related files
-      const toolFiles = ['tools.jinja', 'tool_use.jinja', 'function_calling.jinja']
+      const toolFiles = [
+        'tools.jinja',
+        'tool_use.jinja',
+        'function_calling.jinja',
+      ]
       for (const toolFile of toolFiles) {
         const toolPath = await joinPath([modelDir, toolFile])
         if (await fs.existsSync(toolPath)) {

@@ -125,6 +125,14 @@ export default class llamacpp_extension extends AIEngine {
 
     let settings = structuredClone(SETTINGS) // Clone to modify settings definition before registration
 
+    // Disable fit by default on macOS
+    if (IS_MAC) {
+      const fitSetting = settings.find((s: any) => s.key === 'fit')
+      if (fitSetting) {
+        fitSetting.controllerProps.value = false
+      }
+    }
+
     // This makes the settings (including the backend options and initial value) available to the Jan UI.
     this.registerSettings(settings)
 

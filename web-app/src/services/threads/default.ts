@@ -17,7 +17,9 @@ export class DefaultThreadsService implements ThreadsService {
           if (!Array.isArray(threads)) return []
 
           // Filter out temporary threads from the list
-          const filteredThreads = threads.filter((e) => e.id !== TEMPORARY_CHAT_ID)
+          const filteredThreads = threads.filter(
+            (e) => e.id !== TEMPORARY_CHAT_ID
+          )
 
           return filteredThreads.map((e) => {
             // Model is always stored in assistants[0].model
@@ -29,8 +31,7 @@ export class DefaultThreadsService implements ThreadsService {
               : undefined
 
             // Check if this is a "real" assistant (has instructions) or just model storage
-            const hasRealAssistant = e.assistants?.[0]?.instructions
-            const assistants = hasRealAssistant ? e.assistants : []
+            const assistants = e.assistants
 
             return {
               ...e,
@@ -67,7 +68,7 @@ export class DefaultThreadsService implements ThreadsService {
     // Build assistants payload - always include model info
     // If there's a real assistant (with instructions), include full assistant data
     // Otherwise, just include minimal model-only entry for storage
-    const hasRealAssistant = thread.assistants && thread.assistants.length > 0 && thread.assistants[0]?.instructions
+    const hasRealAssistant = thread.assistants && thread.assistants.length > 0
     const assistantsPayload = hasRealAssistant
       ? [
           {
@@ -110,9 +111,7 @@ export class DefaultThreadsService implements ThreadsService {
               }
             : thread.model
 
-          // Check if this is a "real" assistant (has instructions) or just model storage
-          const hasRealAssistant = e.assistants?.[0]?.instructions
-          const assistants = hasRealAssistant ? e.assistants : []
+          const assistants = e.assistants
 
           return {
             ...e,
