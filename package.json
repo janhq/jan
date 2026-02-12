@@ -30,6 +30,7 @@
     "copy:assets:mobile": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
     "download:lib": "node ./scripts/download-lib.mjs",
     "download:bin": "node ./scripts/download-bin.mjs",
+    "download:opencode": "node ./scripts/download-opencode.mjs",
     "build:mlx-server": "make build-mlx-server",
     "build:tauri:win32": "yarn download:bin && yarn tauri build",
     "build:tauri:linux": "yarn download:bin && NO_STRIP=1 ./src-tauri/build-utils/shim-linuxdeploy.sh yarn tauri build && ./src-tauri/build-utils/buildAppImage.sh",

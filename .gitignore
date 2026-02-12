@@ -23,6 +23,11 @@ src-tauri/icons
 src-tauri/gen/apple
 src-tauri/gen/android
 src-tauri/resources/bin
+# OpenCode binary (downloaded at build time)
+!src-tauri/resources/bin/.gitkeep
+src-tauri/resources/bin/opencode
+src-tauri/resources/bin/opencode.exe
+src-tauri/resources/bin/opencode-*
 
 # Helper tools
 .opencode
