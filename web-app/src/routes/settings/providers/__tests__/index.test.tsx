@@ -58,7 +58,9 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 
 vi.mock('@/lib/utils', () => ({
   getProviderTitle: (provider: string) => `${provider} Provider`,
+  cn: (...args: any[]) => args.filter(Boolean).join(' '),
 }))
+
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: (path: string) => (config: any) => ({
