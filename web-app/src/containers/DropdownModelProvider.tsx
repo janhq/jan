@@ -338,10 +338,28 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
     if (!searchValue) {
       // When not searching, show all active providers (even without models)
-      providers.forEach((provider) => {
-        if (provider.active) {
-          groups[provider.provider] = []
-        }
+      // Sort: local first, then providers with API keys, then others, alphabetically
+      const activeProviders = providers
+        .filter((p) => p.active)
+        .sort((a, b) => {
+          const aIsLocal = a.provider === 'llamacpp' || a.provider === 'mlx'
+          const bIsLocal = b.provider === 'llamacpp' || b.provider === 'mlx'
+          // Local (llamacpp) first
+          if (aIsLocal && !bIsLocal) return -1
+          if (!aIsLocal && bIsLocal) return 1
+
+          const aHasApiKey = (a.api_key?.length ?? 0) > 0
+          const bHasApiKey = (b.api_key?.length ?? 0) > 0
+          // Providers with API keys filled second
+          if (aHasApiKey && !bHasApiKey) return -1
+          if (!aHasApiKey && bHasApiKey) return 1
+
+          // Sort remaining by provider name
+          return a.provider.localeCompare(b.provider)
+        })
+
+      activeProviders.forEach((provider) => {
+        groups[provider.provider] = []
       })
     }
 
