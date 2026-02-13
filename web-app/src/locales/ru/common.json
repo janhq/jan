@@ -38,6 +38,11 @@
   "profile": "Профиль",
   "reset": "Сбросить",
   "search": "Поиск",
+  "searchThreads": "Поиск обсуждений...",
+  "toNavigate": "Навигация",
+  "toSelect": "Выбор",
+  "toClose": "Закрыть",
+  "clearRecent": "Очистить",
   "name": "Имя",
   "cancel": "Отмена",
   "create": "Создать",
@@ -229,6 +234,10 @@
       "title": "Удаление всех обсуждений",
       "description": "Все обсуждения будут удалены. Это действие нельзя отменить."
     },
+    "deleteAllThreadsInProject": {
+      "title": "Удалить все диалоги",
+      "description": "Будет удалено {{count}} диалогов в проекте \"{{projectName}}\". Это действие нельзя отменить."
+    },
     "deleteThread": {
       "description": "Вы уверены, что хотите удалить это обсуждение? Это действие нельзя отменить."
     },
@@ -241,6 +250,7 @@
   },
   "projects": {
     "title": "Проекты",
+    "new": "Новый проект",
     "addProject": "Добавить проект",
     "addToProject": "Добавить в проект",
     "removeFromProject": "Удалить из проекта",
@@ -254,6 +264,10 @@
     "noProjectsYetDesc": "Начните новый проект, нажав кнопку Добавить проект.",
     "projectNotFound": "Проект не найден",
     "projectNotFoundDesc": "Проект, который вы ищете, не существует или был удалён.",
+    "selectAssistant": "Выбрать ассистента",
+    "noAssistantAssigned": "К этому проекту не назначен ассистент",
+    "files": "Файлы",
+    "filesDescription": "Добавьте PDF, документы или другой текст для использования в качестве справочных материалов в этом проекте.",
     "deleteProjectDialog": {
       "title": "Удалить проект",
       "permanentDelete": "Это навсегда удалит все обсуждения.",
@@ -272,16 +286,25 @@
       "editTitle": "Редактировать проект",
       "nameLabel": "Название проекта",
       "namePlaceholder": "Введите название проекта...",
+      "assistant": "Ассистент",
+      "selectAssistant": "Выберите ассистента (необязательно)",
+      "noAssistant": "Без ассистента",
+      "addAssistant": "Добавить ассистента",
       "createButton": "Создать",
       "updateButton": "Обновить",
       "alreadyExists": "Проект \"{{projectName}}\" уже существует",
       "createSuccess": "Проект \"{{projectName}}\" успешно создан",
-      "renameSuccess": "Проект переименован с \"{{oldName}}\" на \"{{newName}}\""
+      "updateSuccess": "Проект \"{{projectName}}\" успешно обновлён"
     },
     "noConversationsIn": "В проекте {{projectName}} нет диалогов",
-    "startNewConversation": "Начните новый диалог с {{projectName}} ниже",
+    "startNewConversation": "Начните новый диалог в проекте {{projectName}} ниже",
     "conversationsIn": "Диалоги в {{projectName}}",
     "conversationsDescription": "Нажмите на любой диалог, чтобы продолжить общение, или начните новый ниже.",
+    "conversation": "Диалог",
+    "instructions": "Инструкции",
+    "setup": "Настройка",
+    "instructionsDescription": "Настройте тон и стиль ответа",
+    "manageInstructions": "Управление инструкциями",
     "thread": "обсуждение",
     "threads": "обсуждения",
     "updated": "Обновлено:",
@@ -382,6 +405,37 @@
     "threadRemovedFromProject": {
       "title": "Обсуждение удалено",
       "description": "Обсуждение успешно удалено из проекта \"{{projectName}}\""
+    },
+    "fileUploaded": {
+      "title": "Файл загружен",
+      "description": "Файл был успешно загружен и проиндексирован"
+    },
+    "uploadFailed": {
+      "title": "Загрузка не удалась",
+      "description": "Не удалось загрузить файл"
+    },
+    "fileDeleted": {
+      "title": "Файл удалён",
+      "description": "Файл был удалён из проекта"
+    },
+    "deleteFailed": {
+      "title": "Не удалось удалить",
+      "description": "Не удалось удалить файл"
+    },
+    "fileAlreadyExists": {
+      "title": "Файл уже существует",
+      "description": "Файл уже прикреплён к этому проекту"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "Вложения отключены",
+      "description": "Вложения отключены в настройках"
     }
+  },
+  "errors": {
+    "fileTooLarge": "Файл слишком большой",
+    "fileTooLargeDescription": "{{fileName}} превышает лимит в {{maxFileSizeMB}} МБ"
+  },
+  "files": {
+    "chunksCount": "{{count}} фрагментов"
   }
 }
