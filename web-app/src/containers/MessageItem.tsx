@@ -66,6 +66,7 @@ export const MessageItem = memo(
       filename?: string
     } | null>(null)
 
+
     const handleRegenerate = useCallback(() => {
       onRegenerate?.(message.id)
     }, [onRegenerate, message.id])
@@ -363,8 +364,7 @@ export const MessageItem = memo(
         )}
 
         {/* Message actions for assistant messages (non-tool) */}
-        {message.role === 'assistant' &&
-          message.parts.some((p) => p.type === 'text' && p.text.length > 0) && (
+        {message.role === 'assistant' && (
             <div className="flex items-center gap-2 text-muted-foreground text-xs mt-1">
               <div
                 className={cn(
