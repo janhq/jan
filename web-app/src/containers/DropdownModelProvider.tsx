@@ -267,13 +267,15 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         if (modelItem.embedding) return
 
         // Skip models that require API key but don't have one (except llamacpp)
+        // For custom providers, allow if they have at least one model loaded
+        const isPredefined = predefinedProviders.some((e) =>
+          e.provider.includes(provider.provider)
+        )
         if (
           provider &&
-          predefinedProviders.some((e) =>
-            e.provider.includes(provider.provider)
-          ) &&
           provider.provider !== 'llamacpp' &&
-          !provider.api_key?.length
+          !provider.api_key?.length &&
+          (isPredefined || provider.models.length === 0)
         )
           return
 
@@ -338,10 +340,39 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
     if (!searchValue) {
       // When not searching, show all active providers (even without models)
-      providers.forEach((provider) => {
-        if (provider.active) {
-          groups[provider.provider] = []
-        }
+      // Sort: local first, then providers with API keys or custom with models, then others, alphabetically
+      const activeProviders = providers
+        .filter((p) => p.active)
+        .sort((a, b) => {
+          const aIsLocal = a.provider === 'llamacpp' || a.provider === 'mlx'
+          const bIsLocal = b.provider === 'llamacpp' || b.provider === 'mlx'
+          // Local (llamacpp) first
+          if (aIsLocal && !bIsLocal) return -1
+          if (!aIsLocal && bIsLocal) return 1
+
+          // Custom providers without API key but with models should be treated like "have API key"
+          const aIsPredefined = predefinedProviders.some((e) =>
+            e.provider.includes(a.provider)
+          )
+          const bIsPredefined = predefinedProviders.some((e) =>
+            e.provider.includes(b.provider)
+          )
+          const aHasApiKeyOrCustomModel =
+            (a.api_key?.length ?? 0) > 0 ||
+            (!aIsPredefined && a.models.length > 0)
+          const bHasApiKeyOrCustomModel =
+            (b.api_key?.length ?? 0) > 0 ||
+            (!bIsPredefined && b.models.length > 0)
+          // Providers with API keys or custom with models filled second
+          if (aHasApiKeyOrCustomModel && !bHasApiKeyOrCustomModel) return -1
+          if (!aHasApiKeyOrCustomModel && bHasApiKeyOrCustomModel) return 1
+
+          // Sort remaining by provider name
+          return a.provider.localeCompare(b.provider)
+        })
+
+      activeProviders.forEach((provider) => {
+        groups[provider.provider] = []
       })
     }
 
