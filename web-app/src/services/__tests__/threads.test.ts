@@ -54,8 +54,7 @@ describe('DefaultThreadsService', () => {
         order: 1,
         isFavorite: true,
         model: { id: 'gpt-4', provider: 'openai' },
-        // assistants without instructions are not considered "real" assistants
-        assistants: [],
+        assistants: [{ model: { id: 'gpt-4', engine: 'openai' } }],
       })
     })
 
@@ -89,8 +88,7 @@ describe('DefaultThreadsService', () => {
         order: 1,
         isFavorite: true,
         model: { id: 'gpt-4', provider: 'openai' },
-        // assistants without instructions are not considered "real" assistants
-        assistants: [],
+        assistants: [{ model: { id: 'gpt-4', engine: 'openai' } }],
       })
       expect(result[1]).toMatchObject({
         id: '2',
@@ -99,8 +97,7 @@ describe('DefaultThreadsService', () => {
         order: 1,
         isFavorite: true,
         model: { id: 'gpt-4', provider: 'openai' },
-        // assistants without instructions are not considered "real" assistants
-        assistants: [],
+        assistants: [{ model: { id: 'gpt-4', engine: 'openai' } }],
       })
     })
 
@@ -308,8 +305,6 @@ describe('DefaultThreadsService', () => {
         updated: 0,
         order: undefined,
         isFavorite: undefined,
-        // No assistants when missing
-        assistants: [],
       })
     })
 
@@ -335,8 +330,6 @@ describe('DefaultThreadsService', () => {
         updated: 1234567890,
         order: 1,
         isFavorite: true,
-        // No assistants when missing
-        assistants: [],
       })
     })
 
@@ -507,8 +500,7 @@ describe('DefaultThreadsService', () => {
         updated: 1234567890,
         model: { id: 'gpt-4', provider: 'openai' },
         order: 1, // Should fall back to original thread order
-        // No real assistants when they lack instructions
-        assistants: [],
+        assistants: [{ model: { id: 'gpt-4', engine: 'openai' } }],
       })
     })
   })
