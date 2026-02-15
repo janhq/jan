@@ -1,4 +1,4 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 5.12
 
 import PackageDescription
 
@@ -11,8 +11,8 @@ let package = Package(
         .executable(name: "mlx-server", targets: ["MLXServer"])
     ],
     dependencies: [
-        .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.30.3"),
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm", revision: "2c70054"),
+        .package(url: "https://github.com/ml-explore/mlx-swift", .upToNextMinor(from: "0.30.6")),
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", branch: "main"),
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.7.0"),
         .package(url: "https://github.com/hummingbird-project/hummingbird", from: "2.19.0"),
     ],

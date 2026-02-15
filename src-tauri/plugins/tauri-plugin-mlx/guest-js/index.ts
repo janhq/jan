@@ -20,6 +20,11 @@ export function normalizeMlxConfig(config: any): MlxConfig {
     n_predict: asNumber(config.n_predict),
     threads: asNumber(config.threads),
     chat_template: asString(config.chat_template),
+    parallel: asNumber(config.parallel),
+    batch_timeout_ms: asNumber(config.batch_timeout_ms),
+    enable_continuous_batching: Boolean(config.enable_continuous_batching),
+    kv_block_size: asNumber(config.kv_block_size),
+    enable_prefix_caching: Boolean(config.enable_prefix_caching),
   }
 }
 
