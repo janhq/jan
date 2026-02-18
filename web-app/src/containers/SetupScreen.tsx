@@ -227,102 +227,118 @@ function SetupScreen() {
             updated_at: Math.floor(Date.now() / 1000),
           }
 
-          // Thread 1: Exploring project assistants
-          const assistantThread = await createThread(
-            { id: '', provider: '' },
-            'Exploring project assistants',
-            undefined,
-            projectMetadata
+          // Re-fetch threads to get the latest state
+          const allThreads = await serviceHub.threads().fetchThreads()
+          const projectThreads = allThreads.filter(
+            (t) => t.metadata?.project?.id === defaultProjectId
           )
 
-          const assistantMessages = [
-            {
-              id: ulid(),
-              object: 'message',
-              thread_id: assistantThread.id,
-              role: ChatCompletionRole.User,
-              content: [
-                {
-                  type: ContentType.Text,
-                  text: { value: 'How should I set up the assistant for a project?', annotations: [] },
-                },
-              ],
-              status: MessageStatus.Ready,
-              created_at: Date.now(),
-              completed_at: Date.now(),
-            },
-            {
-              id: ulid(),
-              object: 'message',
-              thread_id: assistantThread.id,
-              role: ChatCompletionRole.Assistant,
-              content: [
-                {
-                  type: ContentType.Text,
-                  text: {
-                    value:
-                      "Think of the assistant as your project helper. You can choose one assistant per project. This helps keep guidance clear and avoids mixed responses.\n\nDescribe what the project is about, what you want help with, and how you want responses to sound.\n\nFor example, in a research project, you might write:\n\n\"Summarise clearly. Highlight key points and trade-offs. Flag anything uncertain or worth double-checking.\"\n\nA few clear lines are enough. You can change this anytime to tailor responses as your project evolves.",
-                    annotations: [],
-                  },
-                },
-              ],
-              status: MessageStatus.Ready,
-              created_at: Date.now() + 1,
-              completed_at: Date.now() + 1,
-            },
-          ]
+          // Thread 1: Exploring project assistants
+          const existingAssistantThread = projectThreads.find(
+            (t) => t.title === 'Exploring project assistants'
+          )
+          if (!existingAssistantThread) {
+            const assistantThread = await createThread(
+              { id: '', provider: '' },
+              'Exploring project assistants',
+              undefined,
+              projectMetadata
+            )
 
-          for (const message of assistantMessages) {
-            await serviceHub.messages().createMessage(message)
+            const assistantMessages = [
+              {
+                id: ulid(),
+                object: 'message',
+                thread_id: assistantThread.id,
+                role: ChatCompletionRole.User,
+                content: [
+                  {
+                    type: ContentType.Text,
+                    text: { value: 'How should I set up the assistant for a project?', annotations: [] },
+                  },
+                ],
+                status: MessageStatus.Ready,
+                created_at: Date.now(),
+                completed_at: Date.now(),
+              },
+              {
+                id: ulid(),
+                object: 'message',
+                thread_id: assistantThread.id,
+                role: ChatCompletionRole.Assistant,
+                content: [
+                  {
+                    type: ContentType.Text,
+                    text: {
+                      value:
+                        "Think of the assistant as your project helper. You can choose one assistant per project. This helps keep guidance clear and avoids mixed responses.\n\nDescribe what the project is about, what you want help with, and how you want responses to sound.\n\nFor example, in a research project, you might write:\n\n\"Summarise clearly. Highlight key points and trade-offs. Flag anything uncertain or worth double-checking.\"\n\nA few clear lines are enough. You can change this anytime to tailor responses as your project evolves.",
+                      annotations: [],
+                    },
+                  },
+                ],
+                status: MessageStatus.Ready,
+                created_at: Date.now() + 1,
+                completed_at: Date.now() + 1,
+              },
+            ]
+
+            for (const message of assistantMessages) {
+              await serviceHub.messages().createMessage(message)
+            }
           }
 
           // Thread 2: Uploading helpful files
-          const filesThread = await createThread(
-            { id: '', provider: '' },
-            'Uploading helpful files',
-            undefined,
-            projectMetadata
+          const existingFilesThread = projectThreads.find(
+            (t) => t.title === 'Uploading helpful files'
           )
+          if (!existingFilesThread) {
+            const filesThread = await createThread(
+              { id: '', provider: '' },
+              'Uploading helpful files',
+              undefined,
+              projectMetadata
+            )
 
-          const filesMessages = [
-            {
-              id: ulid(),
-              object: 'message',
-              thread_id: filesThread.id,
-              role: ChatCompletionRole.User,
-              content: [
-                {
-                  type: ContentType.Text,
-                  text: { value: 'What types of files should I add to a project to improve responses?', annotations: [] },
-                },
-              ],
-              status: MessageStatus.Ready,
-              created_at: Date.now(),
-              completed_at: Date.now(),
-            },
-            {
-              id: ulid(),
-              object: 'message',
-              thread_id: filesThread.id,
-              role: ChatCompletionRole.Assistant,
-              content: [
-                {
-                  type: ContentType.Text,
-                  text: {
-                    value:
-                      "Add files you'd normally keep open while working:\n\n- Notes or docs if you're thinking through ideas\n- Drafts if you're writing or editing\n- Specs or tickets if you're planning work\n- PDFs or research if you need summaries or comparisons\n- Code files if you want help understanding or improving them\n\nI'll use these files as shared context, so you don't have to repeat yourself.",
-                    annotations: [],
+            const filesMessages = [
+              {
+                id: ulid(),
+                object: 'message',
+                thread_id: filesThread.id,
+                role: ChatCompletionRole.User,
+                content: [
+                  {
+                    type: ContentType.Text,
+                    text: { value: 'What types of files should I add to a project to improve responses?', annotations: [] },
                   },
-                },
-              ],
-              status: MessageStatus.Ready,
-              created_at: Date.now() + 1,
-              completed_at: Date.now() + 1,
-            },
-          ]
+                ],
+                status: MessageStatus.Ready,
+                created_at: Date.now(),
+                completed_at: Date.now(),
+              },
+              {
+                id: ulid(),
+                object: 'message',
+                thread_id: filesThread.id,
+                role: ChatCompletionRole.Assistant,
+                content: [
+                  {
+                    type: ContentType.Text,
+                    text: {
+                      value:
+                        "Add files you'd normally keep open while working:\n\n- Notes or docs if you're thinking through ideas\n- Drafts if you're writing or editing\n- Specs or tickets if you're planning work\n- PDFs or research if you need summaries or comparisons\n- Code files if you want help understanding or improving them\n\nI'll use these files as shared context, so you don't have to repeat yourself.",
+                      annotations: [],
+                    },
+                  },
+                ],
+                status: MessageStatus.Ready,
+                created_at: Date.now() + 1,
+                completed_at: Date.now() + 1,
+              },
+            ]
 
-          for (const message of filesMessages) {
-            await serviceHub.messages().createMessage(message)
+            for (const message of filesMessages) {
+              await serviceHub.messages().createMessage(message)
+            }
           }
         }
       } catch (error) {
