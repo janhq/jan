@@ -1,24 +1,5 @@
 [
   {
-    "key": "batch_size",
-    "title": "Batch Size",
-    "description": "Maximum number of concurrent requests to batch (0 = disabled)",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 4,
-      "placeholder": "4",
-      "type": "number",
-      "textAlign": "right"
-    }
-  },
-  {
-    "key": "enable_continuous_batching",
-    "title": "Continuous Batching",
-    "description": "Enable continuous batching for higher throughput",
-    "controllerType": "checkbox",
-    "controllerProps": { "value": false }
-  },
-  {
     "key": "auto_unload",
     "title": "Auto unload model",
     "description": "Automatically unload other models when loading a new one",

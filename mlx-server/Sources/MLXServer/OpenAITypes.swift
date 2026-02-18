@@ -239,9 +239,9 @@ struct ChatChoice: Codable {
 }
 
 struct UsageInfo: Codable {
-    let prompt_tokens: Int
+    let prompt_tokens: Int?
     let completion_tokens: Int
-    let total_tokens: Int
+    let total_tokens: Int?
 }
 
 // MARK: - Chat Completion Chunk (streaming)
@@ -294,7 +294,6 @@ struct ModelInfo: Codable {
 
 struct HealthResponse: Codable {
     let status: String
-    let batching: String?
 }
 
 // MARK: - Error Response

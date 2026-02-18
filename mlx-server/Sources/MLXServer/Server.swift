@@ -32,20 +32,12 @@ struct MLXHTTPServer {
     let modelRunner: ModelRunner
     let modelId: String
     let apiKey: String
-    let batchingConfig: BatchingConfig?
     let activeGenerations = ActiveGenerations()
-    private var batchProcessor: BatchProcessor?
 
-    init(modelRunner: ModelRunner, modelId: String, apiKey: String, batchingConfig: BatchingConfig? = nil) {
+    init(modelRunner: ModelRunner, modelId: String, apiKey: String) {
         self.modelRunner = modelRunner
         self.modelId = modelId
         self.apiKey = apiKey
-        self.batchingConfig = batchingConfig
-
-        // Initialize batch processor if batching is enabled
-        if let config = batchingConfig, config.maxBatchSize > 0 {
-            self.batchProcessor = BatchProcessor(modelRunner: modelRunner, config: config)
-        }
     }
 
     func buildRouter() -> Router<BasicRequestContext> {
@@ -53,57 +45,8 @@ struct MLXHTTPServer {
 
         // Health check
         router.get("/health") { _, _ in
-            let batchingStatus: String
-            if let config = batchingConfig {
-                batchingStatus = "enabled (max batch: \(config.maxBatchSize), continuous: \(config.enableContinuousBatching))"
-            } else {
-                batchingStatus = "disabled"
-            }
-            let response = HealthResponse(
-                status: "ok",
-                batching: batchingStatus
-            )
+            let response = HealthResponse(status: "ok")
             return try encodeJSON(response)
-        }
-
-        // Metrics endpoint
-        router.get("/metrics") { _, _ in
-            let metrics: [String: Any]
-            if let processor = batchProcessor {
-                let status = await processor.getStatus()
-                metrics = [
-                    "waiting_requests": status.waitingCount,
-                    "running_requests": status.runningCount,
-                    "max_batch_size": status.maxBatchSize,
-                    "total_requests_processed": status.metrics.totalRequestsProcessed,
-                    "total_batches_processed": status.metrics.totalBatchesProcessed,
-                    "avg_batch_size": String(format: "%.2f", status.metrics.avgBatchSize),
-                    "avg_latency_ms": String(format: "%.2f", status.metrics.avgLatencyMs),
-                    "cache_hit_rate": String(format: "%.2f%%", status.metrics.cacheHitRate * 100),
-                    "total_tokens_generated": status.metrics.totalTokensGenerated,
-                ]
-            } else {
-                metrics = [
-                    "mode": "sequential",
-                    "batching": "disabled",
-                ]
-            }
-
-            // Build JSON response
-            var jsonString = "{\n"
-            for (key, value) in metrics {
-                jsonString += "  \"\(key)\": \(value),\n"
-            }
-            jsonString += "}"
-
-            var buffer = ByteBufferAllocator().buffer(capacity: jsonString.count)
-            buffer.writeString(jsonString)
-
-            return Response(
-                status: .ok,
-                headers: [.contentType: "application/json"],
-                body: .init(byteBuffer: buffer)
-            )
         }
 
         // List models
@@ -153,7 +96,7 @@ struct MLXHTTPServer {
 
                 let temperature = chatRequest.temperature ?? 0.7
                 let topP = chatRequest.top_p ?? 1.0
-                let maxTokens = chatRequest.max_tokens ?? chatRequest.n_predict ?? 2048
+                let maxTokens = chatRequest.max_tokens ?? chatRequest.n_predict
                 let repetitionPenalty = chatRequest.repetition_penalty ?? 1.0
                 let stop = chatRequest.stop ?? []
                 let isStreaming = chatRequest.stream ?? false
@@ -231,7 +174,7 @@ struct MLXHTTPServer {
         chatRequest: ChatCompletionRequest,
         temperature: Float,
         topP: Float,
-        maxTokens: Int,
+        maxTokens: Int? = nil,
         repetitionPenalty: Float,
         stop: [String],
         tools: [AnyCodable]? = nil
@@ -281,7 +224,7 @@ struct MLXHTTPServer {
         chatRequest: ChatCompletionRequest,
         temperature: Float,
         topP: Float,
-        maxTokens: Int,
+        maxTokens: Int?,
         repetitionPenalty: Float,
         stop: [String],
         tools: [AnyCodable]? = nil

@@ -14,12 +14,4 @@ export interface UnloadResult {
 
 export type MlxConfig = {
   ctx_size: number
-  n_predict: number
-  threads: number
-  chat_template: string
-  batch_size: number
-  batch_timeout_ms: number
-  enable_continuous_batching: boolean
-  kv_block_size: number
-  enable_prefix_caching: boolean
 }
