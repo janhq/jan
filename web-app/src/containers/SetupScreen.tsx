@@ -17,6 +17,11 @@ import { IconEye, IconSquareCheck } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import HeaderPage from './HeaderPage'
+import { DownloadIcon, FolderIcon, FolderPlusIcon, MessageCircle, PanelLeft, Search } from 'lucide-react'
+import { NavMain } from '@/components/left-sidebar/NavMain'
+import { ThemeSwitcher } from './ThemeSwitcher'
+import { AccentColorPicker } from './AccentColorPicker'
+import { Skeleton } from '@/components/ui/skeleton'
 
 type CacheEntry = {
   status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
@@ -263,23 +268,6 @@ function SetupScreen() {
     )
   }, [defaultVariant, localDownloadingModels, downloadProcesses])
 
-  const downloadedSize = useMemo(() => {
-    if (!defaultVariant) return { current: 0, total: 0 }
-    const process = downloadProcesses.find(
-      (e) => e.id === defaultVariant.model_id
-    )
-    return {
-      current: process?.current || 0,
-      total: process?.total || 0,
-    }
-  }, [defaultVariant, downloadProcesses])
-
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0'
-    const gb = bytes / (1024 * 1024 * 1024)
-    return gb.toFixed(1)
-  }
-
   const isDownloaded = useMemo(() => {
     if (!defaultVariant) return false
     return llamaProvider?.models.some(
@@ -367,7 +355,7 @@ function SetupScreen() {
     if (
       quickStartInitiated &&
       !quickStartQueued &&
-      !isDownloading &&
+      isDownloading &&
       !isDownloaded
     ) {
       setQuickStartInitiated(false)
@@ -393,76 +381,150 @@ function SetupScreen() {
   }, [quickStartInitiated, isDownloaded, defaultVariant, navigate])
 
   return (
-    <div className="flex h-full flex-col justify-center">
+    <div className="flex flex-col h-svh w-full">
       <HeaderPage />
-      <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center ">
-        <div className="w-full mx-auto">
-          <div className="mb-4 text-center">
+      <div className="flex h-[calc(100%-60px)] gap-2">
+        <div className="shrink-0 px-10 w-1/2 overflow-auto pb-10">
+          <div className="mb-4">
             <h1 className="font-studio font-medium text-2xl mb-1">
-              {isDownloading ?  'Sit tight, Jan is getting ready...' : 'Welcome to Jan!'}
+              {isDownloading ?  'While Jan gets ready...' : 'Hey, welcome to Jan!'}
             </h1>
-            <p className='text-muted-foreground w-full md:w-1/2 mx-auto mt-1'>{isDownloading ? 'This may take a few minutes.' : 'To get started, Jan needs to download a model to your device first.'}</p>
+            <p className='text-muted-foreground leading-normal w-full mt-1'>{isDownloading ? 'Want to try a different look? You can change this later in Settings.' : 'Let’s download your first local AI model to run on your device.'}</p>
           </div>
-          <div className="flex gap-4 flex-col mt-6">
-            {/* Quick Start Button - Highlighted */}
-            <div
-              onClick={handleQuickStart}
-              className="w-full text-left lg:w-2/3 mx-auto"
-            >
-              <div className={cn("bg-background p-3 rounded-lg border transition-all hover:shadow-lg disabled:opacity-60 flex justify-between items-start")}>
-                <div className="flex items-start gap-4">
-                  <div className="shrink-0 size-12 bg-secondary/40 rounded-xl flex items-center justify-center">
-                    <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
-                  </div>
-                  <div className="flex-1">
-                    <h1 className="font-semibold text-sm mb-1">
-                      <span>Jan v3</span>&nbsp;<span className='text-xs text-muted-foreground'>· {defaultVariant?.file_size}</span>
-                    </h1>
-                    <div className="text-muted-foreground text-sm mt-1.5">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full mr-1">
-                        <IconSquareCheck size={12} />
-                        General
-                      </span>
-                      {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full">
-                        <IconEye size={12} />
-                        Vision
-                      </span>}
+
+          {isDownloading ? 
+            <div className='mt-8 space-y-6'>
+              <div className='space-y-4'>
+                <div className='text-muted-foreground'>Accent color</div>
+                <AccentColorPicker />
+              </div> 
+              <div className='space-y-4'>
+                <div className='text-muted-foreground'>Color system</div>
+                <ThemeSwitcher renderAsRadio />
+              </div>
+          </div>
+            : 
+            <div className="flex gap-4 flex-col mt-6">
+              {/* Quick Start Button - Highlighted */}
+              <div
+                onClick={handleQuickStart}
+                className="w-full text-left"
+              >
+                <div className={cn("bg-background p-3 rounded-lg border transition-all hover:shadow-lg disabled:opacity-60 flex justify-between items-start")}>
+                  <div className="flex items-start gap-4">
+                    <div className="shrink-0 size-12 bg-secondary/40 rounded-xl flex items-center justify-center">
+                      <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
+                    </div>
+                    <div className="flex-1">
+                      <h1 className="font-semibold text-sm mb-1">
+                        <span>Jan v3</span>&nbsp;<span className='text-xs text-muted-foreground'>· {defaultVariant?.file_size}</span>
+                      </h1>
+                      <div className="text-muted-foreground text-sm mt-1.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full mr-1">
+                          <IconSquareCheck size={12} />
+                          General
+                        </span>
+                        {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full">
+                          <IconEye size={12} />
+                          Vision
+                        </span>}
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-2">
-                  <Button size="sm" disabled={quickStartInitiated || isDownloading}>
-                    {quickStartInitiated || isDownloading ? 'Downloading' : 'Download'}
-                  </Button>
-                  {(quickStartInitiated || isDownloading) && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <svg
-                        className="size-3 animate-spin"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        />
-                      </svg>
-                      <span>{formatBytes(downloadedSize.current)} / {formatBytes(downloadedSize.total)}GB</span>
-                    </div>
-                  )}
+                <div className="flex flex-col items-start gap-2 mt-6">
+                  {quickStartInitiated || !isDownloading && 
+                    <Button size="sm" className='w-full' disabled={isDownloading}>
+                      Download
+                    </Button>}
                 </div>
               </div>
             </div>
-          </div>
+          }
         </div>
+        {quickStartInitiated || !isDownloading ? 
+          <>
+          </>
+          : 
+          <div className='border-l border-t w-full mt-2 rounded-tl-2xl h-full p-2 relative'>
+            <div className='bg-linear-to-b bg-clip-padding border from-sidebar dark:from-sidebar/70 to-background w-60 h-full rounded-t-xl shadow'>
+              <div className='w-full p-4 flex justify-between items-center'>
+                {IS_MACOS ? 
+                  <div className='flex gap-1.5'>
+                    <div className='size-2.5 rounded-full bg-red-500'></div>
+                    <div className='size-2.5 rounded-full bg-yellow-500'></div>
+                    <div className='size-2.5 rounded-full bg-green-500'></div>
+                  </div>
+                : 
+                  <div>
+                    <span className='font-studio font-medium'>Jan</span>
+                  </div>}
+                <div className='flex gap-2.5 text-muted-foreground/80'>
+                  <DownloadIcon className='size-3' />
+                  <PanelLeft className='size-3' />
+                </div>
+              </div>
+              
+              <div className='px-2 mt-2'>
+                <div className='px-2 mt-2 text-muted-foreground/80'>
+                  <ul className='mt-3 space-y-3'>
+                    <li className='flex items-center gap-2'>
+                      <Skeleton className='size-4' />
+                      <Skeleton className='w-20 h-2' />
+                    </li>
+                    <li className='flex items-center gap-2'>
+                      <Skeleton className='size-4' />
+                      <Skeleton className='w-30 h-2' />
+                    </li>
+                    <li className='flex items-center gap-2'>
+                      <Skeleton className='size-4' />
+                      <Skeleton className='w-35 h-2' />
+                    </li>
+                    <li className='flex items-center gap-2'>
+                      <Skeleton className='size-4' />
+                      <Skeleton className='w-25 h-2' />
+                    </li>
+                  </ul>
+                </div>
+
+                <div className='px-2 mt-6 text-muted-foreground/80'>
+                  <Skeleton className='w-20 h-2' />
+                  <ul className='mt-3 space-y-3'>
+                    <li className='flex items-center gap-2'>
+                      <Skeleton className='size-4' />
+                      <Skeleton className='w-20 h-2' />
+                    </li>
+                    <li className='flex items-center gap-2'>
+                      <Skeleton className='size-4' />
+                      <Skeleton className='w-30 h-2' />
+                    </li>
+
+                  </ul>
+                </div>
+
+                <div className='px-2 mt-6 text-muted-foreground/80'>
+                  <Skeleton className='w-20 h-2' />
+                  <ul className='mt-3 space-y-3'>
+                    <li className='truncate'>
+                      <Skeleton className='w-40 h-2' />
+                    </li>
+                    <li className='truncate'>
+                      <Skeleton className='w-30 h-2' />
+                    </li>
+                    <li className='truncate'>
+                      <Skeleton className='w-40 h-2' />
+                    </li>
+                    <li className='truncate'>
+                      <Skeleton className='w-30 h-2' />
+                    </li>
+                  </ul>
+                </div>
+
+              </div>
+                
+            </div>
+          </div>
+        }
       </div>
     </div>
   )
