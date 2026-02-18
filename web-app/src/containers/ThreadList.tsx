@@ -137,7 +137,7 @@ const ThreadItem = memo(
     return (
       <SidebarMenuItem>
         {currentProjectId ? 
-          <Link to="/threads/$threadId" params={{ threadId: thread.id }} className="bg-card dark:bg-secondary/20 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block">
+          <Link to="/threads/$threadId" params={{ threadId: thread.id }} className="bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block">
               <span>{thread.title || t('common:newThread')}</span>
               {currentProjectId && lastUserMessageText && (
                 <div className="text-muted-foreground text-xs mt-1 line-clamp-1 pr-10">
