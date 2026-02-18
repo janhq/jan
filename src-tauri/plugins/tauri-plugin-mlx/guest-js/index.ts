@@ -9,22 +9,9 @@ function asNumber(v: any, defaultValue = 0): number {
   return isFinite(n) ? n : defaultValue
 }
 
-function asString(v: any, defaultValue = ''): string {
-  if (v === '' || v === null || v === undefined) return defaultValue
-  return String(v)
-}
-
 export function normalizeMlxConfig(config: any): MlxConfig {
   return {
     ctx_size: asNumber(config.ctx_size),
-    n_predict: asNumber(config.n_predict),
-    threads: asNumber(config.threads),
-    chat_template: asString(config.chat_template),
-    parallel: asNumber(config.parallel),
-    batch_timeout_ms: asNumber(config.batch_timeout_ms),
-    enable_continuous_batching: Boolean(config.enable_continuous_batching),
-    kv_block_size: asNumber(config.kv_block_size),
-    enable_prefix_caching: Boolean(config.enable_prefix_caching),
   }
 }
 

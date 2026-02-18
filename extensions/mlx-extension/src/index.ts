@@ -300,14 +300,6 @@ export default class mlx_extension extends AIEngine {
 
     const mlxConfig: MlxConfig = {
       ctx_size: cfg.ctx_size ?? 4096,
-      n_predict: cfg.n_predict ?? 0,
-      threads: cfg.threads ?? 0,
-      // Batching configuration
-      parallel: cfg.parallel ?? 4,
-      batch_timeout_ms: cfg.batch_timeout_ms ?? 100,
-      enable_continuous_batching: cfg.enable_continuous_batching ?? false,
-      kv_block_size: cfg.kv_block_size ?? 16,
-      enable_prefix_caching: cfg.enable_prefix_caching ?? true,
     }
 
     logger.info(
