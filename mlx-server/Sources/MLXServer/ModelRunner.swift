@@ -111,14 +111,17 @@ actor ModelRunner {
     private nonisolated func buildGenerateParameters(
         temperature: Float,
         topP: Float,
-        maxTokens: Int,
+        maxTokens: Int? = nil,
         repetitionPenalty: Float
     ) -> GenerateParameters {
         GenerateParameters(
             maxTokens: maxTokens,
+            kvBits: 4,           // 4 or 8 bits
+            kvGroupSize: 64,     // Quantization group size
+            quantizedKVStart: 0,  // Start quantizing after N tokens
             temperature: temperature,
             topP: topP,
-            repetitionPenalty: repetitionPenalty
+            repetitionPenalty: repetitionPenalty,
         )
     }
 
@@ -127,7 +130,7 @@ actor ModelRunner {
         messages: [ChatMessage],
         temperature: Float = 0.7,
         topP: Float = 1.0,
-        maxTokens: Int = 2048,
+        maxTokens: Int? = nil,
         repetitionPenalty: Float = 1.0,
         stop: [String] = [],
         tools: [AnyCodable]? = nil
@@ -138,7 +141,7 @@ actor ModelRunner {
             throw MLXServerError.modelNotLoaded
         }
 
-        log("[mlx] Generate: \(messages.count) messages, temp=\(temperature), topP=\(topP), maxTokens=\(maxTokens)")
+        log("[mlx] Generate: \(messages.count) messages, temp=\(temperature), topP=\(topP), maxTokens=\(maxTokens ?? -1)")
 
         let (instructions, history, currentMessage) = buildChat(from: messages)
 
@@ -220,7 +223,7 @@ actor ModelRunner {
         messages: [ChatMessage],
         temperature: Float = 0.7,
         topP: Float = 1.0,
-        maxTokens: Int = 2048,
+        maxTokens: Int? = nil,
         repetitionPenalty: Float = 1.0,
         stop: [String] = [], // Skipped for now, later should pass thru model load where container preparation - context.configuration.extraEOSTokens
         tools: [AnyCodable]? = nil
@@ -232,7 +235,7 @@ actor ModelRunner {
                     throw MLXServerError.modelNotLoaded
                 }
 
-                log("[mlx] Generate: \(messages.count) messages, temp=\(temperature), topP=\(topP), maxTokens=\(maxTokens)")
+                log("[mlx] Generate: \(messages.count) messages, temp=\(temperature), topP=\(topP), maxTokens=\(maxTokens ?? -1)")
                 let (instructions, history, currentMessage) = buildChat(from: messages)
 
                 let generateParameters = self.buildGenerateParameters(

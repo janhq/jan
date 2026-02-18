@@ -96,7 +96,7 @@ struct MLXHTTPServer {
 
                 let temperature = chatRequest.temperature ?? 0.7
                 let topP = chatRequest.top_p ?? 1.0
-                let maxTokens = chatRequest.max_tokens ?? chatRequest.n_predict ?? 2048
+                let maxTokens = chatRequest.max_tokens ?? chatRequest.n_predict
                 let repetitionPenalty = chatRequest.repetition_penalty ?? 1.0
                 let stop = chatRequest.stop ?? []
                 let isStreaming = chatRequest.stream ?? false
@@ -174,7 +174,7 @@ struct MLXHTTPServer {
         chatRequest: ChatCompletionRequest,
         temperature: Float,
         topP: Float,
-        maxTokens: Int,
+        maxTokens: Int? = nil,
         repetitionPenalty: Float,
         stop: [String],
         tools: [AnyCodable]? = nil
@@ -224,7 +224,7 @@ struct MLXHTTPServer {
         chatRequest: ChatCompletionRequest,
         temperature: Float,
         topP: Float,
-        maxTokens: Int,
+        maxTokens: Int?,
         repetitionPenalty: Float,
         stop: [String],
         tools: [AnyCodable]? = nil
