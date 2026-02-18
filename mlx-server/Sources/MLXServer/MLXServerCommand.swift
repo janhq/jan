@@ -41,7 +41,7 @@ struct MLXServerCommand: AsyncParsableCommand {
         let modelRunner = ModelRunner()
 
         do {
-            try await modelRunner.load(modelPath: model, modelId: modelId)
+            try await modelRunner.load(modelPath: model)
         } catch {
             log("[mlx] Failed to load model: \(error)")
             throw error

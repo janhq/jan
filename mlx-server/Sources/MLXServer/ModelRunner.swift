@@ -6,16 +6,11 @@ import MLXVLM
 
 /// Manages loading and running inference with MLX models
 actor ModelRunner {
-    private var modelId: String = ""
     private var model: ModelContext?
-
-    var currentModelId: String {
-        modelId
-    }
 
     /// Load a model from the given path
     /// Supports both local directories and HuggingFace model IDs
-    func load(modelPath: String, modelId: String) async throws {
+    func load(modelPath: String) async throws {
         log("[mlx] Loading model from: \(modelPath)")
 
         let modelURL = URL(fileURLWithPath: modelPath)
