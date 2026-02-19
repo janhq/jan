@@ -173,7 +173,7 @@ export const MessageItem = memo(
                   </div>
                 )}
                 {displayText && (
-                  <div className="select-text whitespace-pre-wrap">
+                  <div dir="auto" className="select-text whitespace-pre-wrap">
                     {displayText}
                   </div>
                 )}
