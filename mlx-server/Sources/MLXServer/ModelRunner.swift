@@ -116,9 +116,6 @@ actor ModelRunner {
     ) -> GenerateParameters {
         GenerateParameters(
             maxTokens: maxTokens,
-            kvBits: 4,           // 4 or 8 bits
-            kvGroupSize: 64,     // Quantization group size
-            quantizedKVStart: 0,  // Start quantizing after N tokens
             temperature: temperature,
             topP: topP,
             repetitionPenalty: repetitionPenalty,
@@ -267,17 +264,12 @@ actor ModelRunner {
                             log("[mlx] Prompt: \(String(format: "%.1f", info.promptTokensPerSecond)) tokens/sec")
                             log("[mlx] Generation: \(String(format: "%.1f", info.tokensPerSecond)) tokens/sec")
 
-                            // Use full prompt token count for accurate usage tracking
-                            //                        let promptTokenCount = fullTokens.size
                             let usage = UsageInfo(
-                                prompt_tokens: nil,
-                                //                            prompt_tokens: promptTokenCount,
+                                prompt_tokens: info.promptTokenCount,
                                 completion_tokens: info.generationTokenCount,
-                                total_tokens: nil
-                                //                            total_tokens: promptTokenCount + info.generationTokenCount
+                                total_tokens: info.promptTokenCount + info.generationTokenCount
                             )
                             let timings = TimingsInfo(
-                                //                            prompt_n: promptTokenCount,
                                 predicted_n: info.generationTokenCount,
                                 predicted_per_second: info.tokensPerSecond,
                                 prompt_per_second: info.promptTokensPerSecond
