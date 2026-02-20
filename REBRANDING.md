@@ -49,7 +49,7 @@ The `scripts/rebrand.js` script automatically updates these files:
 | **Window titles** | `src-tauri/tauri.{linux,macos,windows}.conf.json` | `app.windows[0].title` |
 | **Mobile configs** | `src-tauri/tauri.{ios,android}.conf.json` | `identifier` |
 | **Root package** | `package.json` | `name` |
-| **Core library** | `core/package.json` | `name`, `homepage`, `author`, `description` |
+| **Core library** | `core/package.json` | `name`, `homepage`, `author` |
 | **HTML entry** | `web-app/index.html` | `<title>`, logo file references, logo alt text |
 | **Locales** | `web-app/src/locales/*/common.json` | `jan` key, `helpUsImproveJan` key |
 | **Rust config** | `src-tauri/Cargo.toml` | `name`, `authors`, `description`, `repository` |

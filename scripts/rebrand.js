@@ -112,8 +112,8 @@ export function applyBranding(brandingPath) {
     let html = readFileSync(indexHtmlPath, 'utf-8')
     // Update <title>
     html = html.replace(/<title>[^<]*<\/title>/, `<title>${branding.pageTitle}</title>`)
-    // Update logo references
-    html = html.replace(/\/images\/[^"]*logo[^"]*\.png/g, `/images/${branding.logoFilename}`)
+    // Update logo references (match common image extensions)
+    html = html.replace(/\/images\/[^"]*logo[^"]*\.(png|svg|jpg|jpeg|webp)/g, `/images/${branding.logoFilename}`)
     // Update logo alt text
     html = html.replace(/alt="[^"]*[Ll]ogo[^"]*"/, `alt="${branding.logoAlt}"`)
     writeFileSync(indexHtmlPath, html, 'utf-8')
@@ -132,10 +132,10 @@ export function applyBranding(brandingPath) {
       try {
         let content = readFileSync(commonPath, 'utf-8')
         let updated = replaceJsonField(content, 'jan', branding.appName)
-        // Update helpUsImproveJan value by replacing "Jan" inside its value
+        // Update helpUsImproveJan value by replacing "Jan" (whole word) inside its value
         updated = updated.replace(
           /("helpUsImproveJan"\s*:\s*)"([^"]*)"/,
-          (match, prefix, value) => `${prefix}"${value.replace(/Jan/g, branding.appName)}"`
+          (match, prefix, value) => `${prefix}"${value.replace(/\bJan\b/g, branding.appName)}"`
         )
         if (updated !== content) {
           writeFileSync(commonPath, updated, 'utf-8')
