@@ -43,6 +43,7 @@
     "build:extensions:darwin": "cd extensions && yarn workspaces foreach -Apt run build:publish",
     "build:extensions:win32": "cd extensions && yarn workspaces foreach -Apt --exclude @janhq/mlx-extension run build:publish",
     "build:extensions:linux": "cd extensions && yarn workspaces foreach -Apt --exclude @janhq/mlx-extension run build:publish",
+    "rebrand": "node scripts/rebrand.js",
     "prepare": "husky"
   },
   "devDependencies": {
