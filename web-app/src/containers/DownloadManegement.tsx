@@ -359,144 +359,153 @@ export function DownloadManagement() {
 
   return (
     <>
-      {downloadCount > 0 && (
-        <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon" className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 size-7 relative">
-              <DownloadIcon className='text-muted-foreground size-4' />
-              {downloadCount > 0 && (
-                <svg className="absolute inset-0 size-7 -rotate-90" viewBox="0 0 36 36">
-                  <path
-                    className="text-primary/30"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    fill="none"
-                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                  />
-                  <path
-                    className="text-primary"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    fill="none"
-                    strokeLinecap="round"
-                    strokeDasharray={`${overallProgress * 100}, 100`}
-                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                  />
-                </svg>
-              )}
-            </Button>
-          </PopoverTrigger>
+      <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="icon" className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 size-7 relative">
+            <DownloadIcon className='text-muted-foreground size-4' />
+            {downloadCount > 0 && (
+              <svg className="absolute inset-0 size-7 -rotate-90" viewBox="0 0 36 36">
+                <path
+                  className="text-primary/30"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  fill="none"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+                <path
+                  className="text-primary"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeDasharray={`${overallProgress * 100}, 100`}
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+              </svg>
+            )}
+          </Button>
+        </PopoverTrigger>
 
-          <PopoverContent
-            side="bottom"
-            align="start"
-            className="p-0 overflow-hidden text-sm select-none rounded-2xl -ml-8"
-            sideOffset={6}
-            onFocusOutside={(e) => e.preventDefault}
-          >
-            <div className="flex flex-col">
-              <div className="px-3 pt-2 flex items-center justify-between">
-                <p>
-                  {t('downloading')}
+        <PopoverContent
+          side="bottom"
+          align="start"
+          className="p-0 overflow-hidden text-sm select-none rounded-2xl -ml-8"
+          sideOffset={6}
+          onFocusOutside={(e) => e.preventDefault}
+        >
+          <div className="flex flex-col">
+            {appUpdateState.isDownloading || downloadProcesses.length > 0 ? (
+              <>
+                <div className="px-3 pt-2 flex items-center justify-between">
+                  <p>
+                    {t('downloading')}
+                  </p>
+                </div>
+                <div className="p-2 max-h-[300px] overflow-y-auto space-y-2">
+                  {appUpdateState.isDownloading && (
+                    <div className="rounded-lg p-2 bg-secondary">
+                      <div className="flex items-center justify-between">
+                        <p className="truncate">
+                          App Update
+                        </p>
+                      </div>
+                      <div className="relative z-40">
+                        <Progress
+                          value={appUpdateState.downloadProgress * 100}
+                          className="my-2 h-6 bg-muted-foreground/10 relative rounded-md"
+                        />
+                        <div className="absolute w-full top-1/2 transform -translate-y-1/2 flex items-center justify-between px-2">
+                          <p className="text-xs">
+                            {Math.round(appUpdateState.downloadProgress * 100)}
+                            %
+                          </p>
+                          <p className="text-xs">
+                            {`${renderGB(appUpdateState.downloadedBytes)} / ${renderGB(appUpdateState.totalBytes)}`}{' '}
+                            GB
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {downloadProcesses.map((download) => (
+                    <div
+                      key={download.id}
+                      className="rounded-lg p-2 bg-secondary"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate">
+                          {download.name}
+                        </p>
+                        <div className="shrink-0 flex items-center space-x-0.5">
+                          <Button variant="secondary" size="icon-xs" onClick={() => {
+                              // TODO: Consolidate cancellation logic
+                              if (download.id.startsWith('llamacpp') || download.id.startsWith('mlx')) {
+                                const downloadManager =
+                                  window.core.extensionManager.getByName(
+                                    '@janhq/download-extension'
+                                  )
+                                downloadManager.cancelDownload(download.id)
+                              } else {
+                                serviceHub
+                                  .models()
+                                  .abortDownload(download.name)
+                                  .then(() => {
+                                    toast.info(
+                                      t('common:toast.downloadCancelled.title'),
+                                      {
+                                        id: 'cancel-download',
+                                        description: t(
+                                          'common:toast.downloadCancelled.description'
+                                        ),
+                                      }
+                                    )
+                                    if (downloadProcesses.length === 0) {
+                                      setIsPopoverOpen(false)
+                                    }
+                                  })
+                              }
+                              setIsPopoverOpen(false)
+                            }} >
+                            <IconX
+                              size={16}
+                              className="text-muted-foreground cursor-pointer"
+                              title="Cancel download"
+                            />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="relative z-40">
+                        <Progress
+                          value={download.progress * 100}
+                          className="my-2 h-6 bg-muted-foreground/10 relative rounded-md"
+                        />
+                        <div className="absolute w-full top-1/2 transform -translate-y-1/2 flex items-center justify-between px-2">
+                          <p className="text-xs">
+                            {download.total > 0
+                              ? `${Math.round(download.progress * 100)}%`
+                              : 'Initializing download...'}
+                          </p>
+                          <p className="text-xs">
+                            {download.total > 0
+                              && `${renderGB(download.current)} / ${renderGB(download.total)} GB`}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+              ) : (
+              <div className="px-3 py-8 flex flex-col items-center justify-center text-center space-y-2">
+                <DownloadIcon className="text-muted-foreground/50 size-6" />
+                <p className="text-muted-foreground leading-normal">
+                  Your download progress <br /> will appear here
                 </p>
               </div>
-              <div className="p-2 max-h-[300px] overflow-y-auto space-y-2">
-                {appUpdateState.isDownloading && (
-                  <div className="rounded-lg p-2 bg-secondary">
-                    <div className="flex items-center justify-between">
-                      <p className="truncate">
-                        App Update
-                      </p>
-                    </div>
-                    <div className="relative z-40">
-                      <Progress
-                        value={appUpdateState.downloadProgress * 100}
-                        className="my-2 h-6 bg-muted-foreground/10 relative rounded-md"
-                      />
-                      <div className="absolute w-full top-1/2 transform -translate-y-1/2 flex items-center justify-between px-2">
-                        <p className="text-xs">
-                          {Math.round(appUpdateState.downloadProgress * 100)}
-                          %
-                        </p>
-                        <p className="text-xs">
-                          {`${renderGB(appUpdateState.downloadedBytes)} / ${renderGB(appUpdateState.totalBytes)}`}{' '}
-                          GB
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {downloadProcesses.map((download) => (
-                  <div
-                    key={download.id}
-                    className="rounded-lg p-2 bg-secondary"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate">
-                        {download.name}
-                      </p>
-                      <div className="shrink-0 flex items-center space-x-0.5">
-                        <Button variant="secondary" size="icon-xs" onClick={() => {
-                            // TODO: Consolidate cancellation logic
-                            if (download.id.startsWith('llamacpp') || download.id.startsWith('mlx')) {
-                              const downloadManager =
-                                window.core.extensionManager.getByName(
-                                  '@janhq/download-extension'
-                                )
-
-                              downloadManager.cancelDownload(download.id)
-                            } else {
-                              serviceHub
-                                .models()
-                                .abortDownload(download.name)
-                                .then(() => {
-                                  toast.info(
-                                    t('common:toast.downloadCancelled.title'),
-                                    {
-                                      id: 'cancel-download',
-                                      description: t(
-                                        'common:toast.downloadCancelled.description'
-                                      ),
-                                    }
-                                  )
-                                  if (downloadProcesses.length === 0) {
-                                    setIsPopoverOpen(false)
-                                  }
-                                })
-                            }
-                          }} >
-                          <IconX
-                            size={16}
-                            className="text-muted-foreground cursor-pointer"
-                            title="Cancel download"
-                          />
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="relative z-40">
-                      <Progress
-                        value={download.progress * 100}
-                        className="my-2 h-6 bg-muted-foreground/10 relative rounded-md"
-                      />
-                      <div className="absolute w-full top-1/2 transform -translate-y-1/2 flex items-center justify-between px-2">
-                        <p className="text-xs">
-                          {download.total > 0
-                            ? `${Math.round(download.progress * 100)}%`
-                            : 'Initializing download...'}
-                        </p>
-                        <p className="text-xs">
-                          {download.total > 0
-                            && `${renderGB(download.current)} / ${renderGB(download.total)} GB`}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </PopoverContent>
-        </Popover>
-      )}
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
     </>
   )
 }
