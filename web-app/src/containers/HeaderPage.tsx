@@ -5,6 +5,7 @@ import {
 } from '@tabler/icons-react'
 import { ReactNode, memo } from 'react'
 import { Button } from "@/components/ui/button"
+import { DownloadManagement } from '@/containers/DownloadManegement'
 
 type HeaderPageProps = {
   children?: ReactNode
@@ -16,27 +17,30 @@ const HeaderPage = memo(function HeaderPage({ children }: HeaderPageProps) {
     <div
       className={cn(
         'h-15 flex items-center shrink-0',
-        (IS_MACOS && !open) ? 'pl-22' : ' pl-4',
+        (IS_MACOS && !open) ? 'pl-24' : ' pl-4',
         children === undefined && 'border-none'
       )}
     >
       <div
         className={cn(
-          'flex items-center w-full gap-2',
+          'flex items-center w-full gap-1',
         )}
       >
         {!open && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className='rounded-full relative z-50'
-            onClick={() => setLeftPanel(!open)}
-            aria-label="Toggle sidebar"
-          >
-            <IconLayoutSidebar
-              className="text-muted-foreground relative size-4.5"
-            />
-          </Button>
+          <>
+            <DownloadManagement />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className='rounded-full relative z-50'
+              onClick={() => setLeftPanel(!open)}
+              aria-label="Toggle sidebar"
+            >
+              <IconLayoutSidebar
+                className="text-muted-foreground relative size-4.5"
+              />
+            </Button>
+          </>
         )}
         <div
           className={cn(
