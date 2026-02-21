@@ -351,4 +351,38 @@ export const predefinedProviders = [
       },
     ],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.llmapi.ai/v1',
+    explore_models_url: 'https://llmapi.ai',
+    provider: 'llmapi',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'The LLM API uses API keys for authentication. Visit [llmapi.ai](https://llmapi.ai) to retrieve your API key.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [LLM API documentation](https://llmapi.ai) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.llmapi.ai/v1',
+          value: 'https://api.llmapi.ai/v1',
+        },
+      },
+    ],
+    models: [],
+  },
 ]
