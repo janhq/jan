@@ -7,7 +7,7 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
 import { ulid } from 'ulidx'
-import { ChatCompletionRole, ContentType, MessageStatus } from '@janhq/core'
+import { ChatCompletionRole, ContentType, MessageStatus, DownloadEvent, events } from '@janhq/core'
 import type { CatalogModel } from '@/services/models/types'
 import {
   NEW_JAN_MODEL_HF_REPO,
@@ -21,7 +21,6 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import HeaderPage from './HeaderPage'
 import { DownloadIcon, PanelLeft} from 'lucide-react'
 import { ThemeSwitcher } from './ThemeSwitcher'
-import { FontSizeSwitcher } from './FontSizeSwitcher'
 import { AccentColorPicker } from './AccentColorPicker'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useThreads } from '@/hooks/useThreads'
@@ -549,7 +548,47 @@ function SetupScreen() {
     huggingfaceToken,
   ])
 
-  // Process queued quick start when metadata becomes available
+  // Use ref to track if we've already navigated
+  const hasNavigatedRef = useRef(false)
+
+  // Navigate when download completes - using event listener for reliability
+  useEffect(() => {
+    if (hasNavigatedRef.current) return
+
+    const onDownloadSuccess = async (state: { modelId: string }) => {
+      if (!defaultVariant || hasNavigatedRef.current) return
+      if (state.modelId !== defaultVariant.model_id) return
+
+      console.log('SetupScreen: Download completed, navigating to home...')
+      hasNavigatedRef.current = true
+
+      // Wait a bit for model provider to update
+      await new Promise((resolve) => setTimeout(resolve, 500))
+
+      toast.dismiss(`model-validation-started-${defaultVariant.model_id}`)
+      localStorage.setItem(localStorageKey.setupCompleted, 'true')
+
+      navigate({
+        to: route.home,
+        search: {
+          model: {
+            id: defaultVariant.model_id,
+            provider: 'llamacpp',
+          },
+        },
+        replace: true,
+      })
+    }
+
+    events.on(DownloadEvent.onFileDownloadAndVerificationSuccess, onDownloadSuccess)
+    events.on(DownloadEvent.onFileDownloadSuccess, onDownloadSuccess)
+
+    return () => {
+      events.off(DownloadEvent.onFileDownloadAndVerificationSuccess, onDownloadSuccess)
+      events.off(DownloadEvent.onFileDownloadSuccess, onDownloadSuccess)
+    }
+  }, [defaultVariant, navigate])
+
   useEffect(() => {
     if (
       quickStartQueued &&
@@ -606,23 +645,6 @@ function SetupScreen() {
     }
   }, [quickStartInitiated, quickStartQueued, isDownloading, isDownloaded])
 
-  useEffect(() => {
-    if (quickStartInitiated && isDownloaded && defaultVariant) {
-      toast.dismiss(`model-validation-started-${defaultVariant.model_id}`)
-      localStorage.setItem(localStorageKey.setupCompleted, 'true')
-
-      navigate({
-        to: route.home,
-        params: {},
-        search: {
-          model: {
-            id: defaultVariant.model_id,
-            provider: 'llamacpp',
-          },
-        },
-      })
-    }
-  }, [quickStartInitiated, isDownloaded, defaultVariant, navigate])
 
   return (
     <div className="flex flex-col h-svh w-full">
@@ -638,27 +660,22 @@ function SetupScreen() {
 
           {isDownloading ?
             <div className='mt-8 space-y-6'>
-              <div className='space-y-4'>
+              <div className='space-y-2.5'>
                 <div className='text-muted-foreground'>Accent color</div>
                 <AccentColorPicker />
               </div>
-              <div className='space-y-4'>
+              <div className='space-y-2.5'>
                 <div className='text-muted-foreground'>Color system</div>
                 <ThemeSwitcher renderAsRadio />
-              </div>
-              <div className='space-y-4'>
-                <div className='text-muted-foreground'>Font size</div>
-                <FontSizeSwitcher renderAsRadio />
               </div>
           </div>
             : 
             <div className="flex gap-4 flex-col mt-6">
               {/* Quick Start Button - Highlighted */}
               <div
-                onClick={handleQuickStart}
                 className="w-full text-left"
               >
-                <div className={cn("bg-background p-3 rounded-lg border transition-all hover:shadow-lg disabled:opacity-60 flex justify-between items-start")}>
+                <div className={cn("bg-background p-3 rounded-lg border transition-all hover:shadow disabled:opacity-60 flex justify-between items-start")}>
                   <div className="flex items-start gap-4">
                     <div className="shrink-0 size-12 bg-secondary/40 rounded-xl flex items-center justify-center">
                       <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
@@ -680,9 +697,9 @@ function SetupScreen() {
                     </div>
                   </div>
                 </div>
-                <div className="flex flex-col items-start gap-2 mt-6">
-                  {quickStartInitiated || !isDownloading && 
-                    <Button size="sm" className='w-full' disabled={isDownloading}>
+                <div className="flex flex-col items-start gap-2 mt-4">
+                  {!isDownloading && 
+                    <Button size="sm" className='w-full' disabled={isDownloading} onClick={handleQuickStart}>
                       Download
                     </Button>}
                 </div>
@@ -690,7 +707,7 @@ function SetupScreen() {
             </div>
           }
         </div>
-        {quickStartInitiated || !isDownloading ? 
+        {!isDownloading ? 
           <>
           </>
           : 
@@ -699,9 +716,9 @@ function SetupScreen() {
               <div className='w-full p-4 flex justify-between items-center'>
                 {IS_MACOS ? 
                   <div className='flex gap-1.5'>
-                    <div className='size-2.5 rounded-full bg-red-500'></div>
-                    <div className='size-2.5 rounded-full bg-yellow-500'></div>
-                    <div className='size-2.5 rounded-full bg-green-500'></div>
+                    <div className='size-2.5 rounded-full bg-foreground/20'></div>
+                    <div className='size-2.5 rounded-full bg-foreground/20'></div>
+                    <div className='size-2.5 rounded-full bg-foreground/20'></div>
                   </div>
                 : 
                   <div>
@@ -717,53 +734,53 @@ function SetupScreen() {
                 <div className='px-2 mt-2 text-muted-foreground/80'>
                   <ul className='mt-3 space-y-3'>
                     <li className='flex items-center gap-2'>
-                      <Skeleton className='size-4' />
-                      <Skeleton className='w-20 h-2' />
+                      <Skeleton className='size-4 bg-foreground/10' />
+                      <Skeleton className='w-20 h-2 bg-foreground/10' />
                     </li>
                     <li className='flex items-center gap-2'>
-                      <Skeleton className='size-4' />
-                      <Skeleton className='w-30 h-2' />
+                      <Skeleton className='size-4 bg-foreground/10' />
+                      <Skeleton className='w-30 h-2 bg-foreground/10' />
                     </li>
                     <li className='flex items-center gap-2'>
-                      <Skeleton className='size-4' />
-                      <Skeleton className='w-35 h-2' />
+                      <Skeleton className='size-4 bg-foreground/10' />
+                      <Skeleton className='w-35 h-2 bg-foreground/10' />
                     </li>
                     <li className='flex items-center gap-2'>
-                      <Skeleton className='size-4' />
-                      <Skeleton className='w-25 h-2' />
+                      <Skeleton className='size-4 bg-foreground/10' />
+                      <Skeleton className='w-25 h-2 bg-foreground/10' />
                     </li>
                   </ul>
                 </div>
 
                 <div className='px-2 mt-6 text-muted-foreground/80'>
-                  <Skeleton className='w-20 h-2' />
+                  <Skeleton className='w-20 h-2 bg-foreground/10' />
                   <ul className='mt-3 space-y-3'>
                     <li className='flex items-center gap-2'>
-                      <Skeleton className='size-4' />
-                      <Skeleton className='w-20 h-2' />
+                      <Skeleton className='size-4 bg-foreground/10' />
+                      <Skeleton className='w-20 h-2 bg-foreground/10' />
                     </li>
                     <li className='flex items-center gap-2'>
-                      <Skeleton className='size-4' />
-                      <Skeleton className='w-30 h-2' />
+                      <Skeleton className='size-4 bg-foreground/10' />
+                      <Skeleton className='w-30 h-2 bg-foreground/10' />
                     </li>
 
                   </ul>
                 </div>
 
                 <div className='px-2 mt-6 text-muted-foreground/80'>
-                  <Skeleton className='w-20 h-2' />
+                  <Skeleton className='w-20 h-2 bg-foreground/10' />
                   <ul className='mt-3 space-y-3'>
                     <li className='truncate'>
-                      <Skeleton className='w-40 h-2' />
+                      <Skeleton className='w-40 h-2 bg-foreground/10' />
                     </li>
                     <li className='truncate'>
-                      <Skeleton className='w-30 h-2' />
+                      <Skeleton className='w-30 h-2 bg-foreground/10' />
                     </li>
                     <li className='truncate'>
-                      <Skeleton className='w-40 h-2' />
+                      <Skeleton className='w-40 h-2 bg-foreground/10' />
                     </li>
                     <li className='truncate'>
-                      <Skeleton className='w-30 h-2' />
+                      <Skeleton className='w-30 h-2 bg-foreground/10' />
                     </li>
                   </ul>
                 </div>
