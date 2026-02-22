@@ -799,13 +799,12 @@ function SetupScreen() {
 
       if (threadId && threadExists) {
         // Update the thread with the downloaded model
-        await serviceHub.threads().updateThread({
-          id: threadId,
+        useThreads.getState().updateThread(threadId, {
           model: {
             id: defaultVariant.model_id,
             provider: 'llamacpp',
           },
-        } as Thread)
+        })
 
         navigate({
           to: route.threadsDetail,
