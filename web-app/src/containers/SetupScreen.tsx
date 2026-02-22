@@ -6,6 +6,7 @@ import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
+import Matter from 'matter-js'
 import { ulid } from 'ulidx'
 import { ChatCompletionRole, ContentType, MessageStatus, DownloadEvent, events } from '@janhq/core'
 import type { CatalogModel } from '@/services/models/types'
@@ -109,6 +110,7 @@ function SetupScreen() {
   const { createThread } = useThreads()
   const threadCheckedRef = useRef(false)
   const defaultThreadIdRef = useRef<string | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
 
   // Create default thread and project for new user (only once)
   useEffect(() => {
@@ -439,7 +441,6 @@ function SetupScreen() {
     fetchJanModel()
   }, [fetchJanModel])
 
-
   const defaultVariant = useMemo(() => {
     if (!janNewModel) return null
 
@@ -519,6 +520,207 @@ function SetupScreen() {
       (m: { id: string }) => m.id === defaultVariant.model_id
     )
   }, [defaultVariant, llamaProvider])
+
+  // Matter.js physics-based falling logos animation
+  useEffect(() => {
+    if (isDownloading) return
+
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    // Set canvas size - full screen
+    const width = window.innerWidth
+    const height = window.innerHeight
+    canvas.width = width
+    canvas.height = height
+
+    // Setup Matter.js physics
+    const Engine = Matter.Engine
+    const Bodies = Matter.Bodies
+    const Composite = Matter.Composite
+    const Body = Matter.Body
+
+    const engine = Engine.create()
+    engine.world.gravity.y = 1
+
+    // Create walls
+    const wallOptions = { isStatic: true, friction: 1 }
+    const ground = Bodies.rectangle(width / 2, height + 50, width, 100, wallOptions)
+    const leftWall = Bodies.rectangle(-50, height / 2, 100, height * 2, wallOptions)
+    const rightWall = Bodies.rectangle(width + 50, height / 2, 100, height * 2, wallOptions)
+
+    Composite.add(engine.world, [ground, leftWall, rightWall])
+
+    // Load logo
+    const logo = new Image()
+    logo.src = '/images/jan-logo.png'
+    let logoLoaded = false
+    logo.onload = () => {
+      logoLoaded = true
+    }
+
+    // Store bodies for rendering
+    const bodies: Matter.Body[] = []
+
+    // Spawn bodies periodically
+    const spawnInterval = setInterval(() => {
+      if (bodies.length < 50) {
+        for (let i = 0; i < 4; i++) {
+          const size = 40 + Math.random() * 60
+          const x = Math.random() * (width - 150) + 75
+          const body = Bodies.circle(x, -100 - Math.random() * 150, size / 2, {
+            restitution: 0.8,
+            friction: 0.3,
+            frictionAir: 0.01,
+          })
+          Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.2)
+          bodies.push(body)
+          Composite.add(engine.world, body)
+        }
+      }
+    }, 500)
+
+    // Drag state
+    let draggedBody: Matter.Body | null = null
+    let dragOffset = { x: 0, y: 0 }
+
+    // Mouse down handler
+    const handleMouseDown = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
+
+      // Check if clicked on a body (iterate backwards for topmost first)
+      for (let i = bodies.length - 1; i >= 0; i--) {
+        const body = bodies[i]
+        const dx = mouseX - body.position.x
+        const dy = mouseY - body.position.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        const radius = body.circleRadius!
+
+        if (dist < radius) {
+          draggedBody = body
+          dragOffset.x = dx
+          dragOffset.y = dy
+          break
+        }
+      }
+    }
+
+    // Mouse move handler
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!draggedBody) return
+
+      const rect = canvas.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
+
+      // Move the body manually
+      Body.setPosition(draggedBody, {
+        x: mouseX - dragOffset.x,
+        y: mouseY - dragOffset.y,
+      })
+      Body.setVelocity(draggedBody, { x: 0, y: 0 })
+    }
+
+    // Mouse up handler
+    const handleMouseUp = () => {
+      if (draggedBody) {
+        // Apply bounce effect on release
+        Body.applyForce(draggedBody, draggedBody.position, {
+          x: (Math.random() - 0.5) * 0.05,
+          y: -0.05 - Math.random() * 0.05,
+        })
+        Body.setAngularVelocity(draggedBody, draggedBody.angularVelocity + (Math.random() - 0.5) * 0.2)
+
+        draggedBody = null
+      }
+    }
+
+    // Click handler (for non-drag clicks)
+    const handleClick = (e: MouseEvent) => {
+      // Only bounce if not currently dragging
+      if (draggedBody) return
+
+      const rect = canvas.getBoundingClientRect()
+      const clickX = e.clientX - rect.left
+      const clickY = e.clientY - rect.top
+
+      // Check if clicked on a body (iterate backwards for topmost first)
+      for (let i = bodies.length - 1; i >= 0; i--) {
+        const body = bodies[i]
+        const dx = clickX - body.position.x
+        const dy = clickY - body.position.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        const radius = body.circleRadius!
+
+        if (dist < radius) {
+          // Apply bounce force
+          Body.applyForce(body, body.position, {
+            x: (Math.random() - 0.5) * 0.04,
+            y: -0.06 - Math.random() * 0.04,
+          })
+          Body.setAngularVelocity(body, body.angularVelocity + (Math.random() - 0.5) * 0.2)
+          break
+        }
+      }
+    }
+
+    canvas.addEventListener('mousedown', handleMouseDown)
+    canvas.addEventListener('mousemove', handleMouseMove)
+    canvas.addEventListener('mouseup', handleMouseUp)
+    canvas.addEventListener('mouseleave', handleMouseUp)
+    canvas.addEventListener('click', handleClick)
+
+    // Custom render loop
+    let animationId: number
+    const render = () => {
+      // Update physics
+      Engine.update(engine, 1000 / 60)
+
+      // Clear canvas
+      ctx.clearRect(0, 0, width, height)
+
+      // Draw bodies
+      for (const body of bodies) {
+        const size = body.circleRadius! * 2
+
+        if (logoLoaded && logo.complete) {
+          ctx.save()
+          ctx.translate(body.position.x, body.position.y)
+          ctx.rotate(body.angle)
+          ctx.globalAlpha = 1
+          ctx.drawImage(logo, -size / 2, -size / 2, size, size)
+          ctx.restore()
+        } else {
+          // Fallback circle
+          ctx.beginPath()
+          ctx.arc(body.position.x, body.position.y, body.circleRadius!, 0, 2 * Math.PI)
+          ctx.fillStyle = `hsl(${(body.id * 25) % 360}, 70%, 55%)`
+          ctx.fill()
+        }
+      }
+
+      animationId = requestAnimationFrame(render)
+    }
+
+    render()
+
+    return () => {
+      clearInterval(spawnInterval)
+      cancelAnimationFrame(animationId)
+      Composite.clear(engine.world, false)
+      Engine.clear(engine)
+      canvas.removeEventListener('mousedown', handleMouseDown)
+      canvas.removeEventListener('mousemove', handleMouseMove)
+      canvas.removeEventListener('mouseup', handleMouseUp)
+      canvas.removeEventListener('mouseleave', handleMouseUp)
+      canvas.removeEventListener('click', handleClick)
+    }
+  }, [isDownloading])
 
   const handleQuickStart = useCallback(() => {
     // If metadata is still loading, queue the download
@@ -664,149 +866,139 @@ function SetupScreen() {
 
 
   return (
-    <div className="flex flex-col h-svh w-full">
-      <HeaderPage />
-      <div className="flex h-[calc(100%-60px)] gap-2">
-        <div className="shrink-0 px-10 w-1/2 overflow-auto pb-10">
-          <div className="mb-4">
-            <h1 className="font-studio font-medium text-2xl mb-1">
-              {isDownloading ?  'While Jan gets ready...' : 'Hey, welcome to Jan!'}
-            </h1>
-            <p className='text-muted-foreground leading-normal w-full mt-1'>{isDownloading ? 'Want to try a different look? You can change this later in Settings.' : 'Let’s download your first local AI model to run on your device.'}</p>
-          </div>
+    <div className="relative flex flex-col h-svh w-full overflow-hidden">
+      {/* Full screen canvas background */}
+      {!isDownloading && <canvas
+        ref={canvasRef}
+        className="absolute inset-0 w-full h-full pointer-events-auto z-50"
+      />}
+      
+      {/* Content overlay - transparent to clicks on empty areas */}
+        <div className="flex flex-col h-svh w-full">
+        <HeaderPage />
+        <div className="flex h-[calc(100%-60px)]">
+          <div className="shrink-0 px-10 w-[480px] overflow-auto pb-10 pointer-events-auto">
+            <div className="mb-4">
+              <h1 className="font-studio font-medium text-2xl mb-1">
+                {isDownloading ?  'While Jan gets ready...' : 'Hey, welcome to Jan!'}
+              </h1>
+              <p className='text-muted-foreground leading-normal w-full mt-1'>{isDownloading ? 'Want to try a different look? You can change this later in Settings.' : 'Let\'s download your first local AI model to run on your device.'}</p>
+            </div>
 
-          {isDownloading ?
-            <div className='mt-8 space-y-6'>
-              <div className='space-y-2.5'>
-                <div className='text-muted-foreground'>Accent color</div>
-                <AccentColorPicker />
+            {isDownloading ?
+              <div className='mt-8 space-y-6'>
+                <div className='space-y-2.5'>
+                  <div className='text-muted-foreground'>Accent color</div>
+                  <AccentColorPicker />
+                </div>
+                <div className='space-y-2.5'>
+                  <div className='text-muted-foreground'>Color system</div>
+                  <ThemeSwitcher renderAsRadio />
+                </div>
               </div>
-              <div className='space-y-2.5'>
-                <div className='text-muted-foreground'>Color system</div>
-                <ThemeSwitcher renderAsRadio />
-              </div>
-          </div>
-            : 
-            <div className="flex gap-4 flex-col mt-6">
-              {/* Quick Start Button - Highlighted */}
-              <div
-                className="w-full text-left"
-              >
-                <div className={cn("bg-background p-3 rounded-lg border transition-all hover:shadow disabled:opacity-60 flex justify-between items-start")}>
-                  <div className="flex items-start gap-4">
-                    <div className="shrink-0 size-12 bg-secondary/40 rounded-xl flex items-center justify-center">
-                      <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
-                    </div>
-                    <div className="flex-1">
-                      <h1 className="font-semibold text-sm mb-1">
-                        <span>Jan v3</span>&nbsp;<span className='text-xs text-muted-foreground'>· {defaultVariant?.file_size}</span>
-                      </h1>
-                      <div className="text-muted-foreground text-sm mt-1.5">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full mr-1">
-                          <IconSquareCheck size={12} />
-                          General
-                        </span>
-                        {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full">
-                          <IconEye size={12} />
-                          Vision
-                        </span>}
+              :
+              <div className="flex gap-4 flex-col mt-6 relative z-50">
+                <div
+                  className="w-full text-left"
+                >
+                  <div className={cn("bg-background p-3 rounded-lg border transition-all hover:shadow disabled:opacity-60 flex justify-between items-start")}>
+                    <div className="flex items-start gap-4">
+                      <div className="shrink-0 size-12 bg-secondary/40 rounded-xl flex items-center justify-center">
+                        <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
+                      </div>
+                      <div className="flex-1">
+                        <h1 className="font-semibold text-sm mb-1">
+                          <span>Jan v3</span>&nbsp;<span className='text-xs text-muted-foreground'>· {defaultVariant?.file_size}</span>
+                        </h1>
+                        <div className="text-muted-foreground text-sm mt-1.5">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full mr-1">
+                            <IconSquareCheck size={12} />
+                            General
+                          </span>
+                          {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full">
+                            <IconEye size={12} />
+                            Vision
+                          </span>}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-                <div className="flex flex-col items-start gap-2 mt-4">
-                  {!isDownloading && 
-                    <Button size="sm" className='w-full' disabled={isDownloading} onClick={handleQuickStart}>
-                      Download
-                    </Button>}
-                </div>
-              </div>
-            </div>
-          }
-        </div>
-        {!isDownloading ? 
-          <>
-          </>
-          : 
-          <div className='border-l border-t w-full mt-2 rounded-tl-2xl h-full p-2 relative'>
-            <div className='bg-linear-to-b bg-clip-padding border from-sidebar dark:from-sidebar/70 to-background w-60 h-full rounded-t-xl shadow'>
-              <div className='w-full p-4 flex justify-between items-center'>
-                {IS_MACOS ? 
-                  <div className='flex gap-1.5'>
-                    <div className='size-2.5 rounded-full bg-foreground/20'></div>
-                    <div className='size-2.5 rounded-full bg-foreground/20'></div>
-                    <div className='size-2.5 rounded-full bg-foreground/20'></div>
+                  <div className="flex flex-col relative z-50 items-start gap-2 mt-4">
+                    {!isDownloading &&
+                      <Button size="sm" className='w-full' disabled={isDownloading} onClick={handleQuickStart}>
+                        Download
+                      </Button>}
                   </div>
-                : 
-                  <div>
-                    <span className='font-studio font-medium'>Jan</span>
-                  </div>}
-                <div className='flex gap-2.5 text-muted-foreground/80'>
-                  <DownloadIcon className='size-3' />
-                  <PanelLeft className='size-3' />
                 </div>
               </div>
-              
-              <div className='px-2 mt-2'>
-                <div className='px-2 mt-2 text-muted-foreground/80'>
-                  <ul className='mt-3 space-y-3'>
-                    <li className='flex items-center gap-2'>
-                      <Skeleton className='size-4 bg-foreground/10' />
-                      <Skeleton className='w-20 h-2 bg-foreground/10' />
-                    </li>
-                    <li className='flex items-center gap-2'>
-                      <Skeleton className='size-4 bg-foreground/10' />
-                      <Skeleton className='w-30 h-2 bg-foreground/10' />
-                    </li>
-                    <li className='flex items-center gap-2'>
-                      <Skeleton className='size-4 bg-foreground/10' />
-                      <Skeleton className='w-35 h-2 bg-foreground/10' />
-                    </li>
-                    <li className='flex items-center gap-2'>
-                      <Skeleton className='size-4 bg-foreground/10' />
-                      <Skeleton className='w-25 h-2 bg-foreground/10' />
-                    </li>
-                  </ul>
-                </div>
-
-                <div className='px-2 mt-6 text-muted-foreground/80'>
-                  <Skeleton className='w-20 h-2 bg-foreground/10' />
-                  <ul className='mt-3 space-y-3'>
-                    <li className='flex items-center gap-2'>
-                      <Skeleton className='size-4 bg-foreground/10' />
-                      <Skeleton className='w-20 h-2 bg-foreground/10' />
-                    </li>
-                    <li className='flex items-center gap-2'>
-                      <Skeleton className='size-4 bg-foreground/10' />
-                      <Skeleton className='w-30 h-2 bg-foreground/10' />
-                    </li>
-
-                  </ul>
-                </div>
-
-                <div className='px-2 mt-6 text-muted-foreground/80'>
-                  <Skeleton className='w-20 h-2 bg-foreground/10' />
-                  <ul className='mt-3 space-y-3'>
-                    <li className='truncate'>
-                      <Skeleton className='w-40 h-2 bg-foreground/10' />
-                    </li>
-                    <li className='truncate'>
-                      <Skeleton className='w-30 h-2 bg-foreground/10' />
-                    </li>
-                    <li className='truncate'>
-                      <Skeleton className='w-40 h-2 bg-foreground/10' />
-                    </li>
-                    <li className='truncate'>
-                      <Skeleton className='w-30 h-2 bg-foreground/10' />
-                    </li>
-                  </ul>
-                </div>
-
-              </div>
-                
-            </div>
+            }
           </div>
-        }
+          {isDownloading && (
+            <div className='border-l border-t w-full mt-2 rounded-tl-2xl h-full p-2 relative'>
+              <div className='bg-linear-to-b bg-clip-padding border border-b-0 from-sidebar dark:from-sidebar/70 to-background w-60 h-full rounded-t-xl shadow'>
+                <div className='w-full p-4 pb-0 flex justify-between items-center'>
+                  {IS_MACOS ?
+                    <div className="flex gap-1.5">
+                      <div className="size-2.5 rounded-full bg-foreground/20"></div>
+                      <div className="size-2.5 rounded-full bg-foreground/20"></div>
+                      <div className="size-2.5 rounded-full bg-foreground/20"></div>
+                    </div>
+                  :
+                    <div>
+                      <span className="font-studio font-medium text-muted-foreground">Jan</span>
+                    </div>}
+                  <div className="flex gap-2.5 text-muted-foreground/80">
+                    <DownloadIcon className="size-3" />
+                    <PanelLeft className="size-3" />
+                  </div>
+                </div>
+
+                <div className="p-4 space-y-4">
+                  <div className="space-y-2">
+                    <Skeleton className="w-20 h-2 bg-foreground/10" />
+                    <ul className="space-y-2">
+                      <li className="flex items-center gap-2">
+                        <Skeleton className="size-4 bg-foreground/10" />
+                        <Skeleton className="w-20 h-2 bg-foreground/10" />
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Skeleton className="size-4 bg-foreground/10" />
+                        <Skeleton className="w-30 h-2 bg-foreground/10" />
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Skeleton className="size-4 bg-foreground/10" />
+                        <Skeleton className="w-35 h-2 bg-foreground/10" />
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Skeleton className="w-20 h-2 bg-foreground/10" />
+                    <ul className="space-y-2">
+                      <li className="flex items-center gap-2">
+                        <Skeleton className="size-4 bg-foreground/10" />
+                        <Skeleton className="w-20 h-2 bg-foreground/10" />
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Skeleton className="size-4 bg-foreground/10" />
+                        <Skeleton className="w-30 h-2 bg-foreground/10" />
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Skeleton className="w-20 h-2 bg-foreground/10" />
+                    <ul className="space-y-2">
+                      <li><Skeleton className="w-40 h-2 bg-foreground/10" /></li>
+                      <li><Skeleton className="w-30 h-2 bg-foreground/10" /></li>
+                      <li><Skeleton className="w-40 h-2 bg-foreground/10" /></li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
