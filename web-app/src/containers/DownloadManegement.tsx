@@ -361,7 +361,7 @@ export function DownloadManagement() {
     <>
       <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="icon" className="text-muted-foreground relative z-50 rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 size-7 relative">
+          <Button variant="ghost" size="icon" className="text-muted-foreground z-50 rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 size-7 relative">
             <DownloadIcon className='text-muted-foreground size-4' />
             {downloadCount > 0 && (
               <svg className="absolute inset-0 size-7 -rotate-90" viewBox="0 0 36 36">

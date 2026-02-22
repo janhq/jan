@@ -773,21 +773,22 @@ function SetupScreen() {
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
 
       // Navigate to default thread if it exists, otherwise to home
-      if (defaultThreadIdRef.current) {
+      const threadId = defaultThreadIdRef.current
+      let threadExists = false
+
+      if (threadId) {
+        try {
+          const threads = await serviceHub.threads().fetchThreads()
+          threadExists = threads.some((t) => t.id === threadId)
+        } catch {
+          threadExists = false
+        }
+      }
+
+      if (threadId && threadExists) {
         navigate({
           to: route.threadsDetail,
-          params: { threadId: defaultThreadIdRef.current },
-          search: {
-            threadModel: {
-              id: defaultVariant.model_id,
-              provider: 'llamacpp',
-            },
-          },
-          replace: true,
-        })
-      } else {
-        navigate({
-          to: route.home,
+          params: { threadId },
           search: {
             threadModel: {
               id: defaultVariant.model_id,
