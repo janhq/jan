@@ -24,7 +24,7 @@ import { useEffect, useState, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { getModelToStart } from '@/utils/getModelToStart'
 import { LogViewer } from '@/components/LogViewer'
-import { invoke } from '@tauri-apps/api/core'
+import { isPlatformTauri } from '@/lib/platform'
 import {
   Popover,
   PopoverTrigger,
@@ -360,6 +360,11 @@ function LocalAPIServerContent() {
       }
 
       // Now launch Claude Code with config
+      if (!isPlatformTauri()) {
+        toast.error('Claude Code launch is only available in the desktop app')
+        return
+      }
+      const { invoke } = await import('@tauri-apps/api/core')
       await invoke('launch_claude_code_with_config', {
         apiUrl,
         apiKey: apiKey || undefined,

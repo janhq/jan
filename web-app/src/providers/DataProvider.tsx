@@ -13,7 +13,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import { isDev } from '@/lib/utils'
-import { invoke } from '@tauri-apps/api/core'
+import { isPlatformTauri } from '@/lib/platform'
 
 type ProviderCustomHeader = {
   header: string
@@ -49,7 +49,13 @@ async function registerRemoteProvider(provider: ModelProvider) {
     models: provider.models.map(e => e.id)
   }
 
+  if (!isPlatformTauri()) {
+    // Web mode: provider registration is handled via the AI SDK directly
+    return
+  }
+
   try {
+    const { invoke } = await import('@tauri-apps/api/core')
     await invoke('register_provider_config', { request })
     console.log(`Registered remote provider: ${provider.provider}`)
   } catch (error) {

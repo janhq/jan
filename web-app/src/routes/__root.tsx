@@ -1,4 +1,4 @@
-﻿import { createRootRoute, Outlet } from '@tanstack/react-router'
+import { createRootRoute, Outlet } from '@tanstack/react-router'
 // import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
@@ -21,13 +21,24 @@ import ToolApproval from '@/containers/dialogs/ToolApproval'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
-import { useEffect } from 'react'
+import { useEffect, lazy, Suspense } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LeftSidebar } from '@/components/left-sidebar'
-import { WindowControls } from '@/components/WindowControls'
+import { isPlatformTauri } from '@/lib/platform'
+
+// Lazy-load WindowControls only for Tauri desktop
+const WindowControls = lazy(() =>
+  import('@/components/WindowControls').then((m) => ({ default: m.WindowControls }))
+)
+
+const TauriWindowControls = () => (
+  <Suspense fallback={null}>
+    <WindowControls />
+  </Suspense>
+)
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -54,9 +65,9 @@ const AppLayout = () => {
       >
         <AnalyticProvider />
         <KeyboardShortcutsProvider />
-        {/* Fake absolute panel top to enable window drag */}
-        {!IS_MACOS && <WindowControls />}
-        <div className="fixed w-full h-12 z-20 top-0" data-tauri-drag-region />
+        {/* Window controls and drag region only for Tauri desktop */}
+        {isPlatformTauri() && !IS_MACOS && <TauriWindowControls />}
+        {isPlatformTauri() && <div className="fixed w-full h-12 z-20 top-0" data-tauri-drag-region />}
         <DialogAppUpdater />
         <BackendUpdater />
         <LeftSidebar />

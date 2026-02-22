@@ -51,9 +51,20 @@ import {
   OpenAICompatibleChatLanguageModel,
 } from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
-import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
-import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { isPlatformTauri } from '@/lib/platform'
+
+// Use Tauri HTTP client on desktop, native fetch on web
+// Tauri's fetch supports bypassing CORS on desktop; web uses native fetch
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const httpFetch: typeof fetch = isPlatformTauri()
+  // Dynamic import to avoid loading Tauri plugin in web builds
+  ? ((...args: Parameters<typeof fetch>) => {
+      return import('@tauri-apps/plugin-http').then(({ fetch: f }) =>
+        (f as unknown as typeof fetch)(...args)
+      )
+    }) as typeof fetch
+  : fetch
 
 /**
  * Llama.cpp timings structure from the response
@@ -210,8 +221,9 @@ export class ModelFactory {
       }
     }
 
-    // Get session info which includes port and api_key
-    const sessionInfo = await invoke<SessionInfo | null>(
+    // Get session info which includes port and api_key (Tauri only)
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core')
+    const sessionInfo = await tauriInvoke<SessionInfo | null>(
       'plugin:llamacpp|find_session_by_model',
       { modelId }
     )
@@ -272,8 +284,9 @@ export class ModelFactory {
       }
     }
 
-    // Get session info which includes port and api_key
-    const sessionInfo = await invoke<SessionInfo | null>(
+    // Get session info which includes port and api_key (Tauri only)
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core')
+    const sessionInfo = await tauriInvoke<SessionInfo | null>(
       'plugin:mlx|find_mlx_session_by_model',
       { modelId }
     )

@@ -65,28 +65,19 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, './src'),
         '@janhq/conversational-extension': path.resolve(__dirname, '../extensions/conversational-extension/src/index.ts'),
+        '@janhq/core': path.resolve(__dirname, '../core/dist/index.js'),
       },
     },
     define: {
-      IS_TAURI: JSON.stringify(process.env.IS_TAURI),
+      IS_TAURI: JSON.stringify(process.env.IS_TAURI ?? false),
       IS_DEV: JSON.stringify(process.env.IS_DEV),
-      IS_WEB_APP: JSON.stringify(false),
-      IS_MACOS: JSON.stringify(
-        process.env.TAURI_ENV_PLATFORM?.includes('darwin') ?? false
-      ),
-      IS_WINDOWS: JSON.stringify(
-        process.env.TAURI_ENV_PLATFORM?.includes('windows') ?? false
-      ),
-      IS_LINUX: JSON.stringify(
-        process.env.TAURI_ENV_PLATFORM?.includes('linux') ?? false
-      ),
-      IS_IOS: JSON.stringify(
-        process.env.TAURI_ENV_PLATFORM?.includes('ios') ?? false
-      ),
-      IS_ANDROID: JSON.stringify(
-        process.env.TAURI_ENV_PLATFORM?.includes('android') ?? false
-      ),
-      PLATFORM: JSON.stringify(process.env.TAURI_ENV_PLATFORM),
+      IS_WEB_APP: JSON.stringify(true),
+      IS_MACOS: JSON.stringify(false),
+      IS_WINDOWS: JSON.stringify(false),
+      IS_LINUX: JSON.stringify(false),
+      IS_IOS: JSON.stringify(false),
+      IS_ANDROID: JSON.stringify(false),
+      PLATFORM: JSON.stringify('web'),
 
       VERSION: JSON.stringify(packageJson.version),
 
@@ -104,14 +95,10 @@ export default defineConfig(({ mode }) => {
       ),
     },
 
-    // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-    //
-    // 1. prevent vite from obscuring rust errors
     clearScreen: false,
-    // 2. tauri expects a fixed port, fail if that port is not available
     server: {
       port: 1420,
-      strictPort: true,
+      strictPort: false,
       host: host || false,
       hmr: host
         ? {
@@ -121,7 +108,6 @@ export default defineConfig(({ mode }) => {
           }
         : undefined,
       watch: {
-        // 3. tell vite to ignore watching `src-tauri`
         ignored: ['**/src-tauri/**'],
         usePolling: true
       },

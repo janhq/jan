@@ -2,6 +2,7 @@ import { CoreRoutes, APIRoutes } from '@janhq/core'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { isPlatformTauri } from '@/lib/platform'
 import type { InvokeArgs } from '@/services/core/types'
+import { webStorage } from '@/lib/web-storage'
 
 export const AppRoutes = [
   'installExtensions',
@@ -35,6 +36,56 @@ export const Routes = [...CoreRoutes, ...APIRoutes, ...AppRoutes].map((r) => ({
 // Function to open an external URL in a new browser window
 export function openExternalUrl(url: string) {
   window?.open(url, '_blank')
+}
+
+// Web platform implementations for thread/message storage via localStorage
+const webAPIs: Record<string, (args?: InvokeArgs) => unknown> = {
+  listThreads: () => Promise.resolve(webStorage.listThreads()),
+  createThread: (args) => {
+    const thread = (args as { thread: Thread })?.thread
+    return Promise.resolve(webStorage.createThread(thread))
+  },
+  modifyThread: (args) => {
+    const thread = (args as { thread: Thread })?.thread
+    webStorage.modifyThread(thread)
+    return Promise.resolve()
+  },
+  deleteThread: (args) => {
+    const threadId = (args as { threadId: string })?.threadId
+    webStorage.deleteThread(threadId)
+    return Promise.resolve()
+  },
+  listMessages: (args) => {
+    const threadId = (args as { threadId: string })?.threadId
+    return Promise.resolve(webStorage.listMessages(threadId))
+  },
+  createMessage: (args) => {
+    const message = (args as { message: unknown })?.message
+    return Promise.resolve(webStorage.createMessage(message as { thread_id?: string }))
+  },
+  modifyMessage: (args) => {
+    const message = (args as { message: unknown })?.message
+    return Promise.resolve(webStorage.modifyMessage(message as { thread_id?: string; id?: string }))
+  },
+  deleteMessage: (args) => {
+    const { threadId, messageId } = args as { threadId: string; messageId: string }
+    webStorage.deleteMessage(threadId, messageId)
+    return Promise.resolve()
+  },
+  getThreadAssistant: (args) => {
+    const threadId = (args as { threadId: string })?.threadId
+    return Promise.resolve(webStorage.getThreadAssistant(threadId))
+  },
+  createThreadAssistant: (args) => {
+    const threadId = (args as { threadId: string })?.threadId
+    const assistant = (args as { assistant: unknown })?.assistant
+    return Promise.resolve(webStorage.createThreadAssistant(threadId, assistant))
+  },
+  modifyThreadAssistant: (args) => {
+    const threadId = (args as { threadId: string })?.threadId
+    const assistant = (args as { assistant: unknown })?.assistant
+    return Promise.resolve(webStorage.modifyThreadAssistant(threadId, assistant))
+  },
 }
 
 export const APIs = {
@@ -94,8 +145,11 @@ export const APIs = {
 
           return getServiceHub().core().invoke(command, args)
         } else {
-          // For Web platform, provide fallback implementations
-          console.warn(`API call '${proxy.route}' not supported in web environment`, args)
+          // For Web platform, use localStorage-based implementations where available
+          if (proxy.route in webAPIs) {
+            return webAPIs[proxy.route](args)
+          }
+          // Silently return null for unimplemented routes
           return Promise.resolve(null)
         }
       },

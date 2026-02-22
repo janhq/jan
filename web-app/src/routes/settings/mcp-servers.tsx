@@ -27,8 +27,8 @@ import { useToolApproval } from '@/hooks/useToolApproval'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
-import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
+import { isPlatformTauri } from '@/lib/platform'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -348,12 +348,15 @@ function MCPServersDesktop() {
     serviceHub.mcp().getConnectedServers().then(setConnectedServers)
 
     let unlisten: (() => void) | undefined
-    const setupListener = async () => {
-      unlisten = await listen(SystemEvent.MCP_UPDATE, () => {
-        serviceHub.mcp().getConnectedServers().then(setConnectedServers)
-      })
+    if (isPlatformTauri()) {
+      const setupListener = async () => {
+        const { listen } = await import('@tauri-apps/api/event')
+        unlisten = await listen(SystemEvent.MCP_UPDATE, () => {
+          serviceHub.mcp().getConnectedServers().then(setConnectedServers)
+        })
+      }
+      setupListener()
     }
-    setupListener()
 
     return () => {
       unlisten?.()
