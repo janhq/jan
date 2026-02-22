@@ -137,12 +137,16 @@ function SetupScreen() {
         const defaultThread = existingThreads.find((t) => t.title === 'What is Jan?')
         if (defaultThread) {
           defaultThreadIdRef.current = defaultThread.id
+          useThreads.getState().setThreads(await serviceHub.threads().fetchThreads())
         } else {
           const thread = await createThread(
             { id: '', provider: '' },
             'What is Jan?'
           )
           defaultThreadIdRef.current = thread.id
+
+          // Refresh threads in store after creating default thread
+          useThreads.getState().setThreads(await serviceHub.threads().fetchThreads())
 
           // Add dummy messages
           const now = Date.now()
@@ -343,9 +347,17 @@ function SetupScreen() {
               await serviceHub.messages().createMessage(message)
             }
           }
+
+          // Refresh threads in store after creating project threads
+          useThreads.getState().setThreads(await serviceHub.threads().fetchThreads())
         }
       } catch (error) {
         console.error('Failed to create default thread/project:', error)
+        if (error instanceof Error) {
+          console.error('Error name:', error.name)
+          console.error('Error message:', error.message)
+          console.error('Error stack:', error.stack)
+        }
       }
     }
 
@@ -880,12 +892,13 @@ function SetupScreen() {
       {/* Full screen canvas background */}
       {!isDownloading && <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full pointer-events-auto z-50"
+        className="absolute bottom-0 w-full h-[calc(100%-60px)] pointer-events-auto z-50"
       />}
       
       {/* Content overlay - transparent to clicks on empty areas */}
         <div className="flex flex-col h-svh w-full">
         <HeaderPage />
+        
         <div className="flex h-[calc(100%-60px)]">
           <div className="shrink-0 px-10 w-[480px] overflow-auto pb-10 pointer-events-auto">
             <div className="mb-4">
