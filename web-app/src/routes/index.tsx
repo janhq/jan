@@ -11,11 +11,13 @@ import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
 import { predefinedProviders } from '@/constants/providers'
 
+type ThreadModel = {
+  id: string
+  provider: string
+}
+
 type SearchParams = {
-  'model'?: {
-    id: string
-    provider: string
-  }
+  model?: ThreadModel
 }
 import { useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
@@ -25,7 +27,7 @@ export const Route = createFileRoute(route.home as any)({
   component: Index,
   validateSearch: (search: Record<string, unknown>): SearchParams => {
     const result: SearchParams = {
-      model: search.model as SearchParams['model'],
+      model: search.model as ThreadModel | undefined,
     }
 
     return result
