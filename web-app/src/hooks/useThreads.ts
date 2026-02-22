@@ -82,15 +82,15 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       },
       {} as Record<string, Thread>
     )
-    // Filter out temporary chat for search index
+    // Filter out threads without valid titles for search index
     const filteredForSearch = Object.values(threadMap).filter(
-      (t) => t.id !== TEMPORARY_CHAT_ID
+      (t) => t.id !== TEMPORARY_CHAT_ID && t.title
     )
 
     set({
       threads: threadMap,
       searchIndex: new Fzf<Thread[]>(filteredForSearch, {
-        selector: (item: Thread) => item.title,
+        selector: (item: Thread) => item.title ?? '',
       }),
     })
   },
@@ -110,8 +110,8 @@ export const useThreads = create<ThreadState>()((set, get) => ({
 
     let currentIndex = searchIndex
     if (!currentIndex?.find) {
-      currentIndex = new Fzf<Thread[]>(filteredThreadsValues, {
-        selector: (item: Thread) => item.title,
+      currentIndex = new Fzf<Thread[]>(filteredThreadsValues.filter(t => t.title), {
+        selector: (item: Thread) => item.title ?? '',
       })
       set({ searchIndex: currentIndex })
     }
@@ -162,10 +162,10 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         threads: remainingThreads,
         searchIndex: new Fzf<Thread[]>(
           Object.values(remainingThreads).filter(
-            (t) => t.id !== TEMPORARY_CHAT_ID
+            (t) => t.id !== TEMPORARY_CHAT_ID && t.title
           ),
           {
-            selector: (item: Thread) => item.title,
+            selector: (item: Thread) => item.title ?? '',
           }
         ),
       }
@@ -208,10 +208,10 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         threads: remainingThreads,
         searchIndex: new Fzf<Thread[]>(
           Object.values(remainingThreads).filter(
-            (t) => t.id !== TEMPORARY_CHAT_ID
+            (t) => t.id !== TEMPORARY_CHAT_ID && t.title
           ),
           {
-            selector: (item: Thread) => item.title,
+            selector: (item: Thread) => item.title ?? '',
           }
         ),
       }
@@ -231,7 +231,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         threads: {},
         currentThreadId: undefined,
         searchIndex: new Fzf<Thread[]>([], {
-          selector: (item: Thread) => item.title,
+          selector: (item: Thread) => item.title ?? '',
         }),
       }
     })
@@ -265,8 +265,8 @@ export const useThreads = create<ThreadState>()((set, get) => ({
 
       return {
         threads: remainingThreads,
-        searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads).filter(t => t.id !== TEMPORARY_CHAT_ID), {
-          selector: (item: Thread) => item.title,
+        searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads).filter(t => t.id !== TEMPORARY_CHAT_ID && t.title), {
+          selector: (item: Thread) => item.title ?? '',
         }),
       }
     })
@@ -403,9 +403,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       return {
         threads: newThreads,
         searchIndex: new Fzf<Thread[]>(
-          Object.values(newThreads).filter((t) => t.id !== TEMPORARY_CHAT_ID),
+          Object.values(newThreads).filter((t) => t.id !== TEMPORARY_CHAT_ID && t.title),
           {
-            selector: (item: Thread) => item.title,
+            selector: (item: Thread) => item.title ?? '',
           }
         ),
       }
@@ -437,10 +437,10 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         threads: updatedThreads,
         searchIndex: new Fzf<Thread[]>(
           Object.values(updatedThreads).filter(
-            (t) => t.id !== TEMPORARY_CHAT_ID
+            (t) => t.id !== TEMPORARY_CHAT_ID && t.title
           ),
           {
-            selector: (item: Thread) => item.title,
+            selector: (item: Thread) => item.title ?? '',
           }
         ),
       }
@@ -463,9 +463,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       return {
         threads: newThreads,
         searchIndex: new Fzf<Thread[]>(
-          Object.values(newThreads).filter((t) => t.id !== TEMPORARY_CHAT_ID),
+          Object.values(newThreads).filter((t) => t.id !== TEMPORARY_CHAT_ID && t.title),
           {
-            selector: (item: Thread) => item.title,
+            selector: (item: Thread) => item.title ?? '',
           }
         ),
       }
