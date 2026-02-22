@@ -108,6 +108,7 @@ function SetupScreen() {
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const { createThread } = useThreads()
   const threadCheckedRef = useRef(false)
+  const defaultThreadIdRef = useRef<string | null>(null)
 
   // Create default thread and project for new user (only once)
   useEffect(() => {
@@ -131,14 +132,15 @@ function SetupScreen() {
 
         // Create default thread (outside of project)
         const existingThreads = await serviceHub.threads().fetchThreads()
-        const hasDefaultThread = existingThreads.some(
-          (t) => t.title === 'What is Jan?'
-        )
-        if (!hasDefaultThread) {
+        const defaultThread = existingThreads.find((t) => t.title === 'What is Jan?')
+        if (defaultThread) {
+          defaultThreadIdRef.current = defaultThread.id
+        } else {
           const thread = await createThread(
             { id: '', provider: '' },
             'What is Jan?'
           )
+          defaultThreadIdRef.current = thread.id
 
           // Add dummy messages
           const now = Date.now()
@@ -568,16 +570,31 @@ function SetupScreen() {
       toast.dismiss(`model-validation-started-${defaultVariant.model_id}`)
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
 
-      navigate({
-        to: route.home,
-        search: {
-          model: {
-            id: defaultVariant.model_id,
-            provider: 'llamacpp',
+      // Navigate to default thread if it exists, otherwise to home
+      if (defaultThreadIdRef.current) {
+        navigate({
+          to: route.threadsDetail,
+          params: { threadId: defaultThreadIdRef.current },
+          search: {
+            threadModel: {
+              id: defaultVariant.model_id,
+              provider: 'llamacpp',
+            },
           },
-        },
-        replace: true,
-      })
+          replace: true,
+        })
+      } else {
+        navigate({
+          to: route.home,
+          search: {
+            threadModel: {
+              id: defaultVariant.model_id,
+              provider: 'llamacpp',
+            },
+          },
+          replace: true,
+        })
+      }
     }
 
     events.on(DownloadEvent.onFileDownloadAndVerificationSuccess, onDownloadSuccess)
