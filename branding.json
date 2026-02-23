@@ -1,0 +1,18 @@
+{
+  "appName": "Jan",
+  "productName": "Jan",
+  "identifier": "jan.ai.app",
+  "identifierIos": "jan.ai.app.ios",
+  "author": "Jan <service@jan.ai>",
+  "publisher": "Menlo Research Pte. Ltd.",
+  "homepage": "https://jan.ai",
+  "repository": "https://github.com/janhq/jan",
+  "description": "Use offline LLMs with your own data. Run open source models like Llama2 or Falcon on your internal computers/servers.",
+  "packageScope": "@janhq",
+  "rootPackageName": "jan-app",
+  "corePackageName": "@janhq/core",
+  "webAppPackageName": "@janhq/web-app",
+  "pageTitle": "Jan",
+  "logoFilename": "jan-logo.png",
+  "logoAlt": "Jan Logo"
+}
