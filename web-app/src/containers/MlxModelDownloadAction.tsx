@@ -86,7 +86,7 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
       to: route.home,
       params: {},
       search: {
-        model: {
+        threadModel: {
           id: modelId,
           provider: 'mlx',
         },
