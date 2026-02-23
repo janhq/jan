@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
 import { MCPTool } from '@/types/completion'
-import { ChatCompletionMessageToolCall } from 'openai/resources'
 
 export type PromptProgress = {
   cache: number
@@ -25,7 +24,6 @@ type AppState = {
   serverStatus: 'running' | 'stopped' | 'pending'
   abortControllers: Record<string, AbortController>
   tokenSpeed?: TokenSpeed
-  currentToolCall?: ChatCompletionMessageToolCall
   showOutOfContextDialog?: boolean
   errorMessage?: AppErrorMessage
   promptProgress?: PromptProgress
@@ -33,9 +31,6 @@ type AppState = {
   cancelToolCall?: () => void
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
-  updateCurrentToolCall: (
-    toolCall: ChatCompletionMessageToolCall | undefined
-  ) => void
   updateLoadingModel: (loading: boolean) => void
   updateTools: (tools: MCPTool[]) => void
   updateRagToolNames: (names: string[]) => void
@@ -77,11 +72,6 @@ export const useAppState = create<AppState>()((set) => ({
             created_at: content.created_at || Date.now(),
           }
         : undefined,
-    }))
-  },
-  updateCurrentToolCall: (toolCall) => {
-    set(() => ({
-      currentToolCall: toolCall,
     }))
   },
   updateLoadingModel: (loading) => {
@@ -154,7 +144,6 @@ export const useAppState = create<AppState>()((set) => ({
       streamingContent: undefined,
       abortControllers: {},
       tokenSpeed: undefined,
-      currentToolCall: undefined,
       cancelToolCall: undefined,
       errorMessage: undefined,
       showOutOfContextDialog: false,
