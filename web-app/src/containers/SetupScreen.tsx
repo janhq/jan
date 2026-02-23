@@ -597,7 +597,7 @@ function SetupScreen() {
 
     // Drag state
     let draggedBody: Matter.Body | null = null
-    let dragOffset = { x: 0, y: 0 }
+    const dragOffset = { x: 0, y: 0 }
 
     // Mouse down handler
     const handleMouseDown = (e: MouseEvent) => {
