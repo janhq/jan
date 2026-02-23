@@ -44,7 +44,7 @@ export const ModelDownloadAction = ({
         to: route.home,
         params: {},
         search: {
-          model: {
+          threadModel: {
             id: modelId,
             provider: 'llamacpp',
           },
