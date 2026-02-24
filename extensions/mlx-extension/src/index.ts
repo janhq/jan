@@ -682,32 +682,31 @@ export default class mlx_extension extends AIEngine {
         capabilities: capabilities,
       })
     } else {
-      // Local file - use absolute path directly
+      // Local folder - use absolute folder path directly
       if (!(await fs.existsSync(sourcePath))) {
-        throw new Error(`File not found: ${sourcePath}`)
+        throw new Error(`Folder not found: ${sourcePath}`)
       }
 
-      // Get file size
+      // Get folder size
       const stat = await fs.fileStat(sourcePath)
       const size_bytes = stat.size
 
-      // Detect capabilities by checking model directory
+      // Detect capabilities by checking model folder
       const isVision = await this.isVisionSupported(sourcePath)
 
       // Build capabilities array
       const capabilities: string[] = []
       if (isVision) capabilities.push('vision')
 
-      // Create model.yml with absolute path
+      // Create model.yml with absolute folder path
       const modelConfig: any = {
         model_path: sourcePath,
         name: modelId,
         size_bytes,
       }
 
-      // For vision models, add mmproj_path pointing to model.safetensors
+      // For vision models, add mmproj_path
       if (isVision) {
-        const modelDir = sourcePath.substring(0, sourcePath.lastIndexOf('/'))
         modelConfig.mmproj_path = sourcePath
         logger.info(`Vision model detected: ${modelId}`)
       }
@@ -797,7 +796,12 @@ export default class mlx_extension extends AIEngine {
 
   async isVisionSupported(modelPath: string): Promise<boolean> {
     // Check if model is a Vision Language Model by examining config.json
-    const modelDir = modelPath.substring(0, modelPath.lastIndexOf('/'))
+    // modelPath can be a folder path or a file path; resolve to directory
+    const stat = await fs.fileStat(modelPath).catch(() => null)
+    const modelDir =
+      stat && stat.isDirectory
+        ? modelPath
+        : modelPath.substring(0, modelPath.lastIndexOf('/'))
     const configPath = await joinPath([modelDir, 'config.json'])
 
     if (!(await fs.existsSync(configPath))) {
