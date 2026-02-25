@@ -2429,14 +2429,23 @@ pub async fn whatsapp_check_auth() -> Result<WhatsAppAuthStatus, String> {
                         .and_then(|v| v.as_str())
                         .map(String::from);
 
-                    if last_error.is_some() && !linked {
-                        return Ok(WhatsAppAuthStatus {
-                            in_progress: false,
-                            qr_code_ready: false,
-                            qr_code: None,
-                            authenticated: false,
-                            error: last_error,
-                        });
+                    // Only report fatal errors, not transient ones like 515 stream errors
+                    // These can occur during connection establishment but the link often succeeds after
+                    if let Some(ref err) = last_error {
+                        let is_transient = err.contains("515") ||
+                                          err.contains("restart required") ||
+                                          err.contains("Stream Errored");
+
+                        if !is_transient && !linked {
+                            return Ok(WhatsAppAuthStatus {
+                                in_progress: false,
+                                qr_code_ready: false,
+                                qr_code: None,
+                                authenticated: false,
+                                error: last_error,
+                            });
+                        }
+                        // For transient errors, continue checking - don't report as error yet
                     }
                 }
             }

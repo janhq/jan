@@ -174,13 +174,26 @@ export function WhatsAppWizardDialog({
           onConnected(whatsappConfig)
         }
 
-        // If there's an error, show it
-        if (status.error) {
-          clearInterval(interval)
-          setPollingInterval(null)
-          setIsPolling(false)
-          setErrorMessage(status.error)
-          setStep('error')
+        // If there's an error, check if it's a fatal error or transient
+        // Transient errors (like 515 stream errors) should not stop polling
+        // as the connection often succeeds on retry
+        if (status.error && !status.in_progress) {
+          // Only stop polling if the error is final (not in progress anymore)
+          // Transient errors during connection attempts should be ignored
+          const isFatalError = !status.error.includes('515') &&
+                               !status.error.includes('restart required') &&
+                               !status.error.includes('Stream Errored');
+
+          if (isFatalError) {
+            clearInterval(interval)
+            setPollingInterval(null)
+            setIsPolling(false)
+            setErrorMessage(status.error)
+            setStep('error')
+          } else {
+            // Transient error, log it but keep polling
+            console.log('Transient WhatsApp error, continuing to poll:', status.error)
+          }
         }
       } catch (error) {
         console.error('Polling error:', error)
