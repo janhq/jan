@@ -115,6 +115,12 @@ const SettingsMenu = () => {
       isEnabled: true,
     },
     {
+      title: 'common:remote_access',
+      route: route.settings.remote_access,
+      hasSubMenu: false,
+      isEnabled: true,
+    },
+    {
       title: 'common:https_proxy',
       route: route.settings.https_proxy,
       hasSubMenu: false,

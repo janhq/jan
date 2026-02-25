@@ -3,6 +3,7 @@
   "hardware": "Hardware",
   "mcp-servers": "MCP Servers",
   "local_api_server": "Local API Server",
+  "remote_access": "Remote Access",
   "https_proxy": "HTTPS Proxy",
   "extensions": "Extensions",
   "attachments": "Attachments",

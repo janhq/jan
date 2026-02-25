@@ -318,5 +318,219 @@
     "updateError": "Failed to update Llamacpp"
   },
   "backendInstallSuccess": "Backend installed successfully",
-  "backendInstallError": "Failed to install backend"
+  "backendInstallError": "Failed to install backend",
+  "remoteAccess": {
+    "title": "Remote Access",
+    "description": "Access your Jan assistant remotely through messaging platforms.",
+    "status": "Status",
+    "enabled": "Remote Access Enabled",
+    "disabled": "Remote Access Disabled",
+    "notInstalled": "Not Installed",
+    "running": "Running",
+    "stopped": "Stopped",
+    "activeChannels": "Active Channels",
+    "connectedUsers": "Connected Users",
+    "port": "Port",
+    "nodeVersion": "Node.js Version",
+    "openclawVersion": "OpenClaw Version",
+    "quickSetup": "Quick Setup",
+    "enableRemoteAccess": "Enable Remote Access",
+    "disableRemoteAccess": "Disable Remote Access",
+    "connectChannel": "Connect a Channel",
+    "shareAccess": "Share Access",
+    "generateInviteLink": "Generate Invite Link",
+    "recentMessages": "Recent Messages",
+    "noRecentMessages": "No recent messages",
+    "settings": "Settings",
+    "modelForRemote": "Model for Remote",
+    "accessPolicy": "Access Policy",
+    "requirePairing": "Require Pairing",
+    "openAccess": "Open Access",
+    "remoteMethod": "Remote Method",
+    "advancedSettings": "Advanced Settings",
+    "install": "Install",
+    "installing": "Installing...",
+    "start": "Start",
+    "stop": "Stop",
+    "starting": "Starting...",
+    "stopping": "Stopping...",
+    "installError": "Failed to install OpenClaw",
+    "startError": "Failed to start Remote Access",
+    "stopError": "Failed to stop Remote Access",
+    "nodeRequired": "Node.js is required to run Remote Access",
+    "portInUse": "Port is already in use",
+    "telegram": "Telegram",
+    "whatsapp": "WhatsApp",
+    "discord": "Discord",
+    "channels": "Channels",
+    "addChannel": {
+      "title": "Add Channel",
+      "description": "Select a messaging platform to connect",
+      "cancel": "Cancel",
+      "continue": "Continue"
+    },
+    "channelDescriptions": {
+      "telegram": "Connect via Telegram bot for secure messaging",
+      "whatsapp": "Connect via WhatsApp for business messaging",
+      "discord": "Connect via Discord bot for server-based chat"
+    },
+    "connected": "Connected",
+    "notConnected": "Not Connected",
+    "manage": "Manage",
+    "disconnect": "Disconnect",
+    "channelDisconnected": "{{channel}} disconnected",
+    "disconnectError": "Failed to disconnect channel",
+    "channelNotConnected": "Click settings to connect {{channel}}",
+    "user_one": "user",
+    "other": "users",
+    "users": "{{count}} {{item}}",
+    "justNow": "just now",
+    "minuteAgo": "min ago",
+    "minutesAgo": "mins ago",
+    "hourAgo": "hour ago",
+    "hoursAgo": "hours ago",
+    "telegramWizard": {
+      "title": "Connect Telegram",
+      "description": "Set up Telegram to chat with Jan remotely",
+      "step1": {
+        "title": "Create a Bot",
+        "instruction1": "Open Telegram and search for @BotFather",
+        "instruction2": "Send /newbot to create a new bot",
+        "instruction3": "Follow the prompts to name your bot",
+        "instruction4": "Copy the bot token (it looks like: 123456789:ABCdefGHI...)"
+      },
+      "step2": {
+        "title": "Enter Token",
+        "placeholder": "Paste your bot token here",
+        "validate": "Validate Token",
+        "validating": "Validating...",
+        "invalidToken": "Invalid token. Please check and try again.",
+        "validToken": "Token validated! Bot: @{{username}}"
+      },
+      "step3": {
+        "title": "Configure & Start",
+        "connecting": "Configuring Telegram channel...",
+        "success": "Telegram channel configured successfully!",
+        "error": "Failed to configure Telegram: {{error}}"
+      },
+      "step4": {
+        "title": "Pair Your Device",
+        "instruction": "Send this code to your Telegram bot:",
+        "codeLabel": "Pairing Code",
+        "waiting": "Waiting for pairing...",
+        "checkAgain": "Check Again",
+        "skipForNow": "Skip for Now"
+      },
+      "step5": {
+        "title": "Connected!",
+        "success": "Telegram is now connected!",
+        "instruction": "You can now chat with Jan by sending messages to your bot.",
+        "botUsername": "Your bot: @{{username}}",
+        "pairedUsers": "{{count}} device(s) paired"
+      },
+      "buttons": {
+        "next": "Next",
+        "back": "Back",
+        "connect": "Connect",
+        "cancel": "Cancel",
+        "done": "Done",
+        "retry": "Retry",
+        "disconnect": "Disconnect"
+      },
+      "status": {
+        "notConnected": "Not Connected",
+        "connected": "Connected",
+        "connecting": "Connecting..."
+      },
+      "errors": {
+        "networkError": "Network error. Please check your connection.",
+        "tokenRequired": "Please enter a bot token",
+        "configError": "Failed to save configuration"
+      }
+    },
+    "whatsappWizard": {
+      "title": "Connect WhatsApp",
+      "description": "Set up WhatsApp to chat with Jan remotely",
+      "whatsappWizardDescription": "Connect your WhatsApp account to enable remote messaging",
+      "scanQrCodeDescription": "Scan the QR code with your WhatsApp app",
+      "verifyingDescription": "Verifying your WhatsApp connection",
+      "successDescription": "Your WhatsApp is connected successfully",
+      "errorDescription": "Failed to connect WhatsApp",
+      "setupTitle": "WhatsApp Setup",
+      "setupDescription": "Connect your WhatsApp account to enable remote messaging",
+      "howItWorks": "How it works",
+      "whatsappStep1": "Click 'Start Setup' to begin",
+      "whatsappStep2": "Scan the QR code with your phone",
+      "whatsappStep3": "Wait for the connection to be established",
+      "scanQrCode": "Scan QR Code",
+      "qrCodeInstructions": "Open WhatsApp on your phone and scan this QR code",
+      "generatingQrCode": "Generating QR code...",
+      "waitingForScan": "Waiting for scan...",
+      "verifyingConnection": "Verifying Connection",
+      "pleaseWait": "Please wait while we verify your connection",
+      "whatsappConnected": "WhatsApp Connected!",
+      "whatsappConnectedDescription": "Your WhatsApp is now connected. You can chat with Jan by sending messages.",
+      "connectionFailed": "Connection Failed",
+      "unknownError": "An unknown error occurred",
+      "back": "Back",
+      "refreshQrCode": "Refresh QR Code",
+      "tryAgain": "Try Again",
+      "startSetup": "Start Setup",
+      "connecting": "Connecting...",
+      "disconnectError": "Failed to disconnect WhatsApp",
+      "buttons": {
+        "next": "Next",
+        "back": "Back",
+        "connect": "Connect",
+        "cancel": "Cancel",
+        "done": "Done",
+        "retry": "Retry",
+        "disconnect": "Disconnect"
+      }
+    },
+    "discordWizard": {
+      "title": "Connect Discord",
+      "description": "Set up Discord to chat with Jan remotely",
+      "step1": {
+        "title": "Create a Bot",
+        "instruction1": "Go to the Discord Developer Portal",
+        "instruction2": "Create a new application",
+        "instruction3": "Navigate to the 'Bot' section",
+        "instruction4": "Click 'Reset Token' to get your bot token",
+        "instruction5": "Copy the bot token"
+      },
+      "step2": {
+        "title": "Enter Token",
+        "placeholder": "Paste your bot token here",
+        "validate": "Validate Token",
+        "validating": "Validating...",
+        "invalidToken": "Invalid token. Please check and try again.",
+        "validToken": "Token validated! Bot: {{username}}"
+      },
+      "step3": {
+        "title": "Configure & Connect",
+        "connecting": "Configuring Discord channel...",
+        "success": "Discord channel configured successfully!",
+        "error": "Failed to configure Discord: {{error}}"
+      },
+      "step4": {
+        "success": "Discord is now connected!",
+        "instruction": "You can now chat with Jan by inviting your bot to servers.",
+        "botUsername": "Your bot: {{username}}"
+      },
+      "buttons": {
+        "next": "Next",
+        "back": "Back",
+        "done": "Done",
+        "disconnect": "Disconnect"
+      },
+      "status": {
+        "notConnected": "Not Connected"
+      },
+      "errors": {
+        "networkError": "Network error. Please check your connection.",
+        "tokenRequired": "Please enter a bot token"
+      }
+    }
+  }
 }

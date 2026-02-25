@@ -1,4 +1,8 @@
-mod core;
+pub mod core;
+pub mod openclaw_cli;
+pub use core::openclaw::OpenClawState;
+pub use core::picoclaw::PicoClawState;
+
 use core::{
     app::commands::get_jan_data_folder_path,
     downloads::models::DownloadManagerState,
@@ -128,6 +132,92 @@ pub fn run() {
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
+        // OpenClaw commands
+        core::openclaw::commands::openclaw_check_dependencies,
+        core::openclaw::commands::openclaw_check_port,
+        core::openclaw::commands::openclaw_install,
+        core::openclaw::commands::openclaw_configure,
+        core::openclaw::commands::openclaw_get_config,
+        core::openclaw::commands::openclaw_sync_model,
+        core::openclaw::commands::openclaw_get_model,
+        core::openclaw::commands::openclaw_list_channels,
+        core::openclaw::commands::openclaw_channel_status,
+        core::openclaw::commands::openclaw_start,
+        core::openclaw::commands::openclaw_stop,
+        core::openclaw::commands::openclaw_status,
+        core::openclaw::commands::openclaw_restart,
+        core::openclaw::commands::openclaw_get_config_dir,
+        // Telegram commands
+        core::openclaw::commands::telegram_validate_token,
+        core::openclaw::commands::telegram_configure,
+        core::openclaw::commands::telegram_get_config,
+        core::openclaw::commands::telegram_check_pairing,
+        core::openclaw::commands::telegram_disconnect,
+        // WhatsApp commands
+        core::openclaw::commands::whatsapp_validate_connection,
+        core::openclaw::commands::whatsapp_start_auth,
+        core::openclaw::commands::whatsapp_get_qr_code,
+        core::openclaw::commands::whatsapp_check_auth,
+        core::openclaw::commands::whatsapp_get_config,
+        core::openclaw::commands::whatsapp_get_contacts,
+        core::openclaw::commands::whatsapp_disconnect,
+        // Discord commands
+        core::openclaw::commands::discord_validate_token,
+        core::openclaw::commands::discord_configure,
+        core::openclaw::commands::discord_get_config,
+        core::openclaw::commands::discord_disconnect,
+        // Tailscale commands
+        core::openclaw::commands::tailscale_detect,
+        core::openclaw::commands::tailscale_get_status,
+        core::openclaw::commands::tailscale_configure_serve,
+        core::openclaw::commands::tailscale_remove_serve,
+        core::openclaw::commands::tailscale_enable_funnel,
+        core::openclaw::commands::tailscale_disable_funnel,
+        core::openclaw::commands::tailscale_get_url,
+        // Security commands
+        core::openclaw::commands::security_get_status,
+        core::openclaw::commands::security_set_auth_mode,
+        core::openclaw::commands::security_generate_token,
+        core::openclaw::commands::security_set_password,
+        core::openclaw::commands::security_verify_token,
+        core::openclaw::commands::security_set_require_pairing,
+        core::openclaw::commands::security_get_devices,
+        core::openclaw::commands::security_approve_device,
+        core::openclaw::commands::security_revoke_device,
+        core::openclaw::commands::security_get_logs,
+        core::openclaw::commands::security_clear_logs,
+        core::openclaw::commands::security_generate_pairing_code,
+        // Tunnel commands
+        core::openclaw::commands::tunnel_get_providers,
+        core::openclaw::commands::tunnel_detect_all,
+        core::openclaw::commands::tunnel_set_provider,
+        core::openclaw::commands::tunnel_start,
+        core::openclaw::commands::tunnel_stop,
+        core::openclaw::commands::tunnel_get_active,
+        core::openclaw::commands::tunnel_set_ngrok_token,
+        core::openclaw::commands::tunnel_set_cloudflare_tunnel,
+        core::openclaw::commands::tunnel_get_config,
+        core::openclaw::commands::tunnel_start_ngrok,
+        core::openclaw::commands::tunnel_stop_ngrok,
+        core::openclaw::commands::tunnel_start_cloudflared,
+        core::openclaw::commands::tunnel_stop_cloudflared,
+        // PicoClaw commands
+        core::picoclaw::commands::picoclaw_detect,
+        core::picoclaw::commands::picoclaw_install,
+        core::picoclaw::commands::picoclaw_configure,
+        core::picoclaw::commands::picoclaw_start,
+        core::picoclaw::commands::picoclaw_stop,
+        core::picoclaw::commands::picoclaw_status,
+        core::picoclaw::commands::picoclaw_enable,
+        core::picoclaw::commands::picoclaw_check_port,
+        core::picoclaw::commands::picoclaw_get_config,
+        core::picoclaw::commands::picoclaw_get_config_dir,
+        // PicoClaw Telegram commands
+        core::picoclaw::commands::picoclaw_telegram_configure,
+        core::picoclaw::commands::picoclaw_telegram_get_config,
+        // PicoClaw Discord commands
+        core::picoclaw::commands::picoclaw_discord_configure,
+        core::picoclaw::commands::picoclaw_discord_get_config,
     ]);
 
     // Mobile: no updater commands
@@ -222,6 +312,8 @@ pub fn run() {
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
         })
+        .manage(OpenClawState::default())
+        .manage(PicoClawState::default())
         .setup(|app| {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
