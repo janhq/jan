@@ -177,12 +177,15 @@ export function WhatsAppWizardDialog({
         // If there's an error, check if it's a fatal error or transient
         // Transient errors (like 515 stream errors) should not stop polling
         // as the connection often succeeds on retry
+        // "not linked" and "not configured" are not errors - they just mean waiting for QR scan
         if (status.error && !status.in_progress) {
           // Only stop polling if the error is final (not in progress anymore)
           // Transient errors during connection attempts should be ignored
           const isFatalError = !status.error.includes('515') &&
                                !status.error.includes('restart required') &&
-                               !status.error.includes('Stream Errored');
+                               !status.error.includes('Stream Errored') &&
+                               !status.error.includes('not linked') &&
+                               !status.error.includes('not configured');
 
           if (isFatalError) {
             clearInterval(interval)

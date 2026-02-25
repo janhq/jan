@@ -1,5 +1,5 @@
 /// OpenClaw package name on npm
-pub const OPENCLAW_PACKAGE_NAME: &str = "@openclaw/openclaw";
+pub const OPENCLAW_PACKAGE_NAME: &str = "openclaw";
 
 /// Default OpenClaw gateway port
 pub const DEFAULT_OPENCLAW_PORT: u16 = 18789;
