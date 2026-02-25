@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { createFileRoute, useParams } from '@tanstack/react-router'
+import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 
 import HeaderPage from '@/containers/HeaderPage'
@@ -58,14 +58,30 @@ const CHAT_STATUS = {
   SUBMITTED: 'submitted',
 } as const
 
+type ThreadModel = {
+  id: string
+  provider: string
+}
+
+type SearchParams = {
+  threadModel?: ThreadModel
+}
+
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
   component: ThreadDetail,
+  validateSearch: (search: Record<string, unknown>): SearchParams => {
+    return {
+      threadModel: search.threadModel as ThreadModel | undefined,
+    }
+  },
 })
 
 function ThreadDetail() {
   const serviceHub = useServiceHub()
   const { threadId } = useParams({ from: Route.id })
+  const search = useSearch({ from: Route.id })
+  const searchThreadModel = search.threadModel
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
   const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
   const assistants = useAssistant((state) => state.assistants)
@@ -525,6 +541,7 @@ function ThreadDetail() {
 
   // Check for and send initial message from sessionStorage
   const initialMessageSentRef = useRef(false)
+  
   useEffect(() => {
     // Prevent duplicate sends
     if (initialMessageSentRef.current) return
@@ -736,7 +753,10 @@ function ThreadDetail() {
     handleRegenerate,
   ])
 
-  const threadModel = useMemo(() => thread?.model, [thread])
+  const threadModel = useMemo(
+    () => searchThreadModel ?? thread?.model,
+    [searchThreadModel, thread]
+  )
 
   return (
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">

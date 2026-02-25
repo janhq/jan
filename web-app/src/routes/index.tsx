@@ -11,11 +11,13 @@ import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
 import { predefinedProviders } from '@/constants/providers'
 
+type ThreadModel = {
+  id: string
+  provider: string
+}
+
 type SearchParams = {
-  'model'?: {
-    id: string
-    provider: string
-  }
+  threadModel?: ThreadModel
 }
 import { useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
@@ -25,7 +27,7 @@ export const Route = createFileRoute(route.home as any)({
   component: Index,
   validateSearch: (search: Record<string, unknown>): SearchParams => {
     const result: SearchParams = {
-      model: search.model as SearchParams['model'],
+      threadModel: search.threadModel as ThreadModel | undefined,
     }
 
     return result
@@ -36,7 +38,7 @@ function Index() {
   const { t } = useTranslation()
   const { providers } = useModelProvider()
   const search = useSearch({ from: route.home as any })
-  const selectedModel = search.model
+  const threadModel = search.threadModel
   const { setCurrentThreadId } = useThreads()
   useTools()
 
@@ -73,7 +75,7 @@ function Index() {
     <div className="flex h-full flex-col justify-center">
       <HeaderPage>
         <div className="flex items-center gap-2 w-full">
-          <DropdownModelProvider model={selectedModel} />
+          <DropdownModelProvider model={threadModel} />
         </div>
       </HeaderPage>
       <div
@@ -98,7 +100,7 @@ function Index() {
           <div className="flex-1 shrink-0">
             <ChatInput
               showSpeedToken={false}
-              model={selectedModel}
+              model={threadModel}
               initialMessage={true}
             />
           </div>
