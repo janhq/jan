@@ -45,7 +45,7 @@ interface WhatsAppWizardDialogProps {
   onConnected: (config: WhatsAppConfig) => void
 }
 
-type WizardStep = 'welcome' | 'scanning' | 'verifying' | 'success' | 'error'
+type WizardStep = 'welcome' | 'setting_up' | 'scanning' | 'verifying' | 'success' | 'error'
 
 export function WhatsAppWizardDialog({
   isOpen,
@@ -101,9 +101,24 @@ export function WhatsAppWizardDialog({
       setIsLoading(true)
       setErrorMessage(null)
 
-      // Start WhatsApp authentication
+      // Show "setting up" step while OpenClaw is being configured
+      setStep('setting_up')
+
+      // Start WhatsApp authentication (this now handles all setup automatically)
+      // - Installs OpenClaw if needed
+      // - Starts the Gateway if not running
+      // - Configures allowed origins
+      // - Handles device pairing
+      // - Enables WhatsApp plugin
       const status = await invoke<WhatsAppAuthStatus>('whatsapp_start_auth')
       setAuthStatus(status)
+
+      // Check if there was an error during setup
+      if (status.error) {
+        setErrorMessage(status.error)
+        setStep('error')
+        return
+      }
 
       // Move to scanning step
       setStep('scanning')
@@ -220,6 +235,37 @@ export function WhatsAppWizardDialog({
                 <li className="flex items-start gap-2">
                   <span className="font-medium text-foreground">3.</span>
                   {t('settings:remoteAccess.whatsappWizard.whatsappStep3')}
+                </li>
+              </ol>
+            </div>
+          </div>
+        )
+
+      case 'setting_up':
+        return (
+          <div className="flex flex-col items-center text-center py-4">
+            <div className="w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center mb-4">
+              <IconRefresh size={32} className="text-blue-500 animate-spin" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2">
+              {t('settings:remoteAccess.whatsappWizard.settingUp') || 'Setting up...'}
+            </h3>
+            <p className="text-muted-foreground text-sm mb-4">
+              {t('settings:remoteAccess.whatsappWizard.settingUpDescription') || 'Configuring OpenClaw and preparing WhatsApp connection. This may take a moment...'}
+            </p>
+            <div className="bg-muted/50 rounded-lg p-4 w-full text-left">
+              <ol className="text-muted-foreground text-sm space-y-2">
+                <li className="flex items-center gap-2">
+                  <IconCheck size={16} className="text-green-500" />
+                  <span>{t('settings:remoteAccess.whatsappWizard.checkingOpenClaw') || 'Checking OpenClaw installation'}</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <IconRefresh size={16} className="animate-spin" />
+                  <span>{t('settings:remoteAccess.whatsappWizard.configuringGateway') || 'Configuring Gateway connection'}</span>
+                </li>
+                <li className="flex items-center gap-2 text-muted-foreground/50">
+                  <span className="w-4 h-4" />
+                  <span>{t('settings:remoteAccess.whatsappWizard.enablingWhatsApp') || 'Enabling WhatsApp channel'}</span>
                 </li>
               </ol>
             </div>

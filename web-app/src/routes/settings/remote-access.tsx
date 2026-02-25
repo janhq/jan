@@ -16,6 +16,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useEffect, useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
+import { setOpenClawRunningState } from '@/utils/openclaw'
 import {
   IconBrandTelegram,
   IconBrandWhatsapp,
@@ -181,6 +182,14 @@ function RemoteAccess() {
       setIsLoading(true)
       const statusData = await invoke<OpenClawStatus>('openclaw_status')
       setStatus(statusData)
+
+      // If OpenClaw is running, ensure Jan's origin is configured for WebSocket access
+      // This handles cases where OpenClaw was started externally
+      if (statusData.running) {
+        await invoke('openclaw_ensure_jan_origin').catch((err) => {
+          console.debug('Failed to ensure Jan origin (may be expected):', err)
+        })
+      }
     } catch (error) {
       console.error('Failed to fetch OpenClaw status:', error)
       toast.error(t('settings:remoteAccess.startError'))
@@ -324,6 +333,8 @@ function RemoteAccess() {
     try {
       setIsStarting(true)
       await invoke('openclaw_start')
+      // Update the OpenClaw running cache immediately so model sync works
+      setOpenClawRunningState(true)
       toast.success(t('settings:remoteAccess.running'))
       await fetchStatus()
     } catch (error) {
@@ -344,6 +355,8 @@ function RemoteAccess() {
     try {
       setIsStopping(true)
       await invoke('openclaw_stop')
+      // Update the OpenClaw running cache immediately
+      setOpenClawRunningState(false)
       toast.success(t('settings:remoteAccess.stopped'))
       await fetchStatus()
     } catch (error) {

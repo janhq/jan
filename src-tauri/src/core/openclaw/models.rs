@@ -32,6 +32,9 @@ pub struct GatewayConfig {
     pub port: u16,
     /// Authentication configuration
     pub auth: AuthConfig,
+    /// Control UI configuration (for WebSocket origin validation)
+    #[serde(rename = "controlUi", skip_serializing_if = "Option::is_none")]
+    pub control_ui: Option<ControlUiConfig>,
 }
 
 impl Default for GatewayConfig {
@@ -40,6 +43,32 @@ impl Default for GatewayConfig {
             bind: "loopback".to_string(),
             port: super::OPENCLAW_PORT,
             auth: AuthConfig::default(),
+            control_ui: Some(ControlUiConfig::default()),
+        }
+    }
+}
+
+/// Control UI configuration for the Gateway
+/// This controls WebSocket origin validation for security
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ControlUiConfig {
+    /// Allowed origins for WebSocket connections
+    /// Required for non-loopback connections (e.g., from Tauri apps)
+    #[serde(rename = "allowedOrigins")]
+    pub allowed_origins: Vec<String>,
+}
+
+impl Default for ControlUiConfig {
+    fn default() -> Self {
+        Self {
+            // Allow connections from Tauri app and local development
+            allowed_origins: vec![
+                "tauri://localhost".to_string(),
+                "http://tauri.localhost".to_string(),
+                "http://localhost".to_string(),
+                "http://localhost:1420".to_string(), // Tauri dev server
+                "http://127.0.0.1".to_string(),
+            ],
         }
     }
 }

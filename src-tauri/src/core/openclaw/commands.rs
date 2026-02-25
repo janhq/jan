@@ -6,9 +6,10 @@ use ed25519_dalek::{SigningKey, Signer};
 use futures::{SinkExt, StreamExt};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
+use sha2::{Sha256, Digest};
 use tokio::process::Command;
 use tokio::net::TcpStream;
-use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{connect_async_with_config, tungstenite::{self, Message, http::Request}, MaybeTlsStream, WebSocketStream};
 use tauri::State;
 
 use crate::core::openclaw::{
@@ -68,9 +69,12 @@ impl DeviceKeypair {
             let signing_key = SigningKey::generate(&mut OsRng);
             let verifying_key = signing_key.verifying_key();
 
-            // Create device ID from public key fingerprint
+            // Create device ID as SHA256 hash of the public key bytes
+            // This matches OpenClaw's device ID derivation: sha256(publicKeyBytes).hex()
             let pubkey_bytes = verifying_key.as_bytes();
-            let device_id = format!("jan-{}", hex::encode(&pubkey_bytes[..8]));
+            let mut hasher = Sha256::new();
+            hasher.update(pubkey_bytes);
+            let device_id = hex::encode(hasher.finalize());
 
             // Save keypair
             let secret_b64 = base64::engine::general_purpose::STANDARD
@@ -133,11 +137,26 @@ struct GatewayResponse {
 }
 
 /// Connect to OpenClaw Gateway WebSocket and perform handshake
+/// Uses an explicit Origin header to pass the Gateway's origin validation
 async fn connect_to_gateway() -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, String> {
     let url = format!("ws://127.0.0.1:{}", OPENCLAW_PORT);
     log::info!("Connecting to OpenClaw Gateway at {}", url);
 
-    let (ws_stream, _) = connect_async(&url)
+    // Build WebSocket request with Origin header
+    // The Gateway validates the Origin header for security (CVE-2026-25253)
+    // We use "http://localhost" which is in the allowedOrigins list
+    let request = Request::builder()
+        .uri(&url)
+        .header("Host", format!("127.0.0.1:{}", OPENCLAW_PORT))
+        .header("Origin", "http://localhost")
+        .header("Connection", "Upgrade")
+        .header("Upgrade", "websocket")
+        .header("Sec-WebSocket-Version", "13")
+        .header("Sec-WebSocket-Key", tungstenite::handshake::client::generate_key())
+        .body(())
+        .map_err(|e| format!("Failed to build WebSocket request: {}", e))?;
+
+    let (ws_stream, _) = connect_async_with_config(request, None, false)
         .await
         .map_err(|e| format!("Failed to connect to OpenClaw Gateway: {}", e))?;
 
@@ -187,6 +206,9 @@ async fn gateway_handshake(ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStr
     let (public_key, signature, signed_at) = device.sign_nonce(&nonce);
 
     // Send connect request following protocol v3
+    // Use "webchat" as client.id and client.mode since Jan acts as an operator UI client
+    // The client.id must be one of the recognized values in the Gateway schema:
+    // "cli", "webchat", "macos", "ios-node", "android-node", etc.
     let connect_id = next_request_id();
     let connect_request = serde_json::json!({
         "type": "req",
@@ -196,14 +218,14 @@ async fn gateway_handshake(ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStr
             "minProtocol": 3,
             "maxProtocol": 3,
             "client": {
-                "id": "jan-desktop",
+                "id": "webchat",
                 "version": env!("CARGO_PKG_VERSION"),
                 "platform": std::env::consts::OS,
-                "mode": "operator"
+                "mode": "webchat"
             },
             "role": "operator",
             "scopes": ["operator.read", "operator.write", "operator.channels"],
-            "caps": [],
+            "caps": ["structured-commands"],
             "commands": [],
             "permissions": {},
             "auth": {},
@@ -277,6 +299,10 @@ async fn gateway_request(
     method: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    // Ensure Jan's origin is configured before connecting
+    // This handles the case where the Gateway is already running but doesn't have Jan's origin
+    let _ = openclaw_ensure_jan_origin().await;
+
     let mut ws_stream = connect_to_gateway().await?;
 
     // Perform handshake first
@@ -342,6 +368,267 @@ async fn gateway_request(
     match result {
         Ok(inner) => inner,
         Err(_) => Err("Request timed out".to_string()),
+    }
+}
+
+// ============================================
+// Unified 1-Click Setup Functions
+// ============================================
+
+/// Setup result for the unified 1-click flow
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenClawSetupResult {
+    /// Whether setup completed successfully
+    pub success: bool,
+    /// Current step in the setup process
+    pub step: String,
+    /// Whether OpenClaw is installed
+    pub openclaw_installed: bool,
+    /// Whether the Gateway is running
+    pub gateway_running: bool,
+    /// Whether the device is paired with the Gateway
+    pub device_paired: bool,
+    /// Error message if setup failed
+    pub error: Option<String>,
+    /// Helpful message for the user
+    pub message: Option<String>,
+}
+
+/// Ensure OpenClaw is fully set up and ready for channel connections
+/// This is the "1-click" setup that handles:
+/// 1. Check/install OpenClaw
+/// 2. Configure allowed origins for Jan
+/// 3. Start the Gateway if not running
+/// 4. Generate device keypair if needed
+/// 5. Auto-approve device for local connections
+/// 6. Test the Gateway connection
+#[tauri::command]
+pub async fn openclaw_setup_for_channels(state: tauri::State<'_, OpenClawState>) -> Result<OpenClawSetupResult, String> {
+    log::info!("Starting 1-click OpenClaw setup for channels");
+
+    // Step 1: Check if OpenClaw is installed
+    let openclaw_version = match check_openclaw_installed().await {
+        Ok(Some(version)) => {
+            log::info!("OpenClaw is installed: {}", version);
+            Some(version)
+        }
+        Ok(None) => {
+            log::info!("OpenClaw is not installed, attempting to install...");
+            // Try to install OpenClaw
+            match openclaw_install().await {
+                Ok(result) if result.success => {
+                    log::info!("OpenClaw installed successfully");
+                    result.version
+                }
+                Ok(result) => {
+                    return Ok(OpenClawSetupResult {
+                        success: false,
+                        step: "install".to_string(),
+                        openclaw_installed: false,
+                        gateway_running: false,
+                        device_paired: false,
+                        error: result.error,
+                        message: Some("Please install Node.js 22+ and OpenClaw manually".to_string()),
+                    });
+                }
+                Err(e) => {
+                    return Ok(OpenClawSetupResult {
+                        success: false,
+                        step: "install".to_string(),
+                        openclaw_installed: false,
+                        gateway_running: false,
+                        device_paired: false,
+                        error: Some(e),
+                        message: Some("Please install Node.js 22+ and OpenClaw manually".to_string()),
+                    });
+                }
+            }
+        }
+        Err(e) => {
+            return Ok(OpenClawSetupResult {
+                success: false,
+                step: "check_install".to_string(),
+                openclaw_installed: false,
+                gateway_running: false,
+                device_paired: false,
+                error: Some(e),
+                message: None,
+            });
+        }
+    };
+
+    // Step 2: Ensure Jan's origin is in the config
+    log::info!("Configuring Gateway for Jan...");
+    if let Err(e) = openclaw_ensure_jan_origin().await {
+        log::warn!("Failed to ensure Jan origin: {}", e);
+        // Non-fatal, continue
+    }
+
+    // Step 3: Check if Gateway is running, start if not
+    let gateway_running = check_gateway_responding().await;
+    if !gateway_running {
+        log::info!("Gateway not running, starting...");
+        match openclaw_start(state).await {
+            Ok(()) => {
+                log::info!("Gateway started successfully");
+                // Wait for gateway to be ready
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            }
+            Err(e) => {
+                return Ok(OpenClawSetupResult {
+                    success: false,
+                    step: "start_gateway".to_string(),
+                    openclaw_installed: openclaw_version.is_some(),
+                    gateway_running: false,
+                    device_paired: false,
+                    error: Some(e),
+                    message: Some("Failed to start the OpenClaw Gateway".to_string()),
+                });
+            }
+        }
+    }
+
+    // Step 4: Test Gateway connection (this also generates device key if needed)
+    log::info!("Testing Gateway connection...");
+    match test_gateway_connection().await {
+        Ok(()) => {
+            log::info!("Gateway connection successful");
+            return Ok(OpenClawSetupResult {
+                success: true,
+                step: "complete".to_string(),
+                openclaw_installed: true,
+                gateway_running: true,
+                device_paired: true,
+                error: None,
+                message: Some("OpenClaw is ready for channel connections".to_string()),
+            });
+        }
+        Err(e) => {
+            // Check if it's a pairing issue
+            if e.contains("pairing") || e.contains("device") {
+                log::info!("Device pairing required, attempting auto-approve...");
+
+                // Try to auto-approve the device
+                match auto_approve_device().await {
+                    Ok(()) => {
+                        // Retry connection
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        match test_gateway_connection().await {
+                            Ok(()) => {
+                                return Ok(OpenClawSetupResult {
+                                    success: true,
+                                    step: "complete".to_string(),
+                                    openclaw_installed: true,
+                                    gateway_running: true,
+                                    device_paired: true,
+                                    error: None,
+                                    message: Some("OpenClaw is ready for channel connections".to_string()),
+                                });
+                            }
+                            Err(retry_err) => {
+                                return Ok(OpenClawSetupResult {
+                                    success: false,
+                                    step: "connect".to_string(),
+                                    openclaw_installed: true,
+                                    gateway_running: true,
+                                    device_paired: false,
+                                    error: Some(retry_err),
+                                    message: Some("Please approve the device in OpenClaw dashboard".to_string()),
+                                });
+                            }
+                        }
+                    }
+                    Err(approve_err) => {
+                        log::warn!("Auto-approve failed: {}", approve_err);
+                        return Ok(OpenClawSetupResult {
+                            success: false,
+                            step: "pair_device".to_string(),
+                            openclaw_installed: true,
+                            gateway_running: true,
+                            device_paired: false,
+                            error: Some(e),
+                            message: Some("Device pairing failed. Please restart the OpenClaw Gateway and try again.".to_string()),
+                        });
+                    }
+                }
+            } else {
+                return Ok(OpenClawSetupResult {
+                    success: false,
+                    step: "connect".to_string(),
+                    openclaw_installed: true,
+                    gateway_running: true,
+                    device_paired: false,
+                    error: Some(e),
+                    message: None,
+                });
+            }
+        }
+    }
+}
+
+/// Test the Gateway connection without making any requests
+async fn test_gateway_connection() -> Result<(), String> {
+    let mut ws_stream = connect_to_gateway().await?;
+    gateway_handshake(&mut ws_stream).await?;
+    let _ = ws_stream.close(None).await;
+    Ok(())
+}
+
+/// Auto-approve the latest pending device (for local connections)
+/// This is called automatically - no user intervention needed
+async fn auto_approve_device() -> Result<(), String> {
+    log::info!("Attempting to auto-approve device...");
+
+    // Get the gateway token from config for authentication
+    let config_path = get_openclaw_config_path()?;
+    let config_json = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read config: {}", e))?;
+    let config: serde_json::Value = serde_json::from_str(&config_json)
+        .map_err(|e| format!("Failed to parse config: {}", e))?;
+
+    let token = config
+        .get("gateway")
+        .and_then(|g| g.get("auth"))
+        .and_then(|a| a.get("token"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+
+    // Run openclaw devices approve --latest with the token
+    // This approves the most recent pending device request automatically
+    let mut args = vec!["devices", "approve", "--latest"];
+    if !token.is_empty() {
+        args.push("--token");
+        args.push(token);
+    }
+
+    let output = Command::new("openclaw")
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run devices approve: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    log::info!("Device approve output: {}", stdout);
+    if !stderr.is_empty() {
+        log::debug!("Device approve stderr: {}", stderr);
+    }
+
+    if output.status.success() {
+        log::info!("Device auto-approved successfully");
+        Ok(())
+    } else {
+        // Check if there are no pending requests (which is fine - device may already be approved)
+        let combined = format!("{}{}", stdout, stderr);
+        if combined.contains("no pending") || combined.contains("No pending") || combined.contains("already") {
+            log::info!("No pending device requests (device may already be approved)");
+            Ok(())
+        } else {
+            Err(format!("Failed to approve device: {}", combined))
+        }
     }
 }
 
@@ -572,6 +859,93 @@ fn generate_default_config(input: Option<OpenClawConfigInput>) -> OpenClawConfig
     config
 }
 
+/// Jan's allowed origins for OpenClaw Gateway WebSocket connections
+/// These origins allow Jan (Tauri app) to connect to the Gateway
+const JAN_ALLOWED_ORIGINS: &[&str] = &[
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "http://localhost",
+    "http://localhost:1420",  // Tauri dev server
+    "http://127.0.0.1",
+];
+
+/// Ensure Jan's origins are in the OpenClaw config's gateway.controlUi.allowedOrigins
+/// This patches an existing config without overwriting other settings
+/// Returns true if the config was modified, false if already correct
+#[tauri::command]
+pub async fn openclaw_ensure_jan_origin() -> Result<bool, String> {
+    log::info!("Ensuring Jan's origin is in OpenClaw allowedOrigins");
+
+    let config_path = get_openclaw_config_path()?;
+
+    if !config_path.exists() {
+        // No config exists, it will be created with correct defaults when openclaw_configure is called
+        log::info!("No OpenClaw config exists yet, will be created with Jan origins");
+        return Ok(false);
+    }
+
+    // Read and parse existing config as JSON Value to preserve all fields
+    let config_json = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read OpenClaw config: {}", e))?;
+
+    let mut config: serde_json::Value = serde_json::from_str(&config_json)
+        .map_err(|e| format!("Failed to parse OpenClaw config: {}", e))?;
+
+    // Ensure gateway object exists
+    if config.get("gateway").is_none() {
+        config["gateway"] = serde_json::json!({});
+    }
+
+    // Ensure gateway.controlUi object exists
+    if config["gateway"].get("controlUi").is_none() {
+        config["gateway"]["controlUi"] = serde_json::json!({});
+    }
+
+    // Get or create allowedOrigins array
+    let allowed_origins = config["gateway"]["controlUi"]
+        .get("allowedOrigins")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    // Convert to a set of existing origins
+    let existing_origins: std::collections::HashSet<String> = allowed_origins
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(String::from)
+        .collect();
+
+    // Check which Jan origins are missing
+    let mut modified = false;
+    let mut new_origins: Vec<serde_json::Value> = allowed_origins;
+
+    for origin in JAN_ALLOWED_ORIGINS {
+        if !existing_origins.contains(*origin) {
+            new_origins.push(serde_json::json!(origin));
+            modified = true;
+            log::info!("Adding Jan origin to allowedOrigins: {}", origin);
+        }
+    }
+
+    if modified {
+        // Update the config with new origins
+        config["gateway"]["controlUi"]["allowedOrigins"] = serde_json::Value::Array(new_origins);
+
+        // Write back the config
+        let updated_json = serde_json::to_string_pretty(&config)
+            .map_err(|e| format!("Failed to serialize config: {}", e))?;
+
+        std::fs::write(&config_path, updated_json)
+            .map_err(|e| format!("Failed to write config: {}", e))?;
+
+        log::info!("OpenClaw config updated with Jan's allowed origins");
+    } else {
+        log::info!("Jan's origins already present in OpenClaw config");
+    }
+
+    Ok(modified)
+}
+
 /// Configure OpenClaw with the specified settings
 #[tauri::command]
 pub async fn openclaw_configure(config_input: Option<OpenClawConfigInput>) -> Result<OpenClawConfig, String> {
@@ -610,9 +984,10 @@ pub async fn openclaw_get_config() -> Result<OpenClawConfig, String> {
 /// Sync the selected model from Jan to OpenClaw
 ///
 /// This updates OpenClaw's agent default model to match Jan's currently selected model.
-/// It does two things:
-/// 1. Ensures the model is registered in OpenClaw's model config (if not already)
-/// 2. Sets the model as the default for the agent
+/// It does three things:
+/// 1. Ensures the "jan" provider exists pointing to localhost:1337
+/// 2. Adds/updates the model in the jan provider's model list
+/// 3. Sets the model as the default using `openclaw models set` (no restart needed)
 #[tauri::command]
 pub async fn openclaw_sync_model(
     model_id: String,
@@ -622,35 +997,29 @@ pub async fn openclaw_sync_model(
     log::info!("Syncing model to OpenClaw: {} (provider: {:?})", model_id, provider);
 
     // Format the model ID for OpenClaw
-    // OpenClaw expects format like "provider/model" or just "model"
-    let openclaw_model_id = if let Some(ref prov) = provider {
-        // If provider is specified and model_id doesn't already include it
-        if model_id.contains('/') {
-            model_id.clone()
-        } else {
-            format!("{}/{}", prov, model_id)
-        }
-    } else {
-        model_id.clone()
-    };
-
-    // First, check if the model already exists in OpenClaw's config
-    // Try to add it to the "jan" provider (or create it)
+    // For the jan provider, we use "jan/<model_id>" format
+    let openclaw_model_id = format!("jan/{}", model_id);
     let display_name = model_name.unwrap_or_else(|| model_id.clone());
+
+    // Determine context window based on provider type
+    let context_window = if provider.as_deref() == Some("llamacpp") || provider.as_deref() == Some("mlx") {
+        16000 // Local models typically have smaller context
+    } else {
+        128000 // Remote providers usually have larger context
+    };
 
     // Create a model definition for OpenClaw
     let model_def = serde_json::json!({
-        "id": openclaw_model_id,
+        "id": model_id,
         "name": display_name,
         "reasoning": false,
         "input": ["text"],
         "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-        "contextWindow": 128000,
-        "maxTokens": 32000
+        "contextWindow": context_window,
+        "maxTokens": 4096
     });
 
-    // Try to add/update the model in the jan provider
-    // First check if jan provider exists
+    // Check if jan provider exists
     let check_output = Command::new("openclaw")
         .args(["config", "get", "models.providers.jan"])
         .stdout(Stdio::piped())
@@ -659,6 +1028,7 @@ pub async fn openclaw_sync_model(
         .await;
 
     let jan_provider_exists = check_output
+        .as_ref()
         .map(|o| o.status.success())
         .unwrap_or(false);
 
@@ -667,11 +1037,13 @@ pub async fn openclaw_sync_model(
         log::info!("Creating 'jan' provider in OpenClaw config");
         let jan_provider = serde_json::json!({
             "baseUrl": "http://localhost:1337/v1",
-            "api": "openai-chat",
+            "api": "openai-completions",
+            "authHeader": false,
+            "apiKey": "not-needed",
             "models": [model_def]
         });
 
-        let _ = Command::new("openclaw")
+        let create_output = Command::new("openclaw")
             .args([
                 "config",
                 "set",
@@ -682,25 +1054,64 @@ pub async fn openclaw_sync_model(
             .stderr(Stdio::piped())
             .output()
             .await;
+
+        if let Ok(output) = create_output {
+            if !output.status.success() {
+                log::warn!("Failed to create jan provider: {:?}", String::from_utf8_lossy(&output.stderr));
+            }
+        }
     } else {
-        // Jan provider exists, try to add model if not present
-        // Note: This is best-effort, the model might already exist
-        log::debug!("Jan provider exists, model may already be configured");
+        // Jan provider exists, update the models list with this model
+        log::debug!("Jan provider exists, updating model list");
+
+        // Get current models
+        let models_output = Command::new("openclaw")
+            .args(["config", "get", "models.providers.jan.models"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+
+        if let Ok(output) = models_output {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if let Ok(mut models) = serde_json::from_str::<Vec<serde_json::Value>>(stdout.trim()) {
+                    // Check if model already exists
+                    let model_exists = models.iter().any(|m| {
+                        m.get("id").and_then(|v| v.as_str()) == Some(&model_id)
+                    });
+
+                    if !model_exists {
+                        // Add the new model
+                        models.push(model_def);
+                        let models_json = serde_json::to_string(&models).unwrap_or_default();
+
+                        let _ = Command::new("openclaw")
+                            .args([
+                                "config",
+                                "set",
+                                "models.providers.jan.models",
+                                &models_json,
+                            ])
+                            .stdout(Stdio::piped())
+                            .stderr(Stdio::piped())
+                            .output()
+                            .await;
+                    }
+                }
+            }
+        }
     }
 
-    // Set the model as the default
+    // Use `openclaw models set` to change the default model
+    // This updates the default for new sessions
     let output = Command::new("openclaw")
-        .args([
-            "config",
-            "set",
-            "agents.defaults.model.primary",
-            &openclaw_model_id,
-        ])
+        .args(["models", "set", &openclaw_model_id])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
         .await
-        .map_err(|e| format!("Failed to run openclaw config set: {}", e))?;
+        .map_err(|e| format!("Failed to run openclaw models set: {}", e))?;
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -715,6 +1126,45 @@ pub async fn openclaw_sync_model(
             "Failed to set OpenClaw model: {}",
             if !stderr.is_empty() { stderr.to_string() } else { stdout.to_string() }
         ));
+    }
+
+    // Now update active sessions to use the new model
+    // Get list of active sessions (updated in last 24 hours)
+    let sessions_output = Command::new("openclaw")
+        .args(["sessions", "--json", "--active", "1440"]) // Last 24 hours
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await;
+
+    if let Ok(sessions_result) = sessions_output {
+        if sessions_result.status.success() {
+            let sessions_json = String::from_utf8_lossy(&sessions_result.stdout);
+            // Parse the sessions response - it's an object with a "sessions" array
+            if let Ok(sessions_response) = serde_json::from_str::<serde_json::Value>(&sessions_json) {
+                if let Some(sessions) = sessions_response.get("sessions").and_then(|v| v.as_array()) {
+                    // Send /model command to each active session
+                    for session in sessions {
+                        if let Some(session_id) = session.get("sessionId").and_then(|v| v.as_str()) {
+                            let model_cmd = format!("/model {}", openclaw_model_id);
+                            log::debug!("Switching model for session {}: {}", session_id, model_cmd);
+
+                            // Fire and forget - don't wait for response
+                            let session_id_clone = session_id.to_string();
+                            let model_cmd_clone = model_cmd.clone();
+                            tokio::spawn(async move {
+                                let _ = Command::new("openclaw")
+                                    .args(["agent", "--session-id", &session_id_clone, "--message", &model_cmd_clone])
+                                    .stdout(Stdio::null())
+                                    .stderr(Stdio::null())
+                                    .output()
+                                    .await;
+                            });
+                        }
+                    }
+                }
+            }
+        }
     }
 
     log::info!("Successfully synced model '{}' to OpenClaw", openclaw_model_id);
@@ -776,6 +1226,8 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
     // Check if gateway is already responding (started externally)
     if check_gateway_responding().await {
         log::info!("OpenClaw gateway is already running on port {} (external process)", OPENCLAW_PORT);
+        // Even if running externally, ensure Jan's origin is configured
+        let _ = openclaw_ensure_jan_origin().await;
         return Ok(());
     }
 
@@ -795,8 +1247,12 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
     // Ensure config exists
     let config_path = get_openclaw_config_path()?;
     if !config_path.exists() {
-        // Generate default config
+        // Generate default config (includes Jan's allowed origins by default)
         openclaw_configure(None).await?;
+    } else {
+        // Config exists, ensure Jan's origin is in allowedOrigins
+        // This is crucial for the 1-click experience - users shouldn't need to manually edit config
+        openclaw_ensure_jan_origin().await?;
     }
 
     // Start OpenClaw gateway
@@ -1493,16 +1949,40 @@ pub async fn whatsapp_validate_connection() -> Result<bool, String> {
     Ok(settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false))
 }
 
-/// Start WhatsApp authentication - uses OpenClaw CLI to add WhatsApp channel
+/// Start WhatsApp authentication - 1-click setup that handles everything
 ///
-/// The WhatsApp login flow in OpenClaw works as follows:
-/// 1. `openclaw plugins enable whatsapp` - enables the WhatsApp plugin
-/// 2. `openclaw channels add --channel whatsapp` - adds the WhatsApp channel config
-/// 3. `openclaw channels login --channel whatsapp` - initiates QR code login (if supported)
-/// 4. Or the gateway generates QR code automatically when WhatsApp channel is enabled
+/// This function handles the complete setup flow automatically:
+/// 1. Ensures OpenClaw is installed and configured
+/// 2. Starts the Gateway if not running
+/// 3. Ensures device pairing for Gateway connection
+/// 4. Enables the WhatsApp plugin
+/// 5. Adds the WhatsApp channel configuration
+/// 6. Initiates the QR code login flow
+///
+/// Users don't need to run any terminal commands - everything is automatic.
 #[tauri::command]
-pub async fn whatsapp_start_auth() -> Result<WhatsAppAuthStatus, String> {
-    log::info!("Starting WhatsApp authentication via OpenClaw CLI");
+pub async fn whatsapp_start_auth(state: tauri::State<'_, OpenClawState>) -> Result<WhatsAppAuthStatus, String> {
+    log::info!("Starting WhatsApp 1-click setup and authentication");
+
+    // Step 1: Run the unified setup to ensure OpenClaw is ready
+    log::info!("Running OpenClaw setup...");
+    let setup_result = openclaw_setup_for_channels(state).await?;
+
+    if !setup_result.success {
+        return Ok(WhatsAppAuthStatus {
+            in_progress: false,
+            qr_code_ready: false,
+            qr_code: None,
+            authenticated: false,
+            error: Some(format!(
+                "OpenClaw setup failed at step '{}': {}",
+                setup_result.step,
+                setup_result.error.unwrap_or_else(|| "Unknown error".to_string())
+            )),
+        });
+    }
+
+    log::info!("OpenClaw setup complete, proceeding with WhatsApp configuration");
 
     // Get the WhatsApp session/auth directory
     let config_dir = get_openclaw_config_dir()?;
@@ -1513,7 +1993,7 @@ pub async fn whatsapp_start_auth() -> Result<WhatsAppAuthStatus, String> {
             .map_err(|e| format!("Failed to create WhatsApp auth directory: {}", e))?;
     }
 
-    // First, enable the WhatsApp plugin (must be done before adding channel)
+    // Enable the WhatsApp plugin (must be done before adding channel)
     enable_channel_plugin("whatsapp").await?;
 
     // Now add WhatsApp channel using CLI

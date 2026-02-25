@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   IconNetwork,
   IconCheck,
@@ -59,6 +60,7 @@ export function TailscaleSetupDialog({
   onClose,
   onSuccess,
 }: TailscaleSetupDialogProps) {
+  const { t } = useTranslation()
   const [step, setStep] = useState<WizardStep>('detection')
   const [isLoading, setIsLoading] = useState(false)
   const [status, setStatus] = useState<TailscaleStatus | null>(null)
@@ -135,10 +137,10 @@ export function TailscaleSetupDialog({
       try {
         if (enable) {
           await invoke('tailscale_configure_serve')
-          toast.success('Tailscale Serve enabled')
+          toast.success(t('settings:remoteAccess.tailscaleSettings.serveEnabled'))
         } else {
           await invoke('tailscale_remove_serve')
-          toast.success('Tailscale Serve disabled')
+          toast.success(t('settings:remoteAccess.tailscaleSettings.serveDisabled'))
         }
         await fetchTailscaleInfo()
       } catch (error) {
@@ -146,7 +148,7 @@ export function TailscaleSetupDialog({
         toast.error(
           error instanceof Error
             ? error.message
-            : 'Failed to configure Tailscale Serve'
+            : t('settings:remoteAccess.tailscaleSettings.serveError')
         )
       } finally {
         setIsConfiguringServe(false)
@@ -161,10 +163,10 @@ export function TailscaleSetupDialog({
       try {
         if (enable) {
           await invoke('tailscale_enable_funnel')
-          toast.success('Tailscale Funnel enabled - Your endpoint is now publicly accessible')
+          toast.success(t('settings:remoteAccess.tailscaleSettings.funnelEnabled'))
         } else {
           await invoke('tailscale_disable_funnel')
-          toast.success('Tailscale Funnel disabled')
+          toast.success(t('settings:remoteAccess.tailscaleSettings.funnelDisabled'))
         }
         await fetchTailscaleInfo()
       } catch (error) {
@@ -172,7 +174,7 @@ export function TailscaleSetupDialog({
         toast.error(
           error instanceof Error
             ? error.message
-            : 'Failed to configure Tailscale Funnel'
+            : t('settings:remoteAccess.tailscaleSettings.funnelError')
         )
       } finally {
         setIsConfiguringFunnel(false)
@@ -183,8 +185,8 @@ export function TailscaleSetupDialog({
 
   const handleCopyUrl = useCallback((url: string) => {
     navigator.clipboard.writeText(url)
-    toast.success('URL copied to clipboard')
-  }, [])
+    toast.success(t('settings:remoteAccess.tailscaleSettings.urlCopied'))
+  }, [t])
 
   const handleOpenUrl = useCallback((url: string) => {
     window.open(url, '_blank')

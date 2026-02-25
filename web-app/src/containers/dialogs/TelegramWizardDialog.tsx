@@ -185,9 +185,9 @@ export function TelegramWizard({
   const handleCopyCode = useCallback(() => {
     if (config?.pairing_code) {
       navigator.clipboard.writeText(config.pairing_code)
-      toast.success('Copied to clipboard!')
+      toast.success(t('settings:remoteAccess.copiedToClipboard'))
     }
-  }, [config?.pairing_code])
+  }, [config?.pairing_code, t])
 
   const renderStepIndicator = () => {
     const currentStep = getStepNumber()

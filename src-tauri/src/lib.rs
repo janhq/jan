@@ -147,6 +147,8 @@ pub fn run() {
         core::openclaw::commands::openclaw_status,
         core::openclaw::commands::openclaw_restart,
         core::openclaw::commands::openclaw_get_config_dir,
+        core::openclaw::commands::openclaw_ensure_jan_origin,
+        core::openclaw::commands::openclaw_setup_for_channels,
         // Telegram commands
         core::openclaw::commands::telegram_validate_token,
         core::openclaw::commands::telegram_configure,
