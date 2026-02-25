@@ -153,6 +153,7 @@ export function EditMessageDialog({
             </div>
           )}
           <Textarea
+            dir="auto"
             ref={textareaRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}

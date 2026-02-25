@@ -93,6 +93,7 @@ function RenderMarkdownComponent({
   // Render the markdown content
   return (
     <div
+      dir="auto"
       className={cn(
         'markdown wrap-break-word select-text',
         isUser && 'is-user',
