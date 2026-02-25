@@ -3,11 +3,12 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::{Manager, Runtime, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use tokio::time::Instant;
 
 use crate::args::{ArgumentBuilder, LlamacppConfig};
@@ -37,10 +38,9 @@ pub struct UnloadResult {
     error: Option<String>,
 }
 
-/// Load a llama model and start the server
-#[tauri::command]
-pub async fn load_llama_model<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
+/// Core model loading logic usable without an AppHandle (CLI / test support).
+pub async fn load_llama_model_impl(
+    process_map_arc: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     backend_path: &str,
     model_id: String,
     model_path: String,
@@ -51,8 +51,7 @@ pub async fn load_llama_model<R: Runtime>(
     is_embedding: bool,
     timeout: u64,
 ) -> ServerResult<SessionInfo> {
-    let state: State<LlamacppState> = app_handle.state();
-    let mut process_map = state.llama_server_process.lock().await;
+    let mut process_map = process_map_arc.lock().await;
 
     log::info!("Attempting to launch server at path: {:?}", backend_path);
     log::info!("Using configuration: {:?}", config);
@@ -277,6 +276,36 @@ pub async fn load_llama_model<R: Runtime>(
     );
 
     Ok(session_info)
+}
+
+/// Load a llama model and start the server
+#[tauri::command]
+pub async fn load_llama_model<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    backend_path: &str,
+    model_id: String,
+    model_path: String,
+    port: u16,
+    config: LlamacppConfig,
+    envs: HashMap<String, String>,
+    mmproj_path: Option<String>,
+    is_embedding: bool,
+    timeout: u64,
+) -> ServerResult<SessionInfo> {
+    let state: State<LlamacppState> = app_handle.state();
+    load_llama_model_impl(
+        state.llama_server_process.clone(),
+        backend_path,
+        model_id,
+        model_path,
+        port,
+        config,
+        envs,
+        mmproj_path,
+        is_embedding,
+        timeout,
+    )
+    .await
 }
 
 /// Unload a llama model by terminating its process

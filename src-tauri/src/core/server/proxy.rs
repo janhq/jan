@@ -9,11 +9,10 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tauri::Manager;
 use tauri_plugin_llamacpp::LLamaBackendSession;
 use tokio::sync::Mutex;
 
-use crate::core::state::{AppState, ServerHandle};
+use crate::core::state::{ProviderConfig, ServerHandle};
 
 /// Transform Anthropic /messages API body to OpenAI /chat/completions body
 fn transform_anthropic_to_openai(body: &serde_json::Value) -> Option<serde_json::Value> {
@@ -425,13 +424,13 @@ pub fn get_destination_path(original_path: &str, prefix: &str) -> String {
 use tauri_plugin_mlx::state::{MlxBackendSession, SessionInfo};
 
 /// Handles the proxy request logic
-async fn proxy_request<R: tauri::Runtime>(
+async fn proxy_request(
     req: Request<Body>,
     client: Client,
     config: ProxyConfig,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
-    app_handle: tauri::AppHandle<R>,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
 ) -> Result<Response<Body>, hyper::Error> {
     if req.method() == hyper::Method::OPTIONS {
         log::debug!(
@@ -725,32 +724,30 @@ async fn proxy_request<R: tauri::Runtime>(
             match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
                 Ok(json_body) => {
                     if let Some(model_id) = json_body.get("model").and_then(|v| v.as_str()) {
-                        let state = app_handle.state::<AppState>();
-                        let provider_configs = state.provider_configs.lock().await;
+                        let pc = provider_configs.lock().await;
 
                         // Try to find a provider for this model
-                        provider_name = provider_configs
+                        provider_name = pc
                             .iter()
                             .find(|(_, config)| config.models.iter().any(|m| m == model_id))
                             .map(|(_, config)| config.provider.clone())
                             .or_else(|| {
                                 if let Some(sep_pos) = model_id.find('/') {
                                     let potential_provider: &str = &model_id[..sep_pos];
-                                    if provider_configs.contains_key(potential_provider) {
+                                    if pc.contains_key(potential_provider) {
                                         return Some(potential_provider.to_string());
                                     }
                                 }
-                                provider_configs.get(model_id).map(|c| c.provider.clone())
+                                pc.get(model_id).map(|c| c.provider.clone())
                             });
 
-                        drop(provider_configs);
+                        drop(pc);
 
                         if let Some(ref p) = provider_name {
                             log::info!("Using remote provider '{p}' for model '{model_id}'");
-                            let state = app_handle.state::<AppState>();
-                            let provider_configs = state.provider_configs.lock().await;
-                            let provider_config = provider_configs.get(p.as_str()).cloned();
-                            drop(provider_configs);
+                            let pc2 = provider_configs.lock().await;
+                            let provider_config = pc2.get(p.as_str()).cloned();
+                            drop(pc2);
 
                             if let Some(provider_cfg) = provider_config {
                                 target_base_url = provider_cfg.base_url.clone().map(|url| {
@@ -859,11 +856,10 @@ async fn proxy_request<R: tauri::Runtime>(
                         log::debug!("Extracted model_id: {model_id}");
 
                         // First, check if there's a registered remote provider for this model
-                        let state = app_handle.state::<AppState>();
-                        let provider_configs = state.provider_configs.lock().await;
+                        let pc = provider_configs.lock().await;
 
                         // Try to find a provider that has this model configured
-                        let provider_name = provider_configs
+                        let provider_name = pc
                             .iter()
                             .find(|(_, config)| {
                                 // Check if any model in this provider matches
@@ -874,32 +870,31 @@ async fn proxy_request<R: tauri::Runtime>(
                                 // Try to find by provider name in model_id (e.g., "anthropic/claude-3-opus")
                                 if let Some(sep_pos) = model_id.find('/') {
                                     let potential_provider: &str = &model_id[..sep_pos];
-                                    if provider_configs.contains_key(potential_provider) {
+                                    if pc.contains_key(potential_provider) {
                                         return Some(potential_provider.to_string());
                                     }
                                 }
                                 // Also check if the model_id itself matches a provider name
-                                provider_configs.get(model_id).map(|c| c.provider.clone())
+                                pc.get(model_id).map(|c| c.provider.clone())
                             });
 
-                        drop(provider_configs);
+                        drop(pc);
 
                         if let Some(ref provider) = provider_name {
                             // Found a remote provider, stream the response directly
                             log::info!("Found remote provider '{provider}' for model '{model_id}'");
 
                             // Get the provider config
-                            let state = app_handle.state::<AppState>();
-                            let provider_configs = state.provider_configs.lock().await;
-                            let provider_config = provider_configs.get(provider.as_str()).cloned();
+                            let pc2 = provider_configs.lock().await;
+                            let provider_config = pc2.get(provider.as_str()).cloned();
 
                             // Log registered providers for debugging
                             log::debug!(
                                 "Registered providers: {:?}",
-                                provider_configs.keys().collect::<Vec<_>>()
+                                pc2.keys().collect::<Vec<_>>()
                             );
 
-                            drop(provider_configs);
+                            drop(pc2);
 
                             if let Some(provider_cfg) = provider_config {
                                 if let Some(api_url) = provider_cfg.base_url.clone() {
@@ -1060,9 +1055,8 @@ async fn proxy_request<R: tauri::Runtime>(
             };
 
             // Get remote provider models
-            let state = app_handle.state::<AppState>();
-            let provider_configs = state.provider_configs.lock().await;
-            let remote_models: Vec<_> = provider_configs
+            let pc = provider_configs.lock().await;
+            let remote_models: Vec<_> = pc
                 .values()
                 .flat_map(|provider_cfg| provider_cfg.models.clone())
                 .map(|model_id| {
@@ -1554,7 +1548,7 @@ pub async fn is_server_running(server_handle: Arc<Mutex<Option<ServerHandle>>>) 
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn start_server<R: tauri::Runtime>(
+pub async fn start_server(
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
@@ -1564,7 +1558,7 @@ pub async fn start_server<R: tauri::Runtime>(
     proxy_api_key: String,
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
-    app_handle: tauri::AppHandle<R>,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     start_server_internal(
         server_handle,
@@ -1576,12 +1570,12 @@ pub async fn start_server<R: tauri::Runtime>(
         proxy_api_key,
         trusted_hosts,
         proxy_timeout,
-        app_handle,
+        provider_configs,
     )
     .await
 }
 
-async fn start_server_internal<R: tauri::Runtime>(
+async fn start_server_internal(
     server_handle: Arc<Mutex<Option<ServerHandle>>>,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
@@ -1591,7 +1585,7 @@ async fn start_server_internal<R: tauri::Runtime>(
     proxy_api_key: String,
     trusted_hosts: Vec<Vec<String>>,
     proxy_timeout: u64,
-    app_handle: tauri::AppHandle<R>,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     let mut handle_guard = server_handle.lock().await;
     if handle_guard.is_some() {
@@ -1621,7 +1615,7 @@ async fn start_server_internal<R: tauri::Runtime>(
         let config = config.clone();
         let sessions = sessions.clone();
         let mlx_sessions = mlx_sessions.clone();
-        let app_handle = app_handle.clone();
+        let provider_configs = provider_configs.clone();
 
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
@@ -1631,7 +1625,7 @@ async fn start_server_internal<R: tauri::Runtime>(
                     config.clone(),
                     sessions.clone(),
                     mlx_sessions.clone(),
-                    app_handle.clone(),
+                    provider_configs.clone(),
                 )
             }))
         }
@@ -1646,7 +1640,7 @@ async fn start_server_internal<R: tauri::Runtime>(
     };
     log::info!("Jan API server started on http://{addr}");
 
-    let server_task = tauri::async_runtime::spawn(async move {
+    let server_task = tokio::spawn(async move {
         if let Err(e) = server.await {
             log::error!("Server error: {e}");
             return Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>);

@@ -10,6 +10,8 @@ mod process;
 pub mod state;
 
 pub use cleanup::cleanup_mlx_processes;
+pub use commands::{load_mlx_model_impl, MlxConfig};
+pub use state::MlxState;
 
 /// Initializes the MLX plugin.
 pub fn init<R: Runtime>() -> TauriPlugin<R> {

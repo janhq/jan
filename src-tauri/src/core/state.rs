@@ -10,7 +10,7 @@ use tokio::sync::{oneshot, Mutex};
 
 /// Server handle type for managing the proxy server lifecycle
 pub type ServerHandle =
-    tauri::async_runtime::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
+    tokio::task::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
 
 /// Provider configuration for remote model providers
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -44,8 +44,8 @@ pub struct AppState {
     pub tool_call_cancellations: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
     pub mcp_settings: Arc<Mutex<McpSettings>>,
     pub mcp_shutdown_in_progress: Arc<Mutex<bool>>,
-    pub mcp_monitoring_tasks: Arc<Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>>,
-    pub background_cleanup_handle: Arc<Mutex<Option<tauri::async_runtime::JoinHandle<()>>>>,
+    pub mcp_monitoring_tasks: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
+    pub background_cleanup_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pub mcp_server_pids: Arc<Mutex<HashMap<String, u32>>>,
     /// Remote provider configurations (e.g., Anthropic, OpenAI, etc.)
     pub provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,

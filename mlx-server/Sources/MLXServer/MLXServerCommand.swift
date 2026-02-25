@@ -22,6 +22,9 @@ struct MLXServerCommand: AsyncParsableCommand {
     @Option(name: .long, help: "API key for authentication (optional)")
     var apiKey: String = ""
 
+    @Option(name: .long, help: "Model ID reported by the API (defaults to parent directory name)")
+    var modelId: String = ""
+
     func run() async throws {
         // Set GPU memory limit to prevent OOM issues
         Memory.cacheLimit = 20 * 1024 * 1024  // 20GB limit
@@ -33,9 +36,11 @@ struct MLXServerCommand: AsyncParsableCommand {
         log("[mlx] Context size: \(ctxSize)")
         log("[mlx] Memory cache limit: \(Memory.cacheLimit / (1024 * 1024))MB")
 
-        // Extract model ID from path
+        // Resolve model ID: use --model-id if provided, otherwise derive from parent directory
         let modelURL = URL(fileURLWithPath: model)
-        let modelId = modelURL.deletingPathExtension().lastPathComponent
+        let resolvedModelId = modelId.isEmpty
+            ? modelURL.deletingPathExtension().lastPathComponent
+            : modelId
 
         // Load the model
         let modelRunner = ModelRunner()
@@ -50,7 +55,7 @@ struct MLXServerCommand: AsyncParsableCommand {
         // Set up the HTTP server
         let server = MLXHTTPServer(
             modelRunner: modelRunner,
-            modelId: modelId,
+            modelId: resolvedModelId,
             apiKey: apiKey
         )
 
