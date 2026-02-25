@@ -1,11 +1,12 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::{Manager, Runtime, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use tokio::time::Instant;
 
 use crate::error::{ErrorCode, MlxError, ServerError, ServerResult};
@@ -31,10 +32,12 @@ pub struct MlxConfig {
     pub ctx_size: i32,
 }
 
-/// Load a model using the MLX server binary
-#[tauri::command]
-pub async fn load_mlx_model<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
+/// Core model-loading logic, decoupled from Tauri AppHandle.
+/// `binary_path` must point to the mlx-server executable.
+/// `process_map_arc` is the shared session map from MlxState.
+pub async fn load_mlx_model_impl(
+    process_map_arc: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+    binary_path: &Path,
     model_id: String,
     model_path: String,
     port: u16,
@@ -43,21 +46,13 @@ pub async fn load_mlx_model<R: Runtime>(
     is_embedding: bool,
     timeout: u64,
 ) -> ServerResult<SessionInfo> {
-    let state: State<MlxState> = app_handle.state();
-    let mut process_map = state.mlx_server_process.lock().await;
-
-    // Resolve binary path from app resources
-    let binary_path = app_handle
-        .path()
-        .resource_dir()
-        .map_err(|e| MlxError::new(ErrorCode::BinaryNotFound, "Failed to get resource dir".to_string(), Some(e.to_string())))?
-        .join("resources/bin/mlx-server");
+    let mut process_map = process_map_arc.lock().await;
 
     log::info!("Attempting to launch MLX server at path: {:?}", binary_path);
     log::info!("Using MLX configuration: {:?}", config);
 
     // Validate binary path
-    let bin_path = PathBuf::from(&binary_path);
+    let bin_path = PathBuf::from(binary_path);
     if !bin_path.exists() {
         return Err(MlxError::new(
             ErrorCode::BinaryNotFound,
@@ -92,6 +87,8 @@ pub async fn load_mlx_model<R: Runtime>(
         model_path.clone(),
         "--port".to_string(),
         port.to_string(),
+        "--model-id".to_string(),
+        model_id.clone(),
     ];
 
     if config.ctx_size > 0 {
@@ -276,6 +273,44 @@ pub async fn load_mlx_model<R: Runtime>(
     );
 
     Ok(session_info)
+}
+
+/// Load a model using the MLX server binary (Tauri command wrapper)
+#[tauri::command]
+pub async fn load_mlx_model<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    model_id: String,
+    model_path: String,
+    port: u16,
+    config: MlxConfig,
+    envs: HashMap<String, String>,
+    is_embedding: bool,
+    timeout: u64,
+) -> ServerResult<SessionInfo> {
+    let state: State<MlxState> = app_handle.state();
+    let binary_path = app_handle
+        .path()
+        .resource_dir()
+        .map_err(|e| {
+            MlxError::new(
+                ErrorCode::BinaryNotFound,
+                "Failed to get resource dir".to_string(),
+                Some(e.to_string()),
+            )
+        })?
+        .join("resources/bin/mlx-server");
+    load_mlx_model_impl(
+        state.mlx_server_process.clone(),
+        &binary_path,
+        model_id,
+        model_path,
+        port,
+        config,
+        envs,
+        is_embedding,
+        timeout,
+    )
+    .await
 }
 
 /// Unload an MLX model by terminating its process

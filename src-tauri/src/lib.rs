@@ -2,6 +2,8 @@ pub mod core;
 pub mod openclaw_cli;
 pub use core::openclaw::OpenClawState;
 
+
+#[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,
     downloads::models::DownloadManagerState,
@@ -9,12 +11,18 @@ use core::{
     setup::{self, setup_mcp},
     state::AppState,
 };
+#[cfg(not(feature = "cli"))]
 use jan_utils::generate_app_token;
+#[cfg(not(feature = "cli"))]
 use std::{collections::HashMap, sync::Arc};
+#[cfg(not(feature = "cli"))]
 use tauri::{Emitter, Manager, RunEvent};
+#[cfg(not(feature = "cli"))]
 use tauri_plugin_store::StoreExt;
+#[cfg(not(feature = "cli"))]
 use tokio::sync::Mutex;
 
+#[cfg(not(feature = "cli"))]
 #[cfg_attr(
     all(mobile, any(target_os = "android", target_os = "ios")),
     tauri::mobile_entry_point
