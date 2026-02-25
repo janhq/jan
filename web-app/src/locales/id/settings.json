@@ -285,6 +285,8 @@
     "running": "Berjalan",
     "stopped": "Berhenti",
     "urlCopied": "URL disalin ke clipboard",
+    "backendInstallSuccess": "OpenClaw berhasil dipasang!",
+    "backendInstallError": "Instalasi gagal. Silakan periksa instalasi Node.js Anda.",
     "activeChannels": "Channel Aktif",
     "connectedUsers": "Pengguna Terhubung",
     "port": "Port",

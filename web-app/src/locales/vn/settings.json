@@ -285,6 +285,8 @@
     "running": "Đang chạy",
     "stopped": "Đã dừng",
     "urlCopied": "URL đã được sao chép vào clipboard",
+    "backendInstallSuccess": "OpenClaw đã được cài đặt thành công!",
+    "backendInstallError": "Cài đặt thất bại. Vui lòng kiểm tra cài đặt Node.js của bạn.",
     "activeChannels": "Kênh hoạt động",
     "connectedUsers": "Người dùng đã kết nối",
     "port": "Cổng",

@@ -317,6 +317,8 @@
     "running": "Executando",
     "stopped": "Parado",
     "urlCopied": "URL copiada para a área de transferência",
+    "backendInstallSuccess": "OpenClaw instalado com sucesso!",
+    "backendInstallError": "Falha na instalação. Verifique sua instalação do Node.js.",
     "activeChannels": "Canais Ativos",
     "connectedUsers": "Usuários Conectados",
     "port": "Porta",

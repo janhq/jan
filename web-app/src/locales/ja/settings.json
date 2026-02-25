@@ -282,6 +282,8 @@
     "running": "実行中",
     "stopped": "停止",
     "urlCopied": "URLをクリップボードにコピーしました",
+    "backendInstallSuccess": "OpenClawが正常にインストールされました！",
+    "backendInstallError": "インストールに失敗しました。Node.jsのインストールを確認してください。",
     "activeChannels": "アクティブチャンネル",
     "connectedUsers": "接続ユーザー",
     "port": "ポート",

@@ -18,18 +18,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
 import { setOpenClawRunningState } from '@/utils/openclaw'
 import {
-  IconBrandTelegram,
-  IconBrandWhatsapp,
-  IconBrandDiscord,
   IconPlugConnected,
   IconLink,
-  IconSettings,
   IconLoader2,
   IconPlayerPlay,
   IconPlayerStop,
   IconPlus,
-  IconNetwork,
-  IconShield,
   IconCopy,
   IconExternalLink,
 } from '@tabler/icons-react'
@@ -64,14 +58,6 @@ interface TelegramConfig {
   paired_users: number
 }
 
-// Mock recent messages for display (would come from actual OpenClaw in future)
-interface RecentMessage {
-  id: string
-  channel: 'telegram' | 'whatsapp' | 'discord'
-  sender: string
-  content: string
-  timestamp: Date
-}
 
 const OPENCLAW_PORT = 18789
 
@@ -155,26 +141,10 @@ function RemoteAccess() {
   const [isSecurityDialogOpen, setIsSecurityDialogOpen] = useState(false)
   const [isTunnelDialogOpen, setIsTunnelDialogOpen] = useState(false)
   const [tunnelStatus, setTunnelStatus] = useState<TunnelProvidersStatus | null>(null)
-  const [securityStatus, setSecurityStatus] = useState<SecurityStatus | null>(null)
+  const [, setSecurityStatus] = useState<SecurityStatus | null>(null)
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null)
   const [whatsappConfig, setWhatsAppConfig] = useState<WhatsAppConfig | null>(null)
   const [discordConfig, setDiscordConfig] = useState<DiscordConfig | null>(null)
-  const [recentMessages] = useState<RecentMessage[]>([
-    {
-      id: '1',
-      channel: 'telegram',
-      sender: '@john_doe',
-      content: "What's the weather like today?",
-      timestamp: new Date(Date.now() - 2 * 60 * 1000),
-    },
-    {
-      id: '2',
-      channel: 'whatsapp',
-      sender: '+1234567890',
-      content: 'Remind me to call mom',
-      timestamp: new Date(Date.now() - 5 * 60 * 1000),
-    },
-  ])
 
   // Fetch status on mount
   const fetchStatus = useCallback(async () => {
@@ -316,19 +286,6 @@ function RemoteAccess() {
     }
   }
 
-  // Get display name for auth mode
-  const getAuthModeName = (mode: 'token' | 'password' | 'none'): string => {
-    switch (mode) {
-      case 'token':
-        return t('settings:remoteAccess.tokenAuth')
-      case 'password':
-        return t('settings:remoteAccess.passwordAuth')
-      case 'none':
-      default:
-        return t('settings:remoteAccess.noAuth')
-    }
-  }
-
   const handleStart = async () => {
     try {
       setIsStarting(true)
@@ -372,6 +329,8 @@ function RemoteAccess() {
       setIsInstalling(true)
       const result = await invoke<InstallResult>('openclaw_install')
       if (result.success) {
+        // Install now auto-configures and starts the Gateway
+        setOpenClawRunningState(true)
         toast.success(t('settings:remoteAccess.backendInstallSuccess'))
         await fetchStatus()
       } else {
@@ -382,29 +341,6 @@ function RemoteAccess() {
       toast.error(t('settings:remoteAccess.installError'))
     } finally {
       setIsInstalling(false)
-    }
-  }
-
-  const formatTimeAgo = (date: Date): string => {
-    const minutes = Math.floor((Date.now() - date.getTime()) / 60000)
-    if (minutes < 1) return 'just now'
-    if (minutes === 1) return '1 min ago'
-    if (minutes < 60) return `${minutes} min ago`
-    const hours = Math.floor(minutes / 60)
-    if (hours === 1) return '1 hour ago'
-    return `${hours} hours ago`
-  }
-
-  const getChannelIcon = (channel: string) => {
-    switch (channel) {
-      case 'telegram':
-        return <IconBrandTelegram size={16} className="text-blue-500" />
-      case 'whatsapp':
-        return <IconBrandWhatsapp size={16} className="text-green-500" />
-      case 'discord':
-        return <IconBrandDiscord size={16} className="text-indigo-500" />
-      default:
-        return null
     }
   }
 
@@ -463,11 +399,6 @@ function RemoteAccess() {
       console.error(`Failed to disconnect ${channel}:`, error)
       toast.error(t('settings:remoteAccess.disconnectError'))
     }
-  }
-
-  // Get messages filtered by channel
-  const getChannelMessages = (channel: string): RecentMessage[] => {
-    return recentMessages.filter((msg) => msg.channel === channel)
   }
 
   // Get connected channels list
@@ -641,36 +572,18 @@ function RemoteAccess() {
                   config={convertTelegramConfig(telegramConfig)}
                   onSettings={() => handleChannelSettings('telegram')}
                   onDisconnect={() => handleDisconnectChannel('telegram')}
-                  recentMessages={getChannelMessages('telegram').map((msg) => ({
-                    id: msg.id,
-                    sender: msg.sender,
-                    content: msg.content,
-                    timestamp: msg.timestamp,
-                  }))}
                 />
                 <ChannelCard
                   type="whatsapp"
                   config={convertWhatsAppConfig(whatsappConfig)}
                   onSettings={() => handleChannelSettings('whatsapp')}
                   onDisconnect={() => handleDisconnectChannel('whatsapp')}
-                  recentMessages={getChannelMessages('whatsapp').map((msg) => ({
-                    id: msg.id,
-                    sender: msg.sender,
-                    content: msg.content,
-                    timestamp: msg.timestamp,
-                  }))}
                 />
                 <ChannelCard
                   type="discord"
                   config={convertDiscordConfig(discordConfig)}
                   onSettings={() => handleChannelSettings('discord')}
                   onDisconnect={() => handleDisconnectChannel('discord')}
-                  recentMessages={getChannelMessages('discord').map((msg) => ({
-                    id: msg.id,
-                    sender: msg.sender,
-                    content: msg.content,
-                    timestamp: msg.timestamp,
-                  }))}
                 />
               </div>
 
@@ -684,37 +597,6 @@ function RemoteAccess() {
                   </Button>
                 }
               />
-            </Card>
-
-            {/* Recent Messages Card */}
-            <Card title={t('settings:remoteAccess.recentMessages')}>
-              {recentMessages.length > 0 ? (
-                <div className="space-y-3">
-                  {recentMessages.map((message) => (
-                    <div
-                      key={message.id}
-                      className="border-b border-border/40 pb-3 last:border-0 last:pb-0"
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        {getChannelIcon(message.channel)}
-                        <span className="text-foreground font-medium">
-                          {getChannelName(message.channel)} {message.sender}
-                        </span>
-                        <span className="text-muted-foreground text-xs">
-                          ({formatTimeAgo(message.timestamp)})
-                        </span>
-                      </div>
-                      <p className="text-muted-foreground text-sm">
-                        {message.content}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground">
-                  {t('settings:remoteAccess.noRecentMessages')}
-                </p>
-              )}
             </Card>
 
             {/* Active Tunnel Status Card */}
@@ -766,91 +648,6 @@ function RemoteAccess() {
               </Card>
             )}
 
-            {/* Settings Card */}
-            <Card title={t('settings:remoteAccess.settings')}>
-              <CardItem
-                title={t('settings:remoteAccess.modelForRemote')}
-                actions={
-                  <select className="bg-secondary text-foreground text-sm rounded px-2 py-1 border border-input">
-                    <option>Llama 3.2 3B</option>
-                    <option>Llama 3.1 8B</option>
-                    <option>Custom...</option>
-                  </select>
-                }
-              />
-              <CardItem
-                title={t('settings:remoteAccess.remoteMethod')}
-                actions={
-                  <div className="flex items-center gap-2">
-                    <span className="text-foreground text-sm">
-                      {getTunnelProviderName(tunnelStatus?.active_provider ?? 'none')}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsTunnelDialogOpen(true)}
-                    >
-                      <IconNetwork className="mr-2 h-4 w-4" />
-                      {t('settings:remoteAccess.configure')}
-                    </Button>
-                  </div>
-                }
-              />
-              <CardItem
-                title={t('settings:remoteAccess.accessPolicy')}
-                actions={
-                  <div className="flex items-center gap-2">
-                    <span className="text-foreground text-sm">
-                      {securityStatus
-                        ? getAuthModeName(securityStatus.auth_mode)
-                        : t('settings:remoteAccess.loading')}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsSecurityDialogOpen(true)}
-                    >
-                      <IconShield className="mr-2 h-4 w-4" />
-                      {t('settings:remoteAccess.security')}
-                    </Button>
-                  </div>
-                }
-              />
-              {securityStatus && (
-                <CardItem
-                  title={t('settings:remoteAccess.approvedDevices')}
-                  actions={
-                    <span className="text-foreground">
-                      {securityStatus.approved_device_count}
-                    </span>
-                  }
-                />
-              )}
-              {tunnelStatus?.active_provider === 'tailscale' && (
-                <CardItem
-                  title={t('settings:remoteAccess.tailscaleSettings')}
-                  actions={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsTailscaleDialogOpen(true)}
-                    >
-                      <IconSettings className="mr-2 h-4 w-4" />
-                      {t('settings:remoteAccess.configureTailscale')}
-                    </Button>
-                  }
-                />
-              )}
-              <CardItem
-                title={t('settings:remoteAccess.advancedSettings')}
-                actions={
-                  <Button variant="outline" size="sm">
-                    <IconSettings className="mr-2 h-4 w-4" />
-                    {t('settings:remoteAccess.advancedSettings')}
-                  </Button>
-                }
-              />
-            </Card>
           </div>
         </div>
       </div>

@@ -285,6 +285,8 @@
     "running": "執行中",
     "stopped": "已停止",
     "urlCopied": "URL已複製到剪貼簿",
+    "backendInstallSuccess": "OpenClaw安裝成功！",
+    "backendInstallError": "安裝失敗。請檢查您的Node.js安裝。",
     "activeChannels": "活躍頻道",
     "connectedUsers": "已連線使用者",
     "port": "連接埠",

@@ -325,6 +325,8 @@
     "running": "Запущено",
     "stopped": "Остановлено",
     "urlCopied": "URL скопирован в буфер обмена",
+    "backendInstallSuccess": "OpenClaw успешно установлен!",
+    "backendInstallError": "Установка не удалась. Проверьте установку Node.js.",
     "activeChannels": "Активные каналы",
     "connectedUsers": "Подключённые пользователи",
     "port": "Порт",

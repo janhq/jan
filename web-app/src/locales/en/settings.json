@@ -329,6 +329,8 @@
     "running": "Remote Access is now running",
     "stopped": "Remote Access has been stopped",
     "urlCopied": "Link copied to clipboard",
+    "backendInstallSuccess": "OpenClaw installed successfully!",
+    "backendInstallError": "Installation failed. Please check your Node.js installation.",
     "activeChannels": "Active Channels",
     "connectedUsers": "Connected Users",
     "port": "Port",

@@ -317,6 +317,8 @@
     "running": "Běží",
     "stopped": "Zastaveno",
     "urlCopied": "URL zkopírována do schránky",
+    "backendInstallSuccess": "OpenClaw úspěšně nainstalován!",
+    "backendInstallError": "Instalace selhala. Zkontrolujte prosím instalaci Node.js.",
     "activeChannels": "Aktivní kanály",
     "connectedUsers": "Připojení uživatelé",
     "port": "Port",

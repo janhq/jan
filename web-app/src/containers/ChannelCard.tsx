@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
 import {
@@ -7,10 +6,6 @@ import {
   IconBrandDiscord,
   IconSettings,
   IconTrash,
-  IconChevronDown,
-  IconChevronUp,
-  IconMessage,
-  IconClock,
 } from '@tabler/icons-react'
 
 export type ChannelType = 'telegram' | 'whatsapp' | 'discord'
@@ -46,19 +41,11 @@ export interface DiscordConfig {
 // Union type for all channel configs
 export type ChannelConfig = TelegramConfig | WhatsAppConfig | DiscordConfig
 
-interface MessagePreview {
-  id: string
-  sender: string
-  content: string
-  timestamp: Date
-}
-
 interface ChannelCardProps {
   type: ChannelType
   config: ChannelConfig | null
   onSettings: () => void
   onDisconnect: () => void
-  recentMessages?: MessagePreview[]
 }
 
 export function ChannelCard({
@@ -66,10 +53,8 @@ export function ChannelCard({
   config,
   onSettings,
   onDisconnect,
-  recentMessages = [],
 }: ChannelCardProps) {
   const { t } = useTranslation()
-  const [isExpanded, setIsExpanded] = useState(false)
 
   const isConnected = config?.connected ?? false
 
@@ -116,32 +101,6 @@ export function ChannelCard({
     }
   }
 
-  const getConnectedUsers = (): number => {
-    if (!config || !isConnected) return 0
-
-    switch (type) {
-      case 'telegram':
-        return (config as TelegramConfig).paired_users
-      case 'whatsapp':
-        return (config as WhatsAppConfig).contacts_count
-      case 'discord':
-        return (config as DiscordConfig).guilds_count
-      default:
-        return 0
-    }
-  }
-
-  const formatTimeAgo = (date: Date): string => {
-    const minutes = Math.floor((Date.now() - date.getTime()) / 60000)
-    if (minutes < 1) return t('settings:remoteAccess.justNow')
-    if (minutes === 1) return `1 ${t('settings:remoteAccess.minuteAgo')}`
-    if (minutes < 60)
-      return `${minutes} ${t('settings:remoteAccess.minutesAgo')}`
-    const hours = Math.floor(minutes / 60)
-    if (hours === 1) return `1 ${t('settings:remoteAccess.hourAgo')}`
-    return `${hours} ${t('settings:remoteAccess.hoursAgo')}`
-  }
-
   return (
     <div
       className={`border rounded-lg overflow-hidden transition-all ${
@@ -183,29 +142,6 @@ export function ChannelCard({
         </div>
 
         <div className="flex items-center gap-2">
-          {isConnected && (
-            <div className="flex items-center gap-1 text-sm text-muted-foreground mr-2">
-              <IconMessage size={14} />
-              <span>
-                {getConnectedUsers()}{' '}
-                {t('settings:remoteAccess.users', { count: getConnectedUsers() })}
-              </span>
-            </div>
-          )}
-          {recentMessages.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="gap-1"
-            >
-              {isExpanded ? (
-                <IconChevronUp size={16} />
-              ) : (
-                <IconChevronDown size={16} />
-              )}
-            </Button>
-          )}
           <Button variant="outline" size="sm" onClick={onSettings}>
             <IconSettings size={16} className="mr-1" />
             {t('settings:remoteAccess.settings')}
@@ -217,38 +153,6 @@ export function ChannelCard({
           )}
         </div>
       </div>
-
-      {/* Expanded Message History */}
-      {isExpanded && recentMessages.length > 0 && (
-        <div className="border-t border-border/40 p-4 bg-background/50">
-          <h4 className="text-sm font-medium text-foreground mb-3">
-            {t('settings:remoteAccess.recentMessages')}
-          </h4>
-          <div className="space-y-2">
-            {recentMessages.map((message) => (
-              <div
-                key={message.id}
-                className="flex items-start gap-3 p-2 rounded hover:bg-secondary/50 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">
-                      {message.sender}
-                    </span>
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <IconClock size={12} />
-                      {formatTimeAgo(message.timestamp)}
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {message.content}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Not Connected State */}
       {!isConnected && (
