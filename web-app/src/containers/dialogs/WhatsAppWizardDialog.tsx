@@ -120,6 +120,21 @@ export function WhatsAppWizardDialog({
         return
       }
 
+      // Check if already authenticated (WhatsApp was already linked)
+      if (status.authenticated) {
+        // Get the final config
+        const whatsappConfig = await invoke<WhatsAppConfig>('whatsapp_get_config')
+        setConfig(whatsappConfig)
+        setStep('success')
+        onConnected(whatsappConfig)
+        return
+      }
+
+      // Check if QR code is already available in the response
+      if (status.qr_code) {
+        setQrCodeImage(status.qr_code)
+      }
+
       // Move to scanning step
       setStep('scanning')
       startPolling()
