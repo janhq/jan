@@ -1,0 +1,17 @@
+{
+  "sortNewest": "Més nous",
+  "sortMostDownloaded": "Més descarregats",
+  "newChat": "Xat nou",
+  "download": "Descarrega",
+  "downloaded": "Descarregat",
+  "loadingModels": "S’estan carregant els models...",
+  "noModels": "No s’han trobat models",
+  "by": "Per",
+  "downloads": "Descàrregues",
+  "variants": "Variants",
+  "showVariants": "Mostra les variants",
+  "useModel": "Utilitza aquest model",
+  "downloadModel": "Descarrega el model",
+  "tools": "Eines",
+  "searchPlaceholder": "Cerca models a Hugging Face..."
+}

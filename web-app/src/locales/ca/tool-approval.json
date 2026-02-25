@@ -1,0 +1,12 @@
+{
+  "title": "Sol·licitud d’ús d’una eina",
+  "description": "L’assistent vol utilitzar l’eina: <strong>{{toolName}}</strong>",
+  "securityNotice": "<strong>Avís de seguretat:</strong> Eines malicioses o contingut de la conversa podrien enganyar l’assistent perquè faci accions perjudicials. Revisa cada sol·licitud amb cura abans d’aprovar-la.",
+  "deny": "Denega",
+  "allowOnce": "Permet un cop",
+  "alwaysAllow": "Permet en aquest fil",
+  "permissions": "Permisos",
+  "approve": "Aprova",
+  "reject": "Rebutja",
+  "parameters": "Paràmetres de l’eina"
+}

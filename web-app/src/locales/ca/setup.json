@@ -1,0 +1,13 @@
+{
+  "welcome": "Benvingut/da a Jan",
+  "description": "Per començar, engega ràpidament amb el model de Jan o configura el teu proveïdor local o remot.",
+  "descriptionWeb": "Per començar necessites connectar-te a un model al núvol amb una clau API.",
+  "quickStart": "Inici ràpid amb el model de Jan",
+  "quickStartDescription": "Sense configuració",
+  "quickStartFailed": "Alguna cosa ha fallat. Torna-ho a provar.",
+  "downloading": "S’està descarregant el model de Jan...",
+  "downloadingDescription": "Espera mentre descarreguem el model. Pot trigar uns minuts.",
+  "orDivider": "o",
+  "localModel": "Configura un model local",
+  "remoteProvider": "Configura un proveïdor remot"
+}

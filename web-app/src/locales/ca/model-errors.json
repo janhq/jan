@@ -1,0 +1,7 @@
+{
+  "title": "Error de context",
+  "description": "Aquest xat s’està acostant al límit de memòria de l’IA, com una pissarra que s’omple. Podem ampliar la finestra de memòria (la mida del context) perquè recordi més coses, però pot consumir més memòria del teu ordinador. També podem truncar l’entrada, és a dir, oblidar part de l’historial per fer lloc a missatges nous.",
+  "increaseContextSizeDescription": "Vols augmentar la mida del context?",
+  "truncateInput": "Escurça l’entrada",
+  "increaseContextSize": "Augmenta la mida del context"
+}

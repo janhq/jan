@@ -1,0 +1,12 @@
+{
+  "toolApproval": {
+    "title": "Cal aprovar l’eina",
+    "description": "L’assistent vol utilitzar",
+    "securityNotice": "Eines malicioses o contingut de la conversa podrien enganyar l’assistent perquè faci accions perjudicials. Revisa bé cada sol·licitud abans d’aprovar-la.",
+    "deny": "Denega",
+    "allowOnce": "Permet un cop",
+    "alwaysAllow": "Permet en aquest fil",
+    "parameters": "Paràmetres de l’eina",
+    "permissionScope": "Els permisos concedits només s’apliquen a aquesta conversa."
+  }
+}
