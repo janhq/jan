@@ -518,6 +518,28 @@ pub struct AccessLogEntry {
     pub error: Option<String>,
 }
 
+/// Entry for bulk model sync from Jan to OpenClaw
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelSyncEntry {
+    /// Model ID (e.g., "llama-3.2-3b", "gpt-4o")
+    #[serde(rename = "modelId")]
+    pub model_id: String,
+    /// Jan's internal provider name (e.g., "llamacpp", "openai", "anthropic")
+    pub provider: String,
+    /// Human-readable display name
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+}
+
+/// Result of bulk model sync
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BulkSyncResult {
+    /// Number of models synced
+    pub synced_count: u32,
+    /// Default model that was set (if any)
+    pub default_model: Option<String>,
+}
+
 /// Security status response for the frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityStatus {

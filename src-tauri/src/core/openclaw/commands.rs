@@ -1316,6 +1316,115 @@ pub async fn openclaw_sync_model(
     Ok(())
 }
 
+/// Bulk sync all models from Jan to OpenClaw
+///
+/// This replaces the entire model list in the 'jan' provider with the full
+/// catalog from Jan's model provider store. Called when Remote Access starts
+/// so that OpenClaw knows about all available models without requiring the
+/// user to switch models in the dropdown.
+#[tauri::command]
+pub async fn openclaw_sync_all_models(
+    models: Vec<ModelSyncEntry>,
+    default_model_id: Option<String>,
+) -> Result<BulkSyncResult, String> {
+    log::info!("Bulk syncing {} models to OpenClaw", models.len());
+
+    if models.is_empty() {
+        log::warn!("No models to sync");
+        return Ok(BulkSyncResult {
+            synced_count: 0,
+            default_model: None,
+        });
+    }
+
+    // Build model definitions array
+    let model_defs: Vec<serde_json::Value> = models
+        .iter()
+        .map(|entry| {
+            let context_window = if entry.provider == "llamacpp" || entry.provider == "mlx" {
+                16000
+            } else {
+                128000
+            };
+
+            serde_json::json!({
+                "id": entry.model_id,
+                "name": entry.display_name,
+                "reasoning": false,
+                "input": ["text"],
+                "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+                "contextWindow": context_window,
+                "maxTokens": 4096
+            })
+        })
+        .collect();
+
+    let synced_count = model_defs.len() as u32;
+
+    // Build the full jan provider config with all models
+    let jan_provider = serde_json::json!({
+        "baseUrl": DEFAULT_JAN_BASE_URL,
+        "api": DEFAULT_JAN_API_TYPE,
+        "authHeader": false,
+        "apiKey": "not-needed",
+        "models": model_defs
+    });
+
+    // Set the jan provider atomically (creates or replaces)
+    let output = Command::new("openclaw")
+        .args([
+            "config",
+            "set",
+            "models.providers.jan",
+            &jan_provider.to_string(),
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run openclaw config set: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to set jan provider models: {}", stderr));
+    }
+
+    // Set the default model if provided
+    let set_default = if let Some(ref model_id) = default_model_id {
+        let openclaw_model_id = format!("jan/{}", model_id);
+        let model_output = Command::new("openclaw")
+            .args(["models", "set", &openclaw_model_id])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+
+        match model_output {
+            Ok(o) if o.status.success() => {
+                log::info!("Set default model to {}", openclaw_model_id);
+                Some(openclaw_model_id)
+            }
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                log::warn!("Failed to set default model: {}", stderr);
+                None
+            }
+            Err(e) => {
+                log::warn!("Failed to run openclaw models set: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    log::info!("Successfully bulk synced {} models to OpenClaw", synced_count);
+    Ok(BulkSyncResult {
+        synced_count,
+        default_model: set_default,
+    })
+}
+
 /// Get the currently configured model in OpenClaw
 #[tauri::command]
 pub async fn openclaw_get_model() -> Result<String, String> {

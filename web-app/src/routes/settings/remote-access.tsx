@@ -16,7 +16,8 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useEffect, useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
-import { setOpenClawRunningState } from '@/utils/openclaw'
+import { setOpenClawRunningState, syncAllModelsToOpenClaw } from '@/utils/openclaw'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import {
   IconPlugConnected,
   IconLink,
@@ -286,12 +287,23 @@ function RemoteAccess() {
     }
   }
 
+  // Bulk sync all models to OpenClaw after gateway starts
+  const bulkSyncModels = useCallback(async () => {
+    const { providers, selectedModel } = useModelProvider.getState()
+    const count = await syncAllModelsToOpenClaw(providers, selectedModel?.id)
+    if (count > 0) {
+      console.debug(`[RemoteAccess] Synced ${count} models to OpenClaw`)
+    }
+  }, [])
+
   const handleStart = async () => {
     try {
       setIsStarting(true)
       await invoke('openclaw_start')
       // Update the OpenClaw running cache immediately so model sync works
       setOpenClawRunningState(true)
+      // Sync all models so OpenClaw knows the full catalog
+      await bulkSyncModels()
       toast.success(t('settings:remoteAccess.running'))
       await fetchStatus()
     } catch (error) {
@@ -332,6 +344,8 @@ function RemoteAccess() {
       if (result.success) {
         // Install now auto-configures and starts the Gateway
         setOpenClawRunningState(true)
+        // Sync all models so OpenClaw knows the full catalog
+        await bulkSyncModels()
         toast.success(t('settings:remoteAccess.backendInstallSuccess'))
         await fetchStatus()
       } else {

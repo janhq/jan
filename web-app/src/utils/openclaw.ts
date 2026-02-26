@@ -113,6 +113,68 @@ export async function syncModelToOpenClaw(
 }
 
 /**
+ * Bulk sync all models from Jan's provider store to OpenClaw.
+ * Called after Remote Access starts so OpenClaw knows about all available models
+ * without requiring the user to switch models in the dropdown.
+ *
+ * @param providers - All model providers from Jan's Zustand store
+ * @param selectedModelId - Currently selected model ID to set as default
+ * @returns Number of models synced
+ */
+export async function syncAllModelsToOpenClaw(
+  providers: ModelProvider[],
+  selectedModelId?: string
+): Promise<number> {
+  try {
+    // Flatten all providers' models into sync entries
+    const models: Array<{
+      modelId: string
+      provider: string
+      displayName: string
+    }> = []
+
+    for (const provider of providers) {
+      if (!provider.models || provider.models.length === 0) continue
+
+      for (const model of provider.models) {
+        const modelId = model.id ?? model.model
+        if (!modelId || typeof modelId !== 'string') continue
+        // Skip embedding models — they're not usable for chat
+        if (model.embedding) continue
+
+        models.push({
+          modelId,
+          provider: provider.provider,
+          displayName: model.displayName || model.name || modelId,
+        })
+      }
+    }
+
+    if (models.length === 0) {
+      console.debug('[OpenClaw] No models to sync')
+      return 0
+    }
+
+    const result = await invoke<{ synced_count: number; default_model: string | null }>(
+      'openclaw_sync_all_models',
+      {
+        models,
+        defaultModelId: selectedModelId || null,
+      }
+    )
+
+    console.debug(
+      `[OpenClaw] Bulk synced ${result.synced_count} models, default: ${result.default_model ?? 'none'}`
+    )
+    return result.synced_count
+  } catch (error) {
+    // Don't throw - this is a background sync operation
+    console.debug('[OpenClaw] Failed to bulk sync models:', error)
+    return 0
+  }
+}
+
+/**
  * Get the currently configured model in OpenClaw
  */
 export async function getOpenClawModel(): Promise<string | null> {
