@@ -22,12 +22,11 @@ import {
   IconPlugConnected,
   IconLink,
   IconLoader2,
-  IconPlayerPlay,
-  IconPlayerStop,
   IconPlus,
   IconCopy,
   IconExternalLink,
 } from '@tabler/icons-react'
+import { cn } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.remote_access as any)({
@@ -442,19 +441,24 @@ function RemoteAccess() {
         <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Status Card */}
-            <Card title={t('settings:remoteAccess.status')}>
-              <div className="flex items-center gap-3 mb-4">
-                <div
-                  className={`w-3 h-3 rounded-full ${
-                    isRunning ? 'bg-green-500' : 'bg-red-500'
-                  }`}
-                />
-                <span className="text-foreground font-medium">
-                  {isRunning
-                    ? t('settings:remoteAccess.enabled')
-                    : t('settings:remoteAccess.disabled')}
-                </span>
-              </div>
+            <Card title={t('settings:remoteAccess.title')}>
+              <CardItem 
+                title={t('settings:remoteAccess.status')}
+                actions={
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={cn("size-2 rounded-full",
+                        isRunning ? 'bg-green-500' : 'bg-red-500'
+                      )}
+                    />
+                    <span className="text-foreground font-medium">
+                      {isRunning
+                        ? t('settings:remoteAccess.enabled')
+                        : t('settings:remoteAccess.disabled')}
+                    </span>
+                  </div>
+                }
+              />
               <CardItem
                 title={t('settings:remoteAccess.activeChannels')}
                 actions={
@@ -524,24 +528,19 @@ function RemoteAccess() {
                           onClick={handleStop}
                           disabled={isStopping}
                         >
-                          {isStopping ? (
-                            <IconLoader2 className="animate-spin mr-2 h-4 w-4" />
-                          ) : (
-                            <IconPlayerStop className="mr-2 h-4 w-4" />
+                          {isStopping && (
+                            <IconLoader2 className="animate-spin size-4" />
                           )}
                           {t('settings:remoteAccess.stop')}
                         </Button>
                       ) : (
                         <Button
-                          variant="secondary"
                           size="sm"
                           onClick={handleStart}
                           disabled={isStarting}
                         >
-                          {isStarting ? (
-                            <IconLoader2 className="animate-spin mr-2 h-4 w-4" />
-                          ) : (
-                            <IconPlayerPlay className="mr-2 h-4 w-4" />
+                          {isStarting && (
+                            <IconLoader2 className="animate-spin size-4" />
                           )}
                           {t('settings:remoteAccess.start')}
                         </Button>
@@ -554,9 +553,9 @@ function RemoteAccess() {
                         disabled={isInstalling}
                       >
                         {isInstalling ? (
-                          <IconLoader2 className="animate-spin mr-2 h-4 w-4" />
+                          <IconLoader2 className="animate-spin size-4 text-muted-foreground" />
                         ) : (
-                          <IconPlugConnected className="mr-2 h-4 w-4" />
+                          <IconPlugConnected className="size-4 text-muted-foreground" />
                         )}
                         {t('settings:remoteAccess.install')}
                       </Button>
@@ -574,7 +573,7 @@ function RemoteAccess() {
                     size="sm"
                     onClick={() => setIsAddChannelDialogOpen(true)}
                   >
-                    <IconPlus className="mr-2 h-4 w-4" />
+                    <IconPlus className="size-4 text-muted-foreground" />
                     {t('settings:remoteAccess.addChannel.title')}
                   </Button>
                 }
@@ -587,27 +586,31 @@ function RemoteAccess() {
                   config={convertTelegramConfig(telegramConfig)}
                   onSettings={() => handleChannelSettings('telegram')}
                   onDisconnect={() => handleDisconnectChannel('telegram')}
+                  OCIsInstalled={isInstalled}
                 />
                 <ChannelCard
                   type="whatsapp"
                   config={convertWhatsAppConfig(whatsappConfig)}
                   onSettings={() => handleChannelSettings('whatsapp')}
                   onDisconnect={() => handleDisconnectChannel('whatsapp')}
+                  OCIsInstalled={isInstalled}
                 />
                 <ChannelCard
                   type="discord"
                   config={convertDiscordConfig(discordConfig)}
                   onSettings={() => handleChannelSettings('discord')}
                   onDisconnect={() => handleDisconnectChannel('discord')}
+                  OCIsInstalled={isInstalled}
                 />
               </div>
 
               {/* Share Access */}
               <CardItem
                 title={t('settings:remoteAccess.shareAccess')}
+                className='mt-5'
                 actions={
                   <Button variant="outline" size="sm">
-                    <IconLink className="mr-2 h-4 w-4" />
+                    <IconLink className="size-4 text-muted-foreground" />
                     {t('settings:remoteAccess.generateInviteLink')}
                   </Button>
                 }

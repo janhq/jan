@@ -7,6 +7,7 @@ import {
   IconSettings,
   IconTrash,
 } from '@tabler/icons-react'
+import { cn } from '@/lib/utils'
 
 export type ChannelType = 'telegram' | 'whatsapp' | 'discord'
 
@@ -46,6 +47,7 @@ interface ChannelCardProps {
   config: ChannelConfig | null
   onSettings: () => void
   onDisconnect: () => void
+  OCIsInstalled: boolean
 }
 
 export function ChannelCard({
@@ -53,6 +55,7 @@ export function ChannelCard({
   config,
   onSettings,
   onDisconnect,
+  OCIsInstalled,
 }: ChannelCardProps) {
   const { t } = useTranslation()
 
@@ -61,11 +64,11 @@ export function ChannelCard({
   const getChannelIcon = () => {
     switch (type) {
       case 'telegram':
-        return <IconBrandTelegram size={24} className="text-blue-500" />
+        return <IconBrandTelegram size={16} className="text-blue-500" />
       case 'whatsapp':
-        return <IconBrandWhatsapp size={24} className="text-green-500" />
+        return <IconBrandWhatsapp size={16} className="text-green-500" />
       case 'discord':
-        return <IconBrandDiscord size={24} className="text-indigo-500" />
+        return <IconBrandDiscord size={16} className="text-indigo-500" />
     }
   }
 
@@ -103,30 +106,32 @@ export function ChannelCard({
 
   return (
     <div
-      className={`border rounded-lg overflow-hidden transition-all ${
+      className={cn("border rounded-lg overflow-hidden transition-all",
         isConnected
           ? 'border-green-500/30 bg-green-500/5'
           : 'border-border bg-card'
-      }`}
+      )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex-shrink-0">{getChannelIcon()}</div>
+      <div className="flex items-center justify-between p-2 px-3">
+        <div className="flex items-center gap-2">
+          <div className="shrink-0">{getChannelIcon()}</div>
           <div>
             <div className="flex items-center gap-2">
               <span className="font-medium text-foreground">
                 {getChannelName()}
               </span>
               <div
-                className={`w-2 h-2 rounded-full ${
-                  isConnected ? 'bg-green-500' : 'bg-muted-foreground'
-                }`}
+                className={cn("size-2 rounded-full", {
+                  'bg-green-500': isConnected,
+                  'bg-muted-foreground': !isConnected,
+                })}
               />
               <span
-                className={`text-xs ${
-                  isConnected ? 'text-green-500' : 'text-muted-foreground'
-                }`}
+                className={cn("text-xs", {
+                  'text-green-500': isConnected,
+                  'text-muted-foreground': !isConnected,
+                })}   
               >
                 {isConnected
                   ? t('settings:remoteAccess.connected')
@@ -143,19 +148,19 @@ export function ChannelCard({
 
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={onSettings}>
-            <IconSettings size={16} className="mr-1" />
+            <IconSettings />
             {t('settings:remoteAccess.settings')}
           </Button>
           {isConnected && (
             <Button variant="ghost" size="sm" onClick={onDisconnect}>
-              <IconTrash size={16} />
+              <IconTrash />
             </Button>
           )}
         </div>
       </div>
 
       {/* Not Connected State */}
-      {!isConnected && (
+      {!isConnected && OCIsInstalled && (
         <div className="border-t border-border/40 px-4 py-3 bg-muted/30">
           <p className="text-sm text-muted-foreground">
             {t('settings:remoteAccess.channelNotConnected', {
