@@ -16,8 +16,6 @@ import { Input } from '@/components/ui/input'
 import {
   IconBrandTelegram,
   IconCheck,
-  IconArrowRight,
-  IconArrowLeft,
   IconLoader2,
   IconAlertCircle,
   IconExternalLink,
@@ -198,9 +196,9 @@ export function TelegramWizard({
             key={i}
             className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium ${
               i + 1 < currentStep
-                ? 'bg-green-500 text-white'
+                ? 'bg-green-500 dark:bg-green-700 text-white'
                 : i + 1 === currentStep
-                ? 'bg-primary text-primary-foreground'
+                ? 'bg-secondary border border-primary/60 text-primary'
                 : 'bg-secondary text-muted-foreground'
             }`}
           >
@@ -229,9 +227,7 @@ export function TelegramWizard({
           <li>{t('settings:remoteAccess.telegramWizard.step1.instruction1')}</li>
           <li>{t('settings:remoteAccess.telegramWizard.step1.instruction2')}</li>
           <li>{t('settings:remoteAccess.telegramWizard.step1.instruction3')}</li>
-          <li className="font-mono text-xs bg-background p-2 rounded">
-            {t('settings:remoteAccess.telegramWizard.step1.instruction4')}
-          </li>
+          <li>{t('settings:remoteAccess.telegramWizard.step1.instruction4')}</li>
         </ol>
       </div>
 
@@ -263,7 +259,6 @@ export function TelegramWizard({
             setValidation(null)
           }}
           placeholder={t('settings:remoteAccess.telegramWizard.step2.placeholder')}
-          className="font-mono"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !isValidating) {
               handleValidateToken()
@@ -273,7 +268,7 @@ export function TelegramWizard({
       </div>
 
       {validation?.valid && (
-        <div className="flex items-center gap-2 text-green-500 text-sm">
+        <div className="flex items-center gap-1 text-green-500 text-sm">
           <IconCheck size={16} />
           <span>
             {t('settings:remoteAccess.telegramWizard.step2.validToken', {
@@ -284,7 +279,7 @@ export function TelegramWizard({
       )}
 
       {validation && !validation.valid && (
-        <div className="flex items-center gap-2 text-red-500 text-sm">
+        <div className="flex items-center gap-1 text-red-500 text-sm">
           <IconAlertCircle size={16} />
           <span>{validation.error}</span>
         </div>
@@ -294,10 +289,11 @@ export function TelegramWizard({
         onClick={handleValidateToken}
         disabled={isValidating || !token.trim()}
         className="w-full"
+        variant="outline"
       >
         {isValidating ? (
           <>
-            <IconLoader2 className="animate-spin mr-2 h-4 w-4" />
+            <IconLoader2 className="animate-spin size-3" />
             {t('settings:remoteAccess.telegramWizard.step2.validating')}
           </>
         ) : (
@@ -366,7 +362,7 @@ export function TelegramWizard({
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium text-foreground">
+        <label className="text-sm font-medium text-foreground block">
           {t('settings:remoteAccess.telegramWizard.step4.codeLabel')}
         </label>
         <Input
@@ -533,10 +529,9 @@ export function TelegramWizard({
         {renderStep()}
 
         {step !== 'configure' && step !== 'success' && (
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2">
             {canGoBack() && (
-              <Button variant="outline" onClick={handleBack} className="gap-1">
-                <IconArrowLeft size={16} />
+              <Button variant="ghost" onClick={handleBack} className="gap-1">
                 {t('settings:remoteAccess.telegramWizard.buttons.back')}
               </Button>
             )}
@@ -547,7 +542,6 @@ export function TelegramWizard({
                 className="gap-1"
               >
                 {t('settings:remoteAccess.telegramWizard.buttons.next')}
-                <IconArrowRight size={16} />
               </Button>
             )}
           </DialogFooter>
