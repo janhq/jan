@@ -1,5 +1,5 @@
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,10 @@ use crate::core::openclaw::{
 
 /// Request ID counter for WebSocket messages
 static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// Flag to prevent repeated gateway restarts during WhatsApp auth polling.
+/// Reset when a new auth session starts via whatsapp_start_auth.
+static WA_RESTART_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 
 /// Get next request ID
 fn next_request_id() -> String {
@@ -2215,6 +2219,9 @@ pub async fn whatsapp_validate_connection() -> Result<bool, String> {
 pub async fn whatsapp_start_auth(state: tauri::State<'_, OpenClawState>) -> Result<WhatsAppAuthStatus, String> {
     log::info!("Starting WhatsApp 1-click setup and authentication");
 
+    // Reset the restart flag for this new auth session
+    WA_RESTART_ATTEMPTED.store(false, Ordering::SeqCst);
+
     // Step 1: Run the unified setup to ensure OpenClaw is ready
     log::info!("Running OpenClaw setup...");
     let setup_result = openclaw_setup_for_channels(state).await?;
@@ -2612,11 +2619,16 @@ pub async fn whatsapp_check_auth() -> Result<WhatsAppAuthStatus, String> {
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
 
-                    // If linked, WhatsApp is authenticated (even if not currently connected)
-                    // "linked" means the account is paired with a phone
+                    let running = whatsapp.get("running")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+
+                    // "linked" means the account is paired with a phone (QR scanned)
                     // "connected" means the WebSocket is currently active
-                    if linked {
-                        log::info!("WhatsApp is linked (authenticated)");
+                    // "running" means the channel process is running
+                    // All three must be true for WhatsApp to actually work
+                    if linked && connected && running {
+                        log::info!("WhatsApp is fully connected (linked + running + connected)");
                         update_whatsapp_connected_status(true).await?;
 
                         return Ok(WhatsAppAuthStatus {
@@ -2624,6 +2636,38 @@ pub async fn whatsapp_check_auth() -> Result<WhatsAppAuthStatus, String> {
                             qr_code_ready: false,
                             qr_code: None,
                             authenticated: true,
+                            error: None,
+                        });
+                    }
+
+                    if linked && (!connected || !running) {
+                        // QR was scanned but the Gateway hasn't established the WhatsApp
+                        // WebSocket connection yet. This is a transient state — the
+                        // Gateway may need a restart to kick-start the connection.
+                        log::info!(
+                            "WhatsApp linked but not fully connected (running: {}, connected: {}), \
+                            waiting for gateway to establish connection",
+                            running, connected
+                        );
+
+                        // Restart the gateway at most once per auth session to nudge
+                        // it into connecting. The flag is reset in whatsapp_start_auth.
+                        if !WA_RESTART_ATTEMPTED.swap(true, Ordering::SeqCst) {
+                            log::info!("Restarting gateway to establish WhatsApp connection");
+                            let _ = Command::new("openclaw")
+                                .args(["gateway", "restart"])
+                                .stdout(Stdio::piped())
+                                .stderr(Stdio::piped())
+                                .output()
+                                .await;
+                        }
+
+                        // Return in_progress so the frontend keeps polling
+                        return Ok(WhatsAppAuthStatus {
+                            in_progress: true,
+                            qr_code_ready: false,
+                            qr_code: None,
+                            authenticated: false,
                             error: None,
                         });
                     }
