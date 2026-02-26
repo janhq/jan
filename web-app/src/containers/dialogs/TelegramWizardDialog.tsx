@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { invoke } from '@tauri-apps/api/core'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -237,7 +238,7 @@ export function TelegramWizard({
       <div className="flex justify-center">
         <Button
           variant="outline"
-          onClick={() => window.open('https://t.me/BotFather', '_blank')}
+          onClick={() => openUrl('https://t.me/BotFather')}
           className="gap-2"
         >
           <IconBrandTelegram size={18} />
