@@ -154,6 +154,7 @@ pub fn run() {
         core::openclaw::commands::telegram_configure,
         core::openclaw::commands::telegram_get_config,
         core::openclaw::commands::telegram_check_pairing,
+        core::openclaw::commands::telegram_approve_pairing,
         core::openclaw::commands::telegram_disconnect,
         // WhatsApp commands
         core::openclaw::commands::whatsapp_validate_connection,

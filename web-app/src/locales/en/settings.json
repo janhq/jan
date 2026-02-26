@@ -486,10 +486,19 @@
       },
       "step4": {
         "title": "Pair Your Device",
-        "instruction": "Send this code to your Telegram bot:",
+        "instruction": "Open your bot on Telegram and send a message. The bot will reply with a pairing code — paste it below to connect.",
+        "openBot": "Open @{{username}} on Telegram",
+        "instruction1": "Open your bot on Telegram using the link above",
+        "instruction2": "Press \"Start\" or send any message to the bot",
+        "instruction3": "Copy the pairing code from the bot's reply and paste it below",
         "codeLabel": "Pairing Code",
-        "waiting": "Waiting for pairing...",
-        "checkAgain": "Check Again",
+        "codePlaceholder": "e.g. ZNAV9KZ3",
+        "approve": "Approve & Connect",
+        "approving": "Approving...",
+        "approved": "Device paired successfully!",
+        "approveError": "Failed to approve pairing: {{error}}",
+        "codeRequired": "Please enter the pairing code from the bot's message",
+        "notConnected": "Channel not connected yet. Make sure the OpenClaw gateway is running.",
         "skipForNow": "Skip for Now"
       },
       "step5": {

@@ -772,94 +772,193 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
     log::info!("Installing OpenClaw via npm");
 
     // First check if OpenClaw is already installed
-    if let Ok(Some(version)) = check_openclaw_installed().await {
-        log::info!("OpenClaw is already installed: {}", version);
-        return Ok(InstallResult {
-            success: true,
-            version: Some(version),
-            error: None,
-        });
+    let already_installed = check_openclaw_installed().await.ok().flatten();
+
+    if already_installed.is_none() {
+        // Check Node.js
+        let node_check = openclaw_check_dependencies().await;
+        if !node_check.installed {
+            return Ok(InstallResult {
+                success: false,
+                version: None,
+                error: node_check.error.or_else(|| Some("Node.js is required but not installed".to_string())),
+            });
+        }
+
+        if !node_check.meets_requirements {
+            return Ok(InstallResult {
+                success: false,
+                version: None,
+                error: node_check.error.or_else(|| Some(format!("Node.js {} or higher is required", MIN_NODE_VERSION))),
+            });
+        }
+
+        // Run npm install -g @openclaw/openclaw
+        let child = Command::new("npm")
+            .args(["install", "-g", OPENCLAW_PACKAGE_NAME])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn npm: {}", e))?;
+
+        let output = child.wait_with_output().await.map_err(|e| format!("Failed to wait for npm: {}", e))?;
+
+        if !output.status.success() {
+            // Parse npm error output for better error messages
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+
+            let error_message = if stderr.contains("404") || stderr.contains("Not Found") || stdout.contains("404") {
+                format!(
+                    "OpenClaw package '{}' is not yet available on npm. \
+                    Please check the OpenClaw project for installation instructions, \
+                    or try using PicoClaw as an alternative lightweight gateway.",
+                    OPENCLAW_PACKAGE_NAME
+                )
+            } else if stderr.contains("EACCES") || stderr.contains("permission denied") {
+                "Permission denied. Try running with administrator privileges or use a Node version manager like nvm.".to_string()
+            } else if stderr.contains("ENOTFOUND") || stderr.contains("network") {
+                "Network error. Please check your internet connection and try again.".to_string()
+            } else {
+                format!(
+                    "npm install failed: {}",
+                    if !stderr.is_empty() {
+                        stderr.trim().to_string()
+                    } else if !stdout.is_empty() {
+                        stdout.trim().to_string()
+                    } else {
+                        "Unknown error".to_string()
+                    }
+                )
+            };
+
+            log::error!("OpenClaw installation failed: {}", error_message);
+
+            return Ok(InstallResult {
+                success: false,
+                version: None,
+                error: Some(error_message),
+            });
+        }
     }
 
-    // Check Node.js
-    let node_check = openclaw_check_dependencies().await;
-    if !node_check.installed {
-        return Ok(InstallResult {
-            success: false,
-            version: None,
-            error: node_check.error.or_else(|| Some("Node.js is required but not installed".to_string())),
-        });
-    }
-
-    if !node_check.meets_requirements {
-        return Ok(InstallResult {
-            success: false,
-            version: None,
-            error: node_check.error.or_else(|| Some(format!("Node.js {} or higher is required", MIN_NODE_VERSION))),
-        });
-    }
-
-    // Run npm install -g @openclaw/openclaw
-    let child = Command::new("npm")
-        .args(["install", "-g", OPENCLAW_PACKAGE_NAME])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn npm: {}", e))?;
-
-    let output = child.wait_with_output().await.map_err(|e| format!("Failed to wait for npm: {}", e))?;
-
-    if output.status.success() {
-        // Verify installation
-        match check_openclaw_installed().await {
-            Ok(version) => Ok(InstallResult {
-                success: true,
-                version,
-                error: None,
-            }),
-            Err(e) => Ok(InstallResult {
+    // Verify installation
+    let version = match check_openclaw_installed().await {
+        Ok(v) => v,
+        Err(e) => {
+            return Ok(InstallResult {
                 success: false,
                 version: None,
                 error: Some(e),
-            }),
+            });
         }
-    } else {
-        // Parse npm error output for better error messages
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
+    };
 
-        let error_message = if stderr.contains("404") || stderr.contains("Not Found") || stdout.contains("404") {
-            format!(
-                "OpenClaw package '{}' is not yet available on npm. \
-                Please check the OpenClaw project for installation instructions, \
-                or try using PicoClaw as an alternative lightweight gateway.",
-                OPENCLAW_PACKAGE_NAME
-            )
-        } else if stderr.contains("EACCES") || stderr.contains("permission denied") {
-            "Permission denied. Try running with administrator privileges or use a Node version manager like nvm.".to_string()
-        } else if stderr.contains("ENOTFOUND") || stderr.contains("network") {
-            "Network error. Please check your internet connection and try again.".to_string()
-        } else {
-            format!(
-                "npm install failed: {}",
-                if !stderr.is_empty() {
-                    stderr.trim().to_string()
-                } else if !stdout.is_empty() {
-                    stdout.trim().to_string()
-                } else {
-                    "Unknown error".to_string()
-                }
-            )
-        };
+    // ============================================
+    // Auto-configure OpenClaw for Jan integration
+    // ============================================
+    log::info!("Auto-configuring OpenClaw for Jan integration");
 
-        log::error!("OpenClaw installation failed: {}", error_message);
-
-        Ok(InstallResult {
-            success: false,
-            version: None,
-            error: Some(error_message),
-        })
+    // 1. Ensure Jan's origins are allowed for WebSocket connections
+    if let Err(e) = openclaw_ensure_jan_origin().await {
+        log::warn!("Failed to ensure Jan origin: {}", e);
+        // Don't fail the install, just log the warning
     }
+
+    // 2. Configure WhatsApp with pairing mode by default (safer for users)
+    if let Ok(mut child) = Command::new("openclaw")
+        .args(["config", "set", "channels.whatsapp.dmPolicy", "pairing"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        let _ = child.wait().await;
+    }
+
+    // 3. Configure Telegram with pairing mode by default
+    if let Ok(mut child) = Command::new("openclaw")
+        .args(["config", "set", "channels.telegram.dmPolicy", "pairing"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        let _ = child.wait().await;
+    }
+
+    // 4. Enable dangerouslyDisableDeviceAuth for Jan's Control UI client
+    // This allows Jan to connect without device pairing (Jan is trusted)
+    if let Ok(mut child) = Command::new("openclaw")
+        .args(["config", "set", "gateway.controlUi.dangerouslyDisableDeviceAuth", "true"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        let _ = child.wait().await;
+    }
+
+    // 5. Set gateway.mode to "local" - required for gateway to start
+    if let Ok(mut child) = Command::new("openclaw")
+        .args(["config", "set", "gateway.mode", "local"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        let _ = child.wait().await;
+    }
+
+    // ============================================
+    // Auto-start the Gateway
+    // ============================================
+    log::info!("Auto-starting OpenClaw Gateway");
+
+    // First install the gateway service (required for fresh install)
+    // This registers the launchd service on macOS
+    if let Ok(mut child) = Command::new("openclaw")
+        .args(["gateway", "install"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        let _ = child.wait().await;
+    }
+
+    // Use 'openclaw gateway start' CLI to start the gateway
+    let start_result = Command::new("openclaw")
+        .args(["gateway", "start"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
+
+    match start_result {
+        Ok(mut child) => {
+            // Wait for the command to complete
+            match child.wait().await {
+                Ok(status) => {
+                    if status.success() {
+                        log::info!("OpenClaw Gateway started successfully");
+                    } else {
+                        log::warn!("openclaw gateway start returned non-zero status");
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to wait for gateway start: {}", e);
+                }
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to start Gateway: {}", e);
+            // Don't fail the install, the user can start it manually
+        }
+    }
+
+    // Give the gateway a moment to start responding
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+    Ok(InstallResult {
+        success: true,
+        version,
+        error: None,
+    })
 }
 
 /// Generate the default OpenClaw configuration
@@ -1253,21 +1352,12 @@ async fn check_gateway_responding() -> bool {
 
 /// Start the OpenClaw gateway
 #[tauri::command]
-pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), String> {
+pub async fn openclaw_start(_state: State<'_, OpenClawState>) -> Result<(), String> {
     log::info!("Starting OpenClaw gateway");
 
-    // Check if already running (tracked by us)
-    {
-        let handle = state.process_handle.lock().await;
-        if handle.is_some() {
-            log::info!("OpenClaw gateway is already running (tracked process)");
-            return Ok(());
-        }
-    }
-
-    // Check if gateway is already responding (started externally)
+    // Check if gateway is already responding
     if check_gateway_responding().await {
-        log::info!("OpenClaw gateway is already running on port {} (external process)", OPENCLAW_PORT);
+        log::info!("OpenClaw gateway is already running on port {}", OPENCLAW_PORT);
         // Even if running externally, ensure Jan's origin is configured
         let _ = openclaw_ensure_jan_origin().await;
         return Ok(());
@@ -1297,129 +1387,170 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
         openclaw_ensure_jan_origin().await?;
     }
 
-    // Start OpenClaw gateway
-    let mut child = Command::new("openclaw")
-        .args(&["gateway", "start"])
+    // First, ensure the gateway service is installed (required on fresh install)
+    // This registers the launchd service on macOS
+    log::info!("Ensuring OpenClaw gateway service is installed");
+    if let Ok(mut install_child) = Command::new("openclaw")
+        .args(["gateway", "install"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to start OpenClaw: {}", e))?;
-
-    // Wait a bit for the process to start
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
-    // Check if process is still running
-    match child.try_wait().map_err(|e| format!("Failed to check process: {}", e)) {
-        Ok(Some(status)) => {
-            if !status.success() {
-                return Err(format!("OpenClaw failed to start: {:?}", status));
-            }
-        }
-        Ok(None) => {
-            // Process is running, store the handle
-            let mut handle = state.process_handle.lock().await;
-            *handle = Some(child);
-            log::info!("OpenClaw gateway started successfully on port {}", OPENCLAW_PORT);
-        }
-        Err(e) => {
-            return Err(format!("Failed to check process status: {}", e));
-        }
+    {
+        let _ = install_child.wait().await;
     }
 
-    Ok(())
+    // Start OpenClaw gateway via CLI
+    // Note: 'openclaw gateway start' starts a launchd service (daemon) and exits immediately
+    // The actual gateway runs as a separate daemon process, not as a child of this CLI command
+    log::info!("Starting OpenClaw gateway service");
+    let output = Command::new("openclaw")
+        .args(["gateway", "start"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run openclaw gateway start: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        log::error!("openclaw gateway start failed: stdout={}, stderr={}", stdout, stderr);
+        return Err(format!("Failed to start OpenClaw gateway: {}", stderr));
+    }
+
+    // Wait for the gateway to actually start responding
+    // The launchd service takes a moment to initialize
+    log::info!("Waiting for OpenClaw gateway to become responsive...");
+    for i in 0..10 {
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        if check_gateway_responding().await {
+            log::info!("OpenClaw gateway started successfully on port {}", OPENCLAW_PORT);
+            return Ok(());
+        }
+        log::debug!("Gateway not responding yet, attempt {}/10", i + 1);
+    }
+
+    // Gateway didn't respond in time
+    Err("OpenClaw gateway started but is not responding. Check logs at /tmp/openclaw/".to_string())
 }
 
 /// Stop the OpenClaw gateway
 #[tauri::command]
-pub async fn openclaw_stop(state: State<'_, OpenClawState>) -> Result<(), String> {
+pub async fn openclaw_stop(_state: State<'_, OpenClawState>) -> Result<(), String> {
     log::info!("Stopping OpenClaw gateway");
 
-    let mut handle = state.process_handle.lock().await;
+    // Use 'openclaw gateway stop' to properly stop the launchd service
+    // This is the correct way to stop the gateway when started via 'openclaw gateway start'
+    let mut stopped_via_cli = false;
+    let stop_result = Command::new("openclaw")
+        .args(["gateway", "stop"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
 
-    if let Some(mut child) = handle.take() {
-        // Try graceful shutdown first
-        match child.kill().await {
-            Ok(_) => {
-                log::info!("OpenClaw gateway stopped");
-                Ok(())
-            }
-            Err(e) => {
-                log::warn!("Failed to stop OpenClaw gracefully: {}", e);
-                // Try to force kill
-                let _ = child.start_kill();
-                Ok(())
+    match stop_result {
+        Ok(mut child) => {
+            match child.wait().await {
+                Ok(status) => {
+                    if status.success() {
+                        log::info!("OpenClaw gateway stop command succeeded");
+                        stopped_via_cli = true;
+                    } else {
+                        log::warn!("openclaw gateway stop returned non-zero status, trying fallback");
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to wait for gateway stop: {}", e);
+                }
             }
         }
-    } else {
-        // Process not tracked, try to kill by name
+        Err(e) => {
+            log::warn!("Failed to run openclaw gateway stop: {}", e);
+        }
+    }
+
+    // Fallback: try to kill by process name
+    if !stopped_via_cli {
         #[cfg(target_os = "macos")]
         {
-            let output = Command::new("pkill")
+            let _ = Command::new("pkill")
                 .arg("-f")
                 .arg("openclaw")
                 .output()
-                .await
-                .map_err(|e| format!("Failed to run pkill: {}", e))?;
-
-            if output.status.success() {
-                Ok(())
-            } else {
-                Err("OpenClaw process not found".to_string())
-            }
+                .await;
         }
 
         #[cfg(target_os = "linux")]
         {
-            let output = Command::new("pkill")
+            let _ = Command::new("pkill")
                 .arg("-f")
                 .arg("openclaw")
                 .output()
-                .await
-                .map_err(|e| format!("Failed to run pkill: {}", e))?;
-
-            if output.status.success() {
-                Ok(())
-            } else {
-                Err("OpenClaw process not found".to_string())
-            }
+                .await;
         }
 
         #[cfg(target_os = "windows")]
         {
-            let output = Command::new("taskkill")
-                .args(&["/F", "/IM", "openclaw.exe"])
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "openclaw.exe"])
                 .output()
-                .await
-                .map_err(|e| format!("Failed to run taskkill: {}", e))?;
-
-            if output.status.success() {
-                Ok(())
-            } else {
-                Err("OpenClaw process not found".to_string())
-            }
+                .await;
         }
     }
+
+    // Wait for the port to actually be released before returning.
+    // Without this, the caller may immediately check status and find
+    // the gateway still responding (race condition).
+    for i in 0..10 {
+        if !check_gateway_responding().await {
+            log::info!("OpenClaw gateway stopped successfully (port released after {} checks)", i + 1);
+            return Ok(());
+        }
+        log::debug!("Gateway still responding after stop, waiting... attempt {}/10", i + 1);
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    // Port is still occupied after 5 seconds - try SIGKILL as last resort
+    log::warn!("OpenClaw gateway still responding after 5s, sending SIGKILL");
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let _ = Command::new("pkill")
+            .arg("-9")
+            .arg("-f")
+            .arg("openclaw")
+            .output()
+            .await;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "openclaw.exe"])
+            .output()
+            .await;
+    }
+
+    // Final wait after SIGKILL
+    for i in 0..6 {
+        if !check_gateway_responding().await {
+            log::info!("OpenClaw gateway stopped after SIGKILL (attempt {})", i + 1);
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    log::warn!("OpenClaw gateway may still be running after stop attempts");
+    Ok(())
 }
 
 /// Get the current OpenClaw status
 #[tauri::command]
-pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClawStatus, String> {
+pub async fn openclaw_status(_state: State<'_, OpenClawState>) -> Result<OpenClawStatus, String> {
     log::info!("Getting OpenClaw status");
 
-    // Check if process is running
-    let running = {
-        let mut handle = state.process_handle.lock().await;
-        if let Some(ref mut child) = *handle {
-            match child.try_wait() {
-                Ok(Some(_)) => false, // Process has exited
-                Ok(None) => true,     // Process is still running
-                Err(_) => false,
-            }
-        } else {
-            // Check if gateway is responding (might be started externally)
-            check_gateway_responding().await
-        }
-    };
+    // Check if gateway is responding on the expected port
+    // This is the source of truth - the gateway runs as a launchd daemon,
+    // not as a child process we track
+    let running = check_gateway_responding().await;
 
     // Check if OpenClaw is installed
     let openclaw_version = match check_openclaw_installed().await {
@@ -1562,17 +1693,6 @@ pub async fn telegram_validate_token(token: String) -> TelegramTokenValidation {
     }
 }
 
-/// Generate a unique pairing code for Telegram
-fn generate_pairing_code() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
-    let random_part: u32 = (timestamp % 10000) as u32;
-    format!("{:04X}{:04X}", random_part, (timestamp / 10000) as u32)
-}
-
 /// Enable a channel plugin in OpenClaw
 ///
 /// Plugins must be enabled before channels can be added
@@ -1672,16 +1792,13 @@ pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String>
     std::fs::write(&telegram_config_path, serde_json::to_string_pretty(&telegram_settings).unwrap())
         .map_err(|e| format!("Failed to save Telegram config: {}", e))?;
 
-    // Generate pairing code for DM access control
-    let pairing_code = generate_pairing_code();
-
-    log::info!("Telegram configured successfully via OpenClaw, pairing code: {}", pairing_code);
+    log::info!("Telegram configured successfully via OpenClaw");
 
     Ok(TelegramConfig {
         bot_token: token,
         bot_username: validation.bot_username,
         connected: true, // Channel is added and connected
-        pairing_code: Some(pairing_code),
+        pairing_code: None,
         paired_users: 0,
     })
 }
@@ -1717,25 +1834,117 @@ pub async fn telegram_get_config() -> Result<TelegramConfig, String> {
     })
 }
 
-/// Check if pairing is complete (simulated - in real impl would check with OpenClaw)
+/// Check if Telegram channel is actually connected in OpenClaw gateway
 #[tauri::command]
 pub async fn telegram_check_pairing() -> Result<bool, String> {
-    log::info!("Checking Telegram pairing status");
+    log::info!("Checking Telegram channel status via OpenClaw gateway");
 
-    let config_dir = get_openclaw_config_dir()?;
-    let telegram_config_path = config_dir.join("telegram.json");
+    // Try gateway WebSocket API first (same pattern as WhatsApp status check)
+    let params = serde_json::json!({
+        "probe": true,
+        "timeoutMs": 10000
+    });
 
-    if !telegram_config_path.exists() {
+    if let Ok(status) = gateway_request("channels.status", params).await {
+        if let Some(channels) = status.get("channels") {
+            if let Some(telegram) = channels.get("telegram") {
+                // Telegram uses configured+running+probe.ok (not connected/linked like WhatsApp)
+                let configured = telegram.get("configured")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let running = telegram.get("running")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let probe_ok = telegram.get("probe")
+                    .and_then(|p| p.get("ok"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                log::info!("Telegram channel status - configured: {}, running: {}, probe.ok: {}", configured, running, probe_ok);
+                return Ok(configured && running && probe_ok);
+            }
+        }
+        log::info!("Telegram channel not found in gateway status response");
         return Ok(false);
     }
 
-    let config_json = std::fs::read_to_string(&telegram_config_path)
-        .map_err(|e| format!("Failed to read Telegram config: {}", e))?;
+    // Fallback: try openclaw channels status --probe CLI
+    log::info!("Gateway WebSocket unavailable, falling back to CLI check");
+    let status_output = Command::new("openclaw")
+        .args(["channels", "status", "--probe"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await;
 
-    let settings: serde_json::Value = serde_json::from_str(&config_json)
-        .map_err(|e| format!("Failed to parse Telegram config: {}", e))?;
+    match status_output {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout).to_lowercase();
+            // Look for telegram in the output with connected/enabled/online status
+            for line in stdout.lines() {
+                if line.contains("telegram") {
+                    let is_connected = line.contains("connected")
+                        || line.contains("online")
+                        || line.contains("enabled");
+                    log::info!("Telegram CLI status line: {}, connected: {}", line.trim(), is_connected);
+                    return Ok(is_connected);
+                }
+            }
+            log::info!("Telegram not found in channels status output");
+            Ok(false)
+        }
+        Err(e) => {
+            log::warn!("Failed to check channel status via CLI: {}", e);
+            // Last resort: check local config
+            let config_dir = get_openclaw_config_dir()?;
+            let telegram_config_path = config_dir.join("telegram.json");
+            if telegram_config_path.exists() {
+                let config_json = std::fs::read_to_string(&telegram_config_path)
+                    .map_err(|e| format!("Failed to read Telegram config: {}", e))?;
+                let settings: serde_json::Value = serde_json::from_str(&config_json)
+                    .map_err(|e| format!("Failed to parse Telegram config: {}", e))?;
+                Ok(settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false))
+            } else {
+                Ok(false)
+            }
+        }
+    }
+}
 
-    Ok(settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false))
+/// Approve a Telegram pairing code so the user can chat with Jan via the bot
+///
+/// When dmPolicy is set to "pairing", users must be approved before they can
+/// interact with the bot. This runs `openclaw pairing approve telegram <code>`
+#[tauri::command]
+pub async fn telegram_approve_pairing(code: String) -> Result<(), String> {
+    log::info!("Approving Telegram pairing code: {}", code);
+
+    let output = Command::new("openclaw")
+        .args(["pairing", "approve", "telegram", &code])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run openclaw pairing approve: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    log::info!("Pairing approve stdout: {}", stdout);
+    if !stderr.is_empty() {
+        log::info!("Pairing approve stderr: {}", stderr);
+    }
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let error_msg = if !stderr.is_empty() {
+            stderr.to_string()
+        } else {
+            stdout.to_string()
+        };
+        Err(format!("Failed to approve pairing: {}", error_msg.trim()))
+    }
 }
 
 /// Disconnect Telegram channel
@@ -2434,7 +2643,9 @@ pub async fn whatsapp_check_auth() -> Result<WhatsAppAuthStatus, String> {
                     if let Some(ref err) = last_error {
                         let is_transient = err.contains("515") ||
                                           err.contains("restart required") ||
-                                          err.contains("Stream Errored");
+                                          err.contains("Stream Errored") ||
+                                          err.contains("not linked") ||
+                                          err.contains("not configured");    
 
                         if !is_transient && !linked {
                             return Ok(WhatsAppAuthStatus {

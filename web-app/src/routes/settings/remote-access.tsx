@@ -312,10 +312,11 @@ function RemoteAccess() {
     try {
       setIsStopping(true)
       await invoke('openclaw_stop')
-      // Update the OpenClaw running cache immediately
+      // The backend now verifies the port is released before returning,
+      // so we can trust this state update without re-fetching status
       setOpenClawRunningState(false)
+      setStatus((prev) => prev ? { ...prev, running: false } : prev)
       toast.success(t('settings:remoteAccess.stopped'))
-      await fetchStatus()
     } catch (error) {
       console.error('Failed to stop OpenClaw:', error)
       toast.error(t('settings:remoteAccess.stopError'))

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
@@ -15,11 +15,11 @@ import { Input } from '@/components/ui/input'
 import {
   IconBrandTelegram,
   IconCheck,
-  IconCopy,
   IconArrowRight,
   IconArrowLeft,
   IconLoader2,
   IconAlertCircle,
+  IconExternalLink,
 } from '@tabler/icons-react'
 
 // Types mirroring Rust backend
@@ -60,17 +60,17 @@ export function TelegramWizard({
   const [isValidating, setIsValidating] = useState(false)
   const [isConfiguring, setIsConfiguring] = useState(false)
   const [config, setConfig] = useState<TelegramConfig | null>(null)
-  const [isCheckingPairing, setIsCheckingPairing] = useState(false)
-  const [, setPairingCheckedCount] = useState(0)
+  const [pairingCode, setPairingCode] = useState('')
+  const [isApproving, setIsApproving] = useState(false)
 
   // Reset state when dialog closes
   useEffect(() => {
     if (!isOpen) {
       setStep('instructions')
       setToken('')
+      setPairingCode('')
       setValidation(null)
       setConfig(null)
-      setPairingCheckedCount(0)
     }
   }, [isOpen])
 
@@ -139,26 +139,32 @@ export function TelegramWizard({
     }
   }
 
-  const handleCheckPairing = async () => {
-    setIsCheckingPairing(true)
-    setPairingCheckedCount((prev) => prev + 1)
+  const handleApprovePairing = async () => {
+    if (!pairingCode.trim()) {
+      toast.error(t('settings:remoteAccess.telegramWizard.step4.codeRequired'))
+      return
+    }
+
+    setIsApproving(true)
     try {
-      const isPaired = await invoke<boolean>('telegram_check_pairing')
-      if (isPaired) {
-        // Refresh config to get updated paired users
-        const updatedConfig = await invoke<TelegramConfig>('telegram_get_config')
-        setConfig(updatedConfig)
-        setStep('success')
-        if (onConnected) {
-          onConnected(updatedConfig)
-        }
-      } else {
-        toast.message(t('settings:remoteAccess.telegramWizard.step4.waiting'))
+      await invoke('telegram_approve_pairing', { code: pairingCode.trim() })
+      toast.success(t('settings:remoteAccess.telegramWizard.step4.approved'))
+
+      // After approving, verify the connection and advance
+      const updatedConfig = await invoke<TelegramConfig>('telegram_get_config')
+      setConfig(updatedConfig)
+      setStep('success')
+      if (onConnected) {
+        onConnected(updatedConfig)
       }
     } catch (error) {
-      console.error('Pairing check error:', error)
+      console.error('Pairing approval error:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      toast.error(
+        t('settings:remoteAccess.telegramWizard.step4.approveError', { error: errorMsg })
+      )
     } finally {
-      setIsCheckingPairing(false)
+      setIsApproving(false)
     }
   }
 
@@ -181,13 +187,6 @@ export function TelegramWizard({
       console.error('Disconnect error:', error)
     }
   }
-
-  const handleCopyCode = useCallback(() => {
-    if (config?.pairing_code) {
-      navigator.clipboard.writeText(config.pairing_code)
-      toast.success(t('settings:remoteAccess.copiedToClipboard'))
-    }
-  }, [config?.pairing_code, t])
 
   const renderStepIndicator = () => {
     const currentStep = getStepNumber()
@@ -332,34 +331,49 @@ export function TelegramWizard({
     </div>
   )
 
+  const botUsername = config?.bot_username || validation?.bot_username
+
   const renderPairingStep = () => (
     <div className="space-y-4">
       <DialogDescription className="text-center">
         {t('settings:remoteAccess.telegramWizard.step4.title')}
       </DialogDescription>
 
-      <div className="bg-secondary/50 rounded-lg p-4 text-center space-y-3">
-        <p className="text-muted-foreground text-sm">
+      <div className="bg-secondary/50 rounded-lg p-4 space-y-3">
+        <p className="text-muted-foreground text-sm text-center">
           {t('settings:remoteAccess.telegramWizard.step4.instruction')}
         </p>
-        <div className="flex items-center justify-center gap-2">
-          <code className="text-2xl font-mono font-bold text-foreground bg-background px-4 py-2 rounded-lg">
-            {config?.pairing_code || '------'}
-          </code>
-          <Button variant="ghost" size="icon" onClick={handleCopyCode}>
-            <IconCopy size={18} />
-          </Button>
-        </div>
+
+        {botUsername && (
+          <a
+            href={`https://t.me/${botUsername}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 text-primary hover:underline font-medium"
+          >
+            <IconBrandTelegram size={18} />
+            {t('settings:remoteAccess.telegramWizard.step4.openBot', { username: botUsername })}
+            <IconExternalLink size={14} />
+          </a>
+        )}
+
+        <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
+          <li>{t('settings:remoteAccess.telegramWizard.step4.instruction1')}</li>
+          <li>{t('settings:remoteAccess.telegramWizard.step4.instruction2')}</li>
+          <li>{t('settings:remoteAccess.telegramWizard.step4.instruction3')}</li>
+        </ol>
       </div>
 
-      <div className="flex justify-center">
-        {isCheckingPairing ? (
-          <IconLoader2 className="animate-spin h-6 w-6 text-primary" />
-        ) : (
-          <p className="text-muted-foreground text-sm">
-            {t('settings:remoteAccess.telegramWizard.step4.waiting')}
-          </p>
-        )}
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-foreground">
+          {t('settings:remoteAccess.telegramWizard.step4.codeLabel')}
+        </label>
+        <Input
+          value={pairingCode}
+          onChange={(e) => setPairingCode(e.target.value.toUpperCase())}
+          placeholder={t('settings:remoteAccess.telegramWizard.step4.codePlaceholder')}
+          className="font-mono text-center text-lg tracking-wider"
+        />
       </div>
 
       <div className="flex gap-2">
@@ -371,11 +385,18 @@ export function TelegramWizard({
           {t('settings:remoteAccess.telegramWizard.step4.skipForNow')}
         </Button>
         <Button
-          onClick={handleCheckPairing}
-          disabled={isCheckingPairing}
+          onClick={handleApprovePairing}
+          disabled={isApproving || !pairingCode.trim()}
           className="flex-1"
         >
-          {t('settings:remoteAccess.telegramWizard.step4.checkAgain')}
+          {isApproving ? (
+            <>
+              <IconLoader2 className="animate-spin h-4 w-4 mr-2" />
+              {t('settings:remoteAccess.telegramWizard.step4.approving')}
+            </>
+          ) : (
+            t('settings:remoteAccess.telegramWizard.step4.approve')
+          )}
         </Button>
       </div>
     </div>
@@ -449,7 +470,7 @@ export function TelegramWizard({
         // Handled by configure function
         break
       case 'pairing':
-        handleCheckPairing()
+        handleApprovePairing()
         break
       case 'success':
         onOpenChange(false)
