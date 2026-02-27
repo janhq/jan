@@ -294,6 +294,73 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://api.avian.io/v1',
+    explore_models_url: 'https://avian.io/models',
+    provider: 'avian',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Avian API uses API keys for authentication. Visit your [Dashboard](https://avian.io/dashboard) to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [Avian API documentation](https://avian.io/docs) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.avian.io/v1',
+          value: 'https://api.avian.io/v1',
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'deepseek/deepseek-v3.2',
+        name: 'DeepSeek V3.2',
+        version: '1.0',
+        description:
+          'DeepSeek V3.2 with 164K context. Fast, cost-effective completions with tool calling support.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'moonshotai/kimi-k2.5',
+        name: 'Kimi K2.5',
+        version: '1.0',
+        description:
+          'Moonshot Kimi K2.5 with 131K context. Advanced reasoning and tool-aware responses.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'z-ai/glm-5',
+        name: 'GLM-5',
+        version: '1.0',
+        description:
+          'Zhipu GLM-5 with 131K context. Multilingual chat model with strong coding abilities.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'minimax/minimax-m2.5',
+        name: 'MiniMax M2.5',
+        version: '1.0',
+        description:
+          'MiniMax M2.5 with 1M context window. Extended context for long document analysis.',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://router.huggingface.co/v1',
     explore_models_url:
       'https://huggingface.co/models?pipeline_tag=text-generation&inference_provider=all',

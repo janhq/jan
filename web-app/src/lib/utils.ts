@@ -88,6 +88,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/openai.svg'
     case 'azure':
       return '/images/model-provider/azure.svg'
+    case 'avian':
+      return '/images/model-provider/avian.svg'
     default:
       return undefined
   }
@@ -109,6 +111,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Gemini'
     case 'huggingface':
       return 'Hugging Face'
+    case 'avian':
+      return 'Avian'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }
