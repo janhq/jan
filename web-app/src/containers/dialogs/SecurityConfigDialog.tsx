@@ -125,8 +125,7 @@ export function SecurityConfigDialog({
       setStatus(result)
       setAuthMode(result.auth_mode)
       setRequirePairing(result.require_pairing)
-    } catch (error) {
-      console.error('Failed to fetch security status:', error)
+    } catch {
       toast.error('Failed to load security settings')
     } finally {
       setIsLoadingStatus(false)
@@ -139,8 +138,7 @@ export function SecurityConfigDialog({
     try {
       const result = await invoke<DeviceInfo[]>('security_get_devices')
       setDevices(result)
-    } catch (error) {
-      console.error('Failed to fetch devices:', error)
+    } catch {
       toast.error('Failed to load devices')
     } finally {
       setIsLoadingDevices(false)
@@ -153,8 +151,7 @@ export function SecurityConfigDialog({
     try {
       const result = await invoke<AccessLogEntry[]>('security_get_logs', { limit: 100 })
       setLogs(result)
-    } catch (error) {
-      console.error('Failed to fetch logs:', error)
+    } catch {
       toast.error('Failed to load access logs')
     } finally {
       setIsLoadingLogs(false)
@@ -204,8 +201,7 @@ export function SecurityConfigDialog({
       await fetchStatus()
       toast.success(`Authentication mode changed to ${newMode}`)
       onSave?.()
-    } catch (error) {
-      console.error('Failed to change auth mode:', error)
+    } catch {
       toast.error('Failed to change authentication mode')
     } finally {
       setIsChangingAuthMode(false)
@@ -223,8 +219,7 @@ export function SecurityConfigDialog({
       await fetchStatus()
       toast.success('New access token generated')
       onSave?.()
-    } catch (error) {
-      console.error('Failed to generate token:', error)
+    } catch {
       toast.error('Failed to generate token')
     } finally {
       setIsGeneratingToken(false)
@@ -239,8 +234,7 @@ export function SecurityConfigDialog({
       setTokenCopied(true)
       toast.success('Token copied to clipboard')
       setTimeout(() => setTokenCopied(false), 2000)
-    } catch (error) {
-      console.error('Failed to copy token:', error)
+    } catch {
       toast.error('Failed to copy token')
     }
   }
@@ -265,8 +259,7 @@ export function SecurityConfigDialog({
       await fetchStatus()
       toast.success('Password set successfully')
       onSave?.()
-    } catch (error) {
-      console.error('Failed to set password:', error)
+    } catch {
       toast.error('Failed to set password')
     } finally {
       setIsSettingPassword(false)
@@ -284,8 +277,7 @@ export function SecurityConfigDialog({
         enabled ? 'Device pairing required' : 'Device pairing disabled'
       )
       onSave?.()
-    } catch (error) {
-      console.error('Failed to toggle pairing:', error)
+    } catch {
       toast.error('Failed to update pairing setting')
     } finally {
       setIsTogglingPairing(false)
@@ -301,8 +293,7 @@ export function SecurityConfigDialog({
       await fetchStatus()
       toast.success('Device access revoked')
       onSave?.()
-    } catch (error) {
-      console.error('Failed to revoke device:', error)
+    } catch {
       toast.error('Failed to revoke device access')
     } finally {
       setRevokingDeviceId(null)
@@ -317,8 +308,7 @@ export function SecurityConfigDialog({
       await invoke('security_clear_logs')
       setLogs([])
       toast.success('Access logs cleared')
-    } catch (error) {
-      console.error('Failed to clear logs:', error)
+    } catch {
       toast.error('Failed to clear logs')
     } finally {
       setIsClearingLogs(false)

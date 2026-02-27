@@ -143,6 +143,7 @@ pub fn run() {
         core::openclaw::commands::openclaw_get_model,
         core::openclaw::commands::openclaw_list_channels,
         core::openclaw::commands::openclaw_channel_status,
+        core::openclaw::commands::openclaw_enable,
         core::openclaw::commands::openclaw_start,
         core::openclaw::commands::openclaw_stop,
         core::openclaw::commands::openclaw_status,

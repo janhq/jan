@@ -31,8 +31,7 @@ import {
   IconAlertCircle,
 } from '@tabler/icons-react'
 
-// Types mirroring Rust backend
-type TunnelProvider = 'none' | 'tailscale' | 'ngrok' | 'cloudflare' | 'localonly'
+import type { TunnelProvider } from '@/types/openclaw'
 
 interface TunnelProviderStatus {
   provider: TunnelProvider
@@ -248,8 +247,7 @@ export function TunnelSelectionDialog({
       if (status.active_provider) {
         setSelectedProvider(status.active_provider)
       }
-    } catch (error) {
-      console.error('Failed to fetch tunnel providers status:', error)
+    } catch {
       toast.error(t('settings:tunnel.fetchStatusError'))
     } finally {
       setIsDetecting(false)
@@ -264,8 +262,8 @@ export function TunnelSelectionDialog({
       setNgrokToken(tunnelConfig.ngrok_auth_token || '')
       setCloudflareTunnelId(tunnelConfig.cloudflare_tunnel_id || '')
       setAutoStart(tunnelConfig.auto_start)
-    } catch (error) {
-      console.error('Failed to fetch tunnel config:', error)
+    } catch {
+      // Config may not exist yet
     }
   }, [])
 
@@ -290,8 +288,7 @@ export function TunnelSelectionDialog({
       const status = await invoke<TunnelProvidersStatus>('tunnel_detect_all')
       setProvidersStatus(status)
       toast.success(t('settings:tunnel.detectionComplete'))
-    } catch (error) {
-      console.error('Failed to detect tunnel providers:', error)
+    } catch {
       toast.error(t('settings:tunnel.detectionError'))
     } finally {
       setIsDetecting(false)
@@ -311,8 +308,7 @@ export function TunnelSelectionDialog({
       await invoke('tunnel_set_ngrok_token', { token: ngrokToken.trim() })
       toast.success(t('settings:tunnel.ngrok.tokenSaved'))
       await fetchProvidersStatus()
-    } catch (error) {
-      console.error('Failed to save ngrok token:', error)
+    } catch {
       toast.error(t('settings:tunnel.ngrok.tokenSaveError'))
     }
   }, [ngrokToken, t, fetchProvidersStatus])
@@ -326,8 +322,7 @@ export function TunnelSelectionDialog({
       await invoke('tunnel_set_cloudflare_tunnel', { tunnelId: cloudflareTunnelId.trim() })
       toast.success(t('settings:tunnel.cloudflare.tunnelIdSaved'))
       await fetchProvidersStatus()
-    } catch (error) {
-      console.error('Failed to save Cloudflare tunnel ID:', error)
+    } catch {
       toast.error(t('settings:tunnel.cloudflare.tunnelIdSaveError'))
     }
   }, [cloudflareTunnelId, t, fetchProvidersStatus])
@@ -340,7 +335,6 @@ export function TunnelSelectionDialog({
       toast.success(t('settings:tunnel.startSuccess'))
       await fetchProvidersStatus()
     } catch (error) {
-      console.error('Failed to start tunnel:', error)
       const errorMsg = error instanceof Error ? error.message : String(error)
       toast.error(t('settings:tunnel.startError', { error: errorMsg }))
     } finally {
@@ -355,8 +349,7 @@ export function TunnelSelectionDialog({
       toast.success(t('settings:tunnel.stopSuccess'))
       setShowStopConfirm(false)
       await fetchProvidersStatus()
-    } catch (error) {
-      console.error('Failed to stop tunnel:', error)
+    } catch {
       toast.error(t('settings:tunnel.stopError'))
     } finally {
       setIsStopping(false)
@@ -370,8 +363,7 @@ export function TunnelSelectionDialog({
       toast.success(t('settings:tunnel.saved'))
       onSave?.()
       onClose()
-    } catch (error) {
-      console.error('Failed to save tunnel settings:', error)
+    } catch {
       toast.error(t('settings:tunnel.saveError'))
     } finally {
       setIsSaving(false)

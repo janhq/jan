@@ -5,12 +5,13 @@ import HeaderPage from '@/containers/HeaderPage'
 import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
 import { TelegramWizard as TelegramWizardDialog } from '@/containers/dialogs/TelegramWizardDialog'
-import { WhatsAppWizardDialog, WhatsAppConfig } from '@/containers/dialogs/WhatsAppWizardDialog'
-import { AddChannelDialog, ChannelType } from '@/containers/dialogs/AddChannelDialog'
+import { WhatsAppWizardDialog } from '@/containers/dialogs/WhatsAppWizardDialog'
+import { AddChannelDialog } from '@/containers/dialogs/AddChannelDialog'
 import { TailscaleSetupDialog } from '@/containers/dialogs/TailscaleSetupDialog'
 import { SecurityConfigDialog } from '@/containers/dialogs/SecurityConfigDialog'
 import { TunnelSelectionDialog } from '@/containers/dialogs/TunnelSelectionDialog'
-import { ChannelCard, TelegramConfig as ChannelTelegramConfig, WhatsAppConfig as ChannelWhatsAppConfig } from '@/containers/ChannelCard'
+import { EnableProgressDialog } from '@/containers/dialogs/EnableProgressDialog'
+import { ChannelCard } from '@/containers/ChannelCard'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useEffect, useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
@@ -26,248 +27,127 @@ import {
   IconExternalLink,
 } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
+import type {
+  ChannelType,
+  TelegramConfig,
+  WhatsAppConfig,
+  OpenClawStatus,
+  TunnelProvider,
+  TunnelProvidersStatus,
+  SecurityStatus,
+} from '@/types/openclaw'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.remote_access as any)({
   component: RemoteAccess,
 })
 
-// OpenClaw Status types (mirroring Rust backend)
-interface OpenClawStatus {
-  installed: boolean
-  running: boolean
-  node_version: string | null
-  openclaw_version: string | null
-  port_available: boolean
-  error: string | null
-}
-
-interface InstallResult {
-  success: boolean
-  version: string | null
-  error: string | null
-}
-
-// Telegram configuration
-interface TelegramConfig {
-  bot_token: string
-  bot_username: string | null
-  connected: boolean
-  pairing_code: string | null
-  paired_users: number
-}
-
-
 const OPENCLAW_PORT = 18789
-
-// Tunnel types (mirroring Rust backend)
-type TunnelProvider = 'none' | 'tailscale' | 'ngrok' | 'cloudflare' | 'localonly'
-
-interface TunnelInfo {
-  provider: TunnelProvider
-  url: string
-  started_at: string
-  port: number
-  is_public: boolean
-}
-
-interface TunnelProvidersStatus {
-  tailscale: { installed: boolean; authenticated: boolean; version: string | null }
-  ngrok: { installed: boolean; authenticated: boolean; version: string | null }
-  cloudflare: { installed: boolean; authenticated: boolean; version: string | null }
-  active_provider: TunnelProvider
-  active_tunnel: TunnelInfo | null
-}
-
-interface SecurityStatus {
-  auth_mode: 'token' | 'password' | 'none'
-  has_token: boolean
-  has_password: boolean
-  require_pairing: boolean
-  approved_device_count: number
-  recent_auth_failures: number
-}
-
-// Convert backend config types to ChannelCard types
-const convertTelegramConfig = (config: TelegramConfig | null): ChannelTelegramConfig | null => {
-  if (!config) return null
-  return {
-    bot_token: config.bot_token,
-    bot_username: config.bot_username,
-    connected: config.connected,
-    pairing_code: config.pairing_code,
-    paired_users: config.paired_users,
-  }
-}
-
-const convertWhatsAppConfig = (config: WhatsAppConfig | null): ChannelWhatsAppConfig | null => {
-  if (!config) return null
-  return {
-    account_id: config.account_id,
-    session_path: config.session_path,
-    connected: config.connected,
-    phone_number: config.phone_number,
-    qr_code: config.qr_code,
-    contacts_count: config.contacts_count,
-  }
-}
 
 function RemoteAccess() {
   const { t } = useTranslation()
   const [status, setStatus] = useState<OpenClawStatus | null>(null)
-  const [, setIsLoading] = useState(true)
   const [isStarting, setIsStarting] = useState(false)
   const [isStopping, setIsStopping] = useState(false)
-  const [isInstalling, setIsInstalling] = useState(false)
   const [isTelegramWizardOpen, setIsTelegramWizardOpen] = useState(false)
   const [isWhatsAppWizardOpen, setIsWhatsAppWizardOpen] = useState(false)
   const [isAddChannelDialogOpen, setIsAddChannelDialogOpen] = useState(false)
   const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
   const [isSecurityDialogOpen, setIsSecurityDialogOpen] = useState(false)
   const [isTunnelDialogOpen, setIsTunnelDialogOpen] = useState(false)
+  const [isEnableDialogOpen, setIsEnableDialogOpen] = useState(false)
   const [tunnelStatus, setTunnelStatus] = useState<TunnelProvidersStatus | null>(null)
   const [, setSecurityStatus] = useState<SecurityStatus | null>(null)
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null)
   const [whatsappConfig, setWhatsAppConfig] = useState<WhatsAppConfig | null>(null)
 
-  // Fetch status on mount
   const fetchStatus = useCallback(async () => {
     try {
-      setIsLoading(true)
       const statusData = await invoke<OpenClawStatus>('openclaw_status')
       setStatus(statusData)
 
-      // If OpenClaw is running, ensure Jan's origin is configured for WebSocket access
-      // This handles cases where OpenClaw was started externally
+      // Ensure Jan's origin is configured when OpenClaw was started externally
       if (statusData.running) {
-        await invoke('openclaw_ensure_jan_origin').catch((err) => {
-          console.debug('Failed to ensure Jan origin (may be expected):', err)
-        })
+        await invoke('openclaw_ensure_jan_origin').catch(() => {})
       }
-    } catch (error) {
-      console.error('Failed to fetch OpenClaw status:', error)
+    } catch {
       toast.error(t('settings:remoteAccess.startError'))
-    } finally {
-      setIsLoading(false)
     }
   }, [t])
 
-  useEffect(() => {
-    fetchStatus()
-  }, [fetchStatus])
-
-  // Fetch Telegram config on mount
   const fetchTelegramConfig = useCallback(async () => {
     try {
       const config = await invoke<TelegramConfig>('telegram_get_config')
       setTelegramConfig(config)
-    } catch (error) {
-      console.error('Failed to fetch Telegram config:', error)
+    } catch {
+      // Telegram may not be configured yet
     }
   }, [])
 
-  useEffect(() => {
-    fetchTelegramConfig()
-  }, [fetchTelegramConfig])
-
-  const handleTelegramWizardConnected = useCallback((config: TelegramConfig) => {
-    setTelegramConfig(config)
-  }, [])
-
-  const handleWhatsAppWizardConnected = useCallback((config: WhatsAppConfig) => {
-    setWhatsAppConfig(config)
-  }, [])
-
-  // Fetch WhatsApp config on mount
   const fetchWhatsAppConfig = useCallback(async () => {
     try {
       const config = await invoke<WhatsAppConfig>('whatsapp_get_config')
       setWhatsAppConfig(config)
-    } catch (error) {
-      console.error('Failed to fetch WhatsApp config:', error)
+    } catch {
+      // WhatsApp may not be configured yet
     }
   }, [])
 
-  useEffect(() => {
-    fetchWhatsAppConfig()
-  }, [fetchWhatsAppConfig])
-
-  // Fetch tunnel status on mount
   const fetchTunnelStatus = useCallback(async () => {
     try {
       const tunnelData = await invoke<TunnelProvidersStatus>('tunnel_get_providers')
       setTunnelStatus(tunnelData)
-    } catch (error) {
-      console.error('Failed to fetch tunnel status:', error)
+    } catch {
+      // Tunnel providers may not be available
     }
   }, [])
 
-  useEffect(() => {
-    fetchTunnelStatus()
-  }, [fetchTunnelStatus])
-
-  // Fetch security status on mount
   const fetchSecurityStatus = useCallback(async () => {
     try {
       const securityData = await invoke<SecurityStatus>('security_get_status')
       setSecurityStatus(securityData)
-    } catch (error) {
-      console.error('Failed to fetch security status:', error)
+    } catch {
+      // Security config may not be available
     }
   }, [])
 
   useEffect(() => {
+    fetchStatus()
+    fetchTelegramConfig()
+    fetchWhatsAppConfig()
+    fetchTunnelStatus()
     fetchSecurityStatus()
-  }, [fetchSecurityStatus])
+  }, [fetchStatus, fetchTelegramConfig, fetchWhatsAppConfig, fetchTunnelStatus, fetchSecurityStatus])
 
-  // Refresh all status data
   const refreshAllStatus = useCallback(async () => {
-    await Promise.all([
-      fetchStatus(),
-      fetchTunnelStatus(),
-      fetchSecurityStatus(),
-    ])
+    await Promise.all([fetchStatus(), fetchTunnelStatus(), fetchSecurityStatus()])
   }, [fetchStatus, fetchTunnelStatus, fetchSecurityStatus])
 
-  // Copy URL to clipboard
   const handleCopyUrl = useCallback((url: string) => {
     navigator.clipboard.writeText(url)
     toast.success(t('settings:remoteAccess.urlCopied'))
   }, [t])
 
-  // Get display name for tunnel provider
   const getTunnelProviderName = (provider: TunnelProvider): string => {
     switch (provider) {
-      case 'tailscale':
-        return 'Tailscale'
-      case 'ngrok':
-        return 'ngrok'
-      case 'cloudflare':
-        return 'Cloudflare Tunnel'
-      case 'localonly':
-        return t('settings:remoteAccess.localNetworkOnly')
-      case 'none':
-      default:
-        return t('settings:remoteAccess.notConfigured')
+      case 'tailscale': return 'Tailscale'
+      case 'ngrok': return 'ngrok'
+      case 'cloudflare': return 'Cloudflare Tunnel'
+      case 'localonly': return t('settings:remoteAccess.localNetworkOnly')
+      default: return t('settings:remoteAccess.notConfigured')
     }
   }
 
-  // Bulk sync all models to OpenClaw after gateway starts
   const bulkSyncModels = useCallback(async () => {
     const { providers, selectedModel } = useModelProvider.getState()
-    const count = await syncAllModelsToOpenClaw(providers, selectedModel?.id)
-    if (count > 0) {
-      console.debug(`[RemoteAccess] Synced ${count} models to OpenClaw`)
-    }
+    await syncAllModelsToOpenClaw(providers, selectedModel?.id)
   }, [])
 
   const handleStart = async () => {
     try {
       setIsStarting(true)
       await invoke('openclaw_start')
-      // Update the OpenClaw running cache immediately so model sync works
       setOpenClawRunningState(true)
-      // Sync all models so OpenClaw knows the full catalog
       await bulkSyncModels()
       toast.success(t('settings:remoteAccess.running'))
       await fetchStatus()
@@ -289,66 +169,29 @@ function RemoteAccess() {
     try {
       setIsStopping(true)
       await invoke('openclaw_stop')
-      // The backend now verifies the port is released before returning,
-      // so we can trust this state update without re-fetching status
       setOpenClawRunningState(false)
       setStatus((prev) => prev ? { ...prev, running: false } : prev)
       toast.success(t('settings:remoteAccess.stopped'))
-    } catch (error) {
-      console.error('Failed to stop OpenClaw:', error)
+    } catch {
       toast.error(t('settings:remoteAccess.stopError'))
     } finally {
       setIsStopping(false)
     }
   }
 
-  const handleInstall = async () => {
-    try {
-      setIsInstalling(true)
-      const result = await invoke<InstallResult>('openclaw_install')
-      if (result.success) {
-        // Install now auto-configures and starts the Gateway
-        setOpenClawRunningState(true)
-        // Sync all models so OpenClaw knows the full catalog
-        await bulkSyncModels()
-        toast.success(t('settings:remoteAccess.backendInstallSuccess'))
-        await fetchStatus()
-      } else {
-        toast.error(result.error || t('settings:remoteAccess.installError'))
-      }
-    } catch (error) {
-      console.error('Failed to install OpenClaw:', error)
-      toast.error(t('settings:remoteAccess.installError'))
-    } finally {
-      setIsInstalling(false)
-    }
-  }
-
   const getChannelName = (channel: string): string => {
     switch (channel) {
-      case 'telegram':
-        return t('settings:remoteAccess.telegram')
-      case 'whatsapp':
-        return t('settings:remoteAccess.whatsapp')
-      default:
-        return channel
+      case 'telegram': return t('settings:remoteAccess.telegram')
+      case 'whatsapp': return t('settings:remoteAccess.whatsapp')
+      default: return channel
     }
   }
 
-  // Channel management handlers
   const handleAddChannel = (channel: ChannelType) => {
     switch (channel) {
-      case 'telegram':
-        setIsTelegramWizardOpen(true)
-        break
-      case 'whatsapp':
-        setIsWhatsAppWizardOpen(true)
-        break
+      case 'telegram': setIsTelegramWizardOpen(true); break
+      case 'whatsapp': setIsWhatsAppWizardOpen(true); break
     }
-  }
-
-  const handleChannelSettings = (channel: ChannelType) => {
-    handleAddChannel(channel)
   }
 
   const handleDisconnectChannel = async (channel: ChannelType) => {
@@ -366,13 +209,11 @@ function RemoteAccess() {
       toast.success(
         t('settings:remoteAccess.channelDisconnected', { channel: getChannelName(channel) })
       )
-    } catch (error) {
-      console.error(`Failed to disconnect ${channel}:`, error)
+    } catch {
       toast.error(t('settings:remoteAccess.disconnectError'))
     }
   }
 
-  // Get connected channels list
   const getConnectedChannels = (): ChannelType[] => {
     const channels: ChannelType[] = []
     if (telegramConfig?.connected) channels.push('telegram')
@@ -396,9 +237,8 @@ function RemoteAccess() {
         <SettingsMenu />
         <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            {/* Status Card */}
             <Card title={t('settings:remoteAccess.title')}>
-              <CardItem 
+              <CardItem
                 title={t('settings:remoteAccess.status')}
                 actions={
                   <div className="flex items-center gap-2">
@@ -447,26 +287,18 @@ function RemoteAccess() {
               {status?.node_version && (
                 <CardItem
                   title={t('settings:remoteAccess.nodeVersion')}
-                  actions={
-                    <span className="text-foreground">{status.node_version}</span>
-                  }
+                  actions={<span className="text-foreground">{status.node_version}</span>}
                 />
               )}
               {status?.openclaw_version && (
                 <CardItem
                   title={t('settings:remoteAccess.openclawVersion')}
-                  actions={
-                    <span className="text-foreground">
-                      {status.openclaw_version}
-                    </span>
-                  }
+                  actions={<span className="text-foreground">{status.openclaw_version}</span>}
                 />
               )}
             </Card>
 
-            {/* Quick Setup Card */}
             <Card title={t('settings:remoteAccess.quickSetup')}>
-              {/* Enable/Disable Remote Access */}
               <CardItem
                 title={
                   isRunning
@@ -483,35 +315,18 @@ function RemoteAccess() {
                           onClick={handleStop}
                           disabled={isStopping}
                         >
-                          {isStopping && (
-                            <IconLoader2 className="animate-spin size-4" />
-                          )}
+                          {isStopping && <IconLoader2 className="animate-spin size-4" />}
                           {t('settings:remoteAccess.stop')}
                         </Button>
                       ) : (
-                        <Button
-                          size="sm"
-                          onClick={handleStart}
-                          disabled={isStarting}
-                        >
-                          {isStarting && (
-                            <IconLoader2 className="animate-spin size-4" />
-                          )}
+                        <Button size="sm" onClick={handleStart} disabled={isStarting}>
+                          {isStarting && <IconLoader2 className="animate-spin size-4" />}
                           {t('settings:remoteAccess.start')}
                         </Button>
                       )
                     ) : (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleInstall}
-                        disabled={isInstalling}
-                      >
-                        {isInstalling ? (
-                          <IconLoader2 className="animate-spin size-4 text-muted-foreground" />
-                        ) : (
-                          <IconPlugConnected className="size-4 text-muted-foreground" />
-                        )}
+                      <Button variant="secondary" size="sm" onClick={() => setIsEnableDialogOpen(true)}>
+                        <IconPlugConnected className="size-4 text-muted-foreground" />
                         {t('settings:remoteAccess.install')}
                       </Button>
                     )}
@@ -519,7 +334,6 @@ function RemoteAccess() {
                 }
               />
 
-              {/* Connect Channels - New Unified Channel Management */}
               <CardItem
                 title={t('settings:remoteAccess.channels')}
                 actions={
@@ -534,25 +348,23 @@ function RemoteAccess() {
                 }
               />
 
-              {/* Channel Cards */}
               <div className="space-y-3 mt-4">
                 <ChannelCard
                   type="telegram"
-                  config={convertTelegramConfig(telegramConfig)}
-                  onSettings={() => handleChannelSettings('telegram')}
+                  config={telegramConfig}
+                  onSettings={() => handleAddChannel('telegram')}
                   onDisconnect={() => handleDisconnectChannel('telegram')}
                   OCIsInstalled={isInstalled}
                 />
                 <ChannelCard
                   type="whatsapp"
-                  config={convertWhatsAppConfig(whatsappConfig)}
-                  onSettings={() => handleChannelSettings('whatsapp')}
+                  config={whatsappConfig}
+                  onSettings={() => handleAddChannel('whatsapp')}
                   onDisconnect={() => handleDisconnectChannel('whatsapp')}
                   OCIsInstalled={isInstalled}
                 />
               </div>
 
-              {/* Share Access */}
               <CardItem
                 title={t('settings:remoteAccess.shareAccess')}
                 className='mt-5'
@@ -565,7 +377,6 @@ function RemoteAccess() {
               />
             </Card>
 
-            {/* Active Tunnel Status Card */}
             {tunnelStatus?.active_tunnel && (
               <Card title={t('settings:remoteAccess.activeTunnel')}>
                 <div className="flex items-center gap-3 mb-4">
@@ -613,48 +424,36 @@ function RemoteAccess() {
                 />
               </Card>
             )}
-
           </div>
         </div>
       </div>
 
-      {/* Telegram Wizard Dialog */}
       <TelegramWizardDialog
         isOpen={isTelegramWizardOpen}
         onOpenChange={setIsTelegramWizardOpen}
-        onConnected={handleTelegramWizardConnected}
+        onConnected={setTelegramConfig}
       />
-
-      {/* WhatsApp Wizard Dialog */}
       <WhatsAppWizardDialog
         isOpen={isWhatsAppWizardOpen}
         onOpenChange={setIsWhatsAppWizardOpen}
-        onConnected={handleWhatsAppWizardConnected}
+        onConnected={setWhatsAppConfig}
       />
-
-      {/* Add Channel Dialog */}
       <AddChannelDialog
         isOpen={isAddChannelDialogOpen}
         onOpenChange={setIsAddChannelDialogOpen}
         onSelectChannel={handleAddChannel}
         connectedChannels={getConnectedChannels()}
       />
-
-      {/* Tailscale Setup Dialog */}
       <TailscaleSetupDialog
         isOpen={isTailscaleDialogOpen}
         onClose={() => setIsTailscaleDialogOpen(false)}
         onSuccess={refreshAllStatus}
       />
-
-      {/* Security Config Dialog */}
       <SecurityConfigDialog
         isOpen={isSecurityDialogOpen}
         onClose={() => setIsSecurityDialogOpen(false)}
         onSave={refreshAllStatus}
       />
-
-      {/* Tunnel Selection Dialog */}
       <TunnelSelectionDialog
         isOpen={isTunnelDialogOpen}
         onClose={() => setIsTunnelDialogOpen(false)}
@@ -663,6 +462,11 @@ function RemoteAccess() {
           setIsTailscaleDialogOpen(true)
         }}
         onSave={refreshAllStatus}
+      />
+      <EnableProgressDialog
+        isOpen={isEnableDialogOpen}
+        onOpenChange={setIsEnableDialogOpen}
+        onSuccess={fetchStatus}
       />
     </div>
   )

@@ -7,29 +7,9 @@ import {
   IconTrash,
 } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
+import type { ChannelType, ChannelConfig, TelegramConfig, WhatsAppConfig } from '@/types/openclaw'
 
-export type ChannelType = 'telegram' | 'whatsapp' 
-
-// Channel configuration interfaces
-export interface TelegramConfig {
-  bot_token: string
-  bot_username: string | null
-  connected: boolean
-  pairing_code: string | null
-  paired_users: number
-}
-
-export interface WhatsAppConfig {
-  account_id: string
-  session_path: string
-  connected: boolean
-  phone_number: string | null
-  qr_code: string | null
-  contacts_count: number
-}
-
-// Union type for all channel configs
-export type ChannelConfig = TelegramConfig | WhatsAppConfig 
+export type { ChannelType, ChannelConfig, TelegramConfig, WhatsAppConfig }
 
 interface ChannelCardProps {
   type: ChannelType
@@ -80,8 +60,6 @@ export function ChannelCard({
         const wa = config as WhatsAppConfig
         return wa.phone_number || ''
       }
-      default:
-        return ''
     }
   }
 
@@ -93,7 +71,6 @@ export function ChannelCard({
           : 'border-border bg-card'
       )}
     >
-      {/* Header */}
       <div className="flex items-center justify-between p-2 px-3">
         <div className="flex items-center gap-2">
           <div className="shrink-0">{getChannelIcon()}</div>
@@ -140,7 +117,6 @@ export function ChannelCard({
         </div>
       </div>
 
-      {/* Not Connected State */}
       {!isConnected && OCIsInstalled && (
         <div className="border-t border-border/40 px-4 py-3 bg-muted/30">
           <p className="text-xs text-muted-foreground">

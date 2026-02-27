@@ -16,19 +16,11 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import type { WhatsAppConfig } from '@/types/openclaw'
 
-// WhatsApp configuration types (mirroring Rust backend)
-export interface WhatsAppConfig {
-  account_id: string
-  session_path: string
-  connected: boolean
-  phone_number: string | null
-  qr_code: string | null
-  contacts_count: number
-}
+export type { WhatsAppConfig }
 
-// WhatsApp authentication status
-export interface WhatsAppAuthStatus {
+interface WhatsAppAuthStatus {
   in_progress: boolean
   qr_code_ready: boolean
   qr_code: string | null
@@ -98,28 +90,17 @@ export function WhatsAppWizardDialog({
       setIsLoading(true)
       setErrorMessage(null)
 
-      // Show "setting up" step while OpenClaw is being configured
       setStep('setting_up')
-
-      // Start WhatsApp authentication (this now handles all setup automatically)
-      // - Installs OpenClaw if needed
-      // - Starts the Gateway if not running
-      // - Configures allowed origins
-      // - Handles device pairing
-      // - Enables WhatsApp plugin
       const status = await invoke<WhatsAppAuthStatus>('whatsapp_start_auth')
       setAuthStatus(status)
 
-      // Check if there was an error during setup
       if (status.error) {
         setErrorMessage(status.error)
         setStep('error')
         return
       }
 
-      // Check if already authenticated (WhatsApp was already linked)
       if (status.authenticated) {
-        // Get the final config
         const whatsappConfig = await invoke<WhatsAppConfig>('whatsapp_get_config')
         setConfig(whatsappConfig)
         setStep('success')
@@ -127,16 +108,13 @@ export function WhatsAppWizardDialog({
         return
       }
 
-      // Check if QR code is already available in the response
       if (status.qr_code) {
         setQrCodeImage(status.qr_code)
       }
 
-      // Move to scanning step
       setStep('scanning')
       startPolling()
     } catch (error) {
-      console.error('Failed to start WhatsApp auth:', error)
       setErrorMessage(
         error instanceof Error ? error.message : String(error)
       )
@@ -147,37 +125,28 @@ export function WhatsAppWizardDialog({
   }, [])
 
   const startPolling = useCallback(() => {
-    // Poll for QR code and authentication status
     const interval = setInterval(async () => {
       try {
         const status = await invoke<WhatsAppAuthStatus>('whatsapp_check_auth')
         setAuthStatus(status)
 
-        // If we get a QR code, display it
         if (status.qr_code) {
           setQrCodeImage(status.qr_code)
         }
 
-        // If authenticated, stop polling and show success
         if (status.authenticated) {
           clearInterval(interval)
           setPollingInterval(null)
           setIsPolling(false)
 
-          // Get the final config
           const whatsappConfig = await invoke<WhatsAppConfig>('whatsapp_get_config')
           setConfig(whatsappConfig)
           setStep('success')
           onConnected(whatsappConfig)
         }
 
-        // If there's an error, check if it's a fatal error or transient
-        // Transient errors (like 515 stream errors) should not stop polling
-        // as the connection often succeeds on retry
-        // "not linked" and "not configured" are not errors - they just mean waiting for QR scan
+        // Only treat non-transient errors as fatal
         if (status.error && !status.in_progress) {
-          // Only stop polling if the error is final (not in progress anymore)
-          // Transient errors during connection attempts should be ignored
           const isFatalError = !status.error.includes('515') &&
                                !status.error.includes('restart required') &&
                                !status.error.includes('Stream Errored') &&
@@ -190,13 +159,10 @@ export function WhatsAppWizardDialog({
             setIsPolling(false)
             setErrorMessage(status.error)
             setStep('error')
-          } else {
-            // Transient error, log it but keep polling
-            console.log('Transient WhatsApp error, continuing to poll:', status.error)
           }
         }
-      } catch (error) {
-        console.error('Polling error:', error)
+      } catch {
+        // Polling error — will retry on next interval
       }
     }, 2000)
 
@@ -216,8 +182,7 @@ export function WhatsAppWizardDialog({
         setPollingInterval(null)
       }
       setIsPolling(false)
-    } catch (error) {
-      console.error('Failed to disconnect WhatsApp:', error)
+    } catch {
       toast.error(t('settings:remoteAccess.disconnectError'))
     } finally {
       setIsLoading(false)

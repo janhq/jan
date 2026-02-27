@@ -11,11 +11,11 @@ import { Button } from '@/components/ui/button'
 import {
   IconBrandTelegram,
   IconBrandWhatsapp,
-  IconBrandDiscord,
   IconArrowRight,
 } from '@tabler/icons-react'
+import type { ChannelType } from '@/types/openclaw'
 
-export type ChannelType = 'telegram' | 'whatsapp' | 'discord'
+export type { ChannelType }
 
 interface AddChannelDialogProps {
   isOpen: boolean
@@ -58,12 +58,6 @@ export function AddChannelDialog({
       name: t('settings:remoteAccess.whatsapp'),
       icon: <IconBrandWhatsapp size={32} className="text-green-500" />,
       description: t('settings:remoteAccess.channelDescriptions.whatsapp'),
-    },
-    {
-      id: 'discord',
-      name: t('settings:remoteAccess.discord'),
-      icon: <IconBrandDiscord size={32} className="text-indigo-500" />,
-      description: t('settings:remoteAccess.channelDescriptions.discord'),
     },
   ]
 

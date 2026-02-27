@@ -1463,6 +1463,148 @@ async fn check_gateway_responding() -> bool {
     }
 }
 
+/// 1-click enable: orchestrates dependency check, install, configure, and start
+#[tauri::command]
+pub async fn openclaw_enable(
+    app: tauri::AppHandle,
+    config_input: Option<OpenClawConfigInput>,
+    state: State<'_, OpenClawState>,
+) -> Result<EnableResult, String> {
+    use tauri::Emitter;
+    log::info!("Starting 1-click OpenClaw enable flow");
+
+    let mut steps_completed: Vec<EnableStep> = vec![];
+
+    let emit = |step: &str, progress: u32, message: &str| {
+        let _ = app.emit(
+            "openclaw-enable-progress",
+            EnableProgressEvent {
+                step: step.to_string(),
+                progress,
+                message: message.to_string(),
+            },
+        );
+    };
+
+    // Step 1: Check Node.js dependencies
+    emit("checking_dependencies", 10, "Checking Node.js installation...");
+    steps_completed.push(EnableStep::CheckingDependencies);
+    let node_check = openclaw_check_dependencies().await;
+    if !node_check.installed {
+        return Err(serde_json::to_string(&EnableError {
+            code: EnableErrorCode::NodeNotFound,
+            message: "Node.js is not installed. OpenClaw requires Node.js 22+.".to_string(),
+            recovery: vec![RecoveryOption {
+                label: "Download Node.js".to_string(),
+                action: RecoveryAction::OpenNodeDownload,
+                description: "Opens the Node.js download page in your browser.".to_string(),
+            }],
+        })
+        .unwrap_or_else(|_| "Node.js is not installed".to_string()));
+    }
+    if !node_check.meets_requirements {
+        return Err(serde_json::to_string(&EnableError {
+            code: EnableErrorCode::NodeVersionTooLow,
+            message: format!(
+                "Node.js 22+ required. Found: {}",
+                node_check.version.as_deref().unwrap_or("unknown")
+            ),
+            recovery: vec![RecoveryOption {
+                label: "Download Node.js".to_string(),
+                action: RecoveryAction::OpenNodeDownload,
+                description: "Opens the Node.js download page to get the latest version.".to_string(),
+            }],
+        })
+        .unwrap_or_else(|_| "Node.js version too low".to_string()));
+    }
+
+    // Step 2: Check if OpenClaw is already installed
+    emit("checking_installation", 25, "Checking OpenClaw installation...");
+    steps_completed.push(EnableStep::CheckingInstallation);
+    let already_installed = check_openclaw_installed().await.ok().flatten().is_some();
+
+    // Step 3: Install if needed
+    if !already_installed {
+        emit("installing", 40, "Installing OpenClaw (this may take a moment)...");
+        steps_completed.push(EnableStep::Installing);
+        let install_result = openclaw_install().await?;
+        if !install_result.success {
+            return Err(serde_json::to_string(&EnableError {
+                code: EnableErrorCode::NpmInstallFailed,
+                message: install_result
+                    .error
+                    .unwrap_or_else(|| "npm install failed".to_string()),
+                recovery: vec![RecoveryOption {
+                    label: "Retry".to_string(),
+                    action: RecoveryAction::Retry,
+                    description: "Try installing OpenClaw again.".to_string(),
+                }],
+            })
+            .unwrap_or_else(|_| "Installation failed".to_string()));
+        }
+    } else {
+        emit("already_installed", 40, "OpenClaw is already installed.");
+    }
+
+    // Step 4: Configure
+    emit("configuring", 60, "Configuring OpenClaw...");
+    steps_completed.push(EnableStep::Configuring);
+    openclaw_configure(config_input).await.map_err(|e| {
+        serde_json::to_string(&EnableError {
+            code: EnableErrorCode::ConfigWriteFailed,
+            message: format!("Failed to write configuration: {}", e),
+            recovery: vec![RecoveryOption {
+                label: "Retry".to_string(),
+                action: RecoveryAction::Retry,
+                description: "Try configuring again.".to_string(),
+            }],
+        })
+        .unwrap_or(e)
+    })?;
+
+    // Step 5: Start the gateway
+    emit("starting", 75, "Starting OpenClaw gateway...");
+    steps_completed.push(EnableStep::Starting);
+    openclaw_start(state.clone()).await.map_err(|e| {
+        if e.contains("Port") || e.contains("port") {
+            serde_json::to_string(&EnableError {
+                code: EnableErrorCode::PortInUse,
+                message: e.clone(),
+                recovery: vec![RecoveryOption {
+                    label: "Use different port".to_string(),
+                    action: RecoveryAction::UseDifferentPort {
+                        port: OPENCLAW_PORT + 1,
+                    },
+                    description: format!("Try port {} instead.", OPENCLAW_PORT + 1),
+                }],
+            })
+            .unwrap_or(e)
+        } else {
+            serde_json::to_string(&EnableError {
+                code: EnableErrorCode::GatewayStartFailed,
+                message: e.clone(),
+                recovery: vec![RecoveryOption {
+                    label: "Retry".to_string(),
+                    action: RecoveryAction::Retry,
+                    description: "Try starting the gateway again.".to_string(),
+                }],
+            })
+            .unwrap_or(e)
+        }
+    })?;
+
+    // Step 6: Get final status
+    emit("complete", 100, "OpenClaw is ready!");
+    let final_status = openclaw_status(state).await?;
+
+    Ok(EnableResult {
+        success: true,
+        already_installed,
+        steps_completed,
+        status: final_status,
+    })
+}
+
 /// Start the OpenClaw gateway
 #[tauri::command]
 pub async fn openclaw_start(_state: State<'_, OpenClawState>) -> Result<(), String> {

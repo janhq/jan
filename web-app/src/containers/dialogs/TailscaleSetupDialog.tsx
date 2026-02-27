@@ -83,8 +83,8 @@ export function TailscaleSetupDialog({
     try {
       const result = await invoke<TailscaleInfo>('tailscale_get_status')
       setInfo(result)
-    } catch (error) {
-      console.error('Failed to fetch Tailscale info:', error)
+    } catch {
+      // Info fetch may fail if Tailscale is not configured
     }
   }, [])
 
@@ -102,7 +102,6 @@ export function TailscaleSetupDialog({
         await fetchTailscaleInfo()
       }
     } catch (error) {
-      console.error('Failed to detect Tailscale:', error)
       setErrorMessage(
         error instanceof Error ? error.message : 'Failed to detect Tailscale'
       )
@@ -144,7 +143,6 @@ export function TailscaleSetupDialog({
         }
         await fetchTailscaleInfo()
       } catch (error) {
-        console.error('Failed to configure Tailscale Serve:', error)
         toast.error(
           error instanceof Error
             ? error.message
@@ -170,7 +168,6 @@ export function TailscaleSetupDialog({
         }
         await fetchTailscaleInfo()
       } catch (error) {
-        console.error('Failed to configure Tailscale Funnel:', error)
         toast.error(
           error instanceof Error
             ? error.message

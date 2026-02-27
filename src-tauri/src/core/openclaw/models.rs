@@ -540,6 +540,86 @@ pub struct BulkSyncResult {
     pub default_model: Option<String>,
 }
 
+// ============================================
+// 1-Click Enable Models
+// ============================================
+
+/// Steps in the 1-click enable flow
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum EnableStep {
+    CheckingDependencies,
+    CheckingInstallation,
+    Installing,
+    Configuring,
+    Starting,
+    SyncingModels,
+}
+
+/// Result of the 1-click enable orchestrator
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnableResult {
+    /// Whether the enable flow completed successfully
+    pub success: bool,
+    /// Whether OpenClaw was already installed before this run
+    pub already_installed: bool,
+    /// Steps that were completed
+    pub steps_completed: Vec<EnableStep>,
+    /// Final OpenClaw status
+    pub status: OpenClawStatus,
+}
+
+/// Progress event emitted during the enable flow
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnableProgressEvent {
+    /// Current step identifier
+    pub step: String,
+    /// Progress percentage (0-100)
+    pub progress: u32,
+    /// Human-readable message
+    pub message: String,
+}
+
+/// Error with recovery options for the enable flow
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnableError {
+    /// Error code for programmatic handling
+    pub code: EnableErrorCode,
+    /// Human-readable error message
+    pub message: String,
+    /// Recovery options the user can take
+    pub recovery: Vec<RecoveryOption>,
+}
+
+/// Error codes for the enable flow
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum EnableErrorCode {
+    NodeNotFound,
+    NodeVersionTooLow,
+    NpmInstallFailed,
+    PortInUse,
+    ConfigWriteFailed,
+    GatewayStartFailed,
+}
+
+/// A recovery option the user can take
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoveryOption {
+    /// Button label
+    pub label: String,
+    /// Recovery action type
+    pub action: RecoveryAction,
+    /// Description of what this action does
+    pub description: String,
+}
+
+/// Recovery actions the frontend can execute
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RecoveryAction {
+    Retry,
+    OpenNodeDownload,
+    UseDifferentPort { port: u16 },
+}
+
 /// Security status response for the frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityStatus {

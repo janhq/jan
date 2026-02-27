@@ -20,21 +20,13 @@ import {
   IconAlertCircle,
   IconExternalLink,
 } from '@tabler/icons-react'
+import type { TelegramConfig } from '@/types/openclaw'
 
-// Types mirroring Rust backend
 interface TelegramTokenValidation {
   valid: boolean
   bot_username: string | null
   bot_name: string | null
   error: string | null
-}
-
-interface TelegramConfig {
-  bot_token: string
-  bot_username: string | null
-  connected: boolean
-  pairing_code: string | null
-  paired_users: number
 }
 
 interface TelegramWizardProps {
@@ -107,8 +99,7 @@ export function TelegramWizard({
           result.error || t('settings:remoteAccess.telegramWizard.step2.invalidToken')
         )
       }
-    } catch (error) {
-      console.error('Token validation error:', error)
+    } catch {
       toast.error(t('settings:remoteAccess.telegramWizard.errors.networkError'))
     } finally {
       setIsValidating(false)
@@ -127,7 +118,6 @@ export function TelegramWizard({
       setStep('pairing')
       toast.success(t('settings:remoteAccess.telegramWizard.step3.success'))
     } catch (error) {
-      console.error('Configure error:', error)
       toast.error(
         t('settings:remoteAccess.telegramWizard.step3.error', {
           error: error instanceof Error ? error.message : String(error),
@@ -157,7 +147,6 @@ export function TelegramWizard({
         onConnected(updatedConfig)
       }
     } catch (error) {
-      console.error('Pairing approval error:', error)
       const errorMsg = error instanceof Error ? error.message : String(error)
       toast.error(
         t('settings:remoteAccess.telegramWizard.step4.approveError', { error: errorMsg })
@@ -182,8 +171,8 @@ export function TelegramWizard({
       setValidation(null)
       setStep('instructions')
       toast.success(t('settings:remoteAccess.telegramWizard.status.notConnected'))
-    } catch (error) {
-      console.error('Disconnect error:', error)
+    } catch {
+      // Disconnect may fail if already disconnected
     }
   }
 
