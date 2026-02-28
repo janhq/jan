@@ -52,7 +52,7 @@ install-ios-rust-targets:
 
 dev: install-and-build
 	yarn download:bin
-	make build-mlx-server
+	make build-mlx-server-if-exists
 	yarn dev
 
 # Web application targets
@@ -120,7 +120,7 @@ endif
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --manifest-path src-tauri/utils/Cargo.toml
 
-# Build MLX server (macOS Apple Silicon only)
+# Build MLX server (macOS Apple Silicon only) - always builds
 build-mlx-server:
 ifeq ($(shell uname -s),Darwin)
 	@echo "Building MLX server for Apple Silicon..."
@@ -147,6 +147,18 @@ ifeq ($(shell uname -s),Darwin)
 		echo "Code signing completed successfully"; \
 	else \
 		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
+	fi
+else
+	@echo "Skipping MLX server build (macOS only)"
+endif
+
+# Build MLX server only if not already present (for dev)
+build-mlx-server-if-exists:
+ifeq ($(shell uname -s),Darwin)
+	@if [ -f "src-tauri/resources/bin/mlx-server" ]; then \
+		echo "MLX server already exists at src-tauri/resources/bin/mlx-server, skipping build..."; \
+	else \
+		make build-mlx-server; \
 	fi
 else
 	@echo "Skipping MLX server build (macOS only)"
