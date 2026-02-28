@@ -869,6 +869,15 @@ const ChatInput = memo(function ChatInput({
     return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
   }
 
+  const hashBase64 = async (base64: string): Promise<string> => {
+    const binary = atob(base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    const hashBuffer = await crypto.subtle.digest('SHA-256', bytes)
+    const hashArray = Array.from(new Uint8Array(hashBuffer))
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
+  }
+
   const processImageFiles = async (files: File[]) => {
     const maxSize = 10 * 1024 * 1024 // 10MB in bytes
     const oversizedFiles: string[] = []
@@ -925,42 +934,66 @@ const ChatInput = memo(function ChatInput({
       })
     }
 
+    // Compute content hashes for deduplication (allows different images with same filename)
+    for (const att of preparedFiles) {
+      if (att.base64) {
+        att.contentHash = await hashBase64(att.base64)
+      }
+    }
+
     let duplicates: string[] = []
     let newFiles: Attachment[] = []
 
-    setAttachmentsForThread(attachmentsKey, (currentAttachments) => {
-      const existingImageNames = new Set(
-        currentAttachments.filter((a) => a.type === 'image').map((a) => a.name)
-      )
+    const currentAttachments = useChatAttachments.getState().getAttachments(
+      attachmentsKey
+    )
 
-      duplicates = []
-      newFiles = []
-
-      for (const att of preparedFiles) {
-        if (existingImageNames.has(att.name)) {
-          duplicates.push(att.name)
-          continue
-        }
-        newFiles.push(att)
+    const existingImageHashes = new Set<string>()
+    const existingImageNames = new Set<string>()
+    for (const a of currentAttachments) {
+      if (a.type !== 'image') continue
+      if (a.contentHash) {
+        existingImageHashes.add(a.contentHash)
+      } else if (a.base64) {
+        existingImageHashes.add(await hashBase64(a.base64))
+      } else {
+        existingImageNames.add(a.name)
       }
+    }
 
-      if (newFiles.length > 0) {
-        return [...currentAttachments, ...newFiles]
+    const seenHashesInBatch = new Set<string>()
+    for (const att of preparedFiles) {
+      const hash = att.contentHash
+      const isDuplicateByContent =
+        hash &&
+        (existingImageHashes.has(hash) || seenHashesInBatch.has(hash))
+      const isDuplicateByName =
+        existingImageNames.has(att.name)
+      if (isDuplicateByContent || isDuplicateByName) {
+        duplicates.push(att.name)
+        continue
       }
-      return currentAttachments
-    })
+      if (hash) {
+        seenHashesInBatch.add(hash)
+      }
+      newFiles.push(att)
+    }
+
+    setAttachmentsForThread(attachmentsKey, (prev) =>
+      newFiles.length > 0 ? [...prev, ...newFiles] : prev
+    )
 
     if (currentThreadId && newFiles.length > 0) {
       void (async () => {
         for (const img of newFiles) {
+          const matchImg = (a: Attachment) =>
+            a.type === 'image' &&
+            (img.contentHash ? a.contentHash === img.contentHash : a.name === img.name)
+
           try {
             // Mark as processing
             setAttachmentsForThread(attachmentsKey, (prev) =>
-              prev.map((a) =>
-                a.name === img.name && a.type === 'image'
-                  ? { ...a, processing: true }
-                  : a
-              )
+              prev.map((a) => (matchImg(a) ? { ...a, processing: true } : a))
             )
 
             const result = await serviceHub
@@ -971,7 +1004,7 @@ const ChatInput = memo(function ChatInput({
               // Mark as processed with ID
               setAttachmentsForThread(attachmentsKey, (prev) =>
                 prev.map((a) =>
-                  a.name === img.name && a.type === 'image'
+                  matchImg(a)
                     ? {
                         ...a,
                         processing: false,
@@ -988,7 +1021,7 @@ const ChatInput = memo(function ChatInput({
             console.error('Failed to ingest image:', error)
             // Remove failed image
             setAttachmentsForThread(attachmentsKey, (prev) =>
-              prev.filter((a) => !(a.name === img.name && a.type === 'image'))
+              prev.filter((a) => !matchImg(a))
             )
             toast.error(`Failed to ingest ${img.name}`, {
               description:
