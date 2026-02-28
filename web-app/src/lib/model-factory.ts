@@ -179,6 +179,7 @@ export class ModelFactory {
       case 'cohere':
       case 'perplexity':
       case 'moonshot':
+      case 'llmapi':
         return this.createOpenAICompatibleModel(modelId, provider)
       default:
         return this.createOpenAICompatibleModel(modelId, provider, parameters)
