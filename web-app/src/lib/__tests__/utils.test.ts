@@ -19,6 +19,7 @@ describe('getProviderLogo', () => {
     )
     expect(getProviderLogo('openai')).toBe('/images/model-provider/openai.svg')
     expect(getProviderLogo('gemini')).toBe('/images/model-provider/gemini.svg')
+    expect(getProviderLogo('avian')).toBe('/images/model-provider/avian.svg')
   })
 
   it('returns undefined for unknown providers', () => {
