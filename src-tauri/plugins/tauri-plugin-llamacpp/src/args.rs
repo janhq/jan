@@ -225,11 +225,11 @@ impl ArgumentBuilder {
             if self.config.flash_attn == "on" {
                 self.args.push("-fa".to_string());
             }
-        } else if !self.config.flash_attn.is_empty() && self.config.flash_attn != "auto" {
-            // Standard llama.cpp uses --flash-attn
+        } else if self.config.flash_attn == "on" {
+            // Standard llama.cpp uses --flash-attn as a boolean flag
             self.args.push("--flash-attn".to_string());
-            self.args.push(self.config.flash_attn.clone());
         }
+        // "auto" and "off" → don't pass --flash-attn
     }
 
     fn add_boolean_flags(&mut self) {
@@ -549,7 +549,19 @@ mod tests {
         let builder = ArgumentBuilder::new(config, false).unwrap();
         let args = builder.build("test", "/path", 8080, None);
 
-        assert_arg_pair(&args, "--flash-attn", "on");
+        assert_has_flag(&args, "--flash-attn");
+        assert_no_flag(&args, "-fa");
+    }
+
+    #[test]
+    fn test_standard_backend_flash_attention_off_not_added() {
+        let mut config = default_config();
+        config.flash_attn = "off".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--flash-attn");
         assert_no_flag(&args, "-fa");
     }
 
@@ -983,7 +995,7 @@ mod tests {
         assert_arg_pair(&args, "--threads-batch", "8");
         assert_arg_pair(&args, "--batch-size", "1024");
         assert_arg_pair(&args, "--ctx-size", "4096");
-        assert_arg_pair(&args, "--flash-attn", "on");
+        assert_has_flag(&args, "--flash-attn");
         assert_has_flag(&args, "--cont-batching");
         assert_arg_pair(&args, "--rope-scaling", "linear");
         assert_arg_pair(&args, "--rope-scale", "2");
