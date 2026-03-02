@@ -154,7 +154,6 @@ export function DataProvider() {
       .then((unsub) => {
         unsubscribe = unsub
       })
-
     return () => {
       unsubscribe()
     }

@@ -66,6 +66,9 @@ enum Commands {
         /// Model ID to load (omit to pick interactively)
         #[arg(long)]
         model: Option<String>,
+        /// Path to the inference binary (auto-discovered from Jan data folder when omitted)
+        #[arg(long)]
+        bin: Option<String>,
         /// Port the model server listens on
         #[arg(long, default_value_t = 6767)]
         port: u16,
@@ -298,9 +301,9 @@ async fn main() {
         Commands::Models { cmd } => handle_models(cmd).await,
         Commands::App { cmd } => handle_app(cmd),
         Commands::Serve { args } => handle_serve(args).await,
-        Commands::Launch { program, program_args, model, port, api_key, n_gpu_layers, ctx_size, fit, verbose } => {
+        Commands::Launch { program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size, fit, verbose } => {
             let ctx_size_val = ctx_size.unwrap_or(4096);
-            handle_launch(program, program_args, model, port, api_key, n_gpu_layers, ctx_size_val, fit, ctx_size.is_none(), verbose).await
+            handle_launch(program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size_val, fit, ctx_size.is_none(), verbose).await
         }
     }
 }
@@ -883,6 +886,7 @@ async fn handle_launch(
     program: String,
     program_args: Vec<String>,
     model: Option<String>,
+    bin: Option<String>,
     port: u16,
     api_key: String,
     n_gpu_layers: i32,
@@ -906,7 +910,7 @@ async fn handle_launch(
     let effective_fit = fit.unwrap_or(is_claude && ctx_size_is_default);
 
     // Start the model server inline (same process, no detach).
-    let (pid, actual_port) = start_model_server(&model_id, port, api_key.clone(), n_gpu_layers, ctx_size, effective_fit, verbose).await;
+    let (pid, actual_port) = start_model_server(&model_id, bin, port, api_key.clone(), n_gpu_layers, ctx_size, effective_fit, verbose).await;
 
     // Model is ready — silence server request/response logs so they don't
     // flood the launched program's terminal (e.g. Claude Code's shell).
@@ -960,6 +964,7 @@ async fn handle_launch(
 /// Resolves the engine automatically (LlamaCPP or MLX).
 async fn start_model_server(
     model_id: &str,
+    bin: Option<String>,
     port: u16,
     api_key: String,
     n_gpu_layers: i32,
@@ -984,10 +989,11 @@ async fn start_model_server(
 
     if engine == "mlx" {
         use std::path::Path;
-        let bin_path = match discover_mlx_binary() {
-            Some(p) => p.to_string_lossy().into_owned(),
+        let bin_path = match bin.or_else(|| discover_mlx_binary().map(|p| p.to_string_lossy().into_owned())) {
+            Some(p) => p,
             None => {
                 finish_progress(pb, "✗ mlx-server binary not found");
+                eprintln!("Install Jan from https://jan.ai or pass --bin <path>.");
                 std::process::exit(1);
             }
         };
@@ -1017,10 +1023,11 @@ async fn start_model_server(
         finish_progress(pb, format!("✓ {model_id} ready · {url}"));
         (info.pid, info.port as u16)
     } else {
-        let bin_path = match discover_llamacpp_binary() {
-            Some(p) => p.to_string_lossy().into_owned(),
+        let bin_path = match bin.or_else(|| discover_llamacpp_binary().map(|p| p.to_string_lossy().into_owned())) {
+            Some(p) => p,
             None => {
                 finish_progress(pb, "✗ llama-server binary not found");
+                eprintln!("Install a backend from Jan's settings or pass --bin <path>.");
                 std::process::exit(1);
             }
         };
