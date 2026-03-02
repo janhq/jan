@@ -366,7 +366,7 @@
     "sandboxLinux": "Espaces de noms Linux",
     "sandboxWsl2": "WSL2",
     "sandboxDocker": "Docker",
-    "securityAdvisory": "OpenClaw s'exécute sans isolation par bac à sable. Pour une meilleure sécurité, activez WSL2 (Windows) ou mettez à jour vers macOS Tahoe.",
+    "securityAdvisory": "OpenClaw s'exécute sans isolation par bac à sable. Pour une meilleure sécurité, activez Docker pour exécuter OpenClaw dans un conteneur.",
     "learnMore": "En savoir plus",
     "logViewer": "Logs du bac à sable",
     "noLogs": "Aucun log disponible",

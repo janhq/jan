@@ -360,7 +360,7 @@
     "sandboxLinux": "Namespaces Linux",
     "sandboxWsl2": "WSL2",
     "sandboxDocker": "Docker",
-    "securityAdvisory": "OpenClaw está sendo executado sem isolamento de sandbox. Para maior segurança, ative o WSL2 (Windows) ou atualize para o macOS Tahoe.",
+    "securityAdvisory": "OpenClaw está sendo executado sem isolamento de sandbox. Para maior segurança, ative o Docker para executar o OpenClaw em um contêiner.",
     "learnMore": "Saiba mais",
     "logViewer": "Logs do Sandbox",
     "noLogs": "Sem logs disponíveis",

@@ -328,7 +328,7 @@
     "sandboxLinux": "Linux Namespaces",
     "sandboxWsl2": "WSL2",
     "sandboxDocker": "Docker",
-    "securityAdvisory": "OpenClaw đang chạy không có sandbox. Để bảo mật tốt hơn, hãy bật WSL2 (Windows) hoặc cập nhật lên macOS Tahoe.",
+    "securityAdvisory": "OpenClaw đang chạy không có sandbox. Để bảo mật tốt hơn, hãy bật Docker để chạy OpenClaw trong container.",
     "learnMore": "Tìm hiểu thêm",
     "logViewer": "Logs Sandbox",
     "noLogs": "Không có logs",

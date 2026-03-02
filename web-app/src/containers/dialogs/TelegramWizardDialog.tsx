@@ -19,6 +19,7 @@ import {
   IconLoader2,
   IconAlertCircle,
   IconExternalLink,
+  IconRefresh,
 } from '@tabler/icons-react'
 import type { TelegramConfig } from '@/types/openclaw'
 
@@ -53,6 +54,7 @@ export function TelegramWizard({
   const [config, setConfig] = useState<TelegramConfig | null>(null)
   const [pairingCode, setPairingCode] = useState('')
   const [isApproving, setIsApproving] = useState(false)
+  const [isResettingPairing, setIsResettingPairing] = useState(false)
 
   // Reset state when dialog closes
   useEffect(() => {
@@ -160,6 +162,19 @@ export function TelegramWizard({
     setStep('success')
     if (config && onConnected) {
       onConnected(config)
+    }
+  }
+
+  const handleResetPairing = async () => {
+    setIsResettingPairing(true)
+    try {
+      await invoke('telegram_clear_pending_pairing')
+      setPairingCode('')
+      toast.success(t('settings:remoteAccess.telegramWizard.step4.resetSuccess'))
+    } catch {
+      toast.error(t('settings:remoteAccess.telegramWizard.step4.resetError'))
+    } finally {
+      setIsResettingPairing(false)
     }
   }
 
@@ -360,6 +375,15 @@ export function TelegramWizard({
           placeholder={t('settings:remoteAccess.telegramWizard.step4.codePlaceholder')}
           className="font-mono text-center text-lg tracking-wider"
         />
+        <button
+          type="button"
+          onClick={handleResetPairing}
+          disabled={isResettingPairing}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mx-auto"
+        >
+          <IconRefresh size={12} className={isResettingPairing ? 'animate-spin' : ''} />
+          {t('settings:remoteAccess.telegramWizard.step4.resetPairing')}
+        </button>
       </div>
 
       <div className="flex gap-2">

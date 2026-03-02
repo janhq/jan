@@ -328,7 +328,7 @@
     "sandboxLinux": "Przestrzenie nazw Linux",
     "sandboxWsl2": "WSL2",
     "sandboxDocker": "Docker",
-    "securityAdvisory": "OpenClaw działa bez izolacji piaskownicy. Aby uzyskać lepsze bezpieczeństwo, włącz WSL2 (Windows) lub zaktualizuj do macOS Tahoe.",
+    "securityAdvisory": "OpenClaw działa bez izolacji piaskownicy. Aby uzyskać lepsze bezpieczeństwo, włącz Docker, aby uruchomić OpenClaw w kontenerze.",
     "learnMore": "Dowiedz się więcej",
     "logViewer": "Logi piaskownicy",
     "noLogs": "Brak logów",

@@ -328,7 +328,7 @@
     "sandboxLinux": "Linux Namespaces",
     "sandboxWsl2": "WSL2",
     "sandboxDocker": "Docker",
-    "securityAdvisory": "OpenClaw läuft ohne Sandbox-Isolation. Für bessere Sicherheit aktivieren Sie WSL2 (Windows) oder aktualisieren Sie auf macOS Tahoe.",
+    "securityAdvisory": "OpenClaw läuft ohne Sandbox-Isolation. Für bessere Sicherheit aktivieren Sie Docker, um OpenClaw in einem Container auszuführen.",
     "learnMore": "Mehr erfahren",
     "logViewer": "Sandbox-Logs",
     "noLogs": "Keine Logs verfügbar",

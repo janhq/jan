@@ -360,7 +360,7 @@
     "sandboxLinux": "Linux Namespaces",
     "sandboxWsl2": "WSL2",
     "sandboxDocker": "Docker",
-    "securityAdvisory": "OpenClaw běží bez izolace pískoviště. Pro lepší bezpečnost povolte WSL2 (Windows) nebo aktualizujte na macOS Tahoe.",
+    "securityAdvisory": "OpenClaw běží bez izolace pískoviště. Pro lepší bezpečnost povolte Docker pro spuštění OpenClaw v kontejneru.",
     "learnMore": "Zjistit více",
     "logViewer": "Logy pískoviště",
     "noLogs": "Žádné logy",

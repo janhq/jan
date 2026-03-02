@@ -25,6 +25,8 @@ impl Default for OpenClawConfig {
 /// Gateway configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GatewayConfig {
+    /// Gateway mode: "local" (run server here) or "remote" (connect to remote)
+    pub mode: String,
     /// Bind address (loopback or 0.0.0.0)
     pub bind: String,
     /// Port number
@@ -39,6 +41,7 @@ pub struct GatewayConfig {
 impl Default for GatewayConfig {
     fn default() -> Self {
         Self {
+            mode: "local".to_string(),
             bind: "loopback".to_string(),
             port: super::OPENCLAW_PORT,
             auth: AuthConfig::default(),
@@ -118,6 +121,22 @@ impl Default for ProvidersConfig {
     }
 }
 
+/// A single model definition for OpenClaw's provider config.
+/// Only `id` and `name` are required by OpenClaw's Zod schema.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelDefinition {
+    /// Model identifier (plain name, no provider prefix)
+    pub id: String,
+    /// Human-readable display name
+    pub name: String,
+    /// Context window size in tokens
+    #[serde(rename = "contextWindow", skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u32>,
+    /// Maximum output tokens
+    #[serde(rename = "maxTokens", skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+}
+
 /// Jan provider configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JanProviderConfig {
@@ -126,8 +145,8 @@ pub struct JanProviderConfig {
     pub base_url: String,
     /// API type (openai-completions, etc.)
     pub api: String,
-    /// List of models to use (or ["*"] for all)
-    pub models: Vec<String>,
+    /// List of model definitions (objects with at least { id, name })
+    pub models: Vec<ModelDefinition>,
 }
 
 impl Default for JanProviderConfig {
@@ -135,7 +154,14 @@ impl Default for JanProviderConfig {
         Self {
             base_url: constants::DEFAULT_JAN_BASE_URL.to_string(),
             api: constants::DEFAULT_JAN_API_TYPE.to_string(),
-            models: vec!["*".to_string()],
+            // Start with the pinned default model; openclaw_sync_all_models
+            // replaces this list with the full catalog from Jan.
+            models: vec![ModelDefinition {
+                id: constants::DEFAULT_MODEL_ID.to_string(),
+                name: constants::DEFAULT_MODEL_ID.to_string(),
+                context_window: Some(128000),
+                max_tokens: Some(4096),
+            }],
         }
     }
 }

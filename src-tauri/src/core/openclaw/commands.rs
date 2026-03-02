@@ -18,6 +18,37 @@ use crate::core::openclaw::{
 /// Request ID counter for WebSocket messages
 static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
+/// Container name for the Docker sandbox
+const DOCKER_CONTAINER_NAME: &str = "jan-openclaw";
+
+/// Check if the Docker container `jan-openclaw` is running.
+/// Used to decide whether CLI commands should route through `docker exec`.
+async fn is_docker_container_running() -> bool {
+    Command::new("docker")
+        .args(["inspect", "--format", "{{.State.Running}}", DOCKER_CONTAINER_NAME])
+        .output()
+        .await
+        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "true")
+        .unwrap_or(false)
+}
+
+/// Build a `Command` for running an `openclaw` CLI command.
+/// If the Docker container is running, routes through `docker exec`;
+/// otherwise runs the host-installed `openclaw` binary directly.
+async fn openclaw_command(args: &[&str]) -> Command {
+    if is_docker_container_running().await {
+        let mut cmd = Command::new("docker");
+        let mut full_args: Vec<&str> = vec!["exec", DOCKER_CONTAINER_NAME, "openclaw"];
+        full_args.extend_from_slice(args);
+        cmd.args(full_args);
+        cmd
+    } else {
+        let mut cmd = Command::new("openclaw");
+        cmd.args(args);
+        cmd
+    }
+}
+
 /// Flag to prevent repeated gateway restarts during WhatsApp auth polling.
 /// Reset when a new auth session starts via whatsapp_start_auth.
 static WA_RESTART_ATTEMPTED: AtomicBool = AtomicBool::new(false);
@@ -499,8 +530,7 @@ async fn test_gateway_connection() -> Result<(), String> {
 async fn restart_gateway_cli() -> Result<(), String> {
     log::info!("Restarting Gateway via CLI...");
 
-    let output = Command::new("openclaw")
-        .args(["gateway", "restart"])
+    let output = openclaw_command(&["gateway", "restart"]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -753,8 +783,7 @@ pub async fn openclaw_check_port(port: u16) -> PortCheckResult {
 
 /// Check if OpenClaw is installed and get its version
 async fn check_openclaw_installed() -> Result<Option<String>, String> {
-    let output = Command::new("openclaw")
-        .arg("--version")
+    let output = openclaw_command(&["--version"]).await
         .output()
         .await;
 
@@ -905,8 +934,7 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
     }
 
     // 2. Configure WhatsApp with pairing mode by default (safer for users)
-    if let Ok(mut child) = Command::new("openclaw")
-        .args(["config", "set", "channels.whatsapp.dmPolicy", "pairing"])
+    if let Ok(mut child) = openclaw_command(&["config", "set", "channels.whatsapp.dmPolicy", "pairing"]).await
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -915,8 +943,7 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
     }
 
     // 3. Configure Telegram with pairing mode by default
-    if let Ok(mut child) = Command::new("openclaw")
-        .args(["config", "set", "channels.telegram.dmPolicy", "pairing"])
+    if let Ok(mut child) = openclaw_command(&["config", "set", "channels.telegram.dmPolicy", "pairing"]).await
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -926,8 +953,7 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
 
     // 4. Enable dangerouslyDisableDeviceAuth for Jan's Control UI client
     // This allows Jan to connect without device pairing (Jan is trusted)
-    if let Ok(mut child) = Command::new("openclaw")
-        .args(["config", "set", "gateway.controlUi.dangerouslyDisableDeviceAuth", "true"])
+    if let Ok(mut child) = openclaw_command(&["config", "set", "gateway.controlUi.dangerouslyDisableDeviceAuth", "true"]).await
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -936,8 +962,7 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
     }
 
     // 5. Set gateway.mode to "local" - required for gateway to start
-    if let Ok(mut child) = Command::new("openclaw")
-        .args(["config", "set", "gateway.mode", "local"])
+    if let Ok(mut child) = openclaw_command(&["config", "set", "gateway.mode", "local"]).await
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -1131,14 +1156,26 @@ pub async fn openclaw_configure(config_input: Option<OpenClawConfigInput>) -> Re
     Ok(config)
 }
 
-/// Strip known-invalid keys from an OpenClaw config.
-/// OpenClaw uses strict Zod validation — unknown keys cause the gateway to refuse to start.
+/// Sanitise an OpenClaw config value before writing it to disk.
+/// 1. Strips known-invalid keys (OpenClaw uses strict Zod validation).
+/// 2. Ensures required fields are present (e.g., gateway.mode = "local").
 fn strip_invalid_config_keys(config: &mut serde_json::Value) {
     // agents.defaults.systemPrompt is NOT a valid key (system prompts come from workspace files)
     if let Some(defaults) = config.pointer_mut("/agents/defaults") {
         if let Some(obj) = defaults.as_object_mut() {
             if obj.remove("systemPrompt").is_some() {
                 log::info!("Stripped invalid key: agents.defaults.systemPrompt");
+            }
+        }
+    }
+
+    // gateway.mode is REQUIRED — without it the gateway refuses to start.
+    // Ensure it is always present and defaults to "local".
+    if let Some(gw) = config.get_mut("gateway") {
+        if let Some(obj) = gw.as_object_mut() {
+            if !obj.contains_key("mode") {
+                obj.insert("mode".to_string(), serde_json::json!("local"));
+                log::info!("Added missing required key: gateway.mode = \"local\"");
             }
         }
     }
@@ -1172,9 +1209,12 @@ fn read_openclaw_config() -> Result<serde_json::Value, String> {
 }
 
 /// Write a JSON Value back to the OpenClaw config file.
+/// Automatically sanitises the config (strip invalid keys, ensure required keys).
 fn write_openclaw_config(config: &serde_json::Value) -> Result<(), String> {
     let config_path = get_openclaw_config_path()?;
-    let json = serde_json::to_string_pretty(config)
+    let mut sanitized = config.clone();
+    strip_invalid_config_keys(&mut sanitized);
+    let json = serde_json::to_string_pretty(&sanitized)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
     std::fs::write(&config_path, json)
         .map_err(|e| format!("Failed to write config: {}", e))
@@ -1194,19 +1234,19 @@ pub async fn openclaw_sync_model(
 
     let display_name = model_name.unwrap_or_else(|| model_id.clone());
 
-    // Determine context window based on provider type
+    // Determine context window based on Jan provider type
     let context_window = if provider.as_deref() == Some("llamacpp") || provider.as_deref() == Some("mlx") {
         16000
     } else {
         128000
     };
 
+    // OpenClaw models.providers.jan.models expects an array of objects with
+    // at minimum { id, name }. The id must be the plain model name — OpenClaw
+    // prepends the provider key ("jan/") when resolving references.
     let model_def = serde_json::json!({
         "id": model_id,
         "name": display_name,
-        "reasoning": false,
-        "input": ["text"],
-        "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
         "contextWindow": context_window,
         "maxTokens": 4096
     });
@@ -1216,7 +1256,6 @@ pub async fn openclaw_sync_model(
 
     // Ensure models.providers.jan exists
     if config.pointer("/models/providers/jan").is_none() {
-        // Read the current baseUrl to preserve Docker vs direct process setting
         let current_base_url = config
             .pointer("/models/providers/jan/baseUrl")
             .and_then(|v| v.as_str())
@@ -1225,8 +1264,6 @@ pub async fn openclaw_sync_model(
         config["models"]["providers"]["jan"] = serde_json::json!({
             "baseUrl": current_base_url,
             "api": DEFAULT_JAN_API_TYPE,
-            "authHeader": false,
-            "apiKey": "not-needed",
             "models": [model_def]
         });
     } else {
@@ -1245,15 +1282,14 @@ pub async fn openclaw_sync_model(
         }
     }
 
-    // Set as default model
-    config["agents"]["defaults"]["model"]["primary"] = serde_json::json!(model_id);
-
-    // Clean up any invalid keys before writing
-    strip_invalid_config_keys(&mut config);
+    // Default model reference must use "jan/<model_id>" so OpenClaw resolves
+    // it under the "jan" provider.
+    let qualified_id = format!("jan/{}", model_id);
+    config["agents"]["defaults"]["model"]["primary"] = serde_json::json!(qualified_id);
 
     write_openclaw_config(&config)?;
 
-    log::info!("Successfully synced model '{}' to OpenClaw config", model_id);
+    log::info!("Successfully synced model '{}' to OpenClaw config (default: {})", model_id, qualified_id);
     Ok(())
 }
 
@@ -1278,7 +1314,8 @@ pub async fn openclaw_sync_all_models(
         });
     }
 
-    // Build model definitions array
+    // Build model definition objects.
+    // Only { id, name } are required; contextWindow and maxTokens are optional.
     let model_defs: Vec<serde_json::Value> = models
         .iter()
         .map(|entry| {
@@ -1291,9 +1328,6 @@ pub async fn openclaw_sync_all_models(
             serde_json::json!({
                 "id": entry.model_id,
                 "name": entry.display_name,
-                "reasoning": false,
-                "input": ["text"],
-                "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
                 "contextWindow": context_window,
                 "maxTokens": 4096
             })
@@ -1312,25 +1346,21 @@ pub async fn openclaw_sync_all_models(
         .unwrap_or(DEFAULT_JAN_BASE_URL)
         .to_string();
 
-    // Build the full jan provider config with all models
+    // Build the full jan provider config with all models as objects
     config["models"]["providers"]["jan"] = serde_json::json!({
         "baseUrl": current_base_url,
         "api": DEFAULT_JAN_API_TYPE,
-        "authHeader": false,
-        "apiKey": "not-needed",
         "models": model_defs
     });
 
-    // Set the default model if provided
+    // Default model must be "jan/<model_id>" so OpenClaw resolves under the jan provider
     let set_default = if let Some(ref model_id) = default_model_id {
-        config["agents"]["defaults"]["model"]["primary"] = serde_json::json!(model_id);
-        Some(format!("jan/{}", model_id))
+        let qualified = format!("jan/{}", model_id);
+        config["agents"]["defaults"]["model"]["primary"] = serde_json::json!(qualified);
+        Some(qualified)
     } else {
         None
     };
-
-    // Clean up any invalid keys before writing
-    strip_invalid_config_keys(&mut config);
 
     write_openclaw_config(&config)?;
 
@@ -1352,6 +1382,10 @@ pub async fn openclaw_get_model() -> Result<String, String> {
         .and_then(|v| v.as_str())
         .unwrap_or(DEFAULT_MODEL_ID)
         .to_string();
+
+    // Strip the "jan/" provider prefix so the frontend gets the plain model ID
+    // that matches Jan's internal model identifiers.
+    let model = model.strip_prefix("jan/").unwrap_or(&model).to_string();
 
     Ok(model)
 }
@@ -1966,8 +2000,7 @@ pub async fn telegram_validate_token(token: String) -> TelegramTokenValidation {
 async fn enable_channel_plugin(channel: &str) -> Result<(), String> {
     log::info!("Enabling {} plugin in OpenClaw", channel);
 
-    let enable_output = Command::new("openclaw")
-        .args(["plugins", "enable", channel])
+    let enable_output = openclaw_command(&["plugins", "enable", channel]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -2012,14 +2045,13 @@ pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String>
     enable_channel_plugin("telegram").await?;
 
     // Add Telegram channel using OpenClaw CLI
-    let add_output = Command::new("openclaw")
-        .args([
+    let add_output = openclaw_command(&[
             "channels",
             "add",
             "--channel", "telegram",
             "--token", &token,
             "--account", "default",
-        ])
+        ]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -2043,6 +2075,12 @@ pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String>
                 if !add_stderr.is_empty() { add_stderr.to_string() } else { add_stdout.to_string() }
             ));
         }
+    }
+
+    // Clear any stale pending pairing codes so the user gets a fresh slot
+    // when they tap /start in the bot (OpenClaw caps pending codes at 3).
+    if let Err(e) = telegram_clear_pending_pairing().await {
+        log::warn!("Failed to clear pending pairing codes: {}", e);
     }
 
     // Also store in local config for Jan's reference
@@ -2101,6 +2139,32 @@ pub async fn telegram_get_config() -> Result<TelegramConfig, String> {
     })
 }
 
+/// Clear all pending Telegram pairing codes.
+///
+/// OpenClaw caps pending pairing requests at 3 per channel.  After that,
+/// `/start` silently does nothing until a code is approved or expires (1 h).
+/// By resetting the pairing state file we guarantee the user always gets a
+/// fresh code slot when they open the wizard or tap `/start` again.
+#[tauri::command]
+pub async fn telegram_clear_pending_pairing() -> Result<(), String> {
+    log::info!("Clearing pending Telegram pairing codes");
+
+    let config_dir = get_openclaw_config_dir()?;
+    let pairing_path = config_dir.join("credentials").join("telegram-pairing.json");
+
+    if pairing_path.exists() {
+        // Reset to an empty request list (keep the version marker)
+        let empty = serde_json::json!({ "version": 1, "requests": [] });
+        std::fs::write(&pairing_path, serde_json::to_string_pretty(&empty).unwrap())
+            .map_err(|e| format!("Failed to clear pairing state: {}", e))?;
+        log::info!("Cleared pending pairing codes at {:?}", pairing_path);
+    } else {
+        log::info!("No pairing state file to clear");
+    }
+
+    Ok(())
+}
+
 /// Check if Telegram channel is actually connected in OpenClaw gateway
 #[tauri::command]
 pub async fn telegram_check_pairing() -> Result<bool, String> {
@@ -2137,8 +2201,7 @@ pub async fn telegram_check_pairing() -> Result<bool, String> {
 
     // Fallback: try openclaw channels status --probe CLI
     log::info!("Gateway WebSocket unavailable, falling back to CLI check");
-    let status_output = Command::new("openclaw")
-        .args(["channels", "status", "--probe"])
+    let status_output = openclaw_command(&["channels", "status", "--probe"]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -2186,8 +2249,7 @@ pub async fn telegram_check_pairing() -> Result<bool, String> {
 pub async fn telegram_approve_pairing(code: String) -> Result<(), String> {
     log::info!("Approving Telegram pairing code: {}", code);
 
-    let output = Command::new("openclaw")
-        .args(["pairing", "approve", "telegram", &code])
+    let output = openclaw_command(&["pairing", "approve", "telegram", &code]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -2274,8 +2336,7 @@ pub async fn openclaw_list_channels() -> Result<ChannelList, String> {
     log::info!("Listing OpenClaw channels");
 
     // Run openclaw channels list to get configured channels
-    let list_output = Command::new("openclaw")
-        .args(["channels", "list"])
+    let list_output = openclaw_command(&["channels", "list"]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -2341,8 +2402,7 @@ pub async fn openclaw_channel_status(channel: String) -> Result<ChannelStatus, S
     log::info!("Getting status for channel: {}", channel);
 
     // Run openclaw channels status to get detailed status
-    let status_output = Command::new("openclaw")
-        .args(["channels", "status", "--probe"])
+    let status_output = openclaw_command(&["channels", "status", "--probe"]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -2559,15 +2619,21 @@ pub async fn whatsapp_start_auth(state: tauri::State<'_, OpenClawState>) -> Resu
     enable_channel_plugin("whatsapp").await?;
 
     // Now add WhatsApp channel using CLI
-    // This configures the channel in OpenClaw's config
-    let add_output = Command::new("openclaw")
-        .args([
+    // For Docker: the auth dir is inside the container at /home/node/.openclaw/whatsapp_auth
+    // For direct process: it's the host path from get_openclaw_config_dir()
+    let effective_auth_dir = if is_docker_container_running().await {
+        "/home/node/.openclaw/whatsapp_auth".to_string()
+    } else {
+        auth_dir.to_string_lossy().to_string()
+    };
+
+    let add_output = openclaw_command(&[
             "channels",
             "add",
             "--channel", "whatsapp",
             "--account", "default",
-            "--auth-dir", &auth_dir.to_string_lossy(),
-        ])
+            "--auth-dir", &effective_auth_dir,
+        ]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -2917,8 +2983,7 @@ pub async fn whatsapp_check_auth() -> Result<WhatsAppAuthStatus, String> {
                         // it into connecting. The flag is reset in whatsapp_start_auth.
                         if !WA_RESTART_ATTEMPTED.swap(true, Ordering::SeqCst) {
                             log::info!("Restarting gateway to establish WhatsApp connection");
-                            let _ = Command::new("openclaw")
-                                .args(["gateway", "restart"])
+                            let _ = openclaw_command(&["gateway", "restart"]).await
                                 .stdout(Stdio::piped())
                                 .stderr(Stdio::piped())
                                 .output()
@@ -3257,14 +3322,13 @@ pub async fn discord_configure(token: String) -> Result<DiscordConfig, String> {
     enable_channel_plugin("discord").await?;
 
     // Add Discord channel using OpenClaw CLI
-    let add_output = Command::new("openclaw")
-        .args([
+    let add_output = openclaw_command(&[
             "channels",
             "add",
             "--channel", "discord",
             "--token", &token,
             "--account", "default",
-        ])
+        ]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()

@@ -325,7 +325,7 @@
     "sandboxLinux": "Linux 名前空間",
     "sandboxWsl2": "WSL2",
     "sandboxDocker": "Docker",
-    "securityAdvisory": "OpenClawはサンドボックス隔離なしで実行されています。より安全な环境にするには、WindowsでWSL2を有効にするか、macOS Tahoeにアップデートしてください。",
+    "securityAdvisory": "OpenClawはサンドボックス隔離なしで実行されています。より安全な環境にするには、Dockerを有効にしてOpenClawをコンテナで実行してください。",
     "learnMore": "詳細",
     "logViewer": "サンドボックスログ",
     "noLogs": "ログがありません",

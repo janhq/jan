@@ -328,7 +328,7 @@
     "sandboxLinux": "Linux 命名空間",
     "sandboxWsl2": "WSL2",
     "sandboxDocker": "Docker",
-    "securityAdvisory": "OpenClaw 正在無沙箱隔離的情況下執行。為了更好的安全性，請在 Windows 上啟用 WSL2 或更新到 macOS Tahoe。",
+    "securityAdvisory": "OpenClaw 正在無沙箱隔離的情況下執行。為了更好的安全性，請啟用 Docker 以在容器中執行 OpenClaw。",
     "learnMore": "了解更多",
     "logViewer": "沙箱日誌",
     "noLogs": "沒有日誌",
