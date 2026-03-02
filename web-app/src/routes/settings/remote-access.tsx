@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
 import { TelegramWizard as TelegramWizardDialog } from '@/containers/dialogs/TelegramWizardDialog'
 import { WhatsAppWizardDialog, WhatsAppConfig } from '@/containers/dialogs/WhatsAppWizardDialog'
-import { DiscordWizardDialog, DiscordConfig } from '@/containers/dialogs/DiscordWizardDialog'
 import { AddChannelDialog, ChannelType } from '@/containers/dialogs/AddChannelDialog'
 import { TailscaleSetupDialog } from '@/containers/dialogs/TailscaleSetupDialog'
 import { SecurityConfigDialog } from '@/containers/dialogs/SecurityConfigDialog'
@@ -113,19 +112,6 @@ const convertWhatsAppConfig = (config: WhatsAppConfig | null): ChannelWhatsAppCo
   }
 }
 
-const convertDiscordConfig = (config: DiscordConfig | null): ChannelDiscordConfig | null => {
-  if (!config) return null
-  return {
-    account_id: config.account_id,
-    bot_token: config.bot_token,
-    bot_username: config.bot_username,
-    bot_discriminator: config.bot_discriminator,
-    connected: config.connected,
-    guilds_count: config.guilds_count,
-    channels_count: config.channels_count,
-  }
-}
-
 function RemoteAccess() {
   const { t } = useTranslation()
   const [status, setStatus] = useState<OpenClawStatus | null>(null)
@@ -135,7 +121,6 @@ function RemoteAccess() {
   const [isInstalling, setIsInstalling] = useState(false)
   const [isTelegramWizardOpen, setIsTelegramWizardOpen] = useState(false)
   const [isWhatsAppWizardOpen, setIsWhatsAppWizardOpen] = useState(false)
-  const [isDiscordWizardOpen, setIsDiscordWizardOpen] = useState(false)
   const [isAddChannelDialogOpen, setIsAddChannelDialogOpen] = useState(false)
   const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
   const [isSecurityDialogOpen, setIsSecurityDialogOpen] = useState(false)
@@ -144,7 +129,6 @@ function RemoteAccess() {
   const [, setSecurityStatus] = useState<SecurityStatus | null>(null)
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null)
   const [whatsappConfig, setWhatsAppConfig] = useState<WhatsAppConfig | null>(null)
-  const [discordConfig, setDiscordConfig] = useState<DiscordConfig | null>(null)
 
   // Fetch status on mount
   const fetchStatus = useCallback(async () => {
@@ -192,24 +176,6 @@ function RemoteAccess() {
 
   const handleWhatsAppWizardConnected = useCallback((config: WhatsAppConfig) => {
     setWhatsAppConfig(config)
-  }, [])
-
-  // Fetch Discord config on mount
-  const fetchDiscordConfig = useCallback(async () => {
-    try {
-      const config = await invoke<DiscordConfig>('discord_get_config')
-      setDiscordConfig(config)
-    } catch (error) {
-      console.error('Failed to fetch Discord config:', error)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchDiscordConfig()
-  }, [fetchDiscordConfig])
-
-  const handleDiscordWizardConnected = useCallback((config: DiscordConfig) => {
-    setDiscordConfig(config)
   }, [])
 
   // Fetch WhatsApp config on mount
@@ -380,9 +346,6 @@ function RemoteAccess() {
       case 'whatsapp':
         setIsWhatsAppWizardOpen(true)
         break
-      case 'discord':
-        setIsDiscordWizardOpen(true)
-        break
     }
   }
 
@@ -401,10 +364,6 @@ function RemoteAccess() {
           await invoke('whatsapp_disconnect')
           setWhatsAppConfig(null)
           break
-        case 'discord':
-          await invoke('discord_disconnect')
-          setDiscordConfig(null)
-          break
       }
       toast.success(
         t('settings:remoteAccess.channelDisconnected', { channel: getChannelName(channel) })
@@ -420,7 +379,6 @@ function RemoteAccess() {
     const channels: ChannelType[] = []
     if (telegramConfig?.connected) channels.push('telegram')
     if (whatsappConfig?.connected) channels.push('whatsapp')
-    if (discordConfig?.connected) channels.push('discord')
     return channels
   }
 
@@ -478,8 +436,7 @@ function RemoteAccess() {
                     {isRunning
                       ? String(
                           (telegramConfig?.paired_users ?? 0) +
-                            (whatsappConfig?.contacts_count ?? 0) +
-                            (discordConfig?.guilds_count ?? 0)
+                            (whatsappConfig?.contacts_count ?? 0)
                         )
                       : '0'}
                   </span>
@@ -595,13 +552,6 @@ function RemoteAccess() {
                   onDisconnect={() => handleDisconnectChannel('whatsapp')}
                   OCIsInstalled={isInstalled}
                 />
-                <ChannelCard
-                  type="discord"
-                  config={convertDiscordConfig(discordConfig)}
-                  onSettings={() => handleChannelSettings('discord')}
-                  onDisconnect={() => handleDisconnectChannel('discord')}
-                  OCIsInstalled={isInstalled}
-                />
               </div>
 
               {/* Share Access */}
@@ -682,13 +632,6 @@ function RemoteAccess() {
         isOpen={isWhatsAppWizardOpen}
         onOpenChange={setIsWhatsAppWizardOpen}
         onConnected={handleWhatsAppWizardConnected}
-      />
-
-      {/* Discord Wizard Dialog */}
-      <DiscordWizardDialog
-        isOpen={isDiscordWizardOpen}
-        onOpenChange={setIsDiscordWizardOpen}
-        onConnected={handleDiscordWizardConnected}
       />
 
       {/* Add Channel Dialog */}
