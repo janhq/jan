@@ -3,13 +3,12 @@ import { Button } from '@/components/ui/button'
 import {
   IconBrandTelegram,
   IconBrandWhatsapp,
-  IconBrandDiscord,
   IconSettings,
   IconTrash,
 } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 
-export type ChannelType = 'telegram' | 'whatsapp' | 'discord'
+export type ChannelType = 'telegram' | 'whatsapp' 
 
 // Channel configuration interfaces
 export interface TelegramConfig {
@@ -29,18 +28,8 @@ export interface WhatsAppConfig {
   contacts_count: number
 }
 
-export interface DiscordConfig {
-  account_id: string
-  bot_token: string
-  bot_username: string | null
-  bot_discriminator: string | null
-  connected: boolean
-  guilds_count: number
-  channels_count: number
-}
-
 // Union type for all channel configs
-export type ChannelConfig = TelegramConfig | WhatsAppConfig | DiscordConfig
+export type ChannelConfig = TelegramConfig | WhatsAppConfig 
 
 interface ChannelCardProps {
   type: ChannelType
@@ -67,8 +56,6 @@ export function ChannelCard({
         return <IconBrandTelegram size={16} className="text-blue-500" />
       case 'whatsapp':
         return <IconBrandWhatsapp size={16} className="text-green-500" />
-      case 'discord':
-        return <IconBrandDiscord size={16} className="text-indigo-500" />
     }
   }
 
@@ -78,8 +65,6 @@ export function ChannelCard({
         return t('settings:remoteAccess.telegram')
       case 'whatsapp':
         return t('settings:remoteAccess.whatsapp')
-      case 'discord':
-        return t('settings:remoteAccess.discord')
     }
   }
 
@@ -94,10 +79,6 @@ export function ChannelCard({
       case 'whatsapp': {
         const wa = config as WhatsAppConfig
         return wa.phone_number || ''
-      }
-      case 'discord': {
-        const dc = config as DiscordConfig
-        return dc.bot_username ? `${dc.bot_username}#${dc.bot_discriminator || ''}` : ''
       }
       default:
         return ''
@@ -162,7 +143,7 @@ export function ChannelCard({
       {/* Not Connected State */}
       {!isConnected && OCIsInstalled && (
         <div className="border-t border-border/40 px-4 py-3 bg-muted/30">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {t('settings:remoteAccess.channelNotConnected', {
               channel: getChannelName(),
             })}

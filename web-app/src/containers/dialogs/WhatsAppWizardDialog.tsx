@@ -478,22 +478,7 @@ export function WhatsAppWizardDialog({
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <IconBrandWhatsapp className="h-5 w-5 text-green-500" />
-            {t('settings:remoteAccess.whatsapp')}
-          </DialogTitle>
-          <DialogDescription>
-            {step === 'welcome' && t('settings:remoteAccess.whatsappWizard.whatsappWizardDescription')}
-            {step === 'scanning' && t('settings:remoteAccess.whatsappWizard.scanQrCodeDescription')}
-            {step === 'verifying' && t('settings:remoteAccess.whatsappWizard.verifyingDescription')}
-            {step === 'success' && t('settings:remoteAccess.whatsappWizard.successDescription')}
-            {step === 'error' && t('settings:remoteAccess.whatsappWizard.errorDescription')}
-          </DialogDescription>
-        </DialogHeader>
-
         <div className="py-2">{renderStepContent()}</div>
-
         <DialogFooter className="sm:justify-between">
           {renderFooter()}
         </DialogFooter>

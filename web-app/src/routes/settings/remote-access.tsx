@@ -10,7 +10,7 @@ import { AddChannelDialog, ChannelType } from '@/containers/dialogs/AddChannelDi
 import { TailscaleSetupDialog } from '@/containers/dialogs/TailscaleSetupDialog'
 import { SecurityConfigDialog } from '@/containers/dialogs/SecurityConfigDialog'
 import { TunnelSelectionDialog } from '@/containers/dialogs/TunnelSelectionDialog'
-import { ChannelCard, TelegramConfig as ChannelTelegramConfig, WhatsAppConfig as ChannelWhatsAppConfig, DiscordConfig as ChannelDiscordConfig } from '@/containers/ChannelCard'
+import { ChannelCard, TelegramConfig as ChannelTelegramConfig, WhatsAppConfig as ChannelWhatsAppConfig } from '@/containers/ChannelCard'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useEffect, useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
@@ -330,8 +330,6 @@ function RemoteAccess() {
         return t('settings:remoteAccess.telegram')
       case 'whatsapp':
         return t('settings:remoteAccess.whatsapp')
-      case 'discord':
-        return t('settings:remoteAccess.discord')
       default:
         return channel
     }
