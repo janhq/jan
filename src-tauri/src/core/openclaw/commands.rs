@@ -771,6 +771,39 @@ async fn check_openclaw_installed() -> Result<Option<String>, String> {
     }
 }
 
+/// Get OpenClaw version from inside the Docker container via `docker exec`.
+/// Returns None if the container isn't running or the command fails.
+async fn check_openclaw_version_docker() -> Option<String> {
+    let output = Command::new("docker")
+        .args(["exec", "jan-openclaw", "openclaw", "--version"])
+        .output()
+        .await
+        .ok()?;
+
+    if output.status.success() {
+        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if version.is_empty() { None } else { Some(version) }
+    } else {
+        None
+    }
+}
+
+/// Get Node.js version from inside the Docker container via `docker exec`.
+async fn check_node_version_docker() -> Option<String> {
+    let output = Command::new("docker")
+        .args(["exec", "jan-openclaw", "node", "--version"])
+        .output()
+        .await
+        .ok()?;
+
+    if output.status.success() {
+        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if version.is_empty() { None } else { Some(version) }
+    } else {
+        None
+    }
+}
+
 /// Install OpenClaw globally via npm
 #[tauri::command]
 pub async fn openclaw_install() -> Result<InstallResult, String> {
@@ -1740,29 +1773,34 @@ pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClaw
 
     let running = check_gateway_responding().await;
 
-    let openclaw_version = match check_openclaw_installed().await {
-        Ok(v) => v,
-        Err(_) => None,
-    };
-
-    // Determine "installed" based on which sandbox is detected.
-    // When Docker is the sandbox, we need the Docker image to exist locally.
-    // When direct process is the sandbox, we need the npm package on the host.
+    // Determine sandbox type early — it affects how we check version & installed
     let is_docker_sandbox = {
         let sandbox_guard = state.sandbox.lock().await;
         sandbox_guard.as_ref().map(|s| s.name() == "Docker").unwrap_or(false)
     };
 
-    let is_installed = if is_docker_sandbox {
-        // For Docker sandbox: installed means the Docker image is available locally
-        // (container existence is transient — it's created/destroyed on start/stop)
-        crate::core::openclaw::sandbox_docker::DockerSandbox::is_image_available().await
+    let (openclaw_version, is_installed, node_version) = if is_docker_sandbox {
+        // Docker sandbox: get version from `docker exec`, skip host Node.js check
+        let version = check_openclaw_version_docker().await;
+        let installed = crate::core::openclaw::sandbox_docker::DockerSandbox::is_image_available().await;
+        // Node.js runs inside the container, not on the host
+        let node_ver = if running {
+            check_node_version_docker().await
+        } else {
+            None
+        };
+        (version, installed, node_ver)
     } else {
-        // For direct process: installed means the npm package is on the host
-        openclaw_version.is_some()
+        // Direct process: check host npm + Node.js
+        let version = match check_openclaw_installed().await {
+            Ok(v) => v,
+            Err(_) => None,
+        };
+        let installed = version.is_some();
+        let node_check = openclaw_check_dependencies().await;
+        (version, installed, node_check.version)
     };
 
-    let node_check = openclaw_check_dependencies().await;
     let port_check = openclaw_check_port(OPENCLAW_PORT).await;
 
     // Get sandbox information from state
@@ -1799,7 +1837,7 @@ pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClaw
     Ok(OpenClawStatus {
         installed: is_installed,
         running,
-        node_version: node_check.version,
+        node_version,
         openclaw_version,
         port_available: port_check.available,
         error: None,
