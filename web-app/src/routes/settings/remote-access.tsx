@@ -26,7 +26,6 @@ import {
   IconCopy,
   IconExternalLink,
 } from '@tabler/icons-react'
-import { cn } from '@/lib/utils'
 import type {
   ChannelType,
   TelegramConfig,
@@ -42,7 +41,7 @@ export const Route = createFileRoute(route.settings.remote_access as any)({
   component: RemoteAccess,
 })
 
-const OPENCLAW_PORT = 18789
+// const OPENCLAW_PORT = 18789
 
 function RemoteAccess() {
   const { t } = useTranslation()
@@ -237,8 +236,9 @@ function RemoteAccess() {
         <SettingsMenu />
         <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            <Card title={t('settings:remoteAccess.title')}>
-              <CardItem
+            {/* Status Card */}
+            {/* <Card title={t('settings:remoteAccess.title')}>
+              <CardItem 
                 title={t('settings:remoteAccess.status')}
                 actions={
                   <div className="flex items-center gap-2">
@@ -296,7 +296,7 @@ function RemoteAccess() {
                   actions={<span className="text-foreground">{status.openclaw_version}</span>}
                 />
               )}
-            </Card>
+            </Card> */}
 
             <Card title={t('settings:remoteAccess.quickSetup')}>
               <CardItem
