@@ -11,6 +11,7 @@ use tauri::State;
 use crate::core::openclaw::{
     constants::*,
     models::*,
+    sandbox::Sandbox,
     get_openclaw_config_path, get_openclaw_config_dir, OpenClawState, OPENCLAW_PORT, MIN_NODE_VERSION,
 };
 
@@ -1605,15 +1606,14 @@ pub async fn openclaw_enable(
     })
 }
 
-/// Start the OpenClaw gateway
+/// Start the OpenClaw gateway via the sandbox abstraction.
 #[tauri::command]
-pub async fn openclaw_start(_state: State<'_, OpenClawState>) -> Result<(), String> {
+pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), String> {
     log::info!("Starting OpenClaw gateway");
 
     // Check if gateway is already responding
     if check_gateway_responding().await {
         log::info!("OpenClaw gateway is already running on port {}", OPENCLAW_PORT);
-        // Even if running externally, ensure Jan's origin is configured
         let _ = openclaw_ensure_jan_origin().await;
         return Ok(());
     }
@@ -1627,197 +1627,90 @@ pub async fn openclaw_start(_state: State<'_, OpenClawState>) -> Result<(), Stri
     // Check port availability
     let port_check = openclaw_check_port(OPENCLAW_PORT).await;
     if !port_check.available {
-        // Port is in use but gateway not responding - something else is using the port
         return Err(format!("Port {} is already in use by another application", OPENCLAW_PORT));
     }
 
     // Ensure config exists
     let config_path = get_openclaw_config_path()?;
     if !config_path.exists() {
-        // Generate default config (includes Jan's allowed origins by default)
         openclaw_configure(None).await?;
     } else {
-        // Config exists, ensure Jan's origin is in allowedOrigins
-        // This is crucial for the 1-click experience - users shouldn't need to manually edit config
         openclaw_ensure_jan_origin().await?;
     }
 
-    // First, ensure the gateway service is installed (required on fresh install)
-    // This registers the launchd service on macOS
-    log::info!("Ensuring OpenClaw gateway service is installed");
-    if let Ok(mut install_child) = Command::new("openclaw")
-        .args(["gateway", "install"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+    // Detect sandbox if not yet initialized
     {
-        let _ = install_child.wait().await;
-    }
-
-    // Start OpenClaw gateway via CLI
-    // Note: 'openclaw gateway start' starts a launchd service (daemon) and exits immediately
-    // The actual gateway runs as a separate daemon process, not as a child of this CLI command
-    log::info!("Starting OpenClaw gateway service");
-    let output = Command::new("openclaw")
-        .args(["gateway", "start"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run openclaw gateway start: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        log::error!("openclaw gateway start failed: stdout={}, stderr={}", stdout, stderr);
-        return Err(format!("Failed to start OpenClaw gateway: {}", stderr));
-    }
-
-    // Wait for the gateway to actually start responding
-    // The launchd service takes a moment to initialize
-    log::info!("Waiting for OpenClaw gateway to become responsive...");
-    for i in 0..10 {
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        if check_gateway_responding().await {
-            log::info!("OpenClaw gateway started successfully on port {}", OPENCLAW_PORT);
-            return Ok(());
+        let mut sandbox_guard = state.sandbox.lock().await;
+        if sandbox_guard.is_none() {
+            let detected = crate::core::openclaw::sandbox::detect_sandbox().await;
+            log::info!("Detected sandbox: {} (tier: {})", detected.name(), detected.isolation_tier());
+            *sandbox_guard = Some(detected);
         }
-        log::debug!("Gateway not responding yet, attempt {}/10", i + 1);
     }
 
-    // Gateway didn't respond in time
-    Err("OpenClaw gateway started but is not responding. Check logs at /tmp/openclaw/".to_string())
+    // Build config and start via lifecycle module
+    let config = crate::core::openclaw::lifecycle::build_sandbox_config(
+        &crate::core::openclaw::constants::DEFAULT_JAN_BASE_URL,
+    )?;
+
+    let sandbox_guard = state.sandbox.lock().await;
+    let sandbox = sandbox_guard.as_ref().ok_or("Sandbox not initialized")?;
+    crate::core::openclaw::lifecycle::start_openclaw(sandbox.as_ref(), &config, &state).await
 }
 
-/// Stop the OpenClaw gateway
+/// Stop the OpenClaw gateway via the sandbox abstraction.
 #[tauri::command]
-pub async fn openclaw_stop(_state: State<'_, OpenClawState>) -> Result<(), String> {
+pub async fn openclaw_stop(state: State<'_, OpenClawState>) -> Result<(), String> {
     log::info!("Stopping OpenClaw gateway");
 
-    // Use 'openclaw gateway stop' to properly stop the launchd service
-    // This is the correct way to stop the gateway when started via 'openclaw gateway start'
-    let mut stopped_via_cli = false;
-    let stop_result = Command::new("openclaw")
-        .args(["gateway", "stop"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
-
-    match stop_result {
-        Ok(mut child) => {
-            match child.wait().await {
-                Ok(status) => {
-                    if status.success() {
-                        log::info!("OpenClaw gateway stop command succeeded");
-                        stopped_via_cli = true;
-                    } else {
-                        log::warn!("openclaw gateway stop returned non-zero status, trying fallback");
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Failed to wait for gateway stop: {}", e);
-                }
-            }
+    let sandbox_guard = state.sandbox.lock().await;
+    match sandbox_guard.as_ref() {
+        Some(sandbox) => {
+            crate::core::openclaw::lifecycle::stop_openclaw(sandbox.as_ref(), &state).await
         }
-        Err(e) => {
-            log::warn!("Failed to run openclaw gateway stop: {}", e);
+        None => {
+            // Sandbox never initialized — fall back to direct CLI stop
+            log::info!("No sandbox detected, using direct CLI stop");
+            let direct = crate::core::openclaw::sandbox_direct::DirectProcessSandbox;
+            let mut handle = crate::core::openclaw::sandbox::SandboxHandle::Named("direct-process".to_string());
+            direct.stop(&mut handle).await
         }
     }
-
-    // Fallback: try to kill by process name
-    if !stopped_via_cli {
-        #[cfg(target_os = "macos")]
-        {
-            let _ = Command::new("pkill")
-                .arg("-f")
-                .arg("openclaw")
-                .output()
-                .await;
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            let _ = Command::new("pkill")
-                .arg("-f")
-                .arg("openclaw")
-                .output()
-                .await;
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            let _ = Command::new("taskkill")
-                .args(["/F", "/IM", "openclaw.exe"])
-                .output()
-                .await;
-        }
-    }
-
-    // Wait for the port to actually be released before returning.
-    // Without this, the caller may immediately check status and find
-    // the gateway still responding (race condition).
-    for i in 0..10 {
-        if !check_gateway_responding().await {
-            log::info!("OpenClaw gateway stopped successfully (port released after {} checks)", i + 1);
-            return Ok(());
-        }
-        log::debug!("Gateway still responding after stop, waiting... attempt {}/10", i + 1);
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    }
-
-    // Port is still occupied after 5 seconds - try SIGKILL as last resort
-    log::warn!("OpenClaw gateway still responding after 5s, sending SIGKILL");
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    {
-        let _ = Command::new("pkill")
-            .arg("-9")
-            .arg("-f")
-            .arg("openclaw")
-            .output()
-            .await;
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let _ = Command::new("taskkill")
-            .args(["/F", "/IM", "openclaw.exe"])
-            .output()
-            .await;
-    }
-
-    // Final wait after SIGKILL
-    for i in 0..6 {
-        if !check_gateway_responding().await {
-            log::info!("OpenClaw gateway stopped after SIGKILL (attempt {})", i + 1);
-            return Ok(());
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    }
-
-    log::warn!("OpenClaw gateway may still be running after stop attempts");
-    Ok(())
 }
 
-/// Get the current OpenClaw status
+/// Get the current OpenClaw status, including sandbox information.
 #[tauri::command]
-pub async fn openclaw_status(_state: State<'_, OpenClawState>) -> Result<OpenClawStatus, String> {
+pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClawStatus, String> {
     log::info!("Getting OpenClaw status");
 
-    // Check if gateway is responding on the expected port
-    // This is the source of truth - the gateway runs as a launchd daemon,
-    // not as a child process we track
     let running = check_gateway_responding().await;
 
-    // Check if OpenClaw is installed
     let openclaw_version = match check_openclaw_installed().await {
         Ok(v) => v,
         Err(_) => None,
     };
 
-    // Check Node.js
     let node_check = openclaw_check_dependencies().await;
-
-    // Check port
     let port_check = openclaw_check_port(OPENCLAW_PORT).await;
+
+    // Get sandbox information from state
+    let (sandbox_type, isolation_tier) = {
+        let sandbox_guard = state.sandbox.lock().await;
+        let mode = state.sandbox_mode.lock().await;
+        match (&*sandbox_guard, &*mode) {
+            (Some(sandbox), crate::core::openclaw::sandbox::SandboxMode::Active { .. }) => {
+                (
+                    Some(sandbox.name().to_string()),
+                    Some(sandbox.isolation_tier().to_string()),
+                )
+            }
+            (Some(sandbox), _) if running => {
+                // Gateway running but not tracked (started externally)
+                (Some(sandbox.name().to_string()), Some(sandbox.isolation_tier().to_string()))
+            }
+            _ => (None, None),
+        }
+    };
 
     Ok(OpenClawStatus {
         installed: openclaw_version.is_some(),
@@ -1826,21 +1719,18 @@ pub async fn openclaw_status(_state: State<'_, OpenClawState>) -> Result<OpenCla
         openclaw_version,
         port_available: port_check.available,
         error: None,
+        sandbox_type,
+        isolation_tier,
     })
 }
 
-/// Restart the OpenClaw gateway
+/// Restart the OpenClaw gateway via the sandbox abstraction.
 #[tauri::command]
 pub async fn openclaw_restart(state: State<'_, OpenClawState>) -> Result<(), String> {
     log::info!("Restarting OpenClaw gateway");
 
-    // Stop first
     openclaw_stop(state.clone()).await?;
-
-    // Wait a bit for the process to fully terminate
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-
-    // Start again
     openclaw_start(state).await
 }
 

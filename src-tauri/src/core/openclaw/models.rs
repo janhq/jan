@@ -205,6 +205,12 @@ pub struct OpenClawStatus {
     pub port_available: bool,
     /// Error message (if any)
     pub error: Option<String>,
+    /// Active sandbox type name (e.g., "Linux Namespaces", "WSL2", "Docker", "Direct Process")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sandbox_type: Option<String>,
+    /// Isolation tier ("none", "platform_sandbox", "full_container")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub isolation_tier: Option<String>,
 }
 
 /// Node.js check result

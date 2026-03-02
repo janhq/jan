@@ -1,7 +1,19 @@
 pub mod cli;
 pub mod commands;
 pub mod constants;
+pub mod health;
+pub mod lifecycle;
 pub mod models;
+pub mod sandbox;
+pub mod sandbox_direct;
+#[cfg(target_os = "linux")]
+pub mod sandbox_native;
+#[cfg(target_os = "windows")]
+pub mod sandbox_wsl2;
+#[cfg(target_os = "macos")]
+pub mod sandbox_apple;
+#[cfg(feature = "docker")]
+pub mod sandbox_docker;
 pub mod security;
 pub mod tailscale;
 pub mod tunnels;
@@ -11,6 +23,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
+use sandbox::{Sandbox, SandboxMode};
 use tunnels::TunnelState;
 
 /// OpenClaw configuration directory
@@ -36,17 +49,20 @@ pub const MIN_NODE_VERSION: u32 = 22;
 
 /// OpenClaw Manager state
 pub struct OpenClawState {
-    /// Process handle for the OpenClaw gateway
-    pub process_handle: Arc<Mutex<Option<tokio::process::Child>>>,
     /// Tunnel state for managing tunnel processes
     pub tunnel_state: TunnelState,
+    /// Current sandbox mode (inactive or active with handle)
+    pub sandbox_mode: Arc<Mutex<SandboxMode>>,
+    /// Detected sandbox implementation (set once on first use via detect_sandbox())
+    pub sandbox: Arc<Mutex<Option<Box<dyn Sandbox>>>>,
 }
 
 impl Default for OpenClawState {
     fn default() -> Self {
         Self {
-            process_handle: Arc::new(Mutex::new(None)),
             tunnel_state: TunnelState::default(),
+            sandbox_mode: Arc::new(Mutex::new(SandboxMode::Inactive)),
+            sandbox: Arc::new(Mutex::new(None)),
         }
     }
 }

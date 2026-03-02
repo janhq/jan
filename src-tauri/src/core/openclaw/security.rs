@@ -10,6 +10,55 @@ use uuid::Uuid;
 use super::get_openclaw_config_dir;
 use super::models::{AccessLogEntry, DeviceInfo, SecurityConfig};
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
+/// Checks and fixes permissions on the OpenClaw config directory.
+///
+/// Ensures the config directory has restrictive permissions (700) to prevent
+/// unauthorized access to sensitive files like security tokens and credentials.
+/// This is called before starting any sandbox to ensure the config is secure.
+pub async fn ensure_secure_config_permissions(config_dir: &std::path::Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        // Ensure the config directory exists
+        if !config_dir.exists() {
+            tokio::fs::create_dir_all(config_dir)
+                .await
+                .map_err(|e| format!("Failed to create config dir: {}", e))?;
+        }
+
+        let metadata = tokio::fs::metadata(config_dir)
+            .await
+            .map_err(|e| format!("Cannot stat config dir: {}", e))?;
+
+        let mode = metadata.permissions().mode() & 0o777;
+
+        // Check if group/other have any permissions
+        if mode & 0o077 != 0 {
+            let mut perms = metadata.permissions();
+            perms.set_mode(0o700);
+            tokio::fs::set_permissions(config_dir, perms)
+                .await
+                .map_err(|e| format!("Cannot fix config dir permissions: {}", e))?;
+            log::info!("Fixed ~/.openclaw permissions to 700");
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        // On non-Unix systems (Windows), we don't have the same permission model
+        // but we still ensure the directory exists
+        if !config_dir.exists() {
+            tokio::fs::create_dir_all(config_dir)
+                .await
+                .map_err(|e| format!("Failed to create config dir: {}", e))?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Maximum number of access log entries to keep
 const MAX_ACCESS_LOG_ENTRIES: usize = 1000;
 

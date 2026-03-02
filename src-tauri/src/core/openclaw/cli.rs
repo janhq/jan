@@ -69,6 +69,8 @@ pub async fn get_status() -> Result<OpenClawStatus, String> {
         openclaw_version,
         port_available,
         error: None,
+        sandbox_type: None,
+        isolation_tier: None,
     })
 }
 
