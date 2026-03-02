@@ -104,6 +104,7 @@ pub fn run() {
         core::system::commands::check_jan_cli_installed,
         core::system::commands::install_jan_cli,
         core::system::commands::uninstall_jan_cli,
+        core::system::commands::clear_claude_code_env,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
@@ -265,6 +266,7 @@ pub fn run() {
         core::system::commands::check_jan_cli_installed,
         core::system::commands::install_jan_cli,
         core::system::commands::uninstall_jan_cli,
+        core::system::commands::clear_claude_code_env,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,

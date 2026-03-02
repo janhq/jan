@@ -408,6 +408,98 @@ pub fn uninstall_jan_cli() -> Result<(), String> {
     Ok(())
 }
 
+/// Build the cleaned shell-file content with all Jan CC env vars stripped out.
+fn build_cleaned_env_content(env_file_path: &str) -> String {
+    let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
+    let cleaned: Vec<&str> = existing_content
+        .split('\n')
+        .filter(|line| {
+            !line.starts_with("# Jan Local API Server - Claude Code Config")
+                && !line.starts_with("# Jan Local API Server")
+                && !line.starts_with("export ANTHROPIC_")
+        })
+        .collect();
+    // Trim trailing blank lines left behind by the removed block
+    cleaned.join("\n").trim_end().to_string() + "\n"
+}
+
+/// Clear all Jan-written Claude Code environment variables from the shell config.
+/// Uses the same write-probe + osascript-fallback logic as `launch_claude_code_with_config`.
+#[tauri::command]
+pub fn clear_claude_code_env() -> Result<(), String> {
+    if cfg!(target_os = "macos") {
+        let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
+        let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, true);
+        log::info!("Clearing CC env from shell: {}, file: {}", shell_name, env_file_path);
+
+        let cleaned = build_cleaned_env_content(&env_file_path);
+
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&env_file_path)
+        {
+            Ok(_) => {
+                std::fs::write(&env_file_path, &cleaned).map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+            Err(_) => {
+                // Write cleaned content to a temp file, then use osascript to move it
+                let temp_path = format!("{}/.jan_env_clear.sh", home_dir);
+                std::fs::write(&temp_path, &cleaned).map_err(|e| e.to_string())?;
+
+                let script = format!(
+                    r#"do shell script "cp '{}' '{}' && rm '{}'" with administrator privileges"#,
+                    temp_path, env_file_path, temp_path
+                );
+
+                std::process::Command::new("osascript")
+                    .arg("-e")
+                    .arg(&script)
+                    .output()
+                    .map_err(|e| e.to_string())?;
+
+                log::info!("CC env cleared from {} with admin privileges", env_file_path);
+                return Ok(());
+            }
+        }
+    } else if cfg!(target_os = "linux") {
+        let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
+        let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, false);
+        log::info!("Clearing CC env from shell: {}, file: {}", shell_name, env_file_path);
+
+        let cleaned = build_cleaned_env_content(&env_file_path);
+
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&env_file_path)
+        {
+            Ok(_) => {
+                std::fs::write(&env_file_path, &cleaned).map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            Err(_) => Err(format!("NEED_PERMISSION:{}", env_file_path)),
+        }
+    } else {
+        // Windows: delete the persistent user env vars from the registry
+        let keys = [
+            "ANTHROPIC_BASE_URL",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        ];
+        for key in &keys {
+            let _ = std::process::Command::new("reg")
+                .args(["delete", "HKCU\\Environment", "/v", key, "/f"])
+                .output();
+        }
+        log::info!("CC env vars removed from Windows registry.");
+        Ok(())
+    }
+}
+
 /// Determine the best writable directory for the Jan CLI install.
 fn jan_cli_install_dir() -> Result<PathBuf, String> {
     #[cfg(unix)]
