@@ -75,12 +75,15 @@ enum Commands {
         /// GPU layers to offload (-1 = all layers, 0 = CPU only)
         #[arg(long, default_value_t = -1)]
         n_gpu_layers: i32,
-        /// Context window size in tokens (0 = model default)
-        #[arg(long, default_value_t = 4096)]
-        ctx_size: i32,
-        /// Auto-fit context to available VRAM (default: on when launching claude)
+        /// Context window size in tokens (default: 4096; disables --fit when set explicitly)
+        #[arg(long)]
+        ctx_size: Option<i32>,
+        /// Auto-fit context to available VRAM (default: on when launching claude, unless --ctx-size is set)
         #[arg(long)]
         fit: Option<bool>,
+        /// Print full server logs (llama.cpp / mlx output) instead of the loading spinner
+        #[arg(long, short = 'v', default_value_t = false)]
+        verbose: bool,
     },
     /// List and inspect conversation threads saved by the Jan app
     #[command(display_order = 10)]
@@ -171,6 +174,9 @@ struct ServeArgs {
     /// Log file for background mode (default: <data-folder>/logs/serve.log)
     #[arg(long)]
     log: Option<String>,
+    /// Print full server logs (llama.cpp / mlx output) instead of the loading spinner
+    #[arg(long, short = 'v', default_value_t = false)]
+    verbose: bool,
 }
 
 // ── Models subcommands ─────────────────────────────────────────────────────
@@ -271,10 +277,11 @@ fn make_logo() -> String {
 
 #[tokio::main]
 async fn main() {
-    // Default to warn so verbose plugin logs don't clutter the spinner output.
-    // Override with RUST_LOG=debug for troubleshooting.
+    // Pre-scan raw args for --verbose / -v before full parse so we can set
+    // the log level before any logging happens.
+    let verbose = std::env::args().any(|a| a == "--verbose" || a == "-v");
     env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("warn"),
+        env_logger::Env::default().default_filter_or(if verbose { "info" } else { "warn" }),
     )
     .init();
 
@@ -291,8 +298,10 @@ async fn main() {
         Commands::Models { cmd } => handle_models(cmd).await,
         Commands::App { cmd } => handle_app(cmd),
         Commands::Serve { args } => handle_serve(args).await,
-        Commands::Launch { program, program_args, model, port, api_key, n_gpu_layers, ctx_size, fit } =>
-            handle_launch(program, program_args, model, port, api_key, n_gpu_layers, ctx_size, fit).await,
+        Commands::Launch { program, program_args, model, port, api_key, n_gpu_layers, ctx_size, fit, verbose } => {
+            let ctx_size_val = ctx_size.unwrap_or(4096);
+            handle_launch(program, program_args, model, port, api_key, n_gpu_layers, ctx_size_val, fit, ctx_size.is_none(), verbose).await
+        }
     }
 }
 
@@ -438,7 +447,7 @@ async fn handle_models(cmd: ModelsCommands) {
     }
 }
 
-// ── Spinner helper ─────────────────────────────────────────────────────────
+// ── Spinner / progress helpers ─────────────────────────────────────────────
 
 fn make_spinner(msg: impl Into<std::borrow::Cow<'static, str>>) -> ProgressBar {
     let pb = ProgressBar::new_spinner();
@@ -451,6 +460,25 @@ fn make_spinner(msg: impl Into<std::borrow::Cow<'static, str>>) -> ProgressBar {
     pb.set_message(msg);
     pb.enable_steady_tick(std::time::Duration::from_millis(80));
     pb
+}
+
+/// Start a spinner, or print a plain status line if verbose mode is on.
+/// Returns `None` in verbose mode so callers know to skip spinner updates.
+fn start_progress(verbose: bool, msg: impl Into<String>) -> Option<ProgressBar> {
+    if verbose {
+        eprintln!("{}", msg.into());
+        None
+    } else {
+        Some(make_spinner(msg.into()))
+    }
+}
+
+/// Finish the spinner with a final message, or print the message plainly in verbose mode.
+fn finish_progress(pb: Option<ProgressBar>, msg: impl AsRef<str>) {
+    match pb {
+        Some(pb) => pb.finish_with_message(msg.as_ref().to_string()),
+        None => eprintln!("{}", msg.as_ref()),
+    }
 }
 
 // ── HuggingFace auto-download ──────────────────────────────────────────────
@@ -600,6 +628,7 @@ fn spawn_detached(model_id: &str, args: &ServeArgs) {
     argv.push(format!("--threads={}",      args.threads));
     if !args.api_key.is_empty()        { argv.push(format!("--api-key={}", args.api_key)); }
     if args.fit                        { argv.push("--fit".into()); }
+    if args.verbose                    { argv.push("--verbose".into()); }
 
     // Resolve log file path
     let log_path: PathBuf = args.log.as_deref()
@@ -672,6 +701,7 @@ async fn handle_serve(args: ServeArgs) {
         fit,
         detach: _,
         log: _,
+        verbose,
     } = args;
 
     // When --fit is on, let llama.cpp decide the context size automatically
@@ -712,7 +742,7 @@ async fn handle_serve(args: ServeArgs) {
             }
         };
 
-    let pb = make_spinner(format!("Loading {} ({engine})…", model_id));
+    let pb = start_progress(verbose, format!("Loading {} ({engine})…", model_id));
 
     if engine == "mlx" {
         use std::path::Path;
@@ -722,7 +752,7 @@ async fn handle_serve(args: ServeArgs) {
             None => match discover_mlx_binary() {
                 Some(p) => p.to_string_lossy().into_owned(),
                 None => {
-                    pb.finish_with_message("✗ mlx-server binary not found".to_string());
+                    finish_progress(pb, "✗ mlx-server binary not found");
                     eprintln!("Install Jan from https://jan.ai or pass --bin <path>.");
                     std::process::exit(1);
                 }
@@ -750,7 +780,7 @@ async fn handle_serve(args: ServeArgs) {
         {
             Ok(info) => {
                 let url = format!("http://127.0.0.1:{}", info.port);
-                pb.finish_with_message(format!("✓ {model_id} ready · {url}"));
+                finish_progress(pb, format!("✓ {model_id} ready · {url}"));
                 eprintln!();
                 eprintln!("  Endpoint  {url}/v1");
                 eprintln!();
@@ -758,7 +788,7 @@ async fn handle_serve(args: ServeArgs) {
                 wait_for_shutdown(info.pid).await;
             }
             Err(e) => {
-                pb.finish_with_message(format!("✗ Failed to load {model_id}"));
+                finish_progress(pb, format!("✗ Failed to load {model_id}"));
                 eprintln!(
                     "\n{}",
                     serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}"))
@@ -773,7 +803,7 @@ async fn handle_serve(args: ServeArgs) {
             None => match discover_llamacpp_binary() {
                 Some(p) => p.to_string_lossy().into_owned(),
                 None => {
-                    pb.finish_with_message("✗ llama-server binary not found".to_string());
+                    finish_progress(pb, "✗ llama-server binary not found");
                     eprintln!("Install a backend from Jan's settings or pass --bin <path>.");
                     std::process::exit(1);
                 }
@@ -804,7 +834,7 @@ async fn handle_serve(args: ServeArgs) {
         {
             Ok(info) => {
                 let url = format!("http://127.0.0.1:{}", info.port);
-                pb.finish_with_message(format!("✓ {model_id} ready · {url}"));
+                finish_progress(pb, format!("✓ {model_id} ready · {url}"));
                 eprintln!();
                 eprintln!("  Endpoint  {url}/v1");
                 eprintln!();
@@ -812,7 +842,7 @@ async fn handle_serve(args: ServeArgs) {
                 wait_for_shutdown(info.pid).await;
             }
             Err(e) => {
-                pb.finish_with_message(format!("✗ Failed to load {model_id}"));
+                finish_progress(pb, format!("✗ Failed to load {model_id}"));
                 eprintln!(
                     "\n{}",
                     serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}"))
@@ -858,6 +888,8 @@ async fn handle_launch(
     n_gpu_layers: i32,
     ctx_size: i32,
     fit: Option<bool>,
+    ctx_size_is_default: bool,
+    verbose: bool,
 ) {
     let model_id = model.unwrap_or_else(select_model_interactively);
 
@@ -868,11 +900,19 @@ async fn handle_launch(
         .unwrap_or(&program);
     let is_claude = prog_name.contains("claude");
 
-    // --fit defaults to true when launching claude (maximises context window).
-    let effective_fit = fit.unwrap_or(is_claude);
+    // --fit defaults to true when launching claude, but only if --ctx-size was
+    // not explicitly provided (an explicit ctx-size means the user wants that
+    // exact context, so fit would override it — don't do that).
+    let effective_fit = fit.unwrap_or(is_claude && ctx_size_is_default);
 
     // Start the model server inline (same process, no detach).
-    let (pid, actual_port) = start_model_server(&model_id, port, api_key.clone(), n_gpu_layers, ctx_size, effective_fit).await;
+    let (pid, actual_port) = start_model_server(&model_id, port, api_key.clone(), n_gpu_layers, ctx_size, effective_fit, verbose).await;
+
+    // Model is ready — silence server request/response logs so they don't
+    // flood the launched program's terminal (e.g. Claude Code's shell).
+    if verbose {
+        log::set_max_level(log::LevelFilter::Warn);
+    }
 
     let base_url = format!("http://127.0.0.1:{actual_port}");
     let v1_url   = format!("{base_url}/v1");
@@ -925,6 +965,7 @@ async fn start_model_server(
     n_gpu_layers: i32,
     ctx_size: i32,
     fit: bool,
+    verbose: bool,
 ) -> (i32, u16) {
     let (engine, model_path, mmproj) = match resolve_model_engine(model_id) {
         Ok(r) => r,
@@ -939,19 +980,22 @@ async fn start_model_server(
     };
     let model_path = model_path.to_string_lossy().into_owned();
 
-    let pb = make_spinner(format!("Loading {} ({engine})…", model_id));
+    let pb = start_progress(verbose, format!("Loading {} ({engine})…", model_id));
 
     if engine == "mlx" {
         use std::path::Path;
-        let bin_path = discover_mlx_binary().unwrap_or_else(|| {
-            pb.finish_with_message("✗ mlx-server binary not found".to_string());
-            std::process::exit(1);
-        });
+        let bin_path = match discover_mlx_binary() {
+            Some(p) => p.to_string_lossy().into_owned(),
+            None => {
+                finish_progress(pb, "✗ mlx-server binary not found");
+                std::process::exit(1);
+            }
+        };
         let mlx_state = Arc::new(init_mlx_state());
         let mut envs = HashMap::new();
         if !api_key.is_empty() { envs.insert("MLX_API_KEY".into(), api_key.clone()); }
         let effective_ctx_size = if fit { 0 } else { ctx_size };
-        let info = load_mlx_model_impl(
+        let info = match load_mlx_model_impl(
             mlx_state.mlx_server_process.clone(),
             Path::new(&bin_path),
             model_id.to_string(),
@@ -961,28 +1005,32 @@ async fn start_model_server(
             envs,
             false,
             120,
-        ).await.unwrap_or_else(|e| {
-            pb.finish_with_message(format!("✗ Failed to load {model_id}"));
-            eprintln!("{}", serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}")));
-            std::process::exit(1);
-        });
+        ).await {
+            Ok(info) => info,
+            Err(e) => {
+                finish_progress(pb, format!("✗ Failed to load {model_id}"));
+                eprintln!("{}", serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}")));
+                std::process::exit(1);
+            }
+        };
         let url = format!("http://127.0.0.1:{}", info.port);
-        pb.finish_with_message(format!("✓ {model_id} ready · {url}"));
+        finish_progress(pb, format!("✓ {model_id} ready · {url}"));
         (info.pid, info.port as u16)
     } else {
-        let bin_path = discover_llamacpp_binary()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|| {
-                pb.finish_with_message("✗ llama-server binary not found".to_string());
+        let bin_path = match discover_llamacpp_binary() {
+            Some(p) => p.to_string_lossy().into_owned(),
+            None => {
+                finish_progress(pb, "✗ llama-server binary not found");
                 std::process::exit(1);
-            });
+            }
+        };
         let llama_state = Arc::new(init_llamacpp_state());
         let mut envs = HashMap::new();
         if !api_key.is_empty() { envs.insert("LLAMA_API_KEY".into(), api_key.clone()); }
         // When fit is on, let llama.cpp decide the context size automatically.
         let effective_ctx_size = if fit { 0 } else { ctx_size };
         let config = build_llamacpp_config(n_gpu_layers, effective_ctx_size, 120, fit, 0);
-        let info = load_llama_model_impl(
+        let info = match load_llama_model_impl(
             llama_state.llama_server_process.clone(),
             &bin_path,
             model_id.to_string(),
@@ -993,13 +1041,16 @@ async fn start_model_server(
             mmproj.map(|p| p.to_string_lossy().into_owned()),
             false,
             120,
-        ).await.unwrap_or_else(|e| {
-            pb.finish_with_message(format!("✗ Failed to load {model_id}"));
-            eprintln!("{}", serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}")));
-            std::process::exit(1);
-        });
+        ).await {
+            Ok(info) => info,
+            Err(e) => {
+                finish_progress(pb, format!("✗ Failed to load {model_id}"));
+                eprintln!("{}", serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}")));
+                std::process::exit(1);
+            }
+        };
         let url = format!("http://127.0.0.1:{}", info.port);
-        pb.finish_with_message(format!("✓ {model_id} ready · {url}"));
+        finish_progress(pb, format!("✓ {model_id} ready · {url}"));
         (info.pid, info.port as u16)
     }
 }

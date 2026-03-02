@@ -168,7 +168,6 @@ endif
 
 # Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
 build-cli:
-	mkdir -p src-tauri/resources/bin
 ifeq ($(shell uname -s),Darwin)
 	cd src-tauri && cargo build --release --features cli --bin jan --target aarch64-apple-darwin
 	cd src-tauri && cargo build --release --features cli --bin jan --target x86_64-apple-darwin
@@ -193,7 +192,6 @@ build-cli-dev:
 
 # Build
 build: install-and-build install-rust-targets
-	make build-cli
 	yarn build
 
 clean:
