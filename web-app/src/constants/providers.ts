@@ -141,6 +141,126 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://api.anthropic.com/v1',
+    provider: 'anthropic-sub',
+    explore_models_url:
+      'https://docs.anthropic.com/en/docs/about-claude/models',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'Bearer Token',
+        description:
+          'The OAuth bearer token used to authenticate with the Anthropic API. This is used in the `Authorization: Bearer` header.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert Bearer Token',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. See the [Anthropic API documentation](https://docs.anthropic.com/en/api/messages) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.anthropic.com/v1',
+          value: 'https://api.anthropic.com/v1',
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'claude-opus-4-5-20251101',
+        name: 'Claude Opus 4.5',
+        version: '4.5',
+        description: 'Most capable Claude model for highly complex tasks.',
+        capabilities: ['completion', 'tools', 'vision'],
+      },
+      {
+        id: 'claude-sonnet-4-6',
+        name: 'Claude Sonnet 4.6',
+        version: '4.6',
+        description: 'Balanced performance and speed for a wide range of tasks.',
+        capabilities: ['completion', 'tools', 'vision'],
+      },
+      {
+        id: 'claude-3-7-sonnet-20250219',
+        name: 'Claude 3.7 Sonnet',
+        version: '3.7',
+        description: 'High capability model with extended thinking support.',
+        capabilities: ['completion', 'tools', 'vision'],
+      },
+      {
+        id: 'claude-3-5-sonnet-20241022',
+        name: 'Claude 3.5 Sonnet',
+        version: '3.5',
+        description: 'Excellent balance of intelligence and speed.',
+        capabilities: ['completion', 'tools', 'vision'],
+      },
+      {
+        id: 'claude-3-5-haiku-20241022',
+        name: 'Claude 3.5 Haiku',
+        version: '3.5',
+        description: 'Fast and compact model optimised for simple tasks.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'claude-3-opus-20240229',
+        name: 'Claude 3 Opus',
+        version: '3',
+        description: 'Powerful model for complex, nuanced tasks.',
+        capabilities: ['completion', 'tools', 'vision'],
+      },
+    ],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://chatgpt.com/backend-api/codex/responses',
+    provider: 'openai-sub',
+    explore_models_url: 'https://chatgpt.com',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'Bearer Token',
+        description:
+          'The OAuth bearer token used to authenticate with the OpenAI/ChatGPT API. This is used in the `Authorization: Bearer` header.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert Bearer Token',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Endpoint URL',
+        description:
+          'The full endpoint URL to send requests to.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://chatgpt.com/backend-api/codex/responses',
+          value: 'https://chatgpt.com/backend-api/codex/responses',
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'gpt-5.2-codex',
+        name: 'GPT-5.2 Codex',
+        version: '5.2',
+        description: 'OpenAI Codex model accessed via ChatGPT backend.',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://openrouter.ai/api/v1',
     explore_models_url: 'https://openrouter.ai/models',
     provider: 'openrouter',

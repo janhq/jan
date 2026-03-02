@@ -18,7 +18,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ArrowRight, PlusIcon } from 'lucide-react'
+import { ArrowRight, PlusIcon, ChevronDown } from 'lucide-react'
 import {
   IconPhoto,
   IconAtom,
@@ -55,6 +55,8 @@ import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
+import { BrainLevelIcon } from '@/components/BrainLevelIcon'
+import { useThinkingLevel } from '@/hooks/useThinkingLevel'
 import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
@@ -158,6 +160,8 @@ const ChatInput = memo(function ChatInput({
   const updateProvider = useModelProvider((state) => state.updateProvider)
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
+  const thinkingLevel = useThinkingLevel((state) => state.thinkingLevel)
+  const setThinkingLevel = useThinkingLevel((state) => state.setThinkingLevel)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
@@ -1776,6 +1780,28 @@ const ChatInput = memo(function ChatInput({
                     </TooltipContent>
                   </Tooltip>
                 )}
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <div className="border h-8 px-3 mb-1 flex items-center gap-1.5 rounded-full cursor-pointer">
+                      <BrainLevelIcon level={thinkingLevel} className="size-4 text-muted-foreground" />
+                      <span className="text-xs font-medium text-muted-foreground leading-normal">{thinkingLevel}</span>
+                      <ChevronDown size={14} className="text-muted-foreground shrink-0" />
+                    </div>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {(['Max', 'High', 'Medium', 'Low', 'None'] as const).map((level) => (
+                      <DropdownMenuItem
+                        key={level}
+                        className={thinkingLevel === level ? 'bg-accent' : ''}
+                        onClick={() => setThinkingLevel(level)}
+                      >
+                        <BrainLevelIcon level={level} className="size-4" />
+                        <span>{level}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
 

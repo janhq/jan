@@ -71,6 +71,7 @@ export function getProviderLogo(provider: string) {
     case 'mlx':
       return '/images/model-provider/mlx.png'
     case 'anthropic':
+    case 'anthropic-sub':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
       return '/images/model-provider/huggingface.svg'
@@ -85,6 +86,7 @@ export function getProviderLogo(provider: string) {
     case 'gemini':
       return '/images/model-provider/gemini.svg'
     case 'openai':
+    case 'openai-sub':
       return '/images/model-provider/openai.svg'
     case 'azure':
       return '/images/model-provider/azure.svg'
@@ -109,6 +111,10 @@ export const getProviderTitle = (provider: string) => {
       return 'Gemini'
     case 'huggingface':
       return 'Hugging Face'
+    case 'anthropic-sub':
+      return 'Anthropic (Sub)'
+    case 'openai-sub':
+      return 'OpenAI (Sub)'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }

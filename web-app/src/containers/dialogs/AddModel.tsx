@@ -8,6 +8,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useProviderModels } from '@/hooks/useProviderModels'
 import { ModelCombobox } from '@/containers/ModelCombobox'
@@ -27,6 +28,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
   const { t } = useTranslation()
   const { updateProvider } = useModelProvider()
   const [modelId, setModelId] = useState<string>('')
+  const [displayName, setDisplayName] = useState<string>('')
   const [open, setOpen] = useState(false)
   const [isComboboxOpen, setIsComboboxOpen] = useState(false)
 
@@ -47,10 +49,11 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
     }
 
     // Create the new model
-    const newModel = {
+    const newModel: Model = {
       id: modelId,
       model: modelId,
       name: modelId,
+      ...(displayName.trim() && { displayName: displayName.trim() }),
       capabilities: getModelCapabilities(provider.provider, modelId),
       version: '1.0',
     }
@@ -64,6 +67,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
 
     // Reset form and close dialog
     setModelId('')
+    setDisplayName('')
     setOpen(false)
   }
 
@@ -112,6 +116,26 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
             placeholder={t('providers:addModel.enterModelId')}
             onOpenChange={setIsComboboxOpen}
           />
+        </div>
+
+        {/* Optional display name field */}
+        <div className="space-y-2">
+          <label
+            htmlFor="display-name"
+            className="text-sm font-medium inline-block"
+          >
+            Display Name
+          </label>
+          <Input
+            id="display-name"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder={modelId || 'Enter display name (optional)'}
+            className="w-full"
+          />
+          <p className="text-xs text-muted-foreground">
+            The name shown in the interface. Defaults to the model ID if left blank.
+          </p>
         </div>
 
         {/* Explore models link */}
