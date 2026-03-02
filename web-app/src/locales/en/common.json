@@ -4,6 +4,8 @@
   "mcp-servers": "MCP Servers",
   "local_api_server": "Local API Server",
   "remote_access": "Remote Access",
+  "integrations": "Integrations",
+  "openclaw": "OpenClaw",
   "https_proxy": "HTTPS Proxy",
   "extensions": "Extensions",
   "attachments": "Attachments",
