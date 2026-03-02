@@ -941,8 +941,8 @@ const ChatInput = memo(function ChatInput({
       }
     }
 
-    let duplicates: string[] = []
-    let newFiles: Attachment[] = []
+    const duplicates: string[] = []
+    const newFiles: Attachment[] = []
 
     const currentAttachments = useChatAttachments.getState().getAttachments(
       attachmentsKey
