@@ -35,6 +35,7 @@ Models downloaded in the Jan desktop app are automatically available here.",
     after_help = "Examples:\n  \
   jan launch claude                               # pick a model, then run Claude Code against it\n  \
   jan launch claude --model qwen3.5-35b-a3b       # use a specific model\n  \
+  jan launch openclaw --model qwen3.5-35b-a3b     # wire openclaw to a local model\n  \
   jan launch opencode --model qwen3.5-35b-a3b     # wire opencode to a local model\n  \
   jan serve qwen3.5-35b-a3b                       # expose a model at localhost:6767/v1\n  \
   jan serve qwen3.5-35b-a3b --fit                 # auto-fit context to available VRAM\n  \
@@ -897,12 +898,13 @@ async fn handle_launch(
 ) {
     let model_id = model.unwrap_or_else(select_model_interactively);
 
-    // Detect claude early so we can set fit default before starting the server.
+    // Detect known agents early so we can set fit default before starting the server.
     let prog_name = std::path::Path::new(&program)
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(&program);
-    let is_claude = prog_name.contains("claude");
+    let is_claude   = prog_name.contains("claude");
+    let is_openclaw = prog_name.contains("openclaw");
 
     // --fit defaults to true when launching claude, but only if --ctx-size was
     // not explicitly provided (an explicit ctx-size means the user wants that
@@ -921,31 +923,57 @@ async fn handle_launch(
     let base_url = format!("http://127.0.0.1:{actual_port}");
     let v1_url   = format!("{base_url}/v1");
 
-    let anthropic_key_var = if is_claude { "ANTHROPIC_AUTH_TOKEN" } else { "ANTHROPIC_API_KEY" };
-
+    // openclaw is configured via ~/.openclaw/openclaw.json, not env vars.
+    // Write the jan provider entry and set the default model, then launch `openclaw tui`.
+    let mut program_args = program_args;
+    if is_openclaw {
+        configure_openclaw(&v1_url, &api_key, &model_id);
+        // openclaw's TUI is a sub-command; prepend it unless the caller already did
+        if program_args.first().map(|s| s.as_str()) != Some("tui") {
+            program_args.insert(0, "tui".to_string());
+        }
+        eprintln!();
+        eprintln!("  ~/.openclaw/openclaw.json → jan provider configured");
+        eprintln!("  agents.defaults.model.primary = jan/{model_id}");
+    } else {
+        let anthropic_key_var = if is_claude { "ANTHROPIC_AUTH_TOKEN" } else { "ANTHROPIC_API_KEY" };
+        eprintln!();
+        eprintln!("  OPENAI_BASE_URL={v1_url}");
+        eprintln!("  OPENAI_API_KEY={api_key}");
+        eprintln!("  OPENAI_MODEL={model_id}");
+        eprintln!("  ANTHROPIC_BASE_URL={base_url}");
+        eprintln!("  {anthropic_key_var}={api_key}");
+        eprintln!("  ANTHROPIC_DEFAULT_OPUS_MODEL={model_id}");
+        eprintln!("  ANTHROPIC_DEFAULT_SONNET_MODEL={model_id}");
+        eprintln!("  ANTHROPIC_DEFAULT_HAIKU_MODEL={model_id}");
+    }
     eprintln!();
-    eprintln!("  OPENAI_BASE_URL={v1_url}");
-    eprintln!("  OPENAI_API_KEY={api_key}");
-    eprintln!("  OPENAI_MODEL={model_id}");
-    eprintln!("  ANTHROPIC_BASE_URL={base_url}");
-    eprintln!("  {anthropic_key_var}={api_key}");
-    eprintln!("  ANTHROPIC_DEFAULT_OPUS_MODEL={model_id}");
-    eprintln!("  ANTHROPIC_DEFAULT_SONNET_MODEL={model_id}");
-    eprintln!("  ANTHROPIC_DEFAULT_HAIKU_MODEL={model_id}");
-    eprintln!();
-    eprintln!("  → Launching: {program}");
+    eprintln!("  → Launching: {program} {}", program_args.join(" "));
     eprintln!();
 
     let mut cmd = std::process::Command::new(&program);
-    cmd.args(&program_args)
-        .env("OPENAI_BASE_URL",    &v1_url)
-        .env("OPENAI_API_KEY",     &api_key)
-        .env("OPENAI_MODEL",       &model_id)
-        .env("ANTHROPIC_BASE_URL", &base_url)
-        .env(anthropic_key_var,    &api_key)
-        .env("ANTHROPIC_DEFAULT_OPUS_MODEL",   &model_id)
-        .env("ANTHROPIC_DEFAULT_SONNET_MODEL", &model_id)
-        .env("ANTHROPIC_DEFAULT_HAIKU_MODEL",  &model_id);
+    cmd.args(&program_args);
+    if is_openclaw {
+        // Clear any provider API keys that could override openclaw's config
+        for var in &[
+            "OPENAI_API_KEY", "OPENAI_BASE_URL",
+            "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN",
+            "GEMINI_API_KEY", "MISTRAL_API_KEY", "GROQ_API_KEY",
+            "XAI_API_KEY", "OPENROUTER_API_KEY",
+        ] {
+            cmd.env_remove(var);
+        }
+    } else {
+        let anthropic_key_var = if is_claude { "ANTHROPIC_AUTH_TOKEN" } else { "ANTHROPIC_API_KEY" };
+        cmd.env("OPENAI_BASE_URL", &v1_url)
+            .env("OPENAI_API_KEY",  &api_key)
+            .env("OPENAI_MODEL",    &model_id)
+            .env("ANTHROPIC_BASE_URL", &base_url)
+            .env(anthropic_key_var,    &api_key)
+            .env("ANTHROPIC_DEFAULT_OPUS_MODEL",   &model_id)
+            .env("ANTHROPIC_DEFAULT_SONNET_MODEL", &model_id)
+            .env("ANTHROPIC_DEFAULT_HAIKU_MODEL",  &model_id);
+    }
     let status = cmd.status();
 
     // Kill the model server when the program exits.
@@ -957,6 +985,65 @@ async fn handle_launch(
             eprintln!("Error launching '{program}': {e}");
             std::process::exit(1);
         }
+    }
+}
+
+// ── openclaw config writer ─────────────────────────────────────────────────
+
+/// Write (or merge into) `~/.openclaw/openclaw.json` so that openclaw uses
+/// the local Jan server as its provider and selects `model_id` by default.
+///
+/// The "jan" provider entry is always overwritten with the current server
+/// address and key. All other config values are preserved.
+/// Also clears the session model override so the new default takes effect.
+fn configure_openclaw(v1_url: &str, api_key: &str, model_id: &str) {
+    let home = dirs::home_dir().unwrap_or_default();
+    let config_path = home.join(".openclaw").join("openclaw.json");
+
+    // Read existing config so we don't clobber other settings.
+    let mut config: serde_json::Value = config_path
+        .exists()
+        .then(|| std::fs::read_to_string(&config_path).ok())
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::json!({}));
+
+    // Inject (or overwrite) the jan provider.
+    config["models"]["providers"]["jan"] = serde_json::json!({
+        "baseUrl": v1_url,
+        "apiKey":  api_key,
+        "api":     "openai-completions",
+        "models": [{
+            "id":            model_id,
+            "name":          model_id,
+            "input":         ["text"],
+            "reasoning":     false,
+            "contextWindow": 131072,
+            "maxTokens":     16384,
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        }]
+    });
+
+    // Set jan/<model_id> as the primary default model.
+    config["agents"]["defaults"]["model"]["primary"] =
+        serde_json::json!(format!("jan/{model_id}"));
+
+    if let Some(parent) = config_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(&config) {
+        let _ = std::fs::write(&config_path, json);
+    }
+
+    // Clear any per-session model override so the new default is picked up.
+    let sessions_path = home
+        .join(".openclaw")
+        .join("agents")
+        .join("main")
+        .join("sessions")
+        .join("sessions.json");
+    if sessions_path.exists() {
+        let _ = std::fs::write(&sessions_path, "{}");
     }
 }
 
