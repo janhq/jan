@@ -53,6 +53,7 @@ install-ios-rust-targets:
 dev: install-and-build
 	yarn download:bin
 	make build-mlx-server-if-exists
+	make build-cli-dev
 	yarn dev
 
 # Web application targets
@@ -152,6 +153,7 @@ else
 	@echo "Skipping MLX server build (macOS only)"
 endif
 
+
 # Build MLX server only if not already present (for dev)
 build-mlx-server-if-exists:
 ifeq ($(shell uname -s),Darwin)
@@ -163,6 +165,41 @@ ifeq ($(shell uname -s),Darwin)
 else
 	@echo "Skipping MLX server build (macOS only)"
 endif
+
+# Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
+build-cli:
+ifeq ($(shell uname -s),Darwin)
+	@echo "Building jan CLI (universal macOS)..."
+	cd src-tauri && cargo build --release --features cli --bin jan --target aarch64-apple-darwin
+	cd src-tauri && cargo build --release --features cli --bin jan --target x86_64-apple-darwin
+	mkdir -p src-tauri/resources/bin
+	lipo -create \
+		src-tauri/target/aarch64-apple-darwin/release/jan \
+		src-tauri/target/x86_64-apple-darwin/release/jan \
+		-output src-tauri/resources/bin/jan
+	chmod +x src-tauri/resources/bin/jan
+	@echo "jan CLI (universal) → src-tauri/resources/bin/jan"
+else ifeq ($(OS),Windows_NT)
+	@echo "Building jan CLI (Windows)..."
+	cd src-tauri && cargo build --release --features cli --bin jan
+	mkdir -p src-tauri/resources/bin
+	cp src-tauri/target/release/jan.exe src-tauri/resources/bin/jan.exe
+	@echo "jan CLI → src-tauri/resources/bin/jan.exe"
+else
+	@echo "Building jan CLI (Linux)..."
+	cd src-tauri && cargo build --release --features cli --bin jan
+	mkdir -p src-tauri/resources/bin
+	cp src-tauri/target/release/jan src-tauri/resources/bin/jan
+	chmod +x src-tauri/resources/bin/jan
+	@echo "jan CLI → src-tauri/resources/bin/jan"
+endif
+
+# Debug build for local dev (faster, no lipo on macOS)
+build-cli-dev:
+	cd src-tauri && cargo build --features cli --bin jan
+	mkdir -p src-tauri/resources/bin
+	cp src-tauri/target/debug/jan src-tauri/resources/bin/jan
+	chmod +x src-tauri/resources/bin/jan
 
 # Build
 build: install-and-build install-rust-targets

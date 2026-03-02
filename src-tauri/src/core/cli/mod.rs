@@ -2,11 +2,8 @@
 //!
 //! This module is only compiled when the `cli` feature is enabled.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-
-use tokio::sync::Mutex;
 
 use crate::core::app::commands::{resolve_config_file_path, resolve_jan_data_folder};
 use crate::core::server::proxy;
@@ -25,10 +22,6 @@ pub use tauri_plugin_mlx::{load_mlx_model_impl, MlxConfig};
 pub use tauri_plugin_mlx::state::SessionInfo;
 
 // ── State constructors ─────────────────────────────────────────────────────
-
-pub fn init_app_state() -> AppState {
-    AppState::default()
-}
 
 pub fn init_llamacpp_state() -> LlamacppState {
     LlamacppState::new()
@@ -225,7 +218,7 @@ pub fn resolve_model_engine(
     }
     Err(format!(
         "Model '{}' not found for any engine. \
-        Run `jan-cli models list` or `jan-cli models list --engine mlx` to see available models.",
+        Run `jan models list` to see available models.",
         model_id
     ))
 }
@@ -250,7 +243,7 @@ pub fn resolve_model_by_id(
     if !yml_path.exists() {
         return Err(format!(
             "Model '{}' not found for engine '{}'. \
-            Run `jan-cli models list` to see available models.",
+            Run `jan models list` to see available models.",
             model_id, engine
         ));
     }

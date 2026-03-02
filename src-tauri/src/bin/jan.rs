@@ -576,7 +576,7 @@ fn select_model_interactively() -> String {
         .interact()
         .unwrap_or_else(|_| std::process::exit(1));
 
-    all.remove(selection).0
+    all[selection].0.clone()
 }
 
 // ── Detached spawn ─────────────────────────────────────────────────────────
@@ -786,44 +786,7 @@ async fn handle_serve(args: ServeArgs) {
             envs.insert("LLAMA_API_KEY".to_string(), api_key);
         }
 
-        let config = LlamacppConfig {
-            version_backend: "cli/llama-server".to_string(),
-            auto_update_engine: false,
-            auto_unload: false,
-            timeout: timeout as i32,
-            llamacpp_env: String::new(),
-            fit,
-            fit_target: String::new(),
-            fit_ctx: String::new(),
-            chat_template: String::new(),
-            n_gpu_layers,
-            offload_mmproj: true,
-            cpu_moe: false,
-            n_cpu_moe: 0,
-            override_tensor_buffer_t: String::new(),
-            ctx_size,
-            threads,
-            threads_batch: 0,
-            n_predict: -1,
-            batch_size: 512,
-            ubatch_size: 512,
-            device: String::new(),
-            split_mode: String::new(),
-            main_gpu: 0,
-            flash_attn: "auto".to_string(),
-            cont_batching: true,
-            no_mmap: false,
-            mlock: false,
-            no_kv_offload: false,
-            cache_type_k: String::new(),
-            cache_type_v: String::new(),
-            defrag_thold: -1.0,
-            rope_scaling: String::new(),
-            rope_scale: 0.0,
-            rope_freq_base: 0.0,
-            rope_freq_scale: 0.0,
-            ctx_shift: false,
-        };
+        let config = build_llamacpp_config(n_gpu_layers, ctx_size, timeout as i32, fit, threads);
 
         match load_llama_model_impl(
             llama_state.llama_server_process.clone(),
@@ -864,11 +827,22 @@ async fn handle_serve(args: ServeArgs) {
 async fn wait_for_shutdown(pid: i32) {
     tokio::signal::ctrl_c().await.ok();
     eprintln!("\nShutting down (pid {pid})...");
+    kill_process(pid);
+}
+
+/// Send a termination signal to a child process by PID.
+fn kill_process(pid: i32) {
     #[cfg(unix)]
     {
         use nix::sys::signal::{kill, Signal};
         use nix::unistd::Pid;
         let _ = kill(Pid::from_raw(pid), Signal::SIGTERM);
+    }
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F"])
+            .status();
     }
 }
 
@@ -908,6 +882,7 @@ async fn handle_launch(
     eprintln!();
     eprintln!("  OPENAI_BASE_URL={v1_url}");
     eprintln!("  OPENAI_API_KEY={api_key}");
+    eprintln!("  OPENAI_MODEL={model_id}");
     eprintln!("  ANTHROPIC_BASE_URL={base_url}");
     eprintln!("  {anthropic_key_var}={api_key}");
     eprintln!("  ANTHROPIC_DEFAULT_OPUS_MODEL={model_id}");
@@ -921,6 +896,7 @@ async fn handle_launch(
     cmd.args(&program_args)
         .env("OPENAI_BASE_URL",    &v1_url)
         .env("OPENAI_API_KEY",     &api_key)
+        .env("OPENAI_MODEL",       &model_id)
         .env("ANTHROPIC_BASE_URL", &base_url)
         .env(anthropic_key_var,    &api_key)
         .env("ANTHROPIC_DEFAULT_OPUS_MODEL",   &model_id)
@@ -929,12 +905,7 @@ async fn handle_launch(
     let status = cmd.status();
 
     // Kill the model server when the program exits.
-    #[cfg(unix)]
-    {
-        use nix::sys::signal::{kill, Signal};
-        use nix::unistd::Pid;
-        let _ = kill(Pid::from_raw(pid), Signal::SIGTERM);
-    }
+    kill_process(pid);
 
     match status {
         Ok(s) => std::process::exit(s.code().unwrap_or(0)),
@@ -955,13 +926,15 @@ async fn start_model_server(
     ctx_size: i32,
     fit: bool,
 ) -> (i32, u16) {
-    // Auto-download from HuggingFace if the model isn't installed locally.
-    if resolve_model_engine(model_id).is_err() && looks_like_hf_repo(model_id) {
-        auto_download_hf_model(model_id).await;
-    }
-
     let (engine, model_path, mmproj) = match resolve_model_engine(model_id) {
         Ok(r) => r,
+        Err(_) if looks_like_hf_repo(model_id) => {
+            auto_download_hf_model(model_id).await;
+            match resolve_model_engine(model_id) {
+                Ok(r) => r,
+                Err(e) => { eprintln!("Error after download: {e}"); std::process::exit(1); }
+            }
+        }
         Err(e) => { eprintln!("Error: {e}"); std::process::exit(1); }
     };
     let model_path = model_path.to_string_lossy().into_owned();
@@ -977,13 +950,14 @@ async fn start_model_server(
         let mlx_state = Arc::new(init_mlx_state());
         let mut envs = HashMap::new();
         if !api_key.is_empty() { envs.insert("MLX_API_KEY".into(), api_key.clone()); }
+        let effective_ctx_size = if fit { 0 } else { ctx_size };
         let info = load_mlx_model_impl(
             mlx_state.mlx_server_process.clone(),
             Path::new(&bin_path),
             model_id.to_string(),
             model_path,
             port,
-            MlxConfig { ctx_size },
+            MlxConfig { ctx_size: effective_ctx_size },
             envs,
             false,
             120,
@@ -1007,21 +981,7 @@ async fn start_model_server(
         if !api_key.is_empty() { envs.insert("LLAMA_API_KEY".into(), api_key.clone()); }
         // When fit is on, let llama.cpp decide the context size automatically.
         let effective_ctx_size = if fit { 0 } else { ctx_size };
-        let config = LlamacppConfig {
-            version_backend: "cli/llama-server".to_string(),
-            auto_update_engine: false, auto_unload: false,
-            timeout: 120, llamacpp_env: String::new(),
-            fit, fit_target: String::new(), fit_ctx: String::new(),
-            chat_template: String::new(), n_gpu_layers, offload_mmproj: true,
-            cpu_moe: false, n_cpu_moe: 0, override_tensor_buffer_t: String::new(),
-            ctx_size: effective_ctx_size, threads: 0, threads_batch: 0, n_predict: -1,
-            batch_size: 512, ubatch_size: 512, device: String::new(),
-            split_mode: String::new(), main_gpu: 0, flash_attn: "auto".into(),
-            cont_batching: true, no_mmap: false, mlock: false, no_kv_offload: false,
-            cache_type_k: String::new(), cache_type_v: String::new(),
-            defrag_thold: -1.0, rope_scaling: String::new(),
-            rope_scale: 0.0, rope_freq_base: 0.0, rope_freq_scale: 0.0, ctx_shift: false,
-        };
+        let config = build_llamacpp_config(n_gpu_layers, effective_ctx_size, 120, fit, 0);
         let info = load_llama_model_impl(
             llama_state.llama_server_process.clone(),
             &bin_path,
@@ -1041,6 +1001,51 @@ async fn start_model_server(
         let url = format!("http://127.0.0.1:{}", info.port);
         pb.finish_with_message(format!("✓ {model_id} ready · {url}"));
         (info.pid, info.port as u16)
+    }
+}
+
+// ── LlamaCPP config builder ────────────────────────────────────────────────
+
+/// Build a `LlamacppConfig` with the values the CLI controls; everything else
+/// stays at a sensible default.
+fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bool, threads: i32) -> LlamacppConfig {
+    LlamacppConfig {
+        version_backend: "cli/llama-server".to_string(),
+        auto_update_engine: false,
+        auto_unload: false,
+        timeout,
+        llamacpp_env: String::new(),
+        fit,
+        fit_target: String::new(),
+        fit_ctx: String::new(),
+        chat_template: String::new(),
+        n_gpu_layers,
+        offload_mmproj: true,
+        cpu_moe: false,
+        n_cpu_moe: 0,
+        override_tensor_buffer_t: String::new(),
+        ctx_size,
+        threads,
+        threads_batch: 0,
+        n_predict: -1,
+        batch_size: 512,
+        ubatch_size: 512,
+        device: String::new(),
+        split_mode: String::new(),
+        main_gpu: 0,
+        flash_attn: "auto".to_string(),
+        cont_batching: true,
+        no_mmap: false,
+        mlock: false,
+        no_kv_offload: false,
+        cache_type_k: String::new(),
+        cache_type_v: String::new(),
+        defrag_thold: -1.0,
+        rope_scaling: String::new(),
+        rope_scale: 0.0,
+        rope_freq_base: 0.0,
+        rope_freq_scale: 0.0,
+        ctx_shift: false,
     }
 }
 
