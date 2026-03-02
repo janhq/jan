@@ -26,25 +26,15 @@ pub fn build_sandbox_config(jan_api_url: &str) -> Result<SandboxConfig, String> 
 }
 
 /// Start OpenClaw using the provided sandbox implementation.
-/// Handles: config patching, sandbox start, health check, state update.
 pub async fn start_openclaw(
     sandbox: &dyn Sandbox,
     config: &SandboxConfig,
     state: &OpenClawState,
 ) -> Result<(), String> {
-    // 1. Ensure config directory has secure permissions
     ensure_secure_config_permissions(&config.config_dir).await?;
-
-    // 2. Patch config if needed for this sandbox type
     patch_config_for_sandbox(sandbox, &config.config_dir)?;
-
-    // 3. Start the sandbox
     let handle = sandbox.start(config).await?;
-
-    // 4. Wait for the gateway to become responsive
     wait_for_port(config.port, Duration::from_secs(30)).await?;
-
-    // 5. Update state
     let mut mode = state.sandbox_mode.lock().await;
     *mode = SandboxMode::Active {
         sandbox_name: sandbox.name().to_string(),
@@ -52,12 +42,7 @@ pub async fn start_openclaw(
         handle,
     };
 
-    log::info!(
-        "OpenClaw started successfully via {} (tier: {})",
-        sandbox.name(),
-        sandbox.isolation_tier()
-    );
-
+    log::info!("OpenClaw started via {} (tier: {})", sandbox.name(), sandbox.isolation_tier());
     Ok(())
 }
 
@@ -75,13 +60,8 @@ pub async fn stop_openclaw(
     }
     *mode = SandboxMode::Inactive;
 
-    // Wait for the port to actually be released
-    for i in 0..10 {
+    for _i in 0..10 {
         if !is_port_in_use(OPENCLAW_PORT).await {
-            log::info!(
-                "OpenClaw stopped successfully (port released after {} checks)",
-                i + 1
-            );
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -112,8 +92,6 @@ pub async fn get_openclaw_status(
             ))
         }
         SandboxMode::Inactive => {
-            // Even if we think we're inactive, check if the gateway happens to be running
-            // (e.g., started externally or from a previous Jan session)
             if is_port_in_use(OPENCLAW_PORT).await {
                 Ok((SandboxStatus::Running, None, None))
             } else {
@@ -123,14 +101,13 @@ pub async fn get_openclaw_status(
     }
 }
 
-/// Shared health check: poll a port until it responds or timeout.
+/// Poll a port until it responds or timeout.
 pub async fn wait_for_port(port: u16, timeout: Duration) -> Result<(), String> {
     let start = tokio::time::Instant::now();
     let interval = Duration::from_millis(500);
 
     loop {
         if is_port_in_use(port).await {
-            log::info!("Port {} is now responding", port);
             return Ok(());
         }
 
@@ -146,15 +123,14 @@ pub async fn wait_for_port(port: u16, timeout: Duration) -> Result<(), String> {
     }
 }
 
-/// Check if a port has something listening (TCP connect succeeds).
+/// Check if a port has something listening.
 pub async fn is_port_in_use(port: u16) -> bool {
     tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
         .await
         .is_ok()
 }
 
-/// Patch OpenClaw config based on the sandbox type using proper JSON parsing.
-/// Docker needs different API URLs and bind mode; direct process uses localhost.
+/// Patch OpenClaw config for the sandbox type (bind mode and API baseUrl).
 pub fn patch_config_for_sandbox(sandbox: &dyn Sandbox, config_dir: &Path) -> Result<(), String> {
     use super::constants;
 
@@ -171,19 +147,15 @@ pub fn patch_config_for_sandbox(sandbox: &dyn Sandbox, config_dir: &Path) -> Res
 
     let (target_base_url, target_bind) = match sandbox.isolation_tier() {
         IsolationTier::FullContainer => {
-            // Docker: container reaches Jan host via host.docker.internal
-            // Bind to "lan" so Docker port mapping works
             (constants::DOCKER_JAN_BASE_URL, constants::DOCKER_BIND_MODE)
         }
         IsolationTier::PlatformSandbox | IsolationTier::None => {
-            // Direct process / platform sandbox: same host, use localhost
             (constants::DEFAULT_JAN_BASE_URL, constants::DEFAULT_BIND_MODE)
         }
     };
 
     let mut modified = false;
 
-    // Patch gateway.bind
     if let Some(bind) = config.pointer_mut("/gateway/bind") {
         if bind.as_str() != Some(target_bind) {
             *bind = serde_json::json!(target_bind);
@@ -191,7 +163,6 @@ pub fn patch_config_for_sandbox(sandbox: &dyn Sandbox, config_dir: &Path) -> Res
         }
     }
 
-    // Patch models.providers.jan.baseUrl
     if let Some(base_url) = config.pointer_mut("/models/providers/jan/baseUrl") {
         if base_url.as_str() != Some(target_base_url) {
             *base_url = serde_json::json!(target_base_url);
@@ -204,12 +175,7 @@ pub fn patch_config_for_sandbox(sandbox: &dyn Sandbox, config_dir: &Path) -> Res
             .map_err(|e| format!("Failed to serialize config: {}", e))?;
         std::fs::write(&config_path, updated)
             .map_err(|e| format!("Failed to write config: {}", e))?;
-        log::info!(
-            "Patched OpenClaw config for {} sandbox (bind={}, baseUrl={})",
-            sandbox.name(),
-            target_bind,
-            target_base_url
-        );
+        log::info!("Patched config for {} sandbox", sandbox.name());
     }
 
     Ok(())

@@ -33,14 +33,10 @@ async fn is_docker_container_running() -> bool {
 }
 
 /// Build a `Command` for running an `openclaw` CLI command.
-/// If the Docker container is running, routes through `docker exec`;
-/// otherwise runs the host-installed `openclaw` binary directly.
+/// Routes through `docker exec` when the container is running.
 async fn openclaw_command(args: &[&str]) -> Command {
     if is_docker_container_running().await {
         let mut cmd = Command::new("docker");
-        // Pass environment variables so the CLI resolves paths inside the
-        // container (e.g. /home/node/.openclaw) instead of trying to use
-        // the host path (/Users/…/.openclaw) which doesn't exist.
         let mut full_args: Vec<&str> = vec![
             "exec",
             "-e", "OPENCLAW_CONFIG=/home/node/.openclaw/openclaw.json",
@@ -537,14 +533,10 @@ async fn test_gateway_connection() -> Result<(), String> {
 
 /// Restart the Gateway via CLI command
 async fn restart_gateway_cli() -> Result<(), String> {
-    log::info!("Restarting Gateway via CLI...");
-
     if is_docker_container_running().await {
-        // Docker mode: use `docker restart` to safely restart the container.
-        // Running `docker exec ... openclaw gateway restart` would kill PID 1
-        // (the gateway process that IS the container) and cause the container
-        // to exit instead of restarting.
-        log::info!("Docker mode: restarting container '{}'", DOCKER_CONTAINER_NAME);
+        // Use `docker restart` — `docker exec ... openclaw gateway restart`
+        // kills PID 1 and stops the container.
+        log::info!("Restarting Docker container '{}'", DOCKER_CONTAINER_NAME);
         let output = Command::new("docker")
             .args(["restart", DOCKER_CONTAINER_NAME])
             .stdout(Stdio::piped())
@@ -553,15 +545,14 @@ async fn restart_gateway_cli() -> Result<(), String> {
             .await
             .map_err(|e| format!("Failed to restart Docker container: {}", e))?;
 
-        if output.status.success() {
-            log::info!("Docker container restarted successfully");
-        } else {
+        if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             log::warn!("Docker container restart may have failed: {}", stderr);
         }
         return Ok(());
     }
 
+    log::info!("Restarting gateway via CLI");
     let output = openclaw_command(&["gateway", "restart"]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -569,30 +560,18 @@ async fn restart_gateway_cli() -> Result<(), String> {
         .await
         .map_err(|e| format!("Failed to restart gateway: {}", e))?;
 
-    if output.status.success() {
-        log::info!("Gateway restarted successfully");
-        Ok(())
-    } else {
+    if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         log::warn!("Gateway restart may have failed: {}", stderr);
-        // Don't fail - the gateway might still be restarting
-        Ok(())
     }
+    Ok(())
 }
 
-/// Clear all stale OpenClaw data that might cause connection issues
-/// This is called automatically before setup to ensure a clean state
+/// Clear stale OpenClaw data before setup to ensure a clean state.
 async fn clear_stale_openclaw_data() -> Result<(), String> {
-    log::info!("Clearing stale OpenClaw data for fresh setup...");
-
     let config_dir = get_openclaw_config_dir()?;
 
-    // List of files that might contain stale device/auth data
-    let stale_files = [
-        "jan_device_key.json",  // Old device keypair (no longer needed)
-        "whatsapp.json",        // Stale WhatsApp config from failed attempts
-    ];
-
+    let stale_files = ["jan_device_key.json", "whatsapp.json"];
     for file in &stale_files {
         let file_path = config_dir.join(file);
         if file_path.exists() {
@@ -603,38 +582,28 @@ async fn clear_stale_openclaw_data() -> Result<(), String> {
         }
     }
 
-    // Also clear the whatsapp_auth directory if it exists and has issues
+    // Remove corrupted whatsapp_auth session files (< 10 bytes)
     let whatsapp_auth_dir = config_dir.join("whatsapp_auth");
     if whatsapp_auth_dir.exists() {
-        // Check if the session files are corrupted (very small or empty)
         if let Ok(entries) = std::fs::read_dir(&whatsapp_auth_dir) {
             for entry in entries.flatten() {
                 if let Ok(metadata) = entry.metadata() {
-                    // Remove files that are suspiciously small (likely corrupted)
                     if metadata.len() < 10 {
                         let _ = std::fs::remove_file(entry.path());
-                        log::info!("Removed potentially corrupted file: {:?}", entry.path());
                     }
                 }
             }
         }
     }
 
-    log::info!("Stale data cleanup complete");
     Ok(())
 }
 
-/// Clear agent session data that contains paths from a different runtime
-/// environment.
+/// Reset `sessions.json` when switching between direct-process and Docker.
 ///
-/// Sessions cache absolute paths (e.g. `sessionFile`, `workspaceDir`) in
-/// `sessions.json`.  When switching between direct-process (host paths like
-/// `/Users/…`) and Docker (container paths like `/home/node/…`), those
-/// cached paths become invalid and the agent fails with ENOENT.
-///
-/// `expected_prefix` is the path prefix that is valid for the *target*
-/// environment.  If sessions.json contains paths that do NOT start with
-/// this prefix, the file is reset so the gateway creates fresh sessions.
+/// Sessions cache absolute paths (`sessionFile`, `workspaceDir`). When the
+/// sandbox mode changes, those paths become invalid (e.g. `/Users/…` inside
+/// Docker) causing ENOENT. Resetting forces fresh sessions with correct paths.
 async fn clear_mismatched_session_paths(expected_prefix: &str) -> Result<(), String> {
     let config_dir = get_openclaw_config_dir()?;
     let sessions_json = config_dir.join("agents/main/sessions/sessions.json");
@@ -646,10 +615,8 @@ async fn clear_mismatched_session_paths(expected_prefix: &str) -> Result<(), Str
     let content = std::fs::read_to_string(&sessions_json)
         .map_err(|e| format!("Failed to read sessions.json: {}", e))?;
 
-    // Look for sessionFile paths — if they don't match the target env, reset
     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
         let json_str = parsed.to_string();
-        // Check if there are any sessionFile entries with the wrong prefix
         let has_wrong_paths = parsed.as_object().map_or(false, |obj| {
             obj.values().any(|session| {
                 session.get("sessionFile")
@@ -657,16 +624,11 @@ async fn clear_mismatched_session_paths(expected_prefix: &str) -> Result<(), Str
                     .map_or(false, |p| !p.starts_with(expected_prefix))
             })
         });
-
-        // Also check for any absolute path in the JSON that doesn't match
-        let has_stale_host_paths = !json_str.contains(expected_prefix)
+        let has_stale_paths = !json_str.contains(expected_prefix)
             && (json_str.contains("/Users/") || json_str.contains("/home/node/"));
 
-        if has_wrong_paths || has_stale_host_paths {
-            log::info!(
-                "Clearing sessions.json: paths don't match expected prefix '{}' (switching sandbox mode)",
-                expected_prefix
-            );
+        if has_wrong_paths || has_stale_paths {
+            log::info!("Clearing sessions.json: switching sandbox mode");
             std::fs::write(&sessions_json, "{}")
                 .map_err(|e| format!("Failed to clear sessions.json: {}", e))?;
         }
@@ -675,16 +637,11 @@ async fn clear_mismatched_session_paths(expected_prefix: &str) -> Result<(), Str
     Ok(())
 }
 
-/// Patch the agent's cached `models.json` so `baseUrl` points to the correct
-/// host for the current sandbox mode.
+/// Patch `agents/main/agent/models.json` baseUrl for the current sandbox mode.
 ///
-/// The agent stores a copy of the provider config in
-/// `agents/main/agent/models.json`.  When switching between direct-process
-/// (`localhost`) and Docker (`host.docker.internal`), this cached URL becomes
-/// wrong and every LLM call fails with "Connection error".
+/// The agent caches provider URLs here. Switching between `localhost` (direct)
+/// and `host.docker.internal` (Docker) requires patching this file.
 fn patch_agent_models_base_url(target_base_url: &str) -> Result<(), String> {
-    use super::constants;
-
     let config_dir = get_openclaw_config_dir()?;
     let models_path = config_dir.join("agents/main/agent/models.json");
 
@@ -694,12 +651,10 @@ fn patch_agent_models_base_url(target_base_url: &str) -> Result<(), String> {
 
     let content = std::fs::read_to_string(&models_path)
         .map_err(|e| format!("Failed to read agent models.json: {}", e))?;
-
     let mut config: serde_json::Value = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse agent models.json: {}", e))?;
 
     let mut modified = false;
-
     if let Some(providers) = config.pointer_mut("/providers") {
         if let Some(providers_obj) = providers.as_object_mut() {
             for (_name, provider) in providers_obj.iter_mut() {
@@ -718,10 +673,7 @@ fn patch_agent_models_base_url(target_base_url: &str) -> Result<(), String> {
             .map_err(|e| format!("Failed to serialize agent models.json: {}", e))?;
         std::fs::write(&models_path, updated)
             .map_err(|e| format!("Failed to write agent models.json: {}", e))?;
-        log::info!(
-            "Patched agent models.json baseUrl to '{}'",
-            target_base_url
-        );
+        log::info!("Patched agent models.json baseUrl to '{}'", target_base_url);
     }
 
     Ok(())
@@ -1938,59 +1890,44 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
             return Ok(());
         }
 
-        // If port is in use but Docker container is NOT running, something else occupies the port.
-        // We'll let the Docker start proceed — it binds to the same port and will fail with a
-        // clear error if there's a conflict.
         log::info!("Docker container not running, will start it");
 
-        // Clear session data that may contain host-specific paths (e.g.
-        // /Users/… from a previous direct-process run).  Inside Docker those
-        // paths don't exist and the agent fails with ENOENT.
+        // Fix cached paths/URLs from a previous direct-process session
         if let Err(e) = clear_mismatched_session_paths("/home/node/").await {
-            log::warn!("Failed to clear mismatched session paths for Docker: {}", e);
+            log::warn!("Failed to clear mismatched session paths: {}", e);
         }
-
-        // Patch the agent's cached models.json so baseUrl points to
-        // host.docker.internal instead of localhost.
         if let Err(e) = patch_agent_models_base_url(
             crate::core::openclaw::constants::DOCKER_JAN_BASE_URL,
         ) {
-            log::warn!("Failed to patch agent models baseUrl for Docker: {}", e);
+            log::warn!("Failed to patch agent models baseUrl: {}", e);
         }
     } else {
-        // For non-Docker: if gateway is already responding, we're done
         if check_gateway_responding().await {
-            log::info!("OpenClaw gateway is already running on port {}", OPENCLAW_PORT);
+            log::info!("OpenClaw gateway already running on port {}", OPENCLAW_PORT);
             let _ = openclaw_ensure_jan_origin().await;
             return Ok(());
         }
 
-        // Clear session data that may contain Docker container paths (e.g.
-        // /home/node/… from a previous Docker run).  On the host those
-        // paths don't exist and the agent fails with ENOENT.
+        // Fix cached paths/URLs from a previous Docker session
         let home = std::env::var("HOME").unwrap_or_default();
         if !home.is_empty() {
             if let Err(e) = clear_mismatched_session_paths(&home).await {
-                log::warn!("Failed to clear mismatched session paths for direct process: {}", e);
+                log::warn!("Failed to clear mismatched session paths: {}", e);
             }
         }
-
-        // Patch the agent's cached models.json so baseUrl points to
-        // localhost instead of host.docker.internal.
         if let Err(e) = patch_agent_models_base_url(
             crate::core::openclaw::constants::DEFAULT_JAN_BASE_URL,
         ) {
-            log::warn!("Failed to patch agent models baseUrl for direct process: {}", e);
+            log::warn!("Failed to patch agent models baseUrl: {}", e);
         }
 
-        // Check port availability for non-Docker
         let port_check = openclaw_check_port(OPENCLAW_PORT).await;
         if !port_check.available {
             return Err(format!("Port {} is already in use by another application", OPENCLAW_PORT));
         }
     }
 
-    // Step 3: Ensure config exists
+    // Ensure config exists
     let config_path = get_openclaw_config_path()?;
     if !config_path.exists() {
         openclaw_configure(None).await?;
@@ -1998,24 +1935,19 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
         openclaw_ensure_jan_origin().await?;
     }
 
-    // Step 4: Node.js check (skip for Docker — runs inside container)
+    // Node.js check (skip for Docker — runs inside container)
     if !is_docker {
         let node_check = openclaw_check_dependencies().await;
         if !node_check.installed || !node_check.meets_requirements {
             return Err(node_check.error.unwrap_or_else(|| "Node.js requirements not met".to_string()));
         }
-    } else {
-        log::info!("Docker sandbox detected - Node.js runs inside container, skipping host check");
     }
 
-    // Step 5: Build config and start via lifecycle module
+    // Build config and start via lifecycle module
     let config = crate::core::openclaw::lifecycle::build_sandbox_config(
         &crate::core::openclaw::constants::DEFAULT_JAN_BASE_URL,
     )?;
 
-    // Take a reference to the sandbox within a scoped lock, then call start_openclaw.
-    // start_openclaw internally locks sandbox_mode, so we must not hold the sandbox lock
-    // across the entire call. Instead, scope it properly.
     let sandbox_guard = state.sandbox.lock().await;
     let sandbox = sandbox_guard.as_ref().ok_or("Sandbox not initialized")?;
     crate::core::openclaw::lifecycle::start_openclaw(sandbox.as_ref(), &config, &state).await
@@ -2169,9 +2101,6 @@ pub struct TelegramConfig {
 /// Validate a Telegram bot token by calling the Telegram Bot API
 #[tauri::command]
 pub async fn telegram_validate_token(token: String) -> TelegramTokenValidation {
-    log::info!("Validating Telegram bot token");
-
-    // Basic format validation (Telegram tokens are typically format: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz)
     if token.len() < 30 || !token.contains(':') {
         return TelegramTokenValidation {
             valid: false,
@@ -2181,7 +2110,6 @@ pub async fn telegram_validate_token(token: String) -> TelegramTokenValidation {
         };
     }
 
-    // Call Telegram Bot API to validate the token
     let url = format!("https://api.telegram.org/bot{}/getMe", token);
 
     match reqwest::get(&url).await {
@@ -2235,23 +2163,16 @@ pub async fn telegram_validate_token(token: String) -> TelegramTokenValidation {
     }
 }
 
-/// Enable a channel plugin in OpenClaw
-///
-/// Plugins must be enabled before channels can be added.
-/// When Docker is running, we write directly to the config file instead of
-/// using `openclaw plugins enable` which can restart the gateway (killing
-/// PID 1 and stopping the container).
+/// Enable a channel plugin in OpenClaw.
+/// In Docker mode, writes directly to the config file to avoid CLI commands
+/// that restart the gateway (killing the container's PID 1).
 async fn enable_channel_plugin(channel: &str) -> Result<(), String> {
-    log::info!("Enabling {} plugin in OpenClaw", channel);
+    log::info!("Enabling {} plugin", channel);
 
     if is_docker_container_running().await {
-        // Docker mode: enable the plugin by editing the config file on the
-        // bind-mounted host directory. This avoids `docker exec openclaw plugins enable`
-        // which can restart the gateway and kill the container's PID 1.
         let mut config = read_openclaw_config()?;
 
-        // OpenClaw stores plugins under plugins.entries.<channel>.enabled
-        // (NOT plugins.<channel> which fails Zod validation)
+        // Schema: plugins.entries.<channel>.enabled (not plugins.<channel>)
         let plugins = config
             .as_object_mut()
             .ok_or("Config is not an object")?
@@ -2272,11 +2193,9 @@ async fn enable_channel_plugin(channel: &str) -> Result<(), String> {
         );
 
         write_openclaw_config(&config)?;
-        log::info!("Enabled {} plugin via config file (Docker mode)", channel);
         return Ok(());
     }
 
-    // Direct process mode: use the CLI as before
     let enable_output = openclaw_command(&["plugins", "enable", channel]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -2286,13 +2205,6 @@ async fn enable_channel_plugin(channel: &str) -> Result<(), String> {
 
     let stderr = String::from_utf8_lossy(&enable_output.stderr);
     let stdout = String::from_utf8_lossy(&enable_output.stdout);
-
-    log::info!("OpenClaw plugins enable {} output: {}", channel, stdout);
-    if !stderr.is_empty() {
-        log::debug!("OpenClaw plugins enable {} stderr: {}", channel, stderr);
-    }
-
-    // Plugin enable succeeds even if already enabled, so we only check for actual errors
     if !enable_output.status.success() {
         let combined = format!("{}{}", stdout, stderr);
         // Ignore "already enabled" type messages
@@ -2304,36 +2216,23 @@ async fn enable_channel_plugin(channel: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Configure Telegram channel with the bot token
-///
-/// Uses `openclaw plugins enable telegram` followed by
-/// `openclaw channels add --channel telegram --token <token>` to add the channel.
-///
-/// When Docker is running, configures via config file + container restart to
-/// avoid `docker exec` CLI commands that can kill the container's PID 1.
+/// Configure Telegram channel with the bot token.
+/// In Docker mode, writes config directly + restarts the container.
 #[tauri::command]
 pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String> {
-    log::info!("Configuring Telegram channel via OpenClaw CLI");
+    log::info!("Configuring Telegram channel");
 
-    // Validate the token first via Telegram API
     let validation = telegram_validate_token(token.clone()).await;
     if !validation.valid {
         return Err(validation.error.unwrap_or_else(|| "Invalid token".to_string()));
     }
 
-    // First, enable the Telegram plugin (must be done before adding channel)
     enable_channel_plugin("telegram").await?;
 
     if is_docker_container_running().await {
-        // Docker mode: add channel config directly to the config file.
-        // CLI commands like `openclaw channels add` can restart the gateway
-        // which kills PID 1 and stops the container.
-        log::info!("Adding Telegram channel via config file (Docker mode)");
         let mut config = read_openclaw_config()?;
 
-        // OpenClaw's Zod schema for channels.telegram accepts:
-        //   botToken, enabled, dmPolicy, groupPolicy, streaming
-        // NOT "token" or "account" (those fail strict validation).
+        // Schema: botToken, enabled, dmPolicy, groupPolicy, streaming
         let channels = config
             .as_object_mut()
             .ok_or("Config is not an object")?
@@ -2350,7 +2249,7 @@ pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String>
             "streaming": "off"
         }));
 
-        // Also write the credentials file that the Telegram plugin reads
+        // Ensure pairing credentials file exists
         let config_dir = get_openclaw_config_dir()?;
         let creds_dir = config_dir.join("credentials");
         std::fs::create_dir_all(&creds_dir)
@@ -2368,16 +2267,9 @@ pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String>
         }
 
         write_openclaw_config(&config)?;
-        log::info!("Telegram channel added to config file, restarting container to apply");
-
-        // Restart the Docker container so the gateway picks up the new config.
-        // This is safe — Docker restarts the container cleanly.
         restart_gateway_cli().await?;
-
-        // Wait for gateway to come back up
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
     } else {
-        // Direct process mode: use the CLI as before
         let add_output = openclaw_command(&[
                 "channels",
                 "add",
@@ -2394,13 +2286,7 @@ pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String>
         let add_stderr = String::from_utf8_lossy(&add_output.stderr);
         let add_stdout = String::from_utf8_lossy(&add_output.stdout);
 
-        log::info!("OpenClaw channels add telegram output: {}", add_stdout);
-        if !add_stderr.is_empty() {
-            log::info!("OpenClaw channels add telegram stderr: {}", add_stderr);
-        }
-
         if !add_output.status.success() {
-            // Check if it failed because channel already exists
             let combined = format!("{}{}", add_stdout, add_stderr);
             if !combined.contains("already exists") && !combined.contains("updated") && !combined.contains("Added") {
                 return Err(format!(
@@ -2411,13 +2297,12 @@ pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String>
         }
     }
 
-    // Clear any stale pending pairing codes so the user gets a fresh slot
-    // when they tap /start in the bot (OpenClaw caps pending codes at 3).
+    // Clear stale pending pairing codes
     if let Err(e) = telegram_clear_pending_pairing().await {
         log::warn!("Failed to clear pending pairing codes: {}", e);
     }
 
-    // Also store in local config for Jan's reference
+    // Store in local config for Jan's reference
     let telegram_settings = serde_json::json!({
         "enabled": true,
         "bot_token": token,
@@ -3688,7 +3573,7 @@ pub async fn discord_configure(token: String) -> Result<DiscordConfig, String> {
         }
     }
 
-    // Also store in local config for Jan's reference
+    // Store in local config for Jan's reference
     let config_dir = get_openclaw_config_dir()?;
     let discord_settings = serde_json::json!({
         "enabled": true,
