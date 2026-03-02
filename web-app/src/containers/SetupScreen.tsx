@@ -6,7 +6,6 @@ import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
-import Matter from 'matter-js'
 import { ulid } from 'ulidx'
 import { ChatCompletionRole, ContentType, MessageStatus, DownloadEvent, events } from '@janhq/core'
 import type { CatalogModel } from '@/services/models/types'
@@ -20,11 +19,11 @@ import { IconEye, IconSquareCheck } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import HeaderPage from './HeaderPage'
-import { DownloadIcon, PanelLeft} from 'lucide-react'
-import { ThemeSwitcher } from './ThemeSwitcher'
-import { AccentColorPicker } from './AccentColorPicker'
+import { DownloadIcon, PanelLeft, ArrowRight, PlusIcon } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useThreads } from '@/hooks/useThreads'
+import { ACCENT_COLORS, type AccentColorValue, useInterfaceSettings } from '@/hooks/useInterfaceSettings'
+import { useTheme } from '@/hooks/useTheme'
 
 type CacheEntry = {
   status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
@@ -87,6 +86,74 @@ function setCachedSupport(
 
 loadCacheFromStorage()
 
+const TYPING_PROMPTS = [
+  'Plan a 5-day trip to Taiwan',
+  'Create character ideas for a novel',
+  'Suggest unit tests for this function',
+  'Give me startup name ideas',
+  'How can I sleep better?',
+  'Make a pros and cons list',
+  'What assumptions does this implementation make?',
+]
+
+function SetupChatInputPreview() {
+  const [displayed, setDisplayed] = useState('')
+  const [promptIndex, setPromptIndex] = useState(0)
+  const [charIndex, setCharIndex] = useState(0)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const current = TYPING_PROMPTS[promptIndex]
+    if (!isDeleting) {
+      if (charIndex < current.length) {
+        timeoutRef.current = setTimeout(() => {
+          setDisplayed(current.slice(0, charIndex + 1))
+          setCharIndex((c) => c + 1)
+        }, 45)
+      } else {
+        timeoutRef.current = setTimeout(() => setIsDeleting(true), 1800)
+      }
+    } else {
+      if (charIndex > 0) {
+        timeoutRef.current = setTimeout(() => {
+          setDisplayed(current.slice(0, charIndex - 1))
+          setCharIndex((c) => c - 1)
+        }, 22)
+      } else {
+        setIsDeleting(false)
+        setPromptIndex((i) => (i + 1) % TYPING_PROMPTS.length)
+      }
+    }
+    return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current) }
+  }, [charIndex, isDeleting, promptIndex])
+
+  return (
+    <div className='relative z-10 w-full max-w-lg px-6'>
+      <div className='relative overflow-hidden p-0.5 rounded-3xl'>
+        <div className='relative z-20 px-0 pb-10 border rounded-3xl border-input bg-background backdrop-blur-sm'>
+          <div className='pt-4 px-4 min-h-14 text-sm text-foreground/80'>
+            {displayed}
+            <span className='inline-block w-0.5 h-4 ml-0.5 bg-foreground/60 animate-pulse align-middle' />
+          </div>
+        </div>
+        <div className='absolute z-20 bottom-0 w-full p-2'>
+          <div className='flex justify-between items-center'>
+            <div className='px-1 flex items-center gap-1'>
+              <div className='p-1 rounded-full bg-secondary size-7 flex items-center justify-center opacity-50'>
+                <PlusIcon size={16} className='text-muted-foreground' />
+              </div>
+            </div>
+            <div className='rounded-full bg-primary size-7 flex items-center justify-center mr-1 mb-1 opacity-50'>
+              <ArrowRight size={16} className='text-primary-foreground' />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SetupScreen() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -107,11 +174,15 @@ function SetupScreen() {
   const checkedModelId = useRef<string | null>(null)
   const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
+  const globalTheme = useTheme((s) => s.activeTheme)
+  const setGlobalTheme = useTheme((s) => s.setTheme)
+  const globalAccentColor = useInterfaceSettings((s) => s.accentColor)
+  const setGlobalAccentColor = useInterfaceSettings((s) => s.setAccentColor)
+  const [pendingTheme, setPendingTheme] = useState<AppTheme>(globalTheme)
+  const [pendingAccentColor, setPendingAccentColor] = useState<AccentColorValue>(globalAccentColor)
   const { createThread } = useThreads()
   const threadCheckedRef = useRef(false)
   const defaultThreadIdRef = useRef<string | null>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-
   // Create default thread and project for new user (only once)
   useEffect(() => {
     if (threadCheckedRef.current) return
@@ -533,207 +604,6 @@ function SetupScreen() {
     )
   }, [defaultVariant, llamaProvider])
 
-  // Matter.js physics-based falling logos animation
-  useEffect(() => {
-    if (isDownloading) return
-
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    // Set canvas size - full screen
-    const width = window.innerWidth
-    const height = window.innerHeight
-    canvas.width = width
-    canvas.height = height
-
-    // Setup Matter.js physics
-    const Engine = Matter.Engine
-    const Bodies = Matter.Bodies
-    const Composite = Matter.Composite
-    const Body = Matter.Body
-
-    const engine = Engine.create()
-    engine.world.gravity.y = 1
-
-    // Create walls
-    const wallOptions = { isStatic: true, friction: 1 }
-    const ground = Bodies.rectangle(width / 2, height + 50, width, 100, wallOptions)
-    const leftWall = Bodies.rectangle(-50, height / 2, 100, height * 2, wallOptions)
-    const rightWall = Bodies.rectangle(width + 50, height / 2, 100, height * 2, wallOptions)
-
-    Composite.add(engine.world, [ground, leftWall, rightWall])
-
-    // Load logo
-    const logo = new Image()
-    logo.src = '/images/jan-logo.png'
-    let logoLoaded = false
-    logo.onload = () => {
-      logoLoaded = true
-    }
-
-    // Store bodies for rendering
-    const bodies: Matter.Body[] = []
-
-    // Spawn bodies periodically
-    const spawnInterval = setInterval(() => {
-      if (bodies.length < 50) {
-        for (let i = 0; i < 4; i++) {
-          const size = 40 + Math.random() * 60
-          const x = Math.random() * (width - 150) + 75
-          const body = Bodies.circle(x, -100 - Math.random() * 150, size / 2, {
-            restitution: 0.8,
-            friction: 0.3,
-            frictionAir: 0.01,
-          })
-          Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.2)
-          bodies.push(body)
-          Composite.add(engine.world, body)
-        }
-      }
-    }, 500)
-
-    // Drag state
-    let draggedBody: Matter.Body | null = null
-    const dragOffset = { x: 0, y: 0 }
-
-    // Mouse down handler
-    const handleMouseDown = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect()
-      const mouseX = e.clientX - rect.left
-      const mouseY = e.clientY - rect.top
-
-      // Check if clicked on a body (iterate backwards for topmost first)
-      for (let i = bodies.length - 1; i >= 0; i--) {
-        const body = bodies[i]
-        const dx = mouseX - body.position.x
-        const dy = mouseY - body.position.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        const radius = body.circleRadius!
-
-        if (dist < radius) {
-          draggedBody = body
-          dragOffset.x = dx
-          dragOffset.y = dy
-          break
-        }
-      }
-    }
-
-    // Mouse move handler
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!draggedBody) return
-
-      const rect = canvas.getBoundingClientRect()
-      const mouseX = e.clientX - rect.left
-      const mouseY = e.clientY - rect.top
-
-      // Move the body manually
-      Body.setPosition(draggedBody, {
-        x: mouseX - dragOffset.x,
-        y: mouseY - dragOffset.y,
-      })
-      Body.setVelocity(draggedBody, { x: 0, y: 0 })
-    }
-
-    // Mouse up handler
-    const handleMouseUp = () => {
-      if (draggedBody) {
-        // Apply bounce effect on release
-        Body.applyForce(draggedBody, draggedBody.position, {
-          x: (Math.random() - 0.5) * 0.05,
-          y: -0.05 - Math.random() * 0.05,
-        })
-        Body.setAngularVelocity(draggedBody, draggedBody.angularVelocity + (Math.random() - 0.5) * 0.2)
-
-        draggedBody = null
-      }
-    }
-
-    // Click handler (for non-drag clicks)
-    const handleClick = (e: MouseEvent) => {
-      // Only bounce if not currently dragging
-      if (draggedBody) return
-
-      const rect = canvas.getBoundingClientRect()
-      const clickX = e.clientX - rect.left
-      const clickY = e.clientY - rect.top
-
-      // Check if clicked on a body (iterate backwards for topmost first)
-      for (let i = bodies.length - 1; i >= 0; i--) {
-        const body = bodies[i]
-        const dx = clickX - body.position.x
-        const dy = clickY - body.position.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        const radius = body.circleRadius!
-
-        if (dist < radius) {
-          // Apply bounce force
-          Body.applyForce(body, body.position, {
-            x: (Math.random() - 0.5) * 0.04,
-            y: -0.06 - Math.random() * 0.04,
-          })
-          Body.setAngularVelocity(body, body.angularVelocity + (Math.random() - 0.5) * 0.2)
-          break
-        }
-      }
-    }
-
-    canvas.addEventListener('mousedown', handleMouseDown)
-    canvas.addEventListener('mousemove', handleMouseMove)
-    canvas.addEventListener('mouseup', handleMouseUp)
-    canvas.addEventListener('mouseleave', handleMouseUp)
-    canvas.addEventListener('click', handleClick)
-
-    // Custom render loop
-    let animationId: number
-    const render = () => {
-      // Update physics
-      Engine.update(engine, 1000 / 60)
-
-      // Clear canvas
-      ctx.clearRect(0, 0, width, height)
-
-      // Draw bodies
-      for (const body of bodies) {
-        const size = body.circleRadius! * 2
-
-        if (logoLoaded && logo.complete) {
-          ctx.save()
-          ctx.translate(body.position.x, body.position.y)
-          ctx.rotate(body.angle)
-          ctx.globalAlpha = 1
-          ctx.drawImage(logo, -size / 2, -size / 2, size, size)
-          ctx.restore()
-        } else {
-          // Fallback circle
-          ctx.beginPath()
-          ctx.arc(body.position.x, body.position.y, body.circleRadius!, 0, 2 * Math.PI)
-          ctx.fillStyle = `hsl(${(body.id * 25) % 360}, 70%, 55%)`
-          ctx.fill()
-        }
-      }
-
-      animationId = requestAnimationFrame(render)
-    }
-
-    render()
-
-    return () => {
-      clearInterval(spawnInterval)
-      cancelAnimationFrame(animationId)
-      Composite.clear(engine.world, false)
-      Engine.clear(engine)
-      canvas.removeEventListener('mousedown', handleMouseDown)
-      canvas.removeEventListener('mousemove', handleMouseMove)
-      canvas.removeEventListener('mouseup', handleMouseUp)
-      canvas.removeEventListener('mouseleave', handleMouseUp)
-      canvas.removeEventListener('click', handleClick)
-    }
-  }, [isDownloading])
-
   const handleQuickStart = useCallback(() => {
     // If metadata is still loading, queue the download
     if (!defaultVariant || !janNewModel || !isSupportCheckComplete) {
@@ -888,35 +758,69 @@ function SetupScreen() {
 
   return (
     <div className="relative flex flex-col h-svh w-full overflow-hidden">
-      {/* Full screen canvas background */}
-      {!isDownloading && <canvas
-        ref={canvasRef}
-        className="absolute bottom-0 w-full h-[calc(100%-60px)] pointer-events-auto z-50"
-      />}
-      
-      {/* Content overlay - transparent to clicks on empty areas */}
+      {/* Content overlay */}
         <div className="flex flex-col h-svh w-full">
         <HeaderPage />
         
-        <div className="flex h-[calc(100%-60px)]">
-          <div className="shrink-0 px-10 w-[480px] overflow-auto pb-10 pointer-events-auto">
+        <div className="flex h-[calc(100%-60px)] items-center">
+          <div className="shrink-0 px-10 w-[480px] overflow-auto pb-10 pointer-events-auto -mt-20">
             <div className="mb-4">
               <h1 className="font-studio font-medium text-2xl mb-1">
                 {isDownloading ?  'While Jan gets ready...' : 'Hey, welcome to Jan!'}
               </h1>
-              <p className='text-muted-foreground leading-normal w-full mt-1'>{isDownloading ? 'Want to try a different look? You can change this later in Settings.' : 'Let\'s download your first local AI model to run on your device.'}</p>
+              <p className='text-muted-foreground leading-normal w-full mt-1'>{isDownloading ? 'Explore the app or choose your theme.' : 'Jan needs a model to begin. Let’s set it up.'}</p>
             </div>
 
             {isDownloading ?
               <div className='mt-8 space-y-6'>
-                <div className='space-y-2.5'>
-                  <div className='text-muted-foreground'>Accent color</div>
-                  <AccentColorPicker />
-                </div>
-                <div className='space-y-2.5'>
-                  <div className='text-muted-foreground'>Color system</div>
-                  <ThemeSwitcher renderAsRadio />
-                </div>
+                    <div className='space-y-2.5'>
+                      <div className='text-muted-foreground text-sm'>Accent color</div>
+                      <div className='flex gap-2 flex-wrap'>
+                        {ACCENT_COLORS.map((color) => (
+                          <button
+                            key={color.value}
+                            onClick={() => setPendingAccentColor(color.value)}
+                            className={cn(
+                              'size-6 rounded-full ring-offset-background ring-offset-2 transition-all',
+                              pendingAccentColor === color.value && 'ring-2 ring-foreground'
+                            )}
+                            style={{ backgroundColor: color.thumb }}
+                            title={color.name}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <div className='space-y-2.5'>
+                      <div className='text-muted-foreground text-sm'>Color system</div>
+                      <div className='space-y-2'>
+                        {(['auto', 'light', 'dark'] as const).map((theme) => (
+                          <button
+                            key={theme}
+                            onClick={() => setPendingTheme(theme)}
+                            className={cn(
+                              'w-full flex items-center gap-3 px-3 py-4 rounded-lg border text-sm transition-all text-left',
+                              pendingTheme === theme ? 'border-primary/50' : 'border-input hover:border-muted-foreground'
+                            )}
+                          >
+                            <span className={cn(
+                              'size-4 rounded-full border-2 flex items-center justify-center shrink-0',
+                              pendingTheme === theme ? 'border-primary' : 'border-muted-foreground/50'
+                            )}>
+                              {pendingTheme === theme && <span className='size-2 rounded-full bg-primary' />}
+                            </span>
+                            <span className='capitalize'>{theme === 'auto' ? 'System' : theme}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className='flex gap-2'>
+                      <Button size='sm' className='flex-1' onClick={() => {
+                        setGlobalTheme(pendingTheme)
+                        setGlobalAccentColor(pendingAccentColor)
+                      }}>
+                        Apply
+                      </Button>
+                    </div>
               </div>
               :
               <div className="flex gap-4 flex-col mt-6 relative z-50">
@@ -955,71 +859,76 @@ function SetupScreen() {
               </div>
             }
           </div>
-          {isDownloading && (
-            <div className='border-l border-t w-full mt-2 rounded-tl-2xl h-full p-2 relative'>
-              <div className='bg-linear-to-b bg-clip-padding border border-b-0 from-sidebar dark:from-sidebar/70 to-background w-60 h-full rounded-t-xl shadow'>
-                <div className='w-full p-4 pb-0 flex justify-between items-center'>
-                  {IS_MACOS ?
-                    <div className="flex gap-1.5">
-                      <div className="size-2.5 rounded-full bg-foreground/20"></div>
-                      <div className="size-2.5 rounded-full bg-foreground/20"></div>
-                      <div className="size-2.5 rounded-full bg-foreground/20"></div>
+
+          {!isDownloading && (
+            <div className='w-full -top-7.5 -left-2 h-[calc(100%+42px)] relative flex items-center justify-center overflow-hidden rounded-2xl'>
+              {/* Gradient background */}
+              <img src='/images/onboarding-gradient.png' className='absolute inset-0 w-full h-full object-cover' />
+              {/* Noise texture overlay */}
+              <div className='absolute inset-0 opacity-30' style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")', backgroundSize: '128px 128px' }} />
+              {/* Static ChatInput preview with typing animation */}
+              <SetupChatInputPreview />
+            </div>
+          )}
+          
+          {isDownloading && (() => {
+            const previewIsDark = pendingTheme === 'dark' || (pendingTheme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+            const colorObj = ACCENT_COLORS.find(c => c.value === pendingAccentColor) ?? ACCENT_COLORS[0]
+            const contentBg = previewIsDark ? '#111111' : '#ffffff'
+            const sidebarFrom = previewIsDark ? colorObj.sidebar.dark : colorObj.sidebar.light
+            const sidebarBg = `linear-gradient(to bottom, ${sidebarFrom}, ${contentBg})`
+            const skStyle = { background: previewIsDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.09)' }
+            const mutedText = previewIsDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)'
+            const borderCol = previewIsDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'
+            return (
+              <div className='border-l border-t w-full mt-2 rounded-tl-2xl h-full p-2 relative transition-colors duration-300' style={{ background: contentBg }}>
+                <div className='bg-clip-padding w-60 h-full rounded-xl shadow transition-colors duration-300' style={{ background: sidebarBg, borderColor: borderCol }}>
+                  <div className='w-full p-4 pb-0 flex justify-between items-center'>
+                    {IS_MACOS ?
+                      <div className="flex gap-1.5">
+                        <div className="size-2.5 rounded-full" style={{ background: mutedText }} />
+                        <div className="size-2.5 rounded-full" style={{ background: mutedText }} />
+                        <div className="size-2.5 rounded-full" style={{ background: mutedText }} />
+                      </div>
+                    :
+                      <div>
+                        <span className="font-studio font-medium" style={{ color: mutedText }}>Jan</span>
+                      </div>}
+                    <div className="flex gap-2.5" style={{ color: mutedText }}>
+                      <DownloadIcon className="size-3" />
+                      <PanelLeft className="size-3" />
                     </div>
-                  :
-                    <div>
-                      <span className="font-studio font-medium text-muted-foreground">Jan</span>
-                    </div>}
-                  <div className="flex gap-2.5 text-muted-foreground/80">
-                    <DownloadIcon className="size-3" />
-                    <PanelLeft className="size-3" />
-                  </div>
-                </div>
-
-                <div className="p-4 space-y-4">
-                  <div className="space-y-2">
-                    <Skeleton className="w-20 h-2 bg-foreground/10" />
-                    <ul className="space-y-2">
-                      <li className="flex items-center gap-2">
-                        <Skeleton className="size-4 bg-foreground/10" />
-                        <Skeleton className="w-20 h-2 bg-foreground/10" />
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <Skeleton className="size-4 bg-foreground/10" />
-                        <Skeleton className="w-30 h-2 bg-foreground/10" />
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <Skeleton className="size-4 bg-foreground/10" />
-                        <Skeleton className="w-35 h-2 bg-foreground/10" />
-                      </li>
-                    </ul>
                   </div>
 
-                  <div className="space-y-2">
-                    <Skeleton className="w-20 h-2 bg-foreground/10" />
-                    <ul className="space-y-2">
-                      <li className="flex items-center gap-2">
-                        <Skeleton className="size-4 bg-foreground/10" />
-                        <Skeleton className="w-20 h-2 bg-foreground/10" />
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <Skeleton className="size-4 bg-foreground/10" />
-                        <Skeleton className="w-30 h-2 bg-foreground/10" />
-                      </li>
-                    </ul>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Skeleton className="w-20 h-2 bg-foreground/10" />
-                    <ul className="space-y-2">
-                      <li><Skeleton className="w-40 h-2 bg-foreground/10" /></li>
-                      <li><Skeleton className="w-30 h-2 bg-foreground/10" /></li>
-                      <li><Skeleton className="w-40 h-2 bg-foreground/10" /></li>
-                    </ul>
+                  <div className="p-4 space-y-4">
+                    <div className="space-y-2">
+                      <Skeleton className="w-20 h-2" style={skStyle} />
+                      <ul className="space-y-2">
+                        <li className="flex items-center gap-2"><Skeleton className="size-4" style={skStyle} /><Skeleton className="w-20 h-2" style={skStyle} /></li>
+                        <li className="flex items-center gap-2"><Skeleton className="size-4" style={skStyle} /><Skeleton className="w-28 h-2" style={skStyle} /></li>
+                        <li className="flex items-center gap-2"><Skeleton className="size-4" style={skStyle} /><Skeleton className="w-32 h-2" style={skStyle} /></li>
+                      </ul>
+                    </div>
+                    <div className="space-y-2">
+                      <Skeleton className="w-20 h-2" style={skStyle} />
+                      <ul className="space-y-2">
+                        <li className="flex items-center gap-2"><Skeleton className="size-4" style={skStyle} /><Skeleton className="w-20 h-2" style={skStyle} /></li>
+                        <li className="flex items-center gap-2"><Skeleton className="size-4" style={skStyle} /><Skeleton className="w-28 h-2" style={skStyle} /></li>
+                      </ul>
+                    </div>
+                    <div className="space-y-2">
+                      <Skeleton className="w-20 h-2" style={skStyle} />
+                      <ul className="space-y-2">
+                        <li><Skeleton className="w-36 h-2" style={skStyle} /></li>
+                        <li><Skeleton className="w-28 h-2" style={skStyle} /></li>
+                        <li><Skeleton className="w-36 h-2" style={skStyle} /></li>
+                      </ul>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
         </div>
       </div>
     </div>
