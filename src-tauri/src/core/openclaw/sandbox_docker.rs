@@ -35,12 +35,19 @@ use futures::StreamExt;
 
 #[cfg(feature = "docker")]
 use super::sandbox::{IsolationTier, Sandbox, SandboxConfig, SandboxHandle, SandboxStatus};
+#[cfg(feature = "docker")]
+use super::constants::OPENCLAW_VERSION;
 
 #[cfg(feature = "docker")]
 const CONTAINER_NAME: &str = "jan-openclaw";
 
 #[cfg(feature = "docker")]
-const IMAGE_NAME: &str = "ghcr.io/openclaw/openclaw:2026.3.1";
+const IMAGE_REPO: &str = "ghcr.io/openclaw/openclaw";
+
+#[cfg(feature = "docker")]
+fn image_name() -> String {
+    format!("{}:{}", IMAGE_REPO, OPENCLAW_VERSION)
+}
 
 #[cfg(feature = "docker")]
 pub struct DockerSandbox;
@@ -93,7 +100,7 @@ impl DockerSandbox {
 
     /// Check if the image exists locally (internal).
     async fn image_exists(client: &bollard::Docker) -> bool {
-        client.inspect_image(IMAGE_NAME).await.is_ok()
+        client.inspect_image(&image_name()).await.is_ok()
     }
 
     /// Check if the Docker image is available locally (public).
@@ -143,10 +150,11 @@ impl DockerSandbox {
 
     /// Pull the OpenClaw image (internal, no progress events).
     async fn pull_image(client: &bollard::Docker) -> Result<(), String> {
-        log::info!("DockerSandbox: pulling image {}", IMAGE_NAME);
+        let img = image_name();
+        log::info!("DockerSandbox: pulling image {}", img);
 
         let options = CreateImageOptions {
-            from_image: IMAGE_NAME,
+            from_image: img.as_str(),
             ..Default::default()
         };
 
@@ -160,7 +168,7 @@ impl DockerSandbox {
                     }
                 }
                 Err(e) => {
-                    return Err(format!("Failed to pull image {}: {}", IMAGE_NAME, e));
+                    return Err(format!("Failed to pull image {}: {}", img, e));
                 }
             }
         }
@@ -181,9 +189,11 @@ impl DockerSandbox {
 
         let client = Self::get_client().await?;
 
+        let img = image_name();
+
         // Check if image already exists locally
         if Self::image_exists(&client).await {
-            log::info!("DockerSandbox: image {} already exists locally", IMAGE_NAME);
+            log::info!("DockerSandbox: image {} already exists locally", img);
             let _ = app.emit(
                 "openclaw-enable-progress",
                 EnableProgressEvent {
@@ -196,10 +206,10 @@ impl DockerSandbox {
             return Ok(());
         }
 
-        log::info!("DockerSandbox: pulling image {} with progress", IMAGE_NAME);
+        log::info!("DockerSandbox: pulling image {} with progress", img);
 
         let options = CreateImageOptions {
-            from_image: IMAGE_NAME,
+            from_image: img.as_str(),
             ..Default::default()
         };
 
@@ -252,7 +262,7 @@ impl DockerSandbox {
                     log::debug!("DockerSandbox: pull: {:?}", info.status);
                 }
                 Err(e) => {
-                    return Err(format!("Failed to pull image {}: {}", IMAGE_NAME, e));
+                    return Err(format!("Failed to pull image {}: {}", img, e));
                 }
             }
         }
@@ -394,7 +404,7 @@ impl Sandbox for DockerSandbox {
         exposed_ports.insert(port_key, HashMap::new());
 
         let container_config = Config {
-            image: Some(IMAGE_NAME.to_string()),
+            image: Some(image_name()),
             env: Some(env_vars),
             exposed_ports: Some(exposed_ports),
             host_config: Some(host_config),

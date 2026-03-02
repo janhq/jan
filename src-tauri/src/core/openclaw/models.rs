@@ -145,6 +145,11 @@ pub struct JanProviderConfig {
     pub base_url: String,
     /// API type (openai-completions, etc.)
     pub api: String,
+    /// API key for authentication.
+    /// For local models this is a placeholder (Jan doesn't require auth).
+    /// For remote providers routed through Jan, this carries the real key.
+    #[serde(rename = "apiKey")]
+    pub api_key: String,
     /// List of model definitions (objects with at least { id, name })
     pub models: Vec<ModelDefinition>,
 }
@@ -154,6 +159,7 @@ impl Default for JanProviderConfig {
         Self {
             base_url: constants::DEFAULT_JAN_BASE_URL.to_string(),
             api: constants::DEFAULT_JAN_API_TYPE.to_string(),
+            api_key: constants::DEFAULT_JAN_API_KEY.to_string(),
             // Start with the pinned default model; openclaw_sync_all_models
             // replaces this list with the full catalog from Jan.
             models: vec![ModelDefinition {

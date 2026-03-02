@@ -1153,7 +1153,67 @@ pub async fn openclaw_configure(config_input: Option<OpenClawConfigInput>) -> Re
         .map_err(|e| format!("Failed to write config file: {}", e))?;
 
     log::info!("OpenClaw configuration written to {:?}", config_path);
+
+    // Ensure the agent directory has auth-profiles.json and that models.json
+    // carries the jan apiKey. Without these, agents fail with
+    // "No API key found for provider".
+    ensure_agent_auth_files()?;
+
     Ok(config)
+}
+
+/// Ensure the agent directory has the files OpenClaw's agent system needs:
+/// 1. `auth-profiles.json` — the credential store (empty is fine).
+/// 2. `models.json` — must have `apiKey` on the jan provider so the agent
+///    can resolve credentials via `getCustomProviderApiKey`.
+///
+/// OpenClaw regenerates `models.json` from `openclaw.json` on gateway start,
+/// but if the gateway is already running (hot-reload) the stale file is used.
+/// We patch it directly so the fix takes effect immediately.
+fn ensure_agent_auth_files() -> Result<(), String> {
+    let config_dir = get_openclaw_config_dir()?;
+    let agent_dir = config_dir.join("agents").join("main").join("agent");
+
+    std::fs::create_dir_all(&agent_dir)
+        .map_err(|e| format!("Failed to create agent directory: {}", e))?;
+
+    // 1. auth-profiles.json
+    let auth_path = agent_dir.join("auth-profiles.json");
+    if !auth_path.exists() {
+        let empty_store = serde_json::json!({
+            "version": 1,
+            "profiles": {}
+        });
+        let json = serde_json::to_string_pretty(&empty_store)
+            .map_err(|e| format!("Failed to serialize auth profiles: {}", e))?;
+        std::fs::write(&auth_path, json)
+            .map_err(|e| format!("Failed to write auth-profiles.json: {}", e))?;
+        log::info!("Created empty auth-profiles.json at {:?}", auth_path);
+    }
+
+    // 2. Patch models.json — ensure jan provider has apiKey
+    let models_path = agent_dir.join("models.json");
+    if models_path.exists() {
+        let content = std::fs::read_to_string(&models_path)
+            .map_err(|e| format!("Failed to read models.json: {}", e))?;
+        if let Ok(mut models) = serde_json::from_str::<serde_json::Value>(&content) {
+            let needs_patch = models
+                .pointer("/providers/jan")
+                .map(|jan| jan.get("apiKey").and_then(|v| v.as_str()).unwrap_or("").is_empty())
+                .unwrap_or(false);
+
+            if needs_patch {
+                models["providers"]["jan"]["apiKey"] = serde_json::json!(DEFAULT_JAN_API_KEY);
+                let json = serde_json::to_string_pretty(&models)
+                    .map_err(|e| format!("Failed to serialize models.json: {}", e))?;
+                std::fs::write(&models_path, json)
+                    .map_err(|e| format!("Failed to write models.json: {}", e))?;
+                log::info!("Patched models.json with jan apiKey");
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Sanitise an OpenClaw config value before writing it to disk.
@@ -1264,6 +1324,7 @@ pub async fn openclaw_sync_model(
         config["models"]["providers"]["jan"] = serde_json::json!({
             "baseUrl": current_base_url,
             "api": DEFAULT_JAN_API_TYPE,
+            "apiKey": DEFAULT_JAN_API_KEY,
             "models": [model_def]
         });
     } else {
@@ -1346,10 +1407,18 @@ pub async fn openclaw_sync_all_models(
         .unwrap_or(DEFAULT_JAN_BASE_URL)
         .to_string();
 
+    // Preserve the current apiKey (may have been customised by the user)
+    let current_api_key = config
+        .pointer("/models/providers/jan/apiKey")
+        .and_then(|v| v.as_str())
+        .unwrap_or(DEFAULT_JAN_API_KEY)
+        .to_string();
+
     // Build the full jan provider config with all models as objects
     config["models"]["providers"]["jan"] = serde_json::json!({
         "baseUrl": current_base_url,
         "api": DEFAULT_JAN_API_TYPE,
+        "apiKey": current_api_key,
         "models": model_defs
     });
 
@@ -1363,6 +1432,10 @@ pub async fn openclaw_sync_all_models(
     };
 
     write_openclaw_config(&config)?;
+
+    // Also patch the agent-level models.json so the running gateway picks up
+    // the apiKey immediately (without needing a full restart).
+    ensure_agent_auth_files()?;
 
     log::info!("Successfully bulk synced {} models to OpenClaw", synced_count);
     Ok(BulkSyncResult {

@@ -23,5 +23,11 @@ pub const DOCKER_BIND_MODE: &str = "lan";
 /// Default API type for Jan
 pub const DEFAULT_JAN_API_TYPE: &str = "openai-completions";
 
+/// Default API key placeholder for the Jan provider.
+/// Jan's local server doesn't require authentication, but OpenClaw's agent
+/// system requires every provider to have a resolvable API key. This
+/// placeholder satisfies that requirement for local models.
+pub const DEFAULT_JAN_API_KEY: &str = "jan-local";
+
 /// Default model ID for agents
 pub const DEFAULT_MODEL_ID: &str = "llama-3.2-3b";
