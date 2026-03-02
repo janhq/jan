@@ -3,14 +3,14 @@ use serde::{Deserialize, Serialize};
 use super::constants;
 
 /// OpenClaw configuration structure
+/// Only includes keys that OpenClaw actually recognizes.
+/// Unknown keys (like agents.defaults.systemPrompt) cause OpenClaw to reject the config.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenClawConfig {
     /// Gateway configuration
     pub gateway: GatewayConfig,
     /// Model providers configuration
     pub models: ModelsConfig,
-    /// Agents configuration
-    pub agents: AgentsConfig,
 }
 
 impl Default for OpenClawConfig {
@@ -18,7 +18,6 @@ impl Default for OpenClawConfig {
         Self {
             gateway: GatewayConfig::default(),
             models: ModelsConfig::default(),
-            agents: AgentsConfig::default(),
         }
     }
 }
@@ -141,54 +140,11 @@ impl Default for JanProviderConfig {
     }
 }
 
-/// Agents configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentsConfig {
-    /// Default agent settings
-    pub defaults: AgentDefaults,
-}
-
-impl Default for AgentsConfig {
-    fn default() -> Self {
-        Self {
-            defaults: AgentDefaults::default(),
-        }
-    }
-}
-
-/// Default agent settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentDefaults {
-    /// Default model configuration
-    pub model: ModelConfig,
-    /// Default system prompt
-    #[serde(rename = "systemPrompt")]
-    pub system_prompt: String,
-}
-
-impl Default for AgentDefaults {
-    fn default() -> Self {
-        Self {
-            model: ModelConfig::default(),
-            system_prompt: constants::DEFAULT_SYSTEM_PROMPT.to_string(),
-        }
-    }
-}
-
-/// Model configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelConfig {
-    /// Primary model ID
-    pub primary: String,
-}
-
-impl Default for ModelConfig {
-    fn default() -> Self {
-        Self {
-            primary: constants::DEFAULT_MODEL_ID.to_string(),
-        }
-    }
-}
+// NOTE: OpenClaw uses strict Zod validation on its config — unknown keys
+// cause the gateway to refuse to start. The `agents.defaults` section accepts
+// known keys like `model` (object: {primary, fallbacks}), `maxConcurrent`,
+// `subagents`, `compaction`, `workspace`, etc. Custom keys like `systemPrompt`
+// are NOT valid and will be rejected. See: https://docs.openclaw.ai/gateway/configuration-reference
 
 /// OpenClaw status response
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -256,12 +212,9 @@ pub struct OpenClawConfigInput {
     /// Optional custom Jan base URL
     #[serde(rename = "janBaseUrl")]
     pub jan_base_url: Option<String>,
-    /// Optional custom model ID
+    /// Optional custom model ID (sets agents.defaults.model.primary)
     #[serde(rename = "modelId")]
     pub model_id: Option<String>,
-    /// Optional custom system prompt
-    #[serde(rename = "systemPrompt")]
-    pub system_prompt: Option<String>,
     /// Optional custom port
     pub port: Option<u16>,
     /// Optional bind address
@@ -583,6 +536,9 @@ pub struct EnableProgressEvent {
     pub progress: u32,
     /// Human-readable message
     pub message: String,
+    /// Optional sandbox info for display (e.g., "Linux Namespaces", "Docker 24.0.7")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sandbox_info: Option<String>,
 }
 
 /// Error with recovery options for the enable flow

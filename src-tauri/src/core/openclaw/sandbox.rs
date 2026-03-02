@@ -89,6 +89,12 @@ pub enum SandboxMode {
     },
 }
 
+impl Default for SandboxMode {
+    fn default() -> Self {
+        SandboxMode::Inactive
+    }
+}
+
 /// Auto-detect the best available sandbox for the current platform.
 /// Returns implementations in priority order: best isolation first.
 ///

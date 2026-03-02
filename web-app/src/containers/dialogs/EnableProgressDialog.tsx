@@ -25,6 +25,7 @@ interface EnableProgressEvent {
   step: string
   progress: number
   message: string
+  sandbox_info?: string
 }
 
 interface EnableResult {
@@ -90,6 +91,7 @@ export function EnableProgressDialog({
   const [message, setMessage] = useState('')
   const [completedSteps, setCompletedSteps] = useState<string[]>([])
   const [currentStep, setCurrentStep] = useState('')
+  const [sandboxInfo, setSandboxInfo] = useState<string | null>(null)
   const [error, setError] = useState<EnableError | null>(null)
   const [isRunning, setIsRunning] = useState(false)
   const [isDone, setIsDone] = useState(false)
@@ -99,6 +101,7 @@ export function EnableProgressDialog({
     setMessage('')
     setCompletedSteps([])
     setCurrentStep('')
+    setSandboxInfo(null)
     setError(null)
     setIsRunning(false)
     setIsDone(false)
@@ -163,10 +166,13 @@ export function EnableProgressDialog({
     const unlisten = listen<EnableProgressEvent>(
       'openclaw-enable-progress',
       (event) => {
-        const { step, progress: p, message: msg } = event.payload
+        const { step, progress: p, message: msg, sandbox_info } = event.payload
         setProgress(p)
         setMessage(msg)
         setCurrentStep(step)
+        if (sandbox_info) {
+          setSandboxInfo(sandbox_info)
+        }
         setCompletedSteps((prev) => {
           if (step !== prev[prev.length - 1]) {
             return [...prev, step]
@@ -258,6 +264,13 @@ export function EnableProgressDialog({
                 const isCurrent = currentStep === step && !isDone
                 const label = STEP_LABELS[step] || step
 
+                // Show sandbox info next to specific steps
+                const showSandboxInfo = sandboxInfo && (
+                  step === 'checking_dependencies' ||
+                  step === 'starting' ||
+                  step === 'complete'
+                )
+
                 // Skip install step if it didn't happen
                 if (
                   step === 'installing' &&
@@ -290,6 +303,11 @@ export function EnableProgressDialog({
                     >
                       {label}
                     </span>
+                    {showSandboxInfo && (
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        {sandboxInfo}
+                      </span>
+                    )}
                   </div>
                 )
               })}

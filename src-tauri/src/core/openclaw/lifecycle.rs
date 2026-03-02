@@ -153,40 +153,63 @@ pub async fn is_port_in_use(port: u16) -> bool {
         .is_ok()
 }
 
-/// Patch OpenClaw config based on the sandbox type.
-/// Docker needs different API URLs; namespace/direct sandboxes work with localhost.
-fn patch_config_for_sandbox(sandbox: &dyn Sandbox, config_dir: &Path) -> Result<(), String> {
-    match sandbox.isolation_tier() {
+/// Patch OpenClaw config based on the sandbox type using proper JSON parsing.
+/// Docker needs different API URLs and bind mode; direct process uses localhost.
+pub fn patch_config_for_sandbox(sandbox: &dyn Sandbox, config_dir: &Path) -> Result<(), String> {
+    use super::constants;
+
+    let config_path = config_dir.join("openclaw.json");
+    if !config_path.exists() {
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read config: {}", e))?;
+
+    let mut config: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse config: {}", e))?;
+
+    let (target_base_url, target_bind) = match sandbox.isolation_tier() {
         IsolationTier::FullContainer => {
-            // Docker: change Jan API URL to host.docker.internal
-            // and change gateway bind to 0.0.0.0 so the port mapping works
-            let config_path = config_dir.join("openclaw.json");
-            if config_path.exists() {
-                let content = std::fs::read_to_string(&config_path)
-                    .map_err(|e| format!("Failed to read config: {}", e))?;
+            // Docker: container reaches Jan host via host.docker.internal
+            // Bind to "lan" so Docker port mapping works
+            (constants::DOCKER_JAN_BASE_URL, constants::DOCKER_BIND_MODE)
+        }
+        IsolationTier::PlatformSandbox | IsolationTier::None => {
+            // Direct process / platform sandbox: same host, use localhost
+            (constants::DEFAULT_JAN_BASE_URL, constants::DEFAULT_BIND_MODE)
+        }
+    };
 
-                let patched = content
-                    .replace("localhost:1337", "host.docker.internal:1337")
-                    .replace("127.0.0.1:1337", "host.docker.internal:1337")
-                    .replace("\"bind\":\"loopback\"", "\"bind\":\"0.0.0.0\"")
-                    .replace("\"bind\": \"loopback\"", "\"bind\": \"0.0.0.0\"");
+    let mut modified = false;
 
-                if patched != content {
-                    std::fs::write(&config_path, patched)
-                        .map_err(|e| format!("Failed to patch config: {}", e))?;
-                    log::info!("Patched OpenClaw config for Docker sandbox");
-                }
-            }
+    // Patch gateway.bind
+    if let Some(bind) = config.pointer_mut("/gateway/bind") {
+        if bind.as_str() != Some(target_bind) {
+            *bind = serde_json::json!(target_bind);
+            modified = true;
         }
-        IsolationTier::PlatformSandbox => {
-            // No config patching needed for platform-native sandboxes:
-            // - WSL2: NAT networking — guest reaches host via localhost
-            // - Apple Container: helper configures host networking
-            // - Linux namespaces: no network namespace, localhost works
+    }
+
+    // Patch models.providers.jan.baseUrl
+    if let Some(base_url) = config.pointer_mut("/models/providers/jan/baseUrl") {
+        if base_url.as_str() != Some(target_base_url) {
+            *base_url = serde_json::json!(target_base_url);
+            modified = true;
         }
-        IsolationTier::None => {
-            // Direct process: same machine, localhost works
-        }
+    }
+
+    if modified {
+        let updated = serde_json::to_string_pretty(&config)
+            .map_err(|e| format!("Failed to serialize config: {}", e))?;
+        std::fs::write(&config_path, updated)
+            .map_err(|e| format!("Failed to write config: {}", e))?;
+        log::info!(
+            "Patched OpenClaw config for {} sandbox (bind={}, baseUrl={})",
+            sandbox.name(),
+            target_bind,
+            target_base_url
+        );
     }
 
     Ok(())

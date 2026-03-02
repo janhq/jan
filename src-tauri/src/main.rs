@@ -176,13 +176,12 @@ fn run_openclaw_cli(cli: OpenClawCli) {
             }
         }
 
-        OpenClawCommands::Configure { port, bind, jan_base_url, model_id, system_prompt } => {
+        OpenClawCommands::Configure { port, bind, jan_base_url, model_id } => {
             let config_input = app_lib::core::openclaw::models::OpenClawConfigInput {
                 port,
                 bind,
                 jan_base_url,
                 model_id,
-                system_prompt,
             };
 
             let result = rt.block_on(async {
@@ -195,7 +194,6 @@ fn run_openclaw_cli(cli: OpenClawCli) {
                     println!("  Gateway Port: {}", config.gateway.port);
                     println!("  Gateway Bind: {}", config.gateway.bind);
                     println!("  Jan Base URL: {}", config.models.providers.jan.base_url);
-                    println!("  Model ID: {}", config.agents.defaults.model.primary);
                 }
                 Err(e) => {
                     eprintln!("Configuration failed: {}", e);

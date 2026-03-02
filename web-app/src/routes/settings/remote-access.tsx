@@ -11,6 +11,7 @@ import { TailscaleSetupDialog } from '@/containers/dialogs/TailscaleSetupDialog'
 import { SecurityConfigDialog } from '@/containers/dialogs/SecurityConfigDialog'
 import { TunnelSelectionDialog } from '@/containers/dialogs/TunnelSelectionDialog'
 import { EnableProgressDialog } from '@/containers/dialogs/EnableProgressDialog'
+import { SandboxLogsDialog } from '@/containers/dialogs/SandboxLogsDialog'
 import { ChannelCard } from '@/containers/ChannelCard'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useEffect, useState, useCallback } from 'react'
@@ -25,6 +26,8 @@ import {
   IconPlus,
   IconCopy,
   IconExternalLink,
+  IconFileText,
+  IconAlertTriangle,
 } from '@tabler/icons-react'
 import type {
   ChannelType,
@@ -55,6 +58,7 @@ function RemoteAccess() {
   const [isSecurityDialogOpen, setIsSecurityDialogOpen] = useState(false)
   const [isTunnelDialogOpen, setIsTunnelDialogOpen] = useState(false)
   const [isEnableDialogOpen, setIsEnableDialogOpen] = useState(false)
+  const [isLogsDialogOpen, setIsLogsDialogOpen] = useState(false)
   const [tunnelStatus, setTunnelStatus] = useState<TunnelProvidersStatus | null>(null)
   const [, setSecurityStatus] = useState<SecurityStatus | null>(null)
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null)
@@ -334,6 +338,42 @@ function RemoteAccess() {
                 }
               />
 
+              {isRunning && status?.sandbox_type && (
+                <CardItem
+                  title={t('settings:remoteAccess.sandbox')}
+                  actions={
+                    <div className="flex items-center gap-2">
+                      <span className="text-foreground text-sm">
+                        {status.sandbox_type}
+                        {status.isolation_tier && status.isolation_tier !== 'none' && (
+                          <span className="text-muted-foreground ml-1">
+                            (Tier {status.isolation_tier === 'full_container' ? '3' : status.isolation_tier === 'platform_sandbox' ? '2' : '0'})
+                          </span>
+                        )}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setIsLogsDialogOpen(true)}
+                        title={t('settings:viewLogs')}
+                      >
+                        <IconFileText className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  }
+                />
+              )}
+
+              {/* Security Advisory - show when no sandbox (Tier 0) */}
+              {isRunning && (!status?.isolation_tier || status.isolation_tier === 'none') && (
+                <div className="flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3">
+                  <IconAlertTriangle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
+                  <p className="text-sm text-yellow-600 dark:text-yellow-400">
+                    {t('settings:securityAdvisory')}
+                  </p>
+                </div>
+              )}
+
               <CardItem
                 title={t('settings:remoteAccess.channels')}
                 actions={
@@ -467,6 +507,10 @@ function RemoteAccess() {
         isOpen={isEnableDialogOpen}
         onOpenChange={setIsEnableDialogOpen}
         onSuccess={fetchStatus}
+      />
+      <SandboxLogsDialog
+        isOpen={isLogsDialogOpen}
+        onOpenChange={setIsLogsDialogOpen}
       />
     </div>
   )

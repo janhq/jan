@@ -37,12 +37,9 @@ pub enum OpenClawCommands {
         /// Jan base URL
         #[arg(long)]
         jan_base_url: Option<String>,
-        /// Model ID to use
+        /// Model ID to use (sets agents.defaults.model.primary)
         #[arg(long)]
         model_id: Option<String>,
-        /// System prompt for agents
-        #[arg(long)]
-        system_prompt: Option<String>,
     },
     /// Restart the OpenClaw gateway
     Restart,

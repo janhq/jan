@@ -40,7 +40,7 @@ use super::sandbox::{IsolationTier, Sandbox, SandboxConfig, SandboxHandle, Sandb
 const CONTAINER_NAME: &str = "jan-openclaw";
 
 #[cfg(feature = "docker")]
-const IMAGE_NAME: &str = "ghcr.io/janhq/openclaw:latest";
+const IMAGE_NAME: &str = "ghcr.io/openclaw/openclaw:2026.3.1";
 
 #[cfg(feature = "docker")]
 pub struct DockerSandbox;
@@ -49,6 +49,24 @@ pub struct DockerSandbox;
 impl DockerSandbox {
     pub fn new() -> Self {
         Self
+    }
+
+    /// Check if Docker is available and the OpenClaw container exists.
+    /// Returns Some(true) if container exists, Some(false) if Docker available but no container,
+    /// None if Docker is not available.
+    pub async fn is_installed() -> Option<bool> {
+        let client = match Self::get_client().await {
+            Ok(c) => c,
+            Err(_) => return None,
+        };
+
+        // Check if Docker is responding
+        if client.ping().await.is_err() {
+            return None;
+        }
+
+        // Check if container exists
+        Some(Self::container_exists(&client).await)
     }
 
     async fn get_client() -> Result<bollard::Docker, String> {
@@ -73,9 +91,19 @@ impl DockerSandbox {
         }
     }
 
-    /// Check if the image exists locally.
+    /// Check if the image exists locally (internal).
     async fn image_exists(client: &bollard::Docker) -> bool {
         client.inspect_image(IMAGE_NAME).await.is_ok()
+    }
+
+    /// Check if the Docker image is available locally (public).
+    /// Returns true if Docker is available AND the image exists.
+    pub async fn is_image_available() -> bool {
+        let client = match Self::get_client().await {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        Self::image_exists(&client).await
     }
 
     /// Load the custom seccomp profile from the resources directory.
@@ -113,7 +141,7 @@ impl DockerSandbox {
         None
     }
 
-    /// Pull the OpenClaw image.
+    /// Pull the OpenClaw image (internal, no progress events).
     async fn pull_image(client: &bollard::Docker) -> Result<(), String> {
         log::info!("DockerSandbox: pulling image {}", IMAGE_NAME);
 
@@ -138,6 +166,108 @@ impl DockerSandbox {
         }
 
         log::info!("DockerSandbox: image pulled successfully");
+        Ok(())
+    }
+
+    /// Pull the Docker image if not already present, emitting progress events.
+    /// Called from `openclaw_enable()` to provide real-time feedback during the
+    /// potentially long image download.
+    pub async fn pull_image_if_needed_with_progress(
+        app: &tauri::AppHandle,
+        sandbox_info: Option<&str>,
+    ) -> Result<(), String> {
+        use tauri::Emitter;
+        use super::models::EnableProgressEvent;
+
+        let client = Self::get_client().await?;
+
+        // Check if image already exists locally
+        if Self::image_exists(&client).await {
+            log::info!("DockerSandbox: image {} already exists locally", IMAGE_NAME);
+            let _ = app.emit(
+                "openclaw-enable-progress",
+                EnableProgressEvent {
+                    step: "installing".to_string(),
+                    progress: 55,
+                    message: "Docker image already available.".to_string(),
+                    sandbox_info: sandbox_info.map(|s| s.to_string()),
+                },
+            );
+            return Ok(());
+        }
+
+        log::info!("DockerSandbox: pulling image {} with progress", IMAGE_NAME);
+
+        let options = CreateImageOptions {
+            from_image: IMAGE_NAME,
+            ..Default::default()
+        };
+
+        let mut stream = client.create_image(Some(options), None, None);
+        let mut last_progress_pct: u32 = 40; // Start at 40% (where installing step begins)
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(info) => {
+                    // Calculate progress from Docker's layer download info
+                    let mut msg = String::new();
+                    if let Some(ref status) = info.status {
+                        msg = status.clone();
+                    }
+
+                    // Use progress_detail to estimate percentage (40-55 range for pull)
+                    if let Some(ref detail) = info.progress_detail {
+                        if let (Some(current), Some(total)) = (detail.current, detail.total) {
+                            if total > 0 {
+                                let pct = (current as f64 / total as f64 * 15.0) as u32 + 40;
+                                last_progress_pct = pct.min(55);
+                            }
+                        }
+                    }
+
+                    if let Some(ref status) = info.status {
+                        // Only emit for meaningful status changes
+                        if status.contains("Pulling") || status.contains("Downloading")
+                            || status.contains("Extracting") || status.contains("Pull complete")
+                            || status.contains("Already exists")
+                        {
+                            let display_msg = if let Some(ref id) = info.id {
+                                format!("{}: {}", status, id)
+                            } else {
+                                msg.clone()
+                            };
+
+                            let _ = app.emit(
+                                "openclaw-enable-progress",
+                                EnableProgressEvent {
+                                    step: "installing".to_string(),
+                                    progress: last_progress_pct,
+                                    message: format!("Pulling image... {}", display_msg),
+                                    sandbox_info: sandbox_info.map(|s| s.to_string()),
+                                },
+                            );
+                        }
+                    }
+
+                    log::debug!("DockerSandbox: pull: {:?}", info.status);
+                }
+                Err(e) => {
+                    return Err(format!("Failed to pull image {}: {}", IMAGE_NAME, e));
+                }
+            }
+        }
+
+        log::info!("DockerSandbox: image pulled successfully");
+        let _ = app.emit(
+            "openclaw-enable-progress",
+            EnableProgressEvent {
+                step: "installing".to_string(),
+                progress: 58,
+                message: "Docker image pulled successfully.".to_string(),
+                sandbox_info: sandbox_info.map(|s| s.to_string()),
+            },
+        );
+
         Ok(())
     }
 }
@@ -208,17 +338,23 @@ impl Sandbox for DockerSandbox {
         );
 
         // Build environment variables
+        // Note: the official OpenClaw image runs as user `node` (home = /home/node)
         let mut env_vars: Vec<String> = config
             .env_vars
             .iter()
+            .filter(|(k, _)| k != "OPENCLAW_CONFIG") // Remove host path, we set the container path below
             .map(|(k, v)| format!("{}={}", k, v))
             .collect();
-        // Override config path for inside the container
-        env_vars.push("OPENCLAW_CONFIG=/root/.openclaw/openclaw.json".to_string());
+        // Override config path for inside the container (node user's home)
+        env_vars.push("OPENCLAW_CONFIG=/home/node/.openclaw/openclaw.json".to_string());
+        // V8 default heap limit on arm64 is ~512MB which is too small for OpenClaw.
+        // Explicitly raise it so the gateway doesn't OOM during startup.
+        env_vars.push("NODE_OPTIONS=--max-old-space-size=768".to_string());
 
-        // Build volume bind: ~/.openclaw -> /root/.openclaw
+        // Build volume bind: ~/.openclaw -> /home/node/.openclaw
+        // The official image runs as `node` user, NOT root
         let host_config_dir = config.config_dir.to_string_lossy();
-        let binds = vec![format!("{}:/root/.openclaw", host_config_dir)];
+        let binds = vec![format!("{}:/home/node/.openclaw", host_config_dir)];
 
         // Build extra hosts for Docker-to-host networking
         let extra_hosts = vec!["host.docker.internal:host-gateway".to_string()];
@@ -249,8 +385,8 @@ impl Sandbox for DockerSandbox {
             tmpfs: Some(tmpfs),
             security_opt: Some(security_opt),
             pids_limit: Some(256),
-            memory: Some(512 * 1024 * 1024), // 512 MB in bytes
-            nano_cpus: Some(1_000_000_000),   // 1 CPU
+            memory: Some(1024 * 1024 * 1024), // 1 GB — Node.js V8 heap needs headroom
+            nano_cpus: Some(1_000_000_000),    // 1 CPU
             ..Default::default()
         };
 

@@ -31,6 +31,8 @@ export interface OpenClawStatus {
   openclaw_version: string | null
   port_available: boolean
   error: string | null
+  sandbox_type?: string | null
+  isolation_tier?: string | null
 }
 
 export type TunnelProvider = 'none' | 'tailscale' | 'ngrok' | 'cloudflare' | 'localonly'

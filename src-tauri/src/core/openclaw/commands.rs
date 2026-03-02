@@ -798,9 +798,10 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
             });
         }
 
-        // Run npm install -g @openclaw/openclaw
+        // Run npm install -g openclaw@<pinned-version>
+        let pinned_package = format!("{}@{}", OPENCLAW_PACKAGE_NAME, OPENCLAW_VERSION);
         let child = Command::new("npm")
-            .args(["install", "-g", OPENCLAW_PACKAGE_NAME])
+            .args(["install", "-g", &pinned_package])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -911,53 +912,9 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
         let _ = child.wait().await;
     }
 
-    // ============================================
-    // Auto-start the Gateway
-    // ============================================
-    log::info!("Auto-starting OpenClaw Gateway");
-
-    // First install the gateway service (required for fresh install)
-    // This registers the launchd service on macOS
-    if let Ok(mut child) = Command::new("openclaw")
-        .args(["gateway", "install"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        let _ = child.wait().await;
-    }
-
-    // Use 'openclaw gateway start' CLI to start the gateway
-    let start_result = Command::new("openclaw")
-        .args(["gateway", "start"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
-
-    match start_result {
-        Ok(mut child) => {
-            // Wait for the command to complete
-            match child.wait().await {
-                Ok(status) => {
-                    if status.success() {
-                        log::info!("OpenClaw Gateway started successfully");
-                    } else {
-                        log::warn!("openclaw gateway start returned non-zero status");
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Failed to wait for gateway start: {}", e);
-                }
-            }
-        }
-        Err(e) => {
-            log::warn!("Failed to start Gateway: {}", e);
-            // Don't fail the install, the user can start it manually
-        }
-    }
-
-    // Give the gateway a moment to start responding
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    // NOTE: Gateway is NOT auto-started here. It is started by openclaw_start()
+    // via the sandbox abstraction (Docker, platform-native, or direct process).
+    // Auto-starting here would conflict with Docker sandbox mode.
 
     Ok(InstallResult {
         success: true,
@@ -979,12 +936,6 @@ fn generate_default_config(input: Option<OpenClawConfigInput>) -> OpenClawConfig
         }
         if let Some(base_url) = input.jan_base_url {
             config.models.providers.jan.base_url = base_url;
-        }
-        if let Some(model_id) = input.model_id {
-            config.agents.defaults.model.primary = model_id;
-        }
-        if let Some(system_prompt) = input.system_prompt {
-            config.agents.defaults.system_prompt = system_prompt;
         }
     }
 
@@ -1092,15 +1043,52 @@ pub async fn openclaw_ensure_jan_origin() -> Result<bool, String> {
     Ok(modified)
 }
 
-/// Configure OpenClaw with the specified settings
+/// Configure OpenClaw with the specified settings.
+/// If a config file already exists, merges gateway + models defaults without
+/// destroying other valid sections (agents, channels, plugins, etc.).
+/// Also strips any known-invalid keys that would cause OpenClaw to reject the config.
 #[tauri::command]
 pub async fn openclaw_configure(config_input: Option<OpenClawConfigInput>) -> Result<OpenClawConfig, String> {
     log::info!("Configuring OpenClaw");
 
     let config = generate_default_config(config_input);
-
     let config_path = get_openclaw_config_path()?;
-    let config_json = serde_json::to_string_pretty(&config)
+
+    // Serialize the defaults as a JSON Value for merging
+    let defaults: serde_json::Value = serde_json::to_value(&config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+
+    let mut merged = if config_path.exists() {
+        // Merge with existing config to preserve agents, channels, etc.
+        let existing_str = std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("Failed to read existing config: {}", e))?;
+        let mut existing: serde_json::Value = serde_json::from_str(&existing_str)
+            .unwrap_or_else(|_| serde_json::json!({}));
+
+        // Update gateway and models from defaults (these are the Jan-managed sections)
+        if let Some(gw) = defaults.get("gateway") {
+            existing["gateway"] = gw.clone();
+        }
+        if let Some(models) = defaults.get("models") {
+            // Preserve existing model list if present, only set defaults if missing
+            if existing.get("models").is_none() {
+                existing["models"] = models.clone();
+            } else {
+                // Ensure provider structure exists but keep existing model definitions
+                if existing.pointer("/models/providers/jan").is_none() {
+                    existing["models"]["providers"]["jan"] = models["providers"]["jan"].clone();
+                }
+            }
+        }
+        existing
+    } else {
+        defaults
+    };
+
+    // Strip known-invalid keys that OpenClaw rejects (strict Zod validation)
+    strip_invalid_config_keys(&mut merged);
+
+    let config_json = serde_json::to_string_pretty(&merged)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
     std::fs::write(&config_path, config_json)
@@ -1108,6 +1096,19 @@ pub async fn openclaw_configure(config_input: Option<OpenClawConfigInput>) -> Re
 
     log::info!("OpenClaw configuration written to {:?}", config_path);
     Ok(config)
+}
+
+/// Strip known-invalid keys from an OpenClaw config.
+/// OpenClaw uses strict Zod validation — unknown keys cause the gateway to refuse to start.
+fn strip_invalid_config_keys(config: &mut serde_json::Value) {
+    // agents.defaults.systemPrompt is NOT a valid key (system prompts come from workspace files)
+    if let Some(defaults) = config.pointer_mut("/agents/defaults") {
+        if let Some(obj) = defaults.as_object_mut() {
+            if obj.remove("systemPrompt").is_some() {
+                log::info!("Stripped invalid key: agents.defaults.systemPrompt");
+            }
+        }
+    }
 }
 
 /// Get the current OpenClaw configuration
@@ -1127,13 +1128,29 @@ pub async fn openclaw_get_config() -> Result<OpenClawConfig, String> {
         .map_err(|e| format!("Failed to parse config: {}", e))
 }
 
+/// Read the OpenClaw config file as a JSON Value.
+/// Preserves all fields including unknown ones.
+fn read_openclaw_config() -> Result<serde_json::Value, String> {
+    let config_path = get_openclaw_config_path()?;
+    let content = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read OpenClaw config: {}", e))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse OpenClaw config: {}", e))
+}
+
+/// Write a JSON Value back to the OpenClaw config file.
+fn write_openclaw_config(config: &serde_json::Value) -> Result<(), String> {
+    let config_path = get_openclaw_config_path()?;
+    let json = serde_json::to_string_pretty(config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+    std::fs::write(&config_path, json)
+        .map_err(|e| format!("Failed to write config: {}", e))
+}
+
 /// Sync the selected model from Jan to OpenClaw
 ///
 /// This updates OpenClaw's agent default model to match Jan's currently selected model.
-/// It does three things:
-/// 1. Ensures the "jan" provider exists pointing to localhost:1337
-/// 2. Adds/updates the model in the jan provider's model list
-/// 3. Sets the model as the default using `openclaw models set` (no restart needed)
+/// Works for both Docker and direct process modes by writing directly to the config file.
 #[tauri::command]
 pub async fn openclaw_sync_model(
     model_id: String,
@@ -1142,19 +1159,15 @@ pub async fn openclaw_sync_model(
 ) -> Result<(), String> {
     log::info!("Syncing model to OpenClaw: {} (provider: {:?})", model_id, provider);
 
-    // Format the model ID for OpenClaw
-    // For the jan provider, we use "jan/<model_id>" format
-    let openclaw_model_id = format!("jan/{}", model_id);
     let display_name = model_name.unwrap_or_else(|| model_id.clone());
 
     // Determine context window based on provider type
     let context_window = if provider.as_deref() == Some("llamacpp") || provider.as_deref() == Some("mlx") {
-        16000 // Local models typically have smaller context
+        16000
     } else {
-        128000 // Remote providers usually have larger context
+        128000
     };
 
-    // Create a model definition for OpenClaw
     let model_def = serde_json::json!({
         "id": model_id,
         "name": display_name,
@@ -1165,155 +1178,49 @@ pub async fn openclaw_sync_model(
         "maxTokens": 4096
     });
 
-    // Check if jan provider exists
-    let check_output = Command::new("openclaw")
-        .args(["config", "get", "models.providers.jan"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await;
+    // Read, modify, write the config directly (works for both Docker and direct process)
+    let mut config = read_openclaw_config()?;
 
-    let jan_provider_exists = check_output
-        .as_ref()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    // Ensure models.providers.jan exists
+    if config.pointer("/models/providers/jan").is_none() {
+        // Read the current baseUrl to preserve Docker vs direct process setting
+        let current_base_url = config
+            .pointer("/models/providers/jan/baseUrl")
+            .and_then(|v| v.as_str())
+            .unwrap_or(DEFAULT_JAN_BASE_URL);
 
-    if !jan_provider_exists {
-        // Create the jan provider pointing to local Jan API
-        log::info!("Creating 'jan' provider in OpenClaw config");
-        let jan_provider = serde_json::json!({
-            "baseUrl": "http://localhost:1337/v1",
-            "api": "openai-completions",
+        config["models"]["providers"]["jan"] = serde_json::json!({
+            "baseUrl": current_base_url,
+            "api": DEFAULT_JAN_API_TYPE,
             "authHeader": false,
             "apiKey": "not-needed",
             "models": [model_def]
         });
-
-        let create_output = Command::new("openclaw")
-            .args([
-                "config",
-                "set",
-                "models.providers.jan",
-                &jan_provider.to_string(),
-            ])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await;
-
-        if let Ok(output) = create_output {
-            if !output.status.success() {
-                log::warn!("Failed to create jan provider: {:?}", String::from_utf8_lossy(&output.stderr));
-            }
-        }
     } else {
-        // Jan provider exists, update the models list with this model
-        log::debug!("Jan provider exists, updating model list");
+        // Add model to existing list if not already present
+        let models = config
+            .pointer_mut("/models/providers/jan/models")
+            .and_then(|v| v.as_array_mut());
 
-        // Get current models
-        let models_output = Command::new("openclaw")
-            .args(["config", "get", "models.providers.jan.models"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await;
-
-        if let Ok(output) = models_output {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if let Ok(mut models) = serde_json::from_str::<Vec<serde_json::Value>>(stdout.trim()) {
-                    // Check if model already exists
-                    let model_exists = models.iter().any(|m| {
-                        m.get("id").and_then(|v| v.as_str()) == Some(&model_id)
-                    });
-
-                    if !model_exists {
-                        // Add the new model
-                        models.push(model_def);
-                        let models_json = serde_json::to_string(&models).unwrap_or_default();
-
-                        let _ = Command::new("openclaw")
-                            .args([
-                                "config",
-                                "set",
-                                "models.providers.jan.models",
-                                &models_json,
-                            ])
-                            .stdout(Stdio::piped())
-                            .stderr(Stdio::piped())
-                            .output()
-                            .await;
-                    }
-                }
+        if let Some(models) = models {
+            let model_exists = models.iter().any(|m| {
+                m.get("id").and_then(|v| v.as_str()) == Some(&model_id)
+            });
+            if !model_exists {
+                models.push(model_def);
             }
         }
     }
 
-    // Use `openclaw models set` to change the default model
-    // This updates the default for new sessions
-    let output = Command::new("openclaw")
-        .args(["models", "set", &openclaw_model_id])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run openclaw models set: {}", e))?;
+    // Set as default model
+    config["agents"]["defaults"]["model"]["primary"] = serde_json::json!(model_id);
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Clean up any invalid keys before writing
+    strip_invalid_config_keys(&mut config);
 
-    log::info!("OpenClaw config set output: {}", stdout);
-    if !stderr.is_empty() {
-        log::debug!("OpenClaw config set stderr: {}", stderr);
-    }
+    write_openclaw_config(&config)?;
 
-    if !output.status.success() {
-        return Err(format!(
-            "Failed to set OpenClaw model: {}",
-            if !stderr.is_empty() { stderr.to_string() } else { stdout.to_string() }
-        ));
-    }
-
-    // Now update active sessions to use the new model
-    // Get list of active sessions (updated in last 24 hours)
-    let sessions_output = Command::new("openclaw")
-        .args(["sessions", "--json", "--active", "1440"]) // Last 24 hours
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await;
-
-    if let Ok(sessions_result) = sessions_output {
-        if sessions_result.status.success() {
-            let sessions_json = String::from_utf8_lossy(&sessions_result.stdout);
-            // Parse the sessions response - it's an object with a "sessions" array
-            if let Ok(sessions_response) = serde_json::from_str::<serde_json::Value>(&sessions_json) {
-                if let Some(sessions) = sessions_response.get("sessions").and_then(|v| v.as_array()) {
-                    // Send /model command to each active session
-                    for session in sessions {
-                        if let Some(session_id) = session.get("sessionId").and_then(|v| v.as_str()) {
-                            let model_cmd = format!("/model {}", openclaw_model_id);
-                            log::debug!("Switching model for session {}: {}", session_id, model_cmd);
-
-                            // Fire and forget - don't wait for response
-                            let session_id_clone = session_id.to_string();
-                            let model_cmd_clone = model_cmd.clone();
-                            tokio::spawn(async move {
-                                let _ = Command::new("openclaw")
-                                    .args(["agent", "--session-id", &session_id_clone, "--message", &model_cmd_clone])
-                                    .stdout(Stdio::null())
-                                    .stderr(Stdio::null())
-                                    .output()
-                                    .await;
-                            });
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    log::info!("Successfully synced model '{}' to OpenClaw", openclaw_model_id);
+    log::info!("Successfully synced model '{}' to OpenClaw config", model_id);
     Ok(())
 }
 
@@ -1362,62 +1269,37 @@ pub async fn openclaw_sync_all_models(
 
     let synced_count = model_defs.len() as u32;
 
+    // Read, modify, write the config directly (works for both Docker and direct process)
+    let mut config = read_openclaw_config()?;
+
+    // Preserve the current baseUrl (may be Docker or localhost depending on sandbox)
+    let current_base_url = config
+        .pointer("/models/providers/jan/baseUrl")
+        .and_then(|v| v.as_str())
+        .unwrap_or(DEFAULT_JAN_BASE_URL)
+        .to_string();
+
     // Build the full jan provider config with all models
-    let jan_provider = serde_json::json!({
-        "baseUrl": DEFAULT_JAN_BASE_URL,
+    config["models"]["providers"]["jan"] = serde_json::json!({
+        "baseUrl": current_base_url,
         "api": DEFAULT_JAN_API_TYPE,
         "authHeader": false,
         "apiKey": "not-needed",
         "models": model_defs
     });
 
-    // Set the jan provider atomically (creates or replaces)
-    let output = Command::new("openclaw")
-        .args([
-            "config",
-            "set",
-            "models.providers.jan",
-            &jan_provider.to_string(),
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run openclaw config set: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Failed to set jan provider models: {}", stderr));
-    }
-
     // Set the default model if provided
     let set_default = if let Some(ref model_id) = default_model_id {
-        let openclaw_model_id = format!("jan/{}", model_id);
-        let model_output = Command::new("openclaw")
-            .args(["models", "set", &openclaw_model_id])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await;
-
-        match model_output {
-            Ok(o) if o.status.success() => {
-                log::info!("Set default model to {}", openclaw_model_id);
-                Some(openclaw_model_id)
-            }
-            Ok(o) => {
-                let stderr = String::from_utf8_lossy(&o.stderr);
-                log::warn!("Failed to set default model: {}", stderr);
-                None
-            }
-            Err(e) => {
-                log::warn!("Failed to run openclaw models set: {}", e);
-                None
-            }
-        }
+        config["agents"]["defaults"]["model"]["primary"] = serde_json::json!(model_id);
+        Some(format!("jan/{}", model_id))
     } else {
         None
     };
+
+    // Clean up any invalid keys before writing
+    strip_invalid_config_keys(&mut config);
+
+    write_openclaw_config(&config)?;
 
     log::info!("Successfully bulk synced {} models to OpenClaw", synced_count);
     Ok(BulkSyncResult {
@@ -1431,23 +1313,12 @@ pub async fn openclaw_sync_all_models(
 pub async fn openclaw_get_model() -> Result<String, String> {
     log::info!("Getting OpenClaw model");
 
-    let output = Command::new("openclaw")
-        .args(["config", "get", "agents.defaults.model.primary"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run openclaw config get: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Failed to get OpenClaw model: {}", stderr));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // The output is JSON, parse it to get just the value
-    let model: String = serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|_| stdout.trim().trim_matches('"').to_string());
+    let config = read_openclaw_config()?;
+    let model = config
+        .pointer("/agents/defaults/model/primary")
+        .and_then(|v| v.as_str())
+        .unwrap_or(DEFAULT_MODEL_ID)
+        .to_string();
 
     Ok(model)
 }
@@ -1475,80 +1346,218 @@ pub async fn openclaw_enable(
     log::info!("Starting 1-click OpenClaw enable flow");
 
     let mut steps_completed: Vec<EnableStep> = vec![];
+    let mut sandbox_info: Option<String> = None;
 
-    let emit = |step: &str, progress: u32, message: &str| {
+    let emit = |step: &str, progress: u32, message: &str, sandbox: Option<&str>| {
         let _ = app.emit(
             "openclaw-enable-progress",
             EnableProgressEvent {
                 step: step.to_string(),
                 progress,
                 message: message.to_string(),
+                sandbox_info: sandbox.map(|s| s.to_string()),
             },
         );
     };
 
-    // Step 1: Check Node.js dependencies
-    emit("checking_dependencies", 10, "Checking Node.js installation...");
+    // Step 1: Detect sandbox type FIRST (before Node.js check)
+    // This is important because for Docker, Node.js runs inside container
+    let detected = crate::core::openclaw::sandbox::detect_sandbox().await;
+    let sandbox_name = detected.name().to_string();
+    let tier = detected.isolation_tier();
+    let mut is_docker = sandbox_name == "Docker";
+    sandbox_info = Some(match tier {
+        crate::core::openclaw::sandbox::IsolationTier::None => "None (direct process)".to_string(),
+        _ => sandbox_name.clone(),
+    });
+    log::info!("Detected sandbox: {} (tier: {:?})", sandbox_name, tier);
+
+    // Step 1b: Check Node.js dependencies (skip for Docker - runs inside container)
+    emit("checking_dependencies", 10, "Checking Node.js installation...", sandbox_info.as_deref());
     steps_completed.push(EnableStep::CheckingDependencies);
-    let node_check = openclaw_check_dependencies().await;
-    if !node_check.installed {
-        return Err(serde_json::to_string(&EnableError {
-            code: EnableErrorCode::NodeNotFound,
-            message: "Node.js is not installed. OpenClaw requires Node.js 22+.".to_string(),
-            recovery: vec![RecoveryOption {
-                label: "Download Node.js".to_string(),
-                action: RecoveryAction::OpenNodeDownload,
-                description: "Opens the Node.js download page in your browser.".to_string(),
-            }],
-        })
-        .unwrap_or_else(|_| "Node.js is not installed".to_string()));
-    }
-    if !node_check.meets_requirements {
-        return Err(serde_json::to_string(&EnableError {
-            code: EnableErrorCode::NodeVersionTooLow,
-            message: format!(
-                "Node.js 22+ required. Found: {}",
-                node_check.version.as_deref().unwrap_or("unknown")
-            ),
-            recovery: vec![RecoveryOption {
-                label: "Download Node.js".to_string(),
-                action: RecoveryAction::OpenNodeDownload,
-                description: "Opens the Node.js download page to get the latest version.".to_string(),
-            }],
-        })
-        .unwrap_or_else(|_| "Node.js version too low".to_string()));
+
+    let _node_check = if is_docker {
+        // For Docker, Node.js runs inside container - no host check needed
+        log::info!("Docker sandbox detected - Node.js runs inside container, skipping host check");
+        NodeCheckResult {
+            installed: true, // Pretend it's installed to allow flow to continue
+            version: None,
+            major_version: None,
+            meets_requirements: true,
+            error: None,
+        }
+    } else {
+        // For direct process, Node.js must be on host
+        let check = openclaw_check_dependencies().await;
+        if !check.installed {
+            return Err(serde_json::to_string(&EnableError {
+                code: EnableErrorCode::NodeNotFound,
+                message: "Node.js is not installed. OpenClaw requires Node.js 22+.".to_string(),
+                recovery: vec![RecoveryOption {
+                    label: "Download Node.js".to_string(),
+                    action: RecoveryAction::OpenNodeDownload,
+                    description: "Opens the Node.js download page in your browser.".to_string(),
+                }],
+            })
+            .unwrap_or_else(|_| "Node.js is not installed".to_string()));
+        }
+        if !check.meets_requirements {
+            return Err(serde_json::to_string(&EnableError {
+                code: EnableErrorCode::NodeVersionTooLow,
+                message: format!(
+                    "Node.js 22+ required. Found: {}",
+                    check.version.as_deref().unwrap_or("unknown")
+                ),
+                recovery: vec![RecoveryOption {
+                    label: "Download Node.js".to_string(),
+                    action: RecoveryAction::OpenNodeDownload,
+                    description: "Opens the Node.js download page to get the latest version.".to_string(),
+                }],
+            })
+            .unwrap_or_else(|_| "Node.js version too low".to_string()));
+        }
+        check
+    };
+
+    // Store detected sandbox in state
+    {
+        let mut sandbox_guard = state.sandbox.lock().await;
+        *sandbox_guard = Some(detected);
     }
 
     // Step 2: Check if OpenClaw is already installed
-    emit("checking_installation", 25, "Checking OpenClaw installation...");
+    emit("checking_installation", 25, "Checking OpenClaw installation...", sandbox_info.as_deref());
     steps_completed.push(EnableStep::CheckingInstallation);
-    let already_installed = check_openclaw_installed().await.ok().flatten().is_some();
+
+    let already_installed = if is_docker {
+        // For Docker: check if the Docker image exists locally
+        let docker_installed = crate::core::openclaw::sandbox_docker::DockerSandbox::is_installed().await;
+        let docker_exists = docker_installed == Some(true);
+        log::info!("Installation check: docker_container={}, sandbox={}", docker_exists, sandbox_name);
+
+        if docker_exists {
+            emit("already_installed", 40, "OpenClaw container exists in Docker.", sandbox_info.as_deref());
+        }
+        docker_exists
+    } else {
+        // For non-Docker: check npm package on host
+        let npm_installed = check_openclaw_installed().await.ok().flatten().is_some();
+        log::info!("Installation check: npm={}, sandbox={}", npm_installed, sandbox_name);
+        npm_installed
+    };
 
     // Step 3: Install if needed
     if !already_installed {
-        emit("installing", 40, "Installing OpenClaw (this may take a moment)...");
-        steps_completed.push(EnableStep::Installing);
-        let install_result = openclaw_install().await?;
-        if !install_result.success {
-            return Err(serde_json::to_string(&EnableError {
-                code: EnableErrorCode::NpmInstallFailed,
-                message: install_result
-                    .error
-                    .unwrap_or_else(|| "npm install failed".to_string()),
-                recovery: vec![RecoveryOption {
-                    label: "Retry".to_string(),
-                    action: RecoveryAction::Retry,
-                    description: "Try installing OpenClaw again.".to_string(),
-                }],
-            })
-            .unwrap_or_else(|_| "Installation failed".to_string()));
+        if is_docker {
+            // Docker path: pull the image (the actual container is created in openclaw_start)
+            emit("installing", 40, "Pulling OpenClaw Docker image...", sandbox_info.as_deref());
+            steps_completed.push(EnableStep::Installing);
+
+            // Pull Docker image with progress events
+            match crate::core::openclaw::sandbox_docker::DockerSandbox::pull_image_if_needed_with_progress(
+                &app,
+                sandbox_info.as_deref(),
+            ).await {
+                Ok(()) => {
+                    log::info!("Docker image pulled successfully");
+                }
+                Err(e) => {
+                    // Docker image pull failed (e.g., image not published yet, auth error, network)
+                    // Fall back to direct process mode with npm install
+                    log::warn!("Docker image pull failed: {}. Falling back to direct process.", e);
+                    emit("installing", 42, "Docker image unavailable, falling back to direct install...", sandbox_info.as_deref());
+
+                    is_docker = false;
+                    sandbox_info = Some("None (direct process)".to_string());
+
+                    // Replace sandbox in state with DirectProcessSandbox
+                    {
+                        let mut sandbox_guard = state.sandbox.lock().await;
+                        *sandbox_guard = Some(Box::new(
+                            crate::core::openclaw::sandbox_direct::DirectProcessSandbox,
+                        ));
+                    }
+
+                    // Check Node.js (required for direct process)
+                    let node_check = openclaw_check_dependencies().await;
+                    if !node_check.installed {
+                        return Err(serde_json::to_string(&EnableError {
+                            code: EnableErrorCode::NodeNotFound,
+                            message: format!(
+                                "Docker image unavailable and Node.js is not installed. \
+                                 Original error: {}. Install Node.js 22+ for direct mode.",
+                                e
+                            ),
+                            recovery: vec![RecoveryOption {
+                                label: "Download Node.js".to_string(),
+                                action: RecoveryAction::OpenNodeDownload,
+                                description: "Opens the Node.js download page in your browser.".to_string(),
+                            }],
+                        })
+                        .unwrap_or_else(|_| "Node.js is not installed".to_string()));
+                    }
+                    if !node_check.meets_requirements {
+                        return Err(serde_json::to_string(&EnableError {
+                            code: EnableErrorCode::NodeVersionTooLow,
+                            message: format!(
+                                "Docker image unavailable and Node.js version too low. \
+                                 Original error: {}. Node.js 22+ required.",
+                                e
+                            ),
+                            recovery: vec![RecoveryOption {
+                                label: "Download Node.js".to_string(),
+                                action: RecoveryAction::OpenNodeDownload,
+                                description: "Opens the Node.js download page to get the latest version.".to_string(),
+                            }],
+                        })
+                        .unwrap_or_else(|_| "Node.js version too low".to_string()));
+                    }
+
+                    // Now do npm install
+                    emit("installing", 45, "Installing OpenClaw via npm...", sandbox_info.as_deref());
+                    let install_result = openclaw_install().await?;
+                    if !install_result.success {
+                        return Err(serde_json::to_string(&EnableError {
+                            code: EnableErrorCode::NpmInstallFailed,
+                            message: install_result
+                                .error
+                                .unwrap_or_else(|| "npm install failed".to_string()),
+                            recovery: vec![RecoveryOption {
+                                label: "Retry".to_string(),
+                                action: RecoveryAction::Retry,
+                                description: "Try installing OpenClaw again.".to_string(),
+                            }],
+                        })
+                        .unwrap_or_else(|_| "Installation failed".to_string()));
+                    }
+                }
+            }
+        } else {
+            // Non-Docker path: npm install
+            emit("installing", 40, "Installing OpenClaw (this may take a moment)...", sandbox_info.as_deref());
+            steps_completed.push(EnableStep::Installing);
+            let install_result = openclaw_install().await?;
+            if !install_result.success {
+                return Err(serde_json::to_string(&EnableError {
+                    code: EnableErrorCode::NpmInstallFailed,
+                    message: install_result
+                        .error
+                        .unwrap_or_else(|| "npm install failed".to_string()),
+                    recovery: vec![RecoveryOption {
+                        label: "Retry".to_string(),
+                        action: RecoveryAction::Retry,
+                        description: "Try installing OpenClaw again.".to_string(),
+                    }],
+                })
+                .unwrap_or_else(|_| "Installation failed".to_string()));
+            }
         }
     } else {
-        emit("already_installed", 40, "OpenClaw is already installed.");
+        emit("already_installed", 40, "OpenClaw is already installed.", sandbox_info.as_deref());
     }
 
     // Step 4: Configure
-    emit("configuring", 60, "Configuring OpenClaw...");
+    emit("configuring", 60, "Configuring OpenClaw...", sandbox_info.as_deref());
     steps_completed.push(EnableStep::Configuring);
     openclaw_configure(config_input).await.map_err(|e| {
         serde_json::to_string(&EnableError {
@@ -1564,7 +1573,7 @@ pub async fn openclaw_enable(
     })?;
 
     // Step 5: Start the gateway
-    emit("starting", 75, "Starting OpenClaw gateway...");
+    emit("starting", 75, "Starting OpenClaw gateway...", sandbox_info.as_deref());
     steps_completed.push(EnableStep::Starting);
     openclaw_start(state.clone()).await.map_err(|e| {
         if e.contains("Port") || e.contains("port") {
@@ -1595,7 +1604,7 @@ pub async fn openclaw_enable(
     })?;
 
     // Step 6: Get final status
-    emit("complete", 100, "OpenClaw is ready!");
+    emit("complete", 100, "OpenClaw is ready!", sandbox_info.as_deref());
     let final_status = openclaw_status(state).await?;
 
     Ok(EnableResult {
@@ -1611,26 +1620,69 @@ pub async fn openclaw_enable(
 pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), String> {
     log::info!("Starting OpenClaw gateway");
 
-    // Check if gateway is already responding
-    if check_gateway_responding().await {
-        log::info!("OpenClaw gateway is already running on port {}", OPENCLAW_PORT);
-        let _ = openclaw_ensure_jan_origin().await;
-        return Ok(());
+    // Step 1: Detect sandbox FIRST (before port checks) — determines how we handle everything
+    let sandbox_name: String;
+    let is_docker = {
+        let mut sandbox_guard = state.sandbox.lock().await;
+        if sandbox_guard.is_none() {
+            let detected = crate::core::openclaw::sandbox::detect_sandbox().await;
+            let name = detected.name().to_string();
+            let tier_str = detected.isolation_tier().to_string();
+            sandbox_name = format!("{} (tier: {})", name, tier_str);
+            log::info!("Detected sandbox: {}", sandbox_name);
+            *sandbox_guard = Some(detected);
+            name == "Docker"
+        } else {
+            let sb = sandbox_guard.as_ref().unwrap();
+            sandbox_name = format!("{} (tier: {})", sb.name(), sb.isolation_tier());
+            sb.name() == "Docker"
+        }
+    };
+
+    log::info!("Starting OpenClaw with sandbox: {}", sandbox_name);
+
+    // Step 2: Port check — behavior depends on sandbox type
+    if is_docker {
+        // For Docker: if port is in use, something else is on it (host process, old container).
+        // We need to ensure the Docker container is running, not just that the port responds.
+        // Check if our Docker container is already running.
+        let docker_status = {
+            let sandbox_guard = state.sandbox.lock().await;
+            if let Some(sandbox) = sandbox_guard.as_ref() {
+                let dummy_handle = crate::core::openclaw::sandbox::SandboxHandle::Named(
+                    "jan-openclaw".to_string(),
+                );
+                sandbox.status(&dummy_handle).await.ok()
+            } else {
+                None
+            }
+        };
+
+        if docker_status == Some(crate::core::openclaw::sandbox::SandboxStatus::Running) {
+            log::info!("Docker container is already running");
+            return Ok(());
+        }
+
+        // If port is in use but Docker container is NOT running, something else occupies the port.
+        // We'll let the Docker start proceed — it binds to the same port and will fail with a
+        // clear error if there's a conflict.
+        log::info!("Docker container not running, will start it");
+    } else {
+        // For non-Docker: if gateway is already responding, we're done
+        if check_gateway_responding().await {
+            log::info!("OpenClaw gateway is already running on port {}", OPENCLAW_PORT);
+            let _ = openclaw_ensure_jan_origin().await;
+            return Ok(());
+        }
+
+        // Check port availability for non-Docker
+        let port_check = openclaw_check_port(OPENCLAW_PORT).await;
+        if !port_check.available {
+            return Err(format!("Port {} is already in use by another application", OPENCLAW_PORT));
+        }
     }
 
-    // Check dependencies first
-    let node_check = openclaw_check_dependencies().await;
-    if !node_check.installed || !node_check.meets_requirements {
-        return Err(node_check.error.unwrap_or_else(|| "Node.js requirements not met".to_string()));
-    }
-
-    // Check port availability
-    let port_check = openclaw_check_port(OPENCLAW_PORT).await;
-    if !port_check.available {
-        return Err(format!("Port {} is already in use by another application", OPENCLAW_PORT));
-    }
-
-    // Ensure config exists
+    // Step 3: Ensure config exists
     let config_path = get_openclaw_config_path()?;
     if !config_path.exists() {
         openclaw_configure(None).await?;
@@ -1638,21 +1690,24 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
         openclaw_ensure_jan_origin().await?;
     }
 
-    // Detect sandbox if not yet initialized
-    {
-        let mut sandbox_guard = state.sandbox.lock().await;
-        if sandbox_guard.is_none() {
-            let detected = crate::core::openclaw::sandbox::detect_sandbox().await;
-            log::info!("Detected sandbox: {} (tier: {})", detected.name(), detected.isolation_tier());
-            *sandbox_guard = Some(detected);
+    // Step 4: Node.js check (skip for Docker — runs inside container)
+    if !is_docker {
+        let node_check = openclaw_check_dependencies().await;
+        if !node_check.installed || !node_check.meets_requirements {
+            return Err(node_check.error.unwrap_or_else(|| "Node.js requirements not met".to_string()));
         }
+    } else {
+        log::info!("Docker sandbox detected - Node.js runs inside container, skipping host check");
     }
 
-    // Build config and start via lifecycle module
+    // Step 5: Build config and start via lifecycle module
     let config = crate::core::openclaw::lifecycle::build_sandbox_config(
         &crate::core::openclaw::constants::DEFAULT_JAN_BASE_URL,
     )?;
 
+    // Take a reference to the sandbox within a scoped lock, then call start_openclaw.
+    // start_openclaw internally locks sandbox_mode, so we must not hold the sandbox lock
+    // across the entire call. Instead, scope it properly.
     let sandbox_guard = state.sandbox.lock().await;
     let sandbox = sandbox_guard.as_ref().ok_or("Sandbox not initialized")?;
     crate::core::openclaw::lifecycle::start_openclaw(sandbox.as_ref(), &config, &state).await
@@ -1690,13 +1745,42 @@ pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClaw
         Err(_) => None,
     };
 
+    // Determine "installed" based on which sandbox is detected.
+    // When Docker is the sandbox, we need the Docker image to exist locally.
+    // When direct process is the sandbox, we need the npm package on the host.
+    let is_docker_sandbox = {
+        let sandbox_guard = state.sandbox.lock().await;
+        sandbox_guard.as_ref().map(|s| s.name() == "Docker").unwrap_or(false)
+    };
+
+    let is_installed = if is_docker_sandbox {
+        // For Docker sandbox: installed means the Docker image is available locally
+        // (container existence is transient — it's created/destroyed on start/stop)
+        crate::core::openclaw::sandbox_docker::DockerSandbox::is_image_available().await
+    } else {
+        // For direct process: installed means the npm package is on the host
+        openclaw_version.is_some()
+    };
+
     let node_check = openclaw_check_dependencies().await;
     let port_check = openclaw_check_port(OPENCLAW_PORT).await;
 
     // Get sandbox information from state
+    // Also check if container still exists (in case it was deleted externally)
     let (sandbox_type, isolation_tier) = {
-        let sandbox_guard = state.sandbox.lock().await;
-        let mode = state.sandbox_mode.lock().await;
+        let mut sandbox_guard = state.sandbox.lock().await;
+        let mut mode = state.sandbox_mode.lock().await;
+
+        // If state says Active but container doesn't exist, reset state
+        if let crate::core::openclaw::sandbox::SandboxMode::Active { .. } = &*mode {
+            if !running {
+                // Container was deleted externally, reset state
+                log::info!("OpenClaw container was deleted externally, resetting state");
+                *mode = crate::core::openclaw::sandbox::SandboxMode::Inactive;
+                *sandbox_guard = None;
+            }
+        }
+
         match (&*sandbox_guard, &*mode) {
             (Some(sandbox), crate::core::openclaw::sandbox::SandboxMode::Active { .. }) => {
                 (
@@ -1713,7 +1797,7 @@ pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClaw
     };
 
     Ok(OpenClawStatus {
-        installed: openclaw_version.is_some(),
+        installed: is_installed,
         running,
         node_version: node_check.version,
         openclaw_version,
@@ -3489,6 +3573,80 @@ pub async fn security_clear_logs() -> Result<(), String> {
 pub fn security_generate_pairing_code() -> String {
     log::info!("Generating pairing code");
     security::generate_pairing_code()
+}
+
+// ============================================
+// Sandbox Commands
+// ============================================
+
+use crate::core::openclaw::sandbox::SandboxMode;
+
+/// Get sandbox logs
+///
+/// Returns the last N lines of logs from the sandboxed OpenClaw process.
+#[tauri::command]
+pub async fn sandbox_get_logs(
+    state: State<'_, OpenClawState>,
+    lines: usize,
+) -> Result<Vec<String>, String> {
+    log::info!("Getting sandbox logs (lines: {})", lines);
+
+    let mode = state.sandbox_mode.lock().await;
+    let sandbox_guard = state.sandbox.lock().await;
+
+    match (&*mode, &*sandbox_guard) {
+        (SandboxMode::Active { handle, .. }, Some(sandbox)) => {
+            sandbox.logs(handle, lines).await
+        }
+        _ => {
+            // Try to read from the gateway log file directly
+            let config_dir = get_openclaw_config_dir()?;
+            let log_path = config_dir.join("gateway.log");
+
+            if log_path.exists() {
+                let content = tokio::fs::read_to_string(&log_path)
+                    .await
+                    .map_err(|e| format!("Failed to read log file: {}", e))?;
+
+                let all_lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+                let start = if all_lines.len() > lines {
+                    all_lines.len() - lines
+                } else {
+                    0
+                };
+                Ok(all_lines[start..].to_vec())
+            } else {
+                Ok(vec!["No logs available. OpenClaw may not be running.".to_string()])
+            }
+        }
+    }
+}
+
+/// Restart the sandboxed OpenClaw process
+///
+/// Stops the current sandbox (if running) and starts a fresh one.
+/// This is useful for recovering from errors or applying configuration changes.
+#[tauri::command]
+pub async fn sandbox_restart(state: State<'_, OpenClawState>) -> Result<(), String> {
+    log::info!("Restarting sandbox");
+
+    // Stop the current sandbox if active
+    {
+        let mut mode = state.sandbox_mode.lock().await;
+        let sandbox_guard = state.sandbox.lock().await;
+
+        if let SandboxMode::Active { handle, sandbox_name, isolation_tier } = std::mem::take(&mut *mode) {
+            if let Some(sandbox) = &*sandbox_guard {
+                log::info!("Stopping sandbox {} ({:?})", sandbox_name, isolation_tier);
+                let mut handle = handle;
+                let _ = sandbox.stop(&mut handle).await;
+            }
+        }
+        *mode = SandboxMode::Inactive;
+    }
+
+    // Start fresh
+    openclaw_start(state).await
 }
 
 // ============================================
