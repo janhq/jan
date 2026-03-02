@@ -36,17 +36,7 @@ export const ImportMlxModelDialog = ({
   const handleFileSelect = async () => {
     const result = await serviceHub.dialog().open({
       multiple: false,
-      directory: false,
-      filters: [
-        {
-          name: 'Safetensor Files',
-          extensions: ['safetensors'],
-        },
-        {
-          name: 'All Files',
-          extensions: ['*'],
-        },
-      ],
+      directory: true,
     })
 
     if (result && typeof result === 'string') {
@@ -65,7 +55,7 @@ export const ImportMlxModelDialog = ({
 
   const handleImport = async () => {
     if (!selectedPath) {
-      toast.error('Please select a safetensor file or folder')
+      toast.error('Please select a model folder')
       return
     }
 
@@ -161,8 +151,9 @@ export const ImportMlxModelDialog = ({
             Import MLX Model
           </DialogTitle>
           <DialogDescription>
-            Import a safetensor model file or folder for use with MLX. MLX models
-            are typically downloaded from HuggingFace and use the safetensors format.
+            Import a local MLX model folder for use with MLX. MLX models are
+            typically downloaded from HuggingFace and contain safetensors files
+            along with config and tokenizer files.
           </DialogDescription>
         </DialogHeader>
 
@@ -188,7 +179,7 @@ export const ImportMlxModelDialog = ({
           <div className="border rounded-lg p-4 space-y-3">
             <div className="flex items-center gap-2">
               <h3 className="font-medium">
-                Safetensor File or Folder
+                Model Folder
               </h3>
               <span className="text-xs bg-secondary px-2 py-1 rounded-sm">
                 Required
@@ -222,7 +213,7 @@ export const ImportMlxModelDialog = ({
                 disabled={importing}
                 className="w-full h-12 border border-dashed text-muted-foreground"
               >
-                Select Safetensor File or Folder
+                Select Model Folder
               </Button>
             )}
           </div>

@@ -250,12 +250,13 @@ function HubModelDetailContent() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div className="flex items-center gap-2 w-full relative">
+        <div className="flex items-center gap-2 w-full">
           <Button
             onClick={() => navigate({ to: route.hub.index })}
             aria-label="Go back"
             variant="ghost"
             size="sm"
+            className='relative z-20'
           >
             <IconArrowLeft size={18} className="text-muted-foreground" />
             <span className="text-foreground">Back to Hub</span>

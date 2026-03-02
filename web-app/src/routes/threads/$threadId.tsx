@@ -778,9 +778,11 @@ function ThreadDetail() {
                       <p className="text-sm font-medium text-destructive mb-1">
                         Error generating response
                       </p>
-                      <p className="text-sm text-muted-foreground">
-                        {error.message}
-                      </p>
+                      <div className="table table-fixed w-full">
+                        <span className="text-sm text-muted-foreground table-cell align-middle" style={{wordWrap: "break-word"}}>
+                          {error.message}
+                        </span>
+                      </div>
                       {(error.message?.toLowerCase().includes('context') &&
                         (error.message?.toLowerCase().includes('size') ||
                           error.message?.toLowerCase().includes('length') ||
