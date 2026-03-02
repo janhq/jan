@@ -192,6 +192,7 @@ build-cli-dev:
 
 # Build
 build: install-and-build install-rust-targets
+	make build-cli
 	yarn build
 
 clean:
