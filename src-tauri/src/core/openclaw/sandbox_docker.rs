@@ -369,11 +369,22 @@ impl Sandbox for DockerSandbox {
         // Build extra hosts for Docker-to-host networking
         let extra_hosts = vec!["host.docker.internal:host-gateway".to_string()];
 
-        // Security: tmpfs mount at /tmp (writable scratch, noexec)
+        // Writable tmpfs mounts on top of the read-only root filesystem.
+        // /tmp — general scratch space for Node.js and OpenClaw
+        // /home/node/.npm — npm cache (plugin enable/install writes here)
+        // /home/node/.cache — generic cache dir used by various Node tools
         let mut tmpfs = HashMap::new();
         tmpfs.insert(
             "/tmp".to_string(),
             "rw,noexec,nosuid,size=65536k".to_string(),
+        );
+        tmpfs.insert(
+            "/home/node/.npm".to_string(),
+            "rw,noexec,nosuid,size=131072k".to_string(),
+        );
+        tmpfs.insert(
+            "/home/node/.cache".to_string(),
+            "rw,noexec,nosuid,size=131072k".to_string(),
         );
 
         // Security: load custom seccomp profile if available

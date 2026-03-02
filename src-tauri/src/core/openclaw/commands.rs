@@ -38,7 +38,16 @@ async fn is_docker_container_running() -> bool {
 async fn openclaw_command(args: &[&str]) -> Command {
     if is_docker_container_running().await {
         let mut cmd = Command::new("docker");
-        let mut full_args: Vec<&str> = vec!["exec", DOCKER_CONTAINER_NAME, "openclaw"];
+        // Pass environment variables so the CLI resolves paths inside the
+        // container (e.g. /home/node/.openclaw) instead of trying to use
+        // the host path (/Users/…/.openclaw) which doesn't exist.
+        let mut full_args: Vec<&str> = vec![
+            "exec",
+            "-e", "OPENCLAW_CONFIG=/home/node/.openclaw/openclaw.json",
+            "-e", "HOME=/home/node",
+            DOCKER_CONTAINER_NAME,
+            "openclaw",
+        ];
         full_args.extend_from_slice(args);
         cmd.args(full_args);
         cmd
@@ -530,6 +539,29 @@ async fn test_gateway_connection() -> Result<(), String> {
 async fn restart_gateway_cli() -> Result<(), String> {
     log::info!("Restarting Gateway via CLI...");
 
+    if is_docker_container_running().await {
+        // Docker mode: use `docker restart` to safely restart the container.
+        // Running `docker exec ... openclaw gateway restart` would kill PID 1
+        // (the gateway process that IS the container) and cause the container
+        // to exit instead of restarting.
+        log::info!("Docker mode: restarting container '{}'", DOCKER_CONTAINER_NAME);
+        let output = Command::new("docker")
+            .args(["restart", DOCKER_CONTAINER_NAME])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| format!("Failed to restart Docker container: {}", e))?;
+
+        if output.status.success() {
+            log::info!("Docker container restarted successfully");
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            log::warn!("Docker container restart may have failed: {}", stderr);
+        }
+        return Ok(());
+    }
+
     let output = openclaw_command(&["gateway", "restart"]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -589,6 +621,109 @@ async fn clear_stale_openclaw_data() -> Result<(), String> {
     }
 
     log::info!("Stale data cleanup complete");
+    Ok(())
+}
+
+/// Clear agent session data that contains paths from a different runtime
+/// environment.
+///
+/// Sessions cache absolute paths (e.g. `sessionFile`, `workspaceDir`) in
+/// `sessions.json`.  When switching between direct-process (host paths like
+/// `/Users/…`) and Docker (container paths like `/home/node/…`), those
+/// cached paths become invalid and the agent fails with ENOENT.
+///
+/// `expected_prefix` is the path prefix that is valid for the *target*
+/// environment.  If sessions.json contains paths that do NOT start with
+/// this prefix, the file is reset so the gateway creates fresh sessions.
+async fn clear_mismatched_session_paths(expected_prefix: &str) -> Result<(), String> {
+    let config_dir = get_openclaw_config_dir()?;
+    let sessions_json = config_dir.join("agents/main/sessions/sessions.json");
+
+    if !sessions_json.exists() {
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(&sessions_json)
+        .map_err(|e| format!("Failed to read sessions.json: {}", e))?;
+
+    // Look for sessionFile paths — if they don't match the target env, reset
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+        let json_str = parsed.to_string();
+        // Check if there are any sessionFile entries with the wrong prefix
+        let has_wrong_paths = parsed.as_object().map_or(false, |obj| {
+            obj.values().any(|session| {
+                session.get("sessionFile")
+                    .and_then(|v| v.as_str())
+                    .map_or(false, |p| !p.starts_with(expected_prefix))
+            })
+        });
+
+        // Also check for any absolute path in the JSON that doesn't match
+        let has_stale_host_paths = !json_str.contains(expected_prefix)
+            && (json_str.contains("/Users/") || json_str.contains("/home/node/"));
+
+        if has_wrong_paths || has_stale_host_paths {
+            log::info!(
+                "Clearing sessions.json: paths don't match expected prefix '{}' (switching sandbox mode)",
+                expected_prefix
+            );
+            std::fs::write(&sessions_json, "{}")
+                .map_err(|e| format!("Failed to clear sessions.json: {}", e))?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Patch the agent's cached `models.json` so `baseUrl` points to the correct
+/// host for the current sandbox mode.
+///
+/// The agent stores a copy of the provider config in
+/// `agents/main/agent/models.json`.  When switching between direct-process
+/// (`localhost`) and Docker (`host.docker.internal`), this cached URL becomes
+/// wrong and every LLM call fails with "Connection error".
+fn patch_agent_models_base_url(target_base_url: &str) -> Result<(), String> {
+    use super::constants;
+
+    let config_dir = get_openclaw_config_dir()?;
+    let models_path = config_dir.join("agents/main/agent/models.json");
+
+    if !models_path.exists() {
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(&models_path)
+        .map_err(|e| format!("Failed to read agent models.json: {}", e))?;
+
+    let mut config: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse agent models.json: {}", e))?;
+
+    let mut modified = false;
+
+    if let Some(providers) = config.pointer_mut("/providers") {
+        if let Some(providers_obj) = providers.as_object_mut() {
+            for (_name, provider) in providers_obj.iter_mut() {
+                if let Some(base_url) = provider.get_mut("baseUrl") {
+                    if base_url.as_str() != Some(target_base_url) {
+                        *base_url = serde_json::json!(target_base_url);
+                        modified = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if modified {
+        let updated = serde_json::to_string_pretty(&config)
+            .map_err(|e| format!("Failed to serialize agent models.json: {}", e))?;
+        std::fs::write(&models_path, updated)
+            .map_err(|e| format!("Failed to write agent models.json: {}", e))?;
+        log::info!(
+            "Patched agent models.json baseUrl to '{}'",
+            target_base_url
+        );
+    }
+
     Ok(())
 }
 
@@ -1807,12 +1942,45 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
         // We'll let the Docker start proceed — it binds to the same port and will fail with a
         // clear error if there's a conflict.
         log::info!("Docker container not running, will start it");
+
+        // Clear session data that may contain host-specific paths (e.g.
+        // /Users/… from a previous direct-process run).  Inside Docker those
+        // paths don't exist and the agent fails with ENOENT.
+        if let Err(e) = clear_mismatched_session_paths("/home/node/").await {
+            log::warn!("Failed to clear mismatched session paths for Docker: {}", e);
+        }
+
+        // Patch the agent's cached models.json so baseUrl points to
+        // host.docker.internal instead of localhost.
+        if let Err(e) = patch_agent_models_base_url(
+            crate::core::openclaw::constants::DOCKER_JAN_BASE_URL,
+        ) {
+            log::warn!("Failed to patch agent models baseUrl for Docker: {}", e);
+        }
     } else {
         // For non-Docker: if gateway is already responding, we're done
         if check_gateway_responding().await {
             log::info!("OpenClaw gateway is already running on port {}", OPENCLAW_PORT);
             let _ = openclaw_ensure_jan_origin().await;
             return Ok(());
+        }
+
+        // Clear session data that may contain Docker container paths (e.g.
+        // /home/node/… from a previous Docker run).  On the host those
+        // paths don't exist and the agent fails with ENOENT.
+        let home = std::env::var("HOME").unwrap_or_default();
+        if !home.is_empty() {
+            if let Err(e) = clear_mismatched_session_paths(&home).await {
+                log::warn!("Failed to clear mismatched session paths for direct process: {}", e);
+            }
+        }
+
+        // Patch the agent's cached models.json so baseUrl points to
+        // localhost instead of host.docker.internal.
+        if let Err(e) = patch_agent_models_base_url(
+            crate::core::openclaw::constants::DEFAULT_JAN_BASE_URL,
+        ) {
+            log::warn!("Failed to patch agent models baseUrl for direct process: {}", e);
         }
 
         // Check port availability for non-Docker
@@ -2069,10 +2237,46 @@ pub async fn telegram_validate_token(token: String) -> TelegramTokenValidation {
 
 /// Enable a channel plugin in OpenClaw
 ///
-/// Plugins must be enabled before channels can be added
+/// Plugins must be enabled before channels can be added.
+/// When Docker is running, we write directly to the config file instead of
+/// using `openclaw plugins enable` which can restart the gateway (killing
+/// PID 1 and stopping the container).
 async fn enable_channel_plugin(channel: &str) -> Result<(), String> {
     log::info!("Enabling {} plugin in OpenClaw", channel);
 
+    if is_docker_container_running().await {
+        // Docker mode: enable the plugin by editing the config file on the
+        // bind-mounted host directory. This avoids `docker exec openclaw plugins enable`
+        // which can restart the gateway and kill the container's PID 1.
+        let mut config = read_openclaw_config()?;
+
+        // OpenClaw stores plugins under plugins.entries.<channel>.enabled
+        // (NOT plugins.<channel> which fails Zod validation)
+        let plugins = config
+            .as_object_mut()
+            .ok_or("Config is not an object")?
+            .entry("plugins")
+            .or_insert_with(|| serde_json::json!({}));
+        let plugins_obj = plugins
+            .as_object_mut()
+            .ok_or("plugins is not an object")?;
+        let entries = plugins_obj
+            .entry("entries")
+            .or_insert_with(|| serde_json::json!({}));
+        let entries_obj = entries
+            .as_object_mut()
+            .ok_or("plugins.entries is not an object")?;
+        entries_obj.insert(
+            channel.to_string(),
+            serde_json::json!({ "enabled": true }),
+        );
+
+        write_openclaw_config(&config)?;
+        log::info!("Enabled {} plugin via config file (Docker mode)", channel);
+        return Ok(());
+    }
+
+    // Direct process mode: use the CLI as before
     let enable_output = openclaw_command(&["plugins", "enable", channel]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -2103,7 +2307,10 @@ async fn enable_channel_plugin(channel: &str) -> Result<(), String> {
 /// Configure Telegram channel with the bot token
 ///
 /// Uses `openclaw plugins enable telegram` followed by
-/// `openclaw channels add --channel telegram --token <token>` to add the channel
+/// `openclaw channels add --channel telegram --token <token>` to add the channel.
+///
+/// When Docker is running, configures via config file + container restart to
+/// avoid `docker exec` CLI commands that can kill the container's PID 1.
 #[tauri::command]
 pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String> {
     log::info!("Configuring Telegram channel via OpenClaw CLI");
@@ -2117,36 +2324,90 @@ pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String>
     // First, enable the Telegram plugin (must be done before adding channel)
     enable_channel_plugin("telegram").await?;
 
-    // Add Telegram channel using OpenClaw CLI
-    let add_output = openclaw_command(&[
-            "channels",
-            "add",
-            "--channel", "telegram",
-            "--token", &token,
-            "--account", "default",
-        ]).await
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run openclaw channels add: {}", e))?;
+    if is_docker_container_running().await {
+        // Docker mode: add channel config directly to the config file.
+        // CLI commands like `openclaw channels add` can restart the gateway
+        // which kills PID 1 and stops the container.
+        log::info!("Adding Telegram channel via config file (Docker mode)");
+        let mut config = read_openclaw_config()?;
 
-    let add_stderr = String::from_utf8_lossy(&add_output.stderr);
-    let add_stdout = String::from_utf8_lossy(&add_output.stdout);
+        // OpenClaw's Zod schema for channels.telegram accepts:
+        //   botToken, enabled, dmPolicy, groupPolicy, streaming
+        // NOT "token" or "account" (those fail strict validation).
+        let channels = config
+            .as_object_mut()
+            .ok_or("Config is not an object")?
+            .entry("channels")
+            .or_insert_with(|| serde_json::json!({}));
+        let channels_obj = channels
+            .as_object_mut()
+            .ok_or("channels is not an object")?;
+        channels_obj.insert("telegram".to_string(), serde_json::json!({
+            "botToken": token,
+            "enabled": true,
+            "dmPolicy": "pairing",
+            "groupPolicy": "allowlist",
+            "streaming": "off"
+        }));
 
-    log::info!("OpenClaw channels add telegram output: {}", add_stdout);
-    if !add_stderr.is_empty() {
-        log::info!("OpenClaw channels add telegram stderr: {}", add_stderr);
-    }
+        // Also write the credentials file that the Telegram plugin reads
+        let config_dir = get_openclaw_config_dir()?;
+        let creds_dir = config_dir.join("credentials");
+        std::fs::create_dir_all(&creds_dir)
+            .map_err(|e| format!("Failed to create credentials dir: {}", e))?;
+        let pairing_path = creds_dir.join("telegram-pairing.json");
+        if !pairing_path.exists() {
+            std::fs::write(
+                &pairing_path,
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "requests": [],
+                    "version": 1
+                })).unwrap(),
+            )
+            .map_err(|e| format!("Failed to write telegram-pairing.json: {}", e))?;
+        }
 
-    if !add_output.status.success() {
-        // Check if it failed because channel already exists
-        let combined = format!("{}{}", add_stdout, add_stderr);
-        if !combined.contains("already exists") && !combined.contains("updated") && !combined.contains("Added") {
-            return Err(format!(
-                "Failed to add Telegram channel: {}",
-                if !add_stderr.is_empty() { add_stderr.to_string() } else { add_stdout.to_string() }
-            ));
+        write_openclaw_config(&config)?;
+        log::info!("Telegram channel added to config file, restarting container to apply");
+
+        // Restart the Docker container so the gateway picks up the new config.
+        // This is safe — Docker restarts the container cleanly.
+        restart_gateway_cli().await?;
+
+        // Wait for gateway to come back up
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    } else {
+        // Direct process mode: use the CLI as before
+        let add_output = openclaw_command(&[
+                "channels",
+                "add",
+                "--channel", "telegram",
+                "--token", &token,
+                "--account", "default",
+            ]).await
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run openclaw channels add: {}", e))?;
+
+        let add_stderr = String::from_utf8_lossy(&add_output.stderr);
+        let add_stdout = String::from_utf8_lossy(&add_output.stdout);
+
+        log::info!("OpenClaw channels add telegram output: {}", add_stdout);
+        if !add_stderr.is_empty() {
+            log::info!("OpenClaw channels add telegram stderr: {}", add_stderr);
+        }
+
+        if !add_output.status.success() {
+            // Check if it failed because channel already exists
+            let combined = format!("{}{}", add_stdout, add_stderr);
+            if !combined.contains("already exists") && !combined.contains("updated") && !combined.contains("Added") {
+                return Err(format!(
+                    "Failed to add Telegram channel: {}",
+                    if !add_stderr.is_empty() { add_stderr.to_string() } else { add_stdout.to_string() }
+                ));
+            }
         }
     }
 
