@@ -4,26 +4,25 @@ import type { Node, Position } from 'unist'
 import type { Code, Paragraph, Parent, Text } from 'mdast'
 import { visit } from 'unist-util-visit'
 import { ExtensionManager } from './extension'
-import path from "path"
-
+import path from 'path'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
 export function basenameNoExt(filePath: string): string {
-  const base = path.basename(filePath);
-  const VALID_EXTENSIONS = [".tar.gz", ".zip"];
+  const base = path.basename(filePath)
+  const VALID_EXTENSIONS = ['.tar.gz', '.zip']
 
   // handle VALID extensions first
   for (const ext of VALID_EXTENSIONS) {
     if (base.toLowerCase().endsWith(ext)) {
-      return base.slice(0, -ext.length);
+      return base.slice(0, -ext.length)
     }
   }
 
   // fallback: remove only the last extension
-  return base.slice(0, -path.extname(base).length);
+  return base.slice(0, -path.extname(base).length)
 }
 
 /**
@@ -42,12 +41,12 @@ export function disableIndentedCodeBlockPlugin() {
         const textNode: Text = {
           type: 'text',
           value: node.value,
-          position: nodePosition
+          position: nodePosition,
         }
         const paragraphNode: Paragraph = {
           type: 'paragraph',
           children: [textNode],
-          position: nodePosition
+          position: nodePosition,
         }
         parent.children[index] = paragraphNode
       }
@@ -88,6 +87,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/openai.svg'
     case 'azure':
       return '/images/model-provider/azure.svg'
+    case 'xai':
+      return '/images/model-provider/xai.svg'
     default:
       return undefined
   }
@@ -109,6 +110,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Gemini'
     case 'huggingface':
       return 'Hugging Face'
+    case 'xai':
+      return 'xAI'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }

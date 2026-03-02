@@ -1448,6 +1448,7 @@ const ChatInput = memo(function ChatInput({
               </div>
             )}
             <TextareaAutosize
+              dir="auto"
               ref={textareaRef}
               minRows={2}
               rows={1}
