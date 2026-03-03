@@ -16,6 +16,7 @@ use super::{
         get_thread_dir, get_thread_metadata_path,
     },
 };
+use crate::core::app::commands::get_jan_data_folder_path;
 
 /// Lists all threads by reading their metadata from the threads directory or database.
 /// Returns a vector of thread metadata as JSON values.
@@ -30,8 +31,9 @@ pub async fn list_threads<R: Runtime>(
     }
 
     // Use file-based storage on desktop
-    ensure_data_dirs(app_handle.clone())?;
-    let data_dir = get_data_dir(app_handle.clone());
+    let data_folder = get_jan_data_folder_path(app_handle);
+    ensure_data_dirs(&data_folder)?;
+    let data_dir = get_data_dir(&data_folder);
     let mut threads = Vec::new();
 
     if !data_dir.exists() {
@@ -72,14 +74,15 @@ pub async fn create_thread<R: Runtime>(
     }
 
     // Use file-based storage on desktop
-    ensure_data_dirs(app_handle.clone())?;
+    let data_folder = get_jan_data_folder_path(app_handle);
+    ensure_data_dirs(&data_folder)?;
     let uuid = Uuid::new_v4().to_string();
     thread["id"] = serde_json::Value::String(uuid.clone());
-    let thread_dir = get_thread_dir(app_handle.clone(), &uuid);
+    let thread_dir = get_thread_dir(&data_folder, &uuid);
     if !thread_dir.exists() {
         fs::create_dir_all(&thread_dir).map_err(|e| e.to_string())?;
     }
-    let path = get_thread_metadata_path(app_handle.clone(), &uuid);
+    let path = get_thread_metadata_path(&data_folder, &uuid);
     let data = serde_json::to_string_pretty(&thread).map_err(|e| e.to_string())?;
     fs::write(path, data).map_err(|e| e.to_string())?;
     Ok(thread)
@@ -98,15 +101,16 @@ pub async fn modify_thread<R: Runtime>(
     }
 
     // Use file-based storage on desktop
+    let data_folder = get_jan_data_folder_path(app_handle);
     let thread_id = thread
         .get("id")
         .and_then(|id| id.as_str())
         .ok_or("Missing thread id")?;
-    let thread_dir = get_thread_dir(app_handle.clone(), thread_id);
+    let thread_dir = get_thread_dir(&data_folder, thread_id);
     if !thread_dir.exists() {
         return Err("Thread directory does not exist".to_string());
     }
-    let path = get_thread_metadata_path(app_handle.clone(), thread_id);
+    let path = get_thread_metadata_path(&data_folder, thread_id);
     let data = serde_json::to_string_pretty(&thread).map_err(|e| e.to_string())?;
     fs::write(path, data).map_err(|e| e.to_string())?;
     Ok(())
@@ -124,7 +128,8 @@ pub async fn delete_thread<R: Runtime>(
     }
 
     // Use file-based storage on desktop
-    let thread_dir = get_thread_dir(app_handle.clone(), &thread_id);
+    let data_folder = get_jan_data_folder_path(app_handle);
+    let thread_dir = get_thread_dir(&data_folder, &thread_id);
     if thread_dir.exists() {
         let _ = fs::remove_dir_all(thread_dir);
     }
@@ -144,7 +149,8 @@ pub async fn list_messages<R: Runtime>(
     }
 
     // Use file-based storage on desktop
-    read_messages_from_file(app_handle, &thread_id)
+    let data_folder = get_jan_data_folder_path(app_handle);
+    read_messages_from_file(&data_folder, &thread_id)
 }
 
 /// Appends a new message to a thread's messages.jsonl file.
@@ -160,6 +166,7 @@ pub async fn create_message<R: Runtime>(
     }
 
     // Use file-based storage on desktop
+    let data_folder = get_jan_data_folder_path(app_handle);
     let thread_id = {
         let id = message
             .get("thread_id")
@@ -167,7 +174,7 @@ pub async fn create_message<R: Runtime>(
             .ok_or("Missing thread_id")?;
         id.to_string()
     };
-    let path = get_messages_path(app_handle.clone(), &thread_id);
+    let path = get_messages_path(&data_folder, &thread_id);
 
     if message.get("id").is_none() {
         let uuid = Uuid::new_v4().to_string();
@@ -180,7 +187,7 @@ pub async fn create_message<R: Runtime>(
         let _guard = lock.lock().await;
 
         // Ensure directory exists right before file operations to handle race conditions
-        ensure_thread_dir_exists(app_handle.clone(), &thread_id)?;
+        ensure_thread_dir_exists(&data_folder, &thread_id)?;
 
         let mut file: File = fs::OpenOptions::new()
             .create(true)
@@ -212,6 +219,7 @@ pub async fn modify_message<R: Runtime>(
     }
 
     // Use file-based storage on desktop
+    let data_folder = get_jan_data_folder_path(app_handle);
     let thread_id = message
         .get("thread_id")
         .and_then(|v| v.as_str())
@@ -226,7 +234,7 @@ pub async fn modify_message<R: Runtime>(
         let lock = get_lock_for_thread(thread_id).await;
         let _guard = lock.lock().await;
 
-        let mut messages = read_messages_from_file(app_handle.clone(), thread_id)?;
+        let mut messages = read_messages_from_file(&data_folder, thread_id)?;
         if let Some(index) = messages
             .iter()
             .position(|m| m.get("id").and_then(|v| v.as_str()) == Some(message_id))
@@ -234,7 +242,7 @@ pub async fn modify_message<R: Runtime>(
             messages[index] = message.clone();
 
             // Rewrite all messages
-            let path = get_messages_path(app_handle.clone(), thread_id);
+            let path = get_messages_path(&data_folder, thread_id);
             write_messages_to_file(&messages, &path)?;
         }
     }
@@ -256,16 +264,17 @@ pub async fn delete_message<R: Runtime>(
     }
 
     // Use file-based storage on desktop
+    let data_folder = get_jan_data_folder_path(app_handle);
     // Acquire per-thread lock before modifying
     {
         let lock = get_lock_for_thread(&thread_id).await;
         let _guard = lock.lock().await;
 
-        let mut messages = read_messages_from_file(app_handle.clone(), &thread_id)?;
+        let mut messages = read_messages_from_file(&data_folder, &thread_id)?;
         messages.retain(|m| m.get("id").and_then(|v| v.as_str()) != Some(message_id.as_str()));
 
         // Rewrite remaining messages
-        let path = get_messages_path(app_handle.clone(), &thread_id);
+        let path = get_messages_path(&data_folder, &thread_id);
         write_messages_to_file(&messages, &path)?;
     }
 
@@ -285,7 +294,8 @@ pub async fn get_thread_assistant<R: Runtime>(
     }
 
     // Use file-based storage on desktop
-    let path = get_thread_metadata_path(app_handle, &thread_id);
+    let data_folder = get_jan_data_folder_path(app_handle);
+    let path = get_thread_metadata_path(&data_folder, &thread_id);
     if !path.exists() {
         return Err("Thread not found".to_string());
     }
@@ -316,7 +326,8 @@ pub async fn create_thread_assistant<R: Runtime>(
     }
 
     // Use file-based storage on desktop
-    let path = get_thread_metadata_path(app_handle.clone(), &thread_id);
+    let data_folder = get_jan_data_folder_path(app_handle);
+    let path = get_thread_metadata_path(&data_folder, &thread_id);
     if !path.exists() {
         return Err("Thread not found".to_string());
     }
@@ -329,7 +340,7 @@ pub async fn create_thread_assistant<R: Runtime>(
     } else {
         thread["assistants"] = serde_json::Value::Array(vec![assistant.clone()]);
     }
-    update_thread_metadata(app_handle, &thread_id, &thread)?;
+    update_thread_metadata(&data_folder, &thread_id, &thread)?;
     Ok(assistant)
 }
 
@@ -347,7 +358,8 @@ pub async fn modify_thread_assistant<R: Runtime>(
     }
 
     // Use file-based storage on desktop
-    let path = get_thread_metadata_path(app_handle.clone(), &thread_id);
+    let data_folder = get_jan_data_folder_path(app_handle);
+    let path = get_thread_metadata_path(&data_folder, &thread_id);
     if !path.exists() {
         return Err("Thread not found".to_string());
     }
@@ -368,7 +380,7 @@ pub async fn modify_thread_assistant<R: Runtime>(
             .position(|a| a.get("id").and_then(|v| v.as_str()) == Some(assistant_id))
         {
             assistants[index] = assistant.clone();
-            update_thread_metadata(app_handle, &thread_id, &thread)?;
+            update_thread_metadata(&data_folder, &thread_id, &thread)?;
         }
     }
     Ok(assistant)

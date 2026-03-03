@@ -2,6 +2,8 @@ pub mod core;
 pub mod openclaw_cli;
 pub use core::openclaw::OpenClawState;
 
+
+#[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,
     downloads::models::DownloadManagerState,
@@ -9,12 +11,18 @@ use core::{
     setup::{self, setup_mcp},
     state::AppState,
 };
+#[cfg(not(feature = "cli"))]
 use jan_utils::generate_app_token;
+#[cfg(not(feature = "cli"))]
 use std::{collections::HashMap, sync::Arc};
+#[cfg(not(feature = "cli"))]
 use tauri::{Emitter, Manager, RunEvent};
+#[cfg(not(feature = "cli"))]
 use tauri_plugin_store::StoreExt;
+#[cfg(not(feature = "cli"))]
 use tokio::sync::Mutex;
 
+#[cfg(not(feature = "cli"))]
 #[cfg_attr(
     all(mobile, any(target_os = "android", target_os = "ios")),
     tauri::mobile_entry_point
@@ -93,6 +101,10 @@ pub fn run() {
         core::system::commands::read_logs,
         core::system::commands::is_library_available,
         core::system::commands::launch_claude_code_with_config,
+        core::system::commands::check_jan_cli_installed,
+        core::system::commands::install_jan_cli,
+        core::system::commands::uninstall_jan_cli,
+        core::system::commands::clear_claude_code_env,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
@@ -251,6 +263,10 @@ pub fn run() {
         core::system::commands::read_logs,
         core::system::commands::is_library_available,
         core::system::commands::launch_claude_code_with_config,
+        core::system::commands::check_jan_cli_installed,
+        core::system::commands::install_jan_cli,
+        core::system::commands::uninstall_jan_cli,
+        core::system::commands::clear_claude_code_env,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
@@ -376,6 +392,8 @@ pub fn run() {
             }
 
             setup_mcp(app);
+            #[cfg(desktop)]
+            setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
             Ok(())
         })

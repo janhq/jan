@@ -11,9 +11,12 @@ dependencies = [
  "bollard",
  "chrono",
  "clap",
+ "console",
+ "dialoguer",
  "dirs",
  "ed25519-dalek",
  "env",
+ "env_logger",
  "fix-path-env",
  "flate2",
  "futures",
@@ -23,6 +26,7 @@ dependencies = [
  "hmac",
  "hostname",
  "hyper 0.14.32",
+ "indicatif",
  "jan-utils",
  "libc",
  "libloading 0.8.9",
@@ -31,6 +35,7 @@ dependencies = [
  "once_cell",
  "rand 0.8.5",
  "reqwest 0.11.27",
+ "reqwest 0.12.23",
  "rfd",
  "rmcp",
  "serde",
@@ -154,7 +159,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dbb4e440d04be07da1f1bf44fb4495ebd58669372fe0cffa6e48595ac5bd88a3"
 dependencies = [
  "android_log-sys",
- "env_filter",
+ "env_filter 0.1.3",
  "log",
 ]
 
@@ -947,6 +952,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "console"
+version = "0.15.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "054ccb5b10f9f2cbf51eb355ca1d05c2d279ce1804688d0db74b4733a5aeafd8"
+dependencies = [
+ "encode_unicode",
+ "libc",
+ "once_cell",
+ "unicode-width 0.2.2",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1373,6 +1391,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dialoguer"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "658bce805d770f407bc62102fca7c2c64ceef2fbcb2b8bd19d2765ce093980de"
+dependencies = [
+ "console",
+ "shell-words",
+ "tempfile",
+ "thiserror 1.0.69",
+ "zeroize",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1587,6 +1618,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ef6b89e5b37196644d8796de5268852ff179b44e96276cf4290264843743bb7"
 
 [[package]]
+name = "encode_unicode"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1639,6 +1676,29 @@ checksum = "186e05a59d4c50738528153b83b0b0194d3a29507dfec16eccd4b342903397d0"
 dependencies = [
  "log",
  "regex",
+]
+
+[[package]]
+name = "env_filter"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a1c3cc8e57274ec99de65301228b537f1e4eedc1b8e0f9411c6caac8ae7308f"
+dependencies = [
+ "log",
+ "regex",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.11.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2daee4ea451f429a58296525ddf28b45a3b64f1acf6587e2067437bb11e218d"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "env_filter 1.0.0",
+ "jiff",
+ "log",
 ]
 
 [[package]]
@@ -2497,7 +2557,7 @@ dependencies = [
  "markup5ever 0.11.0",
  "tendril",
  "thiserror 1.0.69",
- "unicode-width",
+ "unicode-width 0.1.14",
  "xml5ever",
 ]
 
@@ -2705,6 +2765,22 @@ dependencies = [
  "native-tls",
  "tokio",
  "tokio-native-tls",
+]
+
+[[package]]
+name = "hyper-tls"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70206fc6890eaca9fde8a0bf71caa2ddfc9fe045ac9e5c70df101a7dbde866e0"
+dependencies = [
+ "bytes",
+ "http-body-util",
+ "hyper 1.7.0",
+ "hyper-util",
+ "native-tls",
+ "tokio",
+ "tokio-native-tls",
+ "tower-service",
 ]
 
 [[package]]
@@ -2919,6 +2995,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "indicatif"
+version = "0.17.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "183b3088984b400f4cfac3620d5e076c84da5364016b4f49473de574b2586235"
+dependencies = [
+ "console",
+ "number_prefix",
+ "portable-atomic",
+ "unicode-width 0.2.2",
+ "web-time",
+]
+
+[[package]]
 name = "infer"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3041,6 +3130,30 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
+]
+
+[[package]]
+name = "jiff"
+version = "0.2.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "819b44bc7c87d9117eb522f14d46e918add69ff12713c475946b0a29363ed1c2"
+dependencies = [
+ "jiff-static",
+ "log",
+ "portable-atomic",
+ "portable-atomic-util",
+ "serde_core",
+]
+
+[[package]]
+name = "jiff-static"
+version = "0.2.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "470252db18ecc35fd766c0891b1e3ec6cbbcd62507e85276c01bf75d8e94d4a1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
 ]
 
 [[package]]
@@ -3596,6 +3709,12 @@ checksum = "5c7398b9c8b70908f6371f47ed36737907c87c52af34c268fed0bf0ceb92ead9"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "number_prefix"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
 
 [[package]]
 name = "nvml-wrapper"
@@ -4420,6 +4539,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60f6ce597ecdcc9a098e7fddacb1065093a3d66446fa16c675e7e71d1b5c28e6"
 
 [[package]]
+name = "portable-atomic"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
+
+[[package]]
+name = "portable-atomic-util"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a9db96d7fa8782dd8c15ce32ffe8680bbd1e978a43bf51a34d39483540495f5"
+dependencies = [
+ "portable-atomic",
+]
+
+[[package]]
 name = "postscript"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4900,7 +5034,7 @@ dependencies = [
  "http-body 0.4.6",
  "hyper 0.14.32",
  "hyper-rustls 0.24.2",
- "hyper-tls",
+ "hyper-tls 0.5.0",
  "ipnet",
  "js-sys",
  "log",
@@ -4949,10 +5083,12 @@ dependencies = [
  "http-body-util",
  "hyper 1.7.0",
  "hyper-rustls 0.27.7",
+ "hyper-tls 0.6.0",
  "hyper-util",
  "js-sys",
  "log",
  "mime",
+ "native-tls",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -4963,6 +5099,7 @@ dependencies = [
  "serde_urlencoded",
  "sync_wrapper 1.0.2",
  "tokio",
+ "tokio-native-tls",
  "tokio-rustls 0.26.4",
  "tokio-util",
  "tower",
@@ -5635,6 +5772,12 @@ dependencies = [
  "sigchld",
  "windows-sys 0.60.2",
 ]
+
+[[package]]
+name = "shell-words"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
 
 [[package]]
 name = "shlex"
@@ -7414,6 +7557,12 @@ name = "unicode-width"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
+
+[[package]]
+name = "unicode-width"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
 
 [[package]]
 name = "unsafe-libyaml"

@@ -21,11 +21,7 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from '@/components/ui/popover'
-import {
-  IconChevronDown,
-  IconPlus,
-  IconX,
-} from '@tabler/icons-react'
+import { IconChevronDown, IconPlus, IconX } from '@tabler/icons-react'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import Capabilities from '@/containers/Capabilities'
 import { getModelDisplayName, isLocalProvider } from '@/lib/utils'
@@ -60,7 +56,9 @@ function ClaudeCodeIntegration() {
     setModel: setHelperModel,
     setEnvVars,
     setCustomCli,
+    clearModels,
   } = useClaudeCodeModel()
+
   const [isCustomCliDialogOpen, setIsCustomCliDialogOpen] = useState(false)
   const [isModelLoading, setIsModelLoading] = useState(false)
 
@@ -208,42 +206,15 @@ function ClaudeCodeIntegration() {
                     xmlns="http://www.w3.org/2000/svg"
                     className="shrink-0"
                   >
-                    <path
-                      d="M9 0H90V54H9V0Z"
-                      fill="#D77757"
-                    />
-                    <path
-                      d="M0 18H9V36H0V18Z"
-                      fill="#D77757"
-                    />
-                    <path
-                      d="M18 18H27V27H18V18Z"
-                      fill="black"
-                    />
-                    <path
-                      d="M72 18H81V27H72V18Z"
-                      fill="black"
-                    />
-                    <path
-                      d="M90 18H99V36H90V18Z"
-                      fill="#D77757"
-                    />
-                    <path
-                      d="M9 54H18V72H9V54Z"
-                      fill="#D77757"
-                    />
-                    <path
-                      d="M63 54H72V72H63V54Z"
-                      fill="#D77757"
-                    />
-                    <path
-                      d="M27 54H36V72H27V54Z"
-                      fill="#D77757"
-                    />
-                    <path
-                      d="M81 54H90V72H81V54Z"
-                      fill="#D77757"
-                    />
+                    <path d="M9 0H90V54H9V0Z" fill="#D77757" />
+                    <path d="M0 18H9V36H0V18Z" fill="#D77757" />
+                    <path d="M18 18H27V27H18V18Z" fill="black" />
+                    <path d="M72 18H81V27H72V18Z" fill="black" />
+                    <path d="M90 18H99V36H90V18Z" fill="#D77757" />
+                    <path d="M9 54H18V72H9V54Z" fill="#D77757" />
+                    <path d="M63 54H72V72H63V54Z" fill="#D77757" />
+                    <path d="M27 54H36V72H27V54Z" fill="#D77757" />
+                    <path d="M81 54H90V72H81V54Z" fill="#D77757" />
                   </svg>
                   <h1 className="text-foreground font-studio font-medium text-base">
                     Claude Code integration
@@ -257,7 +228,6 @@ function ClaudeCodeIntegration() {
                 actions={
                   <HelperModelSelector
                     providers={providers}
-
                     selectedModel={helperModels.big}
                     onSelect={(model) => setHelperModel('big', model)}
                     placeholder="Select Big Model"
@@ -270,7 +240,6 @@ function ClaudeCodeIntegration() {
                 actions={
                   <HelperModelSelector
                     providers={providers}
-
                     selectedModel={helperModels.medium}
                     onSelect={(model) => setHelperModel('medium', model)}
                     placeholder="Select Medium Model"
@@ -283,7 +252,6 @@ function ClaudeCodeIntegration() {
                 actions={
                   <HelperModelSelector
                     providers={providers}
-
                     selectedModel={helperModels.small}
                     onSelect={(model) => setHelperModel('small', model)}
                     placeholder="Select Small Model"
@@ -299,17 +267,33 @@ function ClaudeCodeIntegration() {
                   <IconPlus className="text-muted-foreground" size={14} />
                   Environment Variables
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={handleLaunchClaudeCode}
-                  disabled={isModelLoading}
-                >
-                  {isModelLoading ? 'Loading models...' : 'Save & Enable'}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      clearModels()
+                      try {
+                        await invoke('clear_claude_code_env')
+                        toast.success('Claude Code settings cleared')
+                      } catch (e) {
+                        toast.error(`Failed to clear env file: ${e}`)
+                      }
+                    }}
+                  >
+                    Reset
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleLaunchClaudeCode}
+                    disabled={isModelLoading}
+                  >
+                    {isModelLoading ? 'Loading models...' : 'Save & Enable'}
+                  </Button>
+                </div>
               </div>
 
-              {(helperModels.customCli ||
-                helperModels.envVars.length > 0) && (
+              {(helperModels.customCli || helperModels.envVars.length > 0) && (
                 <div className="mt-3 text-sm text-muted-foreground">
                   {helperModels.customCli && (
                     <div>Command: {helperModels.customCli}</div>
@@ -398,9 +382,7 @@ function HelperModelSelector({
     return groups
   }, [filteredModels])
 
-  const currentModel = availableModels.find(
-    (m) => m.id === selectedModel
-  )
+  const currentModel = availableModels.find((m) => m.id === selectedModel)
 
   const formatModelWithSize = (model: NonNullable<typeof currentModel>) => {
     const name = getModelDisplayName(model)
