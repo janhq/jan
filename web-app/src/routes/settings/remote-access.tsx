@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
 import { TelegramWizard as TelegramWizardDialog } from '@/containers/dialogs/TelegramWizardDialog'
 import { WhatsAppWizardDialog } from '@/containers/dialogs/WhatsAppWizardDialog'
-import { AddChannelDialog } from '@/containers/dialogs/AddChannelDialog'
 import { TailscaleSetupDialog } from '@/containers/dialogs/TailscaleSetupDialog'
 import { SecurityConfigDialog } from '@/containers/dialogs/SecurityConfigDialog'
 import { TunnelSelectionDialog } from '@/containers/dialogs/TunnelSelectionDialog'
@@ -21,9 +20,7 @@ import { setOpenClawRunningState, syncAllModelsToOpenClaw } from '@/utils/opencl
 import { useModelProvider } from '@/hooks/useModelProvider'
 import {
   IconPlugConnected,
-  IconLink,
   IconLoader2,
-  IconPlus,
   IconCopy,
   IconExternalLink,
   IconFileText,
@@ -53,8 +50,7 @@ function RemoteAccess() {
   const [isStopping, setIsStopping] = useState(false)
   const [isTelegramWizardOpen, setIsTelegramWizardOpen] = useState(false)
   const [isWhatsAppWizardOpen, setIsWhatsAppWizardOpen] = useState(false)
-  const [isAddChannelDialogOpen, setIsAddChannelDialogOpen] = useState(false)
-  const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
+const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
   const [isSecurityDialogOpen, setIsSecurityDialogOpen] = useState(false)
   const [isTunnelDialogOpen, setIsTunnelDialogOpen] = useState(false)
   const [isEnableDialogOpen, setIsEnableDialogOpen] = useState(false)
@@ -217,14 +213,7 @@ function RemoteAccess() {
     }
   }
 
-  const getConnectedChannels = (): ChannelType[] => {
-    const channels: ChannelType[] = []
-    if (telegramConfig?.connected) channels.push('telegram')
-    if (whatsappConfig?.connected) channels.push('whatsapp')
-    return channels
-  }
-
-  const isRunning = status?.running ?? false
+const isRunning = status?.running ?? false
   const isInstalled = status?.installed ?? false
 
   return (
@@ -374,21 +363,8 @@ function RemoteAccess() {
                 </div>
               )}
 
-              <CardItem
-                title={t('settings:remoteAccess.channels')}
-                actions={
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsAddChannelDialogOpen(true)}
-                  >
-                    <IconPlus className="size-4 text-muted-foreground" />
-                    {t('settings:remoteAccess.addChannel.title')}
-                  </Button>
-                }
-              />
-
               <div className="space-y-3 mt-4">
+                <p className='text-foreground font-medium mb-2'>{t('settings:remoteAccess.channels')}</p>
                 <ChannelCard
                   type="telegram"
                   config={telegramConfig}
@@ -404,17 +380,6 @@ function RemoteAccess() {
                   OCIsInstalled={isInstalled}
                 />
               </div>
-
-              <CardItem
-                title={t('settings:remoteAccess.shareAccess')}
-                className='mt-5'
-                actions={
-                  <Button variant="outline" size="sm">
-                    <IconLink className="size-4 text-muted-foreground" />
-                    {t('settings:remoteAccess.generateInviteLink')}
-                  </Button>
-                }
-              />
             </Card>
 
             {tunnelStatus?.active_tunnel && (
@@ -477,12 +442,6 @@ function RemoteAccess() {
         isOpen={isWhatsAppWizardOpen}
         onOpenChange={setIsWhatsAppWizardOpen}
         onConnected={setWhatsAppConfig}
-      />
-      <AddChannelDialog
-        isOpen={isAddChannelDialogOpen}
-        onOpenChange={setIsAddChannelDialogOpen}
-        onSelectChannel={handleAddChannel}
-        connectedChannels={getConnectedChannels()}
       />
       <TailscaleSetupDialog
         isOpen={isTailscaleDialogOpen}
