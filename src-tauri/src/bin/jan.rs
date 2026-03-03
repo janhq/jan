@@ -59,8 +59,9 @@ enum Commands {
     /// Start a local model, then launch an AI agent with it pre-wired (env vars set automatically)
     #[command(display_order = 2)]
     Launch {
-        /// Agent or program to run after the model is ready (e.g. claude, opencode)
-        program: String,
+        /// Agent or program to run after the model is ready (e.g. claude, codex, openclaw)
+        /// Omit to pick interactively from: claude, codex, openclaw
+        program: Option<String>,
         /// Arguments forwarded to the program
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         program_args: Vec<String>,
@@ -303,6 +304,7 @@ async fn main() {
         Commands::App { cmd } => handle_app(cmd),
         Commands::Serve { args } => handle_serve(args).await,
         Commands::Launch { program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size, fit, verbose } => {
+            let program = program.unwrap_or_else(select_program_interactively);
             let ctx_size_val = ctx_size.unwrap_or(4096);
             handle_launch(program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size_val, fit, ctx_size.is_none(), verbose).await
         }
@@ -581,7 +583,30 @@ async fn auto_download_hf_model(repo_id: &str) -> String {
     model_id
 }
 
-// ── Interactive model picker ────────────────────────────────────────────────
+// ── Interactive pickers ────────────────────────────────────────────────────
+
+/// Present an interactive menu for the three supported AI agents.
+fn select_program_interactively() -> String {
+    const CHOICES: &[(&str, &str)] = &[
+        ("claude",   "Claude Code  — Anthropic's AI coding agent"),
+        ("codex",    "Codex CLI    — OpenAI's coding agent"),
+        ("openclaw", "OpenClaw     — Open-source autonomous AI agent"),
+    ];
+
+    let labels: Vec<String> = CHOICES
+        .iter()
+        .map(|(_, desc)| desc.to_string())
+        .collect();
+
+    let idx = dialoguer::Select::new()
+        .with_prompt("Select an agent to launch")
+        .items(&labels)
+        .default(0)
+        .interact()
+        .unwrap_or_else(|_| std::process::exit(1));
+
+    CHOICES[idx].0.to_string()
+}
 
 fn select_model_interactively() -> String {
     let mut all: Vec<(String, String)> = Vec::new(); // (id, engine)
