@@ -177,6 +177,17 @@ ifeq ($(shell uname -s),Darwin)
 		-output src-tauri/resources/bin/jan-cli
 	chmod +x src-tauri/resources/bin/jan-cli
 	mkdir -p src-tauri/target/universal-apple-darwin/release
+
+	echo "Checking for code signing identity..."; \
+	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
+	if [ -n "$$SIGNING_IDENTITY" ]; then \
+		echo "Signing jan-cli with identity: $$SIGNING_IDENTITY"; \
+		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/jan-cli; \
+		echo "Code signing completed successfully"; \
+	else \
+		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
+	fi
+
 	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
 else ifeq ($(OS),Windows_NT)
 	cd src-tauri && cargo build --release --features cli --bin jan-cli
