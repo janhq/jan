@@ -358,7 +358,8 @@ pub fn check_jan_cli_installed() -> CliInstallStatus {
 /// Install order (Unix): `/usr/local/bin` (writable probe), then `~/.local/bin`.
 /// Windows: `%LOCALAPPDATA%\Programs\Jan\`
 pub fn install_jan_cli_sync<R: Runtime>(app_handle: &AppHandle<R>) -> Result<CliInstallStatus, String> {
-    let bin_name = if cfg!(windows) { "jan.exe" } else { "jan" };
+    let bin_name = if cfg!(windows) { "jan-cli.exe" } else { "jan-cli" };
+    let dest_bin_name = if cfg!(windows) { "jan.exe" } else { "jan" };
     let bundled = app_handle
         .path()
         .resource_dir()
@@ -372,7 +373,7 @@ pub fn install_jan_cli_sync<R: Runtime>(app_handle: &AppHandle<R>) -> Result<Cli
 
     let install_dir = jan_cli_install_dir()?;
     std::fs::create_dir_all(&install_dir).map_err(|e| e.to_string())?;
-    let dest = install_dir.join(bin_name);
+    let dest = install_dir.join(dest_bin_name);
 
     std::fs::copy(&bundled, &dest)
         .map_err(|e| format!("Failed to copy jan to {}: {}", dest.display(), e))?;

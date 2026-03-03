@@ -169,28 +169,28 @@ endif
 # Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
 build-cli:
 ifeq ($(shell uname -s),Darwin)
-	cd src-tauri && cargo build --release --features cli --bin jan --target aarch64-apple-darwin
-	cd src-tauri && cargo build --release --features cli --bin jan --target x86_64-apple-darwin
+	cd src-tauri && cargo build --release --features cli --bin jan-cli --target aarch64-apple-darwin
+	cd src-tauri && cargo build --release --features cli --bin jan-cli --target x86_64-apple-darwin
 	lipo -create \
-		src-tauri/target/aarch64-apple-darwin/release/jan \
-		src-tauri/target/x86_64-apple-darwin/release/jan \
-		-output src-tauri/resources/bin/jan
-	chmod +x src-tauri/resources/bin/jan
+		src-tauri/target/aarch64-apple-darwin/release/jan-cli \
+		src-tauri/target/x86_64-apple-darwin/release/jan-cli \
+		-output src-tauri/resources/bin/jan-cli
+	chmod +x src-tauri/resources/bin/jan-cli
 	mkdir -p src-tauri/target/universal-apple-darwin/release
-	cp src-tauri/resources/bin/jan src-tauri/target/universal-apple-darwin/release/jan
+	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
 else ifeq ($(OS),Windows_NT)
-	cd src-tauri && cargo build --release --features cli --bin jan
-	cp src-tauri/target/release/jan.exe src-tauri/resources/bin/jan.exe
+	cd src-tauri && cargo build --release --features cli --bin jan-cli
+	cp src-tauri/target/release/jan-cli.exe src-tauri/resources/bin/jan-cli.exe
 else
-	cd src-tauri && cargo build --release --features cli --bin jan
-	cp src-tauri/target/release/jan src-tauri/resources/bin/jan
+	cd src-tauri && cargo build --release --features cli --bin jan-cli
+	cp src-tauri/target/release/jan-cli src-tauri/resources/bin/jan-cli
 endif
 
 # Debug build for local dev (faster, native arch only)
 build-cli-dev:
 	mkdir -p src-tauri/resources/bin
-	cd src-tauri && cargo build --features cli --bin jan
-	install -m755 src-tauri/target/debug/jan src-tauri/resources/bin/jan
+	cd src-tauri && cargo build --features cli --bin jan-cli
+	install -m755 src-tauri/target/debug/jan-cli src-tauri/resources/bin/jan-cli
 
 # Build
 build: install-and-build install-rust-targets
