@@ -91,6 +91,15 @@ const logger = {
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 
+/**
+ * Parse the build number from a llama.cpp version string like "b6325".
+ * Returns the numeric portion, or null if the format doesn't match.
+ */
+function parseBuildNumber(version: string): number | null {
+  const match = version.match(/^b(\d+)$/)
+  return match ? parseInt(match[1], 10) : null
+}
+
 // Folder structure for llamacpp extension:
 // <Jan's data folder>/llamacpp
 //  - models/<modelId>/
@@ -1503,6 +1512,17 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error(
         'Initial setup for the backend failed due to a network issue. Please restart the app!'
       )
+    }
+
+    // Version-aware flash_attn handling:
+    // llama.cpp b6325+ changed --flash-attn from a boolean flag to a string
+    // For older versions, "auto" is not a valid value so we fall back to "off"
+    // (i.e. don't send the flag at all).
+    if (cfg.flash_attn === 'auto' && !backend.startsWith('ik')) {
+      const buildNum = parseBuildNumber(version)
+      if (buildNum !== null && buildNum < 6325) {
+        cfg.flash_attn = 'off'
+      }
     }
 
     // Ensure backend is downloaded and ready before proceeding

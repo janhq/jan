@@ -40,28 +40,45 @@ pub struct LlamacppConfig {
     pub ctx_shift: bool,
 }
 
+/// Minimum llama.cpp build number that changed --flash-attn from a boolean
+/// flag to a string argument accepting auto|on|off (upstream PR #15434).
+const FLASH_ATTN_STRING_ARG_MIN_BUILD: u32 = 6325;
+
 pub struct ArgumentBuilder {
     args: Vec<String>,
     config: LlamacppConfig,
+    version: String,
     backend: String,
     is_embedding: bool,
 }
 
 impl ArgumentBuilder {
     pub fn new(config: LlamacppConfig, is_embedding: bool) -> Result<Self, String> {
-        let backend = config
-            .version_backend
-            .split('/')
-            .nth(1)
+        let mut parts = config.version_backend.splitn(2, '/');
+        let version = parts
+            .next()
+            .ok_or("Invalid version_backend format")?
+            .to_string();
+        let backend = parts
+            .next()
             .ok_or("Invalid version_backend format")?
             .to_string();
 
         Ok(Self {
             args: Vec::new(),
             config,
+            version,
             backend,
             is_embedding,
         })
+    }
+
+    /// Parse the build number from a version string like "b6325".
+    /// Returns `None` if the format doesn't match.
+    fn parse_build_number(&self) -> Option<u32> {
+        self.version
+            .strip_prefix('b')
+            .and_then(|s| s.parse::<u32>().ok())
     }
 
     /// Build all arguments based on configuration
@@ -225,11 +242,29 @@ impl ArgumentBuilder {
             if self.config.flash_attn == "on" {
                 self.args.push("-fa".to_string());
             }
-        } else if self.config.flash_attn == "on" {
-            // Standard llama.cpp uses --flash-attn as a boolean flag
-            self.args.push("--flash-attn".to_string());
+            return;
         }
-        // "auto" and "off" → don't pass --flash-attn
+
+        let supports_string_arg = self
+            .parse_build_number()
+            .is_some_and(|b| b >= FLASH_ATTN_STRING_ARG_MIN_BUILD);
+
+        if supports_string_arg {
+            // b6325+: --flash-attn accepts auto|on|off as a value
+            match self.config.flash_attn.as_str() {
+                "auto" | "on" | "off" => {
+                    self.args.push("--flash-attn".to_string());
+                    self.args.push(self.config.flash_attn.clone());
+                }
+                _ => {} // unknown value → don't pass
+            }
+        } else {
+            // Older versions: --flash-attn is a boolean flag (no value)
+            if self.config.flash_attn == "on" {
+                self.args.push("--flash-attn".to_string());
+            }
+            // "auto" and "off" → don't pass --flash-attn
+        }
     }
 
     fn add_boolean_flags(&mut self) {
@@ -1000,5 +1035,154 @@ mod tests {
         assert_arg_pair(&args, "--rope-scaling", "linear");
         assert_arg_pair(&args, "--rope-scale", "2");
         assert_arg_pair(&args, "--port", "9000");
+    }
+
+    // ---- Version-aware flash attention tests ----
+
+    #[test]
+    fn test_new_version_flash_attn_auto_sends_value() {
+        let mut config = default_config();
+        config.version_backend = "b6325/standard".to_string();
+        config.flash_attn = "auto".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--flash-attn", "auto");
+    }
+
+    #[test]
+    fn test_new_version_flash_attn_on_sends_value() {
+        let mut config = default_config();
+        config.version_backend = "b6325/standard".to_string();
+        config.flash_attn = "on".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--flash-attn", "on");
+    }
+
+    #[test]
+    fn test_new_version_flash_attn_off_sends_value() {
+        let mut config = default_config();
+        config.version_backend = "b6325/standard".to_string();
+        config.flash_attn = "off".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--flash-attn", "off");
+    }
+
+    #[test]
+    fn test_newer_version_flash_attn_auto() {
+        let mut config = default_config();
+        config.version_backend = "b7000/cuda-12-x64".to_string();
+        config.flash_attn = "auto".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--flash-attn", "auto");
+    }
+
+    #[test]
+    fn test_old_version_flash_attn_auto_not_added() {
+        let mut config = default_config();
+        config.version_backend = "b6000/standard".to_string();
+        config.flash_attn = "auto".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--flash-attn");
+    }
+
+    #[test]
+    fn test_old_version_flash_attn_on_boolean_flag() {
+        let mut config = default_config();
+        config.version_backend = "b6000/standard".to_string();
+        config.flash_attn = "on".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_has_flag(&args, "--flash-attn");
+        // Should NOT have a value after the flag (boolean flag mode)
+        let pos = args.iter().position(|a| a == "--flash-attn").unwrap();
+        let next = args.get(pos + 1).map(|s| s.as_str());
+        assert!(
+            next != Some("on") && next != Some("off") && next != Some("auto"),
+            "Old version should use --flash-attn as boolean flag, not with value"
+        );
+    }
+
+    #[test]
+    fn test_old_version_flash_attn_off_not_added() {
+        let mut config = default_config();
+        config.version_backend = "b6000/standard".to_string();
+        config.flash_attn = "off".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--flash-attn");
+    }
+
+    #[test]
+    fn test_boundary_version_b6324_uses_boolean_flag() {
+        let mut config = default_config();
+        config.version_backend = "b6324/standard".to_string();
+        config.flash_attn = "on".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_has_flag(&args, "--flash-attn");
+        let pos = args.iter().position(|a| a == "--flash-attn").unwrap();
+        let next = args.get(pos + 1).map(|s| s.as_str());
+        assert!(
+            next != Some("on"),
+            "b6324 should use boolean flag, not string value"
+        );
+    }
+
+    #[test]
+    fn test_boundary_version_b6325_uses_string_value() {
+        let mut config = default_config();
+        config.version_backend = "b6325/standard".to_string();
+        config.flash_attn = "on".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--flash-attn", "on");
+    }
+
+    #[test]
+    fn test_unknown_version_format_uses_boolean_flag() {
+        // Non-bNNNN version format should fall back to old boolean behavior
+        let mut config = default_config();
+        config.version_backend = "v1.0/standard".to_string();
+        config.flash_attn = "on".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_has_flag(&args, "--flash-attn");
+    }
+
+    #[test]
+    fn test_ik_backend_ignores_version_for_flash_attn() {
+        let mut config = default_config();
+        config.version_backend = "b7000/ik-backend".to_string();
+        config.flash_attn = "on".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_has_flag(&args, "-fa");
+        assert_no_flag(&args, "--flash-attn");
     }
 }
