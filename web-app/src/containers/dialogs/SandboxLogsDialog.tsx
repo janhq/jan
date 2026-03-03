@@ -57,7 +57,7 @@ export function SandboxLogsDialog({
     setIsRestarting(true)
     try {
       await invoke('sandbox_restart')
-      toast.success(t('settings:restarting'))
+      toast.success(t('settings:remoteAccess.restarting'))
       onOpenChange(false)
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
@@ -70,7 +70,7 @@ export function SandboxLogsDialog({
   const handleCopy = useCallback(() => {
     const text = filteredLogs.join('\n')
     navigator.clipboard.writeText(text)
-    toast.success(t('settings:copiedToClipboard'))
+    toast.success(t('settings:remoteAccess.copiedToClipboard'))
   }, [filteredLogs, t])
 
   const handleDownload = useCallback(() => {
@@ -131,7 +131,7 @@ export function SandboxLogsDialog({
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[80vh]">
         <DialogHeader>
-          <DialogTitle>{t('settings:logViewer')}</DialogTitle>
+          <DialogTitle>{t('settings:remoteAccess.logViewer')}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-3 h-[500px]">
@@ -160,11 +160,11 @@ export function SandboxLogsDialog({
             </Button>
             <Button variant="outline" size="sm" onClick={handleCopy}>
               <IconCopy className="h-4 w-4 mr-1" />
-              {t('settings:copyLogs')}
+              {t('settings:remoteAccess.copyLogs')}
             </Button>
             <Button variant="outline" size="sm" onClick={handleDownload}>
               <IconDownload className="h-4 w-4 mr-1" />
-              {t('settings:downloadLogs')}
+              {t('settings:remoteAccess.downloadLogs')}
             </Button>
             <Button
               variant="outline"
@@ -177,7 +177,7 @@ export function SandboxLogsDialog({
               ) : (
                 <IconRefresh className="h-4 w-4 mr-1" />
               )}
-              {t('settings:restartSandbox')}
+              {t('settings:remoteAccess.restartSandbox')}
             </Button>
           </div>
 
@@ -186,7 +186,7 @@ export function SandboxLogsDialog({
             {filteredLogs.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                 <IconFileText className="h-8 w-8 mb-2" />
-                <p>{t('settings:noLogs')}</p>
+                <p>{t('settings:remoteAccess.noLogs')}</p>
               </div>
             ) : (
               <div className="space-y-0.5">

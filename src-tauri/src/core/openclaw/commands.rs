@@ -785,7 +785,7 @@ async fn ensure_gateway_config_for_jan() -> Result<bool, String> {
 /// Check if Node.js is installed and meets version requirements
 #[tauri::command]
 pub async fn openclaw_check_dependencies() -> NodeCheckResult {
-    log::info!("Checking Node.js dependencies for OpenClaw");
+    log::debug!("Checking Node.js dependencies for OpenClaw");
 
     // Check if Node.js is installed
     let output = Command::new("node")
@@ -846,7 +846,7 @@ pub async fn openclaw_check_dependencies() -> NodeCheckResult {
 /// Check if a port is available
 #[tauri::command]
 pub async fn openclaw_check_port(port: u16) -> PortCheckResult {
-    log::info!("Checking if port {} is available", port);
+    log::debug!("Checking if port {} is available", port);
 
     let addr = if cfg!(target_os = "windows") {
         format!("127.0.0.1:{}", port)
@@ -1102,7 +1102,7 @@ const JAN_ALLOWED_ORIGINS: &[&str] = &[
 /// Returns true if the config was modified, false if already correct
 #[tauri::command]
 pub async fn openclaw_ensure_jan_origin() -> Result<bool, String> {
-    log::info!("Ensuring Jan's origin is in OpenClaw allowedOrigins");
+    log::debug!("Ensuring Jan's origin is in OpenClaw allowedOrigins");
 
     let config_path = get_openclaw_config_path()?;
 
@@ -1182,7 +1182,7 @@ pub async fn openclaw_ensure_jan_origin() -> Result<bool, String> {
 
         log::info!("OpenClaw config updated with Jan's allowed origins and device auth disabled");
     } else {
-        log::info!("Jan's config already correct");
+        log::debug!("Jan's config already correct");
     }
 
     Ok(modified)
@@ -1555,7 +1555,7 @@ async fn check_gateway_responding() -> bool {
     // Use TCP connection check - OpenClaw serves a dashboard UI, not a JSON health endpoint
     match tokio::net::TcpStream::connect(format!("127.0.0.1:{}", OPENCLAW_PORT)).await {
         Ok(_) => {
-            log::info!("OpenClaw gateway is responding on port {}", OPENCLAW_PORT);
+            log::debug!("OpenClaw gateway is responding on port {}", OPENCLAW_PORT);
             true
         }
         Err(_) => false,
@@ -1976,7 +1976,7 @@ pub async fn openclaw_stop(state: State<'_, OpenClawState>) -> Result<(), String
 /// Get the current OpenClaw status, including sandbox information.
 #[tauri::command]
 pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClawStatus, String> {
-    log::info!("Getting OpenClaw status");
+    log::debug!("Getting OpenClaw status");
 
     let running = check_gateway_responding().await;
 
@@ -2011,19 +2011,23 @@ pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClaw
     let port_check = openclaw_check_port(OPENCLAW_PORT).await;
 
     // Get sandbox information from state
-    // Also check if container still exists (in case it was deleted externally)
     let (sandbox_type, isolation_tier) = {
         let mut sandbox_guard = state.sandbox.lock().await;
         let mut mode = state.sandbox_mode.lock().await;
 
-        // If state says Active but container doesn't exist, reset state
+        // If state says Active but gateway stopped, reset mode (keep sandbox for tier info)
         if let crate::core::openclaw::sandbox::SandboxMode::Active { .. } = &*mode {
             if !running {
-                // Container was deleted externally, reset state
-                log::info!("OpenClaw container was deleted externally, resetting state");
+                log::info!("Gateway not responding, resetting sandbox mode to Inactive");
                 *mode = crate::core::openclaw::sandbox::SandboxMode::Inactive;
-                *sandbox_guard = None;
             }
+        }
+
+        // Re-detect sandbox if not set (e.g. fresh app launch with gateway already running)
+        if sandbox_guard.is_none() && running {
+            let detected = crate::core::openclaw::sandbox::detect_sandbox().await;
+            log::info!("Re-detected sandbox: {} (tier: {})", detected.name(), detected.isolation_tier());
+            *sandbox_guard = Some(detected);
         }
 
         match (&*sandbox_guard, &*mode) {
@@ -2034,7 +2038,10 @@ pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClaw
                 )
             }
             (Some(sandbox), _) if running => {
-                // Gateway running but not tracked (started externally)
+                (Some(sandbox.name().to_string()), Some(sandbox.isolation_tier().to_string()))
+            }
+            (Some(sandbox), _) => {
+                // Not running but sandbox is known — still report the tier
                 (Some(sandbox.name().to_string()), Some(sandbox.isolation_tier().to_string()))
             }
             _ => (None, None),

@@ -70,7 +70,7 @@ pub async fn save_tunnel_config(config: &TunnelConfig) -> Result<(), String> {
 
 /// Check if ngrok is installed and get its status
 pub async fn detect_ngrok() -> TunnelProviderStatus {
-    log::info!("Detecting ngrok installation");
+    log::debug!("Detecting ngrok installation");
 
     let output = Command::new("ngrok")
         .arg("version")
@@ -133,7 +133,7 @@ async fn check_ngrok_authenticated() -> bool {
 
 /// Check if cloudflared is installed and get its status
 pub async fn detect_cloudflared() -> TunnelProviderStatus {
-    log::info!("Detecting cloudflared installation");
+    log::debug!("Detecting cloudflared installation");
 
     let output = Command::new("cloudflared")
         .arg("version")
