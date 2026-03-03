@@ -3209,11 +3209,7 @@ pub async fn whatsapp_check_auth() -> Result<WhatsAppAuthStatus, String> {
                         // it into connecting. The flag is reset in whatsapp_start_auth.
                         if !WA_RESTART_ATTEMPTED.swap(true, Ordering::SeqCst) {
                             log::info!("Restarting gateway to establish WhatsApp connection");
-                            let _ = openclaw_command(&["gateway", "restart"]).await
-                                .stdout(Stdio::piped())
-                                .stderr(Stdio::piped())
-                                .output()
-                                .await;
+                            let _ = restart_gateway_cli().await;
                         }
 
                         // Return in_progress so the frontend keeps polling
@@ -3259,17 +3255,46 @@ pub async fn whatsapp_check_auth() -> Result<WhatsAppAuthStatus, String> {
                 }
             }
 
-            // Still waiting for authentication, get QR code from local config
-            let config_path = get_whatsapp_config_path()?;
-            let qr_code = if config_path.exists() {
-                let config_json = std::fs::read_to_string(&config_path).ok();
-                config_json.and_then(|json| {
-                    serde_json::from_str::<serde_json::Value>(&json).ok()
-                }).and_then(|settings| {
-                    settings.get("qr_code").and_then(|v| v.as_str()).map(String::from)
-                })
-            } else {
-                None
+            // Still waiting for authentication — refresh the QR code from Gateway.
+            // WhatsApp QR codes expire every ~20s, so we must fetch a fresh one
+            // rather than serving the stale one from local config.
+            let qr_params = serde_json::json!({
+                "accountId": "default",
+                "timeoutMs": 5000
+            });
+
+            let qr_code = match gateway_request("web.login.start", qr_params).await {
+                Ok(qr_payload) => {
+                    let qr = qr_payload.get("qrDataUrl")
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+
+                    // Update local config with fresh QR
+                    if let Some(ref qr_data) = qr {
+                        if let Ok(config_path) = get_whatsapp_config_path() {
+                            if config_path.exists() {
+                                if let Ok(content) = std::fs::read_to_string(&config_path) {
+                                    if let Ok(mut cfg) = serde_json::from_str::<serde_json::Value>(&content) {
+                                        cfg["qr_code"] = serde_json::json!(qr_data);
+                                        let _ = std::fs::write(&config_path, serde_json::to_string_pretty(&cfg).unwrap_or_default());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    qr
+                }
+                Err(_) => {
+                    // Fall back to local config if Gateway call fails
+                    let config_path = get_whatsapp_config_path()?;
+                    if config_path.exists() {
+                        std::fs::read_to_string(&config_path).ok()
+                            .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+                            .and_then(|settings| settings.get("qr_code").and_then(|v| v.as_str()).map(String::from))
+                    } else {
+                        None
+                    }
+                }
             };
 
             Ok(WhatsAppAuthStatus {

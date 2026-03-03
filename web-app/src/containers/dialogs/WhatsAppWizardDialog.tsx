@@ -164,7 +164,7 @@ export function WhatsAppWizardDialog({
       } catch {
         // Polling error — will retry on next interval
       }
-    }, 2000)
+    }, 5000)
 
     setPollingInterval(interval)
     setIsPolling(true)
