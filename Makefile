@@ -108,7 +108,7 @@ lint: install-and-build
 	yarn lint
 
 # Testing
-test: lint
+test: lint install-rust-targets
 	yarn download:bin
 ifeq ($(OS),Windows_NT)
 endif
