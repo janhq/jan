@@ -23,6 +23,7 @@ import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/constants/providers'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
+import { syncModelToOpenClaw } from '@/utils/openclaw'
 import { ChevronsUpDown } from 'lucide-react'
 
 type DropdownModelProviderProps = {
@@ -414,6 +415,19 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         searchableModel.provider.provider,
         searchableModel.model.id
       )
+
+      // Sync model to OpenClaw (async, don't block UI)
+      syncModelToOpenClaw(
+        searchableModel.model.id,
+        searchableModel.provider.provider,
+        getModelDisplayName(searchableModel.model)
+      ).catch((error) => {
+        console.debug(
+          'Error syncing model to OpenClaw:',
+          searchableModel.model.id,
+          error
+        )
+      })
 
       // Check mmproj existence for llamacpp models (async, don't block UI)
       if (searchableModel.provider.provider === 'llamacpp') {
