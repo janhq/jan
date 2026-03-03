@@ -682,8 +682,25 @@ fn spawn_detached(model_id: &str, args: &ServeArgs) {
 // ── Serve handler (shared by `models load` and top-level `serve`) ──────────
 
 async fn handle_serve(args: ServeArgs) {
-    // Resolve model_id first — may trigger interactive picker before we potentially detach.
-    let model_id = args.model_id.clone().unwrap_or_else(select_model_interactively);
+    // Resolve model_id:
+    // 1. Use the explicit model_id if it is non-empty.
+    // 2. When --model-path is given, derive the id from the filename stem (e.g.
+    //    "/path/to/my-model.gguf" → "my-model") so the user never has to pass
+    //    a dummy empty-string id.
+    // 3. Fall back to the interactive picker only when neither is available.
+    let model_id = match args.model_id.as_deref() {
+        Some(id) if !id.is_empty() => id.to_string(),
+        _ => {
+            if let Some(ref path) = args.model_path {
+                PathBuf::from(path)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "model".to_string())
+            } else {
+                select_model_interactively()
+            }
+        }
+    };
 
     if args.detach {
         spawn_detached(&model_id, &args);
