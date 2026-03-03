@@ -52,11 +52,21 @@ pub async fn stop_openclaw(
     state: &OpenClawState,
 ) -> Result<(), String> {
     let mut mode = state.sandbox_mode.lock().await;
-    if let SandboxMode::Active {
-        ref mut handle, ..
-    } = *mode
-    {
-        sandbox.stop(handle).await?;
+    match *mode {
+        SandboxMode::Active {
+            ref mut handle, ..
+        } => {
+            sandbox.stop(handle).await?;
+        }
+        SandboxMode::Inactive => {
+            // Mode is Inactive but the gateway may still be running (e.g. mode was
+            // reset by a status check). Always attempt to stop via a dummy handle.
+            if is_port_in_use(OPENCLAW_PORT).await {
+                log::info!("Gateway still on port {}, stopping via sandbox", OPENCLAW_PORT);
+                let mut dummy = super::sandbox::SandboxHandle::Named("stop-fallback".to_string());
+                sandbox.stop(&mut dummy).await?;
+            }
+        }
     }
     *mode = SandboxMode::Inactive;
 
@@ -166,6 +176,18 @@ pub fn patch_config_for_sandbox(sandbox: &dyn Sandbox, config_dir: &Path) -> Res
     if let Some(base_url) = config.pointer_mut("/models/providers/jan/baseUrl") {
         if base_url.as_str() != Some(target_base_url) {
             *base_url = serde_json::json!(target_base_url);
+            modified = true;
+        }
+    }
+
+    // Patch WhatsApp authDir — host paths don't exist inside Docker and vice versa
+    let target_wa_auth_dir = match sandbox.isolation_tier() {
+        IsolationTier::FullContainer => "/home/node/.openclaw/whatsapp_auth".to_string(),
+        _ => config_dir.join("whatsapp_auth").to_string_lossy().into_owned(),
+    };
+    if let Some(auth_dir) = config.pointer_mut("/channels/whatsapp/accounts/default/authDir") {
+        if auth_dir.as_str() != Some(&target_wa_auth_dir) {
+            *auth_dir = serde_json::json!(target_wa_auth_dir);
             modified = true;
         }
     }

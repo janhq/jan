@@ -599,6 +599,56 @@ async fn clear_stale_openclaw_data() -> Result<(), String> {
     Ok(())
 }
 
+/// Stop the "other" sandbox instance before switching modes.
+///
+/// When `stop_docker` is true, stops a running Docker container (switching TO direct process).
+/// When `stop_docker` is false, stops a running direct process (switching TO Docker).
+/// This prevents two instances from polling the same Telegram/WhatsApp bot (409 conflict).
+async fn stop_other_sandbox_instance(stop_docker: bool) {
+    if stop_docker {
+        // Switching TO direct process — stop Docker container if running
+        if is_docker_container_running().await {
+            log::info!("Stopping Docker container before switching to direct process");
+            let _ = Command::new("docker")
+                .args(["stop", DOCKER_CONTAINER_NAME])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .await;
+        }
+    } else {
+        // Switching TO Docker — stop direct-process gateway if running on the port
+        // Use `openclaw gateway stop` + pkill as fallback
+        log::info!("Stopping direct-process gateway before switching to Docker");
+        let cli_stopped = Command::new("openclaw")
+            .args(["gateway", "stop"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        if !cli_stopped {
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            {
+                let _ = Command::new("pkill")
+                    .args(["-f", "openclaw-gateway"])
+                    .output()
+                    .await;
+            }
+        }
+
+        // Wait briefly for the port to free up
+        for _ in 0..10 {
+            if !crate::core::openclaw::lifecycle::is_port_in_use(OPENCLAW_PORT).await {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+    }
+}
+
 /// Reset `sessions.json` when switching between direct-process and Docker.
 ///
 /// Sessions cache absolute paths (`sessionFile`, `workspaceDir`). When the
@@ -641,12 +691,13 @@ async fn clear_mismatched_session_paths(expected_prefix: &str) -> Result<(), Str
 ///
 /// The agent caches provider URLs here. Switching between `localhost` (direct)
 /// and `host.docker.internal` (Docker) requires patching this file.
-fn patch_agent_models_base_url(target_base_url: &str) -> Result<(), String> {
+/// Returns `Ok(true)` if the file was actually modified.
+fn patch_agent_models_base_url(target_base_url: &str) -> Result<bool, String> {
     let config_dir = get_openclaw_config_dir()?;
     let models_path = config_dir.join("agents/main/agent/models.json");
 
     if !models_path.exists() {
-        return Ok(());
+        return Ok(false);
     }
 
     let content = std::fs::read_to_string(&models_path)
@@ -676,7 +727,55 @@ fn patch_agent_models_base_url(target_base_url: &str) -> Result<(), String> {
         log::info!("Patched agent models.json baseUrl to '{}'", target_base_url);
     }
 
-    Ok(())
+    Ok(modified)
+}
+
+/// Patch `openclaw.json` baseUrl and bind mode for the current sandbox mode.
+/// Returns `true` if the file was actually modified.
+fn patch_openclaw_config_base_url(target_base_url: &str, target_bind: &str) -> bool {
+    let config_dir = match get_openclaw_config_dir() {
+        Ok(d) => d,
+        Err(_) => return false,
+    };
+    let config_path = config_dir.join("openclaw.json");
+    if !config_path.exists() {
+        return false;
+    }
+
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let mut config: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    let mut modified = false;
+
+    if let Some(base_url) = config.pointer_mut("/models/providers/jan/baseUrl") {
+        if base_url.as_str() != Some(target_base_url) {
+            *base_url = serde_json::json!(target_base_url);
+            modified = true;
+        }
+    }
+
+    if let Some(bind) = config.pointer_mut("/gateway/bind") {
+        if bind.as_str() != Some(target_bind) {
+            *bind = serde_json::json!(target_bind);
+            modified = true;
+        }
+    }
+
+    if modified {
+        if let Ok(updated) = serde_json::to_string_pretty(&config) {
+            if std::fs::write(&config_path, updated).is_ok() {
+                log::info!("Patched openclaw.json for direct-process mode");
+            }
+        }
+    }
+
+    modified
 }
 
 /// Ensure the Gateway config has all required settings for Jan
@@ -1892,6 +1991,10 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
 
         log::info!("Docker container not running, will start it");
 
+        // Stop any running direct-process gateway first — two instances polling
+        // the same Telegram bot cause 409 conflicts.
+        stop_other_sandbox_instance(false).await;
+
         // Fix cached paths/URLs from a previous direct-process session
         if let Err(e) = clear_mismatched_session_paths("/home/node/").await {
             log::warn!("Failed to clear mismatched session paths: {}", e);
@@ -1902,23 +2005,39 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
             log::warn!("Failed to patch agent models baseUrl: {}", e);
         }
     } else {
-        if check_gateway_responding().await {
-            log::info!("OpenClaw gateway already running on port {}", OPENCLAW_PORT);
-            let _ = openclaw_ensure_jan_origin().await;
-            return Ok(());
-        }
+        // Stop any running Docker container first — two instances polling
+        // the same Telegram bot cause 409 conflicts.
+        stop_other_sandbox_instance(true).await;
 
-        // Fix cached paths/URLs from a previous Docker session
+        // Fix cached paths/URLs from a previous Docker session BEFORE checking
+        // if the gateway is already running — if URLs are wrong, we need to restart.
         let home = std::env::var("HOME").unwrap_or_default();
         if !home.is_empty() {
             if let Err(e) = clear_mismatched_session_paths(&home).await {
                 log::warn!("Failed to clear mismatched session paths: {}", e);
             }
         }
-        if let Err(e) = patch_agent_models_base_url(
+        let models_patched = patch_agent_models_base_url(
             crate::core::openclaw::constants::DEFAULT_JAN_BASE_URL,
-        ) {
-            log::warn!("Failed to patch agent models baseUrl: {}", e);
+        ).is_ok_and(|patched| patched);
+        let config_patched = patch_openclaw_config_base_url(
+            crate::core::openclaw::constants::DEFAULT_JAN_BASE_URL,
+            crate::core::openclaw::constants::DEFAULT_BIND_MODE,
+        );
+
+        if check_gateway_responding().await {
+            if models_patched || config_patched {
+                // Config had Docker URLs — gateway is running with stale config, restart it
+                log::info!("Config was patched from Docker URLs, restarting gateway");
+                let _ = restart_gateway_cli().await;
+                // Wait for gateway to come back up
+                let _ = crate::core::openclaw::lifecycle::wait_for_port(
+                    OPENCLAW_PORT,
+                    std::time::Duration::from_secs(15),
+                ).await;
+            }
+            let _ = openclaw_ensure_jan_origin().await;
+            return Ok(());
         }
 
         let port_check = openclaw_check_port(OPENCLAW_PORT).await;
