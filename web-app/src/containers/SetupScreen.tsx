@@ -827,9 +827,10 @@ function SetupScreen() {
                 <div
                   className="w-full text-left"
                 >
-                  <div className={cn("bg-background p-3 rounded-lg border transition-all hover:shadow disabled:opacity-60 flex justify-between items-start")}>
+                  <span className='mb-2 block text-muted-foreground'>Recommended model</span>
+                  <div className={cn("bg-secondary/50 p-3 rounded-lg border transition-all hover:shadow disabled:opacity-60 flex justify-between items-start")}>
                     <div className="flex items-start gap-4">
-                      <div className="shrink-0 size-12 bg-secondary/40 rounded-xl flex items-center justify-center">
+                      <div className="shrink-0 size-12 bg-background rounded-xl flex items-center justify-center">
                         <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
                       </div>
                       <div className="flex-1">
