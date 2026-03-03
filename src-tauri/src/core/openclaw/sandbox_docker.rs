@@ -214,29 +214,42 @@ impl DockerSandbox {
         };
 
         let mut stream = client.create_image(Some(options), None, None);
+
+        // Track per-layer progress to compute aggregate percentage.
+        // Docker reports current/total per layer — we sum across all layers
+        // so the progress bar only moves forward.
+        let mut layer_current: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        let mut layer_total: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
         let mut last_progress_pct: u32 = 40; // Start at 40% (where installing step begins)
 
         while let Some(result) = stream.next().await {
             match result {
                 Ok(info) => {
-                    // Calculate progress from Docker's layer download info
-                    let mut msg = String::new();
-                    if let Some(ref status) = info.status {
-                        msg = status.clone();
-                    }
-
-                    // Use progress_detail to estimate percentage (40-55 range for pull)
-                    if let Some(ref detail) = info.progress_detail {
-                        if let (Some(current), Some(total)) = (detail.current, detail.total) {
-                            if total > 0 {
-                                let pct = (current as f64 / total as f64 * 15.0) as u32 + 40;
-                                last_progress_pct = pct.min(55);
+                    // Update per-layer byte tracking
+                    if let Some(ref id) = info.id {
+                        if let Some(ref detail) = info.progress_detail {
+                            if let (Some(current), Some(total)) = (detail.current, detail.total) {
+                                if total > 0 {
+                                    layer_current.insert(id.clone(), current);
+                                    layer_total.insert(id.clone(), total);
+                                }
                             }
                         }
                     }
 
+                    // Compute aggregate progress across all layers
+                    let sum_current: i64 = layer_current.values().sum();
+                    let sum_total: i64 = layer_total.values().sum();
+                    if sum_total > 0 {
+                        let pct = (sum_current as f64 / sum_total as f64 * 15.0) as u32 + 40;
+                        // Only move forward — never let the bar go backward
+                        let clamped = pct.min(55);
+                        if clamped > last_progress_pct {
+                            last_progress_pct = clamped;
+                        }
+                    }
+
                     if let Some(ref status) = info.status {
-                        // Only emit for meaningful status changes
                         if status.contains("Pulling") || status.contains("Downloading")
                             || status.contains("Extracting") || status.contains("Pull complete")
                             || status.contains("Already exists")
@@ -244,7 +257,7 @@ impl DockerSandbox {
                             let display_msg = if let Some(ref id) = info.id {
                                 format!("{}: {}", status, id)
                             } else {
-                                msg.clone()
+                                status.clone()
                             };
 
                             let _ = app.emit(
