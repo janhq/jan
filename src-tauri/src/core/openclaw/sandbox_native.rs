@@ -17,6 +17,9 @@ use std::process::Stdio;
 #[cfg(target_os = "linux")]
 use super::sandbox::{IsolationTier, Sandbox, SandboxConfig, SandboxHandle, SandboxStatus};
 
+#[cfg(target_os = "linux")]
+use nix::libc;
+
 /// Default memory limit: 512 MB
 #[cfg(target_os = "linux")]
 const DEFAULT_MEMORY_LIMIT_BYTES: u64 = 512 * 1024 * 1024;
