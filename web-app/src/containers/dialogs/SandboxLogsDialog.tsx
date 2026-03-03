@@ -129,7 +129,7 @@ export function SandboxLogsDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh]">
+      <DialogContent className="sm:max-w-5xl max-h-[80vh]">
         <DialogHeader>
           <DialogTitle>{t('settings:remoteAccess.logViewer')}</DialogTitle>
         </DialogHeader>
@@ -182,7 +182,7 @@ export function SandboxLogsDialog({
           </div>
 
           {/* Log content */}
-          <div className="flex-1 overflow-auto rounded-md border bg-muted/50 p-3 font-mono text-xs">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden rounded-md border bg-muted/50 p-3 font-mono text-xs">
             {filteredLogs.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                 <IconFileText className="h-8 w-8 mb-2" />
@@ -191,7 +191,7 @@ export function SandboxLogsDialog({
             ) : (
               <div className="space-y-0.5">
                 {filteredLogs.map((log, index) => (
-                  <div key={index} className="whitespace-pre-wrap break-all">
+                  <div key={index} className="whitespace-pre-wrap break-all overflow-hidden">
                     {log}
                   </div>
                 ))}
