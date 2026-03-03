@@ -51,7 +51,6 @@ export function WhatsAppWizardDialog({
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [config, setConfig] = useState<WhatsAppConfig | null>(null)
 
-  // Clean up polling on unmount
   useEffect(() => {
     return () => {
       if (pollingInterval) {
@@ -60,7 +59,6 @@ export function WhatsAppWizardDialog({
     }
   }, [pollingInterval])
 
-  // Stop polling when dialog closes
   useEffect(() => {
     if (!isOpen && pollingInterval) {
       clearInterval(pollingInterval)
@@ -68,7 +66,6 @@ export function WhatsAppWizardDialog({
     }
   }, [isOpen, pollingInterval])
 
-  // Reset state when dialog opens
   useEffect(() => {
     if (isOpen) {
       setStep('welcome')
@@ -145,15 +142,23 @@ export function WhatsAppWizardDialog({
           onConnected(whatsappConfig)
         }
 
-        // Only treat non-transient errors as fatal
         if (status.error && !status.in_progress) {
-          const isFatalError = !status.error.includes('515') &&
-                               !status.error.includes('restart required') &&
-                               !status.error.includes('Stream Errored') &&
-                               !status.error.includes('not linked') &&
-                               !status.error.includes('not configured');
+          const transientPatterns = [
+            '515',
+            'restart required',
+            'Stream Errored',
+            'not linked',
+            'not configured',
+            'timed out',
+            'Request timed out',
+            'Connection closed',
+            'Gateway is not running',
+          ]
+          const isTransient = transientPatterns.some((p) =>
+            status.error!.includes(p)
+          )
 
-          if (isFatalError) {
+          if (!isTransient) {
             clearInterval(interval)
             setPollingInterval(null)
             setIsPolling(false)
@@ -161,9 +166,7 @@ export function WhatsAppWizardDialog({
             setStep('error')
           }
         }
-      } catch {
-        // Polling error — will retry on next interval
-      }
+      } catch { /* retry next interval */ }
     }, 5000)
 
     setPollingInterval(interval)
@@ -190,7 +193,6 @@ export function WhatsAppWizardDialog({
   }, [pollingInterval, t])
 
   const handleClose = useCallback(() => {
-    // Stop polling before closing
     if (pollingInterval) {
       clearInterval(pollingInterval)
       setPollingInterval(null)
@@ -278,7 +280,6 @@ export function WhatsAppWizardDialog({
               {t('settings:remoteAccess.whatsappWizard.qrCodeInstructions')}
             </p>
 
-            {/* QR Code Display */}
             <div className="bg-white p-4 rounded-lg mb-4 min-h-[200px] min-w-[200px] flex items-center justify-center">
               {qrCodeImage ? (
                 <img
@@ -399,7 +400,7 @@ export function WhatsAppWizardDialog({
         )
 
       case 'verifying':
-        return null // No buttons while verifying
+        return null
 
       case 'success':
         return (

@@ -159,6 +159,7 @@ pub fn run() {
         core::openclaw::commands::telegram_get_config,
         core::openclaw::commands::telegram_check_pairing,
         core::openclaw::commands::telegram_clear_pending_pairing,
+        core::openclaw::commands::telegram_get_pending_pairing_codes,
         core::openclaw::commands::telegram_approve_pairing,
         core::openclaw::commands::telegram_disconnect,
         // WhatsApp commands

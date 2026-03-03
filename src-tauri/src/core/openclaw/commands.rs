@@ -1,5 +1,5 @@
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,6 @@ static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 const DOCKER_CONTAINER_NAME: &str = "jan-openclaw";
 
 /// Check if the Docker container `jan-openclaw` is running.
-/// Used to decide whether CLI commands should route through `docker exec`.
 async fn is_docker_container_running() -> bool {
     Command::new("docker")
         .args(["inspect", "--format", "{{.State.Running}}", DOCKER_CONTAINER_NAME])
@@ -32,8 +31,7 @@ async fn is_docker_container_running() -> bool {
         .unwrap_or(false)
 }
 
-/// Build a `Command` for running an `openclaw` CLI command.
-/// Routes through `docker exec` when the container is running.
+/// Build a `Command` that routes through `docker exec` when the container is running.
 async fn openclaw_command(args: &[&str]) -> Command {
     if is_docker_container_running().await {
         let mut cmd = Command::new("docker");
@@ -54,16 +52,14 @@ async fn openclaw_command(args: &[&str]) -> Command {
     }
 }
 
-/// Flag to prevent repeated gateway restarts during WhatsApp auth polling.
-/// Reset when a new auth session starts via whatsapp_start_auth.
-static WA_RESTART_ATTEMPTED: AtomicBool = AtomicBool::new(false);
+/// Gateway restart attempts counter during WhatsApp auth polling (reset per session).
+static WA_RESTART_COUNT: AtomicU8 = AtomicU8::new(0);
+const MAX_WA_RESTART_ATTEMPTS: u8 = 3;
 
-/// Get next request ID
 fn next_request_id() -> String {
     REQUEST_ID_COUNTER.fetch_add(1, Ordering::SeqCst).to_string()
 }
 
-/// OpenClaw Gateway WebSocket request
 #[derive(Debug, Serialize)]
 struct GatewayRequest {
     #[serde(rename = "type")]
@@ -73,7 +69,6 @@ struct GatewayRequest {
     params: serde_json::Value,
 }
 
-/// OpenClaw Gateway WebSocket response
 #[derive(Debug, Deserialize)]
 struct GatewayResponse {
     #[serde(rename = "type")]
@@ -86,7 +81,7 @@ struct GatewayResponse {
     error: Option<serde_json::Value>,
 }
 
-/// Get the gateway auth token from the OpenClaw config
+/// Read the gateway auth token from the OpenClaw config file.
 async fn get_gateway_auth_token() -> Result<String, String> {
     let config_path = get_openclaw_config_path()?;
 
@@ -109,15 +104,11 @@ async fn get_gateway_auth_token() -> Result<String, String> {
         .ok_or_else(|| "Gateway auth token not found in config".to_string())
 }
 
-/// Connect to OpenClaw Gateway WebSocket and perform handshake
-/// Uses an explicit Origin header to pass the Gateway's origin validation
+/// Connect to the OpenClaw Gateway WebSocket with required Origin header.
 async fn connect_to_gateway() -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, String> {
     let url = format!("ws://127.0.0.1:{}", OPENCLAW_PORT);
-    log::info!("Connecting to OpenClaw Gateway at {}", url);
 
-    // Build WebSocket request with Origin header
-    // The Gateway validates the Origin header for security (CVE-2026-25253)
-    // We use "http://localhost" which is in the allowedOrigins list
+    // Origin header required for CVE-2026-25253 validation
     let request = Request::builder()
         .uri(&url)
         .header("Host", format!("127.0.0.1:{}", OPENCLAW_PORT))
@@ -136,9 +127,8 @@ async fn connect_to_gateway() -> Result<WebSocketStream<MaybeTlsStream<TcpStream
     Ok(ws_stream)
 }
 
-/// Perform the Gateway handshake (connect request) with proper protocol v3
+/// Perform the Gateway handshake (connect request) using protocol v3.
 async fn gateway_handshake(ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>) -> Result<(), String> {
-    // Wait for connect.challenge event
     let timeout = tokio::time::Duration::from_secs(5);
     let challenge_result = tokio::time::timeout(timeout, async {
         while let Some(msg) = ws_stream.next().await {
@@ -148,7 +138,6 @@ async fn gateway_handshake(ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStr
                     if let Ok(event) = serde_json::from_str::<serde_json::Value>(&text) {
                         if event.get("type").and_then(|t| t.as_str()) == Some("event")
                            && event.get("event").and_then(|e| e.as_str()) == Some("connect.challenge") {
-                            // Extract nonce from challenge
                             let nonce = event.get("payload")
                                 .and_then(|p| p.get("nonce"))
                                 .and_then(|n| n.as_str())
@@ -165,22 +154,14 @@ async fn gateway_handshake(ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStr
         Err("No challenge received".to_string())
     }).await;
 
-    // We wait for the challenge but don't need the nonce since device auth is disabled
     match challenge_result {
-        Ok(Ok(_)) => {} // Challenge received, proceed
+        Ok(Ok(_)) => {}
         Ok(Err(e)) => return Err(e),
         Err(_) => return Err("Handshake timeout".to_string()),
     };
 
-    // Send connect request following protocol v3
-    // Use "openclaw-control-ui" as client.id to enable dangerouslyDisableDeviceAuth bypass
-    // This client ID is recognized by the Gateway as a Control UI client, which allows
-    // bypassing device identity checks when dangerouslyDisableDeviceAuth=true
-    //
-    // We also pass the gateway auth token to satisfy the shared auth requirement
+    // client.id "openclaw-control-ui" enables dangerouslyDisableDeviceAuth bypass
     let connect_id = next_request_id();
-
-    // Read the gateway auth token from config
     let auth_token = get_gateway_auth_token().await.unwrap_or_default();
 
     let connect_request = serde_json::json!({
@@ -212,14 +193,12 @@ async fn gateway_handshake(ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStr
     let request_json = serde_json::to_string(&connect_request)
         .map_err(|e| format!("Failed to serialize connect request: {}", e))?;
 
-    log::info!("Sending connect handshake (device auth disabled)");
     log::debug!("Connect request: {}", request_json);
 
     ws_stream.send(Message::Text(request_json))
         .await
         .map_err(|e| format!("Failed to send connect request: {}", e))?;
 
-    // Wait for connect response
     let response_result = tokio::time::timeout(timeout, async {
         while let Some(msg) = ws_stream.next().await {
             match msg {
@@ -228,7 +207,6 @@ async fn gateway_handshake(ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStr
                     if let Ok(response) = serde_json::from_str::<GatewayResponse>(&text) {
                         if response.msg_type == "res" && response.id == connect_id {
                             if response.ok {
-                                log::info!("Gateway connect successful");
                                 return Ok(());
                             } else {
                                 let error_msg = response.error
@@ -253,27 +231,21 @@ async fn gateway_handshake(ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStr
     }).await;
 
     match response_result {
-        Ok(Ok(())) => {
-            log::info!("Gateway handshake completed successfully");
-            Ok(())
-        }
+        Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => Err(e),
         Err(_) => Err("Connect response timeout".to_string()),
     }
 }
 
-/// Send a request to the Gateway and wait for response
-async fn gateway_request(
+/// Send a request to the Gateway and wait for response with configurable timeout.
+async fn gateway_request_with_timeout(
     method: &str,
     params: serde_json::Value,
+    timeout_secs: u64,
 ) -> Result<serde_json::Value, String> {
-    // Ensure Jan's origin is configured before connecting
-    // This handles the case where the Gateway is already running but doesn't have Jan's origin
     let _ = openclaw_ensure_jan_origin().await;
 
     let mut ws_stream = connect_to_gateway().await?;
-
-    // Perform handshake first
     gateway_handshake(&mut ws_stream).await?;
 
     let request_id = next_request_id();
@@ -287,14 +259,13 @@ async fn gateway_request(
     let request_json = serde_json::to_string(&request)
         .map_err(|e| format!("Failed to serialize request: {}", e))?;
 
-    log::info!("Sending Gateway request: {}", request_json);
+    log::debug!("Sending Gateway request: {}", request_json);
 
     ws_stream.send(Message::Text(request_json))
         .await
         .map_err(|e| format!("Failed to send request: {}", e))?;
 
-    // Wait for response with matching ID
-    let timeout = tokio::time::Duration::from_secs(30);
+    let timeout = tokio::time::Duration::from_secs(timeout_secs);
     let result = tokio::time::timeout(timeout, async {
         while let Some(msg) = ws_stream.next().await {
             match msg {
@@ -330,7 +301,6 @@ async fn gateway_request(
         Err("Connection closed unexpectedly".to_string())
     }).await;
 
-    // Close the connection
     let _ = ws_stream.close(None).await;
 
     match result {
@@ -339,11 +309,18 @@ async fn gateway_request(
     }
 }
 
+/// Send a request to the Gateway with default 30s timeout.
+async fn gateway_request(
+    method: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    gateway_request_with_timeout(method, params, 30).await
+}
+
 // ============================================
 // Unified 1-Click Setup Functions
 // ============================================
 
-/// Setup result for the unified 1-click flow
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenClawSetupResult {
     /// Whether setup completed successfully
@@ -362,36 +339,22 @@ pub struct OpenClawSetupResult {
     pub message: Option<String>,
 }
 
-/// Ensure OpenClaw is fully set up and ready for channel connections
-/// This is the "1-click" setup that handles everything automatically:
-/// 1. Clear any stale data from previous failed attempts
-/// 2. Check/install OpenClaw
-/// 3. Configure Gateway with correct settings (origins, device auth bypass)
-/// 4. Start the Gateway if not running
-/// 5. Test the Gateway connection
-/// 6. Restart Gateway if config changed
+/// 1-click setup: ensure OpenClaw is installed, configured, and the Gateway is reachable.
 #[tauri::command]
 pub async fn openclaw_setup_for_channels(state: tauri::State<'_, OpenClawState>) -> Result<OpenClawSetupResult, String> {
-    log::info!("Starting 1-click OpenClaw setup for channels");
 
-    // Step 0: Clear any stale data that might cause issues
     if let Err(e) = clear_stale_openclaw_data().await {
         log::warn!("Failed to clear stale data: {}", e);
-        // Non-fatal, continue
     }
 
-    // Step 1: Check if OpenClaw is installed
     let openclaw_version = match check_openclaw_installed().await {
         Ok(Some(version)) => {
-            log::info!("OpenClaw is installed: {}", version);
+            log::info!("OpenClaw installed: {}", version);
             Some(version)
         }
         Ok(None) => {
-            log::info!("OpenClaw is not installed, attempting to install...");
-            // Try to install OpenClaw
             match openclaw_install().await {
                 Ok(result) if result.success => {
-                    log::info!("OpenClaw installed successfully");
                     result.version
                 }
                 Ok(result) => {
@@ -431,8 +394,6 @@ pub async fn openclaw_setup_for_channels(state: tauri::State<'_, OpenClawState>)
         }
     };
 
-    // Step 2: Ensure Gateway config has all required settings
-    log::info!("Configuring Gateway for Jan...");
     let config_changed = match ensure_gateway_config_for_jan().await {
         Ok(changed) => changed,
         Err(e) => {
@@ -441,15 +402,13 @@ pub async fn openclaw_setup_for_channels(state: tauri::State<'_, OpenClawState>)
         }
     };
 
-    // Step 3: Check if Gateway is running, start or restart if needed
     let gateway_running = check_gateway_responding().await;
     if !gateway_running {
-        log::info!("Gateway not running, starting...");
         match openclaw_start(state.clone()).await {
             Ok(()) => {
-                log::info!("Gateway started successfully");
-                // Wait for gateway to be ready
-                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                if !wait_for_gateway_ready(10).await {
+                    log::warn!("Gateway did not become responsive within 10s, proceeding anyway");
+                }
             }
             Err(e) => {
                 return Ok(OpenClawSetupResult {
@@ -464,17 +423,15 @@ pub async fn openclaw_setup_for_channels(state: tauri::State<'_, OpenClawState>)
             }
         }
     } else if config_changed {
-        // Gateway is running but config changed, restart to apply changes
-        log::info!("Config changed, restarting Gateway...");
+        log::info!("Config changed, restarting Gateway");
         let _ = restart_gateway_cli().await;
-        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+        if !wait_for_gateway_ready(10).await {
+            log::warn!("Gateway did not become responsive after restart within 10s");
+        }
     }
 
-    // Step 4: Test Gateway connection
-    log::info!("Testing Gateway connection...");
     match test_gateway_connection().await {
         Ok(()) => {
-            log::info!("Gateway connection successful");
             return Ok(OpenClawSetupResult {
                 success: true,
                 step: "complete".to_string(),
@@ -486,15 +443,13 @@ pub async fn openclaw_setup_for_channels(state: tauri::State<'_, OpenClawState>)
             });
         }
         Err(e) => {
-            log::warn!("Gateway connection failed: {}", e);
+            log::warn!("Gateway connection failed: {}, retrying after restart", e);
 
-            // If connection failed, try restarting the Gateway and retrying once
-            // This handles cases where the Gateway needs to reload config
-            log::info!("Attempting to restart Gateway and retry connection...");
             let _ = restart_gateway_cli().await;
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            if !wait_for_gateway_ready(10).await {
+                log::warn!("Gateway did not become responsive after retry restart");
+            }
 
-            // Retry connection
             match test_gateway_connection().await {
                 Ok(()) => {
                     return Ok(OpenClawSetupResult {
@@ -523,7 +478,7 @@ pub async fn openclaw_setup_for_channels(state: tauri::State<'_, OpenClawState>)
     }
 }
 
-/// Test the Gateway connection without making any requests
+/// Test the Gateway connection by performing a handshake only.
 async fn test_gateway_connection() -> Result<(), String> {
     let mut ws_stream = connect_to_gateway().await?;
     gateway_handshake(&mut ws_stream).await?;
@@ -567,7 +522,7 @@ async fn restart_gateway_cli() -> Result<(), String> {
     Ok(())
 }
 
-/// Clear stale OpenClaw data before setup to ensure a clean state.
+/// Clear stale files that may cause setup failures.
 async fn clear_stale_openclaw_data() -> Result<(), String> {
     let config_dir = get_openclaw_config_dir()?;
 
@@ -599,16 +554,10 @@ async fn clear_stale_openclaw_data() -> Result<(), String> {
     Ok(())
 }
 
-/// Stop the "other" sandbox instance before switching modes.
-///
-/// When `stop_docker` is true, stops a running Docker container (switching TO direct process).
-/// When `stop_docker` is false, stops a running direct process (switching TO Docker).
-/// This prevents two instances from polling the same Telegram/WhatsApp bot (409 conflict).
+/// Stop the opposing sandbox instance to prevent 409 conflicts when switching modes.
 async fn stop_other_sandbox_instance(stop_docker: bool) {
     if stop_docker {
-        // Switching TO direct process — stop Docker container if running
         if is_docker_container_running().await {
-            log::info!("Stopping Docker container before switching to direct process");
             let _ = Command::new("docker")
                 .args(["stop", DOCKER_CONTAINER_NAME])
                 .stdout(Stdio::piped())
@@ -617,9 +566,6 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
                 .await;
         }
     } else {
-        // Switching TO Docker — stop direct-process gateway if running on the port
-        // Use `openclaw gateway stop` + pkill as fallback
-        log::info!("Stopping direct-process gateway before switching to Docker");
         let cli_stopped = Command::new("openclaw")
             .args(["gateway", "stop"])
             .stdout(Stdio::piped())
@@ -639,7 +585,6 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
             }
         }
 
-        // Wait briefly for the port to free up
         for _ in 0..10 {
             if !crate::core::openclaw::lifecycle::is_port_in_use(OPENCLAW_PORT).await {
                 break;
@@ -649,11 +594,7 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
     }
 }
 
-/// Reset `sessions.json` when switching between direct-process and Docker.
-///
-/// Sessions cache absolute paths (`sessionFile`, `workspaceDir`). When the
-/// sandbox mode changes, those paths become invalid (e.g. `/Users/…` inside
-/// Docker) causing ENOENT. Resetting forces fresh sessions with correct paths.
+/// Reset `sessions.json` when cached paths no longer match the active sandbox mode.
 async fn clear_mismatched_session_paths(expected_prefix: &str) -> Result<(), String> {
     let config_dir = get_openclaw_config_dir()?;
     let sessions_json = config_dir.join("agents/main/sessions/sessions.json");
@@ -688,10 +629,6 @@ async fn clear_mismatched_session_paths(expected_prefix: &str) -> Result<(), Str
 }
 
 /// Patch `agents/main/agent/models.json` baseUrl for the current sandbox mode.
-///
-/// The agent caches provider URLs here. Switching between `localhost` (direct)
-/// and `host.docker.internal` (Docker) requires patching this file.
-/// Returns `Ok(true)` if the file was actually modified.
 fn patch_agent_models_base_url(target_base_url: &str) -> Result<bool, String> {
     let config_dir = get_openclaw_config_dir()?;
     let models_path = config_dir.join("agents/main/agent/models.json");
@@ -731,7 +668,6 @@ fn patch_agent_models_base_url(target_base_url: &str) -> Result<bool, String> {
 }
 
 /// Patch `openclaw.json` baseUrl and bind mode for the current sandbox mode.
-/// Returns `true` if the file was actually modified.
 fn patch_openclaw_config_base_url(target_base_url: &str, target_bind: &str) -> bool {
     let config_dir = match get_openclaw_config_dir() {
         Ok(d) => d,
@@ -778,15 +714,11 @@ fn patch_openclaw_config_base_url(target_base_url: &str, target_bind: &str) -> b
     modified
 }
 
-/// Ensure the Gateway config has all required settings for Jan
-/// This fixes common configuration issues that cause connection failures
+/// Ensure the Gateway config has all required settings for Jan.
 async fn ensure_gateway_config_for_jan() -> Result<bool, String> {
-    log::info!("Ensuring Gateway config is correct for Jan...");
-
     let config_path = get_openclaw_config_path()?;
 
     if !config_path.exists() {
-        log::info!("No OpenClaw config exists yet");
         return Ok(false);
     }
 
@@ -798,19 +730,16 @@ async fn ensure_gateway_config_for_jan() -> Result<bool, String> {
 
     let mut modified = false;
 
-    // Ensure gateway object exists
     if config.get("gateway").is_none() {
         config["gateway"] = serde_json::json!({});
         modified = true;
     }
 
-    // Ensure gateway.controlUi object exists
     if config["gateway"].get("controlUi").is_none() {
         config["gateway"]["controlUi"] = serde_json::json!({});
         modified = true;
     }
 
-    // 1. Ensure allowedOrigins contains Jan's origins
     let allowed_origins = config["gateway"]["controlUi"]
         .get("allowedOrigins")
         .and_then(|v| v.as_array())
@@ -828,15 +757,12 @@ async fn ensure_gateway_config_for_jan() -> Result<bool, String> {
         if !existing_origins.contains(*origin) {
             new_origins.push(serde_json::json!(origin));
             modified = true;
-            log::info!("Adding Jan origin: {}", origin);
         }
     }
     if modified {
         config["gateway"]["controlUi"]["allowedOrigins"] = serde_json::Value::Array(new_origins);
     }
 
-    // 2. Enable dangerouslyDisableDeviceAuth for local connections
-    // This is the key setting that allows connections without complex device signing
     let disable_device_auth = config["gateway"]["controlUi"]
         .get("dangerouslyDisableDeviceAuth")
         .and_then(|v| v.as_bool())
@@ -845,10 +771,8 @@ async fn ensure_gateway_config_for_jan() -> Result<bool, String> {
     if !disable_device_auth {
         config["gateway"]["controlUi"]["dangerouslyDisableDeviceAuth"] = serde_json::json!(true);
         modified = true;
-        log::info!("Enabled dangerouslyDisableDeviceAuth for local connections");
     }
 
-    // 3. Enable whatsapp plugin if not already
     if config.get("plugins").is_none() {
         config["plugins"] = serde_json::json!({"entries": {}});
     }
@@ -864,7 +788,6 @@ async fn ensure_gateway_config_for_jan() -> Result<bool, String> {
     if !whatsapp_enabled {
         config["plugins"]["entries"]["whatsapp"] = serde_json::json!({"enabled": true});
         modified = true;
-        log::info!("Enabled WhatsApp plugin");
     }
 
     if modified {
@@ -874,19 +797,16 @@ async fn ensure_gateway_config_for_jan() -> Result<bool, String> {
         std::fs::write(&config_path, updated_json)
             .map_err(|e| format!("Failed to write config: {}", e))?;
 
-        log::info!("OpenClaw config updated for Jan");
+        log::info!("Gateway config updated for Jan");
     }
 
     Ok(modified)
 }
 
 
-/// Check if Node.js is installed and meets version requirements
+/// Check if Node.js is installed and meets version requirements.
 #[tauri::command]
 pub async fn openclaw_check_dependencies() -> NodeCheckResult {
-    log::debug!("Checking Node.js dependencies for OpenClaw");
-
-    // Check if Node.js is installed
     let output = Command::new("node")
         .arg("--version")
         .output()
@@ -898,7 +818,6 @@ pub async fn openclaw_check_dependencies() -> NodeCheckResult {
                 let version_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 let version_str = version_output.trim_start_matches('v');
 
-                // Parse major version
                 let major_version: Option<u32> = version_str
                     .split('.')
                     .next()
@@ -942,10 +861,9 @@ pub async fn openclaw_check_dependencies() -> NodeCheckResult {
     }
 }
 
-/// Check if a port is available
+/// Check if a port is available.
 #[tauri::command]
 pub async fn openclaw_check_port(port: u16) -> PortCheckResult {
-    log::debug!("Checking if port {} is available", port);
 
     let addr = if cfg!(target_os = "windows") {
         format!("127.0.0.1:{}", port)
@@ -967,7 +885,7 @@ pub async fn openclaw_check_port(port: u16) -> PortCheckResult {
     }
 }
 
-/// Check if OpenClaw is installed and get its version
+/// Check if OpenClaw is installed and get its version.
 async fn check_openclaw_installed() -> Result<Option<String>, String> {
     let output = openclaw_command(&["--version"]).await
         .output()
@@ -986,8 +904,7 @@ async fn check_openclaw_installed() -> Result<Option<String>, String> {
     }
 }
 
-/// Get OpenClaw version from inside the Docker container via `docker exec`.
-/// Returns None if the container isn't running or the command fails.
+/// Get OpenClaw version from inside the Docker container.
 async fn check_openclaw_version_docker() -> Option<String> {
     let output = Command::new("docker")
         .args(["exec", "jan-openclaw", "openclaw", "--version"])
@@ -1003,7 +920,7 @@ async fn check_openclaw_version_docker() -> Option<String> {
     }
 }
 
-/// Get Node.js version from inside the Docker container via `docker exec`.
+/// Get Node.js version from inside the Docker container.
 async fn check_node_version_docker() -> Option<String> {
     let output = Command::new("docker")
         .args(["exec", "jan-openclaw", "node", "--version"])
@@ -1019,16 +936,12 @@ async fn check_node_version_docker() -> Option<String> {
     }
 }
 
-/// Install OpenClaw globally via npm
+/// Install OpenClaw globally via npm.
 #[tauri::command]
 pub async fn openclaw_install() -> Result<InstallResult, String> {
-    log::info!("Installing OpenClaw via npm");
-
-    // First check if OpenClaw is already installed
     let already_installed = check_openclaw_installed().await.ok().flatten();
 
     if already_installed.is_none() {
-        // Check Node.js
         let node_check = openclaw_check_dependencies().await;
         if !node_check.installed {
             return Ok(InstallResult {
@@ -1046,7 +959,6 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
             });
         }
 
-        // Run npm install -g openclaw@<pinned-version>
         let pinned_package = format!("{}@{}", OPENCLAW_PACKAGE_NAME, OPENCLAW_VERSION);
         let child = Command::new("npm")
             .args(["install", "-g", &pinned_package])
@@ -1107,10 +1019,7 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
         }
     };
 
-    // ============================================
-    // Auto-configure OpenClaw for Jan integration
-    // ============================================
-    log::info!("Auto-configuring OpenClaw for Jan integration");
+    // Auto-configure for Jan integration
 
     // 1. Ensure Jan's origins are allowed for WebSocket connections
     if let Err(e) = openclaw_ensure_jan_origin().await {
@@ -1657,6 +1566,23 @@ async fn check_gateway_responding() -> bool {
             true
         }
         Err(_) => false,
+    }
+}
+
+/// Wait for the gateway to become responsive, polling every 500ms up to `max_wait_secs`.
+/// Returns true if the gateway responded before the deadline, false otherwise.
+async fn wait_for_gateway_ready(max_wait_secs: u64) -> bool {
+    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(max_wait_secs);
+    // Always give the process at least 1s to bind the port
+    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    loop {
+        if check_gateway_responding().await {
+            return true;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     }
 }
 
@@ -2392,8 +2318,6 @@ pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String>
         }
 
         write_openclaw_config(&config)?;
-        restart_gateway_cli().await?;
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
     } else {
         let add_output = openclaw_command(&[
                 "channels",
@@ -2422,9 +2346,28 @@ pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String>
         }
     }
 
-    // Clear stale pending pairing codes
-    if let Err(e) = telegram_clear_pending_pairing().await {
-        log::warn!("Failed to clear pending pairing codes: {}", e);
+    // Clear stale pending pairing codes from the credentials file.
+    // This ensures the 3-code cap is reset so the user can get a fresh code
+    // when they type /start in Telegram.
+    {
+        let config_dir = get_openclaw_config_dir()?;
+        let pairing_path = config_dir.join("credentials").join("telegram-pairing.json");
+        let creds_dir = config_dir.join("credentials");
+        std::fs::create_dir_all(&creds_dir).ok();
+        let empty = serde_json::json!({ "version": 1, "requests": [] });
+        std::fs::write(&pairing_path, serde_json::to_string_pretty(&empty).unwrap())
+            .map_err(|e| format!("Failed to clear pairing state: {}", e))?;
+        log::info!("Reset pairing state for fresh code generation");
+    }
+
+    // Restart gateway so it picks up both the new channel config and the
+    // clean pairing state. Use readiness polling instead of a fixed sleep.
+    if check_gateway_responding().await {
+        log::info!("Restarting gateway to apply Telegram config and pairing state");
+        let _ = restart_gateway_cli().await;
+        if !wait_for_gateway_ready(10).await {
+            log::warn!("Gateway did not become responsive after Telegram configure restart");
+        }
     }
 
     // Store in local config for Jan's reference
@@ -2452,34 +2395,101 @@ pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String>
     })
 }
 
-/// Get current Telegram configuration
+/// Get current Telegram configuration.
+///
+/// Reads the local `telegram.json` reference file and reconciles it with the
+/// live gateway state (if running) and the main `openclaw.json` config.
+/// This ensures the UI shows the correct status regardless of whether the
+/// channel was originally configured in Docker mode or direct process mode.
 #[tauri::command]
 pub async fn telegram_get_config() -> Result<TelegramConfig, String> {
     let config_dir = get_openclaw_config_dir()?;
     let telegram_config_path = config_dir.join("telegram.json");
 
-    if !telegram_config_path.exists() {
-        return Ok(TelegramConfig {
-            bot_token: String::new(),
-            bot_username: None,
-            connected: false,
-            pairing_code: None,
-            paired_users: 0,
-        });
+    // Start with local file data (if it exists)
+    let mut bot_token = String::new();
+    let mut bot_username: Option<String> = None;
+    let mut connected = false;
+    let mut paired_users: u32 = 0;
+
+    if telegram_config_path.exists() {
+        if let Ok(config_json) = std::fs::read_to_string(&telegram_config_path) {
+            if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&config_json) {
+                bot_token = settings.get("bot_token").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                bot_username = settings.get("bot_username").and_then(|v| v.as_str()).map(String::from);
+                connected = settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false);
+                paired_users = settings.get("paired_users").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            }
+        }
     }
 
-    let config_json = std::fs::read_to_string(&telegram_config_path)
-        .map_err(|e| format!("Failed to read Telegram config: {}", e))?;
+    // If no local file, try to recover from openclaw.json (channel may have
+    // been configured in a different sandbox mode that didn't create this file)
+    if bot_token.is_empty() {
+        if let Ok(main_config) = read_openclaw_config() {
+            if let Some(tg) = main_config.get("channels").and_then(|c| c.get("telegram")) {
+                if let Some(token) = tg.get("botToken").and_then(|v| v.as_str()) {
+                    if !token.is_empty() {
+                        log::info!("Recovered Telegram config from openclaw.json");
+                        bot_token = token.to_string();
+                        // We have a token but no local file — write one so future reads are fast
+                        let local_config = serde_json::json!({
+                            "enabled": tg.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
+                            "bot_token": bot_token,
+                            "bot_username": serde_json::Value::Null,
+                            "connected": false,
+                        });
+                        let _ = std::fs::write(
+                            &telegram_config_path,
+                            serde_json::to_string_pretty(&local_config).unwrap(),
+                        );
+                    }
+                }
+            }
+        }
+    }
 
-    let settings: serde_json::Value = serde_json::from_str(&config_json)
-        .map_err(|e| format!("Failed to parse Telegram config: {}", e))?;
+    // If the gateway is running, verify actual channel status and reconcile
+    if !bot_token.is_empty() && check_gateway_responding().await {
+        let params = serde_json::json!({ "probe": true, "timeoutMs": 5000 });
+        if let Ok(status) = gateway_request("channels.status", params).await {
+            if let Some(telegram) = status.get("channels").and_then(|c| c.get("telegram")) {
+                let gw_configured = telegram.get("configured").and_then(|v| v.as_bool()).unwrap_or(false);
+                let gw_running = telegram.get("running").and_then(|v| v.as_bool()).unwrap_or(false);
+                let gw_probe_ok = telegram.get("probe")
+                    .and_then(|p| p.get("ok"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                let live_connected = gw_configured && gw_running && gw_probe_ok;
+
+                // Update local file if live status differs
+                if live_connected != connected {
+                    log::info!(
+                        "Reconciling Telegram status: local={}, live={}",
+                        connected, live_connected
+                    );
+                    connected = live_connected;
+                    if let Ok(content) = std::fs::read_to_string(&telegram_config_path) {
+                        if let Ok(mut cfg) = serde_json::from_str::<serde_json::Value>(&content) {
+                            cfg["connected"] = serde_json::json!(connected);
+                            let _ = std::fs::write(
+                                &telegram_config_path,
+                                serde_json::to_string_pretty(&cfg).unwrap_or_default(),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Ok(TelegramConfig {
-        bot_token: settings.get("bot_token").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        bot_username: settings.get("bot_username").and_then(|v| v.as_str()).map(String::from),
-        connected: settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false),
-        pairing_code: None, // Only shown during initial setup
-        paired_users: settings.get("paired_users").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+        bot_token,
+        bot_username,
+        connected,
+        pairing_code: None,
+        paired_users,
     })
 }
 
@@ -2489,6 +2499,9 @@ pub async fn telegram_get_config() -> Result<TelegramConfig, String> {
 /// `/start` silently does nothing until a code is approved or expires (1 h).
 /// By resetting the pairing state file we guarantee the user always gets a
 /// fresh code slot when they open the wizard or tap `/start` again.
+///
+/// After clearing, we restart the gateway so it reloads the empty state from
+/// disk (the running process may have the old requests cached in memory).
 #[tauri::command]
 pub async fn telegram_clear_pending_pairing() -> Result<(), String> {
     log::info!("Clearing pending Telegram pairing codes");
@@ -2502,11 +2515,54 @@ pub async fn telegram_clear_pending_pairing() -> Result<(), String> {
         std::fs::write(&pairing_path, serde_json::to_string_pretty(&empty).unwrap())
             .map_err(|e| format!("Failed to clear pairing state: {}", e))?;
         log::info!("Cleared pending pairing codes at {:?}", pairing_path);
+
+        // Restart gateway so it picks up the clean state
+        if check_gateway_responding().await {
+            log::info!("Restarting gateway to reload pairing state");
+            let _ = restart_gateway_cli().await;
+            wait_for_gateway_ready(8).await;
+        }
     } else {
         log::info!("No pairing state file to clear");
     }
 
     Ok(())
+}
+
+/// Read pending Telegram pairing codes from the credentials file.
+///
+/// Returns a list of pairing code strings that are currently pending approval.
+/// The frontend can poll this to auto-populate the pairing code input field
+/// when a user types `/start` in Telegram.
+#[tauri::command]
+pub async fn telegram_get_pending_pairing_codes() -> Result<Vec<String>, String> {
+    let config_dir = get_openclaw_config_dir()?;
+    let pairing_path = config_dir.join("credentials").join("telegram-pairing.json");
+
+    if !pairing_path.exists() {
+        return Ok(vec![]);
+    }
+
+    let content = std::fs::read_to_string(&pairing_path)
+        .map_err(|e| format!("Failed to read pairing file: {}", e))?;
+    let data: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse pairing file: {}", e))?;
+
+    let codes = data
+        .get("requests")
+        .and_then(|r| r.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|req| {
+                    req.get("code")
+                        .and_then(|c| c.as_str())
+                        .map(String::from)
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    Ok(codes)
 }
 
 /// Check if Telegram channel is actually connected in OpenClaw gateway
@@ -2625,6 +2681,34 @@ pub async fn telegram_approve_pairing(code: String) -> Result<(), String> {
 pub async fn telegram_disconnect() -> Result<(), String> {
     log::info!("Disconnecting Telegram channel");
 
+    // 1. Disable the channel in the gateway so the bot stops responding
+    if is_docker_container_running().await {
+        // Docker mode: set enabled=false in openclaw.json directly
+        if let Ok(mut config) = read_openclaw_config() {
+            if let Some(tg) = config.get_mut("channels")
+                .and_then(|c| c.get_mut("telegram"))
+            {
+                tg["enabled"] = serde_json::json!(false);
+                let _ = write_openclaw_config(&config);
+            }
+        }
+    } else {
+        // Direct process mode: use CLI to disable
+        let _ = openclaw_command(&["config", "set", "channels.telegram.enabled", "false"]).await
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+    }
+
+    // 2. Restart gateway so it picks up the disabled state and stops the bot
+    if check_gateway_responding().await {
+        log::info!("Restarting gateway to stop Telegram bot");
+        let _ = restart_gateway_cli().await;
+        // Don't need to wait for ready — we're tearing down, not setting up
+    }
+
+    // 3. Update local config file (keep credentials for easy reconnection)
     let config_dir = get_openclaw_config_dir()?;
     let telegram_config_path = config_dir.join("telegram.json");
 
@@ -2638,11 +2722,13 @@ pub async fn telegram_disconnect() -> Result<(), String> {
         settings["enabled"] = serde_json::json!(false);
         settings["connected"] = serde_json::json!(false);
         settings["paired_users"] = serde_json::json!(0);
+        // Keep bot_token and bot_username for easy reconnection
 
         std::fs::write(&telegram_config_path, serde_json::to_string_pretty(&settings).unwrap())
             .map_err(|e| format!("Failed to save Telegram config: {}", e))?;
     }
 
+    log::info!("Telegram channel disconnected — bot will stop responding");
     Ok(())
 }
 
@@ -2851,24 +2937,13 @@ fn get_whatsapp_config_path() -> Result<std::path::PathBuf, String> {
     Ok(config_dir.join("whatsapp.json"))
 }
 
-/// Check if WhatsApp is connected by reading the config
+/// Check if WhatsApp is connected by reading the config.
+/// Delegates to `whatsapp_get_config` which reconciles across sandbox modes.
 #[tauri::command]
 pub async fn whatsapp_validate_connection() -> Result<bool, String> {
     log::info!("Validating WhatsApp connection");
-
-    let config_path = get_whatsapp_config_path()?;
-
-    if !config_path.exists() {
-        return Ok(false);
-    }
-
-    let config_json = std::fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read WhatsApp config: {}", e))?;
-
-    let settings: serde_json::Value = serde_json::from_str(&config_json)
-        .map_err(|e| format!("Failed to parse WhatsApp config: {}", e))?;
-
-    Ok(settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false))
+    let config = whatsapp_get_config().await?;
+    Ok(config.connected)
 }
 
 /// Start WhatsApp authentication - 1-click setup that handles everything
@@ -2886,8 +2961,8 @@ pub async fn whatsapp_validate_connection() -> Result<bool, String> {
 pub async fn whatsapp_start_auth(state: tauri::State<'_, OpenClawState>) -> Result<WhatsAppAuthStatus, String> {
     log::info!("Starting WhatsApp 1-click setup and authentication");
 
-    // Reset the restart flag for this new auth session
-    WA_RESTART_ATTEMPTED.store(false, Ordering::SeqCst);
+    // Reset the restart counter for this new auth session
+    WA_RESTART_COUNT.store(0, Ordering::SeqCst);
 
     // Step 1: Run the unified setup to ensure OpenClaw is ready
     log::info!("Running OpenClaw setup...");
@@ -3019,7 +3094,8 @@ pub async fn whatsapp_start_auth(state: tauri::State<'_, OpenClawState>) -> Resu
         "force": true
     });
 
-    match gateway_request("web.login.start", qr_params).await {
+    // Use 65s transport timeout so the server-side 60s timeoutMs can fire first
+    match gateway_request_with_timeout("web.login.start", qr_params, 65).await {
         Ok(qr_payload) => {
             let qr_code = qr_payload.get("qrDataUrl")
                 .and_then(|v| v.as_str())
@@ -3323,11 +3399,18 @@ pub async fn whatsapp_check_auth() -> Result<WhatsAppAuthStatus, String> {
                             running, connected
                         );
 
-                        // Restart the gateway at most once per auth session to nudge
-                        // it into connecting. The flag is reset in whatsapp_start_auth.
-                        if !WA_RESTART_ATTEMPTED.swap(true, Ordering::SeqCst) {
-                            log::info!("Restarting gateway to establish WhatsApp connection");
+                        // Restart the gateway up to MAX_WA_RESTART_ATTEMPTS times per
+                        // auth session to nudge it into connecting. Counter is reset
+                        // in whatsapp_start_auth.
+                        let attempt = WA_RESTART_COUNT.fetch_add(1, Ordering::SeqCst);
+                        if attempt < MAX_WA_RESTART_ATTEMPTS {
+                            log::info!(
+                                "Restarting gateway to establish WhatsApp connection (attempt {}/{})",
+                                attempt + 1, MAX_WA_RESTART_ATTEMPTS
+                            );
                             let _ = restart_gateway_cli().await;
+                            // Give the gateway time to come back before the next poll
+                            wait_for_gateway_ready(8).await;
                         }
 
                         // Return in_progress so the frontend keeps polling
@@ -3457,28 +3540,130 @@ pub async fn whatsapp_check_auth() -> Result<WhatsAppAuthStatus, String> {
     }
 }
 
-/// Get current WhatsApp configuration
+/// Get current WhatsApp configuration.
+///
+/// Reconciles across sandbox modes (Docker vs direct process):
+/// 1. Reads local `whatsapp.json` first
+/// 2. Falls back to `openclaw.json` if local file is absent or empty (cross-mode recovery)
+/// 3. Probes live gateway `channels.status` to verify actual connected/linked state
+/// 4. Persists reconciled state back to local file
+///
+/// This ensures the UI shows the correct status regardless of whether the
+/// channel was originally configured in Docker mode or direct process mode.
 #[tauri::command]
 pub async fn whatsapp_get_config() -> Result<WhatsAppConfig, String> {
     let config_path = get_whatsapp_config_path()?;
 
-    if !config_path.exists() {
-        return Ok(WhatsAppConfig::default());
+    // Start with local file data (if it exists)
+    let mut account_id = "default".to_string();
+    let mut session_path = String::new();
+    let mut connected = false;
+    let mut phone_number: Option<String> = None;
+    let mut qr_code: Option<String> = None;
+    let mut contacts_count: u32 = 0;
+    let mut has_local_data = false;
+
+    if config_path.exists() {
+        if let Ok(config_json) = std::fs::read_to_string(&config_path) {
+            if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&config_json) {
+                account_id = settings.get("account_id").and_then(|v| v.as_str()).unwrap_or("default").to_string();
+                session_path = settings.get("session_path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                connected = settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false);
+                phone_number = settings.get("phone_number").and_then(|v| v.as_str()).map(String::from);
+                qr_code = settings.get("qr_code").and_then(|v| v.as_str()).map(String::from);
+                contacts_count = settings.get("contacts_count").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                // Consider local data present if connected or has phone number
+                has_local_data = connected || phone_number.is_some();
+            }
+        }
     }
 
-    let config_json = std::fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read WhatsApp config: {}", e))?;
+    // If no meaningful local data, try to recover from openclaw.json (channel
+    // may have been configured in a different sandbox mode)
+    if !has_local_data {
+        if let Ok(main_config) = read_openclaw_config() {
+            if let Some(wa) = main_config.get("channels").and_then(|c| c.get("whatsapp")) {
+                let enabled = wa.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+                if enabled {
+                    log::info!("Recovered WhatsApp channel enabled from openclaw.json");
+                    // WhatsApp doesn't store credentials in openclaw.json (unlike Telegram's botToken).
+                    // The channel being enabled means it was set up — write a minimal local file
+                    // so future reads are fast, with connected=false until gateway probe confirms.
+                    let local_config = serde_json::json!({
+                        "account_id": "default",
+                        "session_path": "",
+                        "connected": false,
+                        "phone_number": serde_json::Value::Null,
+                        "contacts_count": 0,
+                    });
+                    let _ = std::fs::write(
+                        &config_path,
+                        serde_json::to_string_pretty(&local_config).unwrap(),
+                    );
+                }
+            }
+        }
+    }
 
-    let settings: serde_json::Value = serde_json::from_str(&config_json)
-        .map_err(|e| format!("Failed to parse WhatsApp config: {}", e))?;
+    // If the gateway is running, verify actual channel status and reconcile
+    if check_gateway_responding().await {
+        let params = serde_json::json!({ "probe": true, "timeoutMs": 5000 });
+        if let Ok(status) = gateway_request("channels.status", params).await {
+            if let Some(whatsapp) = status.get("channels").and_then(|c| c.get("whatsapp")) {
+                let gw_linked = whatsapp.get("linked")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let gw_connected = whatsapp.get("connected")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                // WhatsApp is truly connected when it's linked (authenticated with phone)
+                let live_connected = gw_linked || gw_connected;
+
+                // Update local file if live status differs
+                if live_connected != connected {
+                    log::info!(
+                        "Reconciling WhatsApp status: local={}, live={} (linked={}, connected={})",
+                        connected, live_connected, gw_linked, gw_connected
+                    );
+                    connected = live_connected;
+                    // Persist reconciled state
+                    if config_path.exists() {
+                        if let Ok(content) = std::fs::read_to_string(&config_path) {
+                            if let Ok(mut cfg) = serde_json::from_str::<serde_json::Value>(&content) {
+                                cfg["connected"] = serde_json::json!(connected);
+                                let _ = std::fs::write(
+                                    &config_path,
+                                    serde_json::to_string_pretty(&cfg).unwrap_or_default(),
+                                );
+                            }
+                        }
+                    } else {
+                        // No local file yet but gateway says connected — write one
+                        let local_config = serde_json::json!({
+                            "account_id": account_id,
+                            "session_path": session_path,
+                            "connected": connected,
+                            "phone_number": phone_number,
+                            "contacts_count": contacts_count,
+                        });
+                        let _ = std::fs::write(
+                            &config_path,
+                            serde_json::to_string_pretty(&local_config).unwrap(),
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     Ok(WhatsAppConfig {
-        account_id: settings.get("account_id").and_then(|v| v.as_str()).unwrap_or("default").to_string(),
-        session_path: settings.get("session_path").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        connected: settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false),
-        phone_number: settings.get("phone_number").and_then(|v| v.as_str()).map(String::from),
-        qr_code: settings.get("qr_code").and_then(|v| v.as_str()).map(String::from),
-        contacts_count: settings.get("contacts_count").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+        account_id,
+        session_path,
+        connected,
+        phone_number,
+        qr_code,
+        contacts_count,
     })
 }
 
@@ -3518,6 +3703,33 @@ pub async fn whatsapp_get_contacts() -> Result<Vec<String>, String> {
 pub async fn whatsapp_disconnect() -> Result<(), String> {
     log::info!("Disconnecting WhatsApp channel");
 
+    // 1. Disable the channel in the gateway so WhatsApp stops responding
+    if is_docker_container_running().await {
+        // Docker mode: set enabled=false in openclaw.json directly
+        if let Ok(mut config) = read_openclaw_config() {
+            if let Some(wa) = config.get_mut("channels")
+                .and_then(|c| c.get_mut("whatsapp"))
+            {
+                wa["enabled"] = serde_json::json!(false);
+                let _ = write_openclaw_config(&config);
+            }
+        }
+    } else {
+        // Direct process mode: use CLI to disable
+        let _ = openclaw_command(&["config", "set", "channels.whatsapp.enabled", "false"]).await
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+    }
+
+    // 2. Restart gateway so it picks up the disabled state
+    if check_gateway_responding().await {
+        log::info!("Restarting gateway to stop WhatsApp channel");
+        let _ = restart_gateway_cli().await;
+    }
+
+    // 3. Update local config file (keep session data for easy reconnection)
     let config_path = get_whatsapp_config_path()?;
 
     if config_path.exists() {
@@ -3530,20 +3742,15 @@ pub async fn whatsapp_disconnect() -> Result<(), String> {
         settings["connected"] = serde_json::json!(false);
         settings["phone_number"] = serde_json::json!(null);
         settings["contacts_count"] = serde_json::json!(0);
-
-        // Clear the session
-        let session_path = settings.get("session_path").and_then(|v| v.as_str());
-        if let Some(session) = session_path {
-            let session_dir = std::path::PathBuf::from(session);
-            if session_dir.exists() {
-                let _ = std::fs::remove_dir_all(&session_dir);
-            }
-        }
+        // Keep account_id and session_path for easy reconnection —
+        // the WhatsApp session may still be valid, allowing reconnect
+        // without QR re-scan.
 
         std::fs::write(&config_path, serde_json::to_string_pretty(&settings).unwrap())
             .map_err(|e| format!("Failed to save WhatsApp config: {}", e))?;
     }
 
+    log::info!("WhatsApp channel disconnected — bot will stop responding");
     Ok(())
 }
 

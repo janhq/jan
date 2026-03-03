@@ -56,7 +56,6 @@ export function TelegramWizard({
   const [isApproving, setIsApproving] = useState(false)
   const [isResettingPairing, setIsResettingPairing] = useState(false)
 
-  // Reset state when dialog closes
   useEffect(() => {
     if (!isOpen) {
       setStep('instructions')
@@ -66,6 +65,24 @@ export function TelegramWizard({
       setConfig(null)
     }
   }, [isOpen])
+
+  // Poll for pending pairing codes to auto-fill the input
+  useEffect(() => {
+    if (step !== 'pairing' || !isOpen) return
+
+    const pollCodes = async () => {
+      try {
+        const codes = await invoke<string[]>('telegram_get_pending_pairing_codes')
+        if (codes.length > 0 && !pairingCode) {
+          setPairingCode(codes[codes.length - 1])
+        }
+      } catch { /* retry next interval */ }
+    }
+
+    pollCodes()
+    const interval = setInterval(pollCodes, 3000)
+    return () => clearInterval(interval)
+  }, [step, isOpen, pairingCode])
 
   const getStepNumber = (): number => {
     const stepMap: Record<WizardStep, number> = {
@@ -141,7 +158,6 @@ export function TelegramWizard({
       await invoke('telegram_approve_pairing', { code: pairingCode.trim() })
       toast.success(t('settings:remoteAccess.telegramWizard.step4.approved'))
 
-      // After approving, verify the connection and advance
       const updatedConfig = await invoke<TelegramConfig>('telegram_get_config')
       setConfig(updatedConfig)
       setStep('success')
@@ -186,9 +202,7 @@ export function TelegramWizard({
       setValidation(null)
       setStep('instructions')
       toast.success(t('settings:remoteAccess.telegramWizard.status.notConnected'))
-    } catch {
-      // Disconnect may fail if already disconnected
-    }
+    } catch { /* already disconnected */ }
   }
 
   const renderStepIndicator = () => {
@@ -477,7 +491,6 @@ export function TelegramWizard({
         }
         break
       case 'configure':
-        // Handled by configure function
         break
       case 'pairing':
         handleApprovePairing()
@@ -501,7 +514,6 @@ export function TelegramWizard({
         setStep('configure')
         break
       case 'success':
-        // Cannot go back from success
         break
     }
   }
@@ -513,9 +525,9 @@ export function TelegramWizard({
       case 'token':
         return validation?.valid ?? false
       case 'configure':
-        return false // Auto-progresses
+        return false
       case 'pairing':
-        return false // Manual check
+        return false
       case 'success':
         return true
       default:
