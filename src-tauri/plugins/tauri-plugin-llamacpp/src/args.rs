@@ -589,14 +589,28 @@ mod tests {
     }
 
     #[test]
-    fn test_standard_backend_flash_attention_off_not_added() {
+    fn test_old_version_flash_attention_off_not_added() {
         let mut config = default_config();
+        config.version_backend = "b6000/standard".to_string();
         config.flash_attn = "off".to_string();
 
         let builder = ArgumentBuilder::new(config, false).unwrap();
         let args = builder.build("test", "/path", 8080, None);
 
         assert_no_flag(&args, "--flash-attn");
+        assert_no_flag(&args, "-fa");
+    }
+
+    #[test]
+    fn test_new_version_flash_attention_off_sends_value() {
+        let mut config = default_config();
+        config.version_backend = "b6325/standard".to_string();
+        config.flash_attn = "off".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--flash-attn", "off");
         assert_no_flag(&args, "-fa");
     }
 
