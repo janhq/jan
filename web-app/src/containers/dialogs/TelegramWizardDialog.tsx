@@ -529,7 +529,7 @@ export function TelegramWizard({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px] max-w-[90vw]">
+      <DialogContent className="sm:max-w-[480px] max-w-[90vw]" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <div className="flex items-center justify-center gap-2 mb-2">
             <IconBrandTelegram size={24} className="text-blue-500" />

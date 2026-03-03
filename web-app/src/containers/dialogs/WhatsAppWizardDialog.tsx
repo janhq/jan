@@ -439,7 +439,7 @@ export function WhatsAppWizardDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
         <div className="py-2">{renderStepContent()}</div>
         <DialogFooter className="sm:justify-between">
           {renderFooter()}
