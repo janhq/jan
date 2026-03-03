@@ -5,6 +5,7 @@ import {
   IconBrandWhatsapp,
   IconSettings,
   IconTrash,
+  IconLoader2,
 } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import type { ChannelType, ChannelConfig, TelegramConfig, WhatsAppConfig } from '@/types/openclaw'
@@ -17,6 +18,7 @@ interface ChannelCardProps {
   onSettings: () => void
   onDisconnect: () => void
   OCIsInstalled: boolean
+  isDisconnecting?: boolean
 }
 
 export function ChannelCard({
@@ -25,6 +27,7 @@ export function ChannelCard({
   onSettings,
   onDisconnect,
   OCIsInstalled,
+  isDisconnecting = false,
 }: ChannelCardProps) {
   const { t } = useTranslation()
 
@@ -105,13 +108,15 @@ export function ChannelCard({
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onSettings}>
-            <IconSettings />
-            {t('settings:remoteAccess.settings')}
-          </Button>
+          {!isConnected && (
+            <Button variant="outline" size="sm" onClick={onSettings}>
+              <IconSettings />
+              {t('settings:remoteAccess.settings')}
+            </Button>
+          )}
           {isConnected && (
-            <Button variant="ghost" size="sm" onClick={onDisconnect}>
-              <IconTrash />
+            <Button variant="ghost" size="sm" onClick={onDisconnect} disabled={isDisconnecting}>
+              {isDisconnecting ? <IconLoader2 className="animate-spin" /> : <IconTrash />}
             </Button>
           )}
         </div>

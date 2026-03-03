@@ -2423,33 +2423,23 @@ pub async fn telegram_get_config() -> Result<TelegramConfig, String> {
         }
     }
 
-    // If no local file, try to recover from openclaw.json (channel may have
-    // been configured in a different sandbox mode that didn't create this file)
+    // If no local file, try to recover from openclaw.json (read-only — never
+    // write back here; only explicit user actions should modify local files)
     if bot_token.is_empty() {
         if let Ok(main_config) = read_openclaw_config() {
             if let Some(tg) = main_config.get("channels").and_then(|c| c.get("telegram")) {
                 if let Some(token) = tg.get("botToken").and_then(|v| v.as_str()) {
                     if !token.is_empty() {
-                        log::info!("Recovered Telegram config from openclaw.json");
+                        log::info!("Recovered Telegram config from openclaw.json (in-memory only)");
                         bot_token = token.to_string();
-                        // We have a token but no local file — write one so future reads are fast
-                        let local_config = serde_json::json!({
-                            "enabled": tg.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
-                            "bot_token": bot_token,
-                            "bot_username": serde_json::Value::Null,
-                            "connected": false,
-                        });
-                        let _ = std::fs::write(
-                            &telegram_config_path,
-                            serde_json::to_string_pretty(&local_config).unwrap(),
-                        );
                     }
                 }
             }
         }
     }
 
-    // If the gateway is running, verify actual channel status and reconcile
+    // If the gateway is running, check live channel status (read-only — report
+    // actual state but never persist it; only connect/disconnect actions write)
     if !bot_token.is_empty() && check_gateway_responding().await {
         let params = serde_json::json!({ "probe": true, "timeoutMs": 5000 });
         if let Ok(status) = gateway_request("channels.status", params).await {
@@ -2462,24 +2452,7 @@ pub async fn telegram_get_config() -> Result<TelegramConfig, String> {
                     .unwrap_or(false);
 
                 let live_connected = gw_configured && gw_running && gw_probe_ok;
-
-                // Update local file if live status differs
-                if live_connected != connected {
-                    log::info!(
-                        "Reconciling Telegram status: local={}, live={}",
-                        connected, live_connected
-                    );
-                    connected = live_connected;
-                    if let Ok(content) = std::fs::read_to_string(&telegram_config_path) {
-                        if let Ok(mut cfg) = serde_json::from_str::<serde_json::Value>(&content) {
-                            cfg["connected"] = serde_json::json!(connected);
-                            let _ = std::fs::write(
-                                &telegram_config_path,
-                                serde_json::to_string_pretty(&cfg).unwrap_or_default(),
-                            );
-                        }
-                    }
-                }
+                connected = live_connected;
             }
         }
     }
@@ -2681,54 +2654,30 @@ pub async fn telegram_approve_pairing(code: String) -> Result<(), String> {
 pub async fn telegram_disconnect() -> Result<(), String> {
     log::info!("Disconnecting Telegram channel");
 
-    // 1. Disable the channel in the gateway so the bot stops responding
-    if is_docker_container_running().await {
-        // Docker mode: set enabled=false in openclaw.json directly
-        if let Ok(mut config) = read_openclaw_config() {
-            if let Some(tg) = config.get_mut("channels")
-                .and_then(|c| c.get_mut("telegram"))
-            {
-                tg["enabled"] = serde_json::json!(false);
-                let _ = write_openclaw_config(&config);
-            }
+    // 1. Remove channel from openclaw.json — gateway hot-reloads on file change
+    if let Ok(mut config) = read_openclaw_config() {
+        if let Some(channels) = config.get_mut("channels").and_then(|c| c.as_object_mut()) {
+            channels.remove("telegram");
+            write_openclaw_config(&config)
+                .map_err(|e| format!("Failed to update config: {}", e))?;
+            log::info!("Telegram channel removed from openclaw.json (hot-reload will stop bot)");
         }
-    } else {
-        // Direct process mode: use CLI to disable
-        let _ = openclaw_command(&["config", "set", "channels.telegram.enabled", "false"]).await
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await;
     }
 
-    // 2. Restart gateway so it picks up the disabled state and stops the bot
-    if check_gateway_responding().await {
-        log::info!("Restarting gateway to stop Telegram bot");
-        let _ = restart_gateway_cli().await;
-        // Don't need to wait for ready — we're tearing down, not setting up
-    }
-
-    // 3. Update local config file (keep credentials for easy reconnection)
+    // 2. Delete local config file
     let config_dir = get_openclaw_config_dir()?;
     let telegram_config_path = config_dir.join("telegram.json");
-
     if telegram_config_path.exists() {
-        let config_json = std::fs::read_to_string(&telegram_config_path)
-            .map_err(|e| format!("Failed to read Telegram config: {}", e))?;
-
-        let mut settings: serde_json::Value = serde_json::from_str(&config_json)
-            .map_err(|e| format!("Failed to parse Telegram config: {}", e))?;
-
-        settings["enabled"] = serde_json::json!(false);
-        settings["connected"] = serde_json::json!(false);
-        settings["paired_users"] = serde_json::json!(0);
-        // Keep bot_token and bot_username for easy reconnection
-
-        std::fs::write(&telegram_config_path, serde_json::to_string_pretty(&settings).unwrap())
-            .map_err(|e| format!("Failed to save Telegram config: {}", e))?;
+        let _ = std::fs::remove_file(&telegram_config_path);
     }
 
-    log::info!("Telegram channel disconnected — bot will stop responding");
+    // Also clean up pairing file
+    let pairing_path = config_dir.join("telegram-pairing.json");
+    if pairing_path.exists() {
+        let _ = std::fs::remove_file(&pairing_path);
+    }
+
+    log::info!("Telegram channel fully disconnected and credentials removed");
     Ok(())
 }
 
@@ -3578,81 +3527,35 @@ pub async fn whatsapp_get_config() -> Result<WhatsAppConfig, String> {
         }
     }
 
-    // If no meaningful local data, try to recover from openclaw.json (channel
-    // may have been configured in a different sandbox mode)
+    // If no meaningful local data, check openclaw.json (read-only — never write
+    // back here; only explicit user actions should modify local files)
     if !has_local_data {
         if let Ok(main_config) = read_openclaw_config() {
             if let Some(wa) = main_config.get("channels").and_then(|c| c.get("whatsapp")) {
                 let enabled = wa.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
                 if enabled {
-                    log::info!("Recovered WhatsApp channel enabled from openclaw.json");
-                    // WhatsApp doesn't store credentials in openclaw.json (unlike Telegram's botToken).
-                    // The channel being enabled means it was set up — write a minimal local file
-                    // so future reads are fast, with connected=false until gateway probe confirms.
-                    let local_config = serde_json::json!({
-                        "account_id": "default",
-                        "session_path": "",
-                        "connected": false,
-                        "phone_number": serde_json::Value::Null,
-                        "contacts_count": 0,
-                    });
-                    let _ = std::fs::write(
-                        &config_path,
-                        serde_json::to_string_pretty(&local_config).unwrap(),
-                    );
+                    log::info!("WhatsApp channel enabled in openclaw.json (in-memory only)");
                 }
             }
         }
     }
 
-    // If the gateway is running, verify actual channel status and reconcile
+    // If the gateway is running, check live channel status (read-only — report
+    // actual state but never persist it; only connect/disconnect actions write)
     if check_gateway_responding().await {
         let params = serde_json::json!({ "probe": true, "timeoutMs": 5000 });
         if let Ok(status) = gateway_request("channels.status", params).await {
             if let Some(whatsapp) = status.get("channels").and_then(|c| c.get("whatsapp")) {
+                let gw_running = whatsapp.get("running")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 let gw_linked = whatsapp.get("linked")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                let gw_connected = whatsapp.get("connected")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
 
-                // WhatsApp is truly connected when it's linked (authenticated with phone)
-                let live_connected = gw_linked || gw_connected;
-
-                // Update local file if live status differs
-                if live_connected != connected {
-                    log::info!(
-                        "Reconciling WhatsApp status: local={}, live={} (linked={}, connected={})",
-                        connected, live_connected, gw_linked, gw_connected
-                    );
-                    connected = live_connected;
-                    // Persist reconciled state
-                    if config_path.exists() {
-                        if let Ok(content) = std::fs::read_to_string(&config_path) {
-                            if let Ok(mut cfg) = serde_json::from_str::<serde_json::Value>(&content) {
-                                cfg["connected"] = serde_json::json!(connected);
-                                let _ = std::fs::write(
-                                    &config_path,
-                                    serde_json::to_string_pretty(&cfg).unwrap_or_default(),
-                                );
-                            }
-                        }
-                    } else {
-                        // No local file yet but gateway says connected — write one
-                        let local_config = serde_json::json!({
-                            "account_id": account_id,
-                            "session_path": session_path,
-                            "connected": connected,
-                            "phone_number": phone_number,
-                            "contacts_count": contacts_count,
-                        });
-                        let _ = std::fs::write(
-                            &config_path,
-                            serde_json::to_string_pretty(&local_config).unwrap(),
-                        );
-                    }
-                }
+                // linked=true just means session auth exists (credentials kept after disconnect).
+                // The channel is only truly active when the gateway is running it.
+                connected = gw_running && gw_linked;
             }
         }
     }
@@ -3703,54 +3606,30 @@ pub async fn whatsapp_get_contacts() -> Result<Vec<String>, String> {
 pub async fn whatsapp_disconnect() -> Result<(), String> {
     log::info!("Disconnecting WhatsApp channel");
 
-    // 1. Disable the channel in the gateway so WhatsApp stops responding
-    if is_docker_container_running().await {
-        // Docker mode: set enabled=false in openclaw.json directly
-        if let Ok(mut config) = read_openclaw_config() {
-            if let Some(wa) = config.get_mut("channels")
-                .and_then(|c| c.get_mut("whatsapp"))
-            {
-                wa["enabled"] = serde_json::json!(false);
-                let _ = write_openclaw_config(&config);
-            }
+    // 1. Remove channel from openclaw.json — gateway hot-reloads on file change
+    if let Ok(mut config) = read_openclaw_config() {
+        if let Some(channels) = config.get_mut("channels").and_then(|c| c.as_object_mut()) {
+            channels.remove("whatsapp");
+            write_openclaw_config(&config)
+                .map_err(|e| format!("Failed to update config: {}", e))?;
+            log::info!("WhatsApp channel removed from openclaw.json (hot-reload will stop bot)");
         }
-    } else {
-        // Direct process mode: use CLI to disable
-        let _ = openclaw_command(&["config", "set", "channels.whatsapp.enabled", "false"]).await
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await;
     }
 
-    // 2. Restart gateway so it picks up the disabled state
-    if check_gateway_responding().await {
-        log::info!("Restarting gateway to stop WhatsApp channel");
-        let _ = restart_gateway_cli().await;
-    }
-
-    // 3. Update local config file (keep session data for easy reconnection)
+    // 2. Delete local config file
     let config_path = get_whatsapp_config_path()?;
-
     if config_path.exists() {
-        let config_json = std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("Failed to read WhatsApp config: {}", e))?;
-
-        let mut settings: serde_json::Value = serde_json::from_str(&config_json)
-            .map_err(|e| format!("Failed to parse WhatsApp config: {}", e))?;
-
-        settings["connected"] = serde_json::json!(false);
-        settings["phone_number"] = serde_json::json!(null);
-        settings["contacts_count"] = serde_json::json!(0);
-        // Keep account_id and session_path for easy reconnection —
-        // the WhatsApp session may still be valid, allowing reconnect
-        // without QR re-scan.
-
-        std::fs::write(&config_path, serde_json::to_string_pretty(&settings).unwrap())
-            .map_err(|e| format!("Failed to save WhatsApp config: {}", e))?;
+        let _ = std::fs::remove_file(&config_path);
     }
 
-    log::info!("WhatsApp channel disconnected — bot will stop responding");
+    // 3. Delete WhatsApp auth/session directory
+    let config_dir = get_openclaw_config_dir()?;
+    let auth_dir = config_dir.join("whatsapp_auth");
+    if auth_dir.exists() {
+        let _ = std::fs::remove_dir_all(&auth_dir);
+    }
+
+    log::info!("WhatsApp channel fully disconnected and credentials removed");
     Ok(())
 }
 
