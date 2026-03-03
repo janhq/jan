@@ -293,4 +293,159 @@ mod tests {
         ];
         assert!(allowed_headers.contains(&"x-api-key"));
     }
+
+    // Tests for server-side tool handling (web_search)
+
+    #[test]
+    fn test_has_web_search_tools_present() {
+        let body = serde_json::json!({
+            "model": "claude-3-opus",
+            "messages": [{"role": "user", "content": "test"}],
+            "tools": [
+                {"type": "web_search_20250305", "name": "web_search", "max_uses": 5},
+                {"name": "read_file", "input_schema": {"type": "object"}}
+            ]
+        });
+        assert!(proxy::has_web_search_tools(&body));
+    }
+
+    #[test]
+    fn test_has_web_search_tools_absent() {
+        let body = serde_json::json!({
+            "model": "claude-3-opus",
+            "messages": [{"role": "user", "content": "test"}],
+            "tools": [
+                {"name": "read_file", "input_schema": {"type": "object"}}
+            ]
+        });
+        assert!(!proxy::has_web_search_tools(&body));
+    }
+
+    #[test]
+    fn test_has_web_search_tools_no_tools() {
+        let body = serde_json::json!({
+            "model": "claude-3-opus",
+            "messages": [{"role": "user", "content": "test"}]
+        });
+        assert!(!proxy::has_web_search_tools(&body));
+    }
+
+    #[test]
+    fn test_inject_web_search_function_tool_into_existing() {
+        let mut body = serde_json::json!({
+            "model": "test",
+            "messages": [],
+            "tools": [
+                {"type": "function", "function": {"name": "existing", "parameters": {}}}
+            ]
+        });
+        proxy::inject_web_search_function_tool(&mut body);
+
+        let tools = body["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), 2);
+        assert_eq!(tools[1]["function"]["name"], "web_search");
+    }
+
+    #[test]
+    fn test_inject_web_search_function_tool_no_tools() {
+        let mut body = serde_json::json!({
+            "model": "test",
+            "messages": []
+        });
+        proxy::inject_web_search_function_tool(&mut body);
+
+        let tools = body["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["function"]["name"], "web_search");
+    }
+
+    #[test]
+    fn test_transform_skips_server_side_tools() {
+        let body = serde_json::json!({
+            "model": "claude-3-opus",
+            "messages": [{"role": "user", "content": "test"}],
+            "tools": [
+                {"type": "web_search_20250305", "name": "web_search", "max_uses": 5},
+                {"name": "read_file", "description": "Read a file", "input_schema": {"type": "object"}}
+            ]
+        });
+
+        let result = proxy::transform_anthropic_to_openai(&body).unwrap();
+        let tools = result["tools"].as_array().unwrap();
+        // web_search tool should be filtered out, only read_file remains
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["function"]["name"], "read_file");
+    }
+
+    #[test]
+    fn test_convert_server_tool_use_in_assistant_message() {
+        let body = serde_json::json!({
+            "model": "test",
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "Let me search for that."},
+                        {
+                            "type": "server_tool_use",
+                            "id": "srvtoolu_123",
+                            "name": "web_search",
+                            "input": {"query": "rust programming"}
+                        }
+                    ]
+                }
+            ]
+        });
+
+        let result = proxy::transform_anthropic_to_openai(&body).unwrap();
+        let messages = result["messages"].as_array().unwrap();
+        let assistant_msg = &messages[0];
+        assert_eq!(assistant_msg["role"], "assistant");
+
+        let tool_calls = assistant_msg["tool_calls"].as_array().unwrap();
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0]["id"], "srvtoolu_123");
+        assert_eq!(tool_calls[0]["function"]["name"], "web_search");
+    }
+
+    #[test]
+    fn test_convert_web_search_tool_result_in_user_message() {
+        let body = serde_json::json!({
+            "model": "test",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "web_search_tool_result",
+                            "tool_use_id": "srvtoolu_123",
+                            "content": [
+                                {
+                                    "type": "web_search_result",
+                                    "title": "Rust Language",
+                                    "url": "https://rust-lang.org",
+                                    "page_snippet": "Rust is a systems programming language."
+                                }
+                            ]
+                        },
+                        {"type": "text", "text": "Based on the search results..."}
+                    ]
+                }
+            ]
+        });
+
+        let result = proxy::transform_anthropic_to_openai(&body).unwrap();
+        let messages = result["messages"].as_array().unwrap();
+
+        // Should have a tool message and a user message
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["role"], "tool");
+        assert_eq!(messages[0]["tool_call_id"], "srvtoolu_123");
+        // Content should contain the search result info
+        let content = messages[0]["content"].as_str().unwrap();
+        assert!(content.contains("Rust Language"));
+        assert!(content.contains("https://rust-lang.org"));
+
+        assert_eq!(messages[1]["role"], "user");
+    }
 }
