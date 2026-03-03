@@ -176,6 +176,7 @@ ifeq ($(shell uname -s),Darwin)
 		src-tauri/target/x86_64-apple-darwin/release/jan \
 		-output src-tauri/resources/bin/jan
 	chmod +x src-tauri/resources/bin/jan
+	cp src-tauri/resources/bin/jan src-tauri/target/universal-apple-darwin/release/jan
 else ifeq ($(OS),Windows_NT)
 	cd src-tauri && cargo build --release --features cli --bin jan
 	cp src-tauri/target/release/jan.exe src-tauri/resources/bin/jan.exe
