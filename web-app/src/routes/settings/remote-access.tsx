@@ -16,10 +16,8 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useEffect, useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
-import { setOpenClawRunningState, syncAllModelsToOpenClaw } from '@/utils/openclaw'
-import { useModelProvider } from '@/hooks/useModelProvider'
+import { setOpenClawRunningState } from '@/utils/openclaw'
 import {
-  IconPlugConnected,
   IconLoader2,
   IconCopy,
   IconExternalLink,
@@ -46,7 +44,6 @@ export const Route = createFileRoute(route.settings.remote_access as any)({
 function RemoteAccess() {
   const { t } = useTranslation()
   const [status, setStatus] = useState<OpenClawStatus | null>(null)
-  const [isStarting, setIsStarting] = useState(false)
   const [isStopping, setIsStopping] = useState(false)
   const [disconnectingChannel, setDisconnectingChannel] = useState<ChannelType | null>(null)
   const [isTelegramWizardOpen, setIsTelegramWizardOpen] = useState(false)
@@ -135,33 +132,6 @@ const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
       case 'cloudflare': return 'Cloudflare Tunnel'
       case 'localonly': return t('settings:remoteAccess.localNetworkOnly')
       default: return t('settings:remoteAccess.notConfigured')
-    }
-  }
-
-  const bulkSyncModels = useCallback(async () => {
-    const { providers, selectedModel } = useModelProvider.getState()
-    await syncAllModelsToOpenClaw(providers, selectedModel?.id)
-  }, [])
-
-  const handleStart = async () => {
-    try {
-      setIsStarting(true)
-      await invoke('openclaw_start')
-      setOpenClawRunningState(true)
-      await bulkSyncModels()
-      toast.success(t('settings:remoteAccess.running'))
-      await fetchStatus()
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      if (errorMsg.includes('Node.js')) {
-        toast.error(t('settings:remoteAccess.nodeRequired'))
-      } else if (errorMsg.includes('Port')) {
-        toast.error(t('settings:remoteAccess.portInUse'))
-      } else {
-        toast.error(t('settings:remoteAccess.startError'))
-      }
-    } finally {
-      setIsStarting(false)
     }
   }
 
@@ -304,27 +274,19 @@ const isRunning = status?.running ?? false
                 }
                 actions={
                   <div className="flex items-center gap-2">
-                    {isInstalled ? (
-                      isRunning ? (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={handleStop}
-                          disabled={isStopping}
-                        >
-                          {isStopping && <IconLoader2 className="animate-spin size-4" />}
-                          {t('settings:remoteAccess.stop')}
-                        </Button>
-                      ) : (
-                        <Button size="sm" onClick={handleStart} disabled={isStarting}>
-                          {isStarting && <IconLoader2 className="animate-spin size-4" />}
-                          {t('settings:remoteAccess.start')}
-                        </Button>
-                      )
+                    {isRunning ? (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleStop}
+                        disabled={isStopping}
+                      >
+                        {isStopping && <IconLoader2 className="animate-spin size-4" />}
+                        {t('settings:remoteAccess.stop')}
+                      </Button>
                     ) : (
-                      <Button variant="secondary" size="sm" onClick={() => setIsEnableDialogOpen(true)}>
-                        <IconPlugConnected className="size-4 text-muted-foreground" />
-                        {t('settings:remoteAccess.install')}
+                      <Button size="sm" onClick={() => setIsEnableDialogOpen(true)}>
+                        {t('settings:remoteAccess.start')}
                       </Button>
                     )}
                   </div>

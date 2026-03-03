@@ -2024,17 +2024,33 @@ pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClaw
 
     let running = check_gateway_responding().await;
 
-    // Determine sandbox type early — it affects how we check version & installed
+    // 1. Detect sandbox first — environment may change between checks
+    //    (e.g. Docker Desktop started/stopped since last status call)
     let is_docker_sandbox = {
-        let sandbox_guard = state.sandbox.lock().await;
+        let mut sandbox_guard = state.sandbox.lock().await;
+        let mut mode = state.sandbox_mode.lock().await;
+
+        if let crate::core::openclaw::sandbox::SandboxMode::Active { .. } = &*mode {
+            if !running {
+                log::info!("Gateway not responding, resetting sandbox mode to Inactive");
+                *mode = crate::core::openclaw::sandbox::SandboxMode::Inactive;
+            }
+        }
+
+        // Re-detect when not running or unknown — Docker may have appeared/disappeared
+        if !running || sandbox_guard.is_none() {
+            let detected = crate::core::openclaw::sandbox::detect_sandbox().await;
+            log::debug!("Detected sandbox: {} (tier: {})", detected.name(), detected.isolation_tier());
+            *sandbox_guard = Some(detected);
+        }
+
         sandbox_guard.as_ref().map(|s| s.name() == "Docker").unwrap_or(false)
     };
 
+    // 2. Check installation status using the detected sandbox type
     let (openclaw_version, is_installed, node_version) = if is_docker_sandbox {
-        // Docker sandbox: get version from `docker exec`, skip host Node.js check
         let version = check_openclaw_version_docker().await;
         let installed = crate::core::openclaw::sandbox_docker::DockerSandbox::is_image_available().await;
-        // Node.js runs inside the container, not on the host
         let node_ver = if running {
             check_node_version_docker().await
         } else {
@@ -2042,7 +2058,6 @@ pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClaw
         };
         (version, installed, node_ver)
     } else {
-        // Direct process: check host npm + Node.js
         let version = match check_openclaw_installed().await {
             Ok(v) => v,
             Err(_) => None,
@@ -2054,41 +2069,15 @@ pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClaw
 
     let port_check = openclaw_check_port(OPENCLAW_PORT).await;
 
-    // Get sandbox information from state
+    // 3. Read sandbox info for response
     let (sandbox_type, isolation_tier) = {
-        let mut sandbox_guard = state.sandbox.lock().await;
-        let mut mode = state.sandbox_mode.lock().await;
-
-        // If state says Active but gateway stopped, reset mode (keep sandbox for tier info)
-        if let crate::core::openclaw::sandbox::SandboxMode::Active { .. } = &*mode {
-            if !running {
-                log::info!("Gateway not responding, resetting sandbox mode to Inactive");
-                *mode = crate::core::openclaw::sandbox::SandboxMode::Inactive;
-            }
-        }
-
-        // Re-detect sandbox if not set (e.g. fresh app launch with gateway already running)
-        if sandbox_guard.is_none() && running {
-            let detected = crate::core::openclaw::sandbox::detect_sandbox().await;
-            log::info!("Re-detected sandbox: {} (tier: {})", detected.name(), detected.isolation_tier());
-            *sandbox_guard = Some(detected);
-        }
-
-        match (&*sandbox_guard, &*mode) {
-            (Some(sandbox), crate::core::openclaw::sandbox::SandboxMode::Active { .. }) => {
-                (
-                    Some(sandbox.name().to_string()),
-                    Some(sandbox.isolation_tier().to_string()),
-                )
-            }
-            (Some(sandbox), _) if running => {
-                (Some(sandbox.name().to_string()), Some(sandbox.isolation_tier().to_string()))
-            }
-            (Some(sandbox), _) => {
-                // Not running but sandbox is known — still report the tier
-                (Some(sandbox.name().to_string()), Some(sandbox.isolation_tier().to_string()))
-            }
-            _ => (None, None),
+        let sandbox_guard = state.sandbox.lock().await;
+        match &*sandbox_guard {
+            Some(sandbox) => (
+                Some(sandbox.name().to_string()),
+                Some(sandbox.isolation_tier().to_string()),
+            ),
+            None => (None, None),
         }
     };
 
