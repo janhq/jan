@@ -329,16 +329,13 @@ const isRunning = status?.running ?? false
 
               {isRunning && status?.sandbox_type && (
                 <CardItem
-                  title={t('settings:remoteAccess.sandbox')}
+                  title={t('settings:remoteAccess.runtimeMode')}
                   actions={
                     <div className="flex items-center gap-2">
                       <span className="text-foreground text-sm">
-                        {status.sandbox_type}
-                        {status.isolation_tier && status.isolation_tier !== 'none' && (
-                          <span className="text-muted-foreground ml-1">
-                            (Tier {status.isolation_tier === 'full_container' ? '3' : status.isolation_tier === 'platform_sandbox' ? '2' : '0'})
-                          </span>
-                        )}
+                        {status.isolation_tier === 'full_container'
+                          ? t('settings:remoteAccess.dockerSandbox')
+                          : t('settings:remoteAccess.directProcess')}
                       </span>
                       <Button
                         variant="ghost"

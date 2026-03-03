@@ -321,80 +321,40 @@
   "backendInstallError": "Failed to install backend",
   "remoteAccess": {
     "title": "Remote Access",
-    "description": "Access your Jan assistant remotely through messaging platforms.",
-    "status": "Status",
-    "enabled": "Remote Access Enabled",
-    "disabled": "Remote Access Disabled",
-    "notInstalled": "Not Installed",
     "running": "Remote Access is now running",
     "stopped": "Remote Access has been stopped",
     "urlCopied": "Link copied to clipboard",
-    "backendInstallSuccess": "OpenClaw installed successfully!",
-    "backendInstallError": "Installation failed. Please check your Node.js installation.",
-    "activeChannels": "Active Channels",
-    "connectedUsers": "Connected Users",
     "port": "Port",
-    "nodeVersion": "Node.js Version",
-    "openclawVersion": "OpenClaw Version",
     "quickSetup": "Quick Setup",
     "enableRemoteAccess": "Enable OpenClaw",
     "disableRemoteAccess": "Disable OpenClaw",
-    "connectChannel": "Connect a Channel",
-    "shareAccess": "Share Access",
-    "generateInviteLink": "Generate Invite Link",
-    "recentMessages": "Recent Messages",
-    "noRecentMessages": "No recent messages",
     "settings": "Settings",
-    "modelForRemote": "Model for Remote",
-    "accessPolicy": "Access Policy",
-    "requirePairing": "Require Pairing",
-    "openAccess": "Open Access",
-    "remoteMethod": "Remote Method",
-    "advancedSettings": "Advanced Settings",
     "install": "Install",
-    "installing": "Installing...",
     "start": "Start",
     "stop": "Stop",
-    "starting": "Starting...",
-    "stopping": "Stopping...",
-    "installError": "Installation failed. Please check your Node.js installation.",
     "startError": "Couldn't start Remote Access. Please try again.",
     "stopError": "Couldn't stop Remote Access. Please try again.",
     "nodeRequired": "Node.js 22+ is required. Please install it first.",
     "portInUse": "Port 18789 is in use. Please close other apps using it.",
     "telegram": "Telegram",
     "whatsapp": "WhatsApp",
-    "discord": "Discord",
     "channels": "Channels",
-    "sandbox": "Sandbox",
-    "viewLogs": "View Logs",
-    "sandboxNone": "None (direct process)",
-    "sandboxLinux": "Linux Namespaces",
-    "sandboxWsl2": "WSL2",
-    "sandboxDocker": "Docker",
+    "runtimeMode": "Runtime Mode",
+    "dockerSandbox": "Docker Container",
+    "directProcess": "Direct Process",
     "securityAdvisory": "OpenClaw is running without sandbox isolation. For better security, enable Docker to run OpenClaw in a container.",
-    "learnMore": "Learn more",
     "logViewer": "Sandbox Logs",
     "noLogs": "No logs available",
     "copyLogs": "Copy All",
     "downloadLogs": "Download",
     "restartSandbox": "Restart Sandbox",
-    "restartConfirm": "Restart Sandbox?",
     "restarting": "Restarting sandbox...",
     "localNetworkOnly": "Local Network Only",
     "notConfigured": "Not Configured",
-    "tokenAuth": "Token Authentication",
-    "passwordAuth": "Password Authentication",
-    "noAuth": "No Authentication",
     "publicAccess": "Public Access",
     "tunnelUrl": "Tunnel URL",
     "copyUrl": "Copy URL",
     "openUrl": "Open URL",
-    "loading": "Loading...",
-    "security": "Security",
-    "tailscaleSettings": "Tailscale Settings",
-    "configureTailscale": "Configure Tailscale",
-    "approvedDevices": "Approved Devices",
     "activeTunnel": "Active Tunnel",
     "addChannel": {
       "title": "Add Channel",
@@ -404,8 +364,7 @@
     },
     "channelDescriptions": {
       "telegram": "Connect via Telegram bot for secure messaging",
-      "whatsapp": "Connect via WhatsApp for business messaging",
-      "discord": "Connect via Discord bot for server-based chat"
+      "whatsapp": "Connect via WhatsApp for business messaging"
     },
     "connected": "Connected",
     "notConnected": "Not Connected",
@@ -415,27 +374,6 @@
     "disconnectError": "Couldn't disconnect. Please try again.",
     "channelNotConnected": "Click settings to connect {{channel}}",
     "copiedToClipboard": "Copied to clipboard",
-    "securitySettings": {
-      "loadError": "Failed to load security settings",
-      "loadDevicesError": "Failed to load devices",
-      "loadLogsError": "Failed to load access logs",
-      "authModeChanged": "Authentication mode changed to {{mode}}",
-      "authModeChangeError": "Failed to change authentication mode",
-      "tokenGenerated": "New access token generated",
-      "tokenGenerateError": "Failed to generate token",
-      "tokenCopied": "Token copied to clipboard",
-      "tokenCopyError": "Failed to copy token",
-      "passwordMismatch": "Passwords do not match",
-      "passwordTooShort": "Password must be at least 8 characters",
-      "passwordSet": "Password set successfully",
-      "passwordSetError": "Failed to set password",
-      "pairingUpdated": "Pairing setting updated",
-      "pairingUpdateError": "Failed to update pairing setting",
-      "deviceRevoked": "Device access revoked",
-      "deviceRevokeError": "Failed to revoke device access",
-      "logsCleared": "Access logs cleared",
-      "logsClearError": "Failed to clear logs"
-    },
     "tailscaleSettings": {
       "serveEnabled": "Tailscale Serve enabled",
       "serveDisabled": "Tailscale Serve disabled",
@@ -445,36 +383,6 @@
       "funnelError": "Failed to configure Tailscale Funnel",
       "urlCopied": "URL copied to clipboard"
     },
-    "tunnel": {
-      "fetchStatusError": "Failed to fetch tunnel status",
-      "detectionComplete": "Tunnel provider detection complete",
-      "detectionError": "Failed to detect tunnel providers",
-      "ngrok": {
-        "tokenRequired": "ngrok auth token is required",
-        "tokenSaved": "ngrok token saved successfully",
-        "tokenSaveError": "Failed to save ngrok token"
-      },
-      "cloudflare": {
-        "tunnelIdRequired": "Cloudflare tunnel ID is required",
-        "tunnelIdSaved": "Cloudflare tunnel ID saved successfully",
-        "tunnelIdSaveError": "Failed to save Cloudflare tunnel ID"
-      },
-      "startSuccess": "Tunnel started successfully",
-      "startError": "Failed to start tunnel: {{error}}",
-      "stopSuccess": "Tunnel stopped successfully",
-      "stopError": "Failed to stop tunnel",
-      "saved": "Tunnel configuration saved",
-      "saveError": "Failed to save tunnel configuration",
-      "urlCopied": "Tunnel URL copied to clipboard"
-    },
-    "user_one": "user",
-    "other": "users",
-    "users": "{{count}} {{item}}",
-    "justNow": "just now",
-    "minuteAgo": "min ago",
-    "minutesAgo": "mins ago",
-    "hourAgo": "hour ago",
-    "hoursAgo": "hours ago",
     "telegramWizard": {
       "title": "Connect Telegram",
       "description": "Set up Telegram to chat with Jan remotely",
@@ -547,13 +455,6 @@
       }
     },
     "whatsappWizard": {
-      "title": "Connect WhatsApp",
-      "description": "Set up WhatsApp to chat with Jan remotely",
-      "whatsappWizardDescription": "Connect your WhatsApp account to enable remote messaging",
-      "scanQrCodeDescription": "Scan the QR code with your WhatsApp app",
-      "verifyingDescription": "Verifying your WhatsApp connection",
-      "successDescription": "Your WhatsApp is connected successfully",
-      "errorDescription": "Failed to connect WhatsApp",
       "setupTitle": "WhatsApp Setup",
       "setupDescription": "Connect your WhatsApp account to enable remote messaging",
       "howItWorks": "How it works",
@@ -579,61 +480,7 @@
       "refreshQrCode": "Refresh QR Code",
       "tryAgain": "Try Again",
       "startSetup": "Start Setup",
-      "connecting": "Connecting...",
-      "disconnectError": "Failed to disconnect WhatsApp",
-      "buttons": {
-        "next": "Next",
-        "back": "Back",
-        "connect": "Connect",
-        "cancel": "Cancel",
-        "done": "Done",
-        "retry": "Retry",
-        "disconnect": "Disconnect"
-      }
-    },
-    "discordWizard": {
-      "title": "Connect Discord",
-      "description": "Set up Discord to chat with Jan remotely",
-      "step1": {
-        "title": "Create a Bot",
-        "instruction1": "Go to the Discord Developer Portal",
-        "instruction2": "Create a new application",
-        "instruction3": "Navigate to the 'Bot' section",
-        "instruction4": "Click 'Reset Token' to get your bot token",
-        "instruction5": "Copy the bot token"
-      },
-      "step2": {
-        "title": "Enter Token",
-        "placeholder": "Paste your bot token here",
-        "validate": "Validate Token",
-        "validating": "Validating...",
-        "invalidToken": "Invalid token. Please check and try again.",
-        "validToken": "Token validated! Bot: {{username}}"
-      },
-      "step3": {
-        "title": "Configure & Connect",
-        "connecting": "Configuring Discord channel...",
-        "success": "Discord channel configured successfully!",
-        "error": "Failed to configure Discord: {{error}}"
-      },
-      "step4": {
-        "success": "Discord is now connected!",
-        "instruction": "You can now chat with Jan by inviting your bot to servers.",
-        "botUsername": "Your bot: {{username}}"
-      },
-      "buttons": {
-        "next": "Next",
-        "back": "Back",
-        "done": "Done",
-        "disconnect": "Disconnect"
-      },
-      "status": {
-        "notConnected": "Not Connected"
-      },
-      "errors": {
-        "networkError": "Network error. Please check your connection.",
-        "tokenRequired": "Please enter a bot token"
-      }
+      "connecting": "Connecting..."
     }
   }
 }

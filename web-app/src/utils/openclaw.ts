@@ -82,6 +82,7 @@ export async function syncAllModelsToOpenClaw(
     const models: Array<{ modelId: string; provider: string; displayName: string }> = []
 
     for (const provider of providers) {
+      if (!provider.active) continue
       if (!provider.models || provider.models.length === 0) continue
       for (const model of provider.models) {
         const modelId = model.id ?? model.model
