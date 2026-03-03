@@ -53,6 +53,7 @@ install-ios-rust-targets:
 dev: install-and-build
 	yarn download:bin
 	make build-mlx-server-if-exists
+	make build-cli-dev
 	yarn dev
 
 # Web application targets
@@ -107,7 +108,7 @@ lint: install-and-build
 	yarn lint
 
 # Testing
-test: lint
+test: lint install-rust-targets
 	yarn download:bin
 ifeq ($(OS),Windows_NT)
 endif
@@ -115,6 +116,7 @@ endif
 	yarn copy:assets:tauri
 	yarn build:icon
 	yarn build:mlx-server
+	make build-cli
 	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
@@ -163,6 +165,43 @@ ifeq ($(shell uname -s),Darwin)
 else
 	@echo "Skipping MLX server build (macOS only)"
 endif
+
+# Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
+build-cli:
+ifeq ($(shell uname -s),Darwin)
+	cd src-tauri && cargo build --release --features cli --bin jan-cli --target aarch64-apple-darwin
+	cd src-tauri && cargo build --release --features cli --bin jan-cli --target x86_64-apple-darwin
+	lipo -create \
+		src-tauri/target/aarch64-apple-darwin/release/jan-cli \
+		src-tauri/target/x86_64-apple-darwin/release/jan-cli \
+		-output src-tauri/resources/bin/jan-cli
+	chmod +x src-tauri/resources/bin/jan-cli
+	mkdir -p src-tauri/target/universal-apple-darwin/release
+
+	echo "Checking for code signing identity..."; \
+	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
+	if [ -n "$$SIGNING_IDENTITY" ]; then \
+		echo "Signing jan-cli with identity: $$SIGNING_IDENTITY"; \
+		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/jan-cli; \
+		echo "Code signing completed successfully"; \
+	else \
+		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
+	fi
+
+	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
+else ifeq ($(OS),Windows_NT)
+	cd src-tauri && cargo build --release --features cli --bin jan-cli
+	cp src-tauri/target/release/jan-cli.exe src-tauri/resources/bin/jan-cli.exe
+else
+	cd src-tauri && cargo build --release --features cli --bin jan-cli
+	cp src-tauri/target/release/jan-cli src-tauri/resources/bin/jan-cli
+endif
+
+# Debug build for local dev (faster, native arch only)
+build-cli-dev:
+	mkdir -p src-tauri/resources/bin
+	cd src-tauri && cargo build --features cli --bin jan-cli
+	install -m755 src-tauri/target/debug/jan-cli src-tauri/resources/bin/jan-cli
 
 # Build
 build: install-and-build install-rust-targets

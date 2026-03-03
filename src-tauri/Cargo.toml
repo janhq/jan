@@ -8,10 +8,16 @@ repository = "https://github.com/janhq/jan"
 edition = "2021"
 rust-version = "1.77.2"
 resolver = "2"
+default-run = "Jan"
 
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "jan-cli"
+path = "src/bin/jan-cli.rs"
+required-features = ["cli"]
 
 [features]
 default = [
@@ -50,6 +56,7 @@ test-tauri = [
     "tauri/test",
     "desktop",
 ]
+cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [] }
@@ -114,7 +121,11 @@ hostname = "0.4"
 base64 = "0.22"
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 glob = "0.3"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
+dialoguer = { version = "0.11", optional = true }
+env_logger = { version = "0.11", optional = true }
+indicatif = { version = "0.17", optional = true }
+console = { version = "0.15", optional = true }
 bollard = { version = "0.18", optional = true }
 
 [dependencies.tauri]

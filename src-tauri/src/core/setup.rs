@@ -272,6 +272,45 @@ pub fn extract_extension_manifest<R: Read>(
     Ok(None)
 }
 
+/// Install/update the bundled `jan` CLI binary.
+///
+/// - `version_changed`: pass `true` whenever the app version has changed (i.e. after an update).
+///   When `true` the binary is always overwritten so the CLI stays in sync with the new app.
+///   When `false` only installs if the binary is not yet present on PATH.
+///
+/// Runs in a background task — never blocks startup.
+/// Errors are logged as warnings and never prevent the app from starting.
+pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_changed: bool) {
+    tauri::async_runtime::spawn(async move {
+        // On a normal launch where the version hasn't changed, skip reinstall if already on PATH.
+        if !version_changed {
+            let which_cmd = if cfg!(windows) { "where" } else { "which" };
+            if std::process::Command::new(which_cmd)
+                .arg("jan")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                log::debug!("jan CLI already on PATH — skipping reinstall");
+                return;
+            }
+        }
+
+        match crate::core::system::commands::install_jan_cli_sync(&app_handle) {
+            Ok(status) => {
+                log::info!(
+                    "jan CLI {} to {}",
+                    if version_changed { "updated" } else { "installed" },
+                    status.path.as_deref().unwrap_or("<unknown>")
+                );
+            }
+            Err(e) => {
+                log::warn!("jan CLI auto-install skipped: {e}");
+            }
+        }
+    });
+}
+
 pub fn setup_mcp<R: Runtime>(app: &App<R>) {
     let state = app.state::<AppState>();
     let servers = state.mcp_servers.clone();

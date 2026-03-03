@@ -30,7 +30,7 @@
   },
   "bundle": {
     "targets": ["deb", "appimage"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE"],
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/jan-cli"],
     "externalBin": ["resources/bin/uv"],
     "linux": {
       "appimage": {

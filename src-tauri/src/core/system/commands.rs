@@ -332,3 +332,195 @@ pub fn launch_claude_code_with_config(
         return Ok(());
     }
 }
+
+#[derive(serde::Serialize)]
+pub struct CliInstallStatus {
+    pub installed: bool,
+    pub path: Option<String>,
+}
+
+/// Check if the `jan` CLI binary is accessible on PATH.
+#[tauri::command]
+pub fn check_jan_cli_installed() -> CliInstallStatus {
+    let which_cmd = if cfg!(windows) { "where" } else { "which" };
+    match std::process::Command::new(which_cmd).arg("jan").output() {
+        Ok(out) if out.status.success() => CliInstallStatus {
+            installed: true,
+            path: Some(String::from_utf8_lossy(&out.stdout).trim().to_string()),
+        },
+        _ => CliInstallStatus { installed: false, path: None },
+    }
+}
+
+/// Core install logic — synchronous, no Tauri command overhead.
+///
+/// Copies the bundled `jan` binary to the best writable directory on PATH.
+/// Install order (Unix): `/usr/local/bin` (writable probe), then `~/.local/bin`.
+/// Windows: `%LOCALAPPDATA%\Programs\Jan\`
+pub fn install_jan_cli_sync<R: Runtime>(app_handle: &AppHandle<R>) -> Result<CliInstallStatus, String> {
+    let bin_name = if cfg!(windows) { "jan-cli.exe" } else { "jan-cli" };
+    let dest_bin_name = if cfg!(windows) { "jan.exe" } else { "jan" };
+    let bundled = app_handle
+        .path()
+        .resource_dir()
+        .map_err(|e| e.to_string())?
+        .join("resources/bin")
+        .join(bin_name);
+
+    if !bundled.exists() {
+        return Err("Jan CLI binary not bundled with this version of Jan.".to_string());
+    }
+
+    let install_dir = jan_cli_install_dir()?;
+    std::fs::create_dir_all(&install_dir).map_err(|e| e.to_string())?;
+    let dest = install_dir.join(dest_bin_name);
+
+    std::fs::copy(&bundled, &dest)
+        .map_err(|e| format!("Failed to copy jan to {}: {}", dest.display(), e))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(CliInstallStatus {
+        installed: true,
+        path: Some(dest.to_string_lossy().into_owned()),
+    })
+}
+
+/// Copy the bundled `jan` binary to the system PATH (Tauri command wrapper).
+#[tauri::command]
+pub async fn install_jan_cli<R: Runtime>(app_handle: AppHandle<R>) -> Result<CliInstallStatus, String> {
+    install_jan_cli_sync(&app_handle)
+}
+
+/// Remove the installed `jan` CLI binary from the install directory.
+#[tauri::command]
+pub fn uninstall_jan_cli() -> Result<(), String> {
+    let bin_name = if cfg!(windows) { "jan.exe" } else { "jan" };
+    let dest = jan_cli_install_dir()?.join(bin_name);
+    if dest.exists() {
+        std::fs::remove_file(&dest)
+            .map_err(|e| format!("Failed to remove Jan CLI from {}: {}", dest.display(), e))?;
+    }
+    Ok(())
+}
+
+/// Build the cleaned shell-file content with all Jan CC env vars stripped out.
+fn build_cleaned_env_content(env_file_path: &str) -> String {
+    let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
+    let cleaned: Vec<&str> = existing_content
+        .split('\n')
+        .filter(|line| {
+            !line.starts_with("# Jan Local API Server - Claude Code Config")
+                && !line.starts_with("# Jan Local API Server")
+                && !line.starts_with("export ANTHROPIC_")
+        })
+        .collect();
+    // Trim trailing blank lines left behind by the removed block
+    cleaned.join("\n").trim_end().to_string() + "\n"
+}
+
+/// Clear all Jan-written Claude Code environment variables from the shell config.
+/// Uses the same write-probe + osascript-fallback logic as `launch_claude_code_with_config`.
+#[tauri::command]
+pub fn clear_claude_code_env() -> Result<(), String> {
+    if cfg!(target_os = "macos") {
+        let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
+        let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, true);
+        log::info!("Clearing CC env from shell: {}, file: {}", shell_name, env_file_path);
+
+        let cleaned = build_cleaned_env_content(&env_file_path);
+
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&env_file_path)
+        {
+            Ok(_) => {
+                std::fs::write(&env_file_path, &cleaned).map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+            Err(_) => {
+                // Write cleaned content to a temp file, then use osascript to move it
+                let temp_path = format!("{}/.jan_env_clear.sh", home_dir);
+                std::fs::write(&temp_path, &cleaned).map_err(|e| e.to_string())?;
+
+                let script = format!(
+                    r#"do shell script "cp '{}' '{}' && rm '{}'" with administrator privileges"#,
+                    temp_path, env_file_path, temp_path
+                );
+
+                std::process::Command::new("osascript")
+                    .arg("-e")
+                    .arg(&script)
+                    .output()
+                    .map_err(|e| e.to_string())?;
+
+                log::info!("CC env cleared from {} with admin privileges", env_file_path);
+                return Ok(());
+            }
+        }
+    } else if cfg!(target_os = "linux") {
+        let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
+        let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, false);
+        log::info!("Clearing CC env from shell: {}, file: {}", shell_name, env_file_path);
+
+        let cleaned = build_cleaned_env_content(&env_file_path);
+
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&env_file_path)
+        {
+            Ok(_) => {
+                std::fs::write(&env_file_path, &cleaned).map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            Err(_) => Err(format!("NEED_PERMISSION:{}", env_file_path)),
+        }
+    } else {
+        // Windows: delete the persistent user env vars from the registry
+        let keys = [
+            "ANTHROPIC_BASE_URL",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        ];
+        for key in &keys {
+            let _ = std::process::Command::new("reg")
+                .args(["delete", "HKCU\\Environment", "/v", key, "/f"])
+                .output();
+        }
+        log::info!("CC env vars removed from Windows registry.");
+        Ok(())
+    }
+}
+
+/// Determine the best writable directory for the Jan CLI install.
+fn jan_cli_install_dir() -> Result<PathBuf, String> {
+    #[cfg(unix)]
+    {
+        let usr_local_bin = PathBuf::from("/usr/local/bin");
+        if usr_local_bin.exists() {
+            let probe = usr_local_bin.join(".jan_write_probe");
+            if std::fs::write(&probe, b"").is_ok() {
+                let _ = std::fs::remove_file(&probe);
+                return Ok(usr_local_bin);
+            }
+        }
+        let home = std::env::var("HOME")
+            .map_err(|_| "Cannot determine home directory".to_string())?;
+        Ok(PathBuf::from(home).join(".local").join("bin"))
+    }
+    #[cfg(windows)]
+    {
+        let local_app_data = std::env::var("LOCALAPPDATA")
+            .map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
+        Ok(PathBuf::from(local_app_data).join("Programs").join("Jan"))
+    }
+}
