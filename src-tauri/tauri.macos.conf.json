@@ -30,7 +30,7 @@
   },
   "bundle": {
     "targets": ["app", "dmg"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/mlx-server", "resources/bin/mlx-swift_Cmlx.bundle"],
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "macOS": {
       "entitlements": "./Entitlements.plist"

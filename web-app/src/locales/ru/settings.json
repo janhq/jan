@@ -102,10 +102,8 @@
     "threadScrollDesc": "Выберите, как окно чата должно реагировать на поступление новых сообщений.",
     "threadScrollFlowTitle": "Следящая прокрутка",
     "threadScrollFlowHint": "Фиксирует область просмотра на последнем отправленном вами сообщении.",
-
     "threadScrollStickyTitle": "Закреплённая прокрутка",
     "threadScrollStickyHint": "Обеспечивает автоматическую прокрутку к ответам модели по мере их генерации.",
-
     "tokenCounterCompact": "Компактный счётчик токенов",
     "tokenCounterCompactDesc": "Показывать счётчик токенов внутри поля ввода чата. При отключении счётчик токенов отображается под полем ввода.",
     "codeBlockTitle": "Блок кода",
@@ -314,5 +312,169 @@
     "updateError": "Не удалось обновить Llamacpp"
   },
   "backendInstallSuccess": "Компонент успешно установлен",
-  "backendInstallError": "Не удалось установить компонент"
+  "backendInstallError": "Не удалось установить компонент",
+  "remoteAccess": {
+    "title": "Удалённый доступ",
+    "running": "Удалённый доступ запущен",
+    "stopped": "Удалённый доступ остановлен",
+    "urlCopied": "Ссылка скопирована в буфер обмена",
+    "port": "Порт",
+    "quickSetup": "Быстрая настройка",
+    "enableRemoteAccess": "Включить OpenClaw",
+    "disableRemoteAccess": "Отключить OpenClaw",
+    "settings": "Настройки",
+    "install": "Установить",
+    "start": "Запустить",
+    "stop": "Остановить",
+    "startError": "Не удалось запустить удалённый доступ. Попробуйте снова.",
+    "stopError": "Не удалось остановить удалённый доступ. Попробуйте снова.",
+    "nodeRequired": "Требуется Node.js 22+. Сначала установите его.",
+    "portInUse": "Порт 18789 занят. Закройте другие приложения, использующие его.",
+    "telegram": "Telegram",
+    "whatsapp": "WhatsApp",
+    "channels": "Каналы",
+    "runtimeMode": "Режим запуска",
+    "dockerSandbox": "Docker-контейнер",
+    "directProcess": "Прямой процесс",
+    "securityAdvisory": "OpenClaw работает без изоляции песочницы. Для лучшей безопасности включите Docker для запуска OpenClaw в контейнере.",
+    "logViewer": "Логи песочницы",
+    "noLogs": "Нет логов",
+    "copyLogs": "Копировать всё",
+    "downloadLogs": "Скачать",
+    "restartSandbox": "Перезапустить песочницу",
+    "restarting": "Перезапуск песочницы...",
+    "localNetworkOnly": "Только локальная сеть",
+    "notConfigured": "Не настроено",
+    "publicAccess": "Публичный доступ",
+    "tunnelUrl": "URL туннеля",
+    "copyUrl": "Копировать URL",
+    "openUrl": "Открыть URL",
+    "activeTunnel": "Активный туннель",
+    "addChannel": {
+      "title": "Добавить канал",
+      "description": "Выберите мессенджер для подключения",
+      "cancel": "Отмена",
+      "continue": "Продолжить"
+    },
+    "channelDescriptions": {
+      "telegram": "Подключить через бота Telegram для безопасных сообщений",
+      "whatsapp": "Подключить через WhatsApp для бизнес-сообщений"
+    },
+    "connected": "Подключено",
+    "notConnected": "Не подключено",
+    "manage": "Управление",
+    "disconnect": "Отключить",
+    "channelDisconnected": "{{channel}} отключён",
+    "disconnectError": "Не удалось отключить. Попробуйте снова.",
+    "channelNotConnected": "Нажмите настройки, чтобы подключить {{channel}}",
+    "copiedToClipboard": "Скопировано в буфер обмена",
+    "tailscaleSettings": {
+      "serveEnabled": "Tailscale Serve включён",
+      "serveDisabled": "Tailscale Serve выключен",
+      "funnelEnabled": "Tailscale Funnel включён - Ваша конечная точка теперь общедоступна",
+      "funnelDisabled": "Tailscale Funnel выключен",
+      "serveError": "Не удалось настроить Tailscale Serve",
+      "funnelError": "Не удалось настроить Tailscale Funnel",
+      "urlCopied": "URL скопирован в буфер обмена"
+    },
+    "telegramWizard": {
+      "title": "Подключить Telegram",
+      "description": "Настройте Telegram для удалённого чата с Jan",
+      "step1": {
+        "title": "Создать бота",
+        "instruction1": "Откройте Telegram и найдите @BotFather",
+        "instruction2": "Отправьте /newbot для создания нового бота",
+        "instruction3": "Следуйте инструкциям, чтобы назвать бота",
+        "instruction4": "Скопируйте токен бота (выглядит как: 123456789:ABCdefGHI...)"
+      },
+      "step2": {
+        "title": "Введите токен",
+        "placeholder": "Вставьте токен бота здесь",
+        "validate": "Проверить токен",
+        "validating": "Проверка...",
+        "invalidToken": "Недействительный токен. Проверьте и попробуйте снова.",
+        "validToken": "Токен подтверждён! Бот: @{{username}}"
+      },
+      "step3": {
+        "title": "Настроить и запустить",
+        "connecting": "Настройка канала Telegram...",
+        "success": "Канал Telegram успешно настроен!",
+        "error": "Не удалось настроить Telegram: {{error}}"
+      },
+      "step4": {
+        "title": "Сопряжение устройства",
+        "instruction": "Откройте бота в Telegram и отправьте сообщение. Бот ответит кодом сопряжения — вставьте его ниже для подключения.",
+        "openBot": "Открыть @{{username}} в Telegram",
+        "instruction1": "Откройте бота в Telegram по ссылке выше",
+        "instruction2": "Нажмите «Старт» или отправьте любое сообщение боту",
+        "instruction3": "Скопируйте код сопряжения из ответа бота и вставьте ниже",
+        "codeLabel": "Код сопряжения",
+        "codePlaceholder": "например: ZNAV9KZ3",
+        "approve": "Одобрить и подключить",
+        "approving": "Одобрение...",
+        "approved": "Устройство успешно сопряжено!",
+        "approveError": "Не удалось одобрить сопряжение: {{error}}",
+        "codeRequired": "Введите код сопряжения из сообщения бота",
+        "notConnected": "Канал ещё не подключён. Убедитесь, что шлюз OpenClaw запущен.",
+        "skipForNow": "Пропустить пока",
+        "resetPairing": "Нет кода? Нажмите для сброса и отправьте /start заново",
+        "resetSuccess": "Коды сопряжения очищены — отправьте /start боту заново",
+        "resetError": "Не удалось сбросить коды сопряжения"
+      },
+      "step5": {
+        "title": "Подключено!",
+        "success": "Telegram подключён!",
+        "instruction": "Теперь вы можете общаться с Jan, отправляя сообщения боту.",
+        "botUsername": "Ваш бот: @{{username}}",
+        "pairedUsers": "{{count}} устройств(о) сопряжено"
+      },
+      "buttons": {
+        "next": "Далее",
+        "back": "Назад",
+        "connect": "Подключить",
+        "cancel": "Отмена",
+        "done": "Готово",
+        "retry": "Повторить",
+        "disconnect": "Отключить"
+      },
+      "status": {
+        "notConnected": "Не подключено",
+        "connected": "Подключено",
+        "connecting": "Подключение..."
+      },
+      "errors": {
+        "networkError": "Ошибка сети. Проверьте подключение.",
+        "tokenRequired": "Введите токен бота",
+        "configError": "Не удалось сохранить конфигурацию"
+      }
+    },
+    "whatsappWizard": {
+      "setupTitle": "Настройка WhatsApp",
+      "setupDescription": "Подключите аккаунт WhatsApp для удалённых сообщений",
+      "howItWorks": "Как это работает",
+      "whatsappStep1": "Нажмите «Начать настройку» — мы настроим всё автоматически",
+      "whatsappStep2": "Отсканируйте QR-код приложением WhatsApp",
+      "whatsappStep3": "Начните общаться с Jan с телефона!",
+      "settingUp": "Настройка...",
+      "settingUpDescription": "Настройка OpenClaw и подготовка подключения WhatsApp. Это может занять некоторое время...",
+      "checkingOpenClaw": "Проверка установки OpenClaw",
+      "configuringGateway": "Настройка подключения шлюза",
+      "enablingWhatsApp": "Активация канала WhatsApp",
+      "scanQrCode": "Сканировать QR-код",
+      "qrCodeInstructions": "Откройте WhatsApp на телефоне и отсканируйте этот QR-код",
+      "generatingQrCode": "Генерация QR-кода...",
+      "waitingForScan": "Ожидание сканирования...",
+      "verifyingConnection": "Проверка подключения",
+      "pleaseWait": "Подождите, пока мы проверяем подключение",
+      "whatsappConnected": "WhatsApp подключён!",
+      "whatsappConnectedDescription": "WhatsApp подключён. Вы можете общаться с Jan, отправляя сообщения.",
+      "connectionFailed": "Подключение не удалось",
+      "unknownError": "Произошла неизвестная ошибка",
+      "back": "Назад",
+      "refreshQrCode": "Обновить QR-код",
+      "tryAgain": "Попробовать снова",
+      "startSetup": "Начать настройку",
+      "connecting": "Подключение..."
+    }
+  }
 }
