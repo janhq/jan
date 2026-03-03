@@ -6,6 +6,7 @@
   "remote_access": "Remote Access",
   "integrations": "Integrations",
   "openclaw": "OpenClaw",
+  "claude_code": "Claude Code",
   "https_proxy": "HTTPS Proxy",
   "extensions": "Extensions",
   "attachments": "Attachments",

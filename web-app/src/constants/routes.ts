@@ -20,6 +20,7 @@ export const route = {
     hardware: '/settings/hardware',
     assistant: '/settings/assistant',
     remote_access: '/settings/remote-access',
+    claude_code: '/settings/claude-code',
   },
   hub: {
     index: '/hub/',
