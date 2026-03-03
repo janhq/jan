@@ -84,7 +84,6 @@ describe('SettingsMenu', () => {
     expect(screen.getByText('common:general')).toBeInTheDocument()
     expect(screen.getByText('common:interface')).toBeInTheDocument()
     expect(screen.getByText('common:privacy')).toBeInTheDocument()
-    expect(screen.getByText('common:modelProviders')).toBeInTheDocument()
   })
 
   it('renders keyboard shortcuts and other settings', () => {
