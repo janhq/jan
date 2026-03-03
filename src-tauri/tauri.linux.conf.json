@@ -13,12 +13,12 @@
         "zoomHotkeysEnabled": true,
         "center": true,
         "hiddenTitle": true,
-        "transparent": true,
+        "transparent": false,
         "trafficLightPosition": {
           "x": 20,
           "y": 32
         },
-        "decorations": false,
+        "decorations": true,
         "titleBarStyle": "Overlay",
         "windowEffects": {
           "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
