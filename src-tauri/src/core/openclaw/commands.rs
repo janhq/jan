@@ -1065,8 +1065,7 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
             let error_message = if stderr.contains("404") || stderr.contains("Not Found") || stdout.contains("404") {
                 format!(
                     "OpenClaw package '{}' is not yet available on npm. \
-                    Please check the OpenClaw project for installation instructions, \
-                    or try using PicoClaw as an alternative lightweight gateway.",
+                    Please check the OpenClaw project for installation instructions.",
                     OPENCLAW_PACKAGE_NAME
                 )
             } else if stderr.contains("EACCES") || stderr.contains("permission denied") {

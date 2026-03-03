@@ -1,7 +1,6 @@
 pub mod core;
 pub mod openclaw_cli;
 pub use core::openclaw::OpenClawState;
-pub use core::picoclaw::PicoClawState;
 
 use core::{
     app::commands::get_jan_data_folder_path,
@@ -210,23 +209,6 @@ pub fn run() {
         core::openclaw::commands::tunnel_stop_ngrok,
         core::openclaw::commands::tunnel_start_cloudflared,
         core::openclaw::commands::tunnel_stop_cloudflared,
-        // PicoClaw commands
-        core::picoclaw::commands::picoclaw_detect,
-        core::picoclaw::commands::picoclaw_install,
-        core::picoclaw::commands::picoclaw_configure,
-        core::picoclaw::commands::picoclaw_start,
-        core::picoclaw::commands::picoclaw_stop,
-        core::picoclaw::commands::picoclaw_status,
-        core::picoclaw::commands::picoclaw_enable,
-        core::picoclaw::commands::picoclaw_check_port,
-        core::picoclaw::commands::picoclaw_get_config,
-        core::picoclaw::commands::picoclaw_get_config_dir,
-        // PicoClaw Telegram commands
-        core::picoclaw::commands::picoclaw_telegram_configure,
-        core::picoclaw::commands::picoclaw_telegram_get_config,
-        // PicoClaw Discord commands
-        core::picoclaw::commands::picoclaw_discord_configure,
-        core::picoclaw::commands::picoclaw_discord_get_config,
     ]);
 
     // Mobile: no updater commands
@@ -322,7 +304,6 @@ pub fn run() {
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
         })
         .manage(OpenClawState::default())
-        .manage(PicoClawState::default())
         .setup(|app| {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
