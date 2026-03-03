@@ -1,4 +1,4 @@
-import { models } from 'token.js'
+import { providerModels as models } from '@/constants/models'
 import { ModelCapabilities } from '@/types/models'
 
 export const defaultModel = (provider?: string) => {

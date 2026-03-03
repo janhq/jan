@@ -51,6 +51,7 @@ import {
   OpenAICompatibleChatLanguageModel,
 } from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
+import { createXai } from '@ai-sdk/xai'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
@@ -180,6 +181,9 @@ export class ModelFactory {
       case 'perplexity':
       case 'moonshot':
         return this.createOpenAICompatibleModel(modelId, provider)
+
+      case 'xai':
+        return this.createXaiModel(modelId, provider)
       default:
         return this.createOpenAICompatibleModel(modelId, provider, parameters)
     }
@@ -388,6 +392,33 @@ export class ModelFactory {
     })
 
     return openai(modelId)
+  }
+
+  /**
+   * Create an XAI (Grok) model using the official AI SDK
+   */
+  private static createXaiModel(
+    modelId: string,
+    provider: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): LanguageModel {
+    const headers: Record<string, string> = {}
+
+    // Add custom headers if specified
+    if (provider.custom_header) {
+      provider.custom_header.forEach((customHeader) => {
+        headers[customHeader.header] = customHeader.value
+      })
+    }
+
+    const xai = createXai({
+      apiKey: provider.api_key,
+      baseURL: provider.base_url,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+      fetch: createCustomFetch(httpFetch, parameters),
+    })
+
+    return xai(modelId)
   }
 
   /**

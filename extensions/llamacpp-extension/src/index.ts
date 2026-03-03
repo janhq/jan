@@ -1641,16 +1641,31 @@ export default class llamacpp_extension extends AIEngine {
     body: string,
     abortController?: AbortController
   ): AsyncIterable<chatCompletionChunk> {
+    // AbortSignal.any() is not available in all runtimes (e.g. WebKit/JavaScriptCore),
+    // so we manually combine the timeout and external abort signals.
+    const combinedController = new AbortController()
+    const timeoutId = setTimeout(
+      () => combinedController.abort(new Error('Request timed out')),
+      this.timeout * 1000
+    )
+    if (abortController?.signal) {
+      if (abortController.signal.aborted) {
+        combinedController.abort(abortController.signal.reason)
+      } else {
+        abortController.signal.addEventListener(
+          'abort',
+          () => combinedController.abort(abortController.signal.reason),
+          { once: true }
+        )
+      }
+    }
     const response = await fetch(url, {
       method: 'POST',
       headers,
       body,
       connectTimeout: Number(this.timeout) * 1000, // default 10 minutes
-      signal: AbortSignal.any([
-        AbortSignal.timeout(this.timeout * 1000),
-        abortController?.signal,
-      ]),
-    })
+      signal: combinedController.signal,
+    }).finally(() => clearTimeout(timeoutId))
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
       throw new Error(

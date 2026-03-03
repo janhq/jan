@@ -2,8 +2,8 @@
  * Tauri Providers Service - Desktop implementation
  */
 
-import { models as providerModels } from 'token.js'
 import { predefinedProviders } from '@/constants/providers'
+import { providerModels } from '@/constants/models'
 import { EngineManager, SettingComponentProps } from '@janhq/core'
 import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'

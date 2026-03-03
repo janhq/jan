@@ -259,6 +259,40 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://api.x.ai/v1',
+    explore_models_url: 'https://docs.x.ai/overview',
+    provider: 'xai',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The xAI API uses API keys for authentication. Visit your [API Keys](https://console.x.ai/) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. See the [xAI API documentation](https://docs.x.ai/overview) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.x.ai/v1',
+          value: 'https://api.x.ai/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
     explore_models_url: 'https://ai.google.dev/gemini-api/docs/models/gemini',
     provider: 'gemini',
