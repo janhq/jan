@@ -48,6 +48,7 @@ function RemoteAccess() {
   const [status, setStatus] = useState<OpenClawStatus | null>(null)
   const [isStarting, setIsStarting] = useState(false)
   const [isStopping, setIsStopping] = useState(false)
+  const [disconnectingChannel, setDisconnectingChannel] = useState<ChannelType | null>(null)
   const [isTelegramWizardOpen, setIsTelegramWizardOpen] = useState(false)
   const [isWhatsAppWizardOpen, setIsWhatsAppWizardOpen] = useState(false)
 const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
@@ -194,6 +195,7 @@ const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
   }
 
   const handleDisconnectChannel = async (channel: ChannelType) => {
+    setDisconnectingChannel(channel)
     try {
       switch (channel) {
         case 'telegram':
@@ -210,6 +212,8 @@ const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
       )
     } catch {
       toast.error(t('settings:remoteAccess.disconnectError'))
+    } finally {
+      setDisconnectingChannel(null)
     }
   }
 
@@ -337,14 +341,16 @@ const isRunning = status?.running ?? false
                           ? t('settings:remoteAccess.dockerSandbox')
                           : t('settings:remoteAccess.directProcess')}
                       </span>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => setIsLogsDialogOpen(true)}
-                        title={t('settings:viewLogs')}
-                      >
-                        <IconFileText className="h-4 w-4" />
-                      </Button>
+                      {status.isolation_tier === 'full_container' && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => setIsLogsDialogOpen(true)}
+                          title={t('settings:viewLogs')}
+                        >
+                          <IconFileText className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   }
                 />
@@ -368,6 +374,7 @@ const isRunning = status?.running ?? false
                   onSettings={() => handleAddChannel('telegram')}
                   onDisconnect={() => handleDisconnectChannel('telegram')}
                   OCIsInstalled={isInstalled}
+                  isDisconnecting={disconnectingChannel === 'telegram'}
                 />
                 <ChannelCard
                   type="whatsapp"
@@ -375,6 +382,7 @@ const isRunning = status?.running ?? false
                   onSettings={() => handleAddChannel('whatsapp')}
                   onDisconnect={() => handleDisconnectChannel('whatsapp')}
                   OCIsInstalled={isInstalled}
+                  isDisconnecting={disconnectingChannel === 'whatsapp'}
                 />
               </div>
             </Card>
