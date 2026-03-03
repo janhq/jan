@@ -827,7 +827,7 @@ function SetupScreen() {
                 <div
                   className="w-full text-left"
                 >
-                  <span className='mb-2 block text-muted-foreground'>Recommended model</span>
+                  <span className='mb-2 block text-sm font-medium'>Recommended model</span>
                   <div className={cn("bg-secondary/50 p-3 rounded-lg border transition-all hover:shadow disabled:opacity-60 flex justify-between items-start")}>
                     <div className="flex items-start gap-4">
                       <div className="shrink-0 size-12 bg-background rounded-xl flex items-center justify-center">
