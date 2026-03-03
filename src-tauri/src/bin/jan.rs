@@ -421,7 +421,7 @@ async fn handle_models(cmd: ModelsCommands) {
             };
 
             let mlx_state = Arc::new(init_mlx_state());
-            let mut envs = HashMap::new();
+            let mut envs: HashMap<String, String> = HashMap::new();
             if !api_key.is_empty() {
                 envs.insert("MLX_API_KEY".to_string(), api_key);
             }
@@ -806,7 +806,7 @@ async fn handle_serve(args: ServeArgs) {
         };
 
         let mlx_state = Arc::new(init_mlx_state());
-        let mut envs = HashMap::new();
+        let mut envs: HashMap<String, String> = HashMap::new();
         if !api_key.is_empty() {
             envs.insert("MLX_API_KEY".to_string(), api_key);
         }
@@ -857,7 +857,7 @@ async fn handle_serve(args: ServeArgs) {
         };
 
         let llama_state = Arc::new(init_llamacpp_state());
-        let mut envs = HashMap::new();
+        let mut envs: HashMap<String, String> = HashMap::new();
         if !api_key.is_empty() {
             envs.insert("LLAMA_API_KEY".to_string(), api_key);
         }
@@ -1127,8 +1127,8 @@ async fn start_model_server(
             }
         };
         let mlx_state = Arc::new(init_mlx_state());
-        let mut envs = HashMap::new();
-        if !api_key.is_empty() { envs.insert("MLX_API_KEY".into(), api_key.clone()); }
+        let mut envs: HashMap<String, String> = HashMap::new();
+        if !api_key.is_empty() { envs.insert("MLX_API_KEY".to_string(), api_key.clone()); }
         let effective_ctx_size = if fit { 0 } else { ctx_size };
         let info = match load_mlx_model_impl(
             mlx_state.mlx_server_process.clone(),
@@ -1161,8 +1161,8 @@ async fn start_model_server(
             }
         };
         let llama_state = Arc::new(init_llamacpp_state());
-        let mut envs = HashMap::new();
-        if !api_key.is_empty() { envs.insert("LLAMA_API_KEY".into(), api_key.clone()); }
+        let mut envs: HashMap<String, String> = HashMap::new();
+        if !api_key.is_empty() { envs.insert("LLAMA_API_KEY".to_string(), api_key.clone()); }
         // When fit is on, let llama.cpp decide the context size automatically.
         let effective_ctx_size = if fit { 0 } else { ctx_size };
         let config = build_llamacpp_config(n_gpu_layers, effective_ctx_size, 120, fit, 0);

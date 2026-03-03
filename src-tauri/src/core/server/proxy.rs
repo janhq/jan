@@ -89,7 +89,7 @@ fn convert_messages(
     system_prompt: Option<&serde_json::Value>,
 ) -> Option<serde_json::Value> {
     let messages_array = anth_messages.as_array()?;
-    let mut openai_messages = Vec::new();
+    let mut openai_messages: Vec<serde_json::Value> = Vec::new();
 
     // Anthropic system prompt is a top-level field, convert to system message
     if let Some(system) = system_prompt {
