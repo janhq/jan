@@ -42,7 +42,7 @@ impl Default for GatewayConfig {
     fn default() -> Self {
         Self {
             mode: "local".to_string(),
-            bind: "loopback".to_string(),
+            bind: "lan".to_string(),
             port: super::OPENCLAW_PORT,
             auth: AuthConfig::default(),
             control_ui: Some(ControlUiConfig::default()),

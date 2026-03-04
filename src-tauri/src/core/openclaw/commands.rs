@@ -12,7 +12,7 @@ use crate::core::openclaw::{
     constants::*,
     models::*,
     sandbox::Sandbox,
-    get_openclaw_config_path, get_openclaw_config_dir, OpenClawState, OPENCLAW_PORT, MIN_NODE_VERSION,
+    get_openclaw_config_path, get_openclaw_config_dir, set_docker_mode, OpenClawState, OPENCLAW_PORT, MIN_NODE_VERSION,
 };
 
 /// Request ID counter for WebSocket messages
@@ -108,6 +108,45 @@ async fn get_gateway_auth_token() -> Result<String, String> {
 #[tauri::command]
 pub async fn openclaw_get_auth_token() -> Result<String, String> {
     get_gateway_auth_token().await
+}
+
+/// Ensure the OpenClaw HTTP chat completions endpoint is enabled in the config.
+/// This is required for Jan's agent mode to send messages via POST /v1/chat/completions.
+/// Uses `or_insert` semantics — only adds the field if missing, never overwrites.
+#[tauri::command]
+pub async fn openclaw_ensure_http_api() -> Result<bool, String> {
+    let mut config = read_openclaw_config()?;
+
+    let enabled = config
+        .pointer("/gateway/http/endpoints/chatCompletions/enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if enabled {
+        return Ok(false); // already enabled, no change
+    }
+
+    // Deep-set gateway.http.endpoints.chatCompletions.enabled = true
+    let gw = config.get_mut("gateway")
+        .and_then(|v| v.as_object_mut())
+        .ok_or("Missing gateway config")?;
+    let http = gw.entry("http")
+        .or_insert_with(|| serde_json::json!({}));
+    let endpoints = http.as_object_mut()
+        .ok_or("Invalid gateway.http")?
+        .entry("endpoints")
+        .or_insert_with(|| serde_json::json!({}));
+    let cc = endpoints.as_object_mut()
+        .ok_or("Invalid gateway.http.endpoints")?
+        .entry("chatCompletions")
+        .or_insert_with(|| serde_json::json!({}));
+    cc.as_object_mut()
+        .ok_or("Invalid gateway.http.endpoints.chatCompletions")?
+        .insert("enabled".to_string(), serde_json::json!(true));
+
+    write_openclaw_config(&config)?;
+    log::info!("Enabled OpenClaw HTTP chat completions endpoint");
+    Ok(true) // config was changed
 }
 
 /// Connect to the OpenClaw Gateway WebSocket with required Origin header.
@@ -349,6 +388,12 @@ pub struct OpenClawSetupResult {
 #[tauri::command]
 pub async fn openclaw_setup_for_channels(state: tauri::State<'_, OpenClawState>) -> Result<OpenClawSetupResult, String> {
 
+    {
+        let sandbox_guard = state.sandbox.lock().await;
+        let is_docker = sandbox_guard.as_ref().map(|s| s.name() == "Docker").unwrap_or(false);
+        set_docker_mode(is_docker);
+    }
+
     if let Err(e) = clear_stale_openclaw_data().await {
         log::warn!("Failed to clear stale data: {}", e);
     }
@@ -492,12 +537,10 @@ async fn test_gateway_connection() -> Result<(), String> {
     Ok(())
 }
 
-/// Restart the Gateway via CLI command
+/// Restart the gateway. Docker: `docker restart`. Direct process: stop → install → start
+/// (launchd caches service args, so a plain `gateway restart` won't pick up config changes).
 async fn restart_gateway_cli() -> Result<(), String> {
     if is_docker_container_running().await {
-        // Use `docker restart` — `docker exec ... openclaw gateway restart`
-        // kills PID 1 and stops the container.
-        log::info!("Restarting Docker container '{}'", DOCKER_CONTAINER_NAME);
         let output = Command::new("docker")
             .args(["restart", DOCKER_CONTAINER_NAME])
             .stdout(Stdio::piped())
@@ -508,22 +551,35 @@ async fn restart_gateway_cli() -> Result<(), String> {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            log::warn!("Docker container restart may have failed: {}", stderr);
+            log::warn!("Docker container restart failed: {}", stderr);
         }
         return Ok(());
     }
 
-    log::info!("Restarting gateway via CLI");
-    let output = openclaw_command(&["gateway", "restart"]).await
+    let _ = openclaw_command(&["gateway", "stop"]).await
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await;
+
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    let _ = openclaw_command(&["gateway", "install"]).await
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await;
+
+    let output = openclaw_command(&["gateway", "start"]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
         .await
-        .map_err(|e| format!("Failed to restart gateway: {}", e))?;
+        .map_err(|e| format!("Failed to start gateway: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        log::warn!("Gateway restart may have failed: {}", stderr);
+        log::warn!("Gateway start failed: {}", stderr);
     }
     Ok(())
 }
@@ -600,126 +656,6 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
     }
 }
 
-/// Reset `sessions.json` when cached paths no longer match the active sandbox mode.
-async fn clear_mismatched_session_paths(expected_prefix: &str) -> Result<(), String> {
-    let config_dir = get_openclaw_config_dir()?;
-    let sessions_json = config_dir.join("agents/main/sessions/sessions.json");
-
-    if !sessions_json.exists() {
-        return Ok(());
-    }
-
-    let content = std::fs::read_to_string(&sessions_json)
-        .map_err(|e| format!("Failed to read sessions.json: {}", e))?;
-
-    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-        let json_str = parsed.to_string();
-        let has_wrong_paths = parsed.as_object().map_or(false, |obj| {
-            obj.values().any(|session| {
-                session.get("sessionFile")
-                    .and_then(|v| v.as_str())
-                    .map_or(false, |p| !p.starts_with(expected_prefix))
-            })
-        });
-        let has_stale_paths = !json_str.contains(expected_prefix)
-            && (json_str.contains("/Users/") || json_str.contains("/home/node/"));
-
-        if has_wrong_paths || has_stale_paths {
-            log::info!("Clearing sessions.json: switching sandbox mode");
-            std::fs::write(&sessions_json, "{}")
-                .map_err(|e| format!("Failed to clear sessions.json: {}", e))?;
-        }
-    }
-
-    Ok(())
-}
-
-/// Patch `agents/main/agent/models.json` baseUrl for the current sandbox mode.
-fn patch_agent_models_base_url(target_base_url: &str) -> Result<bool, String> {
-    let config_dir = get_openclaw_config_dir()?;
-    let models_path = config_dir.join("agents/main/agent/models.json");
-
-    if !models_path.exists() {
-        return Ok(false);
-    }
-
-    let content = std::fs::read_to_string(&models_path)
-        .map_err(|e| format!("Failed to read agent models.json: {}", e))?;
-    let mut config: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse agent models.json: {}", e))?;
-
-    let mut modified = false;
-    if let Some(providers) = config.pointer_mut("/providers") {
-        if let Some(providers_obj) = providers.as_object_mut() {
-            for (_name, provider) in providers_obj.iter_mut() {
-                if let Some(base_url) = provider.get_mut("baseUrl") {
-                    if base_url.as_str() != Some(target_base_url) {
-                        *base_url = serde_json::json!(target_base_url);
-                        modified = true;
-                    }
-                }
-            }
-        }
-    }
-
-    if modified {
-        let updated = serde_json::to_string_pretty(&config)
-            .map_err(|e| format!("Failed to serialize agent models.json: {}", e))?;
-        std::fs::write(&models_path, updated)
-            .map_err(|e| format!("Failed to write agent models.json: {}", e))?;
-        log::info!("Patched agent models.json baseUrl to '{}'", target_base_url);
-    }
-
-    Ok(modified)
-}
-
-/// Patch `openclaw.json` baseUrl and bind mode for the current sandbox mode.
-fn patch_openclaw_config_base_url(target_base_url: &str, target_bind: &str) -> bool {
-    let config_dir = match get_openclaw_config_dir() {
-        Ok(d) => d,
-        Err(_) => return false,
-    };
-    let config_path = config_dir.join("openclaw.json");
-    if !config_path.exists() {
-        return false;
-    }
-
-    let content = match std::fs::read_to_string(&config_path) {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-    let mut config: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-
-    let mut modified = false;
-
-    if let Some(base_url) = config.pointer_mut("/models/providers/jan/baseUrl") {
-        if base_url.as_str() != Some(target_base_url) {
-            *base_url = serde_json::json!(target_base_url);
-            modified = true;
-        }
-    }
-
-    if let Some(bind) = config.pointer_mut("/gateway/bind") {
-        if bind.as_str() != Some(target_bind) {
-            *bind = serde_json::json!(target_bind);
-            modified = true;
-        }
-    }
-
-    if modified {
-        if let Ok(updated) = serde_json::to_string_pretty(&config) {
-            if std::fs::write(&config_path, updated).is_ok() {
-                log::info!("Patched openclaw.json for direct-process mode");
-            }
-        }
-    }
-
-    modified
-}
-
 /// Ensure the Gateway config has all required settings for Jan.
 async fn ensure_gateway_config_for_jan() -> Result<bool, String> {
     let config_path = get_openclaw_config_path()?;
@@ -779,6 +715,16 @@ async fn ensure_gateway_config_for_jan() -> Result<bool, String> {
         modified = true;
     }
 
+    // Channels require bind=lan; loopback causes setup errors
+    let current_bind = config["gateway"]
+        .get("bind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("loopback");
+    if current_bind == "loopback" {
+        config["gateway"]["bind"] = serde_json::json!("lan");
+        modified = true;
+    }
+
     if config.get("plugins").is_none() {
         config["plugins"] = serde_json::json!({"entries": {}});
     }
@@ -809,6 +755,46 @@ async fn ensure_gateway_config_for_jan() -> Result<bool, String> {
     Ok(modified)
 }
 
+
+/// Ensure gateway.bind is "lan" in config. If the gateway is running
+/// and the config changed, restarts it so the service picks up bind=lan.
+async fn ensure_gateway_bind_lan() {
+    let config_path = match get_openclaw_config_path() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    if !config_path.exists() {
+        return;
+    }
+
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let mut config: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    let current_bind = config
+        .pointer("/gateway/bind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("loopback");
+
+    if current_bind == "lan" {
+        return;
+    }
+
+    config["gateway"]["bind"] = serde_json::json!("lan");
+    if let Ok(json) = serde_json::to_string_pretty(&config) {
+        let _ = std::fs::write(&config_path, json);
+    }
+
+    if check_gateway_responding().await {
+        let _ = restart_gateway_cli().await;
+        let _ = wait_for_gateway_ready(10).await;
+    }
+}
 
 /// Check if Node.js is installed and meets version requirements.
 #[tauri::command]
@@ -1280,6 +1266,22 @@ pub async fn openclaw_configure(config_input: Option<OpenClawConfigInput>) -> Re
                 gw_obj.entry("auth")
                     .or_insert_with(|| gw_defaults.get("auth").cloned()
                         .unwrap_or(serde_json::json!({"mode": "token"})));
+                // Enable the OpenAI-compatible HTTP API so Jan can send messages
+                // to the OpenClaw agent runtime via POST /v1/chat/completions
+                let http = gw_obj.entry("http")
+                    .or_insert_with(|| serde_json::json!({}));
+                if let Some(http_obj) = http.as_object_mut() {
+                    let endpoints = http_obj.entry("endpoints")
+                        .or_insert_with(|| serde_json::json!({}));
+                    if let Some(ep_obj) = endpoints.as_object_mut() {
+                        let cc = ep_obj.entry("chatCompletions")
+                            .or_insert_with(|| serde_json::json!({}));
+                        if let Some(cc_obj) = cc.as_object_mut() {
+                            cc_obj.entry("enabled")
+                                .or_insert_with(|| serde_json::json!(true));
+                        }
+                    }
+                }
             }
         }
         if let Some(models) = defaults.get("models") {
@@ -1677,6 +1679,8 @@ pub async fn openclaw_enable(
     });
     log::info!("Detected sandbox: {} (tier: {:?})", sandbox_name, tier);
 
+    set_docker_mode(is_docker);
+
     // Step 1b: Check Node.js dependencies (skip for Docker - runs inside container)
     emit("checking_dependencies", 10, "Checking Node.js installation...", sandbox_info.as_deref());
     steps_completed.push(EnableStep::CheckingDependencies);
@@ -1924,26 +1928,20 @@ pub async fn openclaw_enable(
 pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), String> {
     log::info!("Starting OpenClaw gateway");
 
-    // Step 1: Detect sandbox FIRST (before port checks) — determines how we handle everything
-    let sandbox_name: String;
     let is_docker = {
         let mut sandbox_guard = state.sandbox.lock().await;
         if sandbox_guard.is_none() {
             let detected = crate::core::openclaw::sandbox::detect_sandbox().await;
-            let name = detected.name().to_string();
-            let tier_str = detected.isolation_tier().to_string();
-            sandbox_name = format!("{} (tier: {})", name, tier_str);
-            log::info!("Detected sandbox: {}", sandbox_name);
+            let is_docker = detected.name() == "Docker";
+            log::info!("Detected sandbox: {} (tier: {})", detected.name(), detected.isolation_tier());
             *sandbox_guard = Some(detected);
-            name == "Docker"
+            is_docker
         } else {
-            let sb = sandbox_guard.as_ref().unwrap();
-            sandbox_name = format!("{} (tier: {})", sb.name(), sb.isolation_tier());
-            sb.name() == "Docker"
+            sandbox_guard.as_ref().unwrap().name() == "Docker"
         }
     };
 
-    log::info!("Starting OpenClaw with sandbox: {}", sandbox_name);
+    set_docker_mode(is_docker);
 
     // Step 2: Port check — behavior depends on sandbox type
     if is_docker {
@@ -1963,57 +1961,16 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
         };
 
         if docker_status == Some(crate::core::openclaw::sandbox::SandboxStatus::Running) {
-            log::info!("Docker container is already running");
             return Ok(());
         }
 
-        log::info!("Docker container not running, will start it");
-
-        // Stop any running direct-process gateway first — two instances polling
-        // the same Telegram bot cause 409 conflicts.
+        // Stop any running direct-process gateway to avoid port/bot conflicts
         stop_other_sandbox_instance(false).await;
-
-        // Fix cached paths/URLs from a previous direct-process session
-        if let Err(e) = clear_mismatched_session_paths("/home/node/").await {
-            log::warn!("Failed to clear mismatched session paths: {}", e);
-        }
-        if let Err(e) = patch_agent_models_base_url(
-            crate::core::openclaw::constants::DOCKER_JAN_BASE_URL,
-        ) {
-            log::warn!("Failed to patch agent models baseUrl: {}", e);
-        }
     } else {
-        // Stop any running Docker container first — two instances polling
-        // the same Telegram bot cause 409 conflicts.
+        // Stop any running Docker container to avoid port/bot conflicts
         stop_other_sandbox_instance(true).await;
 
-        // Fix cached paths/URLs from a previous Docker session BEFORE checking
-        // if the gateway is already running — if URLs are wrong, we need to restart.
-        let home = std::env::var("HOME").unwrap_or_default();
-        if !home.is_empty() {
-            if let Err(e) = clear_mismatched_session_paths(&home).await {
-                log::warn!("Failed to clear mismatched session paths: {}", e);
-            }
-        }
-        let models_patched = patch_agent_models_base_url(
-            crate::core::openclaw::constants::DEFAULT_JAN_BASE_URL,
-        ).is_ok_and(|patched| patched);
-        let config_patched = patch_openclaw_config_base_url(
-            crate::core::openclaw::constants::DEFAULT_JAN_BASE_URL,
-            crate::core::openclaw::constants::DEFAULT_BIND_MODE,
-        );
-
         if check_gateway_responding().await {
-            if models_patched || config_patched {
-                // Config had Docker URLs — gateway is running with stale config, restart it
-                log::info!("Config was patched from Docker URLs, restarting gateway");
-                let _ = restart_gateway_cli().await;
-                // Wait for gateway to come back up
-                let _ = crate::core::openclaw::lifecycle::wait_for_port(
-                    OPENCLAW_PORT,
-                    std::time::Duration::from_secs(15),
-                ).await;
-            }
             let _ = openclaw_ensure_jan_origin().await;
             return Ok(());
         }
@@ -2056,13 +2013,15 @@ pub async fn openclaw_stop(state: State<'_, OpenClawState>) -> Result<(), String
     log::info!("Stopping OpenClaw gateway");
 
     let sandbox_guard = state.sandbox.lock().await;
+
+    let is_docker = sandbox_guard.as_ref().map(|s| s.name() == "Docker").unwrap_or(false);
+    set_docker_mode(is_docker);
+
     match sandbox_guard.as_ref() {
         Some(sandbox) => {
             crate::core::openclaw::lifecycle::stop_openclaw(sandbox.as_ref(), &state).await
         }
         None => {
-            // Sandbox never initialized — fall back to direct CLI stop
-            log::info!("No sandbox detected, using direct CLI stop");
             let direct = crate::core::openclaw::sandbox_direct::DirectProcessSandbox;
             let mut handle = crate::core::openclaw::sandbox::SandboxHandle::Named("direct-process".to_string());
             direct.stop(&mut handle).await
@@ -2085,20 +2044,18 @@ pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClaw
 
         if let crate::core::openclaw::sandbox::SandboxMode::Active { .. } = &*mode {
             if !running {
-                log::info!("Gateway not responding, resetting sandbox mode to Inactive");
                 *mode = crate::core::openclaw::sandbox::SandboxMode::Inactive;
             }
         }
 
-        // Re-detect when not running or unknown — Docker may have appeared/disappeared
         if !running || sandbox_guard.is_none() {
-            let detected = crate::core::openclaw::sandbox::detect_sandbox().await;
-            log::debug!("Detected sandbox: {} (tier: {})", detected.name(), detected.isolation_tier());
-            *sandbox_guard = Some(detected);
+            *sandbox_guard = Some(crate::core::openclaw::sandbox::detect_sandbox().await);
         }
 
         sandbox_guard.as_ref().map(|s| s.name() == "Docker").unwrap_or(false)
     };
+
+    set_docker_mode(is_docker_sandbox);
 
     // 2. Check installation status using the detected sandbox type
     let (openclaw_version, is_installed, node_version) = if is_docker_sandbox {
@@ -2359,6 +2316,8 @@ pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String>
     if !validation.valid {
         return Err(validation.error.unwrap_or_else(|| "Invalid token".to_string()));
     }
+
+    ensure_gateway_bind_lan().await;
 
     enable_channel_plugin("telegram").await?;
 
@@ -2754,7 +2713,7 @@ pub async fn telegram_disconnect() -> Result<(), String> {
     }
 
     // Also clean up pairing file
-    let pairing_path = config_dir.join("telegram-pairing.json");
+    let pairing_path = config_dir.join("credentials").join("telegram-pairing.json");
     if pairing_path.exists() {
         let _ = std::fs::remove_file(&pairing_path);
     }
@@ -3068,21 +3027,15 @@ pub async fn whatsapp_start_auth(state: tauri::State<'_, OpenClawState>) -> Resu
     // Enable the WhatsApp plugin (must be done before adding channel)
     enable_channel_plugin("whatsapp").await?;
 
-    // Now add WhatsApp channel using CLI
-    // For Docker: the auth dir is inside the container at /home/node/.openclaw/whatsapp_auth
-    // For direct process: it's the host path from get_openclaw_config_dir()
-    let effective_auth_dir = if is_docker_container_running().await {
-        "/home/node/.openclaw/whatsapp_auth".to_string()
-    } else {
-        auth_dir.to_string_lossy().to_string()
-    };
-
+    // Now add WhatsApp channel using CLI.
+    // With config directory isolation, auth_dir is always the correct host path
+    // for the active sandbox — no Docker-specific path rewriting needed.
     let add_output = openclaw_command(&[
             "channels",
             "add",
             "--channel", "whatsapp",
             "--account", "default",
-            "--auth-dir", &effective_auth_dir,
+            "--auth-dir", &auth_dir.to_string_lossy(),
         ]).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -3712,262 +3665,6 @@ pub async fn whatsapp_disconnect() -> Result<(), String> {
     }
 
     log::info!("WhatsApp channel fully disconnected and credentials removed");
-    Ok(())
-}
-
-// ============================================
-// Discord Integration Commands
-// ============================================
-
-/// Discord configuration structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiscordConfig {
-    /// Account ID (e.g., "default")
-    pub account_id: String,
-    /// Bot token
-    pub bot_token: String,
-    /// Bot username
-    pub bot_username: Option<String>,
-    /// Bot discriminator (for older bots)
-    pub bot_discriminator: Option<String>,
-    /// Whether the bot is connected
-    pub connected: bool,
-    /// Number of guilds the bot is in
-    pub guilds_count: u32,
-    /// Number of channels configured
-    pub channels_count: u32,
-}
-
-impl Default for DiscordConfig {
-    fn default() -> Self {
-        Self {
-            account_id: "default".to_string(),
-            bot_token: String::new(),
-            bot_username: None,
-            bot_discriminator: None,
-            connected: false,
-            guilds_count: 0,
-            channels_count: 0,
-        }
-    }
-}
-
-/// Discord token validation result
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiscordTokenValidation {
-    /// Whether the token is valid
-    pub valid: bool,
-    /// Bot username if valid
-    pub bot_username: Option<String>,
-    /// Bot discriminator if valid
-    pub bot_discriminator: Option<String>,
-    /// Error message if invalid
-    pub error: Option<String>,
-}
-
-/// Get the Discord configuration file path
-fn get_discord_config_path() -> Result<std::path::PathBuf, String> {
-    let config_dir = get_openclaw_config_dir()?;
-    Ok(config_dir.join("discord.json"))
-}
-
-/// Validate a Discord bot token by calling the Discord API
-#[tauri::command]
-pub async fn discord_validate_token(token: String) -> DiscordTokenValidation {
-    log::info!("Validating Discord bot token");
-
-    // Basic format validation (Discord bot tokens are typically 72 characters)
-    if token.len() < 50 || token.len() > 80 {
-        return DiscordTokenValidation {
-            valid: false,
-            bot_username: None,
-            bot_discriminator: None,
-            error: Some("Invalid token format. Discord bot tokens are typically 72 characters.".to_string()),
-        };
-    }
-
-    // Call Discord API to validate the token
-    let client = reqwest::Client::new();
-    let url = "https://discord.com/api/v10/users/@me";
-
-    match client.get(url)
-        .header("Authorization", format!("Bot {}", token))
-        .send()
-        .await
-    {
-        Ok(response) => {
-            if response.status().is_success() {
-                match response.json::<serde_json::Value>().await {
-                    Ok(data) => {
-                        let username = data.get("username").and_then(|v| v.as_str()).map(String::from);
-                        let discriminator = data.get("discriminator").and_then(|v| v.as_str()).map(String::from);
-
-                        DiscordTokenValidation {
-                            valid: true,
-                            bot_username: username.clone(),
-                            bot_discriminator: discriminator,
-                            error: None,
-                        }
-                    }
-                    Err(e) => DiscordTokenValidation {
-                        valid: false,
-                        bot_username: None,
-                        bot_discriminator: None,
-                        error: Some(format!("Failed to parse API response: {}", e)),
-                    },
-                }
-            } else if response.status() == 401 {
-                DiscordTokenValidation {
-                    valid: false,
-                    bot_username: None,
-                    bot_discriminator: None,
-                    error: Some("Invalid token. The bot token is incorrect or has been revoked.".to_string()),
-                }
-            } else {
-                DiscordTokenValidation {
-                    valid: false,
-                    bot_username: None,
-                    bot_discriminator: None,
-                    error: Some(format!("API returned error: {}", response.status())),
-                }
-            }
-        }
-        Err(e) => DiscordTokenValidation {
-            valid: false,
-            bot_username: None,
-            bot_discriminator: None,
-            error: Some(format!("Failed to connect to Discord API: {}", e)),
-        },
-    }
-}
-
-/// Configure Discord channel with the bot token
-///
-/// Uses `openclaw plugins enable discord` followed by
-/// `openclaw channels add --channel discord --token <token>` to add the channel
-#[tauri::command]
-pub async fn discord_configure(token: String) -> Result<DiscordConfig, String> {
-    log::info!("Configuring Discord channel via OpenClaw CLI");
-
-    // Validate the token first
-    let validation = discord_validate_token(token.clone()).await;
-    if !validation.valid {
-        return Err(validation.error.unwrap_or_else(|| "Invalid token".to_string()));
-    }
-
-    // First, enable the Discord plugin (must be done before adding channel)
-    enable_channel_plugin("discord").await?;
-
-    // Add Discord channel using OpenClaw CLI
-    let add_output = openclaw_command(&[
-            "channels",
-            "add",
-            "--channel", "discord",
-            "--token", &token,
-            "--account", "default",
-        ]).await
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run openclaw channels add: {}", e))?;
-
-    let add_stderr = String::from_utf8_lossy(&add_output.stderr);
-    let add_stdout = String::from_utf8_lossy(&add_output.stdout);
-
-    log::info!("OpenClaw channels add discord output: {}", add_stdout);
-    if !add_stderr.is_empty() {
-        log::info!("OpenClaw channels add discord stderr: {}", add_stderr);
-    }
-
-    if !add_output.status.success() {
-        // Check if it failed because channel already exists
-        let combined = format!("{}{}", add_stdout, add_stderr);
-        if !combined.contains("already exists") && !combined.contains("updated") && !combined.contains("Added") {
-            return Err(format!(
-                "Failed to add Discord channel: {}",
-                if !add_stderr.is_empty() { add_stderr.to_string() } else { add_stdout.to_string() }
-            ));
-        }
-    }
-
-    // Store in local config for Jan's reference
-    let config_dir = get_openclaw_config_dir()?;
-    let discord_settings = serde_json::json!({
-        "enabled": true,
-        "bot_token": token,
-        "bot_username": validation.bot_username,
-        "bot_discriminator": validation.bot_discriminator,
-        "connected": true,
-    });
-
-    // Store Discord config
-    let discord_config_path = config_dir.join("discord.json");
-    std::fs::write(&discord_config_path, serde_json::to_string_pretty(&discord_settings).unwrap())
-        .map_err(|e| format!("Failed to save Discord config: {}", e))?;
-
-    log::info!("Discord configured successfully via OpenClaw for bot: {:?}", validation.bot_username);
-
-    Ok(DiscordConfig {
-        account_id: "default".to_string(),
-        bot_token: token,
-        bot_username: validation.bot_username,
-        bot_discriminator: validation.bot_discriminator,
-        connected: true,
-        guilds_count: 0,
-        channels_count: 0,
-    })
-}
-
-/// Get current Discord configuration
-#[tauri::command]
-pub async fn discord_get_config() -> Result<DiscordConfig, String> {
-    let config_path = get_discord_config_path()?;
-
-    if !config_path.exists() {
-        return Ok(DiscordConfig::default());
-    }
-
-    let config_json = std::fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read Discord config: {}", e))?;
-
-    let settings: serde_json::Value = serde_json::from_str(&config_json)
-        .map_err(|e| format!("Failed to parse Discord config: {}", e))?;
-
-    Ok(DiscordConfig {
-        account_id: settings.get("account_id").and_then(|v| v.as_str()).unwrap_or("default").to_string(),
-        bot_token: settings.get("bot_token").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        bot_username: settings.get("bot_username").and_then(|v| v.as_str()).map(String::from),
-        bot_discriminator: settings.get("bot_discriminator").and_then(|v| v.as_str()).map(String::from),
-        connected: settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false),
-        guilds_count: settings.get("guilds_count").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-        channels_count: settings.get("channels_count").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-    })
-}
-
-/// Disconnect Discord channel
-#[tauri::command]
-pub async fn discord_disconnect() -> Result<(), String> {
-    log::info!("Disconnecting Discord channel");
-
-    let config_path = get_discord_config_path()?;
-
-    if config_path.exists() {
-        let config_json = std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("Failed to read Discord config: {}", e))?;
-
-        let mut settings: serde_json::Value = serde_json::from_str(&config_json)
-            .map_err(|e| format!("Failed to parse Discord config: {}", e))?;
-
-        settings["enabled"] = serde_json::json!(false);
-        settings["connected"] = serde_json::json!(false);
-        settings["guilds_count"] = serde_json::json!(0);
-        settings["channels_count"] = serde_json::json!(0);
-
-        std::fs::write(&config_path, serde_json::to_string_pretty(&settings).unwrap())
-            .map_err(|e| format!("Failed to save Discord config: {}", e))?;
-    }
-
     Ok(())
 }
 

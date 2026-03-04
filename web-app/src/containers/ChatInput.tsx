@@ -144,9 +144,11 @@ const ChatInput = memo(function ChatInput({
   const assistants = useAssistant((state) => state.assistants)
 
   // Agent mode (OpenClaw)
+  // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
+  const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
   const [openClawAvailable, setOpenClawAvailable] = useState(false)
   const isAgentMode = useAgentMode((state) =>
-    currentThreadId ? state.isAgentMode(currentThreadId) : false
+    state.agentThreads[agentModeKey] === true
   )
   const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
 
@@ -155,10 +157,8 @@ const ChatInput = memo(function ChatInput({
   }, [currentThreadId])
 
   const handleAgentToggle = useCallback(() => {
-    if (currentThreadId) {
-      toggleAgentMode(currentThreadId)
-    }
-  }, [currentThreadId, toggleAgentMode])
+    toggleAgentMode(agentModeKey)
+  }, [agentModeKey, toggleAgentMode])
 
   // Get current thread messages for token counting
   const threadMessages = useMessages(
@@ -393,6 +393,11 @@ const ChatInput = memo(function ChatInput({
           JSON.stringify(messagePayload)
         )
         sessionStorage.setItem('temp-chat-nav', 'true')
+        // Transfer agent mode from home screen to temporary thread
+        if (isAgentMode && agentModeKey !== TEMPORARY_CHAT_ID) {
+          useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
+          useAgentMode.getState().removeThread(agentModeKey)
+        }
         router.navigate({
           to: route.threadsDetail,
           params: { threadId: TEMPORARY_CHAT_ID },
@@ -440,6 +445,12 @@ const ChatInput = memo(function ChatInput({
 
         // Clear selected assistant after creating thread
         setSelectedAssistant(undefined)
+
+        // Transfer agent mode from home screen to the new thread
+        if (isAgentMode) {
+          useAgentMode.getState().setAgentMode(newThread.id, true)
+          useAgentMode.getState().removeThread(agentModeKey)
+        }
 
         // Store the initial message for the new thread
         sessionStorage.setItem(

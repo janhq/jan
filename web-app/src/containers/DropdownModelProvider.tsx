@@ -27,6 +27,7 @@ import { syncModelToOpenClaw } from '@/utils/openclaw'
 import { ChevronsUpDown } from 'lucide-react'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { IconRobot } from '@tabler/icons-react'
+import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -73,8 +74,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const { favoriteModels } = useFavoriteModel()
   const serviceHub = useServiceHub()
   const currentThreadId = useThreads((state) => state.currentThreadId)
+  const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
   const isAgentMode = useAgentMode((state) =>
-    currentThreadId ? state.isAgentMode(currentThreadId) : false
+    state.agentThreads[agentModeKey] === true
   )
 
   // Search state

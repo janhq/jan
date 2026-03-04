@@ -10,6 +10,8 @@ type AgentModeState = {
   toggleAgentMode: (threadId: string) => void
   setAgentMode: (threadId: string, enabled: boolean) => void
   removeThread: (threadId: string) => void
+  /** Clear agent mode for all threads (e.g. when OpenClaw is stopped). */
+  clearAll: () => void
 }
 
 export const useAgentMode = create<AgentModeState>()(
@@ -45,6 +47,10 @@ export const useAgentMode = create<AgentModeState>()(
           const { [threadId]: _removed, ...rest } = state.agentThreads
           return { agentThreads: rest }
         })
+      },
+
+      clearAll: () => {
+        set({ agentThreads: {} })
       },
     }),
     {

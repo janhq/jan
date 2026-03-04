@@ -14,11 +14,8 @@ pub const DEFAULT_JAN_BASE_URL: &str = "http://localhost:1337/v1";
 /// Jan API base URL for Docker sandbox (container → host networking)
 pub const DOCKER_JAN_BASE_URL: &str = "http://host.docker.internal:1337/v1";
 
-/// Gateway bind mode for direct process (loopback only)
-pub const DEFAULT_BIND_MODE: &str = "loopback";
-
-/// Gateway bind mode for Docker (must be accessible from port mapping)
-pub const DOCKER_BIND_MODE: &str = "lan";
+/// Gateway bind mode — "lan" for all sandbox types.
+pub const GATEWAY_BIND_MODE: &str = "lan";
 
 /// Default API type for Jan
 pub const DEFAULT_JAN_API_TYPE: &str = "openai-completions";
