@@ -45,7 +45,14 @@ vi.mock('@/hooks/useModelProvider', () => ({
         models: [],
       },
     ],
+    addProvider: vi.fn(),
   })),
+}))
+
+vi.mock('@/containers/dialogs', () => ({
+  AddProviderDialog: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
 }))
 
 vi.mock('@/lib/utils', () => ({
@@ -106,25 +113,24 @@ describe('SettingsMenu', () => {
   it('shows expanded providers by default', () => {
     render(<SettingsMenu />)
 
-    // Providers are NOT expanded by default (expandedProviders starts as false)
-    // They only expand when the chevron is clicked or when on a provider route
-    expect(screen.queryByTestId('provider-avatar-openai')).not.toBeInTheDocument()
+    // Providers ARE expanded by default (expandedProviders starts as true)
+    expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
   })
 
   it('collapses providers submenu when chevron is clicked', async () => {
     const user = userEvent.setup()
     render(<SettingsMenu />)
 
-    // Providers are NOT visible initially (collapsed by default)
-    expect(screen.queryByTestId('provider-avatar-openai')).not.toBeInTheDocument()
+    // Providers ARE visible initially (expanded by default)
+    expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
 
-    // Click the chevron to expand
+    // Click the chevron to collapse
     const chevronButtons = screen.getAllByRole('button')
     const chevron = chevronButtons[0]
     await user.click(chevron)
 
-    // After clicking, providers should be visible
-    expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
+    // After clicking, providers should be hidden
+    expect(screen.queryByTestId('provider-avatar-openai')).not.toBeInTheDocument()
   })
 
   it('auto-expands providers when on provider route', () => {
@@ -160,11 +166,7 @@ describe('SettingsMenu', () => {
     const user = userEvent.setup()
     render(<SettingsMenu />)
 
-    // Providers are collapsed by default, first click chevron to expand
-    const chevronButtons = screen.getAllByRole('button')
-    await user.click(chevronButtons[0])
-
-    // Now click on a provider
+    // Providers are expanded by default, click directly on a provider
     const openaiProvider = screen
       .getByTestId('provider-avatar-openai')
       .closest('div[class*="cursor-pointer"]')
@@ -192,8 +194,7 @@ describe('SettingsMenu', () => {
     expect(llamaCpp?.className).toContain('hidden')
   })
 
-  it('filters out inactive providers from submenu', async () => {
-    const user = userEvent.setup()
+  it('filters out inactive providers from submenu', () => {
     vi.mocked(useModelProvider).mockReturnValue({
       providers: [
         {
@@ -207,14 +208,12 @@ describe('SettingsMenu', () => {
           models: [],
         },
       ],
+      addProvider: vi.fn(),
     })
 
     render(<SettingsMenu />)
 
-    // Providers are collapsed by default, click chevron to expand
-    const chevronButtons = screen.getAllByRole('button')
-    await user.click(chevronButtons[0])
-
+    // Providers are expanded by default
     expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
     expect(
       screen.queryByTestId('provider-avatar-anthropic')
