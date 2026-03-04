@@ -237,10 +237,8 @@ async fn test_desktop_storage_backend() {
             "Message should be retrievable from file-based storage"
         );
 
-        // Clean up - get the actual data directory used by the app
-        use super::utils::get_data_dir;
-        let actual_data_dir = get_data_dir(app.handle().clone());
-        let _ = fs::remove_dir_all(actual_data_dir);
+        // Clean up
+        let _ = fs::remove_dir_all(&_data_dir);
     }
 }
 

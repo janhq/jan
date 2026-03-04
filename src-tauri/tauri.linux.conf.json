@@ -13,12 +13,12 @@
         "zoomHotkeysEnabled": true,
         "center": true,
         "hiddenTitle": true,
-        "transparent": true,
+        "transparent": false,
         "trafficLightPosition": {
           "x": 20,
           "y": 32
         },
-        "decorations": false,
+        "decorations": true,
         "titleBarStyle": "Overlay",
         "windowEffects": {
           "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
@@ -30,7 +30,7 @@
   },
   "bundle": {
     "targets": ["deb", "appimage"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE"],
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/jan-cli"],
     "externalBin": ["resources/bin/uv"],
     "linux": {
       "appimage": {
