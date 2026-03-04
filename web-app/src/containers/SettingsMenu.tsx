@@ -104,7 +104,6 @@ const SettingsMenu = () => {
       route: route.settings.privacy,
       hasSubMenu: false,
       isEnabled: true,
-      dividerAfter: true,
     },
     {
       title: 'common:assistants',
@@ -142,13 +141,6 @@ const SettingsMenu = () => {
       hasSubMenu: false,
       isEnabled: true,
     },
-    // Hide Extension settings for now
-    // {
-    //   title: 'common:extensions',
-    //   route: route.settings.extensions,
-    //   hasSubMenu: false,
-    //   isEnabled: true,
-    // },
   ]
 
   const toggleProvidersExpansion = () => {
@@ -193,8 +185,6 @@ const SettingsMenu = () => {
                     )}
                   </div>
                 </Link>
-
-                {menu.dividerAfter && <div className="my-4" />}
 
                 {/* Sub-menu for model providers */}
                 {menu.hasSubMenu && expandedProviders && (
