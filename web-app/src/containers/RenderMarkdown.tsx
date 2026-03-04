@@ -21,6 +21,7 @@ interface MarkdownProps {
   isUser?: boolean
   isStreaming?: boolean
   messageId?: string
+  isAnimating?: boolean
 }
 
 // Cache for normalized LaTeX content
@@ -85,6 +86,7 @@ function RenderMarkdownComponent({
   isUser,
   components,
   messageId,
+  isAnimating
 }: MarkdownProps) {
 
   // Memoize the normalized content to avoid reprocessing on every render
@@ -101,7 +103,7 @@ function RenderMarkdownComponent({
       )}
     >
       <Streamdown
-        animate={true}
+        animate={isAnimating ?? true}
         animationDuration={500}
         linkSafety={{
           enabled: false,
