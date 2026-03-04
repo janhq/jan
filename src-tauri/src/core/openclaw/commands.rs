@@ -1195,10 +1195,53 @@ pub async fn openclaw_ensure_jan_origin() -> Result<bool, String> {
     Ok(modified)
 }
 
+/// Back up `openclaw.json` before modifying it.
+/// Keeps up to 3 timestamped backups, prunes older ones.
+fn backup_openclaw_config(config_path: &std::path::Path) -> Result<(), String> {
+    if !config_path.exists() {
+        return Ok(());
+    }
+
+    let timestamp = chrono::Local::now().format("%Y%m%dT%H%M%S");
+    let backup_name = format!(
+        "{}.bak.{}",
+        config_path.file_name().unwrap_or_default().to_string_lossy(),
+        timestamp
+    );
+    let backup_path = config_path.with_file_name(&backup_name);
+    std::fs::copy(config_path, &backup_path)
+        .map_err(|e| format!("Failed to backup config: {}", e))?;
+
+    const MAX_BACKUPS: usize = 3;
+    if let Some(parent) = config_path.parent() {
+        let prefix = format!(
+            "{}.bak.",
+            config_path.file_name().unwrap_or_default().to_string_lossy()
+        );
+        if let Ok(entries) = std::fs::read_dir(parent) {
+            let mut backups: Vec<std::path::PathBuf> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.file_name()
+                        .map(|n| n.to_string_lossy().starts_with(&prefix))
+                        .unwrap_or(false)
+                })
+                .collect();
+            backups.sort_by(|a, b| b.cmp(a));
+            for old in backups.into_iter().skip(MAX_BACKUPS) {
+                let _ = std::fs::remove_file(&old);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Configure OpenClaw with the specified settings.
-/// If a config file already exists, merges gateway + models defaults without
-/// destroying other valid sections (agents, channels, plugins, etc.).
-/// Also strips any known-invalid keys that would cause OpenClaw to reject the config.
+/// Selectively merges only Jan-managed gateway fields (mode, port, auth)
+/// without destroying user-configured settings.
+/// Strips known-invalid keys that would cause OpenClaw to reject the config.
 #[tauri::command]
 pub async fn openclaw_configure(config_input: Option<OpenClawConfigInput>) -> Result<OpenClawConfig, String> {
     log::info!("Configuring OpenClaw");
@@ -1206,30 +1249,38 @@ pub async fn openclaw_configure(config_input: Option<OpenClawConfigInput>) -> Re
     let config = generate_default_config(config_input);
     let config_path = get_openclaw_config_path()?;
 
-    // Serialize the defaults as a JSON Value for merging
     let defaults: serde_json::Value = serde_json::to_value(&config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
     let mut merged = if config_path.exists() {
-        // Merge with existing config to preserve agents, channels, etc.
         let existing_str = std::fs::read_to_string(&config_path)
             .map_err(|e| format!("Failed to read existing config: {}", e))?;
         let mut existing: serde_json::Value = serde_json::from_str(&existing_str)
             .unwrap_or_else(|_| serde_json::json!({}));
 
-        // Update gateway and models from defaults (these are the Jan-managed sections)
-        if let Some(gw) = defaults.get("gateway") {
-            existing["gateway"] = gw.clone();
+        backup_openclaw_config(&config_path)?;
+
+        // Selectively merge only Jan-managed gateway fields, preserving user config
+        if let Some(gw_defaults) = defaults.get("gateway").and_then(|v| v.as_object()) {
+            if existing.get("gateway").is_none() {
+                existing["gateway"] = serde_json::Value::Object(gw_defaults.clone());
+            } else if let Some(gw_obj) = existing["gateway"].as_object_mut() {
+                gw_obj.entry("mode")
+                    .or_insert_with(|| gw_defaults.get("mode").cloned()
+                        .unwrap_or(serde_json::json!("local")));
+                gw_obj.entry("port")
+                    .or_insert_with(|| gw_defaults.get("port").cloned()
+                        .unwrap_or(serde_json::json!(super::OPENCLAW_PORT)));
+                gw_obj.entry("auth")
+                    .or_insert_with(|| gw_defaults.get("auth").cloned()
+                        .unwrap_or(serde_json::json!({"mode": "token"})));
+            }
         }
         if let Some(models) = defaults.get("models") {
-            // Preserve existing model list if present, only set defaults if missing
             if existing.get("models").is_none() {
                 existing["models"] = models.clone();
-            } else {
-                // Ensure provider structure exists but keep existing model definitions
-                if existing.pointer("/models/providers/jan").is_none() {
-                    existing["models"]["providers"]["jan"] = models["providers"]["jan"].clone();
-                }
+            } else if existing.pointer("/models/providers/jan").is_none() {
+                existing["models"]["providers"]["jan"] = models["providers"]["jan"].clone();
             }
         }
         existing
@@ -1237,7 +1288,6 @@ pub async fn openclaw_configure(config_input: Option<OpenClawConfigInput>) -> Re
         defaults
     };
 
-    // Strip known-invalid keys that OpenClaw rejects (strict Zod validation)
     strip_invalid_config_keys(&mut merged);
 
     let config_json = serde_json::to_string_pretty(&merged)
@@ -2138,7 +2188,8 @@ pub struct TelegramConfig {
     pub paired_users: u32,
 }
 
-/// Validate a Telegram bot token by calling the Telegram Bot API
+/// Validate a Telegram bot token by calling the Telegram Bot API.
+/// Retries up to 3 times on transient connection errors.
 #[tauri::command]
 pub async fn telegram_validate_token(token: String) -> TelegramTokenValidation {
     if token.len() < 30 || !token.contains(':') {
@@ -2152,54 +2203,93 @@ pub async fn telegram_validate_token(token: String) -> TelegramTokenValidation {
 
     let url = format!("https://api.telegram.org/bot{}/getMe", token);
 
-    match reqwest::get(&url).await {
-        Ok(response) => {
-            if response.status().is_success() {
-                match response.json::<serde_json::Value>().await {
-                    Ok(data) => {
-                        if data.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
-                            let result = data.get("result");
-                            let username = result.and_then(|r| r.get("username")).and_then(|v| v.as_str()).map(String::from);
-                            let name = result.and_then(|r| r.get("first_name")).and_then(|v| v.as_str()).map(String::from);
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return TelegramTokenValidation {
+                valid: false,
+                bot_username: None,
+                bot_name: None,
+                error: Some(format!("Failed to create HTTP client: {}", e)),
+            };
+        }
+    };
 
-                            TelegramTokenValidation {
-                                valid: true,
-                                bot_username: username.clone(),
-                                bot_name: name,
-                                error: None,
+    const MAX_RETRIES: u32 = 3;
+    let mut last_err = String::new();
+
+    for attempt in 0..MAX_RETRIES {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(500 * u64::from(attempt))).await;
+        }
+
+        match client.get(&url).send().await {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.json::<serde_json::Value>().await {
+                        Ok(data) => {
+                            if data.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+                                let result = data.get("result");
+                                let username = result.and_then(|r| r.get("username")).and_then(|v| v.as_str()).map(String::from);
+                                let name = result.and_then(|r| r.get("first_name")).and_then(|v| v.as_str()).map(String::from);
+
+                                return TelegramTokenValidation {
+                                    valid: true,
+                                    bot_username: username,
+                                    bot_name: name,
+                                    error: None,
+                                };
+                            } else {
+                                let description = data.get("description").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+                                return TelegramTokenValidation {
+                                    valid: false,
+                                    bot_username: None,
+                                    bot_name: None,
+                                    error: Some(format!("Token validation failed: {}", description)),
+                                };
                             }
-                        } else {
-                            let description = data.get("description").and_then(|v| v.as_str()).unwrap_or("Unknown error");
-                            TelegramTokenValidation {
+                        }
+                        Err(e) => {
+                            return TelegramTokenValidation {
                                 valid: false,
                                 bot_username: None,
                                 bot_name: None,
-                                error: Some(format!("Token validation failed: {}", description)),
-                            }
+                                error: Some(format!("Failed to parse API response: {}", e)),
+                            };
                         }
                     }
-                    Err(e) => TelegramTokenValidation {
+                } else {
+                    return TelegramTokenValidation {
                         valid: false,
                         bot_username: None,
                         bot_name: None,
-                        error: Some(format!("Failed to parse API response: {}", e)),
-                    },
-                }
-            } else {
-                TelegramTokenValidation {
-                    valid: false,
-                    bot_username: None,
-                    bot_name: None,
-                    error: Some(format!("API returned error: {}", response.status())),
+                        error: Some(format!("API returned error: {}", response.status())),
+                    };
                 }
             }
+            Err(e) => {
+                last_err = format!("{}", e);
+                let is_transient = e.is_connect() || e.is_timeout() || e.is_request();
+                if !is_transient {
+                    break;
+                }
+                log::warn!("Telegram API connection error (attempt {}): {}", attempt + 1, e);
+            }
         }
-        Err(e) => TelegramTokenValidation {
-            valid: false,
-            bot_username: None,
-            bot_name: None,
-            error: Some(format!("Failed to connect to Telegram API: {}", e)),
-        },
+    }
+
+    TelegramTokenValidation {
+        valid: false,
+        bot_username: None,
+        bot_name: None,
+        error: Some(format!(
+            "Failed to connect to Telegram API after {} attempts: {}",
+            MAX_RETRIES, last_err
+        )),
     }
 }
 
