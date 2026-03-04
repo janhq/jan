@@ -624,10 +624,10 @@ function JanCodeRecommendation({
   if (selectedModel === defaultVariant?.model_id) return null
 
   return (
-    <div className="p-2.5 rounded-lg border border-primary/20 bg-primary/5 flex items-center justify-between gap-3">
+    <div className="p-2.5 rounded-lg min-h-[54px] border border-primary/20 bg-primary/5 flex items-center justify-between gap-3">
       <div className="flex flex-col gap-0.5">
         <span className="text-xs font-medium text-foreground">
-          Use Jan code for a better performance
+          Use Jan code for a quick start
         </span>
       </div>
       <div className="shrink-0">
