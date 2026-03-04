@@ -3,6 +3,7 @@ import { ulid } from 'ulidx'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { Fzf } from 'fzf'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { useAgentMode } from '@/hooks/useAgentMode'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 
@@ -154,6 +155,8 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [threadId]: _, ...remainingThreads } = state.threads
 
+      // Clean up agent mode state
+      useAgentMode.getState().removeThread(threadId)
       // Clean up vector DB collection
       cleanupVectorDB(threadId)
       getServiceHub().threads().deleteThread(threadId)
@@ -223,6 +226,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
 
       // Delete all threads and clean up their vector DB collections
       allThreadIds.forEach((threadId) => {
+        useAgentMode.getState().removeThread(threadId)
         cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })

@@ -104,6 +104,12 @@ async fn get_gateway_auth_token() -> Result<String, String> {
         .ok_or_else(|| "Gateway auth token not found in config".to_string())
 }
 
+/// Expose the gateway auth token to the frontend for direct HTTP API access.
+#[tauri::command]
+pub async fn openclaw_get_auth_token() -> Result<String, String> {
+    get_gateway_auth_token().await
+}
+
 /// Connect to the OpenClaw Gateway WebSocket with required Origin header.
 async fn connect_to_gateway() -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, String> {
     let url = format!("ws://127.0.0.1:{}", OPENCLAW_PORT);
@@ -1647,8 +1653,6 @@ pub async fn openclaw_enable(
     log::info!("Starting 1-click OpenClaw enable flow");
 
     let mut steps_completed: Vec<EnableStep> = vec![];
-    let mut sandbox_info: Option<String> = None;
-
     let emit = |step: &str, progress: u32, message: &str, sandbox: Option<&str>| {
         let _ = app.emit(
             "openclaw-enable-progress",
@@ -1666,8 +1670,8 @@ pub async fn openclaw_enable(
     let detected = crate::core::openclaw::sandbox::detect_sandbox().await;
     let sandbox_name = detected.name().to_string();
     let tier = detected.isolation_tier();
-    let mut is_docker = sandbox_name == "Docker";
-    sandbox_info = Some(match tier {
+    let is_docker = sandbox_name == "Docker";
+    let mut sandbox_info = Some(match tier {
         crate::core::openclaw::sandbox::IsolationTier::None => "None (direct process)".to_string(),
         _ => sandbox_name.clone(),
     });
@@ -1768,7 +1772,6 @@ pub async fn openclaw_enable(
                     log::warn!("Docker image pull failed: {}. Falling back to direct process.", e);
                     emit("installing", 42, "Docker image unavailable, falling back to direct install...", sandbox_info.as_deref());
 
-                    is_docker = false;
                     sandbox_info = Some("None (direct process)".to_string());
 
                     // Replace sandbox in state with DirectProcessSandbox

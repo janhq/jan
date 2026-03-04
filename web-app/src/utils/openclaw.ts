@@ -1,5 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
 
+/** OpenClaw gateway base URL for the OpenAI-compatible HTTP API. */
+export const OPENCLAW_GATEWAY_URL = 'http://127.0.0.1:18789/v1'
+
 let openClawRunningCache: boolean | null = null
 let lastCheckTime = 0
 const CACHE_TTL_MS = 30_000
@@ -106,6 +109,29 @@ export async function syncAllModelsToOpenClaw(
     return result.synced_count
   } catch {
     return 0
+  }
+}
+
+// --- Auth token ---
+
+let authTokenCache: string | null = null
+let authTokenFetchTime = 0
+const AUTH_TOKEN_CACHE_TTL = 60_000
+
+/** Get the OpenClaw gateway auth token, with a 60s cache. */
+export async function getOpenClawAuthToken(forceRefresh = false): Promise<string | null> {
+  const now = Date.now()
+  if (!forceRefresh && authTokenCache && (now - authTokenFetchTime) < AUTH_TOKEN_CACHE_TTL) {
+    return authTokenCache
+  }
+  try {
+    const token = await invoke<string>('openclaw_get_auth_token')
+    authTokenCache = token
+    authTokenFetchTime = now
+    return token
+  } catch {
+    authTokenCache = null
+    return null
   }
 }
 

@@ -31,6 +31,7 @@ import {
   IconWorld,
   IconBrandChrome,
   IconUser,
+  IconRobot,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -86,6 +87,8 @@ import {
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
+import { useAgentMode } from '@/hooks/useAgentMode'
+import { isOpenClawRunning } from '@/utils/openclaw'
 
 type ChatInputProps = {
   className?: string
@@ -139,6 +142,23 @@ const ChatInput = memo(function ChatInput({
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
   const assistants = useAssistant((state) => state.assistants)
+
+  // Agent mode (OpenClaw)
+  const [openClawAvailable, setOpenClawAvailable] = useState(false)
+  const isAgentMode = useAgentMode((state) =>
+    currentThreadId ? state.isAgentMode(currentThreadId) : false
+  )
+  const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
+
+  useEffect(() => {
+    isOpenClawRunning().then(setOpenClawAvailable)
+  }, [currentThreadId])
+
+  const handleAgentToggle = useCallback(() => {
+    if (currentThreadId) {
+      toggleAgentMode(currentThreadId)
+    }
+  }, [currentThreadId, toggleAgentMode])
 
   // Get current thread messages for token counting
   const threadMessages = useMessages(
@@ -1745,6 +1765,36 @@ const ChatInput = memo(function ChatInput({
                       </TooltipContent>
                     </Tooltip>
                   ))}
+
+                {openClawAvailable && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={handleAgentToggle}
+                        className={cn(
+                          isAgentMode && 'text-primary'
+                        )}
+                      >
+                        <IconRobot
+                          size={18}
+                          className={cn(
+                            'text-muted-foreground',
+                            isAgentMode && 'text-primary'
+                          )}
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {isAgentMode
+                          ? 'Agent mode active'
+                          : 'Enable agent mode'}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
 
                 {selectedModel?.capabilities?.includes('web_search') && (
                   <Tooltip>

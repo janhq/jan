@@ -149,6 +149,7 @@ pub fn run() {
         core::openclaw::commands::openclaw_install,
         core::openclaw::commands::openclaw_configure,
         core::openclaw::commands::openclaw_get_config,
+        core::openclaw::commands::openclaw_get_auth_token,
         core::openclaw::commands::openclaw_sync_model,
         core::openclaw::commands::openclaw_sync_all_models,
         core::openclaw::commands::openclaw_get_model,

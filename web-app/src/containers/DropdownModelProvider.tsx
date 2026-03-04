@@ -25,6 +25,8 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { syncModelToOpenClaw } from '@/utils/openclaw'
 import { ChevronsUpDown } from 'lucide-react'
+import { useAgentMode } from '@/hooks/useAgentMode'
+import { IconRobot } from '@tabler/icons-react'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -70,6 +72,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const { t } = useTranslation()
   const { favoriteModels } = useFavoriteModel()
   const serviceHub = useServiceHub()
+  const currentThreadId = useThreads((state) => state.currentThreadId)
+  const isAgentMode = useAgentMode((state) =>
+    currentThreadId ? state.isAgentMode(currentThreadId) : false
+  )
 
   // Search state
   const [open, setOpen] = useState(false)
@@ -475,6 +481,17 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   if (!providers.length) return null
 
   const provider = getProviderByName(selectedProvider)
+
+  if (isAgentMode) {
+    return (
+      <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full text-muted-foreground">
+        <IconRobot size={16} className="shrink-0" />
+        <span className="text-sm font-medium leading-normal">
+          OpenClaw Agent
+        </span>
+      </div>
+    )
+  }
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>

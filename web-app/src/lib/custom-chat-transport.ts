@@ -15,6 +15,8 @@ import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAssistant } from '@/hooks/useAssistant'
+import { useAgentMode } from '@/hooks/useAgentMode'
+import { getOpenClawAuthToken, OPENCLAW_GATEWAY_URL } from '@/utils/openclaw'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionManager } from '@/lib/extension'
@@ -226,35 +228,69 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Ensure tools updated before sending messages
     await this.refreshTools()
 
-    // Initialize model if not already initialized
-    const modelId = useModelProvider.getState().selectedModel?.id
-    const providerId = useModelProvider.getState().selectedProvider
-    const provider = useModelProvider.getState().getProviderByName(providerId)
-    if (this.serviceHub && modelId && provider) {
+    // Check if agent mode is active for this thread
+    const isAgentMode = this.threadId
+      ? useAgentMode.getState().isAgentMode(this.threadId)
+      : false
+
+    if (isAgentMode) {
+      // Agent mode: route to OpenClaw gateway
+      const authToken = await getOpenClawAuthToken()
+      if (!authToken) {
+        throw new Error('OpenClaw is not available. Please check that it is running in Settings > Remote Access.')
+      }
+
+      const openclawProvider: ProviderObject = {
+        active: true,
+        provider: 'openclaw',
+        api_key: authToken,
+        base_url: OPENCLAW_GATEWAY_URL,
+        settings: [],
+        models: [],
+        custom_header: this.threadId
+          ? [{ header: 'x-openclaw-session-key', value: this.threadId }]
+          : [],
+      }
+
       try {
-        const updatedProvider = useModelProvider
-          .getState()
-          .getProviderByName(providerId)
-
-        // Get assistant parameters from current assistant
-        const currentAssistant = useAssistant.getState().currentAssistant
-        const inferenceParams = currentAssistant?.parameters
-
-        // Create the model using the factory
-        // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
-        this.model = await ModelFactory.createModel(
-          modelId,
-          updatedProvider ?? provider,
-          inferenceParams ?? {}
-        )
+        this.model = await ModelFactory.createModel('openclaw', openclawProvider)
       } catch (error) {
-        console.error('Failed to create model:', error)
+        console.error('Failed to create OpenClaw model:', error)
         throw new Error(
-          `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+          `Failed to connect to OpenClaw: ${error instanceof Error ? error.message : JSON.stringify(error)}`
         )
       }
     } else {
-      throw new Error('ServiceHub not initialized or model/provider missing.')
+      // Normal mode: use selected provider
+      const modelId = useModelProvider.getState().selectedModel?.id
+      const providerId = useModelProvider.getState().selectedProvider
+      const provider = useModelProvider.getState().getProviderByName(providerId)
+      if (this.serviceHub && modelId && provider) {
+        try {
+          const updatedProvider = useModelProvider
+            .getState()
+            .getProviderByName(providerId)
+
+          // Get assistant parameters from current assistant
+          const currentAssistant = useAssistant.getState().currentAssistant
+          const inferenceParams = currentAssistant?.parameters
+
+          // Create the model using the factory
+          // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
+          this.model = await ModelFactory.createModel(
+            modelId,
+            updatedProvider ?? provider,
+            inferenceParams ?? {}
+          )
+        } catch (error) {
+          console.error('Failed to create model:', error)
+          throw new Error(
+            `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+          )
+        }
+      } else {
+        throw new Error('ServiceHub not initialized or model/provider missing.')
+      }
     }
 
     // Convert UI messages to model messages
@@ -263,10 +299,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     )
 
     // Include tools only if we have tools loaded AND model supports them
+    // In agent mode, OpenClaw manages its own tools
     const hasTools = Object.keys(this.tools).length > 0
     const selectedModel = useModelProvider.getState().selectedModel
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
-    const shouldEnableTools = hasTools && modelSupportsTools
+    const shouldEnableTools = !isAgentMode && hasTools && modelSupportsTools
 
     // Track stream timing and token count for token speed calculation
     let streamStartTime: number | undefined
