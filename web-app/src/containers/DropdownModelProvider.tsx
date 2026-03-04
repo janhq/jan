@@ -502,10 +502,12 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           {currentModel?.settings &&
             provider &&
             provider.provider === 'llamacpp' && (
-              <ModelSetting
-                model={currentModel as Model}
-                provider={provider}
-              />
+              <div onClick={(e) => e.stopPropagation()}>
+                <ModelSetting
+                  model={currentModel as Model}
+                  provider={provider}
+                />
+              </div>
             )}
           <ModelSupportStatus
             modelId={selectedModel?.id}
