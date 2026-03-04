@@ -77,12 +77,7 @@ const SettingsMenu = () => {
       route: route.settings.privacy,
       hasSubMenu: false,
       isEnabled: true,
-    },
-    {
-      title: 'common:modelProviders',
-      route: route.settings.model_providers,
-      hasSubMenu: activeProviders.length > 0,
-      isEnabled: true,
+      dividerAfter: true,
     },
     {
       title: 'common:assistants',
@@ -136,7 +131,7 @@ const SettingsMenu = () => {
   return (
     <>
       <div
-        className='h-full w-54 shrink-0 px-1.5 flex'
+        className='h-full w-54 shrink-0 px-1.5 flex overflow-auto'
       >
         <div className="flex flex-col gap-1 w-full font-medium">
           {menuSettings.map((menu) => {
@@ -171,6 +166,8 @@ const SettingsMenu = () => {
                     )}
                   </div>
                 </Link>
+
+                {menu.dividerAfter && <div className="my-4" />}
 
                 {/* Sub-menu for model providers */}
                 {menu.hasSubMenu && expandedProviders && (
@@ -222,8 +219,9 @@ const SettingsMenu = () => {
               </div>
             )
           })}
+
           {/* Integrations section */}
-          <div className="mt-3">
+          <div className="mt-4">
             <span className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {t('common:integrations')}
             </span>
@@ -242,6 +240,74 @@ const SettingsMenu = () => {
               </Link>
             </div>
           </div>
+          
+          {/* Model Providers section */}
+          <div className="mt-4">
+            <span className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {t('common:modelProviders')}
+            </span>
+            <div className="mt-1 flex flex-col gap-1">
+              <Link
+                to={route.settings.model_providers}
+                className="flex items-center justify-between px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
+              >
+                <span>{t('common:modelProviders')}</span>
+                {activeProviders.length > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      toggleProvidersExpansion()
+                    }}
+                    className="text-muted-foreground/60 hover:text-muted-foreground/80"
+                  >
+                    {expandedProviders ? (
+                      <IconChevronDown size={16} />
+                    ) : (
+                      <IconChevronRight size={16} />
+                    )}
+                  </button>
+                )}
+              </Link>
+              {expandedProviders && activeProviders.map((provider) => {
+                const isActive = matches.some(
+                  (match) =>
+                    match.routeId === '/settings/providers/$providerName' &&
+                    'providerName' in match.params &&
+                    match.params.providerName === provider.provider
+                )
+                return (
+                  <div
+                    key={provider.provider}
+                    className={cn(
+                      'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-foreground',
+                      isActive && 'bg-secondary',
+                      provider.provider === 'llama.cpp' &&
+                        stepSetupRemoteProvider &&
+                        'hidden'
+                    )}
+                    onClick={() =>
+                      navigate({
+                        to: route.settings.providers,
+                        params: { providerName: provider.provider },
+                        ...(stepSetupRemoteProvider
+                          ? { search: { step: 'setup_remote_provider' } }
+                          : {}),
+                      })
+                    }
+                  >
+                    <ProvidersAvatar provider={provider} />
+                    <div className="truncate">
+                      <span>{getProviderTitle(provider.provider)}</span>
+                    </div>
+                  </div>
+                )
+              })}
+              <div className="m-2" />
+            </div>
+          </div>
+
+          
         </div>
       </div>
     </>
