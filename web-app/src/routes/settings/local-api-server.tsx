@@ -22,6 +22,8 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { getModelToStart } from '@/utils/getModelToStart'
 import { LogViewer } from '@/components/LogViewer'
+import { EngineManager } from '@janhq/core'
+
 import {
   Popover,
   PopoverTrigger,
@@ -107,13 +109,78 @@ function LocalAPIServerContent() {
 
       setServerStatus('pending')
 
+      const MIN_CONTEXT_SIZE = 32768
+
+      // Helper to get context size from a model
+      const getModelCtxSize = (modelId: string): number | undefined => {
+        const allProviders = useModelProvider.getState().providers
+        for (const provider of allProviders) {
+          if (!provider?.models) continue
+          const model = provider.models.find(
+            (m: { id: string }) => m.id === modelId
+          )
+          const ctxLen = model?.settings?.ctx_len?.controller_props?.value as
+            | number
+            | undefined
+          if (ctxLen !== undefined) return ctxLen
+        }
+        return undefined
+      }
+
       // Check if there's already a loaded model
       serviceHub
         .models()
         .getActiveModels()
-        .then((loadedModels) => {
+        .then(async (loadedModels) => {
           if (loadedModels && loadedModels.length > 0) {
             console.log(`Using already loaded model: ${loadedModels[0]}`)
+
+            // Check if the model has sufficient context size (32k)
+            const modelId = loadedModels[0]
+            const currentCtxSize = getModelCtxSize(modelId)
+
+            if (
+              currentCtxSize !== undefined &&
+              currentCtxSize < MIN_CONTEXT_SIZE
+            ) {
+              console.log(
+                `Model ${modelId} has context size ${currentCtxSize}, less than minimum ${MIN_CONTEXT_SIZE}. Restarting with larger context...`
+              )
+
+              // Find the provider for this model
+              const allProviders = useModelProvider.getState().providers
+              let modelProvider = allProviders.find((p) =>
+                p?.models?.some((m: { id: string }) => m.id === modelId)
+              )
+
+              if (!modelProvider) {
+                modelProvider = getProviderByName(selectedProvider)
+              }
+
+              if (modelProvider) {
+                setIsModelLoading(true)
+
+                // Stop the current model
+                await serviceHub
+                  .models()
+                  .stopModel(modelId, modelProvider.provider)
+
+                // Start with larger context size - access engine via EngineManager
+                const settings = { ctx_size: MIN_CONTEXT_SIZE }
+                const engine = EngineManager.instance().get(
+                  modelProvider.provider
+                )
+                if (engine) {
+                  await engine.load(modelId, settings, false, true)
+                }
+
+                console.log(
+                  `Model ${modelId} restarted with context size ${MIN_CONTEXT_SIZE}`
+                )
+                setIsModelLoading(false)
+              }
+            }
+
             // Model already loaded, just start the server
             return Promise.resolve()
           } else {
@@ -132,12 +199,55 @@ function LocalAPIServerContent() {
               throw new Error('No model available to load')
             }
 
+            // Check if the model has sufficient context size (32k)
+            const currentCtxSize = getModelCtxSize(modelToStart.model)
+            let finalProvider = modelToStart.provider
+
+            // If context size is less than minimum, we need to create modified settings
+            if (
+              currentCtxSize !== undefined &&
+              currentCtxSize < MIN_CONTEXT_SIZE
+            ) {
+              console.log(
+                `Model ${modelToStart.model} has context size ${currentCtxSize}, less than minimum ${MIN_CONTEXT_SIZE}. Starting with larger context...`
+              )
+
+              // Create a modified provider with enforced ctx_size
+              finalProvider = {
+                ...modelToStart.provider,
+                models: modelToStart.provider.models.map(
+                  (m: { id: string; settings?: Record<string, unknown> }) => {
+                    if (m.id === modelToStart.model) {
+                      return {
+                        ...m,
+                        settings: {
+                          ...m.settings,
+                          ctx_len: {
+                            ...(m.settings?.ctx_len as object | undefined),
+                            controller_props: {
+                              ...((
+                                m.settings?.ctx_len as {
+                                  controller_props?: object
+                                }
+                              )?.controller_props ?? {}),
+                              value: MIN_CONTEXT_SIZE,
+                            },
+                          },
+                        },
+                      }
+                    }
+                    return m
+                  }
+                ),
+              }
+            }
+
             setIsModelLoading(true) // Start loading state
 
-            // Start the model first
+            // Start the model first (with modified settings if needed)
             return serviceHub
               .models()
-              .startModel(modelToStart.provider, modelToStart.model, true)
+              .startModel(finalProvider, modelToStart.model, true)
               .then(() => {
                 console.log(`Model ${modelToStart.model} started successfully`)
                 setIsModelLoading(false) // Model loaded, stop loading state
@@ -245,7 +355,12 @@ function LocalAPIServerContent() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div className={cn("flex items-center justify-between w-full mr-2 pr-3", !IS_MACOS && "pr-30")}>
+        <div
+          className={cn(
+            'flex items-center justify-between w-full mr-2 pr-3',
+            !IS_MACOS && 'pr-30'
+          )}
+        >
           <span className="font-medium text-base font-studio">
             {t('common:settings')}
           </span>
@@ -468,7 +583,6 @@ function LocalAPIServerContent() {
                   }
                 />
               </Card>
-
             </div>
           </div>
           <div className="p-4 shrink-0">
@@ -505,4 +619,3 @@ function LocalAPIServerContent() {
     </div>
   )
 }
-
