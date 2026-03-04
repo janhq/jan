@@ -1,10 +1,11 @@
 import { Link } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   IconChevronDown,
   IconChevronRight,
+  IconCirclePlus,
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
@@ -12,14 +13,40 @@ import { cn } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
+import { AddProviderDialog } from '@/containers/dialogs'
+import { openAIProviderSettings } from '@/constants/providers'
+import cloneDeep from 'lodash/cloneDeep'
+import { toast } from 'sonner'
 
 const SettingsMenu = () => {
   const { t } = useTranslation()
-  const [expandedProviders, setExpandedProviders] = useState(false)
+  const [expandedProviders, setExpandedProviders] = useState(true)
   const matches = useMatches()
   const navigate = useNavigate()
 
-  const { providers } = useModelProvider()
+  const { providers, addProvider } = useModelProvider()
+
+  const createProvider = useCallback(
+    (name: string) => {
+      if (providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())) {
+        toast.error(t('provider:providerAlreadyExists', { name }))
+        return
+      }
+      const newProvider: ProviderObject = {
+        provider: name,
+        active: true,
+        models: [],
+        settings: cloneDeep(openAIProviderSettings) as ProviderSetting[],
+        api_key: '',
+        base_url: 'https://api.openai.com/v1',
+      }
+      addProvider(newProvider)
+      setTimeout(() => {
+        navigate({ to: route.settings.providers, params: { providerName: name } })
+      }, 0)
+    },
+    [providers, addProvider, t, navigate]
+  )
 
   // Filter providers that have active API keys (or are llama.cpp which doesn't need one)
   // On web: exclude llamacpp provider as it's not available
@@ -269,6 +296,14 @@ const SettingsMenu = () => {
                   </button>
                 )}
               </Link>
+              {expandedProviders && (
+                <AddProviderDialog onCreateProvider={createProvider}>
+                  <button className="flex items-center gap-1.5 px-2 py-1 w-full cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm">
+                    <IconCirclePlus size={16} />
+                    <span>{t('common:addProvider')}</span>
+                  </button>
+                </AddProviderDialog>
+              )}
               {expandedProviders && activeProviders.map((provider) => {
                 const isActive = matches.some(
                   (match) =>
