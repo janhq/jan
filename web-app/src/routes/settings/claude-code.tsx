@@ -12,7 +12,11 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import AddEditCustomCliDialog from '@/containers/dialogs/AddEditCustomCliDialog'
 import { cn } from '@/lib/utils'
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import type { CatalogModel } from '@/services/models/types'
+import { JAN_CODE_HF_REPO } from '@/constants/models'
 import { toast } from 'sonner'
 import { getModelToStart } from '@/utils/getModelToStart'
 import { invoke } from '@tauri-apps/api/core'
@@ -257,8 +261,17 @@ function ClaudeCodeIntegration() {
                     placeholder="Select Small Model"
                   />
                 }
+                descriptionOutside={
+                  <JanCodeRecommendation
+                    selectedModel={helperModels.small}
+                    onSelect={(modelId: string) =>
+                      setHelperModel('small', modelId)
+                    }
+                  />
+                }
               />
-              <div className="flex mt-2 justify-between gap-2">
+
+              <div className="flex mt-2 justify-between gap-2 border-t pt-4">
                 <Button
                   size="sm"
                   variant="outline"
@@ -523,5 +536,146 @@ function HelperModelSelector({
         </div>
       </PopoverContent>
     </Popover>
+  )
+}
+
+function JanCodeRecommendation({
+  selectedModel,
+  onSelect,
+}: {
+  selectedModel: string | null
+  onSelect: (modelId: string) => void
+}) {
+  const serviceHub = useServiceHub()
+  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
+    useDownloadStore()
+  const { getProviderByName } = useModelProvider()
+  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
+  const [janCodeCatalog, setJanCodeCatalog] = useState<CatalogModel | null>(
+    null
+  )
+
+  useEffect(() => {
+    serviceHub
+      .models()
+      .fetchHuggingFaceRepo(JAN_CODE_HF_REPO, huggingfaceToken)
+      .then((repo) => {
+        if (repo)
+          setJanCodeCatalog(
+            serviceHub.models().convertHfRepoToCatalogModel(repo)
+          )
+      })
+      .catch(() => {})
+  }, [serviceHub, huggingfaceToken])
+
+  const defaultVariant = useMemo(() => {
+    if (!janCodeCatalog) return null
+    return (
+      janCodeCatalog.quants?.find((q) =>
+        q.model_id.toLowerCase().includes('q4_k_m')
+      ) ??
+      janCodeCatalog.quants?.[0] ??
+      null
+    )
+  }, [janCodeCatalog])
+
+  const llamaProvider = getProviderByName('llamacpp')
+
+  const isDownloaded = useMemo(() => {
+    if (!defaultVariant) return false
+    return !!llamaProvider?.models.some(
+      (m: { id: string }) => m.id === defaultVariant.model_id
+    )
+  }, [defaultVariant, llamaProvider])
+
+  const isDownloading = useMemo(() => {
+    if (!defaultVariant) return false
+    return (
+      localDownloadingModels.has(defaultVariant.model_id) ||
+      defaultVariant.model_id in downloads
+    )
+  }, [defaultVariant, localDownloadingModels, downloads])
+
+  const downloadProgress = useMemo(() => {
+    if (!defaultVariant) return { current: 0, total: 0 }
+    const d = downloads[defaultVariant.model_id]
+    return { current: d?.current ?? 0, total: d?.total ?? 0 }
+  }, [defaultVariant, downloads])
+
+  const handleDownload = () => {
+    if (!defaultVariant) return
+    addLocalDownloadingModel(defaultVariant.model_id)
+    serviceHub
+      .models()
+      .pullModelWithMetadata(
+        defaultVariant.model_id,
+        defaultVariant.path,
+        undefined,
+        huggingfaceToken,
+        true
+      )
+  }
+
+  const formatBytes = (bytes: number) => {
+    if (!bytes) return '0'
+    return (bytes / (1024 * 1024 * 1024)).toFixed(1)
+  }
+
+  if (selectedModel === defaultVariant?.model_id) return null
+
+  return (
+    <div className="p-2.5 rounded-lg border border-primary/20 bg-primary/5 flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-xs font-medium text-foreground">
+          Use Jan code for a better performance
+        </span>
+      </div>
+      <div className="shrink-0">
+        {isDownloaded ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onSelect(defaultVariant!.model_id)}
+          >
+            Apply
+          </Button>
+        ) : isDownloading ? (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <svg
+              className="size-3 animate-spin"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
+            </svg>
+            <span>
+              {formatBytes(downloadProgress.current)} /{' '}
+              {formatBytes(downloadProgress.total)}GB
+            </span>
+          </div>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleDownload}
+            disabled={!defaultVariant}
+          >
+            Setup
+          </Button>
+        )}
+      </div>
+    </div>
   )
 }
