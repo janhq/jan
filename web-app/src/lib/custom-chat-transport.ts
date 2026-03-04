@@ -50,6 +50,38 @@ export type ServiceHub = {
   }
 }
 
+/**
+ * Wraps a UIMessageChunk stream so that when the first `text-start` chunk
+ * arrives, a `text-delta` carrying `prefixText` is immediately injected into
+ * the same text block. This makes the new message show the partial content
+ * right away while continuation tokens stream in after it.
+ */
+function prependTextDeltaToUIStream(
+  stream: ReadableStream<UIMessageChunk>,
+  prefixText: string
+): ReadableStream<UIMessageChunk> {
+  const reader = stream.getReader()
+  let prefixEmitted = false
+  return new ReadableStream<UIMessageChunk>({
+    async pull(controller) {
+      const { done, value } = await reader.read()
+      if (done) {
+        controller.close()
+        return
+      }
+      controller.enqueue(value)
+      if (!prefixEmitted && (value as { type: string }).type === 'text-start') {
+        prefixEmitted = true
+        const id = (value as { type: 'text-start'; id: string }).id
+        controller.enqueue({ type: 'text-delta', id, delta: prefixText } as UIMessageChunk)
+      }
+    },
+    cancel() {
+      reader.cancel()
+    },
+  })
+}
+
 export class CustomChatTransport implements ChatTransport<UIMessage> {
   public model: LanguageModel | null = null
   private tools: Record<string, Tool> = {}
@@ -60,6 +92,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private systemMessage?: string
   private serviceHub: ServiceHub | null
   private threadId?: string
+  private continueFromContent: string | null = null
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
@@ -215,6 +248,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return this.tools
   }
 
+  /**
+   * Set partial assistant content to send as a prefill on the next request,
+   * so the model continues generation from where it left off.
+   */
+  setContinueFromContent(content: string) {
+    this.continueFromContent = content
+  }
+
   async sendMessages(
     options: {
       chatId: string
@@ -295,9 +336,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
 
     // Convert UI messages to model messages
-    const modelMessages = convertToModelMessages(
+    const baseMessages = convertToModelMessages(
       this.mapUserInlineAttachments(options.messages)
     )
+
+    // If continuing a truncated response, append the partial assistant content as a
+    // prefill so the model resumes from where it left off rather than regenerating.
+    const continueContent = this.continueFromContent
+    this.continueFromContent = null
+    const modelMessages = continueContent
+      ? [...baseMessages, { role: 'assistant' as const, content: continueContent }]
+      : baseMessages
 
     // Include tools only if we have tools loaded AND model supports them
     // In agent mode, OpenClaw manages its own tools
@@ -320,7 +369,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     let tokensPerSecond = 0
 
-    return result.toUIMessageStream({
+    const uiStream = result.toUIMessageStream({
       messageMetadata: ({ part }) => {
         // Track stream start time on start
         if (part.type === 'start' && !streamStartTime) {
@@ -358,6 +407,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           }
 
           return {
+            finishReason: finishPart.finishReason,
             usage: {
               inputTokens: inputTokens,
               outputTokens: outputTokens,
@@ -402,6 +452,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         }
       },
     })
+
+    // When continuing a truncated response, inject the partial content as the
+    // very first text-delta so the new message immediately shows it and the
+    // user sees a seamless continuation rather than an empty box.
+    return continueContent
+      ? prependTextDeltaToUIStream(uiStream, continueContent)
+      : uiStream
   }
 
   async reconnectToStream(

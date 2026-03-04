@@ -1582,7 +1582,7 @@ const ChatInput = memo(function ChatInput({
                           <IconUser size={18} className="text-muted-foreground" />
                           <span>Use Assistant</span>
                         </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent>
+                        <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
                           <DropdownMenuItem
                             className={!selectedAssistant && !currentThread?.assistants?.length ? 'bg-accent' : ''}
                             onClick={() => {
