@@ -543,8 +543,13 @@ async fn auto_download_hf_model(repo_id: &str) -> String {
         });
     fetch_pb.finish_and_clear();
 
-    // Let the user pick which quantization to download
-    let chosen = pick_hf_file(&files);
+    // Auto-select Q4_K_XL if available, otherwise pick the largest file
+    let chosen = files
+        .iter()
+        .find(|f| f.filename.contains("Q4_K_XL"))
+        .unwrap_or_else(|| {
+            files.iter().max_by_key(|f| f.size).unwrap()
+        });
     eprintln!("  Downloading  {}", chosen.filename);
     eprintln!("  Size         {}", fmt_bytes(chosen.size));
     eprintln!();
@@ -606,7 +611,7 @@ fn select_program_interactively() -> String {
     CHOICES[idx].0.to_string()
 }
 
-fn select_model_interactively() -> String {
+async fn select_model_interactively() -> String {
     let mut all: Vec<(String, String)> = Vec::new(); // (id, engine)
     for engine in &["llamacpp", "mlx"] {
         for (id, _) in list_models(engine) {
@@ -615,8 +620,19 @@ fn select_model_interactively() -> String {
     }
 
     if all.is_empty() {
-        eprintln!("No models found. Download a model from the Jan app first.");
-        std::process::exit(1);
+        let default_model = "janhq/Jan-v3-4B-base-instruct-gguf";
+        println!();
+        let msg = Style::new().yellow().apply_to(
+            "No models found. Downloading default model..."
+        );
+        println!("{}", msg);
+        println!();
+        println!("  {} {}", Style::new().dim().apply_to("Model:"), default_model);
+        println!();
+
+        // Auto-download the default model
+        let model_id = auto_download_hf_model(default_model).await;
+        return model_id;
     }
 
     println!();
@@ -748,7 +764,7 @@ async fn handle_serve(args: ServeArgs) {
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "model".to_string())
             } else {
-                select_model_interactively()
+                select_model_interactively().await
             }
         }
     };
@@ -964,7 +980,9 @@ async fn handle_launch(
     ctx_size_is_default: bool,
     verbose: bool,
 ) {
-    let model_id = model.unwrap_or_else(select_model_interactively);
+    let model_id = model.unwrap_or_else(|| -> String {
+        futures::executor::block_on(select_model_interactively())
+    });
 
     // Detect known agents early so we can set fit default before starting the server.
     let prog_name = std::path::Path::new(&program)
