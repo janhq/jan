@@ -92,7 +92,7 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3">F</Kbd>
+        <Kbd className="bg-transparent size-3">M</Kbd>
       </KbdGroup>
     ),
   },
@@ -105,7 +105,7 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3">P</Kbd>
+        <Kbd className="bg-transparent size-3">L</Kbd>
       </KbdGroup>
     ),
   },
