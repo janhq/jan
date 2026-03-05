@@ -40,6 +40,7 @@ import { useSearchDialog } from '@/hooks/useSearchDialog'
 import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { useAppState } from '@/hooks/useAppState'
 
 type AnimatedIconHandle =
   | SearchIconHandle
@@ -174,6 +175,7 @@ export function NavMain() {
   const { open: searchOpen, setOpen: setSearchOpen } = useSearchDialog()
   const { open: projectDialogOpen, setOpen: setProjectDialogOpen } =
     useProjectDialog()
+  const openClawAvailable = useAppState((state) => state.openClawRunning)
 
   const navMainItems = getNavMainItems(
     () => setProjectDialogOpen(true),
@@ -186,7 +188,7 @@ export function NavMain() {
       useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
       navigate({ to: route.home })
     }
-  )
+  ).filter((item) => item.title !== 'New Agent Chat' || openClawAvailable)
 
   const handleCreateProject = async (name: string, assistantId?: string) => {
     const newProject = await addFolder(name, assistantId)
