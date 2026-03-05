@@ -475,7 +475,10 @@ fn start_progress(verbose: bool, msg: impl Into<String>) -> Option<ProgressBar> 
 /// Finish the spinner with a final message, or print the message plainly in verbose mode.
 fn finish_progress(pb: Option<ProgressBar>, msg: impl AsRef<str>) {
     match pb {
-        Some(pb) => pb.finish_with_message(msg.as_ref().to_string()),
+        Some(pb) => {
+            pb.finish_and_clear();
+            eprintln!("{}", msg.as_ref());
+        }
         None => eprintln!("{}", msg.as_ref()),
     }
 }
@@ -665,6 +668,13 @@ async fn select_model_interactively() -> String {
             (i, format!("{} {}", id, indicator))
         })
         .collect();
+
+    // If only one model, skip interactive selection
+    if selection_items.len() == 1 {
+        println!("  Using model: {}", selection_items[0].1);
+        println!();
+        return all[selection_items[0].0].0.clone();
+    }
 
     let labels: Vec<String> = selection_items.iter().map(|(_, label)| label.clone()).collect();
 
