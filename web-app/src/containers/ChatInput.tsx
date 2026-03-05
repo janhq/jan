@@ -1812,15 +1812,16 @@ const ChatInput = memo(function ChatInput({
                     </Tooltip>
                   ))}
 
-                {openClawAvailable && (
+                {openClawAvailable && (!!currentThreadId || isAgentMode) && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         variant={isAgentMode ? "default" : "ghost"}
                         size="icon-xs"
-                        onClick={handleAgentToggle}
+                        onClick={currentThreadId ? handleAgentToggle : undefined}
                         className={cn(
-                          isAgentMode && 'text-primary bg-primary/10 hover:bg-primary/10 items-center'
+                          isAgentMode && 'text-primary bg-primary/10 hover:bg-primary/10 items-center',
+                          !currentThreadId && 'cursor-default pointer-events-none'
                         )}
                       >
                         <BotIcon
