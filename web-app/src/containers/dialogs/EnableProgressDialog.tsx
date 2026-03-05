@@ -15,7 +15,6 @@ import {
   IconCheck,
   IconLoader2,
   IconAlertTriangle,
-  IconExternalLink,
   IconRefresh,
 } from '@tabler/icons-react'
 import { setOpenClawRunningState, syncAllModelsToOpenClaw } from '@/utils/openclaw'
@@ -37,7 +36,7 @@ interface EnableResult {
   status: {
     installed: boolean
     running: boolean
-    node_version: string | null
+    runtime_version: string | null
     openclaw_version: string | null
     port_available: boolean
     error: string | null
@@ -56,7 +55,6 @@ interface EnableError {
 
 type RecoveryAction =
   | 'Retry'
-  | 'OpenNodeDownload'
   | { UseDifferentPort: { port: number } }
 
 interface EnableProgressDialogProps {
@@ -66,7 +64,7 @@ interface EnableProgressDialogProps {
 }
 
 const STEP_LABELS: Record<string, string> = {
-  checking_dependencies: 'Checking Node.js',
+  checking_dependencies: 'Checking runtime',
   checking_installation: 'Checking OpenClaw',
   installing: 'Installing OpenClaw',
   already_installed: 'OpenClaw installed',
@@ -236,8 +234,6 @@ export function EnableProgressDialog({
     if (action === 'Retry') {
       setError(null)
       // runEnable will be triggered by the useEffect
-    } else if (action === 'OpenNodeDownload') {
-      window.open('https://nodejs.org/', '_blank')
     } else if (
       typeof action === 'object' &&
       'UseDifferentPort' in action
@@ -361,14 +357,10 @@ export function EnableProgressDialog({
                     className="w-full justify-start h-auto py-2"
                     onClick={() => handleRecoveryAction(option.action)}
                   >
-                    {option.action === 'OpenNodeDownload' ? (
-                      <IconExternalLink className="mr-2 h-4 w-4 shrink-0" />
-                    ) : (
-                      <IconRefresh className="mr-2 h-4 w-4 shrink-0" />
-                    )}
-                    <span className="flex flex-col items-start text-left">
-                      <span>{option.label}</span>
-                      <span className="text-xs text-muted-foreground font-normal">{option.description}</span>
+                    <IconRefresh className="mr-2 h-4 w-4" />
+                    {option.label}
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {option.description}
                     </span>
                   </Button>
                 ))}

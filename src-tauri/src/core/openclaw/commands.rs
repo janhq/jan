@@ -12,8 +12,18 @@ use crate::core::openclaw::{
     constants::*,
     models::*,
     sandbox::Sandbox,
-    get_openclaw_config_path, get_openclaw_config_dir, set_docker_mode, OpenClawState, OPENCLAW_PORT, MIN_NODE_VERSION,
+    get_openclaw_config_path, get_openclaw_config_dir, set_docker_mode, OpenClawState, OPENCLAW_PORT,
 };
+
+/// On Windows, prevent console window popups for background commands.
+#[cfg(target_os = "windows")]
+fn hide_window(cmd: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+}
+
+#[cfg(not(target_os = "windows"))]
+fn hide_window(_cmd: &mut Command) {}
 
 /// Request ID counter for WebSocket messages
 static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -23,15 +33,24 @@ const DOCKER_CONTAINER_NAME: &str = "jan-openclaw";
 
 /// Check if the Docker container `jan-openclaw` is running.
 async fn is_docker_container_running() -> bool {
-    Command::new("docker")
-        .args(["inspect", "--format", "{{.State.Running}}", DOCKER_CONTAINER_NAME])
-        .output()
+    let mut cmd = Command::new("docker");
+    cmd.args(["inspect", "--format", "{{.State.Running}}", DOCKER_CONTAINER_NAME]);
+    hide_window(&mut cmd);
+    cmd.output()
         .await
         .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "true")
         .unwrap_or(false)
 }
 
-/// Build a `Command` that routes through `docker exec` when the container is running.
+/// Build a `Command` that routes through `docker exec` when the container is running,
+/// or falls back to a bare `openclaw` command for users who installed via npm.
+///
+/// Resolution order for direct process mode:
+/// 1. Installed binary at `~/.jan/openclaw-runtime/bin/openclaw` (fast, no download)
+/// 2. Bare `openclaw` command (assumes user installed it globally via npm)
+///
+/// In both cases, PATH is augmented with the bundled Bun directory and runtime bin
+/// directory (which contains a `node` shim pointing to Bun for shebang resolution).
 async fn openclaw_command(args: &[&str]) -> Command {
     if is_docker_container_running().await {
         let mut cmd = Command::new("docker");
@@ -44,10 +63,38 @@ async fn openclaw_command(args: &[&str]) -> Command {
         ];
         full_args.extend_from_slice(args);
         cmd.args(full_args);
+        hide_window(&mut cmd);
         cmd
     } else {
-        let mut cmd = Command::new("openclaw");
-        cmd.args(args);
+        // Ensure node shim points to bundled Bun (for shebang resolution)
+        if let Err(e) = super::ensure_bun_node_shim() {
+            log::debug!("Node shim not created (will fall back to system node): {}", e);
+        }
+
+        // 1. Try the installed openclaw binary first
+        let openclaw_path = super::get_openclaw_bin_path().ok();
+        let use_installed_binary = openclaw_path
+            .as_ref()
+            .map(|p| p.exists())
+            .unwrap_or(false);
+
+        let mut cmd = if use_installed_binary {
+            let mut c = Command::new(openclaw_path.unwrap());
+            if let Some(new_path) = super::build_augmented_path() {
+                c.env("PATH", new_path);
+            }
+            c.args(args);
+            c
+        } else {
+            // 2. Fallback: bare "openclaw" (user installed via npm or has it in PATH)
+            let mut c = Command::new("openclaw");
+            if let Some(new_path) = super::build_augmented_path() {
+                c.env("PATH", new_path);
+            }
+            c.args(args);
+            c
+        };
+        hide_window(&mut cmd);
         cmd
     }
 }
@@ -416,7 +463,7 @@ pub async fn openclaw_setup_for_channels(state: tauri::State<'_, OpenClawState>)
                         gateway_running: false,
                         device_paired: false,
                         error: result.error,
-                        message: Some("Please install Node.js 22+ and OpenClaw manually".to_string()),
+                        message: Some("Please install Bun or Node.js 22+ and OpenClaw manually".to_string()),
                     });
                 }
                 Err(e) => {
@@ -427,7 +474,7 @@ pub async fn openclaw_setup_for_channels(state: tauri::State<'_, OpenClawState>)
                         gateway_running: false,
                         device_paired: false,
                         error: Some(e),
-                        message: Some("Please install Node.js 22+ and OpenClaw manually".to_string()),
+                        message: Some("Please install Bun or Node.js 22+ and OpenClaw manually".to_string()),
                     });
                 }
             }
@@ -541,11 +588,12 @@ async fn test_gateway_connection() -> Result<(), String> {
 /// (launchd caches service args, so a plain `gateway restart` won't pick up config changes).
 async fn restart_gateway_cli() -> Result<(), String> {
     if is_docker_container_running().await {
-        let output = Command::new("docker")
-            .args(["restart", DOCKER_CONTAINER_NAME])
+        let mut cmd = Command::new("docker");
+        cmd.args(["restart", DOCKER_CONTAINER_NAME])
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
+            .stderr(Stdio::piped());
+        hide_window(&mut cmd);
+        let output = cmd.output()
             .await
             .map_err(|e| format!("Failed to restart Docker container: {}", e))?;
 
@@ -564,7 +612,13 @@ async fn restart_gateway_cli() -> Result<(), String> {
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    let _ = openclaw_command(&["gateway", "install"]).await
+    // Re-register service with --runtime bun when bundled Bun is available
+    let install_args: Vec<&str> = if super::resolve_bundled_bun().is_some() {
+        vec!["gateway", "install", "--runtime", "bun"]
+    } else {
+        vec!["gateway", "install"]
+    };
+    let _ = openclaw_command(&install_args).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -620,22 +674,48 @@ async fn clear_stale_openclaw_data() -> Result<(), String> {
 async fn stop_other_sandbox_instance(stop_docker: bool) {
     if stop_docker {
         if is_docker_container_running().await {
-            let _ = Command::new("docker")
-                .args(["stop", DOCKER_CONTAINER_NAME])
+            let mut cmd = Command::new("docker");
+            cmd.args(["stop", DOCKER_CONTAINER_NAME])
                 .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-                .await;
+                .stderr(Stdio::piped());
+            hide_window(&mut cmd);
+            let _ = cmd.output().await;
         }
     } else {
-        let cli_stopped = Command::new("openclaw")
-            .args(["gateway", "stop"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await
-            .map(|o| o.status.success())
+        // Try to use resolved openclaw path first, fallback to bare command
+        let openclaw_path = super::get_openclaw_bin_path().ok();
+        let use_installed_binary = openclaw_path
+            .as_ref()
+            .map(|p| p.exists())
             .unwrap_or(false);
+
+        let cli_stopped = if use_installed_binary {
+            let mut cmd = Command::new(openclaw_path.unwrap());
+            cmd.args(["gateway", "stop"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            if let Some(new_path) = super::build_augmented_path() {
+                cmd.env("PATH", new_path);
+            }
+            hide_window(&mut cmd);
+            cmd.output()
+                .await
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        } else {
+            let mut cmd = Command::new("openclaw");
+            cmd.args(["gateway", "stop"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            if let Some(new_path) = super::build_augmented_path() {
+                cmd.env("PATH", new_path);
+            }
+            hide_window(&mut cmd);
+            cmd.output()
+                .await
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
 
         if !cli_stopped {
             #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -648,10 +728,16 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
 
             #[cfg(target_os = "windows")]
             {
-                let _ = Command::new("taskkill")
-                    .args(["/F", "/IM", "openclaw.exe"])
-                    .output()
-                    .await;
+                use std::os::windows::process::CommandExt;
+                let kill = |im: &'static str| async move {
+                    let mut cmd = Command::new("taskkill");
+                    cmd.args(["/F", "/IM", im]);
+                    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                    let _ = cmd.output().await;
+                };
+                kill("bun.exe").await;
+                kill("node.exe").await;
+                kill("openclaw.exe").await;
             }
         }
 
@@ -804,13 +890,51 @@ async fn ensure_gateway_bind_lan() {
     }
 }
 
-/// Check if Node.js is installed and meets version requirements.
+/// Check if bundled Bun or Node.js is installed and meets version requirements.
 #[tauri::command]
 pub async fn openclaw_check_dependencies() -> NodeCheckResult {
-    let output = Command::new("node")
-        .arg("--version")
-        .output()
-        .await;
+    // First try: bundled Bun
+    if let Some(bun_path) = super::resolve_bundled_bun() {
+        let mut cmd = tokio::process::Command::new(&bun_path);
+        cmd.arg("--version");
+        hide_window(&mut cmd);
+        let output = cmd.output().await;
+
+        if let Ok(output) = output {
+            if output.status.success() {
+                let version_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                // Bun returns version like "1.2.3", prepend "bun " for clarity
+                let version_with_runtime = format!("bun {}", version_output);
+                let version_str = version_output.trim_start_matches('v');
+
+                let major_version: Option<u32> = version_str
+                    .split('.')
+                    .next()
+                    .and_then(|v| v.parse().ok());
+
+                // Bun 1.0+ meets requirements
+                let meets_requirements = major_version.map(|v| v >= 1).unwrap_or(false);
+
+                return NodeCheckResult {
+                    installed: true,
+                    version: Some(version_with_runtime),
+                    major_version,
+                    meets_requirements,
+                    error: if !meets_requirements {
+                        Some(format!("Bun version {} is required, found {}", super::MIN_BUN_VERSION, version_str))
+                    } else {
+                        None
+                    },
+                };
+            }
+        }
+    }
+
+    // Fallback: check for Node.js
+    let mut node_cmd = Command::new("node");
+    node_cmd.arg("--version");
+    hide_window(&mut node_cmd);
+    let output = node_cmd.output().await;
 
     match output {
         Ok(output) => {
@@ -824,7 +948,7 @@ pub async fn openclaw_check_dependencies() -> NodeCheckResult {
                     .and_then(|v| v.parse().ok());
 
                 let meets_requirements = major_version
-                    .map(|v| v >= MIN_NODE_VERSION)
+                    .map(|v| v >= 22)
                     .unwrap_or(false);
 
                 let version_clone = version_output.clone();
@@ -834,7 +958,7 @@ pub async fn openclaw_check_dependencies() -> NodeCheckResult {
                     major_version,
                     meets_requirements,
                     error: if !meets_requirements {
-                        Some(format!("Node.js version {} is required, found {}", MIN_NODE_VERSION, version_str))
+                        Some(format!("Node.js version 22 is required, found {}", version_str))
                     } else {
                         None
                     },
@@ -845,7 +969,7 @@ pub async fn openclaw_check_dependencies() -> NodeCheckResult {
                     version: None,
                     major_version: None,
                     meets_requirements: false,
-                    error: Some("Node.js is not installed".to_string()),
+                    error: Some("Could not find a JavaScript runtime (Bun or Node.js)".to_string()),
                 }
             }
         }
@@ -855,7 +979,7 @@ pub async fn openclaw_check_dependencies() -> NodeCheckResult {
                 version: None,
                 major_version: None,
                 meets_requirements: false,
-                error: Some(format!("Failed to check Node.js: {}", e)),
+                error: Some(format!("Could not find a JavaScript runtime: {}", e)),
             }
         }
     }
@@ -906,11 +1030,10 @@ async fn check_openclaw_installed() -> Result<Option<String>, String> {
 
 /// Get OpenClaw version from inside the Docker container.
 async fn check_openclaw_version_docker() -> Option<String> {
-    let output = Command::new("docker")
-        .args(["exec", "jan-openclaw", "openclaw", "--version"])
-        .output()
-        .await
-        .ok()?;
+    let mut cmd = Command::new("docker");
+    cmd.args(["exec", "jan-openclaw", "openclaw", "--version"]);
+    hide_window(&mut cmd);
+    let output = cmd.output().await.ok()?;
 
     if output.status.success() {
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -922,11 +1045,10 @@ async fn check_openclaw_version_docker() -> Option<String> {
 
 /// Get Node.js version from inside the Docker container.
 async fn check_node_version_docker() -> Option<String> {
-    let output = Command::new("docker")
-        .args(["exec", "jan-openclaw", "node", "--version"])
-        .output()
-        .await
-        .ok()?;
+    let mut cmd = Command::new("docker");
+    cmd.args(["exec", "jan-openclaw", "node", "--version"]);
+    hide_window(&mut cmd);
+    let output = cmd.output().await.ok()?;
 
     if output.status.success() {
         let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -936,7 +1058,7 @@ async fn check_node_version_docker() -> Option<String> {
     }
 }
 
-/// Install OpenClaw globally via npm.
+/// Install OpenClaw globally via npm or bun.
 #[tauri::command]
 pub async fn openclaw_install() -> Result<InstallResult, String> {
     let already_installed = check_openclaw_installed().await.ok().flatten();
@@ -947,7 +1069,7 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
             return Ok(InstallResult {
                 success: false,
                 version: None,
-                error: node_check.error.or_else(|| Some("Node.js is required but not installed".to_string())),
+                error: node_check.error.or_else(|| Some("A JavaScript runtime (Bun or Node.js) is required but not found".to_string())),
             });
         }
 
@@ -955,22 +1077,44 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
             return Ok(InstallResult {
                 success: false,
                 version: None,
-                error: node_check.error.or_else(|| Some(format!("Node.js {} or higher is required", MIN_NODE_VERSION))),
+                error: node_check.error,
             });
         }
 
         let pinned_package = format!("{}@{}", OPENCLAW_PACKAGE_NAME, OPENCLAW_VERSION);
-        let child = Command::new("npm")
-            .args(["install", "-g", &pinned_package])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Failed to spawn npm: {}", e))?;
 
-        let output = child.wait_with_output().await.map_err(|e| format!("Failed to wait for npm: {}", e))?;
+        // Ensure node shim exists before install (openclaw scripts use #!/usr/bin/env node)
+        if let Err(e) = super::ensure_bun_node_shim() {
+            log::warn!("Failed to create node shim before install: {}", e);
+        }
+
+        // Try bundled Bun first, then fall back to npm
+        let output = if let Some(bun_path) = super::resolve_bundled_bun() {
+            // Use bundled Bun with custom install directory
+            let runtime_dir = super::get_openclaw_runtime_dir()?;
+            let mut cmd = tokio::process::Command::new(&bun_path);
+            cmd.args(["install", "-g", &pinned_package])
+                .env("BUN_INSTALL", runtime_dir.to_string_lossy().as_ref())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            hide_window(&mut cmd);
+            cmd.output()
+                .await
+                .map_err(|e| format!("Failed to run bun install: {}", e))?
+        } else {
+            // Fall back to npm
+            let mut cmd = Command::new("npm");
+            cmd.args(["install", "-g", &pinned_package])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            hide_window(&mut cmd);
+            cmd.output()
+                .await
+                .map_err(|e| format!("Failed to run npm install: {}", e))?
+        };
 
         if !output.status.success() {
-            // Parse npm error output for better error messages
+            // Parse error output for better error messages
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -981,12 +1125,12 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
                     OPENCLAW_PACKAGE_NAME
                 )
             } else if stderr.contains("EACCES") || stderr.contains("permission denied") {
-                "Permission denied. Try running with administrator privileges or use a Node version manager like nvm.".to_string()
+                "Permission denied. Try running with administrator privileges.".to_string()
             } else if stderr.contains("ENOTFOUND") || stderr.contains("network") {
                 "Network error. Please check your internet connection and try again.".to_string()
             } else {
                 format!(
-                    "npm install failed: {}",
+                    "Installation failed: {}",
                     if !stderr.is_empty() {
                         stderr.trim().to_string()
                     } else if !stdout.is_empty() {
@@ -1689,13 +1833,13 @@ pub async fn openclaw_enable(
 
     set_docker_mode(is_docker);
 
-    // Step 1b: Check Node.js dependencies (skip for Docker - runs inside container)
-    emit("checking_dependencies", 10, "Checking Node.js installation...", sandbox_info.as_deref());
+    // Step 1b: Check JS runtime dependencies (skip for Docker - runs inside container)
+    emit("checking_dependencies", 10, "Checking runtime installation...", sandbox_info.as_deref());
     steps_completed.push(EnableStep::CheckingDependencies);
 
     let _node_check = if is_docker {
-        // For Docker, Node.js runs inside container - no host check needed
-        log::info!("Docker sandbox detected - Node.js runs inside container, skipping host check");
+        // For Docker, runtime runs inside container - no host check needed
+        log::info!("Docker sandbox detected - runtime runs inside container, skipping host check");
         NodeCheckResult {
             installed: true, // Pretend it's installed to allow flow to continue
             version: None,
@@ -1704,34 +1848,34 @@ pub async fn openclaw_enable(
             error: None,
         }
     } else {
-        // For direct process, Node.js must be on host
+        // For direct process, a JS runtime (bundled Bun or Node.js) must be available
         let check = openclaw_check_dependencies().await;
         if !check.installed {
             return Err(serde_json::to_string(&EnableError {
-                code: EnableErrorCode::NodeNotFound,
-                message: "Node.js is not installed. OpenClaw requires Node.js 22+.".to_string(),
+                code: EnableErrorCode::RuntimeNotFound,
+                message: "Could not find a JavaScript runtime. Bundled Bun was not found, and Node.js 22+ is not installed.".to_string(),
                 recovery: vec![RecoveryOption {
-                    label: "Download Node.js".to_string(),
-                    action: RecoveryAction::OpenNodeDownload,
-                    description: "Opens the Node.js download page in your browser.".to_string(),
+                    label: "Retry".to_string(),
+                    action: RecoveryAction::Retry,
+                    description: "Try detecting the runtime again.".to_string(),
                 }],
             })
-            .unwrap_or_else(|_| "Node.js is not installed".to_string()));
+            .unwrap_or_else(|_| "JavaScript runtime not found".to_string()));
         }
         if !check.meets_requirements {
             return Err(serde_json::to_string(&EnableError {
-                code: EnableErrorCode::NodeVersionTooLow,
+                code: EnableErrorCode::RuntimeVersionTooLow,
                 message: format!(
-                    "Node.js 22+ required. Found: {}",
+                    "A compatible JavaScript runtime is required. Found: {}",
                     check.version.as_deref().unwrap_or("unknown")
                 ),
                 recovery: vec![RecoveryOption {
-                    label: "Download Node.js".to_string(),
-                    action: RecoveryAction::OpenNodeDownload,
-                    description: "Opens the Node.js download page to get the latest version.".to_string(),
+                    label: "Retry".to_string(),
+                    action: RecoveryAction::Retry,
+                    description: "Try detecting the runtime again.".to_string(),
                 }],
             })
-            .unwrap_or_else(|_| "Node.js version too low".to_string()));
+            .unwrap_or_else(|_| "JavaScript runtime version too low".to_string()));
         }
         check
     };
@@ -1757,10 +1901,10 @@ pub async fn openclaw_enable(
         }
         docker_exists
     } else {
-        // For non-Docker: check npm package on host
-        let npm_installed = check_openclaw_installed().await.ok().flatten().is_some();
-        log::info!("Installation check: npm={}, sandbox={}", npm_installed, sandbox_name);
-        npm_installed
+        // For non-Docker: check openclaw package on host
+        let pkg_installed = check_openclaw_installed().await.ok().flatten().is_some();
+        log::info!("Installation check: installed={}, sandbox={}", pkg_installed, sandbox_name);
+        pkg_installed
     };
 
     // Step 3: Install if needed
@@ -1794,47 +1938,47 @@ pub async fn openclaw_enable(
                         ));
                     }
 
-                    // Check Node.js (required for direct process)
+                    // Check runtime (bundled Bun or Node.js, required for direct process)
                     let node_check = openclaw_check_dependencies().await;
                     if !node_check.installed {
                         return Err(serde_json::to_string(&EnableError {
-                            code: EnableErrorCode::NodeNotFound,
+                            code: EnableErrorCode::RuntimeNotFound,
                             message: format!(
-                                "Docker image unavailable and Node.js is not installed. \
-                                 Original error: {}. Install Node.js 22+ for direct mode.",
+                                "Docker image unavailable and no JavaScript runtime found. \
+                                 Original error: {}. Bundled Bun was not found and Node.js 22+ is not installed.",
                                 e
                             ),
                             recovery: vec![RecoveryOption {
-                                label: "Download Node.js".to_string(),
-                                action: RecoveryAction::OpenNodeDownload,
-                                description: "Opens the Node.js download page in your browser.".to_string(),
+                                label: "Retry".to_string(),
+                                action: RecoveryAction::Retry,
+                                description: "Try detecting the runtime again.".to_string(),
                             }],
                         })
-                        .unwrap_or_else(|_| "Node.js is not installed".to_string()));
+                        .unwrap_or_else(|_| "No JavaScript runtime found".to_string()));
                     }
                     if !node_check.meets_requirements {
                         return Err(serde_json::to_string(&EnableError {
-                            code: EnableErrorCode::NodeVersionTooLow,
+                            code: EnableErrorCode::RuntimeVersionTooLow,
                             message: format!(
-                                "Docker image unavailable and Node.js version too low. \
-                                 Original error: {}. Node.js 22+ required.",
+                                "Docker image unavailable and runtime version too low. \
+                                 Original error: {}. Bun 1.0+ or Node.js 22+ required.",
                                 e
                             ),
                             recovery: vec![RecoveryOption {
-                                label: "Download Node.js".to_string(),
-                                action: RecoveryAction::OpenNodeDownload,
-                                description: "Opens the Node.js download page to get the latest version.".to_string(),
+                                label: "Retry".to_string(),
+                                action: RecoveryAction::Retry,
+                                description: "Try detecting the runtime again.".to_string(),
                             }],
                         })
-                        .unwrap_or_else(|_| "Node.js version too low".to_string()));
+                        .unwrap_or_else(|_| "Runtime version too low".to_string()));
                     }
 
-                    // Now do npm install
-                    emit("installing", 45, "Installing OpenClaw via npm...", sandbox_info.as_deref());
+                    // Now install via bun/npm
+                    emit("installing", 45, "Installing OpenClaw...", sandbox_info.as_deref());
                     let install_result = openclaw_install().await?;
                     if !install_result.success {
                         return Err(serde_json::to_string(&EnableError {
-                            code: EnableErrorCode::NpmInstallFailed,
+                            code: EnableErrorCode::InstallFailed,
                             message: install_result
                                 .error
                                 .unwrap_or_else(|| "npm install failed".to_string()),
@@ -1855,7 +1999,7 @@ pub async fn openclaw_enable(
             let install_result = openclaw_install().await?;
             if !install_result.success {
                 return Err(serde_json::to_string(&EnableError {
-                    code: EnableErrorCode::NpmInstallFailed,
+                    code: EnableErrorCode::InstallFailed,
                     message: install_result
                         .error
                         .unwrap_or_else(|| "npm install failed".to_string()),
@@ -1997,11 +2141,11 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
         openclaw_ensure_jan_origin().await?;
     }
 
-    // Node.js check (skip for Docker — runs inside container)
+    // Runtime check (skip for Docker — runs inside container)
     if !is_docker {
         let node_check = openclaw_check_dependencies().await;
         if !node_check.installed || !node_check.meets_requirements {
-            return Err(node_check.error.unwrap_or_else(|| "Node.js requirements not met".to_string()));
+            return Err(node_check.error.unwrap_or_else(|| "JavaScript runtime requirements not met (Bun or Node.js 22+)".to_string()));
         }
     }
 
@@ -2066,23 +2210,23 @@ pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClaw
     set_docker_mode(is_docker_sandbox);
 
     // 2. Check installation status using the detected sandbox type
-    let (openclaw_version, is_installed, node_version) = if is_docker_sandbox {
+    let (openclaw_version, is_installed, runtime_version) = if is_docker_sandbox {
         let version = check_openclaw_version_docker().await;
         let installed = crate::core::openclaw::sandbox_docker::DockerSandbox::is_image_available().await;
-        let node_ver = if running {
+        let runtime_ver = if running {
             check_node_version_docker().await
         } else {
             None
         };
-        (version, installed, node_ver)
+        (version, installed, runtime_ver)
     } else {
         let version = match check_openclaw_installed().await {
             Ok(v) => v,
             Err(_) => None,
         };
         let installed = version.is_some();
-        let node_check = openclaw_check_dependencies().await;
-        (version, installed, node_check.version)
+        let runtime_check = openclaw_check_dependencies().await;
+        (version, installed, runtime_check.version)
     };
 
     let port_check = openclaw_check_port(OPENCLAW_PORT).await;
@@ -2102,7 +2246,7 @@ pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClaw
     Ok(OpenClawStatus {
         installed: is_installed,
         running,
-        node_version,
+        runtime_version,
         openclaw_version,
         port_available: port_check.available,
         error: None,

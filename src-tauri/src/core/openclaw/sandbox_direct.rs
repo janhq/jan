@@ -6,6 +6,41 @@ use super::sandbox::{IsolationTier, Sandbox, SandboxConfig, SandboxHandle, Sandb
 /// This preserves the exact current behavior — no isolation.
 pub struct DirectProcessSandbox;
 
+/// Helper to build a command with resolved openclaw path and PATH injection.
+fn build_openclaw_command(args: &[&str], config_dir: &std::path::Path) -> tokio::process::Command {
+    // Try to use the installed openclaw binary in the runtime directory
+    let openclaw_path = super::get_openclaw_bin_path().ok();
+    let use_installed_binary = openclaw_path
+        .as_ref()
+        .map(|p| p.exists())
+        .unwrap_or(false);
+
+    let mut cmd = if use_installed_binary {
+        tokio::process::Command::new(openclaw_path.unwrap())
+    } else {
+        tokio::process::Command::new("openclaw")
+    };
+
+    cmd.args(args)
+        .current_dir(config_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    // Augment PATH with bundled Bun and runtime bin for shebang resolution
+    if let Some(new_path) = super::build_augmented_path() {
+        cmd.env("PATH", new_path);
+    }
+
+    // On Windows, prevent console window popups
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    cmd
+}
+
 #[async_trait::async_trait]
 impl Sandbox for DirectProcessSandbox {
     fn name(&self) -> &str {
@@ -21,25 +56,32 @@ impl Sandbox for DirectProcessSandbox {
     }
 
     async fn start(&self, config: &SandboxConfig) -> Result<SandboxHandle, String> {
-        // Ensure the gateway service is installed (registers launchd on macOS)
+        // Ensure node shim exists so `gateway install` hardcodes the correct runtime path.
+        // This is the most critical call site: the service plist/unit file generated here
+        // will contain the absolute path to `node` (resolved via #!/usr/bin/env node shebang).
+        // Our shim makes that resolve to bundled Bun instead of system Node.js.
+        if let Err(e) = super::ensure_bun_node_shim() {
+            log::warn!("Failed to ensure node shim before gateway install: {}", e);
+        }
+
+        // Ensure the gateway service is installed (registers launchd on macOS).
+        // Pass --runtime bun when bundled Bun is available so the service plist/unit
+        // hardcodes the bun binary path instead of resolving to system node.
         log::info!("DirectProcessSandbox: ensuring gateway service is installed");
-        if let Ok(mut install_child) = tokio::process::Command::new("openclaw")
-            .args(["gateway", "install"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-        {
+        let install_args = if super::resolve_bundled_bun().is_some() {
+            vec!["gateway", "install", "--runtime", "bun"]
+        } else {
+            vec!["gateway", "install"]
+        };
+        let mut install_cmd = build_openclaw_command(&install_args.iter().map(|s| *s).collect::<Vec<_>>(), &config.config_dir);
+        if let Ok(mut install_child) = install_cmd.spawn() {
             let _ = install_child.wait().await;
         }
 
         // Start OpenClaw gateway via CLI
         // 'openclaw gateway start' starts a daemon and exits immediately
         log::info!("DirectProcessSandbox: starting gateway service");
-        let mut cmd = tokio::process::Command::new("openclaw");
-        cmd.args(["gateway", "start"])
-            .current_dir(&config.config_dir)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        let mut cmd = build_openclaw_command(&["gateway", "start"], &config.config_dir);
 
         for (key, value) in &config.env_vars {
             cmd.env(key, value);
@@ -69,14 +111,11 @@ impl Sandbox for DirectProcessSandbox {
     async fn stop(&self, _handle: &mut SandboxHandle) -> Result<(), String> {
         log::info!("DirectProcessSandbox: stopping gateway");
 
-        // Try the clean CLI stop first
+        // Try the clean CLI stop first using resolved path
         let mut stopped_via_cli = false;
-        if let Ok(mut child) = tokio::process::Command::new("openclaw")
-            .args(["gateway", "stop"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-        {
+        let config_dir = super::get_openclaw_config_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let mut stop_cmd = build_openclaw_command(&["gateway", "stop"], &config_dir);
+        if let Ok(mut child) = stop_cmd.spawn() {
             if let Ok(status) = child.wait().await {
                 if status.success() {
                     log::info!("openclaw gateway stop command succeeded");
@@ -97,10 +136,17 @@ impl Sandbox for DirectProcessSandbox {
 
             #[cfg(target_os = "windows")]
             {
-                let _ = tokio::process::Command::new("taskkill")
-                    .args(["/F", "/IM", "openclaw.exe"])
-                    .output()
-                    .await;
+                use std::os::windows::process::CommandExt;
+                // Kill both bun.exe and node.exe processes running openclaw
+                let kill = |im: &'static str| async move {
+                    let mut cmd = tokio::process::Command::new("taskkill");
+                    cmd.args(["/F", "/IM", im]);
+                    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                    let _ = cmd.output().await;
+                };
+                kill("bun.exe").await;
+                kill("node.exe").await;
+                kill("openclaw.exe").await;
             }
         }
 
