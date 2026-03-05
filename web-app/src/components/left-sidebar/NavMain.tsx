@@ -29,11 +29,17 @@ import {
   type SettingsIconHandle,
 } from '@/components/animated-icon/settings'
 import { BlocksIcon, type BlocksIconHandle } from '../animated-icon/blocks'
+import {
+  BotIcon,
+  type BotIconHandle,
+} from '@/components/animated-icon/bot'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { SearchDialog } from '@/containers/dialogs/SearchDialog'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useSearchDialog } from '@/hooks/useSearchDialog'
 import { useProjectDialog } from '@/hooks/useProjectDialog'
+import { useAgentMode } from '@/hooks/useAgentMode'
+import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 
 type AnimatedIconHandle =
   | SearchIconHandle
@@ -41,6 +47,7 @@ type AnimatedIconHandle =
   | MessageCircleIconHandle
   | SettingsIconHandle
   | BlocksIconHandle
+  | BotIconHandle
 
 type NavMainItem = {
   title: string
@@ -59,18 +66,33 @@ type NavMainItem = {
 
 const getNavMainItems = (
   onNewProject: () => void,
-  onSearch: () => void
+  onSearch: () => void,
+  onNewChat: () => void,
+  onJanClaw: () => void
 ): NavMainItem[] => [
   {
     title: 'common:newChat',
-    url: route.home,
     animatedIcon: MessageCircleIcon,
+    onClick: onNewChat,
     shortcut: (
       <KbdGroup className="ml-auto scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
         <Kbd className="bg-transparent size-3">N</Kbd>
+      </KbdGroup>
+    ),
+  },
+  {
+    title: 'New Agent Chat',
+    animatedIcon: BotIcon,
+    onClick: onJanClaw,
+    shortcut: (
+      <KbdGroup className="ml-auto scale-90 gap-0">
+        <Kbd className="bg-transparent size-3">
+          <PlatformMetaKey />
+        </Kbd>
+        <Kbd className="bg-transparent size-3">M</Kbd>
       </KbdGroup>
     ),
   },
@@ -83,7 +105,7 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3">P</Kbd>
+        <Kbd className="bg-transparent size-3">L</Kbd>
       </KbdGroup>
     ),
   },
@@ -155,7 +177,15 @@ export function NavMain() {
 
   const navMainItems = getNavMainItems(
     () => setProjectDialogOpen(true),
-    () => setSearchOpen(true)
+    () => setSearchOpen(true),
+    () => {
+      useAgentMode.getState().removeThread(TEMPORARY_CHAT_ID)
+      navigate({ to: route.home })
+    },
+    () => {
+      useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
+      navigate({ to: route.home })
+    }
   )
 
   const handleCreateProject = async (name: string, assistantId?: string) => {
