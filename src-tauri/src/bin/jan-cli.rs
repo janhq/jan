@@ -59,8 +59,8 @@ enum Commands {
     /// Start a local model, then launch an AI agent with it pre-wired (env vars set automatically)
     #[command(display_order = 2)]
     Launch {
-        /// Agent or program to run after the model is ready (e.g. claude, codex, openclaw)
-        /// Omit to pick interactively from: claude, codex, openclaw
+        /// Agent or program to run after the model is ready (e.g. claude, openclaw)
+        /// Omit to pick interactively from: claude, openclaw
         program: Option<String>,
         /// Arguments forwarded to the program
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -89,6 +89,9 @@ enum Commands {
         /// Print full server logs (llama.cpp / mlx output) instead of the loading spinner
         #[arg(long, short = 'v', default_value_t = false)]
         verbose: bool,
+        /// When downloading a model, show quantization selection list
+        #[arg(long, default_value_t = false)]
+        select: bool,
     },
     /// List and inspect conversation threads saved by the Jan app
     #[command(display_order = 10)]
@@ -162,7 +165,7 @@ struct ServeArgs {
     #[arg(long, default_value_t = -1)]
     n_gpu_layers: i32,
     /// Context window size in tokens (0 = model default)
-    #[arg(long, default_value_t = 4096)]
+    #[arg(long, default_value_t = 32768)]
     ctx_size: i32,
     /// Auto-fit context to available VRAM, maximising the context window
     #[arg(long, default_value_t = false)]
@@ -182,6 +185,9 @@ struct ServeArgs {
     /// Print full server logs (llama.cpp / mlx output) instead of the loading spinner
     #[arg(long, short = 'v', default_value_t = false)]
     verbose: bool,
+    /// When downloading a model, show quantization selection list
+    #[arg(long, default_value_t = false)]
+    select: bool,
 }
 
 // ── Models subcommands ─────────────────────────────────────────────────────
@@ -240,7 +246,7 @@ enum AppCommands {
 
 // ── ASCII logo ─────────────────────────────────────────────────────────────
 
-/// Build a centered, bright-yellow ASCII logo for the help header.
+/// Build a left-aligned, bright-yellow ASCII logo for the help header.
 fn make_logo() -> String {
     // "JAN" in ANSI Shadow block letters
     let lines = [
@@ -252,28 +258,21 @@ fn make_logo() -> String {
         r" ╚════╝ ╚═╝  ╚═╝╚═╝  ╚══╝",
     ];
 
-    let art_width: usize = 26; // visual columns of the widest line
-    let term_cols = console::Term::stdout().size().1 as usize;
-    let pad = (term_cols.saturating_sub(art_width)) / 2;
-    let indent = " ".repeat(pad);
+    // Fixed left-aligned indent (2 spaces)
+    let indent = "  ";
 
     let yellow = Style::new().yellow().bold();
 
-    let mut out: Vec<String> = lines
-        .iter()
-        .map(|l| format!("{}{}", indent, yellow.apply_to(l)))
-        .collect();
+    let mut out: Vec<String> = Vec::new();
 
-    // Tagline beneath the wordmark
-    let tagline = "Your models · Your hardware · Your rules";
-    let tpad = (term_cols.saturating_sub(tagline.len())) / 2;
+    // Add padding at top
     out.push(String::new());
-    out.push(format!(
-        "{}{}",
-        " ".repeat(tpad),
-        Style::new().dim().apply_to(tagline)
-    ));
     out.push(String::new());
+
+    // Logo lines
+    for l in &lines {
+        out.push(format!("{}{}", indent, yellow.apply_to(l)));
+    }
 
     out.join("\n")
 }
@@ -303,10 +302,10 @@ async fn main() {
         Commands::Models { cmd } => handle_models(cmd).await,
         Commands::App { cmd } => handle_app(cmd),
         Commands::Serve { args } => handle_serve(args).await,
-        Commands::Launch { program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size, fit, verbose } => {
+        Commands::Launch { program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size, fit, verbose, select } => {
             let program = program.unwrap_or_else(select_program_interactively);
-            let ctx_size_val = ctx_size.unwrap_or(4096);
-            handle_launch(program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size_val, fit, ctx_size.is_none(), verbose).await
+            let ctx_size_val = ctx_size.unwrap_or(32768);
+            handle_launch(program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size_val, fit, ctx_size.is_none(), verbose, select).await
         }
     }
 }
@@ -482,7 +481,10 @@ fn start_progress(verbose: bool, msg: impl Into<String>) -> Option<ProgressBar> 
 /// Finish the spinner with a final message, or print the message plainly in verbose mode.
 fn finish_progress(pb: Option<ProgressBar>, msg: impl AsRef<str>) {
     match pb {
-        Some(pb) => pb.finish_with_message(msg.as_ref().to_string()),
+        Some(pb) => {
+            pb.finish_and_clear();
+            eprintln!("{}", msg.as_ref());
+        }
         None => eprintln!("{}", msg.as_ref()),
     }
 }
@@ -535,7 +537,7 @@ fn pick_hf_file(files: &[HfFileInfo]) -> &HfFileInfo {
 /// and return the local model ID ready to load.
 ///
 /// Exits the process on any unrecoverable error.
-async fn auto_download_hf_model(repo_id: &str) -> String {
+async fn auto_download_hf_model(repo_id: &str, select_quantization: bool) -> String {
     let token = hf_token();
     let tok_ref = token.as_deref();
 
@@ -550,8 +552,17 @@ async fn auto_download_hf_model(repo_id: &str) -> String {
         });
     fetch_pb.finish_and_clear();
 
-    // Let the user pick which quantization to download
-    let chosen = pick_hf_file(&files);
+    // Select quantization: show picker if select_quantization is true, otherwise auto-pick Q4_K_XL
+    let chosen = if select_quantization {
+        pick_hf_file(&files)
+    } else {
+        files
+            .iter()
+            .find(|f| f.filename.contains("Q4_K_XL"))
+            .unwrap_or_else(|| {
+                files.iter().max_by_key(|f| f.size).unwrap()
+            })
+    };
     eprintln!("  Downloading  {}", chosen.filename);
     eprintln!("  Size         {}", fmt_bytes(chosen.size));
     eprintln!();
@@ -585,30 +596,62 @@ async fn auto_download_hf_model(repo_id: &str) -> String {
 
 // ── Interactive pickers ────────────────────────────────────────────────────
 
-/// Present an interactive menu for the three supported AI agents.
+/// Present an interactive menu for the supported AI agents.
 fn select_program_interactively() -> String {
     const CHOICES: &[(&str, &str)] = &[
         ("claude",   "Claude Code  — Anthropic's AI coding agent"),
-        ("codex",    "Codex CLI    — OpenAI's coding agent"),
         ("openclaw", "OpenClaw     — Open-source autonomous AI agent"),
     ];
 
-    let labels: Vec<String> = CHOICES
+    println!();
+    let header = Style::new().cyan().bold().apply_to("━━━ Select Agent ━━━");
+    println!("{}", header);
+    println!();
+
+    let installed: Vec<bool> = CHOICES
         .iter()
-        .map(|(_, desc)| desc.to_string())
+        .map(|(key, _)| {
+            is_command_installed(key) || (*key == "openclaw" && is_command_installed("opencode"))
+        })
         .collect();
 
-    let idx = dialoguer::Select::new()
-        .with_prompt("Select an agent to launch")
-        .items(&labels)
-        .default(0)
-        .interact()
-        .unwrap_or_else(|_| std::process::exit(1));
+    if !installed.iter().any(|&i| i) {
+        eprintln!("  No supported agents are installed.");
+        eprintln!("  Install Claude Code: npm install -g @anthropic-ai/claude-code");
+        eprintln!("  Install OpenClaw:    curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard");
+        std::process::exit(1);
+    }
 
-    CHOICES[idx].0.to_string()
+    let labels: Vec<String> = CHOICES
+        .iter()
+        .zip(installed.iter())
+        .map(|((_, desc), &ok)| {
+            if ok {
+                desc.to_string()
+            } else {
+                format!("{} {}", Style::new().dim().apply_to(desc), Style::new().dim().apply_to("[not installed]"))
+            }
+        })
+        .collect();
+
+    // Keep re-prompting until the user picks an installed agent
+    loop {
+        let idx = dialoguer::Select::new()
+            .with_prompt("Choose an agent to launch")
+            .items(&labels)
+            .default(0)
+            .interact()
+            .unwrap_or_else(|_| std::process::exit(1));
+
+        if installed[idx] {
+            return CHOICES[idx].0.to_string();
+        }
+
+        eprintln!("  {} is not installed. Please choose an installed agent.", CHOICES[idx].1);
+    }
 }
 
-fn select_model_interactively() -> String {
+async fn select_model_interactively(select_quantization: bool) -> String {
     let mut all: Vec<(String, String)> = Vec::new(); // (id, engine)
     for engine in &["llamacpp", "mlx"] {
         for (id, _) in list_models(engine) {
@@ -617,23 +660,69 @@ fn select_model_interactively() -> String {
     }
 
     if all.is_empty() {
-        eprintln!("No models found. Download a model from the Jan app first.");
-        std::process::exit(1);
+        let default_model = "janhq/Jan-v3-4B-base-instruct-gguf";
+        println!();
+        let msg = Style::new().yellow().apply_to(
+            "No models found. Downloading default model..."
+        );
+        println!("{}", msg);
+        println!();
+        println!("  {} {}", Style::new().dim().apply_to("Model:"), default_model);
+        println!();
+
+        // Auto-download the default model
+        let model_id = auto_download_hf_model(default_model, select_quantization).await;
+        return model_id;
     }
 
-    let labels: Vec<String> = all
+    println!();
+    let header = Style::new().cyan().bold().apply_to("━━━ Select Model ━━━");
+    println!("{}", header);
+    println!();
+
+    // Group by engine for better display
+    let mut llamacpp_models: Vec<&String> = Vec::new();
+    let mut mlx_models: Vec<&String> = Vec::new();
+
+    for (id, engine) in &all {
+        match engine.as_str() {
+            "llamacpp" => llamacpp_models.push(id),
+            "mlx" => mlx_models.push(id),
+            _ => {}
+        }
+    }
+
+    // Build selection list with engine indicator next to model name
+    let selection_items: Vec<(usize, String)> = all
         .iter()
-        .map(|(id, engine)| format!("{} ({})", id, engine))
+        .enumerate()
+        .map(|(i, (id, engine))| {
+            let indicator = match engine.as_str() {
+                "llamacpp" => Style::new().green().apply_to("[LlamaCPP]"),
+                "mlx" => Style::new().magenta().apply_to("[MLX]"),
+                _ => Style::new().dim().apply_to("[---]"),
+            };
+            (i, format!("{} {}", id, indicator))
+        })
         .collect();
 
+    // If only one model, skip interactive selection
+    if selection_items.len() == 1 {
+        println!("  Using model: {}", selection_items[0].1);
+        println!();
+        return all[selection_items[0].0].0.clone();
+    }
+
+    let labels: Vec<String> = selection_items.iter().map(|(_, label)| label.clone()).collect();
+
     let selection = dialoguer::Select::new()
-        .with_prompt("Select a model")
+        .with_prompt("Choose a model")
         .items(&labels)
         .default(0)
         .interact()
         .unwrap_or_else(|_| std::process::exit(1));
 
-    all[selection].0.clone()
+    all[selection_items[selection].0].0.clone()
 }
 
 // ── Detached spawn ─────────────────────────────────────────────────────────
@@ -722,7 +811,7 @@ async fn handle_serve(args: ServeArgs) {
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "model".to_string())
             } else {
-                select_model_interactively()
+                select_model_interactively(args.select).await
             }
         }
     };
@@ -748,6 +837,7 @@ async fn handle_serve(args: ServeArgs) {
         detach: _,
         log: _,
         verbose,
+        select,
     } = args;
 
     // When --fit is on, let llama.cpp decide the context size automatically
@@ -769,7 +859,7 @@ async fn handle_serve(args: ServeArgs) {
             }
             Err(_) if looks_like_hf_repo(&model_id) => {
                 // Looks like a HuggingFace repo ID — download then resolve.
-                auto_download_hf_model(&model_id).await;
+                auto_download_hf_model(&model_id, args.select).await;
                 match resolve_model_engine(&model_id) {
                     Ok((eng, mp, mmp)) => (
                         eng,
@@ -922,6 +1012,18 @@ fn kill_process(pid: i32) {
     }
 }
 
+// ── Agent installer ─────────────────────────────────────────────────────────
+
+/// Check if a command is available in PATH
+fn is_command_installed(cmd: &str) -> bool {
+    let which = if cfg!(windows) { "where" } else { "which" };
+    std::process::Command::new(which)
+        .arg(cmd)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 // ── Launch handler ─────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
@@ -937,8 +1039,11 @@ async fn handle_launch(
     fit: Option<bool>,
     ctx_size_is_default: bool,
     verbose: bool,
+    select: bool,
 ) {
-    let model_id = model.unwrap_or_else(select_model_interactively);
+    let model_id = model.unwrap_or_else(|| -> String {
+        futures::executor::block_on(select_model_interactively(select))
+    });
 
     // Detect known agents early so we can set fit default before starting the server.
     let prog_name = std::path::Path::new(&program)
@@ -990,11 +1095,29 @@ async fn handle_launch(
         eprintln!("  ANTHROPIC_DEFAULT_HAIKU_MODEL={model_id}");
     }
     eprintln!();
-    eprintln!("  → Launching: {program} {}", program_args.join(" "));
+    let launch_cmd = if is_openclaw {
+        format!("npx openclaw {}", program_args.join(" "))
+    } else {
+        format!("{} {}", program, program_args.join(" "))
+    };
+    eprintln!("  → Launching: {}", launch_cmd);
     eprintln!();
 
-    let mut cmd = std::process::Command::new(&program);
-    cmd.args(&program_args);
+    // For openclaw, use npx if not installed locally
+    let (cmd_program, cmd_args) = if is_openclaw {
+        if is_command_installed("openclaw") {
+            (program.clone(), program_args.clone())
+        } else {
+            let mut args = vec!["openclaw".to_string()];
+            args.extend(program_args.clone());
+            ("npx".to_string(), args)
+        }
+    } else {
+        (program.clone(), program_args.clone())
+    };
+
+    let mut cmd = std::process::Command::new(&cmd_program);
+    cmd.args(&cmd_args);
     if is_openclaw {
         // Clear any provider API keys that could override openclaw's config
         for var in &[
@@ -1104,7 +1227,7 @@ async fn start_model_server(
     let (engine, model_path, mmproj) = match resolve_model_engine(model_id) {
         Ok(r) => r,
         Err(_) if looks_like_hf_repo(model_id) => {
-            auto_download_hf_model(model_id).await;
+            auto_download_hf_model(model_id, false).await;
             match resolve_model_engine(model_id) {
                 Ok(r) => r,
                 Err(e) => { eprintln!("Error after download: {e}"); std::process::exit(1); }

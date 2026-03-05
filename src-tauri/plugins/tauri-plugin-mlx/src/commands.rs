@@ -76,10 +76,7 @@ pub async fn load_mlx_model_impl(
     let api_key: String = envs
         .get("MLX_API_KEY")
         .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            log::warn!("API key not provided for MLX server");
-            String::new()
-        });
+        .unwrap_or_default();
 
     // Build command arguments
     let mut args: Vec<String> = vec![
