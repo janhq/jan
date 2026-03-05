@@ -165,7 +165,7 @@ struct ServeArgs {
     #[arg(long, default_value_t = -1)]
     n_gpu_layers: i32,
     /// Context window size in tokens (0 = model default)
-    #[arg(long, default_value_t = 4096)]
+    #[arg(long, default_value_t = 32768)]
     ctx_size: i32,
     /// Auto-fit context to available VRAM, maximising the context window
     #[arg(long, default_value_t = false)]
@@ -304,7 +304,7 @@ async fn main() {
         Commands::Serve { args } => handle_serve(args).await,
         Commands::Launch { program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size, fit, verbose, select } => {
             let program = program.unwrap_or_else(select_program_interactively);
-            let ctx_size_val = ctx_size.unwrap_or(4096);
+            let ctx_size_val = ctx_size.unwrap_or(32768);
             handle_launch(program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size_val, fit, ctx_size.is_none(), verbose, select).await
         }
     }
