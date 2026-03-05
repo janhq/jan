@@ -32,6 +32,7 @@ import {
   IconBrandChrome,
   IconUser,
 } from '@tabler/icons-react'
+import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -86,6 +87,8 @@ import {
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
+import { useAgentMode } from '@/hooks/useAgentMode'
+import { isOpenClawRunning } from '@/utils/openclaw'
 
 type ChatInputProps = {
   className?: string
@@ -139,6 +142,23 @@ const ChatInput = memo(function ChatInput({
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
   const assistants = useAssistant((state) => state.assistants)
+
+  // Agent mode (OpenClaw)
+  // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
+  const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
+  const [openClawAvailable, setOpenClawAvailable] = useState(false)
+  const isAgentMode = useAgentMode((state) =>
+    state.agentThreads[agentModeKey] === true
+  )
+  const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
+
+  useEffect(() => {
+    isOpenClawRunning().then(setOpenClawAvailable)
+  }, [currentThreadId])
+
+  const handleAgentToggle = useCallback(() => {
+    toggleAgentMode(agentModeKey)
+  }, [agentModeKey, toggleAgentMode])
 
   // Get current thread messages for token counting
   const threadMessages = useMessages(
@@ -373,6 +393,11 @@ const ChatInput = memo(function ChatInput({
           JSON.stringify(messagePayload)
         )
         sessionStorage.setItem('temp-chat-nav', 'true')
+        // Transfer agent mode from home screen to temporary thread
+        if (isAgentMode && agentModeKey !== TEMPORARY_CHAT_ID) {
+          useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
+          useAgentMode.getState().removeThread(agentModeKey)
+        }
         router.navigate({
           to: route.threadsDetail,
           params: { threadId: TEMPORARY_CHAT_ID },
@@ -420,6 +445,12 @@ const ChatInput = memo(function ChatInput({
 
         // Clear selected assistant after creating thread
         setSelectedAssistant(undefined)
+
+        // Transfer agent mode from home screen to the new thread
+        if (isAgentMode) {
+          useAgentMode.getState().setAgentMode(newThread.id, true)
+          useAgentMode.getState().removeThread(agentModeKey)
+        }
 
         // Store the initial message for the new thread
         sessionStorage.setItem(
@@ -1535,7 +1566,8 @@ const ChatInput = memo(function ChatInput({
                   isStreaming && 'opacity-50 pointer-events-none'
                 )}
               >
-                {/* Dropdown for attachments */}
+                {/* Dropdown for attachments — hidden in agent mode */}
+                {!isAgentMode && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="secondary" size="icon-sm" className='rounded-full mr-2 mb-1'>
@@ -1645,6 +1677,7 @@ const ChatInput = memo(function ChatInput({
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
+                )}
                 {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
                 ) : (
@@ -1653,7 +1686,7 @@ const ChatInput = memo(function ChatInput({
                     useLastUsedModel={initialMessage}
                   />
                 )} */}
-                {hasJanBrowserMCPConfig && modelSupportsBrowser && (
+                {!isAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1695,7 +1728,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {selectedModel?.capabilities?.includes('embeddings') && (
+                {!isAgentMode && selectedModel?.capabilities?.includes('embeddings') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1714,7 +1747,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {selectedModel?.capabilities?.includes('tools') &&
+                {!isAgentMode && selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
                     // Use custom MCP component
@@ -1779,7 +1812,36 @@ const ChatInput = memo(function ChatInput({
                     </Tooltip>
                   ))}
 
-                {selectedModel?.capabilities?.includes('web_search') && (
+                {openClawAvailable && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant={isAgentMode ? "default" : "ghost"}
+                        size="icon-xs"
+                        onClick={handleAgentToggle}
+                        className={cn(
+                          isAgentMode && 'text-primary bg-primary/10 hover:bg-primary/10 items-center'
+                        )}
+                      >
+                        <BotIcon
+                          className={cn(
+                            'text-muted-foreground -mt-0.5',
+                            isAgentMode && 'text-primary'
+                          )}
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {isAgentMode
+                          ? 'Agent mode active'
+                          : 'Enable agent mode'}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+                {!isAgentMode && selectedModel?.capabilities?.includes('web_search') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon-xs">
@@ -1795,7 +1857,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {selectedModel?.capabilities?.includes('reasoning') && (
+                {!isAgentMode && selectedModel?.capabilities?.includes('reasoning') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon-xs">

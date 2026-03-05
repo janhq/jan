@@ -149,6 +149,8 @@ pub fn run() {
         core::openclaw::commands::openclaw_install,
         core::openclaw::commands::openclaw_configure,
         core::openclaw::commands::openclaw_get_config,
+        core::openclaw::commands::openclaw_get_auth_token,
+        core::openclaw::commands::openclaw_ensure_http_api,
         core::openclaw::commands::openclaw_sync_model,
         core::openclaw::commands::openclaw_sync_all_models,
         core::openclaw::commands::openclaw_get_model,
@@ -182,11 +184,6 @@ pub fn run() {
         core::openclaw::commands::whatsapp_get_config,
         core::openclaw::commands::whatsapp_get_contacts,
         core::openclaw::commands::whatsapp_disconnect,
-        // Discord commands
-        core::openclaw::commands::discord_validate_token,
-        core::openclaw::commands::discord_configure,
-        core::openclaw::commands::discord_get_config,
-        core::openclaw::commands::discord_disconnect,
         // Tailscale commands
         core::openclaw::commands::tailscale_detect,
         core::openclaw::commands::tailscale_get_status,

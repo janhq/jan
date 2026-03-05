@@ -32,7 +32,7 @@ pub async fn start_openclaw(
     state: &OpenClawState,
 ) -> Result<(), String> {
     ensure_secure_config_permissions(&config.config_dir).await?;
-    patch_config_for_sandbox(sandbox, &config.config_dir)?;
+    let _ = patch_config_for_sandbox(sandbox, &config.config_dir)?;
     let handle = sandbox.start(config).await?;
     wait_for_port(config.port, Duration::from_secs(30)).await?;
     let mut mode = state.sandbox_mode.lock().await;
@@ -59,10 +59,7 @@ pub async fn stop_openclaw(
             sandbox.stop(handle).await?;
         }
         SandboxMode::Inactive => {
-            // Mode is Inactive but the gateway may still be running (e.g. mode was
-            // reset by a status check). Always attempt to stop via a dummy handle.
             if is_port_in_use(OPENCLAW_PORT).await {
-                log::info!("Gateway still on port {}, stopping via sandbox", OPENCLAW_PORT);
                 let mut dummy = super::sandbox::SandboxHandle::Named("stop-fallback".to_string());
                 sandbox.stop(&mut dummy).await?;
             }
@@ -140,13 +137,14 @@ pub async fn is_port_in_use(port: u16) -> bool {
         .is_ok()
 }
 
-/// Patch OpenClaw config for the sandbox type (bind mode and API baseUrl).
-pub fn patch_config_for_sandbox(sandbox: &dyn Sandbox, config_dir: &Path) -> Result<(), String> {
+/// Patch OpenClaw config for the active sandbox: bind mode, Jan API baseUrl,
+/// agent paths, and agent model URLs. Returns `true` if config was modified.
+pub fn patch_config_for_sandbox(sandbox: &dyn Sandbox, config_dir: &Path) -> Result<bool, String> {
     use super::constants;
 
     let config_path = config_dir.join("openclaw.json");
     if !config_path.exists() {
-        return Ok(());
+        return Ok(false);
     }
 
     let content = std::fs::read_to_string(&config_path)
@@ -155,40 +153,61 @@ pub fn patch_config_for_sandbox(sandbox: &dyn Sandbox, config_dir: &Path) -> Res
     let mut config: serde_json::Value = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse config: {}", e))?;
 
-    let (target_base_url, target_bind) = match sandbox.isolation_tier() {
-        IsolationTier::FullContainer => {
-            (constants::DOCKER_JAN_BASE_URL, constants::DOCKER_BIND_MODE)
-        }
-        IsolationTier::PlatformSandbox | IsolationTier::None => {
-            (constants::DEFAULT_JAN_BASE_URL, constants::DEFAULT_BIND_MODE)
-        }
-    };
-
     let mut modified = false;
 
-    if let Some(bind) = config.pointer_mut("/gateway/bind") {
-        if bind.as_str() != Some(target_bind) {
-            *bind = serde_json::json!(target_bind);
-            modified = true;
+    match sandbox.isolation_tier() {
+        IsolationTier::FullContainer => {
+            if let Some(bind) = config.pointer_mut("/gateway/bind") {
+                if bind.as_str() != Some(constants::GATEWAY_BIND_MODE) {
+                    *bind = serde_json::json!(constants::GATEWAY_BIND_MODE);
+                    modified = true;
+                }
+            }
+            if let Some(base_url) = config.pointer_mut("/models/providers/jan/baseUrl") {
+                if base_url.as_str() != Some(constants::DOCKER_JAN_BASE_URL) {
+                    *base_url = serde_json::json!(constants::DOCKER_JAN_BASE_URL);
+                    modified = true;
+                }
+            }
+        }
+        IsolationTier::PlatformSandbox | IsolationTier::None => {
+            if let Some(base_url) = config.pointer_mut("/models/providers/jan/baseUrl") {
+                if base_url.as_str() != Some(constants::DEFAULT_JAN_BASE_URL) {
+                    *base_url = serde_json::json!(constants::DEFAULT_JAN_BASE_URL);
+                    modified = true;
+                }
+            }
         }
     }
 
-    if let Some(base_url) = config.pointer_mut("/models/providers/jan/baseUrl") {
-        if base_url.as_str() != Some(target_base_url) {
-            *base_url = serde_json::json!(target_base_url);
-            modified = true;
-        }
-    }
+    // Rewrite cross-mode agent paths (Docker ↔ host)
+    let config_dir_str = config_dir.to_string_lossy();
+    let docker_prefix = "/home/node/.openclaw/";
+    let is_docker = matches!(sandbox.isolation_tier(), IsolationTier::FullContainer);
 
-    // Patch WhatsApp authDir — host paths don't exist inside Docker and vice versa
-    let target_wa_auth_dir = match sandbox.isolation_tier() {
-        IsolationTier::FullContainer => "/home/node/.openclaw/whatsapp_auth".to_string(),
-        _ => config_dir.join("whatsapp_auth").to_string_lossy().into_owned(),
-    };
-    if let Some(auth_dir) = config.pointer_mut("/channels/whatsapp/accounts/default/authDir") {
-        if auth_dir.as_str() != Some(&target_wa_auth_dir) {
-            *auth_dir = serde_json::json!(target_wa_auth_dir);
-            modified = true;
+    if let Some(agents_list) = config.pointer_mut("/agents/list") {
+        if let Some(arr) = agents_list.as_array_mut() {
+            for agent in arr.iter_mut() {
+                for field in &["workspace", "agentDir"] {
+                    if let Some(val) = agent.get_mut(*field) {
+                        if let Some(s) = val.as_str() {
+                            if is_docker && !s.starts_with(docker_prefix) && s.contains("/.openclaw/") {
+                                if let Some(pos) = s.find("/.openclaw/") {
+                                    let suffix = &s[pos + "/.openclaw/".len()..];
+                                    let new_path = format!("{}{}", docker_prefix, suffix);
+                                    *val = serde_json::json!(new_path);
+                                    modified = true;
+                                }
+                            } else if !is_docker && s.starts_with(docker_prefix) {
+                                let suffix = &s[docker_prefix.len()..];
+                                let new_path = format!("{}/{}", config_dir_str, suffix);
+                                *val = serde_json::json!(new_path);
+                                modified = true;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -200,5 +219,52 @@ pub fn patch_config_for_sandbox(sandbox: &dyn Sandbox, config_dir: &Path) -> Res
         log::info!("Patched config for {} sandbox", sandbox.name());
     }
 
-    Ok(())
+    // Fix agent models.json baseUrl for current sandbox mode
+    let target_base_url = if is_docker {
+        constants::DOCKER_JAN_BASE_URL
+    } else {
+        constants::DEFAULT_JAN_BASE_URL
+    };
+    let wrong_base_url = if is_docker {
+        constants::DEFAULT_JAN_BASE_URL
+    } else {
+        constants::DOCKER_JAN_BASE_URL
+    };
+    patch_agent_models_base_url(config_dir, target_base_url, wrong_base_url);
+
+    Ok(modified)
+}
+
+/// Patch baseUrl in all `agents/*/agent/models.json` files for the current sandbox mode.
+fn patch_agent_models_base_url(config_dir: &Path, target_url: &str, wrong_url: &str) {
+    let agents_dir = config_dir.join("agents");
+    if !agents_dir.exists() {
+        return;
+    }
+
+    let entries = match std::fs::read_dir(&agents_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let models_path = entry.path().join("agent").join("models.json");
+        if !models_path.exists() {
+            continue;
+        }
+
+        let content = match std::fs::read_to_string(&models_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        if !content.contains(wrong_url) {
+            continue;
+        }
+
+        let updated = content.replace(wrong_url, target_url);
+        if let Err(e) = std::fs::write(&models_path, &updated) {
+            log::warn!("Failed to patch {}: {}", models_path.display(), e);
+        }
+    }
 }

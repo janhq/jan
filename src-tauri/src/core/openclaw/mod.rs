@@ -19,6 +19,7 @@ pub mod tailscale;
 pub mod tunnels;
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
@@ -26,10 +27,25 @@ use tokio::sync::Mutex;
 use sandbox::{Sandbox, SandboxMode};
 use tunnels::TunnelState;
 
-/// OpenClaw configuration directory
+/// When true, config dir resolves to `~/.openclaw/sandbox/docker/` instead of `~/.openclaw/`.
+static DOCKER_MODE_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+pub fn set_docker_mode(active: bool) {
+    DOCKER_MODE_ACTIVE.store(active, Ordering::SeqCst);
+}
+
+pub fn is_docker_mode() -> bool {
+    DOCKER_MODE_ACTIVE.load(Ordering::SeqCst)
+}
+
+/// OpenClaw configuration directory, isolated per sandbox mode.
 pub fn get_openclaw_config_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let config_dir = home.join(".openclaw");
+    let config_dir = if is_docker_mode() {
+        home.join(".openclaw").join("sandbox").join("docker")
+    } else {
+        home.join(".openclaw")
+    };
     if !config_dir.exists() {
         std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
     }

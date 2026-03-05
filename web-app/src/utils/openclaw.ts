@@ -1,4 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
+import { useAgentMode } from '@/hooks/useAgentMode'
+
+/** OpenClaw gateway base URL for the OpenAI-compatible HTTP API. */
+export const OPENCLAW_GATEWAY_URL = 'http://127.0.0.1:18789/v1'
 
 let openClawRunningCache: boolean | null = null
 let lastCheckTime = 0
@@ -27,6 +31,11 @@ export async function isOpenClawRunning(forceRefresh = false): Promise<boolean> 
 export function setOpenClawRunningState(isRunning: boolean): void {
   openClawRunningCache = isRunning
   lastCheckTime = Date.now()
+
+  // When OpenClaw is stopped, clear agent mode for all threads so the UI reverts
+  if (!isRunning) {
+    useAgentMode.getState().clearAll()
+  }
 }
 
 /** Clear the cache (e.g., on app startup). */
@@ -106,6 +115,51 @@ export async function syncAllModelsToOpenClaw(
     return result.synced_count
   } catch {
     return 0
+  }
+}
+
+// --- Auth token ---
+
+let authTokenCache: string | null = null
+let authTokenFetchTime = 0
+const AUTH_TOKEN_CACHE_TTL = 60_000
+let httpApiEnsured = false
+
+/**
+ * Ensure the OpenClaw HTTP chat completions endpoint is enabled.
+ * Called once before first agent mode request; no-op after that.
+ * If the config was changed, restarts the gateway so it picks up the new setting.
+ */
+export async function ensureOpenClawHttpApi(): Promise<void> {
+  if (httpApiEnsured) return
+  try {
+    const changed = await invoke<boolean>('openclaw_ensure_http_api')
+    if (changed) {
+      console.log('[openclaw] Enabled HTTP chat completions endpoint, restarting gateway…')
+      await invoke('openclaw_restart')
+      // Give the gateway a moment to become ready after restart
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+    }
+    httpApiEnsured = true
+  } catch {
+    // Fail silently — the send will fail with a clearer error
+  }
+}
+
+/** Get the OpenClaw gateway auth token, with a 60s cache. */
+export async function getOpenClawAuthToken(forceRefresh = false): Promise<string | null> {
+  const now = Date.now()
+  if (!forceRefresh && authTokenCache && (now - authTokenFetchTime) < AUTH_TOKEN_CACHE_TTL) {
+    return authTokenCache
+  }
+  try {
+    const token = await invoke<string>('openclaw_get_auth_token')
+    authTokenCache = token
+    authTokenFetchTime = now
+    return token
+  } catch {
+    authTokenCache = null
+    return null
   }
 }
 
