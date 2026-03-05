@@ -89,10 +89,7 @@ pub async fn load_llama_model_impl(
     let api_key: String = envs
         .get("LLAMA_API_KEY")
         .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            log::warn!("API key not provided");
-            String::new()
-        });
+        .unwrap_or_default();
 
     // Configure the command to run the server
     let mut command = Command::new(&bin_path);

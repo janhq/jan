@@ -580,19 +580,24 @@ async fn auto_download_hf_model(repo_id: &str) -> String {
 
 /// Present an interactive menu for the three supported AI agents.
 fn select_program_interactively() -> String {
-    const CHOICES: &[(&str, &str)] = &[
-        ("claude",   "Claude Code  — Anthropic's AI coding agent"),
-        ("codex",    "Codex CLI    — OpenAI's coding agent"),
-        ("openclaw", "OpenClaw     — Open-source autonomous AI agent"),
+    const CHOICES: &[(&str, &str, &str)] = &[
+        ("claude",   "Claude Code",  "Anthropic's AI coding agent"),
+        ("codex",    "Codex CLI",    "OpenAI's coding agent"),
+        ("openclaw", "OpenClaw",     "Open-source autonomous AI agent"),
     ];
+
+    println!();
+    let header = Style::new().cyan().bold().apply_to("━━━ Select Agent ━━━");
+    println!("{}", header);
+    println!();
 
     let labels: Vec<String> = CHOICES
         .iter()
-        .map(|(_, desc)| desc.to_string())
+        .map(|(key, name, desc)| format!("{}  {}", Style::new().yellow().bold().apply_to(*key), desc))
         .collect();
 
     let idx = dialoguer::Select::new()
-        .with_prompt("Select an agent to launch")
+        .with_prompt("Choose an agent to launch")
         .items(&labels)
         .default(0)
         .interact()
@@ -614,19 +619,47 @@ fn select_model_interactively() -> String {
         std::process::exit(1);
     }
 
-    let labels: Vec<String> = all
+    println!();
+    let header = Style::new().cyan().bold().apply_to("━━━ Select Model ━━━");
+    println!("{}", header);
+    println!();
+
+    // Group by engine for better display
+    let mut llamacpp_models: Vec<&String> = Vec::new();
+    let mut mlx_models: Vec<&String> = Vec::new();
+
+    for (id, engine) in &all {
+        match engine.as_str() {
+            "llamacpp" => llamacpp_models.push(id),
+            "mlx" => mlx_models.push(id),
+            _ => {}
+        }
+    }
+
+    // Build selection list with engine indicator next to model name
+    let selection_items: Vec<(usize, String)> = all
         .iter()
-        .map(|(id, engine)| format!("{} ({})", id, engine))
+        .enumerate()
+        .map(|(i, (id, engine))| {
+            let indicator = match engine.as_str() {
+                "llamacpp" => Style::new().green().apply_to("[LlamaCPP]"),
+                "mlx" => Style::new().magenta().apply_to("[MLX]"),
+                _ => Style::new().dim().apply_to("[---]"),
+            };
+            (i, format!("{} {}", id, indicator))
+        })
         .collect();
 
+    let labels: Vec<String> = selection_items.iter().map(|(_, label)| label.clone()).collect();
+
     let selection = dialoguer::Select::new()
-        .with_prompt("Select a model")
+        .with_prompt("Choose a model")
         .items(&labels)
         .default(0)
         .interact()
         .unwrap_or_else(|_| std::process::exit(1));
 
-    all[selection].0.clone()
+    all[selection_items[selection].0].0.clone()
 }
 
 // ── Detached spawn ─────────────────────────────────────────────────────────
