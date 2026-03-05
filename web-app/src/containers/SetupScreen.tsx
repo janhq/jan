@@ -347,6 +347,10 @@ function SetupScreen() {
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
 
       selectModelProvider('llamacpp', defaultVariant.model_id)
+      localStorage.setItem(
+        localStorageKey.lastUsedModel,
+        JSON.stringify({ provider: 'llamacpp', model: defaultVariant.model_id })
+      )
       navigate({ to: route.home, replace: true })
     }
 
