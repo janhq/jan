@@ -89,6 +89,9 @@ enum Commands {
         /// Print full server logs (llama.cpp / mlx output) instead of the loading spinner
         #[arg(long, short = 'v', default_value_t = false)]
         verbose: bool,
+        /// When downloading a model, show quantization selection list
+        #[arg(long, default_value_t = false)]
+        select: bool,
     },
     /// List and inspect conversation threads saved by the Jan app
     #[command(display_order = 10)]
@@ -182,6 +185,9 @@ struct ServeArgs {
     /// Print full server logs (llama.cpp / mlx output) instead of the loading spinner
     #[arg(long, short = 'v', default_value_t = false)]
     verbose: bool,
+    /// When downloading a model, show quantization selection list
+    #[arg(long, default_value_t = false)]
+    select: bool,
 }
 
 // ── Models subcommands ─────────────────────────────────────────────────────
@@ -296,10 +302,10 @@ async fn main() {
         Commands::Models { cmd } => handle_models(cmd).await,
         Commands::App { cmd } => handle_app(cmd),
         Commands::Serve { args } => handle_serve(args).await,
-        Commands::Launch { program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size, fit, verbose } => {
+        Commands::Launch { program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size, fit, verbose, select } => {
             let program = program.unwrap_or_else(select_program_interactively);
             let ctx_size_val = ctx_size.unwrap_or(4096);
-            handle_launch(program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size_val, fit, ctx_size.is_none(), verbose).await
+            handle_launch(program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size_val, fit, ctx_size.is_none(), verbose, select).await
         }
     }
 }
@@ -531,7 +537,7 @@ fn pick_hf_file(files: &[HfFileInfo]) -> &HfFileInfo {
 /// and return the local model ID ready to load.
 ///
 /// Exits the process on any unrecoverable error.
-async fn auto_download_hf_model(repo_id: &str) -> String {
+async fn auto_download_hf_model(repo_id: &str, select_quantization: bool) -> String {
     let token = hf_token();
     let tok_ref = token.as_deref();
 
@@ -546,13 +552,17 @@ async fn auto_download_hf_model(repo_id: &str) -> String {
         });
     fetch_pb.finish_and_clear();
 
-    // Auto-select Q4_K_XL if available, otherwise pick the largest file
-    let chosen = files
-        .iter()
-        .find(|f| f.filename.contains("Q4_K_XL"))
-        .unwrap_or_else(|| {
-            files.iter().max_by_key(|f| f.size).unwrap()
-        });
+    // Select quantization: show picker if select_quantization is true, otherwise auto-pick Q4_K_XL
+    let chosen = if select_quantization {
+        pick_hf_file(&files)
+    } else {
+        files
+            .iter()
+            .find(|f| f.filename.contains("Q4_K_XL"))
+            .unwrap_or_else(|| {
+                files.iter().max_by_key(|f| f.size).unwrap()
+            })
+    };
     eprintln!("  Downloading  {}", chosen.filename);
     eprintln!("  Size         {}", fmt_bytes(chosen.size));
     eprintln!();
@@ -614,7 +624,7 @@ fn select_program_interactively() -> String {
     CHOICES[idx].0.to_string()
 }
 
-async fn select_model_interactively() -> String {
+async fn select_model_interactively(select_quantization: bool) -> String {
     let mut all: Vec<(String, String)> = Vec::new(); // (id, engine)
     for engine in &["llamacpp", "mlx"] {
         for (id, _) in list_models(engine) {
@@ -634,7 +644,7 @@ async fn select_model_interactively() -> String {
         println!();
 
         // Auto-download the default model
-        let model_id = auto_download_hf_model(default_model).await;
+        let model_id = auto_download_hf_model(default_model, select_quantization).await;
         return model_id;
     }
 
@@ -774,7 +784,7 @@ async fn handle_serve(args: ServeArgs) {
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "model".to_string())
             } else {
-                select_model_interactively().await
+                select_model_interactively(args.select).await
             }
         }
     };
@@ -800,6 +810,7 @@ async fn handle_serve(args: ServeArgs) {
         detach: _,
         log: _,
         verbose,
+        select,
     } = args;
 
     // When --fit is on, let llama.cpp decide the context size automatically
@@ -821,7 +832,7 @@ async fn handle_serve(args: ServeArgs) {
             }
             Err(_) if looks_like_hf_repo(&model_id) => {
                 // Looks like a HuggingFace repo ID — download then resolve.
-                auto_download_hf_model(&model_id).await;
+                auto_download_hf_model(&model_id, args.select).await;
                 match resolve_model_engine(&model_id) {
                     Ok((eng, mp, mmp)) => (
                         eng,
@@ -989,9 +1000,10 @@ async fn handle_launch(
     fit: Option<bool>,
     ctx_size_is_default: bool,
     verbose: bool,
+    select: bool,
 ) {
     let model_id = model.unwrap_or_else(|| -> String {
-        futures::executor::block_on(select_model_interactively())
+        futures::executor::block_on(select_model_interactively(select))
     });
 
     // Detect known agents early so we can set fit default before starting the server.
@@ -1158,7 +1170,7 @@ async fn start_model_server(
     let (engine, model_path, mmproj) = match resolve_model_engine(model_id) {
         Ok(r) => r,
         Err(_) if looks_like_hf_repo(model_id) => {
-            auto_download_hf_model(model_id).await;
+            auto_download_hf_model(model_id, false).await;
             match resolve_model_engine(model_id) {
                 Ok(r) => r,
                 Err(e) => { eprintln!("Error after download: {e}"); std::process::exit(1); }
