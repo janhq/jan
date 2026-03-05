@@ -240,7 +240,7 @@ enum AppCommands {
 
 // ── ASCII logo ─────────────────────────────────────────────────────────────
 
-/// Build a centered, bright-yellow ASCII logo for the help header.
+/// Build a left-aligned, bright-yellow ASCII logo for the help header.
 fn make_logo() -> String {
     // "JAN" in ANSI Shadow block letters
     let lines = [
@@ -252,28 +252,21 @@ fn make_logo() -> String {
         r" ╚════╝ ╚═╝  ╚═╝╚═╝  ╚══╝",
     ];
 
-    let art_width: usize = 26; // visual columns of the widest line
-    let term_cols = console::Term::stdout().size().1 as usize;
-    let pad = (term_cols.saturating_sub(art_width)) / 2;
-    let indent = " ".repeat(pad);
+    // Fixed left-aligned indent (2 spaces)
+    let indent = "  ";
 
     let yellow = Style::new().yellow().bold();
 
-    let mut out: Vec<String> = lines
-        .iter()
-        .map(|l| format!("{}{}", indent, yellow.apply_to(l)))
-        .collect();
+    let mut out: Vec<String> = Vec::new();
 
-    // Tagline beneath the wordmark
-    let tagline = "Your models · Your hardware · Your rules";
-    let tpad = (term_cols.saturating_sub(tagline.len())) / 2;
+    // Add padding at top
     out.push(String::new());
-    out.push(format!(
-        "{}{}",
-        " ".repeat(tpad),
-        Style::new().dim().apply_to(tagline)
-    ));
     out.push(String::new());
+
+    // Logo lines
+    for l in &lines {
+        out.push(format!("{}{}", indent, yellow.apply_to(l)));
+    }
 
     out.join("\n")
 }
