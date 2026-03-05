@@ -696,16 +696,18 @@ Section Install
   ; Copy resources
     CreateDirectory "$INSTDIR\resources"
     CreateDirectory "$INSTDIR\resources\pre-install"
+    CreateDirectory "$INSTDIR\resources\bin"
     SetOutPath $INSTDIR
     File /a "/oname=LICENSE" "D:\a\jan\jan\src-tauri\resources\LICENSE"
     SetOutPath "$INSTDIR\resources\pre-install"
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\pre-install\"
+    SetOutPath "$INSTDIR\resources\bin"
+    File /a "/oname=jan-cli.exe" "D:\a\jan\jan\src-tauri\resources\bin\jan-cli.exe"
     SetOutPath $INSTDIR
 
   ; Copy external binaries
     File /a "/oname=bun.exe" "D:\a\jan\jan\src-tauri\resources\bin\bun-x86_64-pc-windows-msvc.exe"
     File /a "/oname=uv.exe" "D:\a\jan\jan\src-tauri\resources\bin\uv-x86_64-pc-windows-msvc.exe"
-    File /a "/oname=jan-cli.exe" "D:\a\jan\jan\src-tauri\resources\bin\jan-cli.exe"
 
   ; Create file associations
 
