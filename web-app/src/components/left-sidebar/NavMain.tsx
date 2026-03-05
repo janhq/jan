@@ -11,7 +11,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 
 import { Link, useNavigate } from '@tanstack/react-router'
 import { PlatformMetaKey } from '@/containers/PlatformMetaKey'
-import React, { useRef } from 'react'
+import React, { useRef, useEffect, useState } from 'react'
 import {
   SearchIcon,
   type SearchIconHandle,
@@ -40,6 +40,7 @@ import { useSearchDialog } from '@/hooks/useSearchDialog'
 import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { isOpenClawRunning } from '@/utils/openclaw'
 
 type AnimatedIconHandle =
   | SearchIconHandle
@@ -174,6 +175,11 @@ export function NavMain() {
   const { open: searchOpen, setOpen: setSearchOpen } = useSearchDialog()
   const { open: projectDialogOpen, setOpen: setProjectDialogOpen } =
     useProjectDialog()
+  const [openClawAvailable, setOpenClawAvailable] = useState(false)
+
+  useEffect(() => {
+    isOpenClawRunning().then(setOpenClawAvailable)
+  }, [])
 
   const navMainItems = getNavMainItems(
     () => setProjectDialogOpen(true),
@@ -186,7 +192,7 @@ export function NavMain() {
       useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
       navigate({ to: route.home })
     }
-  )
+  ).filter((item) => item.title !== 'New Agent Chat' || openClawAvailable)
 
   const handleCreateProject = async (name: string, assistantId?: string) => {
     const newProject = await addFolder(name, assistantId)
