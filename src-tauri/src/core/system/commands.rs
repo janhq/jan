@@ -521,6 +521,57 @@ fn jan_cli_install_dir() -> Result<PathBuf, String> {
     {
         let local_app_data = std::env::var("LOCALAPPDATA")
             .map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
-        Ok(PathBuf::from(local_app_data).join("Programs").join("Jan"))
+        let install_dir = PathBuf::from(local_app_data).join("Programs").join("Jan");
+
+        // Add to PATH if not already present
+        add_to_path_windows(&install_dir)?;
+
+        Ok(install_dir)
     }
+}
+
+/// Add a directory to the Windows PATH for the current user.
+#[cfg(windows)]
+fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
+    use std::process::Command;
+
+    // Get current PATH from registry
+    let output = Command::new("reg")
+        .args([
+            "query",
+            "HKCU\\Environment",
+            "/v",
+            "Path",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    let current_path = if output.status.success() {
+        String::from_utf8_lossy(&output.stdout).to_string()
+    } else {
+        String::new()
+    };
+
+    // Check if our install dir is already in PATH
+    let install_dir_str = install_dir.to_string_lossy().to_string();
+    if current_path.contains(&install_dir_str) {
+        return Ok(()); // Already in PATH
+    }
+
+    // Add to PATH using setx
+    let new_path = format!("{};{}", install_dir_str, "%PATH%");
+    let output = Command::new("setx")
+        .args(["PATH", &new_path])
+        .output()
+        .map_err(|e| format!("Failed to add Jan to PATH: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to update PATH: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    log::info!("Added {} to Windows PATH", install_dir_str);
+    Ok(())
 }
