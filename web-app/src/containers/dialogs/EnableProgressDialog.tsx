@@ -20,6 +20,8 @@ import {
 } from '@tabler/icons-react'
 import { setOpenClawRunningState, syncAllModelsToOpenClaw } from '@/utils/openclaw'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { useAppState } from '@/hooks/useAppState'
 
 interface EnableProgressEvent {
   step: string
@@ -129,6 +131,35 @@ export function EnableProgressDialog({
           // Non-fatal — models can be synced later
         }
 
+        // Auto-start local API server on 0.0.0.0 if not already running
+        const { serverStatus, setServerStatus } = useAppState.getState()
+        if (serverStatus === 'stopped') {
+          const { serverPort, apiPrefix, apiKey, trustedHosts, corsEnabled, verboseLogs, proxyTimeout, setServerHost } =
+            useLocalApiServer.getState()
+          setServerHost('0.0.0.0')
+          try {
+            setServerStatus('pending')
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const actualPort = await (window as any).core?.api?.startServer({
+              host: '0.0.0.0',
+              port: serverPort,
+              prefix: apiPrefix,
+              apiKey,
+              trustedHosts,
+              isCorsEnabled: corsEnabled,
+              isVerboseEnabled: verboseLogs,
+              proxyTimeout,
+            })
+            if (actualPort && actualPort !== serverPort) {
+              useLocalApiServer.getState().setServerPort(actualPort)
+            }
+            setServerStatus('running')
+          } catch {
+            setServerStatus('stopped')
+            // Non-fatal — user can start manually
+          }
+        }
+
         setProgress(100)
         setMessage('OpenClaw is ready!')
         setCurrentStep('complete')
@@ -227,7 +258,7 @@ export function EnableProgressDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
+      <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>
             {error
@@ -319,7 +350,7 @@ export function EnableProgressDialog({
             <div className="space-y-3">
               <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3">
                 <IconAlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-                <p className="text-sm text-destructive">{error.message}</p>
+                <p className="text-sm text-destructive wrap-break-word min-w-0">{error.message}</p>
               </div>
               <div className="flex flex-col gap-2">
                 {error.recovery.map((option, i) => (
@@ -327,17 +358,17 @@ export function EnableProgressDialog({
                     key={i}
                     variant="outline"
                     size="sm"
-                    className="w-full justify-start"
+                    className="w-full justify-start h-auto py-2"
                     onClick={() => handleRecoveryAction(option.action)}
                   >
                     {option.action === 'OpenNodeDownload' ? (
-                      <IconExternalLink className="mr-2 h-4 w-4" />
+                      <IconExternalLink className="mr-2 h-4 w-4 shrink-0" />
                     ) : (
-                      <IconRefresh className="mr-2 h-4 w-4" />
+                      <IconRefresh className="mr-2 h-4 w-4 shrink-0" />
                     )}
-                    {option.label}
-                    <span className="ml-auto text-xs text-muted-foreground">
-                      {option.description}
+                    <span className="flex flex-col items-start text-left">
+                      <span>{option.label}</span>
+                      <span className="text-xs text-muted-foreground font-normal">{option.description}</span>
                     </span>
                   </Button>
                 ))}
