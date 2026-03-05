@@ -16,6 +16,7 @@
   "assistants": "Assistants",
   "agents": "Agents",
   "mcp-examples": "Connectors (MCP)",
+  "manage-models": "Hub",
   "local-engine": "Local AI Engine",
   "model-parameters": "Model Parameters",
   "privacy-policy": {
@@ -23,12 +24,6 @@
     "display": "hidden",
     "title": "Privacy Policy"
   },
-  "advanced-separator": {
-    "title": "Advanced",
-    "type": "separator"
-  },
-  "manage-models": "Manage Models",
-  "mcp": "Model Context Protocol",
   "localserver": {
     "title": "Local Server",
     "type": "separator"
@@ -37,11 +32,12 @@
   "llama-cpp-server": "LlamaCpp Server",
   "server-settings": "Server Settings",
   "server-troubleshooting": "Server Troubleshooting",
-  "server-examples": "Integrations",
+  "server-examples": "Clients",
   "reference-separator": {
     "title": "Reference",
     "type": "separator"
   },
+  "mcp": "Model Context Protocol",
   "remote-models": "Cloud Providers",
   "settings": "Settings",
   "data-folder": "Jan Data Folder",

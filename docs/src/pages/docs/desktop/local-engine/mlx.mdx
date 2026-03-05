@@ -12,15 +12,32 @@ keywords:
   ]
 ---
 
+import { Callout } from 'nextra/components'
+
 # MLX
 
 MLX is an inference engine for Apple Silicon (M1 and later). It uses Metal GPU acceleration for fast, efficient local inference — available on macOS 14+.
+
+<Callout type="warning">
+MLX support in Jan is currently in beta and will be improved significantly over time.
+</Callout>
 
 ## Requirements
 
 - macOS 14 or higher
 - Apple Silicon (M1, M2, M3 or later)
 
-## Supported Models
+## Models
+
+MLX is built into Jan — no additional setup required. You can get models in two ways:
+
+- **Hub**: Browse and download MLX-compatible models directly from the Hub
+- **Import**: Import a local MLX model via **Settings** > **MLX** > **Import**
+
+![MLX Settings](../_assets/mlx-settings.png)
 
 MLX supports models in MLX-Swift format. Jan ships with MLX-compatible versions of its foundation models.
+
+## How It Works
+
+Jan integrates MLX via [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm), running a local inference server on top of it. The server is spawned and managed by Jan's MLX plugin, which handles model loading, lifecycle, and communication with the rest of the app.
