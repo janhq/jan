@@ -513,7 +513,6 @@ function HubModelDetailContent() {
                 ) : readmeContent ? (
                   <div className="prose prose-invert max-w-none">
                     <RenderMarkdown
-                      className="text-muted-foreground"
                       components={{
                         a: ({ ...props }) => (
                           <a
