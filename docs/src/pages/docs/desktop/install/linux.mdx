@@ -26,127 +26,25 @@ twitter:
   description: "Download Jan on Linux to run AI models locally. Jan is a free, open-source ChatGPT alternative to run offline."
 ---
 
-import FAQBox from '@/components/FaqBox'
 import { Tabs, Callout, Steps } from 'nextra/components'
 import { Settings } from 'lucide-react'
+import { DownloadButton } from '@/components/DownloadButton'
 
 # Linux Installation
 Instructions for installing Jan on Linux.
 
-## Compatibility
-System requirements:
-
-<Tabs items={['OS', 'CPU', 'RAM', 'GPU', 'Disk']}>
-
-<Tabs.Tab>
-
-#### Debian-based (Supports `.deb` and `AppImage`)
-
-- Debian
-- Ubuntu and derivatives:
-  - Ubuntu Desktop LTS (official)/Ubuntu Server LTS (only for server)
-  - Edubuntu
-  - Kubuntu
-  - Lubuntu
-  - Ubuntu Budgie
-  - Ubuntu Cinnamon
-  - Ubuntu Kylin
-  - Ubuntu MATE
-  - Linux Mint
-  - Pop!_OS
-
-#### RHEL-based (Supports `.rpm` and `AppImage`)
-
-- RHEL-based (Server only)
-- Fedora
-
-#### Arch-based
-
-- Arch Linux
-- SteamOS
-
-#### Independent
-
-- openSUSE
-
-</Tabs.Tab>
-
-<Tabs.Tab>
-- Haswell processors (Q2 2013) and newer
-- Tiger Lake (Q3 2020) and newer for Celeron and Pentium processors
-- Excavator processors (Q2 2015) and newer
-
-<Callout type="info">
-CPU must support AVX2. See [supported processors](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2).
-</Callout>
-</Tabs.Tab>
-
-<Tabs.Tab>
-- 8GB → up to 3B parameter models (int4)
-- 16GB → up to 7B parameter models (int4)
-- 32GB → up to 13B parameter models (int4)
-
-<Callout type="info">
-DDR3 or newer recommended.
-</Callout>
-</Tabs.Tab>
-
-<Tabs.Tab>
-- 6GB → up to 3B parameter models (int4)
-- 8GB → up to 7B parameter models (int4)
-- 12GB → up to 13B parameter models (int4)
-
-<Callout type="info">
-6GB VRAM minimum required.
-</Callout>
-</Tabs.Tab>
-
-<Tabs.Tab>
-Minimum 10GB of free disk space required.
-</Tabs.Tab>
-
-</Tabs>
-
 ## Install Jan
-
-Installation steps:
 
 <Steps>
 
-### Step 1: Download Application
+### Download
 
-Available releases:
-<Tabs items={['Stable Release', 'Beta Release', 'Nightly Release']}>
-<Tabs.Tab>
-Stable release:
-  - Ubuntu: [jan.deb](https://app.jan.ai/download/latest/linux-amd64-deb)
-  - Others: [Jan.AppImage](https://app.jan.ai/download/latest/linux-amd64-appimage)
-- Official Website: https://jan.ai/download
+<div className="inline-flex flex-col gap-3">
+  <DownloadButton href="https://github.com/janhq/jan/releases/download/v0.7.7/Jan_0.7.7_amd64.deb">Download Jan for Ubuntu / Debian</DownloadButton>
+  <DownloadButton href="https://github.com/janhq/jan/releases/download/v0.7.7/Jan_0.7.7_amd64.AppImage">Download Jan AppImage</DownloadButton>
+</div>
 
-</Tabs.Tab>
-<Tabs.Tab>
-
-Beta release:
-  - Ubuntu: [jan.deb](https://app.jan.ai/download/beta/linux-amd64-deb)
-  - Others: [Jan.AppImage](https://app.jan.ai/download/beta/linux-amd64-appimage)
-
-<Callout type="info">
-May contain bugs. Use with caution.
-</Callout>
-</Tabs.Tab>
-<Tabs.Tab>
-
-Development build:
- - Ubuntu: [jan.deb](https://app.jan.ai/download/nightly/linux-amd64-deb)
- - Others: [Jan.AppImage](https://app.jan.ai/download/nightly/linux-amd64-appimage)
-
-<Callout type="info">
-Experimental version. Expect instability.
-</Callout>
-</Tabs.Tab>
-</Tabs>
-
-### Step 2: Install Application
+### Install
 
 Installation commands:
 
@@ -181,6 +79,14 @@ chmod +x jan-linux-x86_64-{version}.AppImage
 
 </Steps>
 
+
+## Compatibility
+
+- **OS:** Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE
+- **CPU:** AVX2 required — Intel Haswell (2013+), AMD Excavator (2015+)
+- **Memory:** 8GB minimum (16GB recommended)
+- **GPU:** 6GB VRAM minimum
+- **Storage:** 10GB free space minimum
 
 ## Data Folder
 

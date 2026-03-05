@@ -16,7 +16,9 @@ keywords:
 ---
 
 import { Callout, Steps } from 'nextra/components'
-import { SquarePen, Pencil, Ellipsis, Paintbrush, Trash2, Settings } from 'lucide-react'
+import { Link } from 'nextra-theme-docs'
+import { DocCard, DocCards } from '@/components/DocCard'
+import { FolderOpen, Bot, Cpu, Plug, Brain } from 'lucide-react'
 
 # QuickStart
 
@@ -24,118 +26,52 @@ Get up and running with Jan in minutes. This guide will help you install Jan, do
 
 <Steps>
 
-### Step 1: Install Jan
+### Install Jan
 
-1. [Download Jan](/download)
+1. <Link href="https://jan.ai/download" target="_blank" rel="noopener noreferrer">Download Jan</Link>
 2. Install the app ([Mac](/docs/desktop/install/mac), [Windows](/docs/desktop/install/windows), [Linux](/docs/desktop/install/linux))
 3. Launch Jan
 
-### Step 2: Download Jan v1
+### Getting Ready
 
-We recommend starting with **Jan v1**, our 4B parameter model optimized for reasoning and tool calling:
+Jan automatically downloads its default foundation model on first launch. Once the download completes, you're ready to chat — no setup required.
 
-1. Go to the **Hub Tab**
-2. Search for **Jan v1**
-3. Choose a quantization that fits your hardware:
-   - **Q4_K_M** (2.5 GB) - Good balance for most users
-   - **Q8_0** (4.28 GB) - Best quality if you have the RAM
-4. Click **Download**
+![Getting Ready](./_assets/getting-ready.png)
 
-![Download Jan v1](./_assets/download_janv1.png)
+### Start Chatting
 
-<Callout type="info">
-Jan v1 achieves 91.1% accuracy on SimpleQA and excels at tool calling, making it perfect for web search and reasoning tasks.
-</Callout>
+Type your message and start chatting. Jan is ready to go.
 
-### Step 3: Start Chatting
+![Start Chatting](./_assets/start-chatting.png)
 
-1. Click **New Chat** (<SquarePen width={16} height={16} style={{display:"inline"}}/>) icon
-2. Select your model in the input field dropdown
-3. Type your message and start chatting
-
-![Create New Thread](./_assets/jan_loaded.png)
-
-Try asking Jan v1 questions like:
+Try asking:
 - "Explain quantum computing in simple terms"
 - "Help me write a Python function to sort a list"
 - "What are the pros and cons of electric vehicles?"
 
 <Callout type="tip">
-**Want to give Jan v1 access to current web information?** Check out our [Serper MCP tutorial](/docs/desktop/mcp-examples/search/serper) to enable real-time web search with 2,500 free searches!
+Jan enables access to current web information by default. You can ask it to search about latest news. Thanks to [Exa](https://exa.ai) for enabling free tier access.
 </Callout>
 
 </Steps>
 
-## Managing Conversations
+## App Features
 
-Jan organizes conversations into threads for easy tracking and revisiting.
+Jan is more than a chat interface. Organize your work with Projects, build custom Assistants, run autonomous Agents, and connect external tools via MCP.
 
-### View Chat History
+<DocCards>
+  <DocCard title="Projects" href="/docs/desktop/projects" icon={<FolderOpen size={20} />}>Organize conversations with shared instructions and files.</DocCard>
+  <DocCard title="Assistants" href="/docs/desktop/assistants" icon={<Bot size={20} />}>Set up a personal AI assistant tailored to how you work.</DocCard>
+  <DocCard title="Agents" href="/docs/desktop/agents" icon={<Cpu size={20} />}>Autonomous AI that reads files, manages calendars, and takes actions.</DocCard>
+  <DocCard title="Connectors (MCP)" href="/docs/desktop/mcp-examples" icon={<Plug size={20} />}>Extend your AI with web search, code execution, databases, and more.</DocCard>
+</DocCards>
 
-- **Left sidebar** shows all conversations
-- Click any chat to open the full conversation
-- **Favorites**: Pin important threads for quick access
-- **Recents**: Access recently used threads
+## Models
 
-![Favorites and Recents](./_assets/threads-favorites-and-recents-updated.png)
+Beyond the default model, Jan comes with a range of foundation models for different tasks — from image understanding and reasoning to coding.
 
-### Edit Chat Titles
-
-1. Hover over a conversation in the sidebar
-2. Click **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
-3. Click <Pencil width={16} height={16} style={{display:"inline"}}/> **Rename**
-4. Enter new title and save
-
-![Context Menu](./_assets/threads-context-menu-updated.png)
-
-### Delete Threads
-
-<Callout type="warning">
-Thread deletion is permanent. No undo available.
-</Callout>
-
-**Single thread:**
-1. Hover over thread in sidebar
-2. Click **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
-3. Click <Trash2 width={16} height={16} style={{display:"inline"}}/> **Delete**
-
-**All threads:**
-1. Hover over `Recents` category
-2. Click **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
-3. Select <Trash2 width={16} height={16} style={{display:"inline"}}/> **Delete All**
-
-## Advanced Features
-
-### Custom Assistant Instructions
-
-Customize how models respond:
-
-1. Use the assistant dropdown in the input field
-2. Or go to the **Assistant tab** to create custom instructions
-3. Instructions work across all models
-
-![Assistant Instruction](./_assets/assistant-dropdown.png)
-
-![Add an Assistant Instruction](./_assets/assistant-edit-dialog.png)
-
-### Model Parameters
-
-Fine-tune model behavior:
-- Click the **Gear icon** next to your model
-- Adjust parameters in **Assistant Settings**
-- Switch models via the **model selector**
-
-![Chat with a Model](./_assets/model-parameters.png)
-
-### Connect Cloud Models (Optional)
-
-Connect to OpenAI, Anthropic, Groq, Mistral, and others:
-
-1. Open any thread
-2. Select a cloud model from the dropdown
-3. Click the **Gear icon** beside the provider
-4. Add your API key (ensure sufficient credits)
-
-![Connect Remote APIs](./_assets/quick-start-03.png)
-
-For detailed setup, see [Remote APIs](/docs/desktop/remote-models/openai).
+<DocCards>
+  <DocCard title="Jan-Code-4B" href="/docs/desktop/jan-models/jan-code-4b" icon={<Brain size={20} />}>Optimized for code generation and reasoning tasks.</DocCard>
+  <DocCard title="Jan-v3-4B" href="/docs/desktop/jan-models/jan-v3-4b-base-instruct" icon={<Brain size={20} />}>General purpose instruction-following model.</DocCard>
+  <DocCard title="Jan-v2-VL" href="/docs/desktop/jan-models/jan-v2-vl-med" icon={<Brain size={20} />}>Vision-language model with strong reasoning capability for image understanding.</DocCard>
+</DocCards>
