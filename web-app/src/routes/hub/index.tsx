@@ -308,7 +308,7 @@ function HubContent() {
         to: route.home,
         params: {},
         search: {
-          model: {
+          threadModel: {
             id: modelId,
             provider: 'llamacpp',
           },
