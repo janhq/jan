@@ -6,6 +6,7 @@ import path from 'path'
 import unzipper from 'unzipper'
 import tar from 'tar'
 import { copySync } from 'cpx'
+import { assertSafeTarEntry, assertSafeZipEntry } from './archive-extract-guard.mjs'
 
 function download(url, dest) {
   return new Promise((resolve, reject) => {
@@ -39,9 +40,17 @@ function download(url, dest) {
   })
 }
 
+async function validateZipArchive(filePath, targetDir) {
+  const archive = await unzipper.Open.file(filePath)
+  for (const entry of archive.files) {
+    assertSafeZipEntry(entry, targetDir)
+  }
+}
+
 async function decompress(filePath, targetDir) {
   console.log(`Decompressing ${filePath} to ${targetDir}`)
   if (filePath.endsWith('.zip')) {
+    await validateZipArchive(filePath, targetDir)
     await fs
       .createReadStream(filePath)
       .pipe(unzipper.Extract({ path: targetDir }))
@@ -50,6 +59,11 @@ async function decompress(filePath, targetDir) {
     await tar.x({
       file: filePath,
       cwd: targetDir,
+      preservePaths: false,
+      filter: (entryPath, entry) => {
+        assertSafeTarEntry(entryPath, entry, targetDir)
+        return true
+      },
     })
   } else {
     throw new Error(`Unsupported archive format: ${filePath}`)
