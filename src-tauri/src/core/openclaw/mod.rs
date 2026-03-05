@@ -6,12 +6,6 @@ pub mod lifecycle;
 pub mod models;
 pub mod sandbox;
 pub mod sandbox_direct;
-#[cfg(target_os = "linux")]
-pub mod sandbox_native;
-#[cfg(target_os = "windows")]
-pub mod sandbox_wsl2;
-#[cfg(target_os = "macos")]
-pub mod sandbox_apple;
 #[cfg(feature = "docker")]
 pub mod sandbox_docker;
 pub mod security;
