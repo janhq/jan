@@ -645,6 +645,14 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
                     .output()
                     .await;
             }
+
+            #[cfg(target_os = "windows")]
+            {
+                let _ = Command::new("taskkill")
+                    .args(["/F", "/IM", "openclaw.exe"])
+                    .output()
+                    .await;
+            }
         }
 
         for _ in 0..10 {

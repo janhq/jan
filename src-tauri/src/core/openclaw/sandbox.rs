@@ -95,53 +95,15 @@ impl Default for SandboxMode {
     }
 }
 
-/// Auto-detect the best available sandbox for the current platform.
-/// Returns implementations in priority order: best isolation first.
-///
-/// Priority chain:
-///   1. Docker/Podman (Tier 3) — best isolation, optional
-///   2. Platform-native (Tier 2) — Linux namespaces / WSL2 / Apple Containerization
-///   3. Direct process (Tier 0) — always-available fallback
+/// Auto-detect the best available sandbox: Docker if available, otherwise direct process.
 pub async fn detect_sandbox() -> Box<dyn Sandbox> {
-    // Tier 3: Docker/Podman (if available — best isolation, optional)
     #[cfg(feature = "docker")]
     {
         let docker = super::sandbox_docker::DockerSandbox::new();
         if docker.is_available().await {
-            log::info!("Sandbox: Docker detected");
             return Box::new(docker);
         }
     }
 
-    // Tier 2: Platform-native lightweight sandbox
-    #[cfg(target_os = "linux")]
-    {
-        let native = super::sandbox_native::NativeSandbox;
-        if native.is_available().await {
-            log::info!("Sandbox: Linux namespaces (bubblewrap-style)");
-            return Box::new(native);
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let wsl2 = super::sandbox_wsl2::Wsl2Sandbox::new();
-        if wsl2.is_available().await {
-            log::info!("Sandbox: WSL2");
-            return Box::new(wsl2);
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let apple = super::sandbox_apple::AppleContainerSandbox;
-        if apple.is_available().await {
-            log::info!("Sandbox: Apple Containerization");
-            return Box::new(apple);
-        }
-    }
-
-    // Tier 0: No isolation (direct process fallback)
-    log::info!("Sandbox: none available, using direct process");
     Box::new(super::sandbox_direct::DirectProcessSandbox)
 }
