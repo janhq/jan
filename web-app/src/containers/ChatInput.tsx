@@ -1533,7 +1533,8 @@ const ChatInput = memo(function ChatInput({
                   isStreaming && 'opacity-50 pointer-events-none'
                 )}
               >
-                {/* Dropdown for attachments */}
+                {/* Dropdown for attachments — hidden in agent mode */}
+                {!isAgentMode && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="secondary" size="icon-sm" className='rounded-full mr-2 mb-1'>
@@ -1643,6 +1644,7 @@ const ChatInput = memo(function ChatInput({
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
+                )}
                 {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
                 ) : (
@@ -1651,7 +1653,7 @@ const ChatInput = memo(function ChatInput({
                     useLastUsedModel={initialMessage}
                   />
                 )} */}
-                {hasJanBrowserMCPConfig && modelSupportsBrowser && (
+                {!isAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1693,7 +1695,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {selectedModel?.capabilities?.includes('embeddings') && (
+                {!isAgentMode && selectedModel?.capabilities?.includes('embeddings') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1712,7 +1714,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {selectedModel?.capabilities?.includes('tools') &&
+                {!isAgentMode && selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
                     // Use custom MCP component
@@ -1807,7 +1809,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {selectedModel?.capabilities?.includes('web_search') && (
+                {!isAgentMode && selectedModel?.capabilities?.includes('web_search') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon-xs">
@@ -1823,7 +1825,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {selectedModel?.capabilities?.includes('reasoning') && (
+                {!isAgentMode && selectedModel?.capabilities?.includes('reasoning') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon-xs">
