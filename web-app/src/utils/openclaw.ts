@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { useAppState } from '@/hooks/useAppState'
 
 /** OpenClaw gateway base URL for the OpenAI-compatible HTTP API. */
 export const OPENCLAW_GATEWAY_URL = 'http://127.0.0.1:18789/v1'
@@ -31,6 +32,8 @@ export async function isOpenClawRunning(forceRefresh = false): Promise<boolean> 
 export function setOpenClawRunningState(isRunning: boolean): void {
   openClawRunningCache = isRunning
   lastCheckTime = Date.now()
+
+  useAppState.getState().setOpenClawRunning(isRunning)
 
   // When OpenClaw is stopped, clear agent mode for all threads so the UI reverts
   if (!isRunning) {
