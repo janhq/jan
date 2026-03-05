@@ -31,8 +31,8 @@ import {
   IconWorld,
   IconBrandChrome,
   IconUser,
-  IconRobot,
 } from '@tabler/icons-react'
+import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -1783,17 +1783,16 @@ const ChatInput = memo(function ChatInput({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                        variant="ghost"
+                        variant={isAgentMode ? "default" : "ghost"}
                         size="icon-xs"
                         onClick={handleAgentToggle}
                         className={cn(
-                          isAgentMode && 'text-primary'
+                          isAgentMode && 'text-primary bg-primary/10 hover:bg-primary/10 items-center'
                         )}
                       >
-                        <IconRobot
-                          size={18}
+                        <BotIcon
                           className={cn(
-                            'text-muted-foreground',
+                            'text-muted-foreground -mt-0.5',
                             isAgentMode && 'text-primary'
                           )}
                         />
