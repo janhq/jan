@@ -596,11 +596,11 @@ async fn auto_download_hf_model(repo_id: &str, select_quantization: bool) -> Str
 
 // ── Interactive pickers ────────────────────────────────────────────────────
 
-/// Present an interactive menu for the three supported AI agents.
+/// Present an interactive menu for the supported AI agents.
 fn select_program_interactively() -> String {
-    const CHOICES: &[(&str, &str, &str)] = &[
-        ("claude",   "Claude Code",  "Anthropic's AI coding agent"),
-        ("openclaw", "OpenClaw",     "Open-source autonomous AI agent"),
+    const CHOICES: &[(&str, &str)] = &[
+        ("claude",   "Claude Code  — Anthropic's AI coding agent"),
+        ("openclaw", "OpenClaw     — Open-source autonomous AI agent"),
     ];
 
     println!();
@@ -608,19 +608,47 @@ fn select_program_interactively() -> String {
     println!("{}", header);
     println!();
 
-    let labels: Vec<String> = CHOICES
+    let installed: Vec<bool> = CHOICES
         .iter()
-        .map(|(key, name, desc)| format!("{}  {}", Style::new().yellow().bold().apply_to(*key), desc))
+        .map(|(key, _)| {
+            is_command_installed(key) || (*key == "openclaw" && is_command_installed("opencode"))
+        })
         .collect();
 
-    let idx = dialoguer::Select::new()
-        .with_prompt("Choose an agent to launch")
-        .items(&labels)
-        .default(0)
-        .interact()
-        .unwrap_or_else(|_| std::process::exit(1));
+    if !installed.iter().any(|&i| i) {
+        eprintln!("  No supported agents are installed.");
+        eprintln!("  Install Claude Code: npm install -g @anthropic-ai/claude-code");
+        eprintln!("  Install OpenClaw:    curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard");
+        std::process::exit(1);
+    }
 
-    CHOICES[idx].0.to_string()
+    let labels: Vec<String> = CHOICES
+        .iter()
+        .zip(installed.iter())
+        .map(|((_, desc), &ok)| {
+            if ok {
+                desc.to_string()
+            } else {
+                format!("{} {}", Style::new().dim().apply_to(desc), Style::new().dim().apply_to("[not installed]"))
+            }
+        })
+        .collect();
+
+    // Keep re-prompting until the user picks an installed agent
+    loop {
+        let idx = dialoguer::Select::new()
+            .with_prompt("Choose an agent to launch")
+            .items(&labels)
+            .default(0)
+            .interact()
+            .unwrap_or_else(|_| std::process::exit(1));
+
+        if installed[idx] {
+            return CHOICES[idx].0.to_string();
+        }
+
+        eprintln!("  {} is not installed. Please choose an installed agent.", CHOICES[idx].1);
+    }
 }
 
 async fn select_model_interactively(select_quantization: bool) -> String {
@@ -996,94 +1024,6 @@ fn is_command_installed(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Install an AI agent if not already installed
-fn install_agent(program: &str) -> Result<(), String> {
-    println!();
-    match program {
-        "claude" => {
-            if is_command_installed("claude") {
-                return Ok(());
-            }
-            let msg = Style::new().yellow().apply_to("Claude Code not found. Installing...");
-            println!("{}", msg);
-            println!();
-
-            // Try to install Claude Code
-            #[cfg(target_os = "macos")]
-            {
-                let status = std::process::Command::new("brew")
-                    .args(["install", "anthropicai/claude-code/claude"])
-                    .status();
-                if status.is_err() {
-                    println!("  Failed to install via brew. Trying alternative...");
-                    let status2 = std::process::Command::new("sh")
-                        .args(["-c", "curl -sL https://raw.githubusercontent.com/anthropics/claude-code/main/install.sh | sh"])
-                        .status();
-                    if status2.is_err() {
-                        eprintln!("  Could not install Claude Code automatically.");
-                        eprintln!("  Please install manually: https://docs.anthropic.com/en/docs/claude-code/installation");
-                        return Err("Claude Code installation failed".to_string());
-                    }
-                }
-            }
-            #[cfg(target_os = "linux")]
-            {
-                let status = std::process::Command::new("sh")
-                    .args(["-c", "curl -sL https://raw.githubusercontent.com/anthropics/claude-code/main/install.sh | sh"])
-                    .status();
-                if status.is_err() {
-                    eprintln!("  Could not install Claude Code automatically.");
-                    eprintln!("  Please install manually: https://docs.anthropic.com/en/docs/claude-code/installation");
-                    return Err("Claude Code installation failed".to_string());
-                }
-            }
-            #[cfg(target_os = "windows")]
-            {
-                let status = std::process::Command::new("winget")
-                    .args(["install", "Anthropic.ClaudeCode", "--silent", "--accept-package-agreements", "--accept-source-agreements"])
-                    .status();
-                if status.is_err() {
-                    eprintln!("  Could not install Claude Code automatically.");
-                    eprintln!("  Please install manually: https://docs.anthropic.com/en/docs/claude-code/installation");
-                    return Err("Claude Code installation failed".to_string());
-                }
-            }
-
-            if is_command_installed("claude") {
-                println!("  {}", Style::new().green().apply_to("✓ Claude Code installed successfully"));
-                return Ok(());
-            }
-            return Err("Claude Code installation completed but command not found. Please restart your terminal.".to_string());
-        }
-        "openclaw" | "opencode" => {
-            if is_command_installed("openclaw") || is_command_installed("opencode") {
-                return Ok(());
-            }
-            let msg = Style::new().yellow().apply_to("OpenClaw not found. Installing...");
-            println!("{}", msg);
-            println!();
-
-            let status = std::process::Command::new("cargo")
-                .args(["install", "openclaw"])
-                .status();
-
-            if status.is_err() {
-                eprintln!("  Could not install OpenClaw automatically.");
-                eprintln!("  Please install manually: cargo install openclaw");
-                return Err("OpenClaw installation failed".to_string());
-            }
-
-            let binary_name = if is_command_installed("openclaw") { "openclaw" } else { "opencode" };
-            if is_command_installed("openclaw") || is_command_installed("opencode") {
-                println!("  {}", Style::new().green().apply_to("✓ OpenClaw installed successfully"));
-                return Ok(());
-            }
-            return Err("OpenClaw installation completed but command not found. Please restart your terminal.".to_string());
-        }
-        _ => Ok(())
-    }
-}
-
 // ── Launch handler ─────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
@@ -1112,11 +1052,6 @@ async fn handle_launch(
         .unwrap_or(&program);
     let is_claude   = prog_name.contains("claude");
     let is_openclaw = prog_name.contains("openclaw");
-
-    // Check if agent is installed, prompt to install if not
-    if let Err(e) = install_agent(&program) {
-        eprintln!("{}", e);
-    }
 
     // --fit defaults to true when launching claude, but only if --ctx-size was
     // not explicitly provided (an explicit ctx-size means the user wants that
@@ -1160,11 +1095,29 @@ async fn handle_launch(
         eprintln!("  ANTHROPIC_DEFAULT_HAIKU_MODEL={model_id}");
     }
     eprintln!();
-    eprintln!("  → Launching: {program} {}", program_args.join(" "));
+    let launch_cmd = if is_openclaw {
+        format!("npx openclaw {}", program_args.join(" "))
+    } else {
+        format!("{} {}", program, program_args.join(" "))
+    };
+    eprintln!("  → Launching: {}", launch_cmd);
     eprintln!();
 
-    let mut cmd = std::process::Command::new(&program);
-    cmd.args(&program_args);
+    // For openclaw, use npx if not installed locally
+    let (cmd_program, cmd_args) = if is_openclaw {
+        if is_command_installed("openclaw") {
+            (program.clone(), program_args.clone())
+        } else {
+            let mut args = vec!["openclaw".to_string()];
+            args.extend(program_args.clone());
+            ("npx".to_string(), args)
+        }
+    } else {
+        (program.clone(), program_args.clone())
+    };
+
+    let mut cmd = std::process::Command::new(&cmd_program);
+    cmd.args(&cmd_args);
     if is_openclaw {
         // Clear any provider API keys that could override openclaw's config
         for var in &[
