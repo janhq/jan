@@ -83,7 +83,7 @@ loadCacheFromStorage()
 function SetupScreen() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { getProviderByName } = useModelProvider()
+  const { getProviderByName, selectModelProvider } = useModelProvider()
 
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
@@ -346,6 +346,7 @@ function SetupScreen() {
       toast.dismiss(`model-validation-started-${defaultVariant.model_id}`)
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
 
+      selectModelProvider('llamacpp', defaultVariant.model_id)
       navigate({ to: route.home, replace: true })
     }
 
@@ -356,7 +357,7 @@ function SetupScreen() {
       events.off(DownloadEvent.onFileDownloadAndVerificationSuccess, onDownloadSuccess)
       events.off(DownloadEvent.onFileDownloadSuccess, onDownloadSuccess)
     }
-  }, [defaultVariant, navigate])
+  }, [defaultVariant, navigate, selectModelProvider])
 
   useEffect(() => {
     if (
