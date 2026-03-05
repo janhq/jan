@@ -52,6 +52,7 @@ const SettingsMenu = () => {
   // On web: exclude llamacpp provider as it's not available
   const activeProviders = providers.filter((provider) => {
     if (!provider.active) return false
+    if (!IS_MACOS && provider.provider === 'mlx') return false
 
     return true
   })
