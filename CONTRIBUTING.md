@@ -91,7 +91,7 @@ Jan is a desktop app that runs local AI models. Here's how the components actual
    - Backend loads plugins as Rust libraries
    - Direct function calls, no IPC overhead
 
-4. **Response Flow**: 
+4. **Response Flow**:
    - Plugin → Backend → IPC → Requester (Web App/Core/Extension) → UI updates
 
 ### Real-World Example: Loading a Model
@@ -126,7 +126,7 @@ jan/
 ├── scripts/              # Build utilities
 │
 ├── package.json          # Root workspace configuration
-├── Makefile              # Build automation commands  
+├── Makefile              # Build automation commands
 ├── LICENSE               # Apache 2.0 license
 └── README.md             # Project overview
 ```
@@ -137,9 +137,10 @@ jan/
 
 **Prerequisites:**
 - Node.js ≥ 20.0.0
-- Yarn ≥ 1.22.0
-- Rust (for Tauri)
+- Yarn ≥ 4.5.3
 - Make ≥ 3.81
+- Rust (for Tauri)
+- (macOS Apple Silicon only) MetalToolchain `xcodebuild -downloadComponent MetalToolchain`
 
 **Option 1: The Easy Way (Make)**
 ```bash
