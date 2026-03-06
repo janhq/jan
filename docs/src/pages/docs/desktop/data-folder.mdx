@@ -30,12 +30,10 @@ Jan stores your data locally in JSON format. Your data is yours alone.
 ## Open Jan Data Folder
 
 Via Jan:
-1. Settings (<Settings width={16} height={16} style={{display:"inline"}}/>) > Advanced Settings
-2. Click <FolderOpen width={16} height={16} style={{display:"inline"}}/>
+1. Settings (<Settings width={16} height={16} style={{display:"inline"}}/>) > General > App Logs
+2. Click **Open Logs**
 
-<br/>
-![Open Jan Data Folder](./_assets/settings-11.png)
-<br/>
+![Open Jan Data Folder](./_assets/server-troubleshooting.png)
 
 Via Terminal:
 
@@ -152,7 +150,15 @@ Debugging headquarters (`/logs/app.txt`):
 - **[SPECS]**: Hardware confessions
 
 ### `models/`
-The silicon brain collection. Each model has its own `model.json`.
+The silicon brain collection. Each model has its own `model.yml`:
+
+```yaml
+model_path: llamacpp/models/janhq/Jan-v3-4B-base-instruct-gguf/Jan-v3-4b-base-instruct-Q4_K_XL.gguf
+name: Jan-v3-4B-base-instruct-gguf
+size_bytes: 2999182272
+embedding: false
+model_sha256: 1dc700f26bfb10e53d1b2daebd86d4c5f2accc50fe13acd863c59453f9abfa48
+```
 
 <Callout type="info">
 Full parameters: [here](/docs/desktop/model-parameters)

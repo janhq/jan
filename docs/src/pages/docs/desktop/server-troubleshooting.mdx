@@ -172,33 +172,7 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
 
 ![Hardware](./_assets/hardware-settings.png)
 
-### Step 3: Verify Configuration
-
-1. Go to **Settings** > **Advanced Settings** > **Data Folder**
-2. Open `settings.json` file
-3. Check these settings:
-
-```json
-{
-  "run_mode": "gpu",          // Should be "gpu"
-  "nvidia_driver": {
-    "exist": true,            // Should be true
-    "version": "531.18"
-  },
-  "cuda": {
-    "exist": true,            // Should be true
-    "version": "12"
-  },
-  "gpus": [
-    {
-      "id": "0",
-      "vram": "12282"         // Your GPU memory in MB
-    }
-  ]
-}
-```
-
-### Step 4: Restart Jan
+### Step 3: Restart Jan
 
 Close and restart Jan to apply changes.
 
