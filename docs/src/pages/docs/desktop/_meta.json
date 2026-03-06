@@ -18,7 +18,6 @@
   "assistants": "Assistants",
   "file-upload": "File Upload",
   "manage-models": "Hub",
-  "mcp-examples": "Connectors (MCP)",
   "api-server": "Local API Server",
   "settings": "App Settings",
   "local-engine": "Local AI Engine",
@@ -34,7 +33,6 @@
   },
   "api-preference": "API Reference",
   "server-troubleshooting": "Server Troubleshooting",
-  "server-examples": "Clients",
   "reference-separator": {
     "title": "Reference",
     "type": "separator"
