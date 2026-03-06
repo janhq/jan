@@ -118,7 +118,12 @@ impl Sandbox for DirectProcessSandbox {
         }
     }
 
-    async fn stop(&self, _handle: &mut SandboxHandle) -> Result<(), String> {
+    async fn stop(&self, handle: &mut SandboxHandle) -> Result<(), String> {
+        if let SandboxHandle::Process(child) = handle {
+            let _ = child.kill().await;
+            return Ok(());
+        }
+
         let mut stopped_via_cli = false;
         let config_dir = super::get_openclaw_config_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let mut stop_cmd = build_openclaw_command(&["gateway", "stop"], &config_dir);
