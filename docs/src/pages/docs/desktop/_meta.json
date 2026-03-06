@@ -16,6 +16,7 @@
   "cli": "CLI",
   "projects": "Projects",
   "assistants": "Assistants",
+  "file-upload": "File Upload",
   "manage-models": "Hub",
   "mcp-examples": "Connectors (MCP)",
   "settings": "App Settings",
