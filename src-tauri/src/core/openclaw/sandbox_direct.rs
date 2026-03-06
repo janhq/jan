@@ -64,40 +64,58 @@ impl Sandbox for DirectProcessSandbox {
             log::warn!("Failed to ensure node shim: {}", e);
         }
 
-        // Install gateway service with --runtime bun when available
+        // On Windows, schtasks requires admin and may fail.
         let install_args = if super::resolve_bundled_bun().is_some() {
             vec!["gateway", "install", "--runtime", "bun"]
         } else {
             vec!["gateway", "install"]
         };
         let mut install_cmd = build_openclaw_command(&install_args.iter().map(|s| *s).collect::<Vec<_>>(), &config.config_dir);
-        match install_cmd.output().await {
+        let service_installed = match install_cmd.output().await {
             Ok(output) if !output.status.success() => {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 log::error!("gateway install failed: {}", stderr.trim());
+                false
             }
             Err(e) => {
                 log::error!("Failed to run gateway install: {}", e);
+                false
             }
-            _ => {}
+            _ => true,
+        };
+
+        if service_installed {
+            let mut cmd = build_openclaw_command(&["gateway", "start"], &config.config_dir);
+            for (key, value) in &config.env_vars {
+                cmd.env(key, value);
+            }
+
+            let output = cmd
+                .output()
+                .await
+                .map_err(|e| format!("Failed to run openclaw gateway start: {}", e))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Failed to start OpenClaw gateway: {}", stderr));
+            }
+
+            Ok(SandboxHandle::Named("direct-process".to_string()))
+        } else {
+            // Service registration failed (e.g. Windows without admin).
+            // Fall back to `openclaw gateway` as a child process.
+            log::info!("Service install unavailable, starting gateway as child process");
+            let mut cmd = build_openclaw_command(&["gateway"], &config.config_dir);
+            for (key, value) in &config.env_vars {
+                cmd.env(key, value);
+            }
+
+            let child = cmd
+                .spawn()
+                .map_err(|e| format!("Failed to spawn openclaw gateway: {}", e))?;
+
+            Ok(SandboxHandle::Process(child))
         }
-
-        let mut cmd = build_openclaw_command(&["gateway", "start"], &config.config_dir);
-        for (key, value) in &config.env_vars {
-            cmd.env(key, value);
-        }
-
-        let output = cmd
-            .output()
-            .await
-            .map_err(|e| format!("Failed to run openclaw gateway start: {}", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Failed to start OpenClaw gateway: {}", stderr));
-        }
-
-        Ok(SandboxHandle::Named("direct-process".to_string()))
     }
 
     async fn stop(&self, _handle: &mut SandboxHandle) -> Result<(), String> {
