@@ -20,6 +20,7 @@
   "local-engine": "Local AI Engine",
   "model-parameters": "Model Parameters",
   "settings": "App Settings",
+  "cli": "Jan CLI",
   "privacy-policy": {
     "type": "page",
     "display": "hidden",
