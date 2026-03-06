@@ -1,6 +1,6 @@
 {
   "refreshModelsError": "Для получения моделей необходимо настроить базовый URL и ключ API поставщика.",
-  "refreshModelsSuccess": "Добавлено {{count}} новых моделей от {{provider}}.",
+  "refreshModelsSuccess": "Добавлены модели от {{provider}}. Новых: {{count}}",
   "noNewModels": "Новых моделей не найдено. Все доступные модели уже добавлены.",
   "refreshModelsFailed": "Не удалось получить модели от {{provider}}. Пожалуйста, проверьте ваш ключ API и базовый URL.",
   "models": "Модели",
