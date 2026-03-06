@@ -7,17 +7,28 @@ use super::sandbox::{IsolationTier, Sandbox, SandboxConfig, SandboxHandle, Sandb
 pub struct DirectProcessSandbox;
 
 /// Helper to build a command with resolved openclaw path and PATH injection.
+///
+/// When bundled Bun is available, uses `bun <openclaw_path> <args>` to avoid
+/// shebang resolution issues (old system node, missing node shim, etc.).
 fn build_openclaw_command(args: &[&str], config_dir: &std::path::Path) -> tokio::process::Command {
-    // Try to use the installed openclaw binary in the runtime directory
     let openclaw_path = super::get_openclaw_bin_path().ok();
     let use_installed_binary = openclaw_path
         .as_ref()
         .map(|p| p.exists())
         .unwrap_or(false);
+    let bun_path = super::resolve_bundled_bun();
 
-    let mut cmd = if use_installed_binary {
+    let mut cmd = if use_installed_binary && bun_path.is_some() {
+        // Best path: run bun explicitly as the interpreter for the openclaw script.
+        // This bypasses shebang resolution entirely — no dependency on `node` in PATH.
+        let mut c = tokio::process::Command::new(bun_path.unwrap());
+        c.arg(openclaw_path.unwrap());
+        c
+    } else if use_installed_binary {
+        // Bun not available, run openclaw script directly (relies on shebang → system node)
         tokio::process::Command::new(openclaw_path.unwrap())
     } else {
+        // Fallback: bare "openclaw" (user installed via npm or has it in PATH)
         tokio::process::Command::new("openclaw")
     };
 
@@ -74,8 +85,19 @@ impl Sandbox for DirectProcessSandbox {
             vec!["gateway", "install"]
         };
         let mut install_cmd = build_openclaw_command(&install_args.iter().map(|s| *s).collect::<Vec<_>>(), &config.config_dir);
-        if let Ok(mut install_child) = install_cmd.spawn() {
-            let _ = install_child.wait().await;
+        match install_cmd.output().await {
+            Ok(output) => {
+                if output.status.success() {
+                    log::info!("gateway install succeeded: {}", String::from_utf8_lossy(&output.stdout).trim());
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    log::error!("gateway install failed (exit {}): stdout={}, stderr={}", output.status, stdout.trim(), stderr.trim());
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to run gateway install: {}", e);
+            }
         }
 
         // Start OpenClaw gateway via CLI

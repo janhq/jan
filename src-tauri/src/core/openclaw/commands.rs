@@ -66,19 +66,30 @@ async fn openclaw_command(args: &[&str]) -> Command {
         hide_window(&mut cmd);
         cmd
     } else {
-        // Ensure node shim points to bundled Bun (for shebang resolution)
+        // Ensure node shim points to bundled Bun (for shebang resolution fallback)
         if let Err(e) = super::ensure_bun_node_shim() {
             log::debug!("Node shim not created (will fall back to system node): {}", e);
         }
 
-        // 1. Try the installed openclaw binary first
         let openclaw_path = super::get_openclaw_bin_path().ok();
         let use_installed_binary = openclaw_path
             .as_ref()
             .map(|p| p.exists())
             .unwrap_or(false);
+        let bun_path = super::resolve_bundled_bun();
 
-        let mut cmd = if use_installed_binary {
+        // When bundled Bun is available, use it as the explicit interpreter for
+        // the openclaw script. This bypasses shebang resolution entirely — avoids
+        // issues with old system node or missing node shim.
+        let mut cmd = if use_installed_binary && bun_path.is_some() {
+            let mut c = Command::new(bun_path.unwrap());
+            c.arg(openclaw_path.unwrap());
+            if let Some(new_path) = super::build_augmented_path() {
+                c.env("PATH", new_path);
+            }
+            c.args(args);
+            c
+        } else if use_installed_binary {
             let mut c = Command::new(openclaw_path.unwrap());
             if let Some(new_path) = super::build_augmented_path() {
                 c.env("PATH", new_path);
@@ -86,7 +97,7 @@ async fn openclaw_command(args: &[&str]) -> Command {
             c.args(args);
             c
         } else {
-            // 2. Fallback: bare "openclaw" (user installed via npm or has it in PATH)
+            // Fallback: bare "openclaw" (user installed via npm or has it in PATH)
             let mut c = Command::new("openclaw");
             if let Some(new_path) = super::build_augmented_path() {
                 c.env("PATH", new_path);

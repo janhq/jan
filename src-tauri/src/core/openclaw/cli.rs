@@ -20,20 +20,33 @@ fn hide_window(cmd: &mut Command) {
 fn hide_window(_cmd: &mut Command) {}
 
 /// Helper to build a command with resolved openclaw path and PATH injection.
+///
+/// When bundled Bun is available, uses `bun <openclaw_path> <args>` to avoid
+/// shebang resolution issues (old system node, missing node shim, etc.).
 fn build_openclaw_command(args: &[&str]) -> Command {
-    // Ensure node shim points to bundled Bun (for shebang resolution)
+    // Ensure node shim points to bundled Bun (for shebang resolution fallback)
     if let Err(e) = super::ensure_bun_node_shim() {
         log::debug!("Node shim not created (will fall back to system node): {}", e);
     }
 
-    // Try to use the installed openclaw binary in the runtime directory
     let openclaw_path = super::get_openclaw_bin_path().ok();
     let use_installed_binary = openclaw_path
         .as_ref()
         .map(|p| p.exists())
         .unwrap_or(false);
+    let bun_path = super::resolve_bundled_bun();
 
-    if use_installed_binary {
+    if use_installed_binary && bun_path.is_some() {
+        // Best path: run bun explicitly as the interpreter for the openclaw script
+        let mut cmd = Command::new(bun_path.unwrap());
+        cmd.arg(openclaw_path.unwrap());
+        if let Some(new_path) = super::build_augmented_path() {
+            cmd.env("PATH", new_path);
+        }
+        cmd.args(args);
+        hide_window(&mut cmd);
+        cmd
+    } else if use_installed_binary {
         let mut cmd = Command::new(openclaw_path.unwrap());
         if let Some(new_path) = super::build_augmented_path() {
             cmd.env("PATH", new_path);
@@ -58,7 +71,14 @@ async fn check_openclaw_installed() -> Result<Option<String>, String> {
     // Try the installed openclaw binary in the runtime directory
     if let Ok(openclaw_path) = super::get_openclaw_bin_path() {
         if openclaw_path.exists() {
-            let mut cmd = Command::new(&openclaw_path);
+            // Use bun as explicit interpreter when available (avoids shebang issues)
+            let mut cmd = if let Some(bun_path) = super::resolve_bundled_bun() {
+                let mut c = Command::new(bun_path);
+                c.arg(&openclaw_path);
+                c
+            } else {
+                Command::new(&openclaw_path)
+            };
             cmd.arg("--version");
             if let Some(new_path) = super::build_augmented_path() {
                 cmd.env("PATH", new_path);
