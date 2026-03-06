@@ -21,8 +21,10 @@ export function LeftSidebar() {
         <SidebarHeader className="flex px-1">
           <div className={cn("flex items-center w-full justify-between", IS_MACOS && "justify-end")}>
             {!IS_MACOS && <span className="ml-2 font-medium font-studio">Jan</span>}
-            {isLeftPanelOpen && <DownloadManagement />}
-            <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
+            <div>  
+              {isLeftPanelOpen && <DownloadManagement />}
+              <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
+            </div>
           </div>
           <NavMain />
         </SidebarHeader>
