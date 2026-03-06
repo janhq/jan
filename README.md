@@ -97,9 +97,10 @@ For those who enjoy the scenic route:
 ### Prerequisites
 
 - Node.js ≥ 20.0.0
-- Yarn ≥ 1.22.0
+- Yarn ≥ 4.5.3
 - Make ≥ 3.81
 - Rust (for Tauri)
+- (macOS Apple Silicon only) MetalToolchain `xcodebuild -downloadComponent MetalToolchain`
 
 ### Run with Make
 

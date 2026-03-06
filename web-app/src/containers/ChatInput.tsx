@@ -32,6 +32,7 @@ import {
   IconBrandChrome,
   IconUser,
 } from '@tabler/icons-react'
+import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -86,6 +87,8 @@ import {
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
+import { useAgentMode } from '@/hooks/useAgentMode'
+import { isOpenClawRunning } from '@/utils/openclaw'
 
 type ChatInputProps = {
   className?: string
@@ -139,6 +142,25 @@ const ChatInput = memo(function ChatInput({
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
   const assistants = useAssistant((state) => state.assistants)
+
+  // Agent mode (OpenClaw)
+  // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
+  const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
+  const [openClawAvailable, setOpenClawAvailable] = useState(false)
+  const isAgentMode = useAgentMode((state) =>
+    state.agentThreads[agentModeKey] === true
+  )
+  // When projectId is present, treat as normal chat (disable agent mode UI)
+  const effectiveAgentMode = isAgentMode && !projectId
+  const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
+
+  useEffect(() => {
+    isOpenClawRunning().then(setOpenClawAvailable)
+  }, [currentThreadId])
+
+  const handleAgentToggle = useCallback(() => {
+    toggleAgentMode(agentModeKey)
+  }, [agentModeKey, toggleAgentMode])
 
   // Get current thread messages for token counting
   const threadMessages = useMessages(
@@ -373,6 +395,11 @@ const ChatInput = memo(function ChatInput({
           JSON.stringify(messagePayload)
         )
         sessionStorage.setItem('temp-chat-nav', 'true')
+        // Transfer agent mode from home screen to temporary thread
+        if (isAgentMode && agentModeKey !== TEMPORARY_CHAT_ID) {
+          useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
+          useAgentMode.getState().removeThread(agentModeKey)
+        }
         router.navigate({
           to: route.threadsDetail,
           params: { threadId: TEMPORARY_CHAT_ID },
@@ -420,6 +447,12 @@ const ChatInput = memo(function ChatInput({
 
         // Clear selected assistant after creating thread
         setSelectedAssistant(undefined)
+
+        // Transfer agent mode from home screen to the new thread
+        if (isAgentMode) {
+          useAgentMode.getState().setAgentMode(newThread.id, true)
+          useAgentMode.getState().removeThread(agentModeKey)
+        }
 
         // Store the initial message for the new thread
         sessionStorage.setItem(
@@ -869,6 +902,15 @@ const ChatInput = memo(function ChatInput({
     return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
   }
 
+  const hashBase64 = async (base64: string): Promise<string> => {
+    const binary = atob(base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    const hashBuffer = await crypto.subtle.digest('SHA-256', bytes)
+    const hashArray = Array.from(new Uint8Array(hashBuffer))
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
+  }
+
   const processImageFiles = async (files: File[]) => {
     const maxSize = 10 * 1024 * 1024 // 10MB in bytes
     const oversizedFiles: string[] = []
@@ -925,42 +967,66 @@ const ChatInput = memo(function ChatInput({
       })
     }
 
-    let duplicates: string[] = []
-    let newFiles: Attachment[] = []
-
-    setAttachmentsForThread(attachmentsKey, (currentAttachments) => {
-      const existingImageNames = new Set(
-        currentAttachments.filter((a) => a.type === 'image').map((a) => a.name)
-      )
-
-      duplicates = []
-      newFiles = []
-
-      for (const att of preparedFiles) {
-        if (existingImageNames.has(att.name)) {
-          duplicates.push(att.name)
-          continue
-        }
-        newFiles.push(att)
+    // Compute content hashes for deduplication (allows different images with same filename)
+    for (const att of preparedFiles) {
+      if (att.base64) {
+        att.contentHash = await hashBase64(att.base64)
       }
+    }
 
-      if (newFiles.length > 0) {
-        return [...currentAttachments, ...newFiles]
+    const duplicates: string[] = []
+    const newFiles: Attachment[] = []
+
+    const currentAttachments = useChatAttachments.getState().getAttachments(
+      attachmentsKey
+    )
+
+    const existingImageHashes = new Set<string>()
+    const existingImageNames = new Set<string>()
+    for (const a of currentAttachments) {
+      if (a.type !== 'image') continue
+      if (a.contentHash) {
+        existingImageHashes.add(a.contentHash)
+      } else if (a.base64) {
+        existingImageHashes.add(await hashBase64(a.base64))
+      } else {
+        existingImageNames.add(a.name)
       }
-      return currentAttachments
-    })
+    }
+
+    const seenHashesInBatch = new Set<string>()
+    for (const att of preparedFiles) {
+      const hash = att.contentHash
+      const isDuplicateByContent =
+        hash &&
+        (existingImageHashes.has(hash) || seenHashesInBatch.has(hash))
+      const isDuplicateByName =
+        existingImageNames.has(att.name)
+      if (isDuplicateByContent || isDuplicateByName) {
+        duplicates.push(att.name)
+        continue
+      }
+      if (hash) {
+        seenHashesInBatch.add(hash)
+      }
+      newFiles.push(att)
+    }
+
+    setAttachmentsForThread(attachmentsKey, (prev) =>
+      newFiles.length > 0 ? [...prev, ...newFiles] : prev
+    )
 
     if (currentThreadId && newFiles.length > 0) {
       void (async () => {
         for (const img of newFiles) {
+          const matchImg = (a: Attachment) =>
+            a.type === 'image' &&
+            (img.contentHash ? a.contentHash === img.contentHash : a.name === img.name)
+
           try {
             // Mark as processing
             setAttachmentsForThread(attachmentsKey, (prev) =>
-              prev.map((a) =>
-                a.name === img.name && a.type === 'image'
-                  ? { ...a, processing: true }
-                  : a
-              )
+              prev.map((a) => (matchImg(a) ? { ...a, processing: true } : a))
             )
 
             const result = await serviceHub
@@ -971,7 +1037,7 @@ const ChatInput = memo(function ChatInput({
               // Mark as processed with ID
               setAttachmentsForThread(attachmentsKey, (prev) =>
                 prev.map((a) =>
-                  a.name === img.name && a.type === 'image'
+                  matchImg(a)
                     ? {
                         ...a,
                         processing: false,
@@ -988,7 +1054,7 @@ const ChatInput = memo(function ChatInput({
             console.error('Failed to ingest image:', error)
             // Remove failed image
             setAttachmentsForThread(attachmentsKey, (prev) =>
-              prev.filter((a) => !(a.name === img.name && a.type === 'image'))
+              prev.filter((a) => !matchImg(a))
             )
             toast.error(`Failed to ingest ${img.name}`, {
               description:
@@ -1448,6 +1514,7 @@ const ChatInput = memo(function ChatInput({
               </div>
             )}
             <TextareaAutosize
+              dir="auto"
               ref={textareaRef}
               minRows={2}
               rows={1}
@@ -1501,7 +1568,8 @@ const ChatInput = memo(function ChatInput({
                   isStreaming && 'opacity-50 pointer-events-none'
                 )}
               >
-                {/* Dropdown for attachments */}
+                {/* Dropdown for attachments — hidden in agent mode */}
+                {!effectiveAgentMode && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="secondary" size="icon-sm" className='rounded-full mr-2 mb-1'>
@@ -1550,7 +1618,7 @@ const ChatInput = memo(function ChatInput({
                           <IconUser size={18} className="text-muted-foreground" />
                           <span>Use Assistant</span>
                         </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent>
+                        <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
                           <DropdownMenuItem
                             className={!selectedAssistant && !currentThread?.assistants?.length ? 'bg-accent' : ''}
                             onClick={() => {
@@ -1611,6 +1679,7 @@ const ChatInput = memo(function ChatInput({
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
+                )}
                 {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
                 ) : (
@@ -1619,7 +1688,7 @@ const ChatInput = memo(function ChatInput({
                     useLastUsedModel={initialMessage}
                   />
                 )} */}
-                {hasJanBrowserMCPConfig && modelSupportsBrowser && (
+                {!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1661,7 +1730,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {selectedModel?.capabilities?.includes('embeddings') && (
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('embeddings') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1680,7 +1749,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {selectedModel?.capabilities?.includes('tools') &&
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
                     // Use custom MCP component
@@ -1745,7 +1814,37 @@ const ChatInput = memo(function ChatInput({
                     </Tooltip>
                   ))}
 
-                {selectedModel?.capabilities?.includes('web_search') && (
+                {openClawAvailable && !projectId && isAgentMode && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant={isAgentMode ? "default" : "ghost"}
+                        size="icon-xs"
+                        onClick={currentThreadId ? handleAgentToggle : undefined}
+                        className={cn(
+                          isAgentMode && 'text-primary bg-primary/10 hover:bg-primary/10 items-center',
+                          !currentThreadId && 'cursor-default pointer-events-none'
+                        )}
+                      >
+                        <BotIcon
+                          className={cn(
+                            'text-muted-foreground -mt-0.5',
+                            isAgentMode && 'text-primary'
+                          )}
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {isAgentMode
+                          ? 'Agent mode active'
+                          : 'Enable agent mode'}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('web_search') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon-xs">
@@ -1761,7 +1860,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {selectedModel?.capabilities?.includes('reasoning') && (
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('reasoning') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon-xs">
@@ -1782,6 +1881,7 @@ const ChatInput = memo(function ChatInput({
             <div className="flex items-center gap-2">
               {selectedProvider === 'llamacpp' &&
                 tokenCounterCompact &&
+                !effectiveAgentMode &&
                 !initialMessage &&
                 (threadMessages?.length > 0 || prompt.trim().length > 0) && (
                   <div className="flex-1 flex justify-center">
@@ -1849,6 +1949,7 @@ const ChatInput = memo(function ChatInput({
 
       {selectedProvider === 'llamacpp' &&
         isModelActive &&
+        !effectiveAgentMode &&
         !tokenCounterCompact &&
         !initialMessage &&
         (threadMessages?.length > 0 || prompt.trim().length > 0) && (

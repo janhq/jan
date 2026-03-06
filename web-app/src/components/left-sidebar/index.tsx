@@ -2,11 +2,11 @@ import { DownloadManagement } from '@/containers/DownloadManegement'
 import { NavChats } from './NavChats'
 import { NavMain } from './NavMain'
 import { NavProjects } from './NavProjects'
+import { useLeftPanel } from '@/hooks/useLeftPanel'
 
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarTrigger,
   SidebarHeader,
   SidebarRail,
@@ -14,6 +14,7 @@ import {
 import { cn } from '@/lib/utils'
 
 export function LeftSidebar() {
+  const { open: isLeftPanelOpen } = useLeftPanel()
   return (
     <div className='relative z-50'>
       <Sidebar variant="floating" collapsible="offcanvas">
@@ -28,9 +29,6 @@ export function LeftSidebar() {
           <NavProjects />
           <NavChats />
         </SidebarContent>
-        <SidebarFooter>
-          <DownloadManagement />
-        </SidebarFooter>
         <SidebarRail />
       </Sidebar>
     </div>

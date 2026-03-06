@@ -22,7 +22,7 @@ pub fn is_valid_host(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
     } else {
         host.split(':').next().unwrap_or(host)
     };
-    let default_valid_hosts = ["localhost", "127.0.0.1", "0.0.0.0"];
+    let default_valid_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal"];
 
     if default_valid_hosts
         .iter()

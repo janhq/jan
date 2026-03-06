@@ -639,20 +639,20 @@ Section VCRedist
   ${If} $0 == ""
     ; VC++ Redistributable not found, need to install
     DetailPrint "Visual C++ Redistributable not found, downloading and installing..."
-    
+
     ; Download VC++ Redistributable
     Delete "$TEMP\${VCREDIST_FILENAME}"
     DetailPrint "Downloading Visual C++ Redistributable..."
     NSISdl::download "${VCREDIST_URL}" "$TEMP\${VCREDIST_FILENAME}"
     Pop $1
-    
+
     ${If} $1 == "success"
       DetailPrint "Visual C++ Redistributable download successful"
-      
+
       ; Install VC++ Redistributable silently
       DetailPrint "Installing Visual C++ Redistributable..."
       ExecWait '"$TEMP\${VCREDIST_FILENAME}" /quiet /norestart' $2
-      
+
       ${If} $2 == 0
         DetailPrint "Visual C++ Redistributable installed successfully"
       ${ElseIf} $2 == 1638
@@ -666,7 +666,7 @@ Section VCRedist
         Abort "Installation cancelled due to Visual C++ Redistributable failure"
         continue_install:
       ${EndIf}
-      
+
       ; Clean up downloaded file
       Delete "$TEMP\${VCREDIST_FILENAME}"
     ${Else}
@@ -696,10 +696,13 @@ Section Install
   ; Copy resources
     CreateDirectory "$INSTDIR\resources"
     CreateDirectory "$INSTDIR\resources\pre-install"
+    CreateDirectory "$INSTDIR\resources\bin"
     SetOutPath $INSTDIR
     File /a "/oname=LICENSE" "D:\a\jan\jan\src-tauri\resources\LICENSE"
     SetOutPath "$INSTDIR\resources\pre-install"
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\pre-install\"
+    SetOutPath "$INSTDIR\resources\bin"
+    File /a "/oname=jan-cli.exe" "D:\a\jan\jan\src-tauri\resources\bin\jan-cli.exe"
     SetOutPath $INSTDIR
 
   ; Copy external binaries
@@ -810,7 +813,7 @@ FunctionEnd
 
 Section Uninstall
   SetDetailsPrint none
-  
+
   !ifmacrodef NSIS_HOOK_PREUNINSTALL
     !insertmacro NSIS_HOOK_PREUNINSTALL
   !endif

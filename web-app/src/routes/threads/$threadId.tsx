@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { createFileRoute, useParams } from '@tanstack/react-router'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 
 import HeaderPage from '@/containers/HeaderPage'
@@ -52,20 +52,37 @@ import { useToolApproval } from '@/hooks/useToolApproval'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
+import { Shimmer } from '@/components/ai-elements/shimmer'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
   SUBMITTED: 'submitted',
 } as const
 
+type ThreadModel = {
+  id: string
+  provider: string
+}
+
+type SearchParams = {
+  threadModel?: ThreadModel
+}
+
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
   component: ThreadDetail,
+  validateSearch: (search: Record<string, unknown>): SearchParams => {
+    return {
+      threadModel: search.threadModel as ThreadModel | undefined,
+    }
+  },
 })
 
 function ThreadDetail() {
   const serviceHub = useServiceHub()
   const { threadId } = useParams({ from: Route.id })
+  const search = useSearch({ from: Route.id })
+  const searchThreadModel = search.threadModel
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
   const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
   const assistants = useAssistant((state) => state.assistants)
@@ -126,6 +143,18 @@ function ThreadDetail() {
     threadRef.current = thread
   }, [thread])
 
+  // Holds the partial assistant message while the model reloads after a
+  // context-limit hit, so the user sees it instead of a blank gap.
+  const [pendingContinueMessage, setPendingContinueMessage] =
+    useState<UIMessage | null>(null)
+  const [isAutoIncreasingContext, setIsAutoIncreasingContext] = useState(false)
+
+  // Refs so onFinish (captured in closure) always calls the latest callbacks
+  const handleContextSizeIncreaseRef = useRef<(() => void) | null>(null)
+  const setContinueFromContentRef = useRef<((content: string) => void) | null>(
+    null
+  )
+
   // Use the AI SDK chat hook
   const {
     messages: chatMessages,
@@ -137,26 +166,47 @@ function ThreadDetail() {
     stop,
     addToolOutput,
     updateRagToolsAvailability,
+    setContinueFromContent,
   } = useChat({
     sessionId: threadId,
     sessionTitle: thread?.title,
     systemMessage,
     experimental_throttle: 50,
     onFinish: ({ message, isAbort }) => {
-      // Persist assistant message to backend (skip if aborted)
+      const msgMeta = message.metadata as Record<string, unknown> | undefined
+      const finishReason = msgMeta?.finishReason as string | undefined
+
+      // Context limit hit: send partial content as prefill so the model continues
+      // from where it stopped. The stream wrapper injects it as the first text-delta
+      // of the new message, so the user sees the partial text immediately.
+      if (!isAbort && finishReason === 'length') {
+        const partialText = message.parts
+          .filter((p) => p.type === 'text')
+          .map((p) => (p as { type: 'text'; text: string }).text)
+          .join('')
+        if (partialText) {
+          setContinueFromContentRef.current?.(partialText)
+          // Keep the partial message visible while the model reloads
+          setPendingContinueMessage(message)
+        }
+        handleContextSizeIncreaseRef.current?.()
+        return
+      }
+
+      if (!isAbort && message.parts.length) setPendingContinueMessage(null)
+
+      // Persist assistant message to backend (skip if aborted).
+      // For continuations, message.parts already contains partial + new content
+      // because the stream wrapper prepended the partial text as the first delta.
       if (!isAbort && message.role === 'assistant') {
-        // Extract content parts (including tool calls) as separate items in the content array
-        // This preserves the natural ordering: text -> tool call -> text -> tool call, etc.
         const contentParts = extractContentPartsFromUIMessage(message)
 
         if (contentParts.length > 0) {
-          // Extract metadata from the message (including usage and tokenSpeed)
           const messageMetadata = (message.metadata || {}) as Record<
             string,
             unknown
           >
 
-          // Create assistant message with content parts (including tool calls) and metadata
           const assistantMessage: ThreadMessage = {
             type: 'text',
             role: ChatCompletionRole.Assistant,
@@ -223,7 +273,6 @@ function ThreadDetail() {
 
             // Route to the appropriate service based on tool name
             if (ragToolNames.has(toolName)) {
-
               result = await serviceHub.rag().callTool({
                 toolName,
                 arguments: toolCall.input,
@@ -525,6 +574,7 @@ function ThreadDetail() {
 
   // Check for and send initial message from sessionStorage
   const initialMessageSentRef = useRef(false)
+  
   useEffect(() => {
     // Prevent duplicate sends
     if (initialMessageSentRef.current) return
@@ -699,8 +749,11 @@ function ThreadDetail() {
 
     // Increase context length by 50%
     const currentCtxLen =
-      (model.settings?.ctx_len?.controller_props?.value as number) ?? 8192
-    const newCtxLen = Math.round(Math.max(8192, currentCtxLen) * 1.5)
+      (model.settings?.ctx_len?.controller_props?.value as number) ?? 32768
+    const newCtxLen =
+      currentCtxLen < 32768
+        ? 32768
+        : Math.round(Math.max(32768, currentCtxLen) * 1.5)
 
     const updatedModel = {
       ...model,
@@ -736,7 +789,36 @@ function ThreadDetail() {
     handleRegenerate,
   ])
 
-  const threadModel = useMemo(() => thread?.model, [thread])
+  // Keep refs in sync so onFinish always calls the latest versions
+  handleContextSizeIncreaseRef.current = handleContextSizeIncrease
+  setContinueFromContentRef.current = setContinueFromContent
+
+  // Auto-trigger context size increase when the model reports a context limit error
+  useEffect(() => {
+    if (!error) return
+    const isContextError =
+      (error.message?.toLowerCase().includes('context') &&
+        (error.message?.toLowerCase().includes('size') ||
+          error.message?.toLowerCase().includes('length') ||
+          error.message?.toLowerCase().includes('limit'))) ||
+      error.message === OUT_OF_CONTEXT_SIZE
+    if (isContextError) {
+      setIsAutoIncreasingContext(true)
+      handleContextSizeIncrease()
+    }
+  }, [error]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clear once the new stream starts
+  useEffect(() => {
+    if (isAutoIncreasingContext && status === 'streaming') {
+      setIsAutoIncreasingContext(false)
+    }
+  }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
+
+   const threadModel = useMemo(
+    () => searchThreadModel ?? thread?.model,
+    [searchThreadModel, thread]
+  )
 
   return (
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
@@ -766,11 +848,35 @@ function ThreadDetail() {
                     onRegenerate={handleRegenerate}
                     onEdit={handleEditMessage}
                     onDelete={handleDeleteMessage}
+                    isAnimating={!pendingContinueMessage}
+                    hideActions={!!pendingContinueMessage}
                   />
                 )
               })}
-              {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
-              {error && (
+              {pendingContinueMessage && status === 'submitted' && (
+                <MessageItem
+                  key={`continue-placeholder-${pendingContinueMessage.id}`}
+                  message={pendingContinueMessage}
+                  isFirstMessage={false}
+                  isLastMessage={true}
+                  status={status}
+                  reasoningContainerRef={reasoningContainerRef}
+                  onRegenerate={handleRegenerate}
+                  onEdit={handleEditMessage}
+                  onDelete={handleDeleteMessage}
+                  hideActions
+                  isAnimating={false}
+                />
+              )}
+              {(status === CHAT_STATUS.SUBMITTED || isAutoIncreasingContext) && (
+                <div className="flex flex-row items-center gap-2">
+                  {(pendingContinueMessage || isAutoIncreasingContext) && (
+                    <Shimmer duration={1}>Growing the Mind...</Shimmer>
+                  )}
+                  {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
+                </div>
+              )}
+              {error && !isAutoIncreasingContext && (
                 <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
                   <div className="flex items-start gap-3">
                     <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
@@ -778,9 +884,14 @@ function ThreadDetail() {
                       <p className="text-sm font-medium text-destructive mb-1">
                         Error generating response
                       </p>
-                      <p className="text-sm text-muted-foreground">
-                        {error.message}
-                      </p>
+                      <div className="table table-fixed w-full">
+                        <span
+                          className="text-sm text-muted-foreground table-cell align-middle"
+                          style={{ wordWrap: 'break-word' }}
+                        >
+                          {error.message}
+                        </span>
+                      </div>
                       {(error.message?.toLowerCase().includes('context') &&
                         (error.message?.toLowerCase().includes('size') ||
                           error.message?.toLowerCase().includes('length') ||

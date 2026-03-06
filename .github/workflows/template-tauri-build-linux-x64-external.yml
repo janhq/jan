@@ -22,7 +22,7 @@ on:
         description: 'If true, builds both .deb and .appimage but disables auto-updater'
 jobs:
   build-linux-x64-external:
-    runs-on: ubuntu-22.04 
+    runs-on: ubuntu-22.04
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
@@ -64,7 +64,7 @@ jobs:
       - name: Install Tauri dependencies
         run: |
           sudo apt update
-          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 libayatana-appindicator3-dev
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 libappindicator3-dev
 
       - name: Update app version
         run: |
@@ -116,6 +116,7 @@ jobs:
             chmod +x .github/scripts/rename-tauri-app.sh
             .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json ${{ inputs.channel }}
             ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
+            ctoml ./src-tauri/Cargo.toml package.default-run "Jan-${{ inputs.channel }}"
             ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
             chmod +x .github/scripts/rename-workspace.sh
             .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
@@ -135,6 +136,7 @@ jobs:
         env:
           RELEASE_CHANNEL: '${{ inputs.channel }}'
           AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
+          TAURI_TRAY: libappindicator3
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

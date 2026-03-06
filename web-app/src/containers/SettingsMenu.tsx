@@ -1,10 +1,11 @@
 import { Link } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   IconChevronDown,
   IconChevronRight,
+  IconCirclePlus,
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
@@ -12,19 +13,46 @@ import { cn } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
+import { AddProviderDialog } from '@/containers/dialogs'
+import { openAIProviderSettings } from '@/constants/providers'
+import cloneDeep from 'lodash/cloneDeep'
+import { toast } from 'sonner'
 
 const SettingsMenu = () => {
   const { t } = useTranslation()
-  const [expandedProviders, setExpandedProviders] = useState(false)
+  const [expandedProviders, setExpandedProviders] = useState(true)
   const matches = useMatches()
   const navigate = useNavigate()
 
-  const { providers } = useModelProvider()
+  const { providers, addProvider } = useModelProvider()
+
+  const createProvider = useCallback(
+    (name: string) => {
+      if (providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())) {
+        toast.error(t('provider:providerAlreadyExists', { name }))
+        return
+      }
+      const newProvider: ProviderObject = {
+        provider: name,
+        active: true,
+        models: [],
+        settings: cloneDeep(openAIProviderSettings) as ProviderSetting[],
+        api_key: '',
+        base_url: 'https://api.openai.com/v1',
+      }
+      addProvider(newProvider)
+      setTimeout(() => {
+        navigate({ to: route.settings.providers, params: { providerName: name } })
+      }, 0)
+    },
+    [providers, addProvider, t, navigate]
+  )
 
   // Filter providers that have active API keys (or are llama.cpp which doesn't need one)
   // On web: exclude llamacpp provider as it's not available
   const activeProviders = providers.filter((provider) => {
     if (!provider.active) return false
+    if (!IS_MACOS && provider.provider === 'mlx') return false
 
     return true
   })
@@ -79,12 +107,6 @@ const SettingsMenu = () => {
       isEnabled: true,
     },
     {
-      title: 'common:modelProviders',
-      route: route.settings.model_providers,
-      hasSubMenu: activeProviders.length > 0,
-      isEnabled: true,
-    },
-    {
       title: 'common:assistants',
       route: route.settings.assistant,
       hasSubMenu: false,
@@ -120,13 +142,6 @@ const SettingsMenu = () => {
       hasSubMenu: false,
       isEnabled: true,
     },
-    // Hide Extension settings for now
-    // {
-    //   title: 'common:extensions',
-    //   route: route.settings.extensions,
-    //   hasSubMenu: false,
-    //   isEnabled: true,
-    // },
   ]
 
   const toggleProvidersExpansion = () => {
@@ -136,7 +151,7 @@ const SettingsMenu = () => {
   return (
     <>
       <div
-        className='h-full w-54 shrink-0 px-1.5 flex'
+        className='h-full w-54 shrink-0 px-1.5 flex overflow-auto'
       >
         <div className="flex flex-col gap-1 w-full font-medium">
           {menuSettings.map((menu) => {
@@ -222,6 +237,103 @@ const SettingsMenu = () => {
               </div>
             )
           })}
+
+          {/* Integrations section */}
+          <div className="mt-4">
+            <span className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {t('common:integrations')}
+            </span>
+            <div className="mt-1 flex flex-col gap-1">
+              <Link
+                to={route.settings.claude_code}
+                className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
+              >
+                <span>{t('common:claude_code')}</span>
+              </Link>
+              <Link
+                to={route.settings.remote_access}
+                className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
+              >
+                <span>{t('common:openclaw')}</span>
+              </Link>
+            </div>
+          </div>
+          
+          {/* Model Providers section */}
+          <div className="mt-4">
+            <span className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {t('common:modelProviders')}
+            </span>
+            <div className="mt-1 flex flex-col gap-1">
+              <Link
+                to={route.settings.model_providers}
+                className="flex items-center justify-between px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
+              >
+                <span>{t('common:modelProviders')}</span>
+                {activeProviders.length > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      toggleProvidersExpansion()
+                    }}
+                    className="text-muted-foreground/60 hover:text-muted-foreground/80"
+                  >
+                    {expandedProviders ? (
+                      <IconChevronDown size={16} />
+                    ) : (
+                      <IconChevronRight size={16} />
+                    )}
+                  </button>
+                )}
+              </Link>
+              {expandedProviders && (
+                <AddProviderDialog onCreateProvider={createProvider}>
+                  <button className="flex items-center gap-1.5 px-2 py-1 w-full cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm">
+                    <IconCirclePlus size={16} />
+                    <span>{t('common:addProvider')}</span>
+                  </button>
+                </AddProviderDialog>
+              )}
+              {expandedProviders && activeProviders.map((provider) => {
+                const isActive = matches.some(
+                  (match) =>
+                    match.routeId === '/settings/providers/$providerName' &&
+                    'providerName' in match.params &&
+                    match.params.providerName === provider.provider
+                )
+                return (
+                  <div
+                    key={provider.provider}
+                    className={cn(
+                      'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-foreground',
+                      isActive && 'bg-secondary',
+                      provider.provider === 'llama.cpp' &&
+                        stepSetupRemoteProvider &&
+                        'hidden'
+                    )}
+                    onClick={() =>
+                      navigate({
+                        to: route.settings.providers,
+                        params: { providerName: provider.provider },
+                        ...(stepSetupRemoteProvider
+                          ? { search: { step: 'setup_remote_provider' } }
+                          : {}),
+                      })
+                    }
+                  >
+                    <ProvidersAvatar provider={provider} />
+                    <div className="truncate">
+                      <span>{getProviderTitle(provider.provider)}</span>
+                    </div>
+                  </div>
+                )
+              })}
+              <div className="m-2" />
+            </div>
+          </div>
+
+          
         </div>
       </div>
     </>

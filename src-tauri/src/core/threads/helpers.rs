@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
-use tauri::Runtime;
+use std::path::Path;
 
 // For async file write serialization
 use std::collections::HashMap;
@@ -44,11 +44,11 @@ pub fn write_messages_to_file(
 }
 
 /// Read messages from a thread's messages.jsonl file
-pub fn read_messages_from_file<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
+pub fn read_messages_from_file(
+    data_folder: &Path,
     thread_id: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let path = get_messages_path(app_handle, thread_id);
+    let path = get_messages_path(data_folder, thread_id);
     if !path.exists() {
         return Ok(vec![]);
     }
@@ -80,12 +80,12 @@ pub fn read_messages_from_file<R: Runtime>(
 }
 
 /// Update thread metadata by writing to thread.json
-pub fn update_thread_metadata<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
+pub fn update_thread_metadata(
+    data_folder: &Path,
     thread_id: &str,
     thread: &serde_json::Value,
 ) -> Result<(), String> {
-    let path = get_thread_metadata_path(app_handle, thread_id);
+    let path = get_thread_metadata_path(data_folder, thread_id);
     let data = serde_json::to_string_pretty(thread).map_err(|e| e.to_string())?;
     fs::write(path, data).map_err(|e| e.to_string())?;
     Ok(())

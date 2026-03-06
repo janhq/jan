@@ -16,6 +16,7 @@ export type Attachment = {
   base64?: string
   dataUrl?: string
   mimeType?: string
+  contentHash?: string // Used for deduplication (different files can have same name)
 
   // For documents (local files)
   path?: string

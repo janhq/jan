@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as HubIndexRouteImport } from './routes/hub/index'
 import { Route as ThreadsThreadIdRouteImport } from './routes/threads/$threadId'
 import { Route as SettingsShortcutsRouteImport } from './routes/settings/shortcuts'
+import { Route as SettingsRemoteAccessRouteImport } from './routes/settings/remote-access'
 import { Route as SettingsPrivacyRouteImport } from './routes/settings/privacy'
 import { Route as SettingsMcpServersRouteImport } from './routes/settings/mcp-servers'
 import { Route as SettingsLocalApiServerRouteImport } from './routes/settings/local-api-server'
@@ -23,6 +24,7 @@ import { Route as SettingsHttpsProxyRouteImport } from './routes/settings/https-
 import { Route as SettingsHardwareRouteImport } from './routes/settings/hardware'
 import { Route as SettingsGeneralRouteImport } from './routes/settings/general'
 import { Route as SettingsExtensionsRouteImport } from './routes/settings/extensions'
+import { Route as SettingsClaudeCodeRouteImport } from './routes/settings/claude-code'
 import { Route as SettingsAttachmentsRouteImport } from './routes/settings/attachments'
 import { Route as SettingsAssistantRouteImport } from './routes/settings/assistant'
 import { Route as ProjectProjectIdRouteImport } from './routes/project/$projectId'
@@ -59,6 +61,11 @@ const ThreadsThreadIdRoute = ThreadsThreadIdRouteImport.update({
 const SettingsShortcutsRoute = SettingsShortcutsRouteImport.update({
   id: '/settings/shortcuts',
   path: '/settings/shortcuts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRemoteAccessRoute = SettingsRemoteAccessRouteImport.update({
+  id: '/settings/remote-access',
+  path: '/settings/remote-access',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsPrivacyRoute = SettingsPrivacyRouteImport.update({
@@ -99,6 +106,11 @@ const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
 const SettingsExtensionsRoute = SettingsExtensionsRouteImport.update({
   id: '/settings/extensions',
   path: '/settings/extensions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsClaudeCodeRoute = SettingsClaudeCodeRouteImport.update({
+  id: '/settings/claude-code',
+  path: '/settings/claude-code',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsAttachmentsRoute = SettingsAttachmentsRouteImport.update({
@@ -147,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
+  '/settings/claude-code': typeof SettingsClaudeCodeRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
@@ -155,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/remote-access': typeof SettingsRemoteAccessRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub/': typeof HubIndexRoute
@@ -170,6 +184,7 @@ export interface FileRoutesByTo {
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
+  '/settings/claude-code': typeof SettingsClaudeCodeRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
@@ -178,6 +193,7 @@ export interface FileRoutesByTo {
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/remote-access': typeof SettingsRemoteAccessRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
@@ -194,6 +210,7 @@ export interface FileRoutesById {
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
+  '/settings/claude-code': typeof SettingsClaudeCodeRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
@@ -202,6 +219,7 @@ export interface FileRoutesById {
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/remote-access': typeof SettingsRemoteAccessRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub/': typeof HubIndexRoute
@@ -219,6 +237,7 @@ export interface FileRouteTypes {
     | '/project/$projectId'
     | '/settings/assistant'
     | '/settings/attachments'
+    | '/settings/claude-code'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
@@ -227,6 +246,7 @@ export interface FileRouteTypes {
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
+    | '/settings/remote-access'
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub/'
@@ -242,6 +262,7 @@ export interface FileRouteTypes {
     | '/project/$projectId'
     | '/settings/assistant'
     | '/settings/attachments'
+    | '/settings/claude-code'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
@@ -250,6 +271,7 @@ export interface FileRouteTypes {
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
+    | '/settings/remote-access'
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub'
@@ -265,6 +287,7 @@ export interface FileRouteTypes {
     | '/project/$projectId'
     | '/settings/assistant'
     | '/settings/attachments'
+    | '/settings/claude-code'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
@@ -273,6 +296,7 @@ export interface FileRouteTypes {
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
+    | '/settings/remote-access'
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub/'
@@ -289,6 +313,7 @@ export interface RootRouteChildren {
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
   SettingsAssistantRoute: typeof SettingsAssistantRoute
   SettingsAttachmentsRoute: typeof SettingsAttachmentsRoute
+  SettingsClaudeCodeRoute: typeof SettingsClaudeCodeRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsHardwareRoute: typeof SettingsHardwareRoute
@@ -297,6 +322,7 @@ export interface RootRouteChildren {
   SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
   SettingsMcpServersRoute: typeof SettingsMcpServersRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
+  SettingsRemoteAccessRoute: typeof SettingsRemoteAccessRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   HubIndexRoute: typeof HubIndexRoute
@@ -346,6 +372,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/shortcuts'
       fullPath: '/settings/shortcuts'
       preLoaderRoute: typeof SettingsShortcutsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/remote-access': {
+      id: '/settings/remote-access'
+      path: '/settings/remote-access'
+      fullPath: '/settings/remote-access'
+      preLoaderRoute: typeof SettingsRemoteAccessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/privacy': {
@@ -402,6 +435,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/extensions'
       fullPath: '/settings/extensions'
       preLoaderRoute: typeof SettingsExtensionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/claude-code': {
+      id: '/settings/claude-code'
+      path: '/settings/claude-code'
+      fullPath: '/settings/claude-code'
+      preLoaderRoute: typeof SettingsClaudeCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/attachments': {
@@ -465,6 +505,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectProjectIdRoute: ProjectProjectIdRoute,
   SettingsAssistantRoute: SettingsAssistantRoute,
   SettingsAttachmentsRoute: SettingsAttachmentsRoute,
+  SettingsClaudeCodeRoute: SettingsClaudeCodeRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsHardwareRoute: SettingsHardwareRoute,
@@ -473,6 +514,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsLocalApiServerRoute: SettingsLocalApiServerRoute,
   SettingsMcpServersRoute: SettingsMcpServersRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
+  SettingsRemoteAccessRoute: SettingsRemoteAccessRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   HubIndexRoute: HubIndexRoute,

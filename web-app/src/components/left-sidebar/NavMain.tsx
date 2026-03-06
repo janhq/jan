@@ -11,7 +11,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 
 import { Link, useNavigate } from '@tanstack/react-router'
 import { PlatformMetaKey } from '@/containers/PlatformMetaKey'
-import React, { useRef } from 'react'
+import React, { useEffect, useRef } from 'react'
 import {
   SearchIcon,
   type SearchIconHandle,
@@ -29,11 +29,19 @@ import {
   type SettingsIconHandle,
 } from '@/components/animated-icon/settings'
 import { BlocksIcon, type BlocksIconHandle } from '../animated-icon/blocks'
+import {
+  BotIcon,
+  type BotIconHandle,
+} from '@/components/animated-icon/bot'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { SearchDialog } from '@/containers/dialogs/SearchDialog'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useSearchDialog } from '@/hooks/useSearchDialog'
 import { useProjectDialog } from '@/hooks/useProjectDialog'
+import { useAgentMode } from '@/hooks/useAgentMode'
+import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import { useAppState } from '@/hooks/useAppState'
+import { isOpenClawRunning } from '@/utils/openclaw'
 
 type AnimatedIconHandle =
   | SearchIconHandle
@@ -41,6 +49,7 @@ type AnimatedIconHandle =
   | MessageCircleIconHandle
   | SettingsIconHandle
   | BlocksIconHandle
+  | BotIconHandle
 
 type NavMainItem = {
   title: string
@@ -59,18 +68,33 @@ type NavMainItem = {
 
 const getNavMainItems = (
   onNewProject: () => void,
-  onSearch: () => void
+  onSearch: () => void,
+  onNewChat: () => void,
+  onJanClaw: () => void
 ): NavMainItem[] => [
   {
     title: 'common:newChat',
-    url: route.home,
     animatedIcon: MessageCircleIcon,
+    onClick: onNewChat,
     shortcut: (
       <KbdGroup className="ml-auto scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
         <Kbd className="bg-transparent size-3">N</Kbd>
+      </KbdGroup>
+    ),
+  },
+  {
+    title: 'New Agent Chat',
+    animatedIcon: BotIcon,
+    onClick: onJanClaw,
+    shortcut: (
+      <KbdGroup className="ml-auto scale-90 gap-0">
+        <Kbd className="bg-transparent size-3">
+          <PlatformMetaKey />
+        </Kbd>
+        <Kbd className="bg-transparent size-3">M</Kbd>
       </KbdGroup>
     ),
   },
@@ -83,7 +107,7 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3">P</Kbd>
+        <Kbd className="bg-transparent size-3">L</Kbd>
       </KbdGroup>
     ),
   },
@@ -152,11 +176,25 @@ export function NavMain() {
   const { open: searchOpen, setOpen: setSearchOpen } = useSearchDialog()
   const { open: projectDialogOpen, setOpen: setProjectDialogOpen } =
     useProjectDialog()
+  const openClawAvailable = useAppState((state) => state.openClawRunning)
+  const setOpenClawRunning = useAppState((state) => state.setOpenClawRunning)
+
+  useEffect(() => {
+    isOpenClawRunning().then(setOpenClawRunning)
+  }, [setOpenClawRunning])
 
   const navMainItems = getNavMainItems(
     () => setProjectDialogOpen(true),
-    () => setSearchOpen(true)
-  )
+    () => setSearchOpen(true),
+    () => {
+      useAgentMode.getState().removeThread(TEMPORARY_CHAT_ID)
+      navigate({ to: route.home })
+    },
+    () => {
+      useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
+      navigate({ to: route.home })
+    }
+  ).filter((item) => item.title !== 'New Agent Chat' || openClawAvailable)
 
   const handleCreateProject = async (name: string, assistantId?: string) => {
     const newProject = await addFolder(name, assistantId)

@@ -25,6 +25,7 @@ export const localStorageKey = {
   modelSupportCache: 'jan_model_support_cache',
   recentSearches: 'recent-searches',
   janModelPromptDismissed: 'jan-model-prompt-dismissed',
+  agentMode: 'agent-mode',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

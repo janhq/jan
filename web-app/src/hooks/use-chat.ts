@@ -126,6 +126,10 @@ export function useChat(
     }
   }, [mcpToolNames, ragToolNames])
 
+  const setContinueFromContent = useCallback((content: string) => {
+    transportRef.current?.setContinueFromContent(content)
+  }, [])
+
   // Expose method to update RAG tools availability
   const updateRagToolsAvailability = useCallback(
     async (
@@ -147,5 +151,6 @@ export function useChat(
   return {
     ...chatResult,
     updateRagToolsAvailability,
+    setContinueFromContent,
   }
 }

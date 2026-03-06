@@ -1,4 +1,9 @@
-mod core;
+pub mod core;
+pub mod openclaw_cli;
+pub use core::openclaw::OpenClawState;
+
+
+#[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,
     downloads::models::DownloadManagerState,
@@ -6,12 +11,18 @@ use core::{
     setup::{self, setup_mcp},
     state::AppState,
 };
+#[cfg(not(feature = "cli"))]
 use jan_utils::generate_app_token;
+#[cfg(not(feature = "cli"))]
 use std::{collections::HashMap, sync::Arc};
+#[cfg(not(feature = "cli"))]
 use tauri::{Emitter, Manager, RunEvent};
+#[cfg(not(feature = "cli"))]
 use tauri_plugin_store::StoreExt;
+#[cfg(not(feature = "cli"))]
 use tokio::sync::Mutex;
 
+#[cfg(not(feature = "cli"))]
 #[cfg_attr(
     all(mobile, any(target_os = "android", target_os = "ios")),
     tauri::mobile_entry_point
@@ -90,6 +101,10 @@ pub fn run() {
         core::system::commands::read_logs,
         core::system::commands::is_library_available,
         core::system::commands::launch_claude_code_with_config,
+        core::system::commands::check_jan_cli_installed,
+        core::system::commands::install_jan_cli,
+        core::system::commands::uninstall_jan_cli,
+        core::system::commands::clear_claude_code_env,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
@@ -128,6 +143,82 @@ pub fn run() {
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
+        // OpenClaw commands
+        core::openclaw::commands::openclaw_check_dependencies,
+        core::openclaw::commands::openclaw_check_port,
+        core::openclaw::commands::openclaw_install,
+        core::openclaw::commands::openclaw_configure,
+        core::openclaw::commands::openclaw_get_config,
+        core::openclaw::commands::openclaw_get_auth_token,
+        core::openclaw::commands::openclaw_ensure_http_api,
+        core::openclaw::commands::openclaw_sync_model,
+        core::openclaw::commands::openclaw_sync_all_models,
+        core::openclaw::commands::openclaw_get_model,
+        core::openclaw::commands::openclaw_list_channels,
+        core::openclaw::commands::openclaw_channel_status,
+        core::openclaw::commands::openclaw_enable,
+        core::openclaw::commands::openclaw_start,
+        core::openclaw::commands::openclaw_stop,
+        core::openclaw::commands::openclaw_status,
+        core::openclaw::commands::openclaw_restart,
+        core::openclaw::commands::openclaw_get_config_dir,
+        core::openclaw::commands::openclaw_ensure_jan_origin,
+        core::openclaw::commands::openclaw_setup_for_channels,
+        // Sandbox commands
+        core::openclaw::commands::sandbox_get_logs,
+        core::openclaw::commands::sandbox_restart,
+        // Telegram commands
+        core::openclaw::commands::telegram_validate_token,
+        core::openclaw::commands::telegram_configure,
+        core::openclaw::commands::telegram_get_config,
+        core::openclaw::commands::telegram_check_pairing,
+        core::openclaw::commands::telegram_clear_pending_pairing,
+        core::openclaw::commands::telegram_get_pending_pairing_codes,
+        core::openclaw::commands::telegram_approve_pairing,
+        core::openclaw::commands::telegram_disconnect,
+        // WhatsApp commands
+        core::openclaw::commands::whatsapp_validate_connection,
+        core::openclaw::commands::whatsapp_start_auth,
+        core::openclaw::commands::whatsapp_get_qr_code,
+        core::openclaw::commands::whatsapp_check_auth,
+        core::openclaw::commands::whatsapp_get_config,
+        core::openclaw::commands::whatsapp_get_contacts,
+        core::openclaw::commands::whatsapp_disconnect,
+        // Tailscale commands
+        core::openclaw::commands::tailscale_detect,
+        core::openclaw::commands::tailscale_get_status,
+        core::openclaw::commands::tailscale_configure_serve,
+        core::openclaw::commands::tailscale_remove_serve,
+        core::openclaw::commands::tailscale_enable_funnel,
+        core::openclaw::commands::tailscale_disable_funnel,
+        core::openclaw::commands::tailscale_get_url,
+        // Security commands
+        core::openclaw::commands::security_get_status,
+        core::openclaw::commands::security_set_auth_mode,
+        core::openclaw::commands::security_generate_token,
+        core::openclaw::commands::security_set_password,
+        core::openclaw::commands::security_verify_token,
+        core::openclaw::commands::security_set_require_pairing,
+        core::openclaw::commands::security_get_devices,
+        core::openclaw::commands::security_approve_device,
+        core::openclaw::commands::security_revoke_device,
+        core::openclaw::commands::security_get_logs,
+        core::openclaw::commands::security_clear_logs,
+        core::openclaw::commands::security_generate_pairing_code,
+        // Tunnel commands
+        core::openclaw::commands::tunnel_get_providers,
+        core::openclaw::commands::tunnel_detect_all,
+        core::openclaw::commands::tunnel_set_provider,
+        core::openclaw::commands::tunnel_start,
+        core::openclaw::commands::tunnel_stop,
+        core::openclaw::commands::tunnel_get_active,
+        core::openclaw::commands::tunnel_set_ngrok_token,
+        core::openclaw::commands::tunnel_set_cloudflare_tunnel,
+        core::openclaw::commands::tunnel_get_config,
+        core::openclaw::commands::tunnel_start_ngrok,
+        core::openclaw::commands::tunnel_stop_ngrok,
+        core::openclaw::commands::tunnel_start_cloudflared,
+        core::openclaw::commands::tunnel_stop_cloudflared,
     ]);
 
     // Mobile: no updater commands
@@ -169,6 +260,10 @@ pub fn run() {
         core::system::commands::read_logs,
         core::system::commands::is_library_available,
         core::system::commands::launch_claude_code_with_config,
+        core::system::commands::check_jan_cli_installed,
+        core::system::commands::install_jan_cli,
+        core::system::commands::uninstall_jan_cli,
+        core::system::commands::clear_claude_code_env,
         // Server commands
         core::server::commands::start_server,
         core::server::commands::stop_server,
@@ -222,6 +317,7 @@ pub fn run() {
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
         })
+        .manage(OpenClawState::default())
         .setup(|app| {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
@@ -293,6 +389,8 @@ pub fn run() {
             }
 
             setup_mcp(app);
+            #[cfg(desktop)]
+            setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
             Ok(())
         })

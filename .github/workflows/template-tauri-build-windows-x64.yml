@@ -116,7 +116,7 @@ jobs:
 
           jq --arg version "${{ inputs.new_version }}" '.version = $version' ./src-tauri/plugins/tauri-plugin-hardware/package.json > /tmp/package.json
           mv /tmp/package.json ./src-tauri/plugins/tauri-plugin-hardware/package.json
-          
+
           echo "---------./src-tauri/plugins/tauri-plugin-hardware/package.json---------"
           cat ./src-tauri/plugins/tauri-plugin-hardware/package.json
 
@@ -129,7 +129,7 @@ jobs:
           ctoml ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml package.version "${{ inputs.new_version }}"
           echo "---------./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml---------"
           cat ./src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-          
+
           ctoml ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml package.version "${{ inputs.new_version }}"
           echo "---------./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml---------"
           cat ./src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
@@ -167,7 +167,7 @@ jobs:
           generate_build_version ${{ inputs.new_version }}
           sed -i "s/jan_version/$new_base_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
           sed -i "s/jan_build/$new_build_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
-          
+
           echo "---------tauri.windows.conf.json---------"
           cat ./src-tauri/tauri.windows.conf.json
 
@@ -183,7 +183,7 @@ jobs:
               jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
             fi
             mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
-            
+
             # Update product name
             jq --arg name "Jan-${{ inputs.channel }}" '.productName = $name' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
             mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
@@ -196,6 +196,7 @@ jobs:
 
             # Update Cargo.toml
             ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
+            ctoml ./src-tauri/Cargo.toml package.default-run "Jan-${{ inputs.channel }}"
             ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
             echo "------------------"
             cat ./src-tauri/Cargo.toml
@@ -256,7 +257,7 @@ jobs:
           name: jan-windows-msi-${{ inputs.new_version }}
           path: |
             ./src-tauri/target/release/bundle/msi/*.msi
-      
+
       - name: Upload Portable Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -278,7 +279,7 @@ jobs:
           else
             FILE_NAME=Jan_${{ inputs.new_version }}_x64-setup.exe
             WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
-            
+
             MSI_FILE="Jan_${{ inputs.new_version }}_x64_en-US.msi"
             PORTABLE_FILE_NAME="Jan_${{ inputs.new_version }}_x64-portable.exe"
           fi

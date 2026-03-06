@@ -48,6 +48,8 @@ export type MessageItemProps = {
   onDelete?: (messageId: string) => void
   assistant?: { avatar?: React.ReactNode; name?: string }
   showAssistant?: boolean
+  isAnimating?: boolean
+  hideActions?: boolean
 }
 
 export const MessageItem = memo(
@@ -55,6 +57,8 @@ export const MessageItem = memo(
     message,
     isLastMessage,
     status,
+    isAnimating,
+    hideActions,
     reasoningContainerRef,
     onRegenerate,
     onEdit,
@@ -173,7 +177,7 @@ export const MessageItem = memo(
                   </div>
                 )}
                 {displayText && (
-                  <div className="select-text whitespace-pre-wrap">
+                  <div dir="auto" className="select-text whitespace-pre-wrap">
                     {displayText}
                   </div>
                 )}
@@ -185,6 +189,7 @@ export const MessageItem = memo(
                 content={part.text}
                 isStreaming={isStreaming && isLastPart}
                 messageId={message.id}
+                isAnimating={isAnimating}
               />
             </>
           )}
@@ -345,7 +350,7 @@ export const MessageItem = memo(
         })}
 
         {/* Message actions for user messages */}
-        {message.role === 'user' && (
+        {message.role === 'user' && !hideActions && (
           <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs mt-4">
             <CopyButton text={getFullTextContent()} />
 
@@ -369,7 +374,7 @@ export const MessageItem = memo(
               <div
                 className={cn(
                   'flex items-center gap-1',
-                  isStreaming && 'hidden'
+                  (isStreaming || hideActions) && 'hidden'
                 )}
               >
                 <CopyButton text={getFullTextContent()} />
@@ -434,7 +439,8 @@ export const MessageItem = memo(
       prevProps.isFirstMessage === nextProps.isFirstMessage &&
       prevProps.isLastMessage === nextProps.isLastMessage &&
       prevProps.status === nextProps.status &&
-      prevProps.showAssistant === nextProps.showAssistant
+      prevProps.showAssistant === nextProps.showAssistant &&
+      prevProps.hideActions === nextProps.hideActions
     )
   }
 )

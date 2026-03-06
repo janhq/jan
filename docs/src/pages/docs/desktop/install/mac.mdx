@@ -25,19 +25,34 @@ twitter:
   description: "Download Jan on Mac to run AI models locally. Jan is a free, open-source ChatGPT alternative to run offline."
 ---
 
-import { Tabs } from 'nextra/components'
-import FAQBox from '@/components/FaqBox'
 import { Callout, Steps } from 'nextra/components'
+import { DownloadButton } from '@/components/DownloadButton'
 
 
 
 # Mac Installation
 Jan runs natively on both Apple Silicon and Intel-based Macs.
 
+## Install Jan
+
+<Steps>
+
+### Download
+
+<DownloadButton href="https://app.jan.ai/download/latest/mac-universal">Download Jan for Mac</DownloadButton>
+
+### Install
+
+1. Open the Jan installer (`.dmg` file)
+2. Drag Jan to **Applications**
+3. Launch Jan
+
+</Steps>
+
 ## Compatibility
+
 ### Minimum Requirements
-Your Mac needs:
-- **Operating System:** MacOSX 13.6 or higher
+- **Operating System:** macOS 13.6 or higher
 - **Memory:**
   - 8GB → up to 3B parameter models
   - 16GB → up to 7B parameter models
@@ -45,75 +60,24 @@ Your Mac needs:
 - **Storage:** 10GB+ free space
 
 ### Mac Performance Guide
-<Callout type="info">
-**Apple Silicon Macs** use Metal for GPU acceleration, making them faster than **Apple Intel Macs**, which operate on CPU only.
-</Callout>
-**Apple Silicon (M1, M2, M3)**
-- Metal acceleration enabled by default
-- GPU-accelerated processing
 
-**Intel-based Mac**
-- CPU processing only
-- Standard performance
+<Callout type="info">
+**Apple Silicon Macs** use Metal for GPU acceleration, making them faster than **Intel Macs**, which operate on CPU only.
+</Callout>
+
+**Apple Silicon (M1, M2, M3)** — Metal acceleration enabled by default
+
+**Intel-based Mac** — CPU processing only
 
 _Check your Mac's processor: Apple menu → About This Mac_
 
-## Install Jan
-
-Installation steps:
-
-<Steps>
-
-### Step 1: Download Application
-
-Select version:
-<Tabs items={['Stable Release', 'Beta Release', 'Nightly Release']}>
-<Tabs.Tab>
-Get Jan from here:
-
-- [Download Jan's Stable Version](https://app.jan.ai/download/latest/mac-universal)
-- Official Website: https://jan.ai/download
-
-</Tabs.Tab>
-<Tabs.Tab>
-
-Beta: New features with potential instability.
-
-[Download Jan's Beta Version](https://app.jan.ai/download/beta/mac-universal)
-
-<Callout type="warning">
-May contain bugs.
-</Callout>
-</Tabs.Tab>
-<Tabs.Tab>
-
-Nightly: Latest features, less stable.
-
-[Download Jan's Nightly Version](https://app.jan.ai/download/nightly/mac-universal)
-
-<Callout type="info">
-Expect potential instability.
-</Callout>
-</Tabs.Tab>
-</Tabs>
-
-
-### Step 2: Install Application
-
-1. Open the Jan installer (`.dmg` file)
-2. Drag Jan to **Applications**
-3. Wait a moment
-4. Launch Jan
-
-</Steps>
-
-
 ## Jan Data Folder
+
+Jan stores all your data locally — downloaded models, conversation threads, settings, and logs generated from using the app. Nothing is sent to the cloud.
 
 Default location:
 
 ```sh
-# Default installation directory
 ~/Library/Application\ Support/Jan/data
 ```
 See [Jan Data Folder](/docs/desktop/data-folder) for details.

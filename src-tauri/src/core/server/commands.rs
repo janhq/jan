@@ -5,6 +5,7 @@ use tauri_plugin_mlx::state::MlxState;
 use crate::core::server::proxy;
 use crate::core::state::AppState;
 
+
 #[derive(serde::Deserialize)]
 pub struct StartServerConfig {
     pub host: String,
@@ -46,7 +47,7 @@ pub async fn start_server<R: Runtime>(
         api_key,
         vec![trusted_hosts],
         proxy_timeout,
-        app_handle,
+        state.provider_configs.clone(),
     )
     .await
     .map_err(|e| e.to_string())?;

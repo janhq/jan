@@ -91,6 +91,15 @@ const logger = {
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 
+/**
+ * Parse the build number from a llama.cpp version string like "b6325".
+ * Returns the numeric portion, or null if the format doesn't match.
+ */
+function parseBuildNumber(version: string): number | null {
+  const match = version.match(/^b(\d+)$/)
+  return match ? parseInt(match[1], 10) : null
+}
+
 // Folder structure for llamacpp extension:
 // <Jan's data folder>/llamacpp
 //  - models/<modelId>/
@@ -124,14 +133,6 @@ export default class llamacpp_extension extends AIEngine {
     super.onLoad() // Calls registerEngine() from AIEngine
 
     let settings = structuredClone(SETTINGS) // Clone to modify settings definition before registration
-
-    // Disable fit by default on macOS
-    if (IS_MAC) {
-      const fitSetting = settings.find((s: any) => s.key === 'fit')
-      if (fitSetting) {
-        fitSetting.controllerProps.value = false
-      }
-    }
 
     // This makes the settings (including the backend options and initial value) available to the Jan UI.
     this.registerSettings(settings)
@@ -1505,6 +1506,17 @@ export default class llamacpp_extension extends AIEngine {
       )
     }
 
+    // Version-aware flash_attn handling:
+    // llama.cpp b6325+ changed --flash-attn from a boolean flag to a string
+    // For older versions, "auto" is not a valid value so we fall back to "off"
+    // (i.e. don't send the flag at all).
+    if (cfg.flash_attn === 'auto' && !backend.startsWith('ik')) {
+      const buildNum = parseBuildNumber(version)
+      if (buildNum !== null && buildNum < 6325) {
+        cfg.flash_attn = 'off'
+      }
+    }
+
     // Ensure backend is downloaded and ready before proceeding
     await this.ensureBackendReady(backend, version)
 
@@ -1541,7 +1553,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Migrate old env vars
-    if(typeof cfg.fit === 'string') cfg.fit = true
+    if (typeof cfg.fit === 'string') cfg.fit = true
 
     logger.info(
       'Calling Tauri command load_llama_model with config:',
@@ -1641,16 +1653,31 @@ export default class llamacpp_extension extends AIEngine {
     body: string,
     abortController?: AbortController
   ): AsyncIterable<chatCompletionChunk> {
+    // AbortSignal.any() is not available in all runtimes (e.g. WebKit/JavaScriptCore),
+    // so we manually combine the timeout and external abort signals.
+    const combinedController = new AbortController()
+    const timeoutId = setTimeout(
+      () => combinedController.abort(new Error('Request timed out')),
+      this.timeout * 1000
+    )
+    if (abortController?.signal) {
+      if (abortController.signal.aborted) {
+        combinedController.abort(abortController.signal.reason)
+      } else {
+        abortController.signal.addEventListener(
+          'abort',
+          () => combinedController.abort(abortController.signal.reason),
+          { once: true }
+        )
+      }
+    }
     const response = await fetch(url, {
       method: 'POST',
       headers,
       body,
       connectTimeout: Number(this.timeout) * 1000, // default 10 minutes
-      signal: AbortSignal.any([
-        AbortSignal.timeout(this.timeout * 1000),
-        abortController?.signal,
-      ]),
-    })
+      signal: combinedController.signal,
+    }).finally(() => clearTimeout(timeoutId))
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
       throw new Error(

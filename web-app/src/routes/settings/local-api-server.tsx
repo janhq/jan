@@ -12,19 +12,18 @@ import { ProxyTimeoutInput } from '@/containers/ProxyTimeoutInput'
 import { ApiPrefixInput } from '@/containers/ApiPrefixInput'
 import { TrustedHostsInput } from '@/containers/TrustedHostsInput'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
-import { useClaudeCodeModel } from '@/hooks/useClaudeCodeModel'
-import AddEditCustomCliDialog from '@/containers/dialogs/AddEditCustomCliDialog'
 import { useAppState } from '@/hooks/useAppState'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { IconSettings2 } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { getModelToStart } from '@/utils/getModelToStart'
 import { LogViewer } from '@/components/LogViewer'
-import { invoke } from '@tauri-apps/api/core'
+import { EngineManager } from '@janhq/core'
+
 import {
   Popover,
   PopoverTrigger,
@@ -39,12 +38,7 @@ import {
   IconChevronDown,
   IconChevronUp,
   IconExternalLink,
-  IconPlus,
-  IconX,
 } from '@tabler/icons-react'
-import ProvidersAvatar from '@/containers/ProvidersAvatar'
-import Capabilities from '@/containers/Capabilities'
-import { getModelDisplayName, isLocalProvider } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -71,20 +65,10 @@ function LocalAPIServerContent() {
   } = useLocalApiServer()
 
   const { serverStatus, setServerStatus } = useAppState()
-  const { providers, selectedModel, selectedProvider, getProviderByName } =
+  const { selectedModel, selectedProvider, getProviderByName } =
     useModelProvider()
   const [showApiKeyError, setShowApiKeyError] = useState(false)
-  const { activeModels } = useAppState()
   const setActiveModels = useAppState((state) => state.setActiveModels)
-
-  // Helper card state (persisted to localStorage)
-  const {
-    models: helperModels,
-    setModel: setHelperModel,
-    setEnvVars,
-    setCustomCli,
-  } = useClaudeCodeModel()
-  const [isCustomCliDialogOpen, setIsCustomCliDialogOpen] = useState(false)
 
   useEffect(() => {
     const checkServerStatus = async () => {
@@ -125,13 +109,78 @@ function LocalAPIServerContent() {
 
       setServerStatus('pending')
 
+      const MIN_CONTEXT_SIZE = 32768
+
+      // Helper to get context size from a model
+      const getModelCtxSize = (modelId: string): number | undefined => {
+        const allProviders = useModelProvider.getState().providers
+        for (const provider of allProviders) {
+          if (!provider?.models) continue
+          const model = provider.models.find(
+            (m: { id: string }) => m.id === modelId
+          )
+          const ctxLen = model?.settings?.ctx_len?.controller_props?.value as
+            | number
+            | undefined
+          if (ctxLen !== undefined) return ctxLen
+        }
+        return undefined
+      }
+
       // Check if there's already a loaded model
       serviceHub
         .models()
         .getActiveModels()
-        .then((loadedModels) => {
+        .then(async (loadedModels) => {
           if (loadedModels && loadedModels.length > 0) {
             console.log(`Using already loaded model: ${loadedModels[0]}`)
+
+            // Check if the model has sufficient context size (32k)
+            const modelId = loadedModels[0]
+            const currentCtxSize = getModelCtxSize(modelId)
+
+            if (
+              currentCtxSize !== undefined &&
+              currentCtxSize < MIN_CONTEXT_SIZE
+            ) {
+              console.log(
+                `Model ${modelId} has context size ${currentCtxSize}, less than minimum ${MIN_CONTEXT_SIZE}. Restarting with larger context...`
+              )
+
+              // Find the provider for this model
+              const allProviders = useModelProvider.getState().providers
+              let modelProvider = allProviders.find((p) =>
+                p?.models?.some((m: { id: string }) => m.id === modelId)
+              )
+
+              if (!modelProvider) {
+                modelProvider = getProviderByName(selectedProvider)
+              }
+
+              if (modelProvider) {
+                setIsModelLoading(true)
+
+                // Stop the current model
+                await serviceHub
+                  .models()
+                  .stopModel(modelId, modelProvider.provider)
+
+                // Start with larger context size - access engine via EngineManager
+                const settings = { ctx_size: MIN_CONTEXT_SIZE }
+                const engine = EngineManager.instance().get(
+                  modelProvider.provider
+                )
+                if (engine) {
+                  await engine.load(modelId, settings, false, true)
+                }
+
+                console.log(
+                  `Model ${modelId} restarted with context size ${MIN_CONTEXT_SIZE}`
+                )
+                setIsModelLoading(false)
+              }
+            }
+
             // Model already loaded, just start the server
             return Promise.resolve()
           } else {
@@ -150,12 +199,55 @@ function LocalAPIServerContent() {
               throw new Error('No model available to load')
             }
 
+            // Check if the model has sufficient context size (32k)
+            const currentCtxSize = getModelCtxSize(modelToStart.model)
+            let finalProvider = modelToStart.provider
+
+            // If context size is less than minimum, we need to create modified settings
+            if (
+              currentCtxSize !== undefined &&
+              currentCtxSize < MIN_CONTEXT_SIZE
+            ) {
+              console.log(
+                `Model ${modelToStart.model} has context size ${currentCtxSize}, less than minimum ${MIN_CONTEXT_SIZE}. Starting with larger context...`
+              )
+
+              // Create a modified provider with enforced ctx_size
+              finalProvider = {
+                ...modelToStart.provider,
+                models: modelToStart.provider.models.map(
+                  (m: { id: string; settings?: Record<string, unknown> }) => {
+                    if (m.id === modelToStart.model) {
+                      return {
+                        ...m,
+                        settings: {
+                          ...m.settings,
+                          ctx_len: {
+                            ...(m.settings?.ctx_len as object | undefined),
+                            controller_props: {
+                              ...((
+                                m.settings?.ctx_len as {
+                                  controller_props?: object
+                                }
+                              )?.controller_props ?? {}),
+                              value: MIN_CONTEXT_SIZE,
+                            },
+                          },
+                        },
+                      }
+                    }
+                    return m
+                  }
+                ) as Model[],
+              }
+            }
+
             setIsModelLoading(true) // Start loading state
 
-            // Start the model first
+            // Start the model first (with modified settings if needed)
             return serviceHub
               .models()
-              .startModel(modelToStart.provider, modelToStart.model, true)
+              .startModel(finalProvider, modelToStart.model, true)
               .then(() => {
                 console.log(`Model ${modelToStart.model} started successfully`)
                 setIsModelLoading(false) // Model loaded, stop loading state
@@ -258,140 +350,17 @@ function LocalAPIServerContent() {
     }
   }
 
-  const handleLaunchClaudeCode = async () => {
-    // Do not append apiPrefix to claude code settings
-    const apiUrl = `http://${serverHost}:${serverPort}`
-    const modelBig = helperModels.big
-    const modelMedium = helperModels.medium
-    const modelSmall = helperModels.small
-    const customEnvVars = helperModels.envVars
-
-    // Helper function to start the server with selected models
-    const startServer = async (): Promise<void> => {
-      // Get helper models that need to be started
-      const helperModelsToStart = [
-        { id: helperModels.big, role: 'Big' },
-        { id: helperModels.medium, role: 'Medium' },
-        { id: helperModels.small, role: 'Small' },
-      ]
-        .filter((m) => m.id)
-        .map((m) => m.id as string)
-
-      // Check which helper models are already loaded
-      const loadedModels = (await serviceHub.models().getActiveModels()) || []
-      const modelsToStart = helperModelsToStart.filter(
-        (m) => !loadedModels.includes(m)
-      )
-
-      if (modelsToStart.length > 0) {
-        setIsModelLoading(true)
-        for (const modelId of modelsToStart) {
-          // Find the provider that has this model
-          const providerWithModel = providers.find((p) =>
-            p.models.some((m) => m.id === modelId)
-          )
-
-          if (providerWithModel) {
-            await serviceHub
-              .models()
-              .startModel(providerWithModel, modelId, true)
-              .then(() => {
-                console.log(`Model ${modelId} started successfully`)
-              })
-          }
-        }
-        setIsModelLoading(false)
-        await serviceHub
-          .models()
-          .getActiveModels()
-          .then((models) => setActiveModels(models || []))
-        await new Promise((resolve) => setTimeout(resolve, 500))
-      } else if (loadedModels.length > 0) {
-        console.log(`Using already loaded models: ${loadedModels.join(', ')}`)
-      } else if (helperModelsToStart.length === 0) {
-        // No helper models selected, start default model if available
-        const modelToStart = getModelToStart({
-          selectedModel,
-          selectedProvider,
-          getProviderByName,
-        })
-
-        if (modelToStart) {
-          setIsModelLoading(true)
-          await serviceHub
-            .models()
-            .startModel(modelToStart.provider, modelToStart.model, true)
-            .then(() => {
-              console.log(`Model ${modelToStart.model} started successfully`)
-              setIsModelLoading(false)
-              serviceHub
-                .models()
-                .getActiveModels()
-                .then((models) => setActiveModels(models || []))
-              return new Promise((resolve) => setTimeout(resolve, 500))
-            })
-        }
-      }
-
-      const actualPort = await window.core?.api?.startServer({
-        host: serverHost,
-        port: serverPort,
-        prefix: apiPrefix,
-        apiKey,
-        trustedHosts,
-        isCorsEnabled: corsEnabled,
-        isVerboseEnabled: verboseLogs,
-        proxyTimeout: proxyTimeout,
-      })
-
-      if (actualPort && actualPort !== serverPort) {
-        setServerPort(actualPort)
-      }
-      setServerStatus('running')
-    }
-
-    try {
-      // If server is not running, start it first
-      if (serverStatus === 'stopped') {
-        toast.info('Starting server...', {
-          description: 'Preparing server for Claude Code',
-        })
-        await startServer()
-      }
-
-      // Now launch Claude Code with config
-      await invoke('launch_claude_code_with_config', {
-        apiUrl,
-        apiKey: apiKey || undefined,
-        bigModel: modelBig || undefined,
-        mediumModel: modelMedium || undefined,
-        smallModel: modelSmall || undefined,
-        customEnvVars: customEnvVars.map((env) => ({
-          key: env.key,
-          value: env.value,
-        })),
-      })
-      toast.success(
-        'Environment variables updated. Please try relaunching Claude Code in a new terminal window.',
-        {
-          duration: 8000,
-        }
-      )
-    } catch (error) {
-      console.error('Failed to launch Claude Code:', error)
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      toast.error('Failed to configure env vars', {
-        description: errorMsg,
-      })
-    }
-  }
-
   const isServerRunning = serverStatus !== 'stopped'
 
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div className={cn("flex items-center justify-between w-full mr-2 pr-3", !IS_MACOS && "pr-30")}>
+        <div
+          className={cn(
+            'flex items-center justify-between w-full mr-2 pr-3',
+            !IS_MACOS && 'pr-30'
+          )}
+        >
           <span className="font-medium text-base font-studio">
             {t('common:settings')}
           </span>
@@ -614,145 +583,8 @@ function LocalAPIServerContent() {
                   }
                 />
               </Card>
-
-              {/* Helper Card */}
-              <Card
-                header={
-                  <div className="mb-3 flex w-full items-center gap-3">
-                    <svg
-                      width="20"
-                      height="20"
-                      viewBox="0 0 99 72"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="shrink-0"
-                    >
-                      <path
-                        d="M9 0H90V54H9V0Z"
-                        fill="#D77757"
-                      />
-                      <path
-                        d="M0 18H9V36H0V18Z"
-                        fill="#D77757"
-                      />
-                      <path
-                        d="M18 18H27V27H18V18Z"
-                        fill="black"
-                      />
-                      <path
-                        d="M72 18H81V27H72V18Z"
-                        fill="black"
-                      />
-                      <path
-                        d="M90 18H99V36H90V18Z"
-                        fill="#D77757"
-                      />
-                      <path
-                        d="M9 54H18V72H9V54Z"
-                        fill="#D77757"
-                      />
-                      <path
-                        d="M63 54H72V72H63V54Z"
-                        fill="#D77757"
-                      />
-                      <path
-                        d="M27 54H36V72H27V54Z"
-                        fill="#D77757"
-                      />
-                      <path
-                        d="M81 54H90V72H81V54Z"
-                        fill="#D77757"
-                      />
-                    </svg>
-                    <h1 className="text-foreground font-studio font-medium text-base">
-                      Claude Code integration
-                    </h1>
-                  </div>
-                }
-              >
-                <CardItem
-                  title="Large Model"
-                  description="Opus"
-                  actions={
-                    <HelperModelSelector
-                      providers={providers}
-                      activeModels={activeModels}
-                      selectedModel={helperModels.big}
-                      onSelect={(model) => setHelperModel('big', model)}
-                      placeholder="Select Big Model"
-                    />
-                  }
-                />
-                <CardItem
-                  title="Medium Model"
-                  description="Sonnet"
-                  actions={
-                    <HelperModelSelector
-                      providers={providers}
-                      activeModels={activeModels}
-                      selectedModel={helperModels.medium}
-                      onSelect={(model) => setHelperModel('medium', model)}
-                      placeholder="Select Medium Model"
-                    />
-                  }
-                />
-                <CardItem
-                  title="Small Model"
-                  description="Haiku"
-                  actions={
-                    <HelperModelSelector
-                      providers={providers}
-                      activeModels={activeModels}
-                      selectedModel={helperModels.small}
-                      onSelect={(model) => setHelperModel('small', model)}
-                      placeholder="Select Small Model"
-                    />
-                  }
-                />
-                <div className="flex mt-2 justify-between gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setIsCustomCliDialogOpen(true)}
-                  >
-                    <IconPlus className="text-muted-foreground" size={14} />
-                    Environment Variables
-                  </Button>
-                  <Button size="sm" onClick={handleLaunchClaudeCode}>
-                    Save & Enable
-                  </Button>
-                </div>
-
-                {/* Display Custom CLI Configuration */}
-                {(helperModels.customCli ||
-                  helperModels.envVars.length > 0) && (
-                  <div className="mt-3 text-sm text-muted-foreground">
-                    {helperModels.customCli && (
-                      <div>Command: {helperModels.customCli}</div>
-                    )}
-                    {helperModels.envVars.length > 0 && (
-                      <div className="break-all">
-                        Env:{' '}
-                        {helperModels.envVars
-                          .map((env) => `${env.key}=******`)
-                          .join(', ')}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </Card>
             </div>
           </div>
-          <AddEditCustomCliDialog
-            open={isCustomCliDialogOpen}
-            onOpenChange={setIsCustomCliDialogOpen}
-            initialEnvVars={helperModels.envVars}
-            initialCustomCli={helperModels.customCli}
-            onSave={(envVars, customCli) => {
-              setEnvVars(envVars)
-              setCustomCli(customCli)
-            }}
-          />
           <div className="p-4 shrink-0">
             <Card>
               <Collapsible defaultOpen={false}>
@@ -785,223 +617,5 @@ function LocalAPIServerContent() {
         </div>
       </div>
     </div>
-  )
-}
-
-function HelperModelSelector({
-  providers,
-  activeModels,
-  selectedModel,
-  onSelect,
-  placeholder = 'Select a model',
-}: {
-  providers: ModelProvider[]
-  activeModels: string[]
-  selectedModel: string | null
-  onSelect: (modelId: string) => void
-  placeholder?: string
-}) {
-  const [open, setOpen] = useState(false)
-  const [searchValue, setSearchValue] = useState('')
-  const searchInputRef = useRef<HTMLInputElement>(null)
-
-  // Get available models:
-  // - Local providers (llamacpp, mlx): show models (they're downloaded locally)
-  // - Remote providers: show models only if API key is configured
-  const availableModels = useMemo(() => {
-    return providers
-      .filter((p) => p.active)
-      .flatMap((p) =>
-        p.models.map((m) => ({
-          ...m,
-          providerName: p.provider,
-          isLocal: isLocalProvider(p.provider),
-          hasApiKey: !!p.api_key?.length,
-        }))
-      )
-      .filter((m) => {
-        // Local providers: show all models (they're downloaded locally)
-        if (m.isLocal) {
-          return m.id
-        }
-        // Remote providers: only show if API key configured
-        return m.hasApiKey
-      })
-  }, [providers, activeModels])
-
-  // Filter models by search value
-  const filteredModels = useMemo(() => {
-    if (!searchValue.trim()) return availableModels
-    const search = searchValue.toLowerCase()
-    return availableModels.filter(
-      (m) =>
-        m.id.toLowerCase().includes(search) ||
-        (m.displayName?.toLowerCase() ?? '').includes(search) ||
-        m.providerName.toLowerCase().includes(search)
-    )
-  }, [availableModels, searchValue])
-
-  // Group by provider
-  const groupedModels = useMemo(() => {
-    const groups: Record<string, typeof filteredModels> = {}
-    filteredModels.forEach((model) => {
-      if (!groups[model.providerName]) {
-        groups[model.providerName] = []
-      }
-      groups[model.providerName].push(model)
-    })
-    return groups
-  }, [filteredModels])
-
-  const currentModel = availableModels.find(
-    (m) => m.id === selectedModel
-  )
-
-  // Format model display name with size
-  const formatModelWithSize = (model: NonNullable<typeof currentModel>) => {
-    const name = getModelDisplayName(model)
-    // Model size is not directly available in provider models
-    // Could be extended to show size if available in settings/metadata
-    return name
-  }
-
-  const handleSelect = (model: (typeof filteredModels)[0]) => {
-    onSelect(model.id)
-    setOpen(false)
-    setSearchValue('')
-  }
-
-  const handleOpenChange = (isOpen: boolean) => {
-    setOpen(isOpen)
-    if (!isOpen) {
-      setSearchValue('')
-    } else {
-      setTimeout(() => searchInputRef.current?.focus(), 100)
-    }
-  }
-
-  return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="max-w-[280px]">
-          <span className="flex items-center gap-2 truncate leading-normal">
-            {selectedModel && currentModel ? (
-              <>
-                <span
-                  className={cn(
-                    'text-[10px] px-1.5 py-0.5 rounded-full shrink-0',
-                    currentModel.isLocal
-                      ? 'bg-emerald-500/10 text-emerald-600'
-                      : 'bg-blue-500/10 text-blue-600'
-                  )}
-                >
-                  {currentModel.isLocal ? 'Local' : 'Remote'}
-                </span>
-                <span>{formatModelWithSize(currentModel)}</span>
-              </>
-            ) : (
-              placeholder
-            )}
-          </span>
-          <IconChevronDown className="size-4 shrink-0 text-muted-foreground" />
-        </Button>
-      </PopoverTrigger>
-
-      <PopoverContent
-        className="w-[280px] p-0 bg-background/95 border"
-        align="end"
-        sideOffset={8}
-      >
-        <div className="flex flex-col size-full">
-          {/* Search input */}
-          <div className="relative p-2 border-b">
-            <input
-              ref={searchInputRef}
-              value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
-              placeholder="Search models..."
-              className="text-sm font-normal outline-0 w-full"
-            />
-            {searchValue.length > 0 && (
-              <div className="absolute right-2 top-0 bottom-0 flex items-center justify-center">
-                <IconX
-                  size={16}
-                  className="text-muted-foreground cursor-pointer"
-                  onClick={() => setSearchValue('')}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Model list */}
-          <div className="max-h-[300px] overflow-y-auto">
-            {Object.keys(groupedModels).length === 0 && searchValue ? (
-              <div className="py-3 px-4 text-sm text-muted-foreground">
-                No models found for "{searchValue}"
-              </div>
-            ) : (
-              <div className="py-1">
-                {Object.entries(groupedModels).map(([providerKey, models]) => {
-                  const providerInfo = providers.find(
-                    (p) => p.provider === providerKey
-                  )
-                  if (!providerInfo) return null
-
-                  return (
-                    <div
-                      key={providerKey}
-                      className="bg-secondary/30 rounded-sm my-1.5 mx-1.5 first:mt-1 py-1"
-                    >
-                      {/* Provider header */}
-                      <div className="flex items-center gap-1.5 px-2 py-1">
-                        <ProvidersAvatar provider={providerInfo} />
-                        <span className="capitalize text-sm font-medium text-muted-foreground">
-                          {providerKey}
-                        </span>
-                      </div>
-
-                      {/* Models for this provider */}
-                      {models.map((model) => {
-                        const isSelected = selectedModel === model.id
-                        const capabilities = model.capabilities || []
-
-                        return (
-                          <div
-                            key={model.id}
-                            title={model.id}
-                            onClick={() => handleSelect(model)}
-                            className={cn(
-                              'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
-                              'hover:bg-secondary/40',
-                              isSelected &&
-                                'bg-secondary/60 hover:bg-secondary/60'
-                            )}
-                          >
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <span
-                                className="text-sm truncate"
-                                title={model.id}
-                              >
-                                {getModelDisplayName(model)}
-                              </span>
-                              <div className="flex-1"></div>
-                              {capabilities.length > 0 && (
-                                <div className="shrink-0 -mr-1.5">
-                                  <Capabilities capabilities={capabilities} />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
   )
 }

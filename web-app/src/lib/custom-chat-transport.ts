@@ -15,6 +15,8 @@ import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAssistant } from '@/hooks/useAssistant'
+import { useAgentMode } from '@/hooks/useAgentMode'
+import { getOpenClawAuthToken, ensureOpenClawHttpApi, OPENCLAW_GATEWAY_URL } from '@/utils/openclaw'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionManager } from '@/lib/extension'
@@ -48,6 +50,38 @@ export type ServiceHub = {
   }
 }
 
+/**
+ * Wraps a UIMessageChunk stream so that when the first `text-start` chunk
+ * arrives, a `text-delta` carrying `prefixText` is immediately injected into
+ * the same text block. This makes the new message show the partial content
+ * right away while continuation tokens stream in after it.
+ */
+function prependTextDeltaToUIStream(
+  stream: ReadableStream<UIMessageChunk>,
+  prefixText: string
+): ReadableStream<UIMessageChunk> {
+  const reader = stream.getReader()
+  let prefixEmitted = false
+  return new ReadableStream<UIMessageChunk>({
+    async pull(controller) {
+      const { done, value } = await reader.read()
+      if (done) {
+        controller.close()
+        return
+      }
+      controller.enqueue(value)
+      if (!prefixEmitted && (value as { type: string }).type === 'text-start') {
+        prefixEmitted = true
+        const id = (value as { type: 'text-start'; id: string }).id
+        controller.enqueue({ type: 'text-delta', id, delta: prefixText } as UIMessageChunk)
+      }
+    },
+    cancel() {
+      reader.cancel()
+    },
+  })
+}
+
 export class CustomChatTransport implements ChatTransport<UIMessage> {
   public model: LanguageModel | null = null
   private tools: Record<string, Tool> = {}
@@ -58,6 +92,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private systemMessage?: string
   private serviceHub: ServiceHub | null
   private threadId?: string
+  private continueFromContent: string | null = null
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
@@ -213,6 +248,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     return this.tools
   }
 
+  /**
+   * Set partial assistant content to send as a prefill on the next request,
+   * so the model continues generation from where it left off.
+   */
+  setContinueFromContent(content: string) {
+    this.continueFromContent = content
+  }
+
   async sendMessages(
     options: {
       chatId: string
@@ -226,47 +269,91 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Ensure tools updated before sending messages
     await this.refreshTools()
 
-    // Initialize model if not already initialized
-    const modelId = useModelProvider.getState().selectedModel?.id
-    const providerId = useModelProvider.getState().selectedProvider
-    const provider = useModelProvider.getState().getProviderByName(providerId)
-    if (this.serviceHub && modelId && provider) {
+    // Check if agent mode is active for this thread
+    const isAgentMode = this.threadId
+      ? useAgentMode.getState().isAgentMode(this.threadId)
+      : false
+
+    if (isAgentMode) {
+      // Agent mode: route to OpenClaw gateway
+      await ensureOpenClawHttpApi()
+      const authToken = await getOpenClawAuthToken()
+      if (!authToken) {
+        throw new Error('OpenClaw is not available. Please check that it is running in Settings > Remote Access.')
+      }
+
+      const openclawProvider: ProviderObject = {
+        active: true,
+        provider: 'openclaw',
+        api_key: authToken,
+        base_url: OPENCLAW_GATEWAY_URL,
+        settings: [],
+        models: [],
+        custom_header: this.threadId
+          ? [{ header: 'x-openclaw-session-key', value: this.threadId }]
+          : [],
+      }
+
       try {
-        const updatedProvider = useModelProvider
-          .getState()
-          .getProviderByName(providerId)
-
-        // Get assistant parameters from current assistant
-        const currentAssistant = useAssistant.getState().currentAssistant
-        const inferenceParams = currentAssistant?.parameters
-
-        // Create the model using the factory
-        // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
-        this.model = await ModelFactory.createModel(
-          modelId,
-          updatedProvider ?? provider,
-          inferenceParams ?? {}
-        )
+        this.model = await ModelFactory.createModel('openclaw', openclawProvider)
       } catch (error) {
-        console.error('Failed to create model:', error)
+        console.error('Failed to create OpenClaw model:', error)
         throw new Error(
-          `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+          `Failed to connect to OpenClaw: ${error instanceof Error ? error.message : JSON.stringify(error)}`
         )
       }
     } else {
-      throw new Error('ServiceHub not initialized or model/provider missing.')
+      // Normal mode: use selected provider
+      const modelId = useModelProvider.getState().selectedModel?.id
+      const providerId = useModelProvider.getState().selectedProvider
+      const provider = useModelProvider.getState().getProviderByName(providerId)
+      if (this.serviceHub && modelId && provider) {
+        try {
+          const updatedProvider = useModelProvider
+            .getState()
+            .getProviderByName(providerId)
+
+          // Get assistant parameters from current assistant
+          const currentAssistant = useAssistant.getState().currentAssistant
+          const inferenceParams = currentAssistant?.parameters
+
+          // Create the model using the factory
+          // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
+          this.model = await ModelFactory.createModel(
+            modelId,
+            updatedProvider ?? provider,
+            inferenceParams ?? {}
+          )
+        } catch (error) {
+          console.error('Failed to create model:', error)
+          throw new Error(
+            `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+          )
+        }
+      } else {
+        throw new Error('ServiceHub not initialized or model/provider missing.')
+      }
     }
 
     // Convert UI messages to model messages
-    const modelMessages = convertToModelMessages(
+    const baseMessages = convertToModelMessages(
       this.mapUserInlineAttachments(options.messages)
     )
 
+    // If continuing a truncated response, append the partial assistant content as a
+    // prefill so the model resumes from where it left off rather than regenerating.
+    const continueContent = this.continueFromContent
+    this.continueFromContent = null
+    const modelMessages = continueContent
+      ? [...baseMessages, { role: 'assistant' as const, content: continueContent }]
+      : baseMessages
+
     // Include tools only if we have tools loaded AND model supports them
+    // In agent mode, OpenClaw manages its own tools
     const hasTools = Object.keys(this.tools).length > 0
     const selectedModel = useModelProvider.getState().selectedModel
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
-    const shouldEnableTools = hasTools && modelSupportsTools
+    const shouldEnableTools = !isAgentMode && hasTools && modelSupportsTools
 
     // Track stream timing and token count for token speed calculation
     let streamStartTime: number | undefined
@@ -282,7 +369,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     let tokensPerSecond = 0
 
-    return result.toUIMessageStream({
+    const uiStream = result.toUIMessageStream({
       messageMetadata: ({ part }) => {
         // Track stream start time on start
         if (part.type === 'start' && !streamStartTime) {
@@ -320,6 +407,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           }
 
           return {
+            finishReason: finishPart.finishReason,
             usage: {
               inputTokens: inputTokens,
               outputTokens: outputTokens,
@@ -364,6 +452,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         }
       },
     })
+
+    // When continuing a truncated response, inject the partial content as the
+    // very first text-delta so the new message immediately shows it and the
+    // user sees a seamless continuation rather than an empty box.
+    return continueContent
+      ? prependTextDeltaToUIStream(uiStream, continueContent)
+      : uiStream
   }
 
   async reconnectToStream(

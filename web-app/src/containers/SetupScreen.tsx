@@ -6,6 +6,7 @@ import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
+import { DownloadEvent, events } from '@janhq/core'
 import type { CatalogModel } from '@/services/models/types'
 import {
   NEW_JAN_MODEL_HF_REPO,
@@ -82,7 +83,7 @@ loadCacheFromStorage()
 function SetupScreen() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { getProviderByName } = useModelProvider()
+  const { getProviderByName, selectModelProvider } = useModelProvider()
 
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
@@ -189,7 +190,6 @@ function SetupScreen() {
     fetchJanModel()
   }, [fetchJanModel])
 
-
   const defaultVariant = useMemo(() => {
     if (!janNewModel) return null
 
@@ -263,7 +263,7 @@ function SetupScreen() {
     )
   }, [defaultVariant, localDownloadingModels, downloadProcesses])
 
-  const downloadedSize = useMemo(() => {
+   const downloadedSize = useMemo(() => {
     if (!defaultVariant) return { current: 0, total: 0 }
     const process = downloadProcesses.find(
       (e) => e.id === defaultVariant.model_id
@@ -317,7 +317,52 @@ function SetupScreen() {
     huggingfaceToken,
   ])
 
-  // Process queued quick start when metadata becomes available
+  // Auto-start download when screen is shown
+  const hasAutoStarted = useRef(false)
+  useEffect(() => {
+    if (hasAutoStarted.current || isDownloaded) return
+    hasAutoStarted.current = true
+    handleQuickStart()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Use ref to track if we've already navigated
+  const hasNavigatedRef = useRef(false)
+
+  // Navigate when download completes - using event listener for reliability
+  useEffect(() => {
+    if (hasNavigatedRef.current) return
+
+    const onDownloadSuccess = async (state: { modelId: string }) => {
+      if (!defaultVariant || hasNavigatedRef.current) return
+      if (state.modelId !== defaultVariant.model_id) return
+
+      console.log('SetupScreen: Download completed, navigating to home...')
+      hasNavigatedRef.current = true
+
+      // Wait a bit for model provider to update
+      await new Promise((resolve) => setTimeout(resolve, 500))
+
+      toast.dismiss(`model-validation-started-${defaultVariant.model_id}`)
+      localStorage.setItem(localStorageKey.setupCompleted, 'true')
+
+      selectModelProvider('llamacpp', defaultVariant.model_id)
+      localStorage.setItem(
+        localStorageKey.lastUsedModel,
+        JSON.stringify({ provider: 'llamacpp', model: defaultVariant.model_id })
+      )
+      navigate({ to: route.home, replace: true })
+    }
+
+    events.on(DownloadEvent.onFileDownloadAndVerificationSuccess, onDownloadSuccess)
+    events.on(DownloadEvent.onFileDownloadSuccess, onDownloadSuccess)
+
+    return () => {
+      events.off(DownloadEvent.onFileDownloadAndVerificationSuccess, onDownloadSuccess)
+      events.off(DownloadEvent.onFileDownloadSuccess, onDownloadSuccess)
+    }
+  }, [defaultVariant, navigate, selectModelProvider])
+
   useEffect(() => {
     if (
       quickStartQueued &&
@@ -367,30 +412,13 @@ function SetupScreen() {
     if (
       quickStartInitiated &&
       !quickStartQueued &&
-      !isDownloading &&
+      isDownloading &&
       !isDownloaded
     ) {
       setQuickStartInitiated(false)
     }
   }, [quickStartInitiated, quickStartQueued, isDownloading, isDownloaded])
 
-  useEffect(() => {
-    if (quickStartInitiated && isDownloaded && defaultVariant) {
-      toast.dismiss(`model-validation-started-${defaultVariant.model_id}`)
-      localStorage.setItem(localStorageKey.setupCompleted, 'true')
-
-      navigate({
-        to: route.home,
-        params: {},
-        search: {
-          model: {
-            id: defaultVariant.model_id,
-            provider: 'llamacpp',
-          },
-        },
-      })
-    }
-  }, [quickStartInitiated, isDownloaded, defaultVariant, navigate])
 
   return (
     <div className="flex h-full flex-col justify-center">
@@ -430,38 +458,15 @@ function SetupScreen() {
                     </div>
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-2">
-                  <Button size="sm" disabled={quickStartInitiated || isDownloading}>
-                    {quickStartInitiated || isDownloading ? 'Downloading' : 'Download'}
+                <div className="flex flex-col relative z-50 items-start gap-2 mt-4">
+                  <Button size="sm" disabled={isDownloading}  onClick={handleQuickStart} className='flex items-center gap-2 w-full'>
+                    {isDownloading ? 'Downloading' : 'Download'}
                   </Button>
-                  {(quickStartInitiated || isDownloading) && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <svg
-                        className="size-3 animate-spin"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        />
-                      </svg>
-                      <span>{formatBytes(downloadedSize.current)} / {formatBytes(downloadedSize.total)}GB</span>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
           </div>
+
         </div>
       </div>
     </div>

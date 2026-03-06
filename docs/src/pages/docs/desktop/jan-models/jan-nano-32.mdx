@@ -24,21 +24,39 @@ import { Callout } from 'nextra/components'
 
 ## Why Jan Nano?
 
-Most language models face a fundamental tradeoff where powerful capabilities require a lot of computational resources. Jan 
-Nano breaks this constraint through a focused design philosophy where instead of trying to know everything, it excels at 
+Most language models face a fundamental tradeoff where powerful capabilities require a lot of computational resources. Jan
+Nano breaks this constraint through a focused design philosophy where instead of trying to know everything, it excels at
 knowing how to find anything.
 
+<a
+  href="jan://models/huggingface/Menlo/Jan-nano-gguf"
+  style={{
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 20px',
+    backgroundColor: '#000',
+    color: '#fff',
+    borderRadius: '8px',
+    fontWeight: '600',
+    fontSize: '15px',
+    textDecoration: 'none',
+    marginTop: '8px',
+  }}
+>
+  Open in Jan
+</a>
 
 ## What is Jan Nano?
 
-Jan Nano is a compact 4-billion parameter language model specifically designed and trained for deep research tasks. 
-This model has been optimized to work seamlessly with Model Context Protocol (MCP) servers, enabling efficient integration 
+Jan Nano is a compact 4-billion parameter language model specifically designed and trained for deep research tasks.
+This model has been optimized to work seamlessly with Model Context Protocol (MCP) servers, enabling efficient integration
 with various research tools and data sources.
 
 The model and its different model variants are fully supported by Jan.
 
 <Callout type="info">
-  To use Jan-Nano, you will need to use a search engine via MCP. You can enable MCP in the **Settings** 
+  To use Jan-Nano, you will need to use a search engine via MCP. You can enable MCP in the **Settings**
   tab under **Advanced Settings**.
 </Callout>
 
@@ -70,7 +88,7 @@ Go to the Hub Tab, search for Jan-Nano-Gguf, and click on the download button to
 Go to **Settings** > **Model Providers** > **Llama.cpp** click on the pencil icon and enable tool use for Jan-Nano-Gguf.
 
 **Step 4**
-To take advantage of Jan-Nano's full capabilities, you need to enable MCP support. We're going to use it with Serper's 
+To take advantage of Jan-Nano's full capabilities, you need to enable MCP support. We're going to use it with Serper's
 API. You can get a free API key from [here](https://serper.dev/). Sign up and they will immediately generate one for you.
 
 **Step 5**

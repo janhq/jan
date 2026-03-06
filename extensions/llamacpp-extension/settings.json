@@ -54,7 +54,7 @@
     "description": "Whether to adjust unset arguments to fit in device memory ('on' or 'off'). (env: LLAMA_ARG_FIT)",
     "controllerType": "checkbox",
     "controllerProps": {
-      "value": true
+      "value": false
     }
   },
   {

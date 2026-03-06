@@ -57,14 +57,29 @@ async function registerRemoteProvider(provider: ModelProvider) {
   }
 }
 
+// Track which providers have been registered so we can unregister stale ones
+let registeredProviderNames = new Set<string>()
+
 // Effect to sync remote providers when providers change
 const syncRemoteProviders = () => {
   const providers = useModelProvider.getState().providers
+  const currentActive = new Set<string>()
+
   providers.forEach((provider) => {
     if (provider.active && provider.provider !== 'llamacpp' && provider.api_key) {
       registerRemoteProvider(provider)
+      currentActive.add(provider.provider)
     }
   })
+
+  // Unregister providers that were previously registered but are now inactive/removed
+  for (const name of registeredProviderNames) {
+    if (!currentActive.has(name)) {
+      invoke('unregister_provider_config', { provider: name }).catch(() => {})
+    }
+  }
+
+  registeredProviderNames = currentActive
 }
 
 export function DataProvider() {
@@ -97,8 +112,13 @@ export function DataProvider() {
     console.log('Initializing DataProvider...')
     serviceHub.providers().getProviders().then((providers) => {
       setProviders(providers)
-      // Register remote providers with the backend
-      providers.forEach(registerRemoteProvider)
+      // Register active remote providers with the backend
+      providers.forEach((provider) => {
+        if (provider.active) {
+          registerRemoteProvider(provider)
+          registeredProviderNames.add(provider.provider)
+        }
+      })
     })
     serviceHub
       .mcp()
@@ -183,7 +203,7 @@ export function DataProvider() {
     events.on(AppEvent.onModelImported, () => {
       serviceHub.providers().getProviders().then((providers) => {
         setProviders(providers)
-        providers.forEach(registerRemoteProvider)
+        syncRemoteProviders()
       })
     })
   }, [serviceHub, setProviders])
