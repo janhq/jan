@@ -7,40 +7,40 @@
   "quickstart": "Quickstart",
   "install": "Install 👋 Jan",
   "jan-models": "Models",
-  "remote-models": "Cloud Providers",
-  "mcp-examples": "Tutorials",
+  "integrations": "Integrations",
   "coreconcepts-separator": {
     "title": "Core concepts",
     "type": "separator"
   },
+  "agents": "Agents",
+  "cli": "CLI",
+  "projects": "Projects",
   "assistants": "Assistants",
-  "llama-cpp": "Local AI Engine",
+  "file-upload": "File Upload",
+  "manage-models": "Hub",
+  "mcp-examples": "Connectors (MCP)",
+  "settings": "App Settings",
+  "local-engine": "Local AI Engine",
   "model-parameters": "Model Parameters",
   "privacy-policy": {
     "type": "page",
     "display": "hidden",
     "title": "Privacy Policy"
   },
-  "advanced-separator": {
-    "title": "ADVANCED",
-    "type": "separator"
-  },
-  "manage-models": "Manage Models",
-  "mcp": "Model Context Protocol",
   "localserver": {
-    "title": "LOCAL SERVER",
+    "title": "Local Server",
     "type": "separator"
   },
   "api-server": "Server Setup",
   "llama-cpp-server": "LlamaCpp Server",
-  "server-settings": "Server Settings",
   "server-troubleshooting": "Server Troubleshooting",
-  "server-examples": "Integrations",
+  "server-examples": "Clients",
   "reference-separator": {
-    "title": "REFERENCE",
+    "title": "Reference",
     "type": "separator"
   },
-  "settings": "Settings",
+  "mcp": "Model Context Protocol",
+  "remote-models": "Cloud Providers",
   "data-folder": "Jan Data Folder",
   "troubleshooting": "Troubleshooting"
 }

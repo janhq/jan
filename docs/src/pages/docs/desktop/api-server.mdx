@@ -23,15 +23,14 @@ import { Callout, Steps } from 'nextra/components'
 
 Jan provides a built-in, OpenAI-compatible API server that runs entirely on your computer, powered by `llama.cpp`. Use it as a drop-in replacement for cloud APIs to build private, offline-capable AI applications.
 
-![Jan's Local API Server Settings UI](./_assets/api-server-ui.png)
+![Jan's Local API Server Settings UI](./_assets/local-api-server.png)
 
 ## Quick Start
 
 <Steps>
 ### Start the Server
 1.  Navigate to **Settings** > **Local API Server**.
-2.  Enter a custom **API Key** (e.g., `secret-key-123`). This is required for all requests.
-3.  Click **Start Server**.
+2.  Click **Start Server**.
 
 The server is ready when the logs show `JAN API listening at http://127.0.0.1:1337`.
 
@@ -51,7 +50,9 @@ curl http://127.0.0.1:1337/v1/chat/completions \
 
 ## Server Configuration
 
-These settings control the network accessibility and basic behavior of your local server.
+These settings control the network accessibility and basic behavior of your local server. Access them via the **Configuration** button in the top right.
+
+![Server Configuration](./_assets/server-configuration.png)
 
 ### Server Host
 The network address the server listens on.
