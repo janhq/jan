@@ -238,7 +238,7 @@ function LocalAPIServerContent() {
                     }
                     return m
                   }
-                ),
+                ) as Model[],
               }
             }
 
