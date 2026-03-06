@@ -456,6 +456,13 @@ pub fn run() {
                         }
                     }
 
+                    // Clean up Claude Code env vars from shell config on exit
+                    if let Err(e) = crate::core::system::commands::clear_claude_code_env() {
+                        log::warn!("Failed to clear Claude Code env vars: {}", e);
+                    } else {
+                        log::info!("Claude Code env vars cleaned up successfully");
+                    }
+
                     log::info!("App cleanup completed");
                 });
             });
