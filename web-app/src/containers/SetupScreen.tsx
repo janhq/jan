@@ -6,8 +6,7 @@ import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
-import { ulid } from 'ulidx'
-import { ChatCompletionRole, ContentType, MessageStatus, DownloadEvent, events } from '@janhq/core'
+import { DownloadEvent, events } from '@janhq/core'
 import type { CatalogModel } from '@/services/models/types'
 import {
   NEW_JAN_MODEL_HF_REPO,
@@ -19,7 +18,6 @@ import { IconEye, IconSquareCheck } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import HeaderPage from './HeaderPage'
-import { useThreads } from '@/hooks/useThreads'
 
 type CacheEntry = {
   status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
@@ -85,7 +83,7 @@ loadCacheFromStorage()
 function SetupScreen() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { getProviderByName } = useModelProvider()
+  const { getProviderByName, selectModelProvider } = useModelProvider()
 
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
@@ -102,260 +100,6 @@ function SetupScreen() {
   const checkedModelId = useRef<string | null>(null)
   const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
-  const { createThread } = useThreads()
-  const threadCheckedRef = useRef(false)
-  const defaultThreadIdRef = useRef<string | null>(null)
-  // Create default thread and project for new user (only once)
-  useEffect(() => {
-    if (threadCheckedRef.current) return
-    threadCheckedRef.current = true
-
-    const setupDefaults = async () => {
-      try {
-        // Create default project "Getting started"
-        const existingProjects = await serviceHub.projects().getProjects()
-        const hasDefaultProject = existingProjects.some(
-          (p) => p.name === 'Getting started'
-        )
-        let defaultProjectId: string | undefined
-        if (!hasDefaultProject) {
-          const project = await serviceHub.projects().addProject('Getting started')
-          defaultProjectId = project.id
-        } else {
-          defaultProjectId = existingProjects.find((p) => p.name === 'Getting started')?.id
-        }
-
-        // Create default thread (outside of project)
-        const existingThreads = await serviceHub.threads().fetchThreads()
-        const defaultThread = existingThreads.find((t) => t.title === 'What is Jan?')
-        if (defaultThread) {
-          defaultThreadIdRef.current = defaultThread.id
-          useThreads.getState().setThreads(await serviceHub.threads().fetchThreads())
-        } else {
-          const thread = await createThread(
-            { id: '', provider: '' },
-            'What is Jan?'
-          )
-          defaultThreadIdRef.current = thread.id
-
-          // Refresh threads in store after creating default thread
-          useThreads.getState().setThreads(await serviceHub.threads().fetchThreads())
-
-          // Add dummy messages
-          const now = Date.now()
-          const messages = [
-            {
-              id: ulid(),
-              object: 'message',
-              thread_id: thread.id,
-              role: ChatCompletionRole.User,
-              content: [
-                {
-                  type: ContentType.Text,
-                  text: { value: 'Hey, so what is Jan?', annotations: [] },
-                },
-              ],
-              status: MessageStatus.Ready,
-              created_at: now,
-              completed_at: now,
-            },
-            {
-              id: ulid(),
-              object: 'message',
-              thread_id: thread.id,
-              role: ChatCompletionRole.Assistant,
-              content: [
-                {
-                  type: ContentType.Text,
-                  text: {
-                    value:
-                      "Hello, I'm Jan! I'm an open-source AI assistant built by the team at Menlo Research.\n\nI can help you answer questions, think through complex ideas, and solve problems, big or small, by using tools to complete them on your behalf. I run on your device, so you stay in control of your data and work.\n\nTo learn more about how I'm built, visit jan.ai, or explore the team's work at menlo.ai.",
-                    annotations: [],
-                  },
-                },
-              ],
-              status: MessageStatus.Ready,
-              created_at: now + 1,
-              completed_at: now + 1,
-            },
-            {
-              id: ulid(),
-              object: 'message',
-              thread_id: thread.id,
-              role: ChatCompletionRole.User,
-              content: [
-                {
-                  type: ContentType.Text,
-                  text: { value: 'What can you do?', annotations: [] },
-                },
-              ],
-              status: MessageStatus.Ready,
-              created_at: now + 2,
-              completed_at: now + 2,
-            },
-            {
-              id: ulid(),
-              object: 'message',
-              thread_id: thread.id,
-              role: ChatCompletionRole.Assistant,
-              content: [
-                {
-                  type: ContentType.Text,
-                  text: {
-                    value:
-                      "Quite a few things.\n\nYou can ask me questions, work through ideas, or get help with things like writing and code.\n\nYou can chat with me for quick questions, or start a project to organise longer work. You can also add files, and I'll use them as context.\n\nIf you like, you can switch between different models depending on what you're working on.\n\nWhat would you like to try first?",
-                    annotations: [],
-                  },
-                },
-              ],
-              status: MessageStatus.Ready,
-              created_at: now + 3,
-              completed_at: now + 3,
-            },
-          ]
-
-          for (const message of messages) {
-            await serviceHub.messages().createMessage(message)
-          }
-        }
-
-        // Create threads inside "Getting started" project
-        if (defaultProjectId) {
-          const projectMetadata = {
-            id: defaultProjectId,
-            name: 'Getting started',
-            updated_at: Math.floor(Date.now() / 1000),
-          }
-
-          // Re-fetch threads to get the latest state
-          const allThreads = await serviceHub.threads().fetchThreads()
-          const projectThreads = allThreads.filter(
-            (t) => t.metadata?.project?.id === defaultProjectId
-          )
-
-          // Thread 1: Exploring project assistants
-          const existingAssistantThread = projectThreads.find(
-            (t) => t.title === 'Exploring project assistants'
-          )
-          if (!existingAssistantThread) {
-            const assistantThread = await createThread(
-              { id: '', provider: '' },
-              'Exploring project assistants',
-              undefined,
-              projectMetadata
-            )
-
-            const assistantMessages = [
-              {
-                id: ulid(),
-                object: 'message',
-                thread_id: assistantThread.id,
-                role: ChatCompletionRole.User,
-                content: [
-                  {
-                    type: ContentType.Text,
-                    text: { value: 'How should I set up the assistant for a project?', annotations: [] },
-                  },
-                ],
-                status: MessageStatus.Ready,
-                created_at: Date.now(),
-                completed_at: Date.now(),
-              },
-              {
-                id: ulid(),
-                object: 'message',
-                thread_id: assistantThread.id,
-                role: ChatCompletionRole.Assistant,
-                content: [
-                  {
-                    type: ContentType.Text,
-                    text: {
-                      value:
-                        "Think of the assistant as your project helper. You can choose one assistant per project. This helps keep guidance clear and avoids mixed responses.\n\nDescribe what the project is about, what you want help with, and how you want responses to sound.\n\nFor example, in a research project, you might write:\n\n\"Summarise clearly. Highlight key points and trade-offs. Flag anything uncertain or worth double-checking.\"\n\nA few clear lines are enough. You can change this anytime to tailor responses as your project evolves.",
-                      annotations: [],
-                    },
-                  },
-                ],
-                status: MessageStatus.Ready,
-                created_at: Date.now() + 1,
-                completed_at: Date.now() + 1,
-              },
-            ]
-
-            for (const message of assistantMessages) {
-              await serviceHub.messages().createMessage(message)
-            }
-          }
-
-          // Thread 2: Uploading helpful files
-          const existingFilesThread = projectThreads.find(
-            (t) => t.title === 'Uploading helpful files'
-          )
-          if (!existingFilesThread) {
-            const filesThread = await createThread(
-              { id: '', provider: '' },
-              'Uploading helpful files',
-              undefined,
-              projectMetadata
-            )
-
-            const filesMessages = [
-              {
-                id: ulid(),
-                object: 'message',
-                thread_id: filesThread.id,
-                role: ChatCompletionRole.User,
-                content: [
-                  {
-                    type: ContentType.Text,
-                    text: { value: 'What types of files should I add to a project to improve responses?', annotations: [] },
-                  },
-                ],
-                status: MessageStatus.Ready,
-                created_at: Date.now(),
-                completed_at: Date.now(),
-              },
-              {
-                id: ulid(),
-                object: 'message',
-                thread_id: filesThread.id,
-                role: ChatCompletionRole.Assistant,
-                content: [
-                  {
-                    type: ContentType.Text,
-                    text: {
-                      value:
-                        "Add files you'd normally keep open while working:\n\n- Notes or docs if you're thinking through ideas\n- Drafts if you're writing or editing\n- Specs or tickets if you're planning work\n- PDFs or research if you need summaries or comparisons\n- Code files if you want help understanding or improving them\n\nI'll use these files as shared context, so you don't have to repeat yourself.",
-                      annotations: [],
-                    },
-                  },
-                ],
-                status: MessageStatus.Ready,
-                created_at: Date.now() + 1,
-                completed_at: Date.now() + 1,
-              },
-            ]
-
-            for (const message of filesMessages) {
-              await serviceHub.messages().createMessage(message)
-            }
-          }
-
-          // Refresh threads in store after creating project threads
-          useThreads.getState().setThreads(await serviceHub.threads().fetchThreads())
-        }
-      } catch (error) {
-        console.error('Failed to create default thread/project:', error)
-        if (error instanceof Error) {
-          console.error('Error name:', error.name)
-          console.error('Error message:', error.message)
-          console.error('Error stack:', error.stack)
-        }
-      }
-    }
-
-    setupDefaults()
-  }, []) // Empty dependency - runs once on mount
 
   const fetchJanModel = useCallback(async () => {
     setMetadataFetchFailed(false)
@@ -573,6 +317,15 @@ function SetupScreen() {
     huggingfaceToken,
   ])
 
+  // Auto-start download when screen is shown
+  const hasAutoStarted = useRef(false)
+  useEffect(() => {
+    if (hasAutoStarted.current || isDownloaded) return
+    hasAutoStarted.current = true
+    handleQuickStart()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Use ref to track if we've already navigated
   const hasNavigatedRef = useRef(false)
 
@@ -593,40 +346,12 @@ function SetupScreen() {
       toast.dismiss(`model-validation-started-${defaultVariant.model_id}`)
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
 
-      // Navigate to default thread if it exists, otherwise to home
-      const threadId = defaultThreadIdRef.current
-      let threadExists = false
-
-      if (threadId) {
-        try {
-          const threads = await serviceHub.threads().fetchThreads()
-          threadExists = threads.some((t) => t.id === threadId)
-        } catch {
-          threadExists = false
-        }
-      }
-
-      if (threadId && threadExists) {
-        // Update the thread with the downloaded model
-        useThreads.getState().updateThread(threadId, {
-          model: {
-            id: defaultVariant.model_id,
-            provider: 'llamacpp',
-          },
-        })
-
-        navigate({
-          to: route.threadsDetail,
-          params: { threadId },
-          search: {
-            threadModel: {
-              id: defaultVariant.model_id,
-              provider: 'llamacpp',
-            },
-          },
-          replace: true,
-        })
-      }
+      selectModelProvider('llamacpp', defaultVariant.model_id)
+      localStorage.setItem(
+        localStorageKey.lastUsedModel,
+        JSON.stringify({ provider: 'llamacpp', model: defaultVariant.model_id })
+      )
+      navigate({ to: route.home, replace: true })
     }
 
     events.on(DownloadEvent.onFileDownloadAndVerificationSuccess, onDownloadSuccess)
@@ -636,7 +361,7 @@ function SetupScreen() {
       events.off(DownloadEvent.onFileDownloadAndVerificationSuccess, onDownloadSuccess)
       events.off(DownloadEvent.onFileDownloadSuccess, onDownloadSuccess)
     }
-  }, [defaultVariant, navigate])
+  }, [defaultVariant, navigate, selectModelProvider])
 
   useEffect(() => {
     if (
