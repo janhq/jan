@@ -11,7 +11,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 
 import { Link, useNavigate } from '@tanstack/react-router'
 import { PlatformMetaKey } from '@/containers/PlatformMetaKey'
-import React, { useRef } from 'react'
+import React, { useEffect, useRef } from 'react'
 import {
   SearchIcon,
   type SearchIconHandle,
@@ -41,6 +41,7 @@ import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useAppState } from '@/hooks/useAppState'
+import { isOpenClawRunning } from '@/utils/openclaw'
 
 type AnimatedIconHandle =
   | SearchIconHandle
@@ -176,6 +177,11 @@ export function NavMain() {
   const { open: projectDialogOpen, setOpen: setProjectDialogOpen } =
     useProjectDialog()
   const openClawAvailable = useAppState((state) => state.openClawRunning)
+  const setOpenClawRunning = useAppState((state) => state.setOpenClawRunning)
+
+  useEffect(() => {
+    isOpenClawRunning().then(setOpenClawRunning)
+  }, [setOpenClawRunning])
 
   const navMainItems = getNavMainItems(
     () => setProjectDialogOpen(true),
