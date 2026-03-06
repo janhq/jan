@@ -22,6 +22,40 @@ import { Callout, Tabs } from 'nextra/components'
 
 The `jan` CLI lets you serve local AI models and launch autonomous agents from your terminal — no cloud account, no usage fees, full privacy.
 
+```
+       ██╗ █████╗ ███╗  ██╗
+       ██║██╔══██╗████╗ ██║
+       ██║███████║██╔██╗██║
+  ██   ██║██╔══██║██║╚████║
+  ╚█████╔╝██║  ██║██║ ╚███║
+   ╚════╝ ╚═╝  ╚═╝╚═╝  ╚══╝
+
+Jan runs local AI models (LlamaCPP / MLX) and exposes them via an
+OpenAI-compatible API, then wires AI coding agents like Claude Code or opencode
+directly to your own hardware — no cloud account, no usage fees, full privacy.
+
+Models downloaded in the Jan desktop app are automatically available here.
+
+Usage: jan <COMMAND>
+
+Commands:
+  serve    Load a local model and expose it at localhost:6767/v1 (auto-detects LlamaCPP or MLX)
+  launch   Start a local model, then launch an AI agent with it pre-wired (env vars set automatically)
+  threads  List and inspect conversation threads saved by the Jan app
+  models   List and load models installed in the Jan data folder
+  help     Print this message or the help of the given subcommand(s)
+
+Examples:
+  jan launch claude                               # pick a model, then run Claude Code against it
+  jan launch claude --model qwen3.5-35b-a3b       # use a specific model
+  jan launch openclaw --model qwen3.5-35b-a3b     # wire openclaw to a local model
+  jan launch opencode --model qwen3.5-35b-a3b     # wire opencode to a local model
+  jan serve qwen3.5-35b-a3b                       # expose a model at localhost:6767/v1
+  jan serve qwen3.5-35b-a3b --fit                 # auto-fit context to available VRAM
+  jan serve qwen3.5-35b-a3b --detach              # run in the background
+  jan models list                                 # show all installed models
+```
+
 Models downloaded in the Jan desktop app are automatically available to the CLI.
 
 ## Installation
@@ -55,6 +89,19 @@ jan serve [MODEL_ID] [OPTIONS]
 | `--embedding` | Treat model as an embedding model | — |
 | `-v, --verbose` | Print full server logs | — |
 
+When no model ID is provided, an interactive selector is shown. If no models are installed yet, Jan will automatically download its default foundation model to get you started:
+
+```
+$ jan serve
+
+━━━ Select Model ━━━
+
+Choose a model:
+> janhq/Jan-v3-4B-base-instruct-gguf [LlamaCPP]
+  sentence-transformer-mini [LlamaCPP]
+  Jan-v3-4B-base-instruct-4bit [MLX]
+```
+
 **Examples:**
 
 ```bash
@@ -84,6 +131,18 @@ jan launch [PROGRAM] [OPTIONS]
 | `--port` | Port for the model server | `6767` |
 | `--api-key` | API key (exported as `OPENAI_API_KEY` and `ANTHROPIC_AUTH_TOKEN`) | `jan` |
 | `-v, --verbose` | Print full server logs | — |
+
+When no agent or model is specified, interactive selectors are shown. If no models are installed, Jan will automatically download its default foundation model before launching the agent:
+
+```
+$ jan launch
+
+━━━ Select Agent ━━━
+
+Choose an agent to launch:
+> Claude Code  — Anthropic's AI coding agent
+  OpenClaw     — Open-source autonomous AI agent [not installed]
+```
 
 **Examples:**
 
