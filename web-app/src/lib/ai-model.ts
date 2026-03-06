@@ -112,8 +112,8 @@ export function createLanguageModel(
       // OpenRouter identification headers
       ...(provider.provider === 'openrouter'
         ? {
-            'HTTP-Referer': 'https://jan.ai',
-            'X-Title': 'Jan',
+            'HTTP-Referer': 'https://seo.io',
+            'X-Title': 'SEO.IO',
           }
         : {}),
     },

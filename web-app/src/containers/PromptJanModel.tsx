@@ -96,9 +96,9 @@ export function PromptJanModel() {
   return (
     <div className="fixed bottom-4 right-4 z-50 p-4 shadow-lg bg-background w-4/5 md:w-100 border rounded-lg">
       <div className="flex items-center gap-2">
-        <img src="/images/jan-logo.png" alt="Jan" className="size-5" />
+        <img src="/images/seo-io-logo.svg" alt="SEO.IO" className="size-5" />
         <h2 className="font-medium">
-          Jan v3 Model
+          SEO.IO v3 Model
           {defaultVariant && (
           <span className="text-muted-foreground">
             {' '}
@@ -108,7 +108,7 @@ export function PromptJanModel() {
         </h2>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
-        Get started with Jan v3, our recommended local AI model optimized for your device.
+        Get started with SEO.IO v3, our recommended local AI model optimized for your device.
       </p>
       <div className="mt-4 flex justify-end space-x-2">
         <Button

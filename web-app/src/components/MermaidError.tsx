@@ -16,7 +16,7 @@ function MermaidErrorComponent({
 }: MermaidErrorComponentProps) {
   return (
     <div className="flex flex-col items-center justify-center p-6 gap-3">
-      <img src="/images/jan-logo.png" alt="Jan Logo" className="h-12 w-12" />
+      <img src="/images/seo-io-logo.svg" alt="SEO.IO Logo" className="h-12 w-12" />
       <p className="text-sm text-muted-foreground text-center">
         Diagram error detected
       </p>

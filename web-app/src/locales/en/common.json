@@ -17,7 +17,7 @@
   "recents": "Recents",
   "hub": "Hub",
   "helpSupport": "Help & Support",
-  "helpUsImproveJan": "Help Us Improve Jan",
+  "helpUsImproveJan": "Help Us Improve SEO.IO",
   "unstarAll": "Unstar All",
   "unstar": "Unstar",
   "deleteAll": "Delete All",
@@ -94,7 +94,7 @@
   "noModels": "No models found",
   "customAvatar": "Custom avatar",
   "editAssistant": "Edit Assistant",
-  "jan": "Jan",
+  "jan": "SEO.IO",
   "metadata": "Metadata",
   "regenerate": "Regenerate",
   "threadImage": "Thread image",
@@ -123,7 +123,7 @@
   "apiKeyRequired": "API Key is required",
   "enterTrustedHosts": "Enter trusted hosts",
   "placeholder": {
-    "chatInput": "Ask me anything..."
+    "chatInput": "Ask about SEO, content strategy, or rankings..."
   },
   "confirm": "Confirm",
   "continue": "Continue",

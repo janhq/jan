@@ -471,7 +471,7 @@ function General() {
                 description={t('settings:general.documentationDesc')}
                 actions={
                   <a
-                    href="https://jan.ai/docs"
+                    href="https://seo.io/docs"
                     target="_blank"
                     rel="noopener noreferrer"
                   >

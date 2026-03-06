@@ -1,12 +1,12 @@
 {
-  "welcome": "Welcome to Jan",
-  "description": "To get started, quickly launch with Jan Model or choose to set up your own local or remote provider",
-  "descriptionWeb": "To get started, you'll need to connect to a cloud model using an API key",
-  "quickStart": "Quick start with Jan Model",
+  "welcome": "Welcome to SEO.IO",
+  "description": "To get started, launch with the SEO.IO Model or set up your own local or remote provider",
+  "descriptionWeb": "To get started, connect to a cloud model using an API key to power your SEO intelligence",
+  "quickStart": "Quick start with SEO.IO Model",
   "quickStartDescription": "No setup needed",
   "quickStartFailed": "Something went wrong. Please try again.",
-  "downloading": "Downloading Jan Model...",
-  "downloadingDescription": "Please wait while we download the model. This may take a few minutes.",
+  "downloading": "Downloading SEO.IO Model...",
+  "downloadingDescription": "Setting up your SEO AI engine. This may take a few minutes.",
   "orDivider": "or",
   "localModel": "Set up local model",
   "remoteProvider": "Set up remote provider"

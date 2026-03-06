@@ -399,9 +399,9 @@ function SetupScreen() {
         <div className="w-full mx-auto">
           <div className="mb-4 text-center">
             <h1 className="font-studio font-medium text-2xl mb-1">
-              {isDownloading ?  'Sit tight, Jan is getting ready...' : 'Welcome to Jan!'}
+              {isDownloading ?  'Sit tight, SEO.IO is getting ready...' : 'Welcome to SEO.IO!'}
             </h1>
-            <p className='text-muted-foreground w-full md:w-1/2 mx-auto mt-1'>{isDownloading ? 'This may take a few minutes.' : 'To get started, Jan needs to download a model to your device first.'}</p>
+            <p className='text-muted-foreground w-full md:w-1/2 mx-auto mt-1'>{isDownloading ? 'This may take a few minutes.' : 'To get started, SEO.IO needs to download an AI model to power your SEO intelligence.'}</p>
           </div>
           <div className="flex gap-4 flex-col mt-6">
             {/* Quick Start Button - Highlighted */}
@@ -412,11 +412,11 @@ function SetupScreen() {
               <div className={cn("bg-background p-3 rounded-lg border transition-all hover:shadow-lg disabled:opacity-60 flex justify-between items-start")}>
                 <div className="flex items-start gap-4">
                   <div className="shrink-0 size-12 bg-secondary/40 rounded-xl flex items-center justify-center">
-                    <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
+                    <img src="/images/seo-io-logo.svg" alt="SEO.IO Logo" className='size-6' />
                   </div>
                   <div className="flex-1">
                     <h1 className="font-semibold text-sm mb-1">
-                      <span>Jan v3</span>&nbsp;<span className='text-xs text-muted-foreground'>· {defaultVariant?.file_size}</span>
+                      <span>SEO.IO v3</span>&nbsp;<span className='text-xs text-muted-foreground'>· {defaultVariant?.file_size}</span>
                     </h1>
                     <div className="text-muted-foreground text-sm mt-1.5">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full mr-1">
