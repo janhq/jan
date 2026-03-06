@@ -112,8 +112,9 @@ export function EnableProgressDialog({
     setIsRunning(true)
 
     try {
+      const { apiKey } = useLocalApiServer.getState()
       const result = await invoke<EnableResult>('openclaw_enable', {
-        configInput: null,
+        configInput: apiKey ? { janApiKey: apiKey } : null,
       })
 
       if (result.success) {

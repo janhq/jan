@@ -176,12 +176,13 @@ fn run_openclaw_cli(cli: OpenClawCli) {
             }
         }
 
-        OpenClawCommands::Configure { port, bind, jan_base_url, model_id } => {
+        OpenClawCommands::Configure { port, bind, jan_base_url, model_id, jan_api_key } => {
             let config_input = app_lib::core::openclaw::models::OpenClawConfigInput {
                 port,
                 bind,
                 jan_base_url,
                 model_id,
+                jan_api_key,
             };
 
             let result = rt.block_on(async {

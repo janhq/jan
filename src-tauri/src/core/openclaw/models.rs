@@ -251,6 +251,9 @@ pub struct OpenClawConfigInput {
     pub port: Option<u16>,
     /// Optional bind address
     pub bind: Option<String>,
+    /// Optional API key for Jan's local API server
+    #[serde(rename = "janApiKey")]
+    pub jan_api_key: Option<String>,
 }
 
 // ============================================

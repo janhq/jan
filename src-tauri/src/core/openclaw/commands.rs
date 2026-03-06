@@ -1243,6 +1243,11 @@ fn generate_default_config(input: Option<OpenClawConfigInput>) -> OpenClawConfig
         if let Some(base_url) = input.jan_base_url {
             config.models.providers.jan.base_url = base_url;
         }
+        if let Some(api_key) = input.jan_api_key {
+            if !api_key.is_empty() {
+                config.models.providers.jan.api_key = api_key;
+            }
+        }
     }
 
     config
@@ -1452,6 +1457,12 @@ pub async fn openclaw_configure(config_input: Option<OpenClawConfigInput>) -> Re
             } else if existing.pointer("/models/providers/jan").is_none() {
                 existing["models"]["providers"]["jan"] = models["providers"]["jan"].clone();
             }
+        }
+        // Always update the jan provider apiKey when an explicit key was provided
+        // (i.e., the generated config has a non-default key from config_input.jan_api_key)
+        if config.models.providers.jan.api_key != DEFAULT_JAN_API_KEY {
+            existing["models"]["providers"]["jan"]["apiKey"] =
+                serde_json::json!(config.models.providers.jan.api_key);
         }
         existing
     } else {
