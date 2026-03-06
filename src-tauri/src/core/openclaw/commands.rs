@@ -42,15 +42,8 @@ async fn is_docker_container_running() -> bool {
         .unwrap_or(false)
 }
 
-/// Build a `Command` that routes through `docker exec` when the container is running,
-/// or falls back to a bare `openclaw` command for users who installed via npm.
-///
-/// Resolution order for direct process mode:
-/// 1. Installed binary at `~/.jan/openclaw-runtime/bin/openclaw` (fast, no download)
-/// 2. Bare `openclaw` command (assumes user installed it globally via npm)
-///
-/// In both cases, PATH is augmented with the bundled Bun directory and runtime bin
-/// directory (which contains a `node` shim pointing to Bun for shebang resolution).
+/// Build a `Command` for openclaw: docker exec when container is running,
+/// otherwise direct process with bun interpreter (Unix) or native exe (Windows).
 async fn openclaw_command(args: &[&str]) -> Command {
     if is_docker_container_running().await {
         let mut cmd = Command::new("docker");
@@ -66,10 +59,7 @@ async fn openclaw_command(args: &[&str]) -> Command {
         hide_window(&mut cmd);
         cmd
     } else {
-        // Ensure node shim points to bundled Bun (for shebang resolution fallback)
-        if let Err(e) = super::ensure_bun_node_shim() {
-            log::debug!("Node shim not created (will fall back to system node): {}", e);
-        }
+        let _ = super::ensure_bun_node_shim();
 
         let openclaw_path = super::get_openclaw_bin_path().ok();
         let use_installed_binary = openclaw_path
@@ -77,11 +67,11 @@ async fn openclaw_command(args: &[&str]) -> Command {
             .map(|p| p.exists())
             .unwrap_or(false);
         let bun_path = super::resolve_bundled_bun();
+        let use_bun_interpreter = !cfg!(target_os = "windows")
+            && use_installed_binary
+            && bun_path.is_some();
 
-        // When bundled Bun is available, use it as the explicit interpreter for
-        // the openclaw script. This bypasses shebang resolution entirely — avoids
-        // issues with old system node or missing node shim.
-        let mut cmd = if use_installed_binary && bun_path.is_some() {
+        let mut cmd = if use_bun_interpreter {
             let mut c = Command::new(bun_path.unwrap());
             c.arg(openclaw_path.unwrap());
             if let Some(new_path) = super::build_augmented_path() {
@@ -97,7 +87,6 @@ async fn openclaw_command(args: &[&str]) -> Command {
             c.args(args);
             c
         } else {
-            // Fallback: bare "openclaw" (user installed via npm or has it in PATH)
             let mut c = Command::new("openclaw");
             if let Some(new_path) = super::build_augmented_path() {
                 c.env("PATH", new_path);
@@ -1094,14 +1083,9 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
 
         let pinned_package = format!("{}@{}", OPENCLAW_PACKAGE_NAME, OPENCLAW_VERSION);
 
-        // Ensure node shim exists before install (openclaw scripts use #!/usr/bin/env node)
-        if let Err(e) = super::ensure_bun_node_shim() {
-            log::warn!("Failed to create node shim before install: {}", e);
-        }
+        let _ = super::ensure_bun_node_shim();
 
-        // Try bundled Bun first, then fall back to npm
         let output = if let Some(bun_path) = super::resolve_bundled_bun() {
-            // Use bundled Bun with custom install directory
             let runtime_dir = super::get_openclaw_runtime_dir()?;
             let mut cmd = tokio::process::Command::new(&bun_path);
             cmd.args(["install", "-g", &pinned_package])
@@ -1113,7 +1097,6 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
                 .await
                 .map_err(|e| format!("Failed to run bun install: {}", e))?
         } else {
-            // Fall back to npm
             let mut cmd = Command::new("npm");
             cmd.args(["install", "-g", &pinned_package])
                 .stdout(Stdio::piped())

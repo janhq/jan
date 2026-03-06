@@ -78,21 +78,15 @@ pub fn get_openclaw_bin_path() -> Result<std::path::PathBuf, String> {
     Ok(bin_path)
 }
 
-/// Resolve the bundled Bun path.
+/// Resolve the bundled Bun path. Returns None if unavailable.
 ///
-/// Platform-specific resolution:
-/// - **macOS / Windows**: Tauri `externalBin` places `bun` (or `bun.exe`) next to the
-///   main executable — same directory as `std::env::current_exe().parent()`.
-/// - **Linux (deb)**: Bun is installed to `/usr/bin/bun` via the deb package's `files`
-///   mapping, not as an `externalBin`. So we also check `/usr/bin/bun`.
-/// - **Linux (AppImage)**: The binary may be next to the executable inside the
-///   AppImage mount, so the `exe_path.parent()` check covers it.
-///
-/// Returns None if bun doesn't exist or can't run on this machine.
+/// Resolution order:
+/// 1. Next to executable (macOS, Windows, dev mode)
+/// 2. `$APPDIR/usr/bin/bun` (Linux AppImage — exe is in usr/lib/, bun is in usr/bin/)
+/// 3. `/usr/bin/bun` (Linux deb)
 pub fn resolve_bundled_bun() -> Option<std::path::PathBuf> {
     let bun_name = if cfg!(target_os = "windows") { "bun.exe" } else { "bun" };
 
-    // 1. Check next to the executable (macOS, Windows, Linux AppImage, dev mode)
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(bin_path) = exe_path.parent() {
             let candidate = bin_path.join(bun_name);
@@ -105,9 +99,18 @@ pub fn resolve_bundled_bun() -> Option<std::path::PathBuf> {
         }
     }
 
-    // 2. Linux deb: bun is installed to /usr/bin/bun via package files mapping
     #[cfg(target_os = "linux")]
     {
+        if let Ok(appdir) = std::env::var("APPDIR") {
+            let candidate = std::path::PathBuf::from(&appdir).join("usr").join("bin").join("bun");
+            if candidate.exists() {
+                let s = candidate.to_string_lossy().to_string();
+                if jan_utils::system::can_override_npx(s) {
+                    return Some(candidate);
+                }
+            }
+        }
+
         let system_bun = std::path::PathBuf::from("/usr/bin/bun");
         if system_bun.exists() {
             let s = system_bun.to_string_lossy().to_string();
@@ -120,12 +123,8 @@ pub fn resolve_bundled_bun() -> Option<std::path::PathBuf> {
     None
 }
 
-/// Ensure a `node` symlink (or copy on Windows) exists in the runtime bin directory
-/// pointing to the bundled Bun binary. This is critical because:
-/// - `openclaw gateway install` registers a launchd/systemd service
-/// - The service plist hardcodes the absolute path to `node` (resolved via shebang)
-/// - If bun's directory is first in PATH and contains a `node` symlink, the service
-///   will use bun as its runtime instead of requiring a separate Node.js installation
+/// Create a `node` shim (symlink on Unix, copy on Windows) pointing to bundled Bun.
+/// Used as fallback for shebang resolution in service files.
 pub fn ensure_bun_node_shim() -> Result<(), String> {
     let bun_path = resolve_bundled_bun().ok_or("Bundled Bun not found")?;
     let runtime_dir = get_openclaw_runtime_dir()?;
@@ -140,25 +139,21 @@ pub fn ensure_bun_node_shim() -> Result<(), String> {
 
     #[cfg(unix)]
     {
-        // Check if shim already exists and points to the correct bun binary
         if node_shim.exists() || node_shim.symlink_metadata().is_ok() {
             if let Ok(target) = std::fs::read_link(&node_shim) {
                 if target == bun_path {
                     return Ok(());
                 }
             }
-            // Stale or non-symlink — remove and recreate
             let _ = std::fs::remove_file(&node_shim);
         }
 
-        // Linux AppImage: mount path is ephemeral (/tmp/.mount_JanXXX/), so copy
-        // instead of symlinking to ensure the shim survives after AppImage unmounts.
+        // AppImage: copy instead of symlink (mount path is ephemeral)
         #[cfg(target_os = "linux")]
         {
             if std::env::var("APPIMAGE").is_ok() {
                 std::fs::copy(&bun_path, &node_shim)
-                    .map_err(|e| format!("Failed to copy bun as node (AppImage): {}", e))?;
-                // Ensure executable permission on the copy
+                    .map_err(|e| format!("Failed to copy bun as node: {}", e))?;
                 use std::os::unix::fs::PermissionsExt;
                 let _ = std::fs::set_permissions(
                     &node_shim,
@@ -174,8 +169,6 @@ pub fn ensure_bun_node_shim() -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        // Windows symlinks require elevated privileges; copy instead.
-        // Re-copy if bun.exe is newer than our node.exe copy.
         let needs_copy = if node_shim.exists() {
             let bun_modified = std::fs::metadata(&bun_path)
                 .and_then(|m| m.modified())
@@ -200,12 +193,9 @@ pub fn ensure_bun_node_shim() -> Result<(), String> {
     Ok(())
 }
 
-/// Platform-aware PATH separator (";" on Windows, ":" elsewhere).
 pub const PATH_SEPARATOR: &str = if cfg!(target_os = "windows") { ";" } else { ":" };
 
-/// Build a new PATH string by prepending the bundled Bun directory and the
-/// openclaw-runtime/bin directory to the current PATH. Returns None if no
-/// extra entries are available.
+/// Prepend bundled Bun dir and openclaw-runtime/bin to PATH.
 pub fn build_augmented_path() -> Option<String> {
     let mut path_entries = Vec::new();
     if let Some(bun_path) = resolve_bundled_bun() {
