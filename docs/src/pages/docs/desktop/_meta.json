@@ -32,7 +32,7 @@
     "title": "Jan Servers",
     "type": "separator"
   },
-  "api-preference": "API Preference",
+  "api-preference": "API Reference",
   "llama-cpp-server": "LlamaCpp Server",
   "mlx-server": "MLX Server",
   "server-troubleshooting": "Server Troubleshooting",
