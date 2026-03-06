@@ -4,7 +4,12 @@ import LogoMark from '@/components/LogoMark'
 import FooterMenu from '@/components/FooterMenu'
 import JSONLD from '@/components/JSONLD'
 import { useRouter } from 'next/router'
-import NavbarExtraContent from '@/components/NavbarExtraContent'
+import Link from 'next/link'
+import { LibraryBig, Blocks, BrainCircuit, Computer } from 'lucide-react'
+import { AiOutlineGithub } from 'react-icons/ai'
+import { BiLogoDiscordAlt } from 'react-icons/bi'
+import { RiTwitterXFill } from 'react-icons/ri'
+import Navbar from '@/components/Navbar'
 
 const defaultUrl = 'https://jan.ai'
 const defaultImage = 'https://jan.ai/assets/images/general/og-image.png'
@@ -47,7 +52,7 @@ const config: DocsThemeConfig = {
     }
   },
   navbar: {
-    extraContent: <NavbarExtraContent />,
+    component: <Navbar />,
   },
   sidebar: {
     defaultMenuCollapseLevel: 1,
