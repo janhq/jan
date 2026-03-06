@@ -137,7 +137,7 @@ jan/
 
 **Prerequisites:**
 - Node.js ≥ 20.0.0
-- Yarn ≥ 4.5.3
+- pnpm ≥ 10
 - Make ≥ 3.81
 - Rust (for Tauri)
 - (macOS Apple Silicon only) MetalToolchain `xcodebuild -downloadComponent MetalToolchain`
@@ -183,7 +183,7 @@ make dev
 ## Testing
 
 ```bash
-yarn test                    # All tests
+pnpm test                    # All tests
 cd src-tauri && cargo test  # Rust tests
 cd autoqa && python main.py # End-to-end tests
 ```

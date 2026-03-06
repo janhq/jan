@@ -32,7 +32,7 @@ Extensions add specific features to Jan as self-contained modules.
 ```bash
 mkdir my-extension
 cd my-extension  
-yarn init
+pnpm init
 ```
 
 ### Structure
@@ -65,10 +65,10 @@ export default class MyExtension extends Extension {
 
 ```bash
 # Build extension
-yarn build
+pnpm run build
 
 # Run tests
-yarn test
+pnpm test
 ```
 
 ## Common Patterns

@@ -12,7 +12,7 @@ if [ ! -f "$FILE_PATH" ]; then
 fi
 
 # Perform the replacements
-sed -i -e "s/yarn workspace jan/yarn workspace jan-$CHANNEL/g" "$FILE_PATH"
+sed -i -e "s/pnpm --filter jan/pnpm --filter jan-$CHANNEL/g" "$FILE_PATH"
 
 # Notify completion
 echo "File has been updated: $FILE_PATH"

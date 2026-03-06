@@ -35,10 +35,10 @@ tauri::Builder::default()
 
 ```bash
 # Development
-yarn tauri dev
+pnpm tauri dev
 
-# Build 
-yarn tauri build
+# Build
+pnpm tauri build
 
 # Run tests
 cargo test

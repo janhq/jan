@@ -97,7 +97,7 @@ For those who enjoy the scenic route:
 ### Prerequisites
 
 - Node.js ≥ 20.0.0
-- Yarn ≥ 4.5.3
+- pnpm ≥ 10
 - Make ≥ 3.81
 - Rust (for Tauri)
 - (macOS Apple Silicon only) MetalToolchain `xcodebuild -downloadComponent MetalToolchain`
@@ -121,11 +121,11 @@ This handles everything: installs dependencies, builds core components, and laun
 ### Manual Commands
 
 ```bash
-yarn install
-yarn build:tauri:plugin:api
-yarn build:core
-yarn build:extensions
-yarn dev
+pnpm install
+pnpm run build:tauri:plugin:api
+pnpm run build:core
+pnpm run build:extensions
+pnpm run dev
 ```
 
 ## System Requirements

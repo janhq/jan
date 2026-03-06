@@ -10,17 +10,17 @@ REPORT_PORTAL_DESCRIPTION ?= "Jan App report"
 all:
 	@echo "Specify a target to run"
 
-# Installs yarn dependencies and builds core and extensions
+# Installs dependencies and builds core and extensions
 install-and-build:
 ifeq ($(OS),Windows_NT)
 	echo "skip"
 else ifeq ($(shell uname -s),Linux)
 	chmod +x src-tauri/build-utils/*
 endif
-	yarn install
-	yarn build:tauri:plugin:api
-	yarn build:core
-	yarn build:extensions
+	pnpm install
+	pnpm build:tauri:plugin:api
+	pnpm build:core
+	pnpm build:extensions
 
 # Install required Rust targets for macOS universal builds
 install-rust-targets:
@@ -51,53 +51,53 @@ install-ios-rust-targets:
 	@echo "iOS Rust targets ready!"
 
 dev: install-and-build
-	yarn download:bin
+	pnpm download:bin
 	make build-mlx-server-if-exists
 	make build-cli-dev
-	yarn dev
+	pnpm dev
 
 # Web application targets
 install-web-app:
-	yarn install
+	pnpm install
 
 dev-web-app: install-web-app
-	yarn build:core
-	yarn dev:web-app
+	pnpm build:core
+	pnpm dev:web-app
 
 build-web-app: install-web-app
-	yarn build:core
-	yarn build:web-app
+	pnpm build:core
+	pnpm build:web-app
 
 serve-web-app:
-	yarn serve:web-app
+	pnpm serve:web-app
 
 build-serve-web-app: build-web-app
-	yarn serve:web-app
+	pnpm serve:web-app
 
 # Mobile
 dev-android: install-and-build install-android-rust-targets
 	@echo "Setting up Android development environment..."
 	@if [ ! -d "src-tauri/gen/android" ]; then \
 		echo "Android app not initialized. Initializing..."; \
-		yarn tauri android init; \
+		pnpm tauri android init; \
 	fi
 	@echo "Sourcing Android environment setup..."
 	@bash autoqa/scripts/setup-android-env.sh echo "Android environment ready"
 	@echo "Starting Android development server..."
-	yarn dev:android
+	pnpm dev:android
 
 dev-ios: install-and-build install-ios-rust-targets
 	@echo "Setting up iOS development environment..."
 ifeq ($(shell uname -s),Darwin)
 	@if [ ! -d "src-tauri/gen/ios" ]; then \
 		echo "iOS app not initialized. Initializing..."; \
-		yarn tauri ios init; \
+		pnpm tauri ios init; \
 	fi
 	@echo "Checking iOS development requirements..."
 	@xcrun --version > /dev/null 2>&1 || (echo "❌ Xcode command line tools not found. Install with: xcode-select --install" && exit 1)
 	@xcrun simctl list devices available | grep -q "iPhone\|iPad" || (echo "❌ No iOS simulators found. Install simulators through Xcode." && exit 1)
 	@echo "Starting iOS development server..."
-	yarn dev:ios
+	pnpm dev:ios
 else
 	@echo "❌ iOS development is only supported on macOS"
 	@exit 1
@@ -105,17 +105,17 @@ endif
 
 # Linting
 lint: install-and-build
-	yarn lint
+	pnpm lint
 
 # Testing
 test: lint install-rust-targets
-	yarn download:bin
+	pnpm download:bin
 ifeq ($(OS),Windows_NT)
 endif
-	yarn test
-	yarn copy:assets:tauri
-	yarn build:icon
-	yarn build:mlx-server
+	pnpm test
+	pnpm copy:assets:tauri
+	pnpm build:icon
+	pnpm build:mlx-server
 	make build-cli
 	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
@@ -205,11 +205,11 @@ build-cli-dev:
 
 # Build
 build: install-and-build install-rust-targets
-	yarn build
+	pnpm build
 
 clean:
 ifeq ($(OS),Windows_NT)
-	-powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out, .turbo, .yarn -Recurse -Directory | Remove-Item -Recurse -Force"
+	-powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out, .turbo -Recurse -Directory | Remove-Item -Recurse -Force"
 	-powershell -Command "Get-ChildItem -Path . -Include package-lock.json, tsconfig.tsbuildinfo -Recurse -File | Remove-Item -Recurse -Force"
 	-powershell -Command "Remove-Item -Recurse -Force ./pre-install/*.tgz"
 	-powershell -Command "Remove-Item -Recurse -Force ./extensions/*/*.tgz"
@@ -224,7 +224,6 @@ else ifeq ($(shell uname -s),Linux)
 	find . -name "build" -type d -exec rm -rf '{}' +
 	find . -name "out" -type d -exec rm -rf '{}' +
 	find . -name ".turbo" -type d -exec rm -rf '{}' +
-	find . -name ".yarn" -type d -exec rm -rf '{}' +
 	find . -name "packake-lock.json" -type f -exec rm -rf '{}' +
 	find . -name "package-lock.json" -type f -exec rm -rf '{}' +
 	rm -rf ./pre-install/*.tgz
@@ -242,7 +241,6 @@ else
 	find . -name "build" -type d -exec rm -rfv '{}' +
 	find . -name "out" -type d -exec rm -rfv '{}' +
 	find . -name ".turbo" -type d -exec rm -rfv '{}' +
-	find . -name ".yarn" -type d -exec rm -rfv '{}' +
 	find . -name "package-lock.json" -type f -exec rm -rfv '{}' +
 	rm -rfv ./pre-install/*.tgz
 	rm -rfv ./extensions/*/*.tgz

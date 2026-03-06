@@ -49,5 +49,5 @@
   "peerDependencies": {
     "react": "19.0.0"
   },
-  "packageManager": "yarn@4.5.3"
+  "packageManager": "pnpm@10.30.3"
 }

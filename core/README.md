@@ -59,10 +59,10 @@ import * as core from '@janhq/core'
    1. Navigate to the extension directory.
    2. Install dependencies.
       ```bash
-      yarn install
+      pnpm install
       ```
    3. Compile the source code. The following command keeps running in the terminal and rebuilds the extension when you modify the source code.
       ```bash
-      yarn build
+      pnpm run build
       ```
    4. Select the generated .tgz from Jan > Settings > Extension > Manual Installation.

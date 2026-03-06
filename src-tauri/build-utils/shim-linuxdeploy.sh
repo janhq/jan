@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# wrapper script to pin linuxdeploy version and inject environment variables into the 
-# build process. While yarn supports injecting environment vairables via env files,
-# this applies to all yarn scripts. Using a wrapper allows granular control over
-# when environment variables are injected, and avoids tainting the system .cache
+# wrapper script to pin linuxdeploy version and inject environment variables into the
+# build process. Using a wrapper allows granular control over when environment
+# variables are injected, and avoids tainting the system .cache
 
-# avoid redownloading corepack if possible
-export COREPACK_HOME=${COREPACK_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/node/corepack}
 # move cache home to <project root>/.cache
 export XDG_CACHE_HOME=${PWD}/.cache
 

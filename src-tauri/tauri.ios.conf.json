@@ -3,8 +3,8 @@
   "build": {
     "devUrl": null,
     "frontendDist": "../web-app/dist",
-    "beforeDevCommand": "cross-env IS_DEV=true IS_IOS=true yarn build:web",
-    "beforeBuildCommand": "cross-env IS_IOS=true yarn build:web"
+    "beforeDevCommand": "cross-env IS_DEV=true IS_IOS=true pnpm build:web",
+    "beforeBuildCommand": "cross-env IS_IOS=true pnpm build:web"
   },
   "app": {
     "security": {

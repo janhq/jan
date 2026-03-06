@@ -72,7 +72,7 @@ export async function myCommand(param: string): Promise<string> {
 
 ```bash
 cargo build    # Build plugin
-yarn build     # Build JavaScript
+pnpm run build # Build JavaScript
 cargo test     # Run tests
 ```
 
@@ -98,10 +98,10 @@ cargo test
 
 # Test with main app
 cd ../../
-yarn tauri dev
+pnpm tauri dev
 
 # Test JavaScript API
-yarn build && node -e "const plugin = require('./dist-js'); console.log(plugin)"
+pnpm run build && node -e "const plugin = require('./dist-js'); console.log(plugin)"
 ```
 
 ## Best Practices
