@@ -91,7 +91,7 @@ export async function syncAllModelsToOpenClaw(
   selectedModelId?: string
 ): Promise<number> {
   try {
-    const models: Array<{ modelId: string; provider: string; displayName: string }> = []
+    const models: Array<{ modelId: string; provider: string; displayName: string; contextWindow?: number }> = []
 
     for (const provider of providers) {
       if (!provider.active) continue
@@ -101,10 +101,19 @@ export async function syncAllModelsToOpenClaw(
         if (!modelId || typeof modelId !== 'string') continue
         if (model.embedding) continue
 
+        // Extract context window from Jan's model settings (ctx_len)
+        const ctxLenRaw = model.settings?.ctx_len?.controller_props?.value
+        const contextWindow = typeof ctxLenRaw === 'number' && ctxLenRaw > 0
+          ? ctxLenRaw
+          : typeof ctxLenRaw === 'string' && parseInt(ctxLenRaw) > 0
+            ? parseInt(ctxLenRaw)
+            : undefined
+
         models.push({
           modelId,
           provider: provider.provider,
           displayName: model.displayName || model.name || modelId,
+          contextWindow,
         })
       }
     }

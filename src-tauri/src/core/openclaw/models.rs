@@ -185,8 +185,8 @@ pub struct OpenClawStatus {
     pub installed: bool,
     /// Whether the gateway is running
     pub running: bool,
-    /// Node.js version (if installed)
-    pub node_version: Option<String>,
+    /// Runtime version (Bun or Node.js, if installed)
+    pub runtime_version: Option<String>,
     /// Installed OpenClaw version (if installed)
     pub openclaw_version: Option<String>,
     /// Port status (available or in use)
@@ -251,6 +251,9 @@ pub struct OpenClawConfigInput {
     pub port: Option<u16>,
     /// Optional bind address
     pub bind: Option<String>,
+    /// Optional API key for Jan's local API server
+    #[serde(rename = "janApiKey")]
+    pub jan_api_key: Option<String>,
 }
 
 // ============================================
@@ -520,6 +523,9 @@ pub struct ModelSyncEntry {
     /// Human-readable display name
     #[serde(rename = "displayName")]
     pub display_name: String,
+    /// Context window size from Jan's model settings (ctx_len). None = use default.
+    #[serde(rename = "contextWindow")]
+    pub context_window: Option<u32>,
 }
 
 /// Result of bulk model sync
@@ -587,9 +593,9 @@ pub struct EnableError {
 /// Error codes for the enable flow
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EnableErrorCode {
-    NodeNotFound,
-    NodeVersionTooLow,
-    NpmInstallFailed,
+    RuntimeNotFound,
+    RuntimeVersionTooLow,
+    InstallFailed,
     PortInUse,
     ConfigWriteFailed,
     GatewayStartFailed,
@@ -610,7 +616,6 @@ pub struct RecoveryOption {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RecoveryAction {
     Retry,
-    OpenNodeDownload,
     UseDifferentPort { port: u16 },
 }
 

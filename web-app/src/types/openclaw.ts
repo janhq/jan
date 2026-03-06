@@ -27,7 +27,7 @@ export type ChannelConfig = TelegramConfig | WhatsAppConfig
 export interface OpenClawStatus {
   installed: boolean
   running: boolean
-  node_version: string | null
+  runtime_version: string | null
   openclaw_version: string | null
   port_available: boolean
   error: string | null
