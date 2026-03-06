@@ -251,10 +251,10 @@ const isRunning = status?.running ?? false
                 title={t('settings:remoteAccess.port')}
                 actions={<span className="text-foreground">{OPENCLAW_PORT}</span>}
               />
-              {status?.node_version && (
+              {status?.runtime_version && (
                 <CardItem
-                  title={t('settings:remoteAccess.nodeVersion')}
-                  actions={<span className="text-foreground">{status.node_version}</span>}
+                  title={t('settings:remoteAccess.runtimeVersion')}
+                  actions={<span className="text-foreground">{status.runtime_version}</span>}
                 />
               )}
               {status?.openclaw_version && (
@@ -265,7 +265,7 @@ const isRunning = status?.running ?? false
               )}
             </Card> */}
 
-            <Card title={t('settings:remoteAccess.quickSetup')}>
+            <Card title={t('settings:remoteAccess.openclawIntegration')}>
               <CardItem
                 title={
                   isRunning
