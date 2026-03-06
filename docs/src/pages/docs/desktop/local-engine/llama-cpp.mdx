@@ -92,56 +92,82 @@ Using the wrong backend can make models run slowly or fail to load. Pick the one
 
 <Tabs.Tab>
 
-### NVIDIA Graphics Cards (Recommended for Speed)
+### NVIDIA Graphics Cards (CUDA)
 Choose based on your CUDA version (check NVIDIA Control Panel):
 
-**For CUDA 12.0:**
-- `llama.cpp-avx2-cuda-12-0` (most common)
-- `llama.cpp-avx512-cuda-12-0` (newer Intel/AMD CPUs)
+**CUDA 12.0 (recommended):**
+- `win-avx2-cuda-cu12.0-x64` (most common)
+- `win-avx512-cuda-cu12.0-x64` (newer Intel/AMD CPUs)
+- `win-avx-cuda-cu12.0-x64` (older CPUs)
+- `win-cuda-12-common_cpus-x64` (broadest CPU compatibility)
 
-**For CUDA 11.7:**
-- `llama.cpp-avx2-cuda-11-7` (most common)
-- `llama.cpp-avx512-cuda-11-7` (newer Intel/AMD CPUs)
+**CUDA 11.7:**
+- `win-avx2-cuda-cu11.7-x64` (most common)
+- `win-avx512-cuda-cu11.7-x64` (newer Intel/AMD CPUs)
+- `win-avx-cuda-cu11.7-x64` (older CPUs)
+- `win-cuda-11-common_cpus-x64` (broadest CPU compatibility)
 
-### CPU Only (No Graphics Card Acceleration)
-- `llama.cpp-avx2` (most modern CPUs)
-- `llama.cpp-avx512` (newer Intel/AMD CPUs)
-- `llama.cpp-avx` (older CPUs)
-- `llama.cpp-noavx` (very old CPUs)
+**CUDA 13:**
+- `win-cuda-13-common_cpus-x64`
 
-### Other Graphics Cards
-- `llama.cpp-vulkan` (AMD, Intel Arc, some others)
+### CPU Only
+- `win-avx2-x64` (most modern CPUs, recommended)
+- `win-avx512-x64` (newer Intel/AMD CPUs with AVX-512)
+- `win-avx-x64` (older CPUs)
+- `win-noavx-x64` (very old CPUs)
+- `win-common_cpus-x64` (broadest compatibility)
+
+### Other Graphics Cards (Vulkan — AMD, Intel Arc)
+- `win-vulkan-x64` (recommended for GPU acceleration)
+- `win-vulkan-common_cpus-x64` (Vulkan with broader CPU support)
 
 <Callout type="info">
-**Quick Test**: Start with `avx2-cuda-12-0` if you have an NVIDIA card, or `avx2` for CPU-only. If it doesn't work, try the `avx` variant.
+**Quick Test**: Start with `win-avx2-cuda-cu12.0-x64` for NVIDIA, `win-vulkan-x64` for AMD/Intel Arc, or `win-avx2-x64` for CPU-only.
 </Callout>
 
 </Tabs.Tab>
 
 <Tabs.Tab>
 
-### NVIDIA Graphics Cards
-Same CUDA options as Windows:
-- `llama.cpp-avx2-cuda-12-0` (most common)
-- `llama.cpp-avx2-cuda-11-7` (older drivers)
+### NVIDIA Graphics Cards (CUDA)
+Choose based on your CUDA version:
+
+**CUDA 12.0 (recommended):**
+- `linux-avx2-cuda-cu12.0-x64` (most common)
+- `linux-avx512-cuda-cu12.0-x64` (newer Intel/AMD CPUs)
+- `linux-avx-cuda-cu12.0-x64` (older CPUs)
+- `linux-cuda-12-common_cpus-x64` (broadest CPU compatibility)
+
+**CUDA 11.7:**
+- `linux-avx2-cuda-cu11.7-x64` (most common)
+- `linux-avx512-cuda-cu11.7-x64` (newer Intel/AMD CPUs)
+- `linux-avx-cuda-cu11.7-x64` (older CPUs)
+- `linux-cuda-11-common_cpus-x64` (broadest CPU compatibility)
+
+**CUDA 13:**
+- `linux-cuda-13-common_cpus-x64`
 
 ### CPU Only
-- `llama.cpp-avx2` (most modern CPUs)
-- `llama.cpp-avx512` (newer Intel/AMD CPUs)
-- `llama.cpp-arm64` (ARM processors like Raspberry Pi)
+- `linux-avx2-x64` (most modern CPUs, recommended)
+- `linux-avx512-x64` (newer Intel/AMD CPUs with AVX-512)
+- `linux-avx-x64` (older CPUs)
+- `linux-noavx-x64` (very old CPUs)
+- `linux-common_cpus-x64` (broadest compatibility)
 
-### Other Graphics Cards
-- `llama.cpp-vulkan` (AMD, Intel graphics)
+### Other Graphics Cards (Vulkan — AMD, Intel Arc)
+- `linux-vulkan-x64` (recommended for GPU acceleration)
+- `linux-vulkan-common_cpus-x64` (Vulkan with broader CPU support)
+
+<Callout type="info">
+**Quick Test**: Start with `linux-avx2-cuda-cu12.0-x64` for NVIDIA, `linux-vulkan-x64` for AMD/Intel Arc, or `linux-avx2-x64` for CPU-only.
+</Callout>
 
 </Tabs.Tab>
 
 <Tabs.Tab>
 
-### Apple Silicon (M1/M2/M3/M4)
-- `llama.cpp-mac-arm64` (recommended)
-
-### Intel Macs
-- `llama.cpp-mac-amd64`
+- `macos-arm64` (Apple Silicon — M1/M2/M3/M4, recommended)
+- `macos-x64` (Intel Macs)
 
 <Callout type="info">
 Apple Silicon Macs automatically use the GPU through Metal - no additional setup needed.
