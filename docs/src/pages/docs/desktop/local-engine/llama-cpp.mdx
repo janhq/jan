@@ -44,9 +44,27 @@ Originally created by Georgi Gerganov, llama.cpp is designed to run large langua
 
 ## Accessing Engine Settings
 
-Find llama.cpp settings at **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **llama.cpp**:
+Find llama.cpp settings at **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Llama.cpp** under Model Providers:
 
-![llama.cpp](./_assets/llama.cpp-01-updated.png)
+![llama.cpp](../_assets/llama-cpp-settings.png)
+
+## Model Management
+
+The **Models** section at the top of the Llama.cpp settings page lets you manage all your local GGUF models.
+
+### Download from Hub
+
+Browse and download models directly from the [Hub](/docs/desktop/manage-models) tab in the left sidebar. Downloaded models will appear here automatically.
+
+### Import Local Files
+
+Click **Import** to link a GGUF model file already on your computer. This is useful for models downloaded via your browser from Hugging Face, or models shared with other apps — Jan links to the file in place without copying it.
+
+![llama.cpp Import](../_assets/llama-cpp-import.png)
+
+### Delete a Model
+
+Click the trash icon next to any model to remove it. This deletes the model file from Jan's data folder (linked files leave the original intact).
 
 <Callout type="info">
 These are advanced settings. You typically only need to adjust them if models aren't working properly or you want to optimize performance for your specific hardware.
@@ -74,56 +92,82 @@ Using the wrong backend can make models run slowly or fail to load. Pick the one
 
 <Tabs.Tab>
 
-### NVIDIA Graphics Cards (Recommended for Speed)
+### NVIDIA Graphics Cards (CUDA)
 Choose based on your CUDA version (check NVIDIA Control Panel):
 
-**For CUDA 12.0:**
-- `llama.cpp-avx2-cuda-12-0` (most common)
-- `llama.cpp-avx512-cuda-12-0` (newer Intel/AMD CPUs)
+**CUDA 12.0 (recommended):**
+- `win-avx2-cuda-cu12.0-x64` (most common)
+- `win-avx512-cuda-cu12.0-x64` (newer Intel/AMD CPUs)
+- `win-avx-cuda-cu12.0-x64` (older CPUs)
+- `win-cuda-12-common_cpus-x64` (broadest CPU compatibility)
 
-**For CUDA 11.7:**
-- `llama.cpp-avx2-cuda-11-7` (most common)
-- `llama.cpp-avx512-cuda-11-7` (newer Intel/AMD CPUs)
+**CUDA 11.7:**
+- `win-avx2-cuda-cu11.7-x64` (most common)
+- `win-avx512-cuda-cu11.7-x64` (newer Intel/AMD CPUs)
+- `win-avx-cuda-cu11.7-x64` (older CPUs)
+- `win-cuda-11-common_cpus-x64` (broadest CPU compatibility)
 
-### CPU Only (No Graphics Card Acceleration)
-- `llama.cpp-avx2` (most modern CPUs)
-- `llama.cpp-avx512` (newer Intel/AMD CPUs)
-- `llama.cpp-avx` (older CPUs)
-- `llama.cpp-noavx` (very old CPUs)
+**CUDA 13:**
+- `win-cuda-13-common_cpus-x64`
 
-### Other Graphics Cards
-- `llama.cpp-vulkan` (AMD, Intel Arc, some others)
+### CPU Only
+- `win-avx2-x64` (most modern CPUs, recommended)
+- `win-avx512-x64` (newer Intel/AMD CPUs with AVX-512)
+- `win-avx-x64` (older CPUs)
+- `win-noavx-x64` (very old CPUs)
+- `win-common_cpus-x64` (broadest compatibility)
+
+### Other Graphics Cards (Vulkan — AMD, Intel Arc)
+- `win-vulkan-x64` (recommended for GPU acceleration)
+- `win-vulkan-common_cpus-x64` (Vulkan with broader CPU support)
 
 <Callout type="info">
-**Quick Test**: Start with `avx2-cuda-12-0` if you have an NVIDIA card, or `avx2` for CPU-only. If it doesn't work, try the `avx` variant.
+**Quick Test**: Start with `win-avx2-cuda-cu12.0-x64` for NVIDIA, `win-vulkan-x64` for AMD/Intel Arc, or `win-avx2-x64` for CPU-only.
 </Callout>
 
 </Tabs.Tab>
 
 <Tabs.Tab>
 
-### NVIDIA Graphics Cards
-Same CUDA options as Windows:
-- `llama.cpp-avx2-cuda-12-0` (most common)
-- `llama.cpp-avx2-cuda-11-7` (older drivers)
+### NVIDIA Graphics Cards (CUDA)
+Choose based on your CUDA version:
+
+**CUDA 12.0 (recommended):**
+- `linux-avx2-cuda-cu12.0-x64` (most common)
+- `linux-avx512-cuda-cu12.0-x64` (newer Intel/AMD CPUs)
+- `linux-avx-cuda-cu12.0-x64` (older CPUs)
+- `linux-cuda-12-common_cpus-x64` (broadest CPU compatibility)
+
+**CUDA 11.7:**
+- `linux-avx2-cuda-cu11.7-x64` (most common)
+- `linux-avx512-cuda-cu11.7-x64` (newer Intel/AMD CPUs)
+- `linux-avx-cuda-cu11.7-x64` (older CPUs)
+- `linux-cuda-11-common_cpus-x64` (broadest CPU compatibility)
+
+**CUDA 13:**
+- `linux-cuda-13-common_cpus-x64`
 
 ### CPU Only
-- `llama.cpp-avx2` (most modern CPUs)
-- `llama.cpp-avx512` (newer Intel/AMD CPUs)
-- `llama.cpp-arm64` (ARM processors like Raspberry Pi)
+- `linux-avx2-x64` (most modern CPUs, recommended)
+- `linux-avx512-x64` (newer Intel/AMD CPUs with AVX-512)
+- `linux-avx-x64` (older CPUs)
+- `linux-noavx-x64` (very old CPUs)
+- `linux-common_cpus-x64` (broadest compatibility)
 
-### Other Graphics Cards
-- `llama.cpp-vulkan` (AMD, Intel graphics)
+### Other Graphics Cards (Vulkan — AMD, Intel Arc)
+- `linux-vulkan-x64` (recommended for GPU acceleration)
+- `linux-vulkan-common_cpus-x64` (Vulkan with broader CPU support)
+
+<Callout type="info">
+**Quick Test**: Start with `linux-avx2-cuda-cu12.0-x64` for NVIDIA, `linux-vulkan-x64` for AMD/Intel Arc, or `linux-avx2-x64` for CPU-only.
+</Callout>
 
 </Tabs.Tab>
 
 <Tabs.Tab>
 
-### Apple Silicon (M1/M2/M3/M4)
-- `llama.cpp-mac-arm64` (recommended)
-
-### Intel Macs
-- `llama.cpp-mac-amd64`
+- `macos-arm64` (Apple Silicon — M1/M2/M3/M4, recommended)
+- `macos-x64` (Intel Macs)
 
 <Callout type="info">
 Apple Silicon Macs automatically use the GPU through Metal - no additional setup needed.
