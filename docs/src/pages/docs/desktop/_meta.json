@@ -33,8 +33,6 @@
     "type": "separator"
   },
   "api-preference": "API Reference",
-  "llama-cpp-server": "LlamaCpp Server",
-  "mlx-server": "MLX Server",
   "server-troubleshooting": "Server Troubleshooting",
   "server-examples": "Clients",
   "reference-separator": {
