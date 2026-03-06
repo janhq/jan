@@ -37,7 +37,7 @@ fn run_openclaw_cli(cli: OpenClawCli) {
                     println!("  Installed: {}", if status.installed { "Yes" } else { "No" });
                     println!("  Running: {}", if status.running { "Yes" } else { "No" });
                     println!("  OpenClaw Version: {}", status.openclaw_version.clone().unwrap_or_else(|| "N/A".to_string()));
-                    println!("  Node.js Version: {}", status.node_version.clone().unwrap_or_else(|| "N/A".to_string()));
+                    println!("  Runtime Version: {}", status.runtime_version.clone().unwrap_or_else(|| "N/A".to_string()));
                     println!("  Port (18789): {}", if status.port_available { "Available" } else { "In Use" });
 
                     if let Some(err) = status.error {
@@ -176,12 +176,13 @@ fn run_openclaw_cli(cli: OpenClawCli) {
             }
         }
 
-        OpenClawCommands::Configure { port, bind, jan_base_url, model_id } => {
+        OpenClawCommands::Configure { port, bind, jan_base_url, model_id, jan_api_key } => {
             let config_input = app_lib::core::openclaw::models::OpenClawConfigInput {
                 port,
                 bind,
                 jan_base_url,
                 model_id,
+                jan_api_key,
             };
 
             let result = rt.block_on(async {
