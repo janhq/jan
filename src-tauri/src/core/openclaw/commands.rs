@@ -1464,6 +1464,11 @@ pub async fn openclaw_configure(config_input: Option<OpenClawConfigInput>) -> Re
             existing["models"]["providers"]["jan"]["apiKey"] =
                 serde_json::json!(config.models.providers.jan.api_key);
         }
+        // Always update the jan provider baseUrl when an explicit URL was provided
+        if config.models.providers.jan.base_url != DEFAULT_JAN_BASE_URL {
+            existing["models"]["providers"]["jan"]["baseUrl"] =
+                serde_json::json!(config.models.providers.jan.base_url);
+        }
         existing
     } else {
         defaults
@@ -1619,21 +1624,19 @@ pub async fn openclaw_sync_model(
 
     let display_name = model_name.unwrap_or_else(|| model_id.clone());
 
-    // Determine context window based on Jan provider type
-    let context_window = if provider.as_deref() == Some("llamacpp") || provider.as_deref() == Some("mlx") {
-        16000
-    } else {
-        128000
-    };
-
     // OpenClaw models.providers.jan.models expects an array of objects with
     // at minimum { id, name }. The id must be the plain model name — OpenClaw
     // prepends the provider key ("jan/") when resolving references.
+    // Context window is declared as 131072 for all models — the actual limit
+    // is enforced by the inference engine, not this metadata.
     let model_def = serde_json::json!({
         "id": model_id,
         "name": display_name,
-        "contextWindow": context_window,
-        "maxTokens": 4096
+        "input": ["text"],
+        "reasoning": false,
+        "contextWindow": 131072,
+        "maxTokens": 16384,
+        "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
     });
 
     // Read, modify, write the config directly (works for both Docker and direct process)
@@ -1700,22 +1703,22 @@ pub async fn openclaw_sync_all_models(
         });
     }
 
-    // Build model definition objects.
-    // Only { id, name } are required; contextWindow and maxTokens are optional.
+    // Build model definition objects matching the CLI's rich format so OpenClaw
+    // can make optimal decisions about context, output limits, and cost.
+    // Use the actual context window from Jan's model settings when available,
+    // falling back to 131072 (128K) as a reasonable default.
     let model_defs: Vec<serde_json::Value> = models
         .iter()
         .map(|entry| {
-            let context_window = if entry.provider == "llamacpp" || entry.provider == "mlx" {
-                16000
-            } else {
-                128000
-            };
-
+            let ctx = entry.context_window.unwrap_or(131072);
             serde_json::json!({
                 "id": entry.model_id,
                 "name": entry.display_name,
-                "contextWindow": context_window,
-                "maxTokens": 4096
+                "input": ["text"],
+                "reasoning": false,
+                "contextWindow": ctx,
+                "maxTokens": 16384,
+                "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
             })
         })
         .collect();

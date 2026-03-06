@@ -523,6 +523,9 @@ pub struct ModelSyncEntry {
     /// Human-readable display name
     #[serde(rename = "displayName")]
     pub display_name: String,
+    /// Context window size from Jan's model settings (ctx_len). None = use default.
+    #[serde(rename = "contextWindow")]
+    pub context_window: Option<u32>,
 }
 
 /// Result of bulk model sync

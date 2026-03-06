@@ -112,9 +112,10 @@ export function EnableProgressDialog({
     setIsRunning(true)
 
     try {
-      const { apiKey } = useLocalApiServer.getState()
+      const { apiKey, serverPort, apiPrefix } = useLocalApiServer.getState()
+      const janBaseUrl = `http://localhost:${serverPort}${apiPrefix}`
       const result = await invoke<EnableResult>('openclaw_enable', {
-        configInput: apiKey ? { janApiKey: apiKey } : null,
+        configInput: { janApiKey: apiKey || undefined, janBaseUrl },
       })
 
       if (result.success) {
@@ -151,6 +152,10 @@ export function EnableProgressDialog({
             })
             if (actualPort && actualPort !== serverPort) {
               useLocalApiServer.getState().setServerPort(actualPort)
+              // Update OpenClaw's baseUrl to point at the actual port
+              await invoke('openclaw_configure', {
+                configInput: { janBaseUrl: `http://localhost:${actualPort}${apiPrefix}` },
+              }).catch(() => {})
             }
             setServerStatus('running')
           } catch {
