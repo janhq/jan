@@ -1,0 +1,57 @@
+---
+title: MLX Server
+description: Jan's MLX inference server for Apple Silicon
+keywords:
+  [
+    Jan,
+    MLX,
+    Apple Silicon,
+    local AI,
+    Metal,
+    inference server,
+    mlx-swift-lm,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+
+# MLX Server
+
+Jan's MLX Server is a local inference server for Apple Silicon, powered by [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm). It uses Metal GPU acceleration for fast, efficient model serving on macOS.
+
+<Callout type="warning">
+MLX support in Jan is currently in beta and will be improved significantly over time.
+</Callout>
+
+## Requirements
+
+- macOS 14 or higher
+- Apple Silicon (M1, M2, M3 or later)
+
+## Accessing MLX Settings
+
+Find MLX settings at **Settings** > **MLX** under Model Providers:
+
+![MLX Settings](./_assets/mlx-settings.png)
+
+## How It Works
+
+Jan integrates MLX via [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm), running a local inference server on top of it. The server is spawned and managed by Jan's MLX plugin, which handles model loading, lifecycle, and communication with the rest of the app.
+
+The MLX server exposes an OpenAI-compatible API on a local port. Jan routes requests to it automatically when an MLX model is active — no manual configuration needed.
+
+## Model Management
+
+MLX supports models in MLX-Swift format. Jan ships with MLX-compatible versions of its foundation models.
+
+### Download from Hub
+
+Browse and download MLX-compatible models directly from the [Hub](/docs/desktop/manage-models) tab in the left sidebar.
+
+### Import Local Files
+
+Click **Import** to link an MLX model file already on your computer — useful for models downloaded via your browser from Hugging Face or shared with other apps.
+
+### Delete a Model
+
+Click the trash icon next to any model to remove it. Linked files leave the original intact.
