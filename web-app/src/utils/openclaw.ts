@@ -147,10 +147,7 @@ export async function ensureOpenClawHttpApi(): Promise<void> {
   try {
     const changed = await invoke<boolean>('openclaw_ensure_http_api')
     if (changed) {
-      console.log('[openclaw] Enabled HTTP chat completions endpoint, restarting gateway…')
       await invoke('openclaw_restart')
-      // Give the gateway a moment to become ready after restart
-      await new Promise((resolve) => setTimeout(resolve, 2000))
     }
     httpApiEnsured = true
   } catch {

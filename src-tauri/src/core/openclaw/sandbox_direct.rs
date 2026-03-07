@@ -136,6 +136,7 @@ impl Sandbox for DirectProcessSandbox {
         if !stopped_via_cli {
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             {
+                // Match full command line — the actual process is `bun /path/to/openclaw gateway`
                 let _ = tokio::process::Command::new("pkill")
                     .args(["-f", "openclaw"])
                     .output()
@@ -154,6 +155,36 @@ impl Sandbox for DirectProcessSandbox {
                 kill("bun.exe").await;
                 kill("node.exe").await;
                 kill("openclaw.exe").await;
+            }
+        }
+
+        // Port-based kill as last resort — kill whatever is holding the port
+        if tokio::net::TcpStream::connect(format!("127.0.0.1:{}", super::OPENCLAW_PORT))
+            .await
+            .is_ok()
+        {
+            log::warn!(
+                "Port {} still in use after stop attempts, trying port-based kill",
+                super::OPENCLAW_PORT
+            );
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            {
+                let _ = tokio::process::Command::new("sh")
+                    .args([
+                        "-c",
+                        &format!("lsof -ti :{} | xargs kill -9", super::OPENCLAW_PORT),
+                    ])
+                    .output()
+                    .await;
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                let mut cmd = tokio::process::Command::new("cmd");
+                cmd.args(["/C", &format!("for /f \"tokens=5\" %a in ('netstat -aon ^| findstr :{} ^| findstr LISTENING') do taskkill /F /PID %a", super::OPENCLAW_PORT)]);
+                cmd.creation_flags(0x08000000);
+                let _ = cmd.output().await;
             }
         }
 
