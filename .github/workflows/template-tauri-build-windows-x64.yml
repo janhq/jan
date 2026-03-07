@@ -258,12 +258,12 @@ jobs:
           path: |
             ./src-tauri/target/release/bundle/msi/*.msi
 
-      - name: Upload Portable Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: jan-windows-portable-${{ inputs.new_version }}
-          path: |
-            ./src-tauri/target/release/Jan*.exe
+      # - name: Upload Portable Artifact
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: jan-windows-portable-${{ inputs.new_version }}
+      #     path: |
+      #       ./src-tauri/target/release/Jan*.exe
 
       ## Set output filename for windows
       - name: Set output filename for windows
@@ -329,13 +329,13 @@ jobs:
           asset_name: ${{ steps.metadata.outputs.FILE_NAME }}
           asset_content_type: application/octet-stream
 
-      - name: Upload portable exe to release (github)
-        if: inputs.public_provider == 'github'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@v1.0.1
-        with:
-          upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/release/${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
-          asset_name: ${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
-          asset_content_type: application/octet-stream
+      # - name: Upload portable exe to release (github)
+      #   if: inputs.public_provider == 'github'
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #   uses: actions/upload-release-asset@v1.0.1
+      #   with:
+      #     upload_url: ${{ inputs.upload_url }}
+      #     asset_path: ./src-tauri/target/release/${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
+      #     asset_name: ${{ steps.metadata.outputs.PORTABLE_FILE_NAME }}
+      #     asset_content_type: application/octet-stream
