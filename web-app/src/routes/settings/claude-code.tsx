@@ -48,6 +48,7 @@ function ClaudeCodeIntegration() {
     apiKey,
     trustedHosts,
     proxyTimeout,
+    setLastServerModels,
   } = useLocalApiServer()
 
   const { serverStatus, setServerStatus } = useAppState()
@@ -157,6 +158,16 @@ function ClaudeCodeIntegration() {
         setServerPort(actualPort)
       }
       setServerStatus('running')
+
+      // Persist whichever models are actually running so next startup can restore them
+      const activeModels = await serviceHub.models().getActiveModels().catch(() => [] as string[])
+      if (activeModels.length > 0) {
+        const serverModels = activeModels.flatMap((id) => {
+          const p = providers.find((p) => p?.models?.some((m) => m.id === id))
+          return p ? [{ model: id, provider: p.provider }] : []
+        })
+        if (serverModels.length > 0) setLastServerModels(serverModels)
+      }
     }
 
     try {
