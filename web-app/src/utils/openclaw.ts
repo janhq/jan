@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { useAppState } from '@/hooks/useAppState'
 
 /** OpenClaw gateway base URL for the OpenAI-compatible HTTP API. */
 export const OPENCLAW_GATEWAY_URL = 'http://127.0.0.1:18789/v1'
@@ -31,6 +32,8 @@ export async function isOpenClawRunning(forceRefresh = false): Promise<boolean> 
 export function setOpenClawRunningState(isRunning: boolean): void {
   openClawRunningCache = isRunning
   lastCheckTime = Date.now()
+
+  useAppState.getState().setOpenClawRunning(isRunning)
 
   // When OpenClaw is stopped, clear agent mode for all threads so the UI reverts
   if (!isRunning) {
@@ -88,7 +91,7 @@ export async function syncAllModelsToOpenClaw(
   selectedModelId?: string
 ): Promise<number> {
   try {
-    const models: Array<{ modelId: string; provider: string; displayName: string }> = []
+    const models: Array<{ modelId: string; provider: string; displayName: string; contextWindow?: number }> = []
 
     for (const provider of providers) {
       if (!provider.active) continue
@@ -98,10 +101,19 @@ export async function syncAllModelsToOpenClaw(
         if (!modelId || typeof modelId !== 'string') continue
         if (model.embedding) continue
 
+        // Extract context window from Jan's model settings (ctx_len)
+        const ctxLenRaw = model.settings?.ctx_len?.controller_props?.value
+        const contextWindow = typeof ctxLenRaw === 'number' && ctxLenRaw > 0
+          ? ctxLenRaw
+          : typeof ctxLenRaw === 'string' && parseInt(ctxLenRaw) > 0
+            ? parseInt(ctxLenRaw)
+            : undefined
+
         models.push({
           modelId,
           provider: provider.provider,
           displayName: model.displayName || model.name || modelId,
+          contextWindow,
         })
       }
     }

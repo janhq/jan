@@ -40,6 +40,9 @@ pub enum OpenClawCommands {
         /// Model ID to use (sets agents.defaults.model.primary)
         #[arg(long)]
         model_id: Option<String>,
+        /// Jan API key for authentication
+        #[arg(long)]
+        jan_api_key: Option<String>,
     },
     /// Restart the OpenClaw gateway
     Restart,

@@ -150,6 +150,8 @@ const ChatInput = memo(function ChatInput({
   const isAgentMode = useAgentMode((state) =>
     state.agentThreads[agentModeKey] === true
   )
+  // When projectId is present, treat as normal chat (disable agent mode UI)
+  const effectiveAgentMode = isAgentMode && !projectId
   const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
 
   useEffect(() => {
@@ -1567,7 +1569,7 @@ const ChatInput = memo(function ChatInput({
                 )}
               >
                 {/* Dropdown for attachments — hidden in agent mode */}
-                {!isAgentMode && (
+                {!effectiveAgentMode && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="secondary" size="icon-sm" className='rounded-full mr-2 mb-1'>
@@ -1686,7 +1688,7 @@ const ChatInput = memo(function ChatInput({
                     useLastUsedModel={initialMessage}
                   />
                 )} */}
-                {!isAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
+                {!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1728,7 +1730,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!isAgentMode && selectedModel?.capabilities?.includes('embeddings') && (
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('embeddings') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1747,7 +1749,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!isAgentMode && selectedModel?.capabilities?.includes('tools') &&
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
                     // Use custom MCP component
@@ -1812,15 +1814,16 @@ const ChatInput = memo(function ChatInput({
                     </Tooltip>
                   ))}
 
-                {openClawAvailable && (
+                {openClawAvailable && !projectId && isAgentMode && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         variant={isAgentMode ? "default" : "ghost"}
                         size="icon-xs"
-                        onClick={handleAgentToggle}
+                        onClick={currentThreadId ? handleAgentToggle : undefined}
                         className={cn(
-                          isAgentMode && 'text-primary bg-primary/10 hover:bg-primary/10 items-center'
+                          isAgentMode && 'text-primary bg-primary/10 hover:bg-primary/10 items-center',
+                          !currentThreadId && 'cursor-default pointer-events-none'
                         )}
                       >
                         <BotIcon
@@ -1841,7 +1844,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!isAgentMode && selectedModel?.capabilities?.includes('web_search') && (
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('web_search') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon-xs">
@@ -1857,7 +1860,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!isAgentMode && selectedModel?.capabilities?.includes('reasoning') && (
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('reasoning') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon-xs">
@@ -1878,6 +1881,7 @@ const ChatInput = memo(function ChatInput({
             <div className="flex items-center gap-2">
               {selectedProvider === 'llamacpp' &&
                 tokenCounterCompact &&
+                !effectiveAgentMode &&
                 !initialMessage &&
                 (threadMessages?.length > 0 || prompt.trim().length > 0) && (
                   <div className="flex-1 flex justify-center">
@@ -1945,6 +1949,7 @@ const ChatInput = memo(function ChatInput({
 
       {selectedProvider === 'llamacpp' &&
         isModelActive &&
+        !effectiveAgentMode &&
         !tokenCounterCompact &&
         !initialMessage &&
         (threadMessages?.length > 0 || prompt.trim().length > 0) && (
