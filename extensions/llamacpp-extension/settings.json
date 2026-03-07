@@ -49,6 +49,26 @@
     }
   },
   {
+    "key": "idle_unload_timeout_minutes",
+    "title": "Idle auto-unload (minutes)",
+    "description": "Unload the current model after this many minutes of no new messages. Set to 0 to disable.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0 = disabled",
+      "type": "number",
+      "textAlign": "right",
+      "min": 0
+    }
+  },
+  {
+    "key": "unload_after_tool_call",
+    "title": "Unload model after tool call",
+    "description": "Unload the model immediately after tool calls complete. Use for agentic workflows where a lightweight tool model is followed by a heavier generation model.",
+    "controllerType": "checkbox",
+    "controllerProps": { "value": false }
+  },
+  {
     "key": "fit",
     "title": "Fit (auto-adjust to device memory)",
     "description": "Whether to adjust unset arguments to fit in device memory ('on' or 'off'). (env: LLAMA_ARG_FIT)",
