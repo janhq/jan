@@ -118,6 +118,24 @@ function HardwareContent() {
     }
   }
 
+  const handleRefreshHardware = async () => {
+    try {
+      setIsLoading(true)
+      await serviceHub.hardware().refreshHardwareInfo()
+      const [hardwareData, systemUsage] = await Promise.all([
+        serviceHub.hardware().getHardwareInfo(),
+        serviceHub.hardware().getSystemUsage(),
+      ])
+      if (hardwareData) setHardwareData(hardwareData)
+      if (systemUsage) updateSystemUsage(systemUsage)
+      if (!IS_MACOS) fetchDevices()
+    } catch (error) {
+      console.error('Failed to refresh hardware:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
@@ -275,7 +293,23 @@ function HardwareContent() {
 
               {/* Llamacpp Devices Information */}
               {!IS_MACOS && llamacpp && (
-                <Card title="GPUs">
+                <Card
+                  header={
+                    <div className="flex items-center justify-between mb-4">
+                      <h1 className="text-foreground font-studio font-medium text-base">
+                        GPUs
+                      </h1>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleRefreshHardware}
+                        disabled={isLoading}
+                      >
+                        {isLoading ? '...' : 'Refresh'}
+                      </Button>
+                    </div>
+                  }
+                >
                   {llamacppDevicesLoading ? (
                     <CardItem title="Loading devices..." actions={<></>} />
                   ) : llamacppDevicesError ? (
