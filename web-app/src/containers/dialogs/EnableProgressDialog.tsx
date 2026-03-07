@@ -70,6 +70,7 @@ const STEP_LABELS: Record<string, string> = {
   already_installed: 'OpenClaw installed',
   configuring: 'Configuring',
   starting: 'Starting gateway',
+  validating: 'Validating configuration',
   syncing_models: 'Syncing models',
   complete: 'Complete',
 }
@@ -249,12 +250,16 @@ export function EnableProgressDialog({
     }
   }
 
+  const isDocker = sandboxInfo?.startsWith('Docker') ?? false
+
   const allSteps = [
     'checking_dependencies',
     'checking_installation',
     'installing',
     'configuring',
     'starting',
+    // Validation only runs for direct process, not Docker
+    ...(!isDocker ? ['validating'] : []),
     'complete',
   ]
 
