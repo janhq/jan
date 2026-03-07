@@ -2,48 +2,42 @@
   "name": "jan-app",
   "private": true,
   "type": "module",
-  "workspaces": {
-    "packages": [
-      "core",
-      "web-app"
-    ]
-  },
   "scripts": {
-    "lint": "yarn workspace @janhq/web-app lint",
-    "dev": "yarn dev:tauri",
-    "ios": "yarn tauri ios dev",
-    "android": "yarn tauri android dev",
-    "build": "yarn build:web && yarn build:tauri",
+    "lint": "pnpm --filter @janhq/web-app run lint",
+    "dev": "pnpm run dev:tauri",
+    "ios": "pnpm tauri ios dev",
+    "android": "pnpm tauri android dev",
+    "build": "pnpm run build:web && pnpm run build:tauri",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
-    "test:prepare": "yarn build:icon && yarn copy:assets:tauri && yarn build --no-bundle ",
-    "dev:web": "yarn workspace @janhq/web-app dev",
-    "dev:tauri": "yarn build:icon && yarn copy:assets:tauri && cross-env IS_CLEAN=true tauri dev",
-    "dev:ios": "yarn copy:assets:mobile && RUSTC_WRAPPER= cross-env IS_IOS=true yarn tauri ios dev --features mobile",
-    "dev:android": "yarn copy:assets:mobile && cross-env IS_ANDROID=true yarn tauri android dev --features mobile",
-    "build:android": "yarn build:icon && yarn copy:assets:mobile && cross-env IS_CLEAN=true yarn tauri android build -- --no-default-features --features mobile",
-    "build:ios": "yarn build:icon && yarn copy:assets:mobile && cross-env IS_IOS=true yarn tauri ios build -- --no-default-features --features mobile",
-    "build:ios:device": "yarn build:icon && yarn copy:assets:mobile && cross-env IS_IOS=true yarn tauri ios build -- --no-default-features --features mobile --export-method debugging",
+    "test:prepare": "pnpm run build:icon && pnpm run copy:assets:tauri && pnpm run build --no-bundle ",
+    "dev:web": "pnpm --filter @janhq/web-app run dev",
+    "dev:tauri": "pnpm run build:icon && pnpm run copy:assets:tauri && cross-env IS_CLEAN=true tauri dev",
+    "dev:ios": "pnpm run copy:assets:mobile && RUSTC_WRAPPER= cross-env IS_IOS=true pnpm tauri ios dev --features mobile",
+    "dev:android": "pnpm run copy:assets:mobile && cross-env IS_ANDROID=true pnpm tauri android dev --features mobile",
+    "build:android": "pnpm run build:icon && pnpm run copy:assets:mobile && cross-env IS_CLEAN=true pnpm tauri android build -- --no-default-features --features mobile",
+    "build:ios": "pnpm run build:icon && pnpm run copy:assets:mobile && cross-env IS_IOS=true pnpm tauri ios build -- --no-default-features --features mobile",
+    "build:ios:device": "pnpm run build:icon && pnpm run copy:assets:mobile && cross-env IS_IOS=true pnpm tauri ios build -- --no-default-features --features mobile --export-method debugging",
     "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
     "copy:assets:mobile": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
     "download:lib": "node ./scripts/download-lib.mjs",
     "download:bin": "node ./scripts/download-bin.mjs",
     "build:mlx-server": "make build-mlx-server",
     "build:cli": "make build-cli",
-    "build:tauri:win32": "yarn download:bin && yarn build:cli && yarn tauri build",
-    "build:tauri:linux": "yarn download:bin && yarn build:cli && NO_STRIP=1 ./src-tauri/build-utils/shim-linuxdeploy.sh yarn tauri build && ./src-tauri/build-utils/buildAppImage.sh",
-    "build:tauri:darwin": "yarn download:bin && yarn build:mlx-server && yarn build:cli && yarn tauri build --target universal-apple-darwin",
-    "build:tauri": "yarn build:icon && yarn copy:assets:tauri && run-script-os",
-    "build:tauri:plugin:api": "cd src-tauri/plugins && yarn install && yarn workspaces foreach -Apt run build",
+    "build:tauri:win32": "pnpm run download:bin && pnpm run build:cli && pnpm tauri build",
+    "build:tauri:linux": "pnpm run download:bin && pnpm run build:cli && NO_STRIP=1 ./src-tauri/build-utils/shim-linuxdeploy.sh pnpm tauri build && ./src-tauri/build-utils/buildAppImage.sh",
+    "build:tauri:darwin": "pnpm run download:bin && pnpm run build:mlx-server && pnpm run build:cli && pnpm tauri build --target universal-apple-darwin",
+    "build:tauri": "pnpm run build:icon && pnpm run copy:assets:tauri && run-script-os",
+    "build:tauri:plugin:api": "cd src-tauri/plugins && pnpm install && pnpm -r run build",
     "build:icon": "tauri icon ./src-tauri/icons/icon.png",
-    "build:core": "cd core && yarn build && yarn pack",
-    "build:web": "yarn workspace @janhq/web-app build",
-    "build:extensions": "rimraf ./pre-install/*.tgz || true && yarn workspace @janhq/core build && cd extensions && yarn install && cd .. && run-script-os",
-    "build:extensions:darwin": "cd extensions && yarn workspaces foreach -Apt run build:publish",
-    "build:extensions:win32": "cd extensions && yarn workspaces foreach -Apt --exclude @janhq/mlx-extension run build:publish",
-    "build:extensions:linux": "cd extensions && yarn workspaces foreach -Apt --exclude @janhq/mlx-extension run build:publish",
+    "build:core": "cd core && pnpm run build && pnpm pack",
+    "build:web": "pnpm --filter @janhq/web-app run build",
+    "build:extensions": "rimraf ./pre-install/*.tgz || true && pnpm --filter @janhq/core run build && cd extensions && pnpm install && cd .. && run-script-os",
+    "build:extensions:darwin": "cd extensions && pnpm -r run build:publish",
+    "build:extensions:win32": "cd extensions && pnpm -r --filter '!@janhq/mlx-extension' run build:publish",
+    "build:extensions:linux": "cd extensions && pnpm -r --filter '!@janhq/mlx-extension' run build:publish",
     "prepare": "husky"
   },
   "devDependencies": {
@@ -60,13 +54,12 @@
     "vitest": "^3.1.3"
   },
   "version": "0.0.0",
-  "installConfig": {
-    "hoistingLimits": "workspaces"
+  "pnpm": {
+    "overrides": {
+      "yallist": "4.0.0",
+      "@types/react": "19.1.2",
+      "@types/react-dom": "19.1.2"
+    }
   },
-  "resolutions": {
-    "yallist": "4.0.0",
-    "@types/react": "19.1.2",
-    "@types/react-dom": "19.1.2"
-  },
-  "packageManager": "yarn@4.5.3"
+  "packageManager": "pnpm@10.30.3"
 }

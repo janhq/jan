@@ -24,13 +24,13 @@ TypeScript SDK providing extension system, APIs, and type definitions for all Ja
 
 ```bash
 # Build the SDK
-yarn build
+pnpm run build
 
-# Run tests  
-yarn test
+# Run tests
+pnpm test
 
 # Watch mode
-yarn test:watch
+pnpm run test:watch
 ```
 
 ### Event System

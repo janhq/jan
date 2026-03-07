@@ -9,14 +9,14 @@ package-lock.json
 coverage
 *.log
 core/lib/**
-.yarn
-.yarnrc
+.pnpm-store
 *.tsbuildinfo
 test_results.html
 pre-install
 
 # docs
-docs/yarn.lock
+docs/bun.lock
+docs/bun.lockb
 src-tauri/resources/lib
 src-tauri/icons
 !src-tauri/icons/icon.png
@@ -50,8 +50,6 @@ docs/.next/
 **/.env
 **/.env.*
 **/npm-debug.log*
-**/yarn-debug.log*
-**/yarn-error.log*
 **/pnpm-debug.log*
 
 ## cargo

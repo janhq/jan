@@ -34,12 +34,8 @@ jobs:
       - name: Install jq      
         uses: dcarbone/install-jq-action@v2.0.1
 
-      - name: Config Yarn
-        run: |
-          corepack enable
-          corepack prepare yarn@4.5.3 --activate
-          yarn --version
-          yarn config set -H enableImmutableInstalls false
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Fill env vars
         working-directory: docs
@@ -59,13 +55,13 @@ jobs:
 
       - name: Install dependencies
         working-directory: docs
-        run: yarn install
+        run: bun install
       - name: Clean output directory
         working-directory: docs
         run: rm -rf out/* .next/*
       - name: Build website
         working-directory: docs
-        run: export NODE_ENV=production && yarn build && cp _redirects out/_redirects && cp _headers out/_headers
+        run: export NODE_ENV=production && bun run build && cp _redirects out/_redirects && cp _headers out/_headers
 
       - name: Publish to Cloudflare Pages PR Preview and Staging
         if: github.event_name == 'pull_request'

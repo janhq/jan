@@ -43,9 +43,12 @@ jobs:
           node-version: '20.x'
           registry-url: 'https://registry.npmjs.org'
 
-      - run: cd core && corepack enable && corepack prepare yarn@4.5.3 --activate && yarn --version && yarn config set -H enableImmutableInstalls false && yarn install && yarn build
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
-      - run: cd core && yarn publish --access public
+      - run: cd core && pnpm install && pnpm build
+
+      - run: cd core && pnpm publish --access public --no-git-checks
         if: github.event_name == 'push'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
