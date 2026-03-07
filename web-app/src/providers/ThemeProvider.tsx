@@ -37,7 +37,19 @@ export function ThemeProvider() {
     // Add a delayed refresh to catch the correct OS theme
     const timeoutId = setTimeout(refreshTheme, 100)
 
-    // Listen to Tauri native theme events (uses XDG Desktop Portal on Linux)
+    // Listen to prefers-color-scheme media query changes
+    // On Linux with WebKitGTK 2.42+, this reacts to XDG Desktop Portal
+    // color-scheme changes, which works reliably on KDE Plasma and other DEs
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const handleMediaChange = (e: MediaQueryListEvent) => {
+      if (activeTheme === 'auto') {
+        setIsDark(e.matches)
+      }
+    }
+    mediaQuery.addEventListener('change', handleMediaChange)
+
+    // Listen to Tauri native theme events (fallback for platforms where
+    // the media query listener may not fire)
     let unlistenTauri: (() => void) | undefined
 
     if (isPlatformTauri()) {
@@ -61,6 +73,7 @@ export function ThemeProvider() {
     // Clean up
     return () => {
       clearTimeout(timeoutId)
+      mediaQuery.removeEventListener('change', handleMediaChange)
       if (unlistenTauri) {
         unlistenTauri()
       }
