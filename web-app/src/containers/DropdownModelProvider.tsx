@@ -486,8 +486,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
   const provider = getProviderByName(selectedProvider)
 
-  console.log(projectId, 'projectId in DropdownModelProvider')
-
   if (isAgentMode && !projectId) {
     return (
       <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full text-muted-foreground">
