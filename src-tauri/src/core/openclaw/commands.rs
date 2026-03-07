@@ -816,8 +816,9 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
         if !cli_stopped {
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             {
+                // Match full command line — the actual process is `bun /path/to/openclaw gateway`
                 let _ = Command::new("pkill")
-                    .args(["-f", "openclaw-gateway"])
+                    .args(["-f", "openclaw"])
                     .output()
                     .await;
             }
@@ -842,6 +843,32 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+
+        // Port-based kill as last resort — kill whatever is holding the port
+        if crate::core::openclaw::lifecycle::is_port_in_use(OPENCLAW_PORT).await {
+            log::warn!("Port {} still in use after stop attempts, trying port-based kill", OPENCLAW_PORT);
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            {
+                let _ = Command::new("sh")
+                    .args(["-c", &format!("lsof -ti :{} | xargs kill -9", OPENCLAW_PORT)])
+                    .output()
+                    .await;
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                // Find and kill PID by port using netstat
+                if let Ok(output) = Command::new("cmd")
+                    .args(["/C", &format!("for /f \"tokens=5\" %a in ('netstat -aon ^| findstr :{} ^| findstr LISTENING') do taskkill /F /PID %a", OPENCLAW_PORT)])
+                    .creation_flags(0x08000000)
+                    .output()
+                    .await
+                {
+                    let _ = output;
+                }
+            }
         }
     }
 }
@@ -4090,19 +4117,38 @@ pub async fn security_get_status() -> Result<SecurityStatus, String> {
 /// Set the authentication mode
 ///
 /// Changes how users authenticate to the OpenClaw gateway.
+/// When set to `None`, also removes the gateway auth token from `openclaw.json`.
 #[tauri::command]
 pub async fn security_set_auth_mode(mode: AuthMode) -> Result<(), String> {
     log::info!("Setting auth mode to {:?}", mode);
 
     let mut config = security::load_security_config().await?;
-    config.auth_mode = mode;
-    security::save_security_config(&config).await
+    config.auth_mode = mode.clone();
+    security::save_security_config(&config).await?;
+
+    // Sync auth mode to the gateway config
+    if mode == AuthMode::None {
+        if let Ok(mut oc_config) = read_openclaw_config() {
+            if let Some(auth) = oc_config.pointer_mut("/gateway/auth") {
+                if let Some(obj) = auth.as_object_mut() {
+                    obj.remove("token");
+                }
+            }
+            if let Err(e) = write_openclaw_config(&oc_config) {
+                log::warn!("Failed to clear gateway auth token: {}", e);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Generate and store a new access token
 ///
 /// Returns the plaintext token (only shown once). The token is
 /// stored as a hash and cannot be retrieved after this.
+/// Also updates the gateway auth token in `openclaw.json` so the
+/// OpenClaw gateway enforces the same token.
 #[tauri::command]
 pub async fn security_generate_token() -> Result<String, String> {
     log::info!("Generating new access token");
@@ -4114,6 +4160,14 @@ pub async fn security_generate_token() -> Result<String, String> {
     config.token_hash = Some(hash);
     config.auth_mode = AuthMode::Token;
     security::save_security_config(&config).await?;
+
+    // Sync the token to the gateway config so OpenClaw actually uses it
+    if let Ok(mut oc_config) = read_openclaw_config() {
+        oc_config["gateway"]["auth"]["token"] = serde_json::json!(token);
+        if let Err(e) = write_openclaw_config(&oc_config) {
+            log::warn!("Failed to sync token to gateway config: {}", e);
+        }
+    }
 
     Ok(token)
 }
