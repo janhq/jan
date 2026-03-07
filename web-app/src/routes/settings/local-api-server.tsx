@@ -21,6 +21,7 @@ import { ApiKeyInput } from '@/containers/ApiKeyInput'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { getModelToStart } from '@/utils/getModelToStart'
+import { invoke } from '@tauri-apps/api/core'
 import { LogViewer } from '@/components/LogViewer'
 import { EngineManager } from '@janhq/core'
 
@@ -320,12 +321,24 @@ function LocalAPIServerContent() {
       setServerStatus('pending')
       window.core?.api
         ?.stopServer()
-        .then(() => {
+        .then(async () => {
           setServerStatus('stopped')
+          // Clean up Claude Code env vars from shell config when server stops
+          try {
+            await invoke('clear_claude_code_env')
+          } catch (e) {
+            console.warn('Failed to clear Claude Code env vars:', e)
+          }
         })
-        .catch((error: unknown) => {
+        .catch(async (error: unknown) => {
           console.error('Error stopping server:', error)
           setServerStatus('stopped')
+          // Still try to clean up env vars even if stop had an error
+          try {
+            await invoke('clear_claude_code_env')
+          } catch (e) {
+            console.warn('Failed to clear Claude Code env vars:', e)
+          }
         })
     }
   }
