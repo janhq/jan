@@ -135,16 +135,23 @@ function ClaudeCodeIntegration() {
         }
       }
 
-      const actualPort = await window.core?.api?.startServer({
-        host: serverHost,
-        port: serverPort,
-        prefix: apiPrefix,
-        apiKey,
-        trustedHosts,
-        isCorsEnabled: corsEnabled,
-        isVerboseEnabled: verboseLogs,
-        proxyTimeout: proxyTimeout,
-      })
+      let actualPort: number | undefined
+      try {
+        actualPort = await window.core?.api?.startServer({
+          host: serverHost,
+          port: serverPort,
+          prefix: apiPrefix,
+          apiKey,
+          trustedHosts,
+          isCorsEnabled: corsEnabled,
+          isVerboseEnabled: verboseLogs,
+          proxyTimeout: proxyTimeout,
+        })
+      } catch (startErr) {
+        const msg =
+          startErr instanceof Error ? startErr.message : String(startErr)
+        if (!msg.includes('already running')) throw startErr
+      }
 
       if (actualPort && actualPort !== serverPort) {
         setServerPort(actualPort)
