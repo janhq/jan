@@ -32,6 +32,7 @@ import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 type DropdownModelProviderProps = {
   model?: ThreadModel
   useLastUsedModel?: boolean
+  projectId?: string 
 }
 
 interface SearchableModel {
@@ -56,6 +57,7 @@ const setLastUsedModel = (provider: string, model: string) => {
 
 const DropdownModelProvider = memo(function DropdownModelProvider({
   model,
+  projectId,
   useLastUsedModel = false,
 }: DropdownModelProviderProps) {
   const {
@@ -484,7 +486,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
   const provider = getProviderByName(selectedProvider)
 
-  if (isAgentMode) {
+  console.log(projectId, 'projectId in DropdownModelProvider')
+
+  if (isAgentMode && !projectId) {
     return (
       <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full text-muted-foreground">
         <BotIcon className="shrink-0 size-4" />
