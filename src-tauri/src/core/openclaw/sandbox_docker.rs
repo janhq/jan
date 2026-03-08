@@ -78,13 +78,47 @@ impl DockerSandbox {
 
     async fn get_client() -> Result<bollard::Docker, String> {
         if std::env::var("DOCKER_HOST").is_ok() {
-            bollard::Docker::connect_with_local_defaults()
-        } else {
-            // connect_with_local_defaults falls back to HTTP localhost:2375,
-            // but standard Linux Docker only listens on /var/run/docker.sock.
-            bollard::Docker::connect_with_socket_defaults()
+            return bollard::Docker::connect_with_local_defaults()
+                .map_err(|e| format!("Failed to connect to Docker: {}", e));
         }
-        .map_err(|e| format!("Failed to connect to Docker: {}", e))
+
+        let mut candidates: Vec<String> = vec![
+            "/var/run/docker.sock".to_string(),
+        ];
+
+        if let Ok(home) = std::env::var("HOME") {
+            // Docker Desktop on macOS/Linux
+            candidates.push(format!("{}/.docker/run/docker.sock", home));
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let uid = unsafe { libc::getuid() };
+            // Rootless Docker
+            candidates.push(format!("/run/user/{}/docker.sock", uid));
+        }
+
+        for socket_path in &candidates {
+            if !std::path::Path::new(socket_path).exists() {
+                continue;
+            }
+            let uri = format!("unix://{}", socket_path);
+            match bollard::Docker::connect_with_socket(
+                &uri,
+                120,
+                &bollard::API_DEFAULT_VERSION,
+            ) {
+                Ok(client) => {
+                    log::info!("DockerSandbox: connected via {}", socket_path);
+                    return Ok(client);
+                }
+                Err(e) => {
+                    log::info!("DockerSandbox: socket {} found but connect failed: {}", socket_path, e);
+                }
+            }
+        }
+
+        Err("Failed to connect to Docker: no working socket found".to_string())
     }
 
     /// Check if the jan-openclaw container already exists (running or stopped).
