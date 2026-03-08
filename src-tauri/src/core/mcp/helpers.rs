@@ -768,7 +768,7 @@ async fn kill_process_by_pid(pid: u32) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
 
     let mut cmd = Command::new("taskkill");
-    cmd.args(&["/F", "/PID", &pid.to_string()]);
+    cmd.args(&["/F", "/T", "/PID", &pid.to_string()]);
 
     #[cfg(windows)]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
