@@ -351,7 +351,13 @@ function SetupScreen() {
         localStorageKey.lastUsedModel,
         JSON.stringify({ provider: 'llamacpp', model: defaultVariant.model_id })
       )
-      navigate({ to: route.home, replace: true })
+      navigate({
+        to: route.home,
+        replace: true,
+        search: {
+          threadModel: { id: defaultVariant.model_id, provider: 'llamacpp' },
+        },
+      })
     }
 
     events.on(DownloadEvent.onFileDownloadAndVerificationSuccess, onDownloadSuccess)
