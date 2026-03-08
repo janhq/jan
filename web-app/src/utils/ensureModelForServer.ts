@@ -1,5 +1,4 @@
 import { EngineManager } from '@janhq/core'
-import type { Model } from '@janhq/core'
 import { getModelToStart } from './getModelToStart'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
