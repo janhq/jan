@@ -385,4 +385,63 @@ export const predefinedProviders = [
       },
     ],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.tensorix.ai/v1',
+    explore_models_url: 'https://tensorix.ai/models',
+    provider: 'tensorix',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Tensorix API uses API keys for authentication. Visit your [Dashboard](https://app.tensorix.ai) to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. See the [Tensorix documentation](https://docs.tensorix.ai) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.tensorix.ai/v1',
+          value: 'https://api.tensorix.ai/v1',
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'deepseek/deepseek-chat-v3.1',
+        name: 'DeepSeek V3.1',
+        version: '1.0',
+        description:
+          'Hybrid reasoning model with strong performance for tool use, code generation, and complex reasoning.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'deepseek/deepseek-r1-0528',
+        name: 'DeepSeek R1 0528',
+        version: '1.0',
+        description:
+          'Advanced reasoning model with chain-of-thought for improved accuracy.',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'z-ai/glm-5',
+        name: 'GLM 5',
+        version: '1.0',
+        description:
+          'Latest generation GLM model with strong coding, reasoning, and multi-step task capabilities.',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
+  },
 ]

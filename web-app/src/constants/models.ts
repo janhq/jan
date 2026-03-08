@@ -118,6 +118,15 @@ export const providerModels = {
     supportsToolCalls: true,
     supportsN: true,
   },
+  tensorix: {
+    models: true,
+    supportsCompletion: true,
+    supportsStreaming: true,
+    supportsJSON: true,
+    supportsImages: true,
+    supportsToolCalls: true,
+    supportsN: true,
+  },
   'openai-compatible': {
     models: true,
     supportsCompletion: true,
