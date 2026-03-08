@@ -62,6 +62,7 @@ function LocalAPIServerContent() {
     apiKey,
     trustedHosts,
     proxyTimeout,
+    setLastServerModels,
   } = useLocalApiServer()
 
   const { serverStatus, setServerStatus } = useAppState()
@@ -181,6 +182,18 @@ function LocalAPIServerContent() {
               }
             }
 
+            // Remember all loaded models for next startup
+            {
+              const allProviders = useModelProvider.getState().providers
+              const serverModels = loadedModels.flatMap((id: string) => {
+                const p = allProviders.find((p) =>
+                  p?.models?.some((m: { id: string }) => m.id === id)
+                )
+                return p ? [{ model: id, provider: p.provider }] : []
+              })
+              if (serverModels.length > 0) setLastServerModels(serverModels)
+            }
+
             // Model already loaded, just start the server
             return Promise.resolve()
           } else {
@@ -251,6 +264,8 @@ function LocalAPIServerContent() {
               .then(() => {
                 console.log(`Model ${modelToStart.model} started successfully`)
                 setIsModelLoading(false) // Model loaded, stop loading state
+                // Remember this model for next startup
+                setLastServerModels([{ model: modelToStart.model, provider: modelToStart.provider.provider }])
                 // Refresh active models after starting
                 serviceHub
                   .models()
