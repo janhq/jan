@@ -1,0 +1,99 @@
+id: ai.jan.Jan
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+command: Jan
+finish-args:
+  - --socket=wayland # Permission needed to show the window
+  - --socket=fallback-x11 # Permission needed to show the window on X11
+  - --device=dri
+  - --share=ipc
+  - --share=network
+  - --socket=pulseaudio # for future multimodality
+
+cleanup:
+  - /include
+  - /lib/cmake
+  - /lib/pkgconfig
+
+modules:
+  - name: volk
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DVOLK_INSTALL=ON
+    cleanup:
+      - /bin
+    sources:
+      - type: archive
+        url: https://github.com/zeux/volk/archive/refs/tags/vulkan-sdk-1.3.280.0.zip
+        sha256: 178875134d36e8b90f7e3ec31171355df3b71f47eba49cca2f98158e6552b011
+
+  - name: vulkan-headers
+    buildsystem: cmake-ninja
+    builddir: true
+    sources:
+      - type: archive
+        url: https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.3.283.zip
+        sha256: 2094159c87fb4b6d8f734bd4cad59564cef7ef32feb00cf6d8ca7e75a84df921
+
+  - name: vulkan-tools
+    buildsystem: cmake-ninja
+    builddir: true
+    sources:
+      - type: archive
+        url: https://github.com/KhronosGroup/Vulkan-Tools/archive/refs/tags/v1.3.283.zip
+        sha256: 11ec6b474e91dc8cb6e7f22891294ede549bb6ed67c19d230e293b3fc9610883
+
+  - name: shaderc
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DSHADERC_SKIP_COPYRIGHT_CHECK=ON
+      - -DSHADERC_SKIP_EXAMPLES=ON
+      - -DSHADERC_SKIP_TESTS=ON
+      - -DSPIRV_SKIP_EXECUTABLES=ON
+      - -DENABLE_GLSLANG_BINARIES=OFF
+    sources:
+      - type: git
+        url: https://github.com/google/shaderc.git
+        tag: v2024.1
+        commit: 47a9387ef5b3600d30d84c71ec77a59dc7db46fa
+      # https://github.com/google/shaderc/blob/known-good/known_good.json
+      - type: git
+        url: https://github.com/KhronosGroup/SPIRV-Tools.git
+        commit: dd4b663e13c07fea4fbb3f70c1c91c86731099f7
+        dest: third_party/spirv-tools
+      - type: git
+        url: https://github.com/KhronosGroup/SPIRV-Headers.git
+        commit: 5e3ad389ee56fca27c9705d093ae5387ce404df4
+        dest: third_party/spirv-headers
+      - type: git
+        url: https://github.com/KhronosGroup/glslang.git
+        commit: 142052fa30f9eca191aa9dcf65359fcaed09eeec
+        dest: third_party/glslang
+      - type: patch
+        path: patches/fix-cstdint.patch
+
+  - name: jan-binary
+    buildsystem: simple
+    sources:
+      - type: file
+        url: https://catalog.jan.ai/flatpak/Jan_0.7.3_amd64.deb
+        sha256: de852b052cf85007f8ac9728c0607926af2c1d7375ee1652d31d5e91be4a6283
+        only-arches: [x86_64]
+      - type: file
+        path: ai.jan.Jan.metainfo.xml
+    build-commands:
+      - ar -x *.deb
+      - tar -xf data.tar.gz
+      - 'install -Dm755 usr/bin/Jan /app/bin/Jan'
+      - 'install -Dm755 usr/bin/bun /app/bin/bun'
+      - 'install -Dm755 usr/bin/uv /app/bin/uv'
+      - cp -rv usr/lib/* /app/lib/.
+      - install -Dm644 usr/share/applications/Jan.desktop /app/share/applications/ai.jan.Jan.desktop
+      - desktop-file-edit --set-key=Exec --set-value=/app/bin/Jan --set-icon=ai.jan.Jan /app/share/applications/ai.jan.Jan.desktop
+      - install -Dm644 usr/share/icons/hicolor/128x128/apps/Jan.png /app/share/icons/hicolor/128x128/apps/ai.jan.Jan.png
+      - install -Dm644 usr/share/icons/hicolor/32x32/apps/Jan.png /app/share/icons/hicolor/32x32/apps/ai.jan.Jan.png
+      - install -Dm644 usr/share/icons/hicolor/256x256@2/apps/Jan.png /app/share/icons/hicolor/256x256@2/apps/ai.jan.Jan.png
+      - install -Dm644 ai.jan.Jan.metainfo.xml /app/share/metainfo/ai.jan.Jan.metainfo.xml

@@ -1,0 +1,7 @@
+{
+  "title": "Erro de contexto esgotado",
+  "description": "Este chat está atingindo o limite de memória da IA, como um quadro branco ficando cheio. Podemos expandir a janela de memória (chamada tamanho do contexto) para que ela lembre mais, mas pode usar mais da memória do seu computador. Também podemos truncar a entrada, o que significa que ela esquecerá parte do histórico do chat para dar espaço a novas mensagens.",
+  "increaseContextSizeDescription": "Você quer aumentar o tamanho do contexto?",
+  "truncateInput": "Truncar Entrada",
+  "increaseContextSize": "Aumentar Tamanho do Contexto"
+}

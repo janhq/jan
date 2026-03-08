@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-delete-chunks"
+description = "Enables the delete_chunks command without any pre-configured scope."
+commands.allow = ["delete_chunks"]
+
+[[permission]]
+identifier = "deny-delete-chunks"
+description = "Denies the delete_chunks command without any pre-configured scope."
+commands.deny = ["delete_chunks"]

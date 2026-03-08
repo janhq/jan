@@ -1,0 +1,15 @@
+# Auto assign author, tags, and reviewers to pull requests
+name: "Auto Assign Author"
+on:
+  pull_request:
+    types: [opened]
+jobs:
+  assign-author:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: toshimaru/auto-author-assign@v1.1.0
+        with:
+          repo-token: "${{ secrets.GITHUB_TOKEN }}"

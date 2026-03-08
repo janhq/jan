@@ -1,0 +1,36 @@
+{
+  "name": "@janhq/download-extension",
+  "productName": "Download Manager",
+  "version": "1.0.0",
+  "description": "Download and manage files and AI models in Jan.",
+  "main": "dist/index.js",
+  "author": "Jan <service@jan.ai>",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "test": "vitest run",
+    "build": "rolldown -c rolldown.config.mjs",
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
+  },
+  "devDependencies": {
+    "cpx": "1.5.0",
+    "rimraf": "6.0.1",
+    "rolldown": "1.0.0-beta.1",
+    "run-script-os": "1.1.6",
+    "typescript": "5.8.3",
+    "vitest": "3.2.4"
+  },
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ],
+  "dependencies": {
+    "@janhq/core": "../../core/package.tgz",
+    "@tauri-apps/api": "2.8.0"
+  },
+  "bundleDependencies": [],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "packageManager": "yarn@4.5.3"
+}

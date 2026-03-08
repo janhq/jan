@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-create-collection"
+description = "Enables the create_collection command without any pre-configured scope."
+commands.allow = ["create_collection"]
+
+[[permission]]
+identifier = "deny-create-collection"
+description = "Denies the create_collection command without any pre-configured scope."
+commands.deny = ["create_collection"]

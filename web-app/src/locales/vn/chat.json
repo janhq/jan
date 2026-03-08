@@ -1,0 +1,12 @@
+{
+  "welcome": "Chào bạn, bạn khỏe không?",
+  "description": "Hôm nay tôi có thể giúp gì cho bạn?",
+  "temporaryChat": "Trò chuyện tạm thời",
+  "temporaryChatDescription": "Bắt đầu một cuộc trò chuyện tạm thời sẽ không được lưu vào lịch sử trò chuyện của bạn.",
+  "status": {
+    "empty": "Không tìm thấy cuộc trò chuyện nào"
+  },
+  "sendMessage": "Gửi tin nhắn",
+  "newConversation": "Cuộc trò chuyện mới",
+  "clearHistory": "Xóa lịch sử"
+}

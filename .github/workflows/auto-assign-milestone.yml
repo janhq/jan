@@ -1,0 +1,47 @@
+# Pipeline auto assign current milestone for PR after the PR is merge
+name: Assign Milestone
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  assign_milestone:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Assign Milestone
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const { number, merged } = context.payload.pull_request;
+            if (merged) {
+              const { data: milestones } = await github.issues.listMilestones({
+                owner,
+                repo,
+                state: 'open',
+              });
+
+              const mergedDate = new Date(context.payload.pull_request.merged_at);
+              const currentMilestone = milestones
+              .filter(milestone => milestone.due_on !== null)
+              .find((milestone) => {
+                const dueDate = new Date(milestone.due_on);
+                return mergedDate <= dueDate;
+              });
+
+              if (currentMilestone) {
+                await github.issues.update({
+                  owner,
+                  repo,
+                  issue_number: number,
+                  milestone: currentMilestone.number
+                });
+              }
+            }
+          debug: true
+

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-parse-document"
+description = "Enables the parse_document command without any pre-configured scope."
+commands.allow = ["parse_document"]
+
+[[permission]]
+identifier = "deny-parse-document"
+description = "Denies the parse_document command without any pre-configured scope."
+commands.deny = ["parse_document"]

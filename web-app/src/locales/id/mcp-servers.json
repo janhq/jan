@@ -1,0 +1,63 @@
+{
+  "editServer": "Edit Server MCP",
+  "addServer": "Tambah Server MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Memeriksa status ekstensi..."
+    },
+    "notInstalled": {
+      "title": "Jan menyelesaikan tugas di browser Anda",
+      "description": "Instal ekstensi untuk memberikan Jan akses browser",
+      "getExtension": "Dapatkan Ekstensi"
+    }
+  },
+  "serverName": "Nama Server",
+  "enterServerName": "Masukkan nama server",
+  "command": "Perintah",
+  "enterCommand": "Masukkan perintah (uvx atau npx)",
+  "arguments": "Argumen",
+  "argument": "Argumen {{index}}",
+  "envVars": "Variabel Lingkungan",
+  "key": "Kunci",
+  "value": "Nilai",
+  "save": "Simpan",
+  "status": "Status",
+  "connected": "Terhubung",
+  "disconnected": "Terputus",
+  "deleteServer": {
+    "title": "Hapus Server MCP",
+    "description": "Apakah Anda yakin ingin menghapus server MCP {{serverName}}? Tindakan ini tidak dapat dibatalkan.",
+    "delete": "Hapus",
+    "success": "Server MCP {{serverName}} berhasil dihapus"
+  },
+  "editJson": {
+    "title": "Edit JSON untuk Server MCP: {{serverName}}",
+    "titleAll": "Edit Semua JSON Server MCP",
+    "placeholder": "Masukkan konfigurasi JSON",
+    "errorParse": "Gagal mengurai data awal",
+    "errorPaste": "Format JSON tidak valid pada konten yang ditempel",
+    "errorFormat": "Format JSON tidak valid",
+    "errorServerName": "Nama server wajib diisi dan tidak boleh kosong",
+    "errorMissingServerNameKey": "JSON harus berstruktur sebagai {\"serverName\": {config}} - kunci nama server hilang",
+    "errorInvalidType": "Tipe '{{type}}' untuk server '{{serverName}}' tidak valid. Tipe harus 'stdio', 'http', atau 'sse'",
+    "save": "Simpan"
+  },
+  "checkParams": "Silakan periksa parameter sesuai dengan tutorial.",
+  "title": "Server MCP",
+  "experimental": "Eksperimental",
+  "editAllJson": "Edit Semua JSON Server",
+  "findMore": "Temukan lebih banyak server MCP di",
+  "allowPermissions": "Izinkan Semua Izin Alat MCP",
+  "allowPermissionsDesc": "Jika diaktifkan, semua panggilan alat MCP akan disetujui secara otomatis tanpa menampilkan dialog izin. Pengaturan ini berlaku secara global untuk semua percakapan, termasuk chat baru.",
+  "noServers": "Tidak ada server MCP yang ditemukan",
+  "args": "Argumen",
+  "env": "Lingkungan",
+  "serverStatusActive": "Server {{serverKey}} berhasil diaktifkan",
+  "serverStatusInactive": "Server {{serverKey}} berhasil dinonaktifkan",
+  "runtimeSettings": {
+    "title": "Pengaturan Runtime",
+    "description": "Atur bagaimana Jan mengelola dan mencoba ulang server MCP.",
+    "toolCallTimeout": "Batas waktu pemanggilan alat (detik)",
+    "toolCallTimeoutDesc": "Waktu maksimum menunggu respons alat MCP sebelum waktu habis."
+  }
+}

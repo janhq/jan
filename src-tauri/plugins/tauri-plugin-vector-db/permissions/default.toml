@@ -1,0 +1,15 @@
+[default]
+description = "Default permissions for the vector-db plugin"
+permissions = [
+  "allow-get-status",
+  "allow-create-collection",
+  "allow-insert-chunks",
+  "allow-create-file",
+  "allow-search-collection",
+  "allow-delete-chunks",
+  "allow-delete-file",
+  "allow-delete-collection",
+  "allow-chunk-text",
+  "allow-list-attachments",
+  "allow-get-chunks",
+]

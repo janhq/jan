@@ -1,0 +1,25 @@
+---
+title: "Jan v0.7.2: Security Update"
+version: 0.7.2
+description: "Jan v0.7.2 updates the happy-dom dependency to v20.0.0 to address a recently disclosed sandbox vulnerability."
+date: 2025-10-16
+---
+
+import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
+import { Callout } from 'nextra/components'
+
+<ChangelogHeader title="Jan v0.7.2" date="2025-10-16" />
+
+## Jan v0.7.2: Security Update (happy-dom v20)
+
+This release focuses on **security and stability improvements**.  
+It updates the `happy-dom` dependency to the latest version to address a recently disclosed vulnerability.
+
+### Security Fix
+- Updated `happy-dom` to **^20.0.0**, preventing untrusted JavaScript executed within HAPPY DOM from accessing process-level functions and executing arbitrary code outside the intended sandbox.
+
+---
+
+Update your Jan or [download the latest version](https://jan.ai/).
+
+For the complete list of changes, see the [GitHub release notes](https://github.com/janhq/jan/releases/tag/v0.7.2).

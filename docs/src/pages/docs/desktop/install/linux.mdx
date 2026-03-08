@@ -1,0 +1,202 @@
+---
+title: Linux
+description: Download Jan on Linux to run AI models locally. Jan is a free, open-source ChatGPT alternative to run offline.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    Jan on Linux,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    quickstart,
+    getting started,
+    using AI model,
+    installation,
+    "desktop"
+  ]
+twitter:
+  card: summary_large_image
+  site: "@jandotai"
+  title: "Jan on Linux"
+  description: "Download Jan on Linux to run AI models locally. Jan is a free, open-source ChatGPT alternative to run offline."
+---
+
+import { Tabs, Callout, Steps } from 'nextra/components'
+import { Settings } from 'lucide-react'
+import { DownloadButton } from '@/components/DownloadButton'
+
+# Linux Installation
+Instructions for installing Jan on Linux.
+
+## Install Jan
+
+<Steps>
+
+### Download
+
+<div className="inline-flex flex-col gap-3">
+  <DownloadButton href="https://app.jan.ai/download/latest/linux-amd64-deb">Download Jan for Ubuntu / Debian</DownloadButton>
+  <DownloadButton href="https://app.jan.ai/download/latest/linux-amd64-appimage">Download Jan AppImage</DownloadButton>
+</div>
+
+### Install
+
+Installation commands:
+
+<Tabs items={['Ubuntu', 'Others']}>
+<Tabs.Tab>
+
+##### dpkg
+
+```bash
+sudo dpkg -i jan-linux-amd64-{version}.deb
+```
+
+##### apt-get
+
+```bash
+sudo apt-get install ./jan-linux-amd64-{version}.deb
+```
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+
+From the terminal, run the following commands:
+
+```bash
+chmod +x jan-linux-x86_64-{version}.AppImage
+./jan-linux-x86_64-{version}.AppImage
+```
+
+</Tabs.Tab>
+</Tabs>
+
+</Steps>
+
+
+## Compatibility
+
+- **OS:** Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE
+- **CPU:** AVX2 required — Intel Haswell (2013+), AMD Excavator (2015+)
+- **Memory:** 8GB minimum (16GB recommended)
+- **GPU:** 6GB VRAM minimum
+- **Storage:** 10GB free space minimum
+
+## Jan Data Folder
+
+Jan stores all your data locally — downloaded models, conversation threads, settings, and logs generated from using the app. Nothing is sent to the cloud.
+
+Default location:
+
+```bash
+~/.config/Jan/data
+```
+See [Jan Data Folder](/docs/desktop/data-folder) for details.
+
+
+## GPU Acceleration
+Configuration for GPU support:
+
+<Tabs items={['NVIDIA GPU', 'AMD GPU', 'Intel Arc GPU']}>
+
+<Tabs.Tab>
+<Steps>
+
+### Step 1: Verify Hardware & Install Dependencies
+
+**1.1. Check GPU Detection**
+
+```sh
+lspci | grep -i nvidia
+```
+
+**1.2. Install Required components**
+
+**NVIDIA Driver:**
+
+1. Install the [NVIDIA Driver](https://www.nvidia.com/en-us/drivers/), ideally via your package manager.
+2. Verify:
+
+```sh
+nvidia-smi
+```
+
+**CUDA Toolkit:**
+
+1. Install the [CUDA toolkit](https://developer.nvidia.com/cuda-downloads), ideally from your package manager (**11.7+**)
+2. Verify:
+
+```sh
+nvcc --version
+```
+
+**Additional Requirements:**
+
+```sh
+sudo apt update
+sudo apt install gcc-11 g++-11 cpp-11
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
+```
+[Documentation](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions)
+
+### Step 2: Enable GPU Acceleration
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **Llama.cpp**
+2. Select appropriate backend in **llama-cpp Backend**. Details in our [llama.cpp guide](/docs/desktop/llama-cpp).
+
+<Callout type="info">
+CUDA offers better performance than Vulkan.
+</Callout>
+
+</Steps>
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+Requires Vulkan support.
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
+2. Select appropriate backend in **llama-cpp Backend**. Details in our [guide](/docs/desktop/local-engines/llama-cpp).
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+Requires Vulkan support.
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
+2. Select appropriate backend in **llama-cpp Backend**. Details in our [guide](/docs/desktop/local-engines/llama-cpp).
+</Tabs.Tab>
+
+</Tabs>
+
+## Uninstall Jan
+
+Removal commands:
+<Tabs items={['Ubuntu', 'Others']}>
+<Tabs.Tab>
+
+```bash
+sudo apt-get remove jan
+rm -rf Jan
+rm -rf ~/.config/Jan/data
+rm -rf ~/.config/Jan/cache
+```
+</Tabs.Tab>
+<Tabs.Tab>
+
+```bash
+rm jan-linux-x86_64-{version}.AppImage
+rm -rf ~/.config/Jan
+```
+</Tabs.Tab>
+</Tabs>
+
+<Callout type="warning">
+These commands permanently delete application data.
+</Callout>

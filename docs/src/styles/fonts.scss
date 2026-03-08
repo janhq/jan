@@ -1,0 +1,109 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+
+@font-face {
+  font-family: 'PPEditorialNew';
+  src: url('../../public/assets/fonts/PPEditorialNew-Regular.otf')
+    format('opentype');
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: 'PPEditorialNew';
+  src: url('../../public/assets/fonts/PPEditorialNew-RegularItalic.otf')
+    format('opentype');
+  font-weight: 400;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: 'PPEditorialNew';
+  src: url('../../public/assets/fonts/PPEditorialNew-Ultrabold.otf')
+    format('opentype');
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: 'PPEditorialNew';
+  src: url('../../public/assets/fonts/PPEditorialNew-UltraboldItalic.otf')
+    format('opentype');
+  font-weight: 700;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: 'PPEditorialNew';
+  src: url('../../public/assets/fonts/PPEditorialNew-Ultralight.otf')
+    format('opentype');
+  font-weight: 300;
+}
+
+@font-face {
+  font-family: 'PPEditorialNew';
+  src: url('../../public/assets/fonts/PPEditorialNew-UltralightItalic.otf')
+    format('opentype');
+  font-weight: 300;
+  font-style: italic;
+}
+
+/* Studio Feixen Sans - Ultralight */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('../../public/assets/fonts/StudioFeixenSans-Ultralight.otf')
+    format('opentype');
+  font-weight: 200;
+}
+
+/* Studio Feixen Sans - Light */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('../../public/assets/fonts/StudioFeixenSans-Light.otf')
+    format('opentype');
+  font-weight: 300;
+}
+
+/* Studio Feixen Sans - Book */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('../../public/assets/fonts/StudioFeixenSans-Book.otf')
+    format('opentype');
+  font-weight: 350;
+}
+
+/* Studio Feixen Sans - Regular */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('../../public/assets/fonts/StudioFeixenSans-Regular.otf')
+    format('opentype');
+  font-weight: 400;
+}
+
+/* Studio Feixen Sans - Medium */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('../../public/assets/fonts/StudioFeixenSans-Medium.otf')
+    format('opentype');
+  font-weight: 500;
+}
+
+/* Studio Feixen Sans - Semibold */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('../../public/assets/fonts/StudioFeixenSans-Semibold.otf')
+    format('opentype');
+  font-weight: 600;
+}
+
+/* Studio Feixen Sans - Bold */
+@font-face {
+  font-family: 'StudioFeixenSans';
+  font-display: swap;
+  src: url('../../public/assets/fonts/StudioFeixenSans-Bold.otf')
+    format('opentype');
+  font-weight: 700;
+}

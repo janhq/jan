@@ -1,0 +1,16 @@
+.changelog-markdown {
+  h2 {
+    @apply mt-8 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100;
+  }
+
+  ul {
+    @apply mt-6 list-disc first:mt-0 ltr:ml-6 rtl:mr-6;
+    li {
+      @apply my-2;
+    }
+  }
+
+  p {
+    @apply mt-6 leading-7 first:mt-0;
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "sortNewest": "Nejnovější",
+  "sortMostDownloaded": "Nejstahovanější",
+  "newChat": "Nový chat",
+  "download": "Stáhnout",
+  "downloaded": "Staženo",
+  "loadingModels": "Načítání modelů...",
+  "noModels": "Nebyly nalezeny žádné modely",
+  "by": "Od",
+  "downloads": "Stahování",
+  "variants": "Varianty",
+  "showVariants": "Zobrazit varianty",
+  "useModel": "Použít tento model",
+  "downloadModel": "Stáhnout model",
+  "tools": "Nástroje",
+  "searchPlaceholder": "Hledat modely na Hugging Face..."
+}

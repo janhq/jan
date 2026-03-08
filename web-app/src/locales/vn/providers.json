@@ -1,0 +1,62 @@
+{
+  "refreshModelsError": "Nhà cung cấp phải có URL cơ sở và khóa API được định cấu hình để tìm nạp các mô hình.",
+  "refreshModelsSuccess": "Đã thêm {{count}} mô hình mới từ {{provider}}.",
+  "noNewModels": "Không tìm thấy mô hình mới nào. Tất cả các mô hình có sẵn đã được thêm vào.",
+  "refreshModelsFailed": "Không thể tìm nạp các mô hình từ {{provider}}. Vui lòng kiểm tra khóa API và URL cơ sở của bạn.",
+  "models": "Mô hình",
+  "refreshing": "Đang làm mới...",
+  "refresh": "Làm mới",
+  "import": "Nhập",
+  "importModelSuccess": "Mô hình {{provider}} đã được nhập thành công.",
+  "importModelError": "Không thể nhập mô hình:",
+  "stop": "Dừng",
+  "start": "Bắt đầu",
+  "noModelFound": "Không tìm thấy mô hình nào",
+  "noModelFoundDesc": "Các mô hình có sẵn sẽ được liệt kê ở đây. Nếu bạn chưa có bất kỳ mô hình nào, hãy truy cập Hub để tải xuống.",
+  "configuration": "Cấu hình",
+  "apiEndpoint": "Điểm cuối API",
+  "testConnection": "Kiểm tra kết nối",
+  "addModel": {
+    "title": "Thêm mô hình mới",
+    "description": "Thêm một mô hình mới vào nhà cung cấp {{provider}}.",
+    "modelId": "ID mô hình",
+    "enterModelId": "Nhập ID mô hình",
+    "exploreModels": "Xem danh sách mô hình từ {{provider}}",
+    "addModel": "Thêm mô hình",
+    "modelExists": "Mô hình đã tồn tại",
+    "modelExistsDesc": "Vui lòng chọn một ID mô hình khác."
+  },
+  "deleteModel": {
+    "title": "Xóa mô hình: {{modelId}}",
+    "description": "Bạn có chắc chắn muốn xóa mô hình này không? Hành động này không thể hoàn tác.",
+    "success": "Mô hình {{modelId}} đã bị xóa vĩnh viễn.",
+    "cancel": "Hủy",
+    "delete": "Xóa"
+  },
+  "deleteProvider": {
+    "title": "Xóa nhà cung cấp",
+    "description": "Xóa nhà cung cấp này và tất cả các mô hình của nó. Hành động này không thể hoàn tác.",
+    "success": "Nhà cung cấp {{provider}} đã bị xóa vĩnhviễn.",
+    "confirmTitle": "Xóa nhà cung cấp: {{provider}}",
+    "confirmDescription": "Bạn có chắc chắn muốn xóa nhà cung cấp này không? Hành động này không thể hoàn tác.",
+    "cancel": "Hủy",
+    "delete": "Xóa"
+  },
+  "editModel": {
+    "title": "Chỉnh sửa mô hình: {{modelId}}",
+    "description": "Định cấu hình khả năng của mô hình bằng cách chuyển đổi các tùy chọn bên dưới.",
+    "capabilities": "Khả năng",
+    "tools": "Công cụ",
+    "vision": "Thị giác",
+    "proactive": "Chủ động (Thử nghiệm)",
+    "embeddings": "Nhúng",
+    "notAvailable": "Chưa có",
+    "warning": {
+      "title": "Hãy Thận Trọng",
+      "description": "Việc sửa đổi khả năng của mô hình có thể ảnh hưởng đến hiệu suất và chức năng. Cài đặt không chính xác có thể gây ra hành vi hoặc lỗi không mong muốn."
+    }
+  },
+  "addProvider": "Thêm nhà cung cấp",
+  "addOpenAIProvider": "Thêm nhà cung cấp OpenAI",
+  "enterNameForProvider": "Nhập tên cho nhà cung cấp"
+}

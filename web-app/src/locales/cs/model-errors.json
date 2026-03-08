@@ -1,0 +1,7 @@
+{
+  "title": "Chyba mimo kontext",
+  "description": "Tento chat se blíží k limitu paměti AI, jako tabule, která se plní. Můžeme rozšířit paměťové okno (nazývané velikost kontextu), aby si pamatoval více, ale může to využít více paměti vašeho počítače. Můžeme také zkrátit vstup, což znamená, že zapomene část historie chatu, aby uvolnil místo pro nové zprávy.",
+  "increaseContextSizeDescription": "Chcete zvýšit velikost kontextu?",
+  "truncateInput": "Zkrátit vstup",
+  "increaseContextSize": "Zvýšit velikost kontextu"
+}

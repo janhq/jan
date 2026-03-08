@@ -1,0 +1,35 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "system-monitor-window",
+  "description": "enables permissions for the system monitor window",
+  "windows": ["system-monitor-window"],
+  "platforms": ["linux", "macOS", "windows"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-theme",
+    "core:window:allow-get-all-windows",
+    "core:event:allow-listen",
+    "log:default",
+    "core:webview:allow-create-webview-window",
+    "core:webview:allow-get-all-webviews",
+    "core:window:allow-set-focus",
+    "hardware:allow-get-system-info",
+    "hardware:allow-get-system-usage",
+    "llamacpp:allow-get-devices",
+    "llamacpp:allow-read-gguf-metadata",
+    "deep-link:allow-get-current",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://*:*"
+        },
+        {
+          "url": "http://*:*"
+        }
+      ],
+      "deny": []
+    }
+  ]
+}

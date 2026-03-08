@@ -1,0 +1,12 @@
+{
+  "welcome": "嗨，你好吗？",
+  "description": "今天我能为您做些什么？",
+  "status": {
+    "empty": "未找到聊天"
+  },
+  "sendMessage": "发送消息",
+  "newConversation": "新对话",
+  "clearHistory": "清除历史记录",
+  "temporaryChat": "临时聊天",
+  "temporaryChatDescription": "开始一个临时对话，不会保存到您的聊天历史记录中。"
+}

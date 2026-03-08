@@ -1,0 +1,41 @@
+[default]
+description = "Default permissions for the llamacpp plugin"
+permissions = [
+    # Cleanup commands
+    "allow-cleanup-llama-processes",
+
+    # LlamaCpp server commands
+    "allow-load-llama-model",
+    "allow-unload-llama-model",
+    "allow-get-devices",
+    "allow-generate-api-key",
+    "allow-is-process-running",
+    "allow-get-random-port",
+    "allow-find-session-by-model",
+    "allow-get-loaded-models",
+    "allow-get-all-sessions",
+    "allow-get-session-by-model",
+
+    # GGUF commands
+    "allow-read-gguf-metadata",
+    "allow-estimate-kv-cache-size",
+    "allow-get-model-size",
+    "allow-is-model-supported",
+    "allow-plan-model-load",
+
+    # Backend management commands
+    "allow-map-old-backend-to-new",
+    "allow-get-local-installed-backends",
+    "allow-list-supported-backends",
+    "allow-determine-supported-backends",
+    "allow-get-supported-features",
+    "allow-is-cuda-installed",
+    "allow-find-latest-version-for-backend",
+    "allow-prioritize-backends",
+    "allow-parse-backend-version",
+    "allow-check-backend-for-updates",
+    "allow-remove-old-backend-versions",
+    "allow-validate-backend-string",
+    "allow-should-migrate-backend",
+    "allow-handle-setting-update"
+]

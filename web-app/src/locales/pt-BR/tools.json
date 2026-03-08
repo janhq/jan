@@ -1,0 +1,12 @@
+{
+  "toolApproval": {
+    "title": "Aprovação de Ferramenta Necessária",
+    "description": "O assistente quer usar a ferramenta: <strong>{{toolName}}</strong>",
+    "securityNotice": "<strong>Aviso de Segurança:</strong> Ferramentas maliciosas ou conteúdo de conversa podem potencialmente enganar o assistente para tentar ações prejudiciais. Revise cada chamada de ferramenta cuidadosamente antes de aprovar.",
+    "deny": "Negar",
+    "allowOnce": "Permitir Uma Vez",
+    "alwaysAllow": "Permitir na conversa",
+    "parameters": "Parâmetros da Ferramenta",
+    "permissionScope": "Permissões concedidas aplicam-se apenas a esta conversa."
+  }
+}

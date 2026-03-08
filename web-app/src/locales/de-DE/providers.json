@@ -1,0 +1,62 @@
+{
+  "refreshModelsError": "Der Anbieter muss über eine Basis-URL und einen API-Schlüssel verfügen, um Modelle abzurufen.",
+  "refreshModelsSuccess": "{{count}} neue(s) Modell(e) hinzugefügt von {{provider}}.",
+  "noNewModels": "Keine neuen Modelle gefunden. Alle verfügbaren Modelle sind bereits hinzugefügt.",
+  "refreshModelsFailed": "Das Abrufen der Modelle von {{provider}} ist fehlgeschlagen. Bitte überprüfe Deinen API-Schlüssel und die Basis-URL.",
+  "models": "Modelle",
+  "refreshing": "Aktualisiere...",
+  "refresh": "Aktualisieren",
+  "import": "Importieren",
+  "importModelSuccess": "Modell von {{provider}} wurde erfolgreich importiert.",
+  "importModelError": "Modellimport ist fehlgeschlagen:",
+  "stop": "Stop",
+  "start": "Start",
+  "noModelFound": "Kein Modell gefunden",
+  "noModelFoundDesc": "Verfügbare Modelle werden hier aufgelistet. Wenn Du noch keine Modelle hast, können diese im Hub heruntergeladen werden.",
+  "configuration": "Konfiguration",
+  "apiEndpoint": "API Endpunkt",
+  "testConnection": "Teste Verbindung",
+  "addModel": {
+    "title": "Neues Modell hinzufügen",
+    "description": "Neues Modell zu Anbieter {{provider}} hinzufügen.",
+    "modelId": "Modell ID",
+    "enterModelId": "Modell ID eingeben",
+    "exploreModels": "Sehe Modellliste von {{provider}}",
+    "addModel": "Modell hinzufügen",
+    "modelExists": "Modell bereits vorhanden",
+    "modelExistsDesc": "Bitte wähle eine andere Modell-ID."
+  },
+  "deleteModel": {
+    "title": "Lösche Modell: {{modelId}}",
+    "description": "Möchtest Du dieses Modell wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
+    "success": "Modell {{modelId}} wurde permanent gelöscht.",
+    "cancel": "Abbrechen",
+    "delete": "Löschen"
+  },
+  "deleteProvider": {
+    "title": "Anbieter löschen",
+    "description": "Lösche diesen Anbieter und alle seine Modelle. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "success": "Anbieter {{provider}} wurde permanent gelöscht.",
+    "confirmTitle": "Lösche Anbieter: {{provider}}",
+    "confirmDescription": "Möchtest Du diesen Anbieter wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
+    "cancel": "Abbrechen",
+    "delete": "Löschen"
+  },
+  "editModel": {
+    "title": "Modell bearbeiten: {{modelId}}",
+    "description": "Konfiguriere die Modellfunktionen, indem Du die folgenden Optionen einstellst.",
+    "capabilities": "Fähigkeiten",
+    "tools": "Werkzeuge",
+    "vision": "Vision",
+    "proactive": "Proaktiv (Experimentell)",
+    "embeddings": "Einbettungen",
+    "notAvailable": "Noch nicht verfügbar",
+    "warning": {
+      "title": "Mit Vorsicht fortfahren",
+      "description": "Das Ändern von Modellfunktionen kann Leistung und Funktionalität beeinträchtigen. Falsche Einstellungen können zu unerwartetem Verhalten oder Fehlern führen."
+    }
+  },
+  "addProvider": "Anbieter hinzufügen",
+  "addOpenAIProvider": "OpenAI Anbieter hinzufügen",
+  "enterNameForProvider": "Namen für den Anbieter eingeben"
+}

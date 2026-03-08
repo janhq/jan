@@ -1,0 +1,36 @@
+name: "Auto Label Conventional Commits"
+on:
+  pull_request:
+    types:
+      - reopened
+      - opened
+jobs:
+  label_prs:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Label PRs
+        run: |
+          ISSUE_TITLE=$(gh issue view ${{ github.event.number }} --json title -q ".title")
+          case "$ISSUE_TITLE" in
+            chore:*) LABEL="type: chore" ;;
+            feat:*) LABEL="type: feature request" ;;
+            perf:*) LABEL="type: enhancement" ;;
+            fix:*) LABEL="type: bug" ;;
+            docs:*) LABEL="type: documentation" ;;
+            ci:*) LABEL="type: ci" ;;
+            build:*) LABEL="type: ci" ;;
+            test:*) LABEL="type: chore" ;;
+            style:*) LABEL="type: chore" ;;
+            refactor:*) LABEL="type: chore" ;;
+            *) LABEL="" ;;
+          esac
+          if [ -n "$LABEL" ]; then
+            gh issue edit ${{ github.event.number }} --add-label "$LABEL"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

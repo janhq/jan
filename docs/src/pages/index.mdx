@@ -1,0 +1,41 @@
+---
+title: "Jan - Open-Source ChatGPT Replacement"
+description: "Jan is an open-source alternative to ChatGPT. Run open-source AI models locally or connect to cloud models like GPT, Claude and others."
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    architecture,
+  ]
+---
+
+import Home from "@/components/Home"
+
+export const getStaticProps = async() => {
+  const resReleaseLatest = await fetch('https://api.github.com/repos/janhq/jan/releases/latest')  
+  const resRelease = await fetch('https://api.github.com/repos/janhq/jan/releases?per_page=500')  
+  const resRepo = await fetch('https://api.github.com/repos/janhq/jan')
+  const repo = await resRepo.json()
+  const latestRelease = await resReleaseLatest.json()
+  const release = await resRelease.json()
+
+  return {
+    props: {
+      ssg: {
+        stars: repo.stargazers_count || 2000,
+        lastRelease: latestRelease,
+        release: release,
+        lastVersion: latestRelease.tag_name || 'v.0.0.1'
+      },
+    },
+  }
+}
+
+<Home />

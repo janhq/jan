@@ -1,0 +1,63 @@
+{
+  "editServer": "编辑 MCP 服务器",
+  "addServer": "添加 MCP 服务器",
+  "browserExtension": {
+    "connecting": {
+      "checking": "正在检查扩展状态..."
+    },
+    "notInstalled": {
+      "title": "Jan 在您的浏览器中完成任务",
+      "description": "安装扩展以授予 Jan 浏览器访问权限",
+      "getExtension": "获取扩展"
+    }
+  },
+  "serverName": "服务器名称",
+  "enterServerName": "输入服务器名称",
+  "command": "命令",
+  "enterCommand": "输入命令 (uvx 或 npx)",
+  "arguments": "参数",
+  "argument": "参数 {{index}}",
+  "envVars": "环境变量",
+  "key": "键",
+  "value": "值",
+  "save": "保存",
+  "status": "状态",
+  "connected": "已连接",
+  "disconnected": "已断开",
+  "deleteServer": {
+    "title": "删除 MCP 服务器",
+    "description": "您确定要删除 MCP 服务器 {{serverName}} 吗？此操作无法撤销。",
+    "delete": "删除",
+    "success": "MCP 服务器 {{serverName}} 删除成功"
+  },
+  "editJson": {
+    "title": "编辑 MCP 服务器的 JSON：{{serverName}}",
+    "titleAll": "编辑所有 MCP 服务器的 JSON",
+    "placeholder": "输入 JSON 配置",
+    "errorParse": "解析初始数据失败",
+    "errorPaste": "粘贴内容中的 JSON 格式无效",
+    "errorFormat": "JSON 格式无效",
+    "errorServerName": "服务器名称为必填项，不能为空",
+    "errorMissingServerNameKey": "JSON 必须按 {\"serverName\": {config}} 格式结构化 - 缺少服务器名称键",
+    "errorInvalidType": "服务器 '{{serverName}}' 的类型 '{{type}}' 无效。类型必须是 'stdio'、'http' 或 'sse'",
+    "save": "保存"
+  },
+  "checkParams": "请根据教程检查参数。",
+  "title": "MCP 服务器",
+  "experimental": "实验性",
+  "editAllJson": "编辑所有服务器的 JSON",
+  "findMore": "在以下位置查找更多 MCP 服务器",
+  "allowPermissions": "允许所有 MCP 工具权限",
+  "allowPermissionsDesc": "启用后，所有 MCP 工具调用都将自动批准，而不会显示权限对话框。此设置全局适用于所有对话，包括新聊天。",
+  "noServers": "未找到 MCP 服务器",
+  "args": "参数",
+  "env": "环境",
+  "serverStatusActive": "服务器 {{serverKey}} 激活成功",
+  "serverStatusInactive": "服务器 {{serverKey}} 停用成功",
+  "runtimeSettings": {
+    "title": "运行时设置",
+    "description": "配置 Jan 如何管理和重试 MCP 服务器。",
+    "toolCallTimeout": "工具调用超时时间（秒）",
+    "toolCallTimeoutDesc": "在超时前等待 MCP 工具响应的最长时间。"
+  }
+}

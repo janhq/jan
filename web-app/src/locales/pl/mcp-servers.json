@@ -1,0 +1,63 @@
+{
+  "editServer": "Edytuj Serwer MCP",
+  "addServer": "Dodaj Serwer MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Sprawdzanie statusu rozszerzenia..."
+    },
+    "notInstalled": {
+      "title": "Jan wykonuje zadania w Twojej przeglądarce",
+      "description": "Zainstaluj rozszerzenie, aby dać Janowi dostęp do przeglądarki",
+      "getExtension": "Pobierz rozszerzenie"
+    }
+  },
+  "serverName": "Nazwa Serwera",
+  "enterServerName": "Wprowadź nazwę serwera",
+  "command": "Polecenie",
+  "enterCommand": "Wprowadź polecenie (uvx lub npx)",
+  "arguments": "Argumenty",
+  "argument": "{{index}}. argument",
+  "envVars": "Zmienne Środowiskowe",
+  "key": "Klucz",
+  "value": "Wartość",
+  "save": "Zapisz",
+  "status": "Stan",
+  "connected": "Połączono",
+  "disconnected": "Rozłączono",
+  "deleteServer": {
+    "title": "Usuń Serwer MCP",
+    "description": "Na pewno chcesz usunąć serwer MCP {{serverName}}? Tej operacji nie można cofnąć.",
+    "delete": "Usuń",
+    "success": "Serwer MCP {{serverName}} został pomyślnie usunięty"
+  },
+  "editJson": {
+    "title": "Edytuj JSON Serwera MCP: {{serverName}}",
+    "titleAll": "Edytuj JSON Wszystkich Serwerów MCP",
+    "placeholder": "Wprowadź konfigurację JSON",
+    "errorParse": "Błąd parsowania wstępnych danych",
+    "errorPaste": "Wprowadzono JSON o niepoprawnym formacie",
+    "errorFormat": "Niepoprawny format JSON",
+    "errorServerName": "Nazwa serwera jest wymagana i nie może być pusta",
+    "errorMissingServerNameKey": "JSON musi być w formacie {\"serverName\": {config}} - brakuje klucza nazwy serwera",
+    "errorInvalidType": "Niepoprawny typ '{{type}}' dla serwera '{{serverName}}'. Typ musi być 'stdio', 'http' lub 'sse'",
+    "save": "Zapisz"
+  },
+  "checkParams": "Proszę sprawdzić parametry we wprowadzeniu.",
+  "title": "Serwery MCP",
+  "experimental": "Eksperymentalne",
+  "editAllJson": "Edytuj JSON Wszystkich Serwerów",
+  "findMore": "Znajdź więcej serwerów MCP na",
+  "allowPermissions": "Pozwalaj na Wszystkie Użycia Narzędzi MCP",
+  "allowPermissionsDesc": "Po włączeniu będzie automatycznie zezwalać na wszystkie użycia narzędzi MCP bez wyświetlania próśb o zgodę. To ustawienie obowiązuje globalnie dla wszystkich rozmów, w tym nowych czatów.",
+  "noServers": "Nie znaleziono serwerów MCP",
+  "args": "Argumenty",
+  "env": "Zmienne Środowiskowe",
+  "serverStatusActive": "Pomyślnie aktywowano serwer {{serverKey}}",
+  "serverStatusInactive": "Pomyślnie dezaktywowano serwer {{serverKey}}",
+  "runtimeSettings": {
+    "title": "Ustawienia środowiska uruchomieniowego",
+    "description": "Skonfiguruj, jak Jan zarządza i ponawia próby połączenia z serwerami MCP.",
+    "toolCallTimeout": "Limit czasu wywołania narzędzia (sekundy)",
+    "toolCallTimeoutDesc": "Maksymalny czas oczekiwania na odpowiedź narzędzia MCP przed przekroczeniem limitu czasu."
+  }
+}

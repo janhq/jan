@@ -1,0 +1,62 @@
+{
+  "refreshModelsError": "Dostawca musi mieć ustawiony adres URL i klucz API aby pobrać modele.",
+  "refreshModelsSuccess": "Dodano {{count}} model-e/i od dostawcy {{provider}}.",
+  "noNewModels": "Nie znaleziono nowych modeli. Wszystkie modele są już dodane.",
+  "refreshModelsFailed": "Nie udało się pobrać modeli od dostawcy {{provider}}. Proszę sprawdzić poprawność klucza API i adresu URL.",
+  "models": "Modele",
+  "refreshing": "Odświeżanie…",
+  "refresh": "Odśwież",
+  "import": "Importuj",
+  "importModelSuccess": "Pomyślnie zaimportowano model dostawcy {{provider}}.",
+  "importModelError": "Nie udało się zaimportować modelu:",
+  "stop": "Zatrzymaj",
+  "start": "Uruchom",
+  "noModelFound": "Brak modeli",
+  "noModelFoundDesc": "Tutaj będą wymienione dostępne modele. Odwiedź Centrum Modeli żeby jakiś pobrać.",
+  "configuration": "Ustawienia",
+  "apiEndpoint": "Punkt Końcowy API",
+  "testConnection": "Sprawdź Połączenie",
+  "addModel": {
+    "title": "Dodaj Nowy Model",
+    "description": "Dodaj nowy model do dostawcy {{provider}}.",
+    "modelId": "Identyfikator Modelu",
+    "enterModelId": "Wprowadź identyfikator modelu",
+    "exploreModels": "Zobacz listę modeli dostawcy {{provider}}",
+    "addModel": "Dodaj Model",
+    "modelExists": "Model już istnieje",
+    "modelExistsDesc": "Wybierz inny identyfikator modelu."
+  },
+  "deleteModel": {
+    "title": "Usuń Model: {{modelId}}",
+    "description": "Na pewno chcesz usunąć ten model? Tej operacji nie można cofnąć.",
+    "success": "Model {{modelId}} został usunięty.",
+    "cancel": "Anuluj",
+    "delete": "Usuń"
+  },
+  "deleteProvider": {
+    "title": "Usuń Dostawcę",
+    "description": "Usuń dostawcę i wszystkie jego modele. Tej operacji nie można cofnąć.",
+    "success": "Dostawca {{provider}} został usunięty.",
+    "confirmTitle": "Usuń Dostawcę: {{provider}}",
+    "confirmDescription": "Na pewno chcesz usunąć tego dostawcę? Tej operacji nie można cofnąć.",
+    "cancel": "Anuluj",
+    "delete": "Usuń"
+  },
+  "editModel": {
+    "title": "Edytuj Model: {{modelId}}",
+    "description": "Ustaw możliwości modelu za pomocą poniższych przełączników.",
+    "capabilities": "Możliwości",
+    "tools": "Narzędzia",
+    "vision": "Wizja",
+    "proactive": "Proaktywny (Eksperymentalny)",
+    "embeddings": "Osadzenia",
+    "notAvailable": "Jeszcze niedostępne",
+    "warning": {
+      "title": "Zachowaj Ostrożność",
+      "description": "Modyfikowanie możliwości modelu może wpłynąć na wydajność i funkcjonalność. Nieprawidłowe ustawienia mogą spowodować nieoczekiwane zachowanie lub błędy."
+    }
+  },
+  "addProvider": "Dodaj Dostawcę",
+  "addOpenAIProvider": "Dodaj Dostawcę OpenAI",
+  "enterNameForProvider": "Wprowadź nazwę dostawcy"
+}

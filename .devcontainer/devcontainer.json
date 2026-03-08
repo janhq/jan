@@ -1,0 +1,20 @@
+{
+	"name": "Jan",
+	"image": "mcr.microsoft.com/devcontainers/base:jammy",
+	"features": {
+		"ghcr.io/devcontainers/features/node:1": {
+			"version": "20"
+		},
+		"ghcr.io/devcontainers/features/rust:1": {},
+		"ghcr.io/devcontainers-extra/features/corepack:1": {}
+	},
+
+	"postCreateCommand": "./.devcontainer/postCreateCommand.sh",
+
+	// appimagekit requires fuse to package appimage, to use fuse in the container you need to enable it on the host
+	"runArgs": [
+    	"--device", "/dev/fuse",
+    	"--cap-add=SYS_ADMIN",
+    	"--security-opt", "apparmor:unconfined"
+  	]
+}

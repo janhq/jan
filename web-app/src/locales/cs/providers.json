@@ -1,0 +1,62 @@
+{
+  "refreshModelsError": "Poskytovatel musí mít nakonfigurovanou základní URL a API klíč pro načtení modelů.",
+  "refreshModelsSuccess": "Přidáno {{count}} nových modelů od {{provider}}.",
+  "noNewModels": "Nebyly nalezeny žádné nové modely. Všechny dostupné modely již byly přidány.",
+  "refreshModelsFailed": "Nepodařilo se načíst modely od {{provider}}. Zkontrolujte prosím váš API klíč a základní URL.",
+  "models": "Modely",
+  "refreshing": "Obnovování...",
+  "refresh": "Obnovit",
+  "import": "Importovat",
+  "importModelSuccess": "Model {{provider}} byl úspěšně importován.",
+  "importModelError": "Nepodařilo se importovat model:",
+  "stop": "Zastavit",
+  "start": "Spustit",
+  "noModelFound": "Nebyl nalezen žádný model",
+  "noModelFoundDesc": "Dostupné modely budou uvedeny zde. Pokud zatím nemáte žádné modely, navštivte Centrum a stáhněte si je.",
+  "configuration": "Konfigurace",
+  "apiEndpoint": "API koncový bod",
+  "testConnection": "Otestovat připojení",
+  "addModel": {
+    "title": "Přidat nový model",
+    "description": "Přidejte nový model k poskytovateli {{provider}}.",
+    "modelId": "ID modelu",
+    "enterModelId": "Zadejte ID modelu",
+    "exploreModels": "Zobrazit seznam modelů od {{provider}}",
+    "addModel": "Přidat model",
+    "modelExists": "Model již existuje",
+    "modelExistsDesc": "Zvolte prosím jiné ID modelu."
+  },
+  "deleteModel": {
+    "title": "Smazat model: {{modelId}}",
+    "description": "Opravdu chcete smazat tento model? Tuto akci nelze vrátit zpět.",
+    "success": "Model {{modelId}} byl trvale smazán.",
+    "cancel": "Zrušit",
+    "delete": "Smazat"
+  },
+  "deleteProvider": {
+    "title": "Smazat poskytovatele",
+    "description": "Smazat tohoto poskytovatele a všechny jeho modely. Tuto akci nelze vrátit zpět.",
+    "success": "Poskytovatel {{provider}} byl trvale smazán.",
+    "confirmTitle": "Smazat poskytovatele: {{provider}}",
+    "confirmDescription": "Opravdu chcete smazat tohoto poskytovatele? Tuto akci nelze vrátit zpět.",
+    "cancel": "Zrušit",
+    "delete": "Smazat"
+  },
+  "editModel": {
+    "title": "Upravit model: {{modelId}}",
+    "description": "Nakonfigurujte schopnosti modelu přepnutím níže uvedených možností.",
+    "capabilities": "Schopnosti",
+    "tools": "Nástroje",
+    "vision": "Vidění",
+    "proactive": "Proaktivní (Experimentální)",
+    "embeddings": "Embeddingy",
+    "notAvailable": "Zatím není k dispozici",
+    "warning": {
+      "title": "Postupujte opatrně",
+      "description": "Úprava schopností modelu může ovlivnit výkon a funkčnost. Nesprávné nastavení může způsobit neočekávané chování nebo chyby."
+    }
+  },
+  "addProvider": "Přidat poskytovatele",
+  "addOpenAIProvider": "Přidat OpenAI poskytovatele",
+  "enterNameForProvider": "Zadejte název pro poskytovatele"
+}

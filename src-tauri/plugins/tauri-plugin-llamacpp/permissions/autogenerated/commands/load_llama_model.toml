@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-load-llama-model"
+description = "Enables the load_llama_model command without any pre-configured scope."
+commands.allow = ["load_llama_model"]
+
+[[permission]]
+identifier = "deny-load-llama-model"
+description = "Denies the load_llama_model command without any pre-configured scope."
+commands.deny = ["load_llama_model"]

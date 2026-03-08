@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-check-backend-for-updates"
+description = "Enables the check_backend_for_updates command without any pre-configured scope."
+commands.allow = ["check_backend_for_updates"]
+
+[[permission]]
+identifier = "deny-check-backend-for-updates"
+description = "Denies the check_backend_for_updates command without any pre-configured scope."
+commands.deny = ["check_backend_for_updates"]

@@ -1,0 +1,1972 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/messages": {
+      "post": {
+        "operationId": "MessagesController_create",
+        "summary": "Create message",
+        "description": "Creates a message in a thread.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The message has been successfully created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateMessageDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Messages"]
+      },
+      "get": {
+        "operationId": "MessagesController_findAll",
+        "summary": "List messages",
+        "description": "Retrieves all the messages in a thread.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListMessagesResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Messages"]
+      }
+    },
+    "/messages/{id}": {
+      "get": {
+        "operationId": "MessagesController_findOne",
+        "summary": "Retrieve message",
+        "description": "Retrieves a specific message defined by a message's `id`.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the message.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetMessageResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Messages"]
+      },
+      "patch": {
+        "operationId": "MessagesController_update",
+        "summary": "Update message",
+        "description": "Updates a specific message defined by a message's `id`.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the message.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The message has been successfully updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateMessageDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Messages"]
+      },
+      "delete": {
+        "operationId": "MessagesController_remove",
+        "summary": "Delete message",
+        "description": "Deletes a specific message defined by a message's `id`.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the message.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully deleted the message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteMessageResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Messages"]
+      }
+    },
+    "/threads": {
+      "post": {
+        "operationId": "ThreadsController_create",
+        "summary": "Create thread",
+        "description": "Creates a new thread.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateThreadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadEntity"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Threads"]
+      },
+      "get": {
+        "operationId": "ThreadsController_findAll",
+        "summary": "List threads",
+        "description": "Lists all the available threads along with its configurations.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ThreadEntity"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Threads"]
+      }
+    },
+    "/threads/{id}": {
+      "get": {
+        "operationId": "ThreadsController_findOne",
+        "summary": "Get thread",
+        "description": "Retrieves a thread along with its configurations.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the thread.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetThreadResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Threads"]
+      },
+      "patch": {
+        "operationId": "ThreadsController_update",
+        "summary": "Update thread",
+        "description": "Updates a thread's configurations.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the thread.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateThreadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The thread has been successfully updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateThreadDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Threads"]
+      },
+      "delete": {
+        "operationId": "ThreadsController_remove",
+        "summary": "Delete thread",
+        "description": "Deletes a specific thread defined by a thread `id` .",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the thread.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thread has been successfully deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteThreadResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Threads"]
+      }
+    },
+    "/models": {
+      "post": {
+        "operationId": "ModelsController_create",
+        "summary": "Create model",
+        "description": "Creates a model `.json` instance file manually.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateModelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The model has been successfully created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartModelSuccessDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Models"]
+      },
+      "get": {
+        "operationId": "ModelsController_findAll",
+        "summary": "List models",
+        "description": "Lists the currently available models, and provides basic information about each one such as the owner and availability. [Equivalent to OpenAI's list model](https://platform.openai.com/docs/api-reference/models/list).",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListModelsResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Models"]
+      }
+    },
+    "/models/{modelId}/start": {
+      "post": {
+        "operationId": "ModelsController_startModel",
+        "summary": "Start model",
+        "description": "Starts a model operation defined by a model `id`.",
+        "parameters": [
+          {
+            "name": "modelId",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the model.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelSettingParamsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The model has been successfully started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartModelSuccessDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Models"]
+      }
+    },
+    "/models/{modelId}/stop": {
+      "post": {
+        "operationId": "ModelsController_stopModel",
+        "summary": "Stop model",
+        "description": "Stops a model operation defined by a model `id`.",
+        "parameters": [
+          {
+            "name": "modelId",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the model.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The model has been successfully stopped.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartModelSuccessDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Models"]
+      }
+    },
+    "/models/download/{modelId}": {
+      "get": {
+        "operationId": "ModelsController_downloadModel",
+        "summary": "Download model",
+        "description": "Downloads a specific model instance.",
+        "parameters": [
+          {
+            "name": "modelId",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the model.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadModelResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Models"]
+      }
+    },
+    "/models/{id}": {
+      "get": {
+        "operationId": "ModelsController_findOne",
+        "summary": "Get model",
+        "description": "Retrieves a model instance, providing basic information about the model such as the owner and permissions. [Equivalent to OpenAI's list model](https://platform.openai.com/docs/api-reference/models/retrieve).",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the model.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Models"]
+      },
+      "patch": {
+        "operationId": "ModelsController_update",
+        "summary": "Update model",
+        "description": "Updates a model instance defined by a model's `id`.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the model.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateModelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The model has been successfully updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateModelDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Models"]
+      },
+      "delete": {
+        "operationId": "ModelsController_remove",
+        "summary": "Delete model",
+        "description": "Deletes a model. [Equivalent to OpenAI's delete model](https://platform.openai.com/docs/api-reference/models/delete).",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the model.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The model has been successfully deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteModelResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Models"]
+      }
+    },
+    "/chat/completions": {
+      "post": {
+        "operationId": "ChatController_create",
+        "summary": "Create chat completion",
+        "description": "Creates a model response for the given conversation.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChatCompletionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatCompletionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Inference"]
+      }
+    },
+    "/assistants": {
+      "post": {
+        "operationId": "AssistantsController_create",
+        "summary": "Create assistant",
+        "description": "Creates a new assistant.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAssistantDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The assistant has been successfully created."
+          }
+        },
+        "tags": ["Assistants"]
+      },
+      "get": {
+        "operationId": "AssistantsController_findAll",
+        "summary": "List assistants",
+        "description": "Retrieves all the available assistants along with their settings.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AssistantEntity"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Assistants"]
+      }
+    },
+    "/assistants/{id}": {
+      "get": {
+        "operationId": "AssistantsController_findOne",
+        "summary": "Get assistant",
+        "description": "Retrieves a specific assistant defined by an assistant's `id`.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the assistant.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantEntity"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Assistants"]
+      },
+      "delete": {
+        "operationId": "AssistantsController_remove",
+        "summary": "Delete assistant",
+        "description": "Deletes a specific assistant defined by an assistant's `id`.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the assistant.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The assistant has been successfully deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteAssistantResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Assistants"]
+      }
+    }
+  },
+  "info": {
+    "title": "Cortex API",
+    "description": "Cortex API provides a command-line interface (CLI) for seamless interaction with large language models (LLMs). Fully compatible with the [OpenAI API](https://platform.openai.com/docs/api-reference), it enables straightforward command execution and management of LLM interactions.",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [
+    {
+      "name": "Inference",
+      "description": "This endpoint initiates interaction with a Language Learning Model (LLM)."
+    },
+    {
+      "name": "Assistants",
+      "description": "These endpoints manage the lifecycle of an Assistant within a conversation thread."
+    },
+    {
+      "name": "Models",
+      "description": "These endpoints provide a list and descriptions of all available models within the Cortex framework."
+    },
+    {
+      "name": "Messages",
+      "description": "These endpoints manage the retrieval and storage of conversation content, including responses from LLMs and other metadata related to chat interactions."
+    },
+    {
+      "name": "Threads",
+      "description": "These endpoints handle the creation, retrieval, updating, and deletion of conversation threads."
+    }
+  ],
+  "servers": [
+    {
+      "url": "http://localhost:1337"
+    },
+    {
+      "url": "http://localhost:1337/v1"
+    }
+  ],
+  "components": {
+    "schemas": {
+      "ContentValueDto": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "The text's value."
+          },
+          "annotations": {
+            "description": "The text's annotation that categorize the text.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string",
+            "description": "The name or title of the text."
+          },
+          "size": {
+            "type": "number",
+            "description": "The text's size in bytes."
+          }
+        },
+        "required": ["value", "annotations"]
+      },
+      "ThreadContentDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": ["text", "image", "pdf"],
+            "type": "string",
+            "description": "The type of content."
+          },
+          "text": {
+            "description": "The content details.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ContentValueDto"
+              }
+            ]
+          }
+        },
+        "required": ["type", "text"]
+      },
+      "CreateMessageDto": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "The ID of the thread to which the message will be posted."
+          },
+          "assistant_id": {
+            "type": "string",
+            "description": "The assistant's unique identifier."
+          },
+          "role": {
+            "enum": ["system", "assistant", "user"],
+            "type": "string",
+            "description": "The sources of the messages."
+          },
+          "content": {
+            "description": "The content of the messages.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ThreadContentDto"
+            }
+          },
+          "status": {
+            "enum": ["ready", "pending", "error", "stopped"],
+            "type": "string",
+            "description": "Current status of the message."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optional dictionary for additional unstructured message information."
+          },
+          "type": {
+            "type": "string",
+            "description": "Type of the message."
+          },
+          "error_code": {
+            "enum": [
+              "invalid_api_key",
+              "insufficient_quota",
+              "invalid_request_error",
+              "unknown"
+            ],
+            "type": "string",
+            "description": "Specifies the cause of any error."
+          }
+        },
+        "required": ["thread_id", "role", "content", "status"]
+      },
+      "ListMessageObjectDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "msg_abc123",
+            "description": "The identifier of the message."
+          },
+          "object": {
+            "type": "string",
+            "example": "thread.message",
+            "description": "Type of the object, indicating it's a thread message."
+          },
+          "created_at": {
+            "type": "integer",
+            "example": 1699017614,
+            "description": "Unix timestamp representing the creation time of the message."
+          },
+          "thread_id": {
+            "type": "string",
+            "example": "thread_abc123",
+            "description": "Identifier of the thread to which this message belongs."
+          },
+          "role": {
+            "type": "string",
+            "example": "user",
+            "description": "Role of the sender, either 'user' or 'assistant'."
+          },
+          "file_ids": {
+            "description": "Array of file IDs associated with the message, if any.",
+            "example": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "assistant_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Identifier of the assistant involved in the message, if applicable.",
+            "example": null
+          },
+          "run_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Run ID associated with the message, if applicable.",
+            "example": null
+          },
+          "metadata": {
+            "type": "object",
+            "example": {},
+            "description": "Metadata associated with the message."
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "created_at",
+          "thread_id",
+          "role",
+          "file_ids",
+          "assistant_id",
+          "run_id",
+          "metadata"
+        ]
+      },
+      "ListMessagesResponseDto": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string",
+            "example": "list",
+            "description": "Type of the object, indicating it's a list."
+          },
+          "data": {
+            "description": "Array of message objects.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ListMessageObjectDto"
+            }
+          },
+          "first_id": {
+            "type": "string",
+            "example": "msg_abc123",
+            "description": "Identifier of the first message in the list."
+          },
+          "last_id": {
+            "type": "string",
+            "example": "msg_abc456",
+            "description": "Identifier of the last message in the list."
+          },
+          "has_more": {
+            "type": "boolean",
+            "example": false,
+            "description": "Indicates whether there are more messages to retrieve."
+          }
+        },
+        "required": ["object", "data", "first_id", "last_id", "has_more"]
+      },
+      "ContentDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "example": "text",
+            "description": "Type of content, e.g., \"text\"."
+          },
+          "text": {
+            "type": "object",
+            "example": {
+              "value": "How does AI work? Explain it in simple terms.",
+              "annotations": []
+            },
+            "description": "Text content of the message along with any annotations."
+          }
+        },
+        "required": ["type", "text"]
+      },
+      "GetMessageResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "msg_abc123",
+            "description": "The identifier of the message."
+          },
+          "object": {
+            "type": "string",
+            "example": "thread.message",
+            "description": "Type of the object, indicating it's a thread message.",
+            "default": "thread.message"
+          },
+          "created_at": {
+            "type": "integer",
+            "example": 1699017614,
+            "description": "Unix timestamp representing the creation time of the message."
+          },
+          "thread_id": {
+            "type": "string",
+            "example": "thread_abc123",
+            "description": "Identifier of the thread to which this message belongs."
+          },
+          "role": {
+            "type": "string",
+            "example": "user",
+            "description": "Role of the sender, either 'user' or 'assistant'."
+          },
+          "content": {
+            "description": "Array of content objects detailing the message content.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContentDto"
+            }
+          },
+          "file_ids": {
+            "example": [],
+            "description": "Array of file IDs associated with the message, if any.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "assistant_id": {
+            "type": "string",
+            "nullable": true,
+            "example": null,
+            "description": "Identifier of the assistant involved in the message, if applicable."
+          },
+          "run_id": {
+            "type": "string",
+            "nullable": true,
+            "example": null,
+            "description": "Run ID associated with the message, if applicable."
+          },
+          "metadata": {
+            "type": "object",
+            "example": {},
+            "description": "Metadata associated with the message."
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "created_at",
+          "thread_id",
+          "role",
+          "content",
+          "file_ids",
+          "assistant_id",
+          "run_id",
+          "metadata"
+        ]
+      },
+      "UpdateMessageDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "DeleteMessageResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "message_123",
+            "description": "The identifier of the message that was deleted."
+          },
+          "object": {
+            "type": "string",
+            "example": "message",
+            "description": "Type of the object, indicating it's a message.",
+            "default": "message"
+          },
+          "deleted": {
+            "type": "boolean",
+            "example": true,
+            "description": "Indicates whether the message was successfully deleted."
+          }
+        },
+        "required": ["id", "object", "deleted"]
+      },
+      "ModelSettingParamsDto": {
+        "type": "object",
+        "properties": {
+          "ctx_len": {
+            "type": "number",
+            "description": "Sets the maximum input the model can use to generate a response, it varies with the model used."
+          },
+          "ngl": {
+            "type": "number",
+            "description": "Determines GPU layer usage."
+          },
+          "embedding": {
+            "type": "boolean",
+            "description": "Enables embedding utilization for tasks like document-enhanced chat in RAG-based applications."
+          },
+          "n_parallel": {
+            "type": "number",
+            "description": "Number of parallel processing units to use."
+          },
+          "cpu_threads": {
+            "type": "number",
+            "description": "Determines CPU inference threads, limited by hardware and OS. "
+          },
+          "prompt_template": {
+            "type": "string",
+            "description": "A predefined text or framework that guides the AI model's response generation."
+          },
+          "system_prompt": {
+            "type": "string",
+            "description": "Specific prompt used by the system for generating model outputs."
+          },
+          "ai_prompt": {
+            "type": "string",
+            "description": "The prompt fed into the AI, typically to guide or specify the nature of the content it should generate."
+          },
+          "user_prompt": {
+            "type": "string",
+            "description": "Customizable prompt input by the user to direct the model’s output generation."
+          },
+          "llama_model_path": {
+            "type": "string",
+            "description": "File path to a specific llama model."
+          },
+          "mmproj": {
+            "type": "string",
+            "description": "The mmproj is a projection matrix that is used to project the embeddings from CLIP into tokens usable by llama/mistral."
+          },
+          "cont_batching": {
+            "type": "boolean",
+            "description": "Controls continuous batching, enhancing throughput for LLM inference."
+          },
+          "vision_model": {
+            "type": "boolean",
+            "description": "Specifies if a vision-based model (for image processing) should be used."
+          },
+          "text_model": {
+            "type": "boolean",
+            "description": "Specifies if a text-based model is to be utilized, for tasks like text generation or analysis."
+          }
+        }
+      },
+      "ModelRuntimeParamsDto": {
+        "type": "object",
+        "properties": {
+          "temperature": {
+            "type": "number",
+            "description": "Influences the randomness of the model's output."
+          },
+          "token_limit": {
+            "type": "number",
+            "description": "Sets the maximum number of pieces (like words or characters) the model will produce at one time."
+          },
+          "top_k": {
+            "type": "number",
+            "description": "Limits the model's choices when it's deciding what to write next."
+          },
+          "top_p": {
+            "type": "number",
+            "description": "Sets probability threshold for more relevant outputs."
+          },
+          "stream": {
+            "type": "boolean",
+            "description": "Determines the format for output generation. If set to `true`, the output is generated continuously, allowing for real-time streaming of responses. If set to `false`, the output is delivered in a single JSON file."
+          },
+          "max_tokens": {
+            "type": "number",
+            "description": "Sets the upper limit on the number of tokens the model can generate in a single output."
+          },
+          "stop": {
+            "description": "Defines specific tokens or phrases that signal the model to stop producing further output.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "frequency_penalty": {
+            "type": "number",
+            "description": "Modifies the likelihood of the model repeating the same words or phrases within a single output."
+          },
+          "presence_penalty": {
+            "type": "number",
+            "description": "Reduces the likelihood of repeating tokens, promoting novelty in the output."
+          },
+          "engine": {
+            "type": "string",
+            "description": "The engine used to run the model."
+          }
+        }
+      },
+      "CreateThreadModelInfoDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The unique identifier of the thread."
+          },
+          "settings": {
+            "description": "The settings of the thread.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ModelSettingParamsDto"
+              }
+            ]
+          },
+          "parameters": {
+            "description": "The parameters of the thread.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ModelRuntimeParamsDto"
+              }
+            ]
+          },
+          "engine": {
+            "type": "string",
+            "description": "The engine used in the thread to operate the model."
+          }
+        },
+        "required": ["id", "settings", "parameters"]
+      },
+      "AssistantToolDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "The type of the assistant's tool."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Enable or disable the assistant's tool."
+          },
+          "settings": {
+            "type": "object",
+            "description": "The setting of the assistant's tool."
+          }
+        },
+        "required": ["type", "enabled", "settings"]
+      },
+      "CreateThreadAssistantDto": {
+        "type": "object",
+        "properties": {
+          "assistant_id": {
+            "type": "string",
+            "description": "The unique identifier of the assistant."
+          },
+          "assistant_name": {
+            "type": "string",
+            "description": "The name of the assistant."
+          },
+          "model": {
+            "description": "The model's unique identifier and settings.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CreateThreadModelInfoDto"
+              }
+            ]
+          },
+          "instructions": {
+            "type": "string",
+            "description": "The assistant's specific instructions."
+          },
+          "tools": {
+            "description": "The thread's tool(Knowledge Retrieval) configurations.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssistantToolDto"
+            }
+          }
+        },
+        "required": ["assistant_id", "assistant_name", "model"]
+      },
+      "CreateThreadDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "The title of the thread."
+          },
+          "assistants": {
+            "description": "The details of the thread's settings.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreateThreadAssistantDto"
+            }
+          }
+        },
+        "required": ["title", "assistants"]
+      },
+      "ThreadEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "assistants": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        },
+        "required": ["id", "object", "title", "assistants", "createdAt"]
+      },
+      "GetThreadResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "thread_abc123",
+            "description": "The identifier of the thread."
+          },
+          "object": {
+            "type": "string",
+            "example": "thread",
+            "description": "Type of the object"
+          },
+          "created_at": {
+            "type": "integer",
+            "example": 1699014083,
+            "description": "Unix timestamp representing the creation time of the thread."
+          },
+          "assistants": {
+            "example": ["assistant-001"],
+            "description": "List of assistants involved in the thread.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "example": {},
+            "description": "Metadata associated with the thread."
+          },
+          "messages": {
+            "example": [],
+            "description": "List of messages within the thread.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "object",
+          "created_at",
+          "assistants",
+          "metadata",
+          "messages"
+        ]
+      },
+      "UpdateThreadDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "DeleteThreadResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "thread_123",
+            "description": "The identifier of the thread that was deleted."
+          },
+          "object": {
+            "type": "string",
+            "example": "thread",
+            "description": "Type of the object, indicating it's a thread.",
+            "default": "thread"
+          },
+          "deleted": {
+            "type": "boolean",
+            "example": true,
+            "description": "Indicates whether the thread was successfully deleted."
+          }
+        },
+        "required": ["id", "object", "deleted"]
+      },
+      "ModelArtifactDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The URL source of the model."
+          }
+        },
+        "required": ["url"]
+      },
+      "ModelMetadataDto": {
+        "type": "object",
+        "properties": {
+          "author": {
+            "type": "string",
+            "description": "The author of the model."
+          },
+          "tags": {
+            "description": "The model's tags.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "size": {
+            "type": "number",
+            "description": "The model's size."
+          },
+          "cover": {
+            "type": "string",
+            "description": "The model's cover."
+          }
+        },
+        "required": ["author", "tags", "size"]
+      },
+      "CreateModelDto": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "The version of the model."
+          },
+          "format": {
+            "enum": ["gguf", "api"],
+            "type": "string",
+            "description": "The state format of the model."
+          },
+          "sources": {
+            "description": "The URL sources from which the model downloaded or accessed.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelArtifactDto"
+            }
+          },
+          "id": {
+            "type": "string",
+            "description": "The unique identifier of the model."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the model."
+          },
+          "description": {
+            "type": "string",
+            "description": "A brief description of the model."
+          },
+          "settings": {
+            "description": "The settings parameters of the model.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ModelSettingParamsDto"
+              }
+            ]
+          },
+          "parameters": {
+            "description": "The parameters configuration of the model.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ModelRuntimeParamsDto"
+              }
+            ]
+          },
+          "metadata": {
+            "description": "The metadata of the model.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ModelMetadataDto"
+              }
+            ]
+          },
+          "engine": {
+            "type": "string",
+            "description": "The engine used to run the model."
+          }
+        },
+        "required": [
+          "version",
+          "format",
+          "sources",
+          "id",
+          "name",
+          "description",
+          "settings",
+          "parameters",
+          "metadata",
+          "engine"
+        ]
+      },
+      "StartModelSuccessDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "The success or error message displayed when a model is successfully loaded or fails to load."
+          },
+          "modelId": {
+            "type": "string",
+            "description": "The unique identifier of the model."
+          }
+        },
+        "required": ["message", "modelId"]
+      },
+      "DownloadModelResponseDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Starting download mistral-ins-7b-q4",
+            "description": "Message indicates Jan starting download corresponding model."
+          }
+        },
+        "required": ["message"]
+      },
+      "ModelDto": {
+        "type": "object",
+        "properties": {
+          "source_url": {
+            "type": "string",
+            "example": "https://huggingface.co/janhq/trinity-v1.2-GGUF/resolve/main/trinity-v1.2.Q4_K_M.gguf",
+            "description": "URL to the source of the model."
+          },
+          "id": {
+            "type": "string",
+            "example": "trinity-v1.2-7b",
+            "description": "Unique identifier used in chat-completions model_name, matches folder name."
+          },
+          "object": {
+            "type": "string",
+            "example": "model"
+          },
+          "name": {
+            "type": "string",
+            "example": "Trinity-v1.2 7B Q4",
+            "description": "Name of the model."
+          },
+          "version": {
+            "type": "string",
+            "default": "1.0",
+            "description": "The version number of the model."
+          },
+          "description": {
+            "type": "string",
+            "example": "Trinity is an experimental model merge using the Slerp method. Recommended for daily assistance purposes.",
+            "description": "Description of the model."
+          },
+          "format": {
+            "type": "string",
+            "example": "gguf",
+            "description": "State format of the model, distinct from the engine."
+          },
+          "ctx_len": {
+            "type": "number",
+            "description": "Context length.",
+            "example": 4096
+          },
+          "prompt_template": {
+            "type": "string",
+            "example": "system\n{system_message}\nuser\n{prompt}\nassistant"
+          },
+          "temperature": {
+            "type": "number",
+            "example": 0.7
+          },
+          "top_p": {
+            "type": "number",
+            "example": 0.95
+          },
+          "stream": {
+            "type": "boolean",
+            "example": true
+          },
+          "max_tokens": {
+            "type": "number",
+            "example": 4096
+          },
+          "stop": {
+            "example": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "frequency_penalty": {
+            "type": "number",
+            "example": 0
+          },
+          "presence_penalty": {
+            "type": "number",
+            "example": 0
+          },
+          "author": {
+            "type": "string",
+            "example": "Jan"
+          },
+          "tags": {
+            "example": ["7B", "Merged", "Featured"],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "size": {
+            "type": "number",
+            "example": 4370000000
+          },
+          "cover": {
+            "type": "string",
+            "example": "https://raw.githubusercontent.com/janhq/jan/main/models/trinity-v1.2-7b/cover.png"
+          },
+          "engine": {
+            "type": "string",
+            "example": "cortex"
+          }
+        },
+        "required": [
+          "source_url",
+          "id",
+          "object",
+          "name",
+          "version",
+          "description",
+          "format",
+          "ctx_len",
+          "prompt_template",
+          "temperature",
+          "top_p",
+          "stream",
+          "max_tokens",
+          "stop",
+          "frequency_penalty",
+          "presence_penalty",
+          "author",
+          "tags",
+          "size",
+          "cover",
+          "engine"
+        ]
+      },
+      "ListModelsResponseDto": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string",
+            "example": "list",
+            "enum": ["list"]
+          },
+          "data": {
+            "description": "List of models",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelDto"
+            }
+          }
+        },
+        "required": ["object", "data"]
+      },
+      "UpdateModelDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "DeleteModelResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "mistral-ins-7b-q4",
+            "description": "The identifier of the model that was deleted."
+          },
+          "object": {
+            "type": "string",
+            "example": "model",
+            "description": "Type of the object, indicating it's a model.",
+            "default": "model"
+          },
+          "deleted": {
+            "type": "boolean",
+            "example": true,
+            "description": "Indicates whether the model was successfully deleted."
+          }
+        },
+        "required": ["id", "object", "deleted"]
+      },
+      "ChatCompletionMessage": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "The Content of the chat message."
+          },
+          "role": {
+            "enum": ["system", "assistant", "user"],
+            "type": "string",
+            "description": "The role of the entity in the chat completion."
+          }
+        },
+        "required": ["content", "role"]
+      },
+      "CreateChatCompletionDto": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "description": "Array of chat messages to be used for generating the chat completion.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatCompletionMessage"
+            }
+          },
+          "model": {
+            "type": "string",
+            "description": "The unique identifier of the model."
+          },
+          "stream": {
+            "type": "boolean",
+            "description": "Determines the format for output generation. If set to `true`, the output is generated continuously, allowing for real-time streaming of responses. If set to `false`, the output is delivered in a single JSON file."
+          },
+          "max_tokens": {
+            "type": "number",
+            "description": "Sets the upper limit on the number of tokens the model can generate in a single output."
+          },
+          "stop": {
+            "description": "Defines specific tokens or phrases that signal the model to stop producing further output.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "frequency_penalty": {
+            "type": "number",
+            "description": "Modifies the likelihood of the model repeating the same words or phrases within a single output."
+          },
+          "presence_penalty": {
+            "type": "number",
+            "description": "Reduces the likelihood of repeating tokens, promoting novelty in the output."
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Influences the randomness of the model's output."
+          },
+          "top_p": {
+            "type": "number",
+            "description": "Sets probability threshold for more relevant outputs."
+          }
+        },
+        "required": [
+          "messages",
+          "model",
+          "stream",
+          "max_tokens",
+          "stop",
+          "frequency_penalty",
+          "presence_penalty",
+          "temperature",
+          "top_p"
+        ]
+      },
+      "MessageDto": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "The textual content of the chat message or completion generated by the model."
+          },
+          "role": {
+            "type": "string",
+            "description": "The role of the participant in the chat, such as 'user' or 'system', indicating who is the sender of the message."
+          }
+        },
+        "required": ["content", "role"]
+      },
+      "ChoiceDto": {
+        "type": "object",
+        "properties": {
+          "finish_reason": {
+            "type": "string",
+            "description": "The reason the chat completion ended, typically indicating whether the model completed the text naturally or was cut off."
+          },
+          "index": {
+            "type": "number",
+            "description": "The index of the completion relative to other generated completions, useful for identifying its order in a batch request."
+          },
+          "message": {
+            "description": "An object representing the message details involved in the chat completion, encapsulated within a MessageDto.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MessageDto"
+              }
+            ]
+          }
+        },
+        "required": ["finish_reason", "index", "message"]
+      },
+      "UsageDto": {
+        "type": "object",
+        "properties": {
+          "completion_tokens": {
+            "type": "number",
+            "description": "The number of tokens used in the completion part of the response generated by the model."
+          },
+          "prompt_tokens": {
+            "type": "number",
+            "description": "The number of tokens used in the prompt part of the chat input, which is provided to the model."
+          },
+          "total_tokens": {
+            "type": "number",
+            "description": "The total number of tokens used in both the prompt and the completion, summarizing the entire token count of the chat operation."
+          }
+        },
+        "required": ["completion_tokens", "prompt_tokens", "total_tokens"]
+      },
+      "ChatCompletionResponseDto": {
+        "type": "object",
+        "properties": {
+          "choices": {
+            "description": "A list of choices generated by the chat model.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChoiceDto"
+            }
+          },
+          "created": {
+            "type": "number",
+            "description": "The timestamp of when the chat completion was created, expressed as a Unix timestamp."
+          },
+          "id": {
+            "type": "string",
+            "description": "The unique identifier for the chat completion."
+          },
+          "model": {
+            "type": "string",
+            "description": "The identifier of the model used to generate the chat completion."
+          },
+          "object": {
+            "type": "string",
+            "description": "The type of object, typically set to 'chat_completion' to denote the nature of the API response."
+          },
+          "system_fingerprint": {
+            "type": "string",
+            "description": "A unique fingerprint that identifies the system configuration used during the chat completion."
+          },
+          "usage": {
+            "description": "An object representing the usage statistics of the model for the current completion.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UsageDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "choices",
+          "created",
+          "id",
+          "model",
+          "object",
+          "system_fingerprint",
+          "usage"
+        ]
+      },
+      "CreateAssistantDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The unique identifier of the assistant."
+          },
+          "avatar": {
+            "type": "string",
+            "description": "The avatar of the assistant."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the assistant."
+          },
+          "description": {
+            "type": "string",
+            "description": "The description of the assistant."
+          },
+          "model": {
+            "type": "string",
+            "description": "The model of the assistant."
+          },
+          "instructions": {
+            "type": "string",
+            "description": "The instructions for the assistant."
+          },
+          "tools": {
+            "description": "The tools associated with the assistant.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssistantToolDto"
+            }
+          },
+          "file_ids": {
+            "description": "The identifiers of the files that have been uploaded to the thread.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "description": "The metadata of the assistant."
+          }
+        },
+        "required": [
+          "id",
+          "avatar",
+          "name",
+          "description",
+          "model",
+          "instructions",
+          "tools",
+          "file_ids"
+        ]
+      },
+      "AssistantEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "avatar": {
+            "type": "string"
+          },
+          "thread_location": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "file_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "avatar",
+          "object",
+          "created_at",
+          "name",
+          "model",
+          "file_ids"
+        ]
+      },
+      "DeleteAssistantResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "assistant_123",
+            "description": "The identifier of the assistant that was deleted."
+          },
+          "object": {
+            "type": "string",
+            "example": "assistant",
+            "description": "Type of the object, indicating it's a assistant.",
+            "default": "assistant"
+          },
+          "deleted": {
+            "type": "boolean",
+            "example": true,
+            "description": "Indicates whether the assistant was successfully deleted."
+          }
+        },
+        "required": ["id", "object", "deleted"]
+      }
+    }
+  }
+}

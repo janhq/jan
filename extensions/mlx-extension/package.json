@@ -1,0 +1,40 @@
+{
+  "name": "@janhq/mlx-extension",
+  "productName": "MLX Inference Engine",
+  "version": "1.0.0",
+  "description": "This extension enables MLX-Swift inference on Apple Silicon Macs",
+  "main": "dist/index.js",
+  "module": "dist/module.js",
+  "engine": "mlx",
+  "author": "Jan <service@jan.ai>",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "build": "rolldown -c rolldown.config.mjs",
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
+  },
+  "devDependencies": {
+    "cpx": "1.5.0",
+    "rimraf": "3.0.2",
+    "rolldown": "1.0.0-beta.1",
+    "typescript": "5.9.2"
+  },
+  "dependencies": {
+    "@janhq/core": "../../core/package.tgz",
+    "@janhq/tauri-plugin-llamacpp-api": "link:../../src-tauri/plugins/tauri-plugin-llamacpp",
+    "@janhq/tauri-plugin-mlx-api": "link:../../src-tauri/plugins/tauri-plugin-mlx",
+    "@tauri-apps/api": "2.8.0",
+    "@tauri-apps/plugin-http": "2.5.0",
+    "@tauri-apps/plugin-log": "^2.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/*",
+    "package.json"
+  ],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "packageManager": "yarn@4.5.3"
+}
