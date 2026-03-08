@@ -535,43 +535,57 @@ fn jan_cli_install_dir() -> Result<PathBuf, String> {
 fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
     use std::process::Command;
 
-    // Get current PATH from registry
-    let output = Command::new("reg")
+    let install_dir_str = install_dir.to_string_lossy().to_string();
+
+    // Use PowerShell to read the user-scoped PATH directly from the registry.
+    // This avoids %PATH% expansion which would include the system PATH and corrupt the user value.
+    let read_output = Command::new("powershell")
         .args([
-            "query",
-            "HKCU\\Environment",
-            "/v",
-            "Path",
+            "-NoProfile",
+            "-Command",
+            "[Environment]::GetEnvironmentVariable('Path', 'User')",
         ])
         .output()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("Failed to read user PATH: {}", e))?;
 
-    let current_path = if output.status.success() {
-        String::from_utf8_lossy(&output.stdout).to_string()
-    } else {
-        String::new()
-    };
+    let existing_user_path = String::from_utf8_lossy(&read_output.stdout)
+        .trim()
+        .to_string();
 
-    // Check if our install dir is already in PATH
-    let install_dir_str = install_dir.to_string_lossy().to_string();
-    if current_path.contains(&install_dir_str) {
-        return Ok(()); // Already in PATH
+    // Check if already present
+    if existing_user_path
+        .split(';')
+        .any(|p| p.eq_ignore_ascii_case(&install_dir_str))
+    {
+        return Ok(());
     }
 
-    // Add to PATH using setx
-    let new_path = format!("{};{}", install_dir_str, "%PATH%");
-    let output = Command::new("setx")
-        .args(["PATH", &new_path])
-        .output()
-        .map_err(|e| format!("Failed to add Jan to PATH: {}", e))?;
+    let new_path = if existing_user_path.is_empty() {
+        install_dir_str.clone()
+    } else {
+        format!("{};{}", install_dir_str, existing_user_path)
+    };
 
-    if !output.status.success() {
+    // Write back using PowerShell — also broadcasts WM_SETTINGCHANGE so shells notice immediately
+    let write_output = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            &format!(
+                "[Environment]::SetEnvironmentVariable('Path', '{}', 'User')",
+                new_path.replace('\'', "''") // escape single quotes for PS string
+            ),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to update user PATH: {}", e))?;
+
+    if !write_output.status.success() {
         return Err(format!(
             "Failed to update PATH: {}",
-            String::from_utf8_lossy(&output.stderr)
+            String::from_utf8_lossy(&write_output.stderr)
         ));
     }
 
-    log::info!("Added {} to Windows PATH", install_dir_str);
+    log::info!("Added {} to Windows user PATH", install_dir_str);
     Ok(())
 }
