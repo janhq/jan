@@ -456,6 +456,49 @@ pub fn run() {
                         }
                     }
 
+                    // OpenClaw gateway cleanup
+                    {
+                        use crate::core::openclaw::sandbox::Sandbox;
+                        use crate::core::openclaw::OpenClawState;
+                        let openclaw_state = app_handle.state::<OpenClawState>();
+                        let openclaw_future = async {
+                            let sandbox_guard = openclaw_state.sandbox.lock().await;
+                            match sandbox_guard.as_ref() {
+                                Some(sandbox) => {
+                                    crate::core::openclaw::lifecycle::stop_openclaw(
+                                        sandbox.as_ref(),
+                                        &openclaw_state,
+                                    )
+                                    .await
+                                }
+                                None => {
+                                    // Fallback: use DirectProcessSandbox to stop any running gateway
+                                    let direct =
+                                        crate::core::openclaw::sandbox_direct::DirectProcessSandbox;
+                                    let mut handle =
+                                        crate::core::openclaw::sandbox::SandboxHandle::Named(
+                                            "exit-cleanup".to_string(),
+                                        );
+                                    direct.stop(&mut handle).await
+                                }
+                            }
+                        };
+                        match tokio::time::timeout(
+                            tokio::time::Duration::from_secs(10),
+                            openclaw_future,
+                        )
+                        .await
+                        {
+                            Ok(Ok(_)) => {
+                                log::info!("OpenClaw cleanup completed successfully")
+                            }
+                            Ok(Err(e)) => log::warn!("OpenClaw cleanup failed: {}", e),
+                            Err(_) => {
+                                log::warn!("OpenClaw cleanup timed out after 10 seconds")
+                            }
+                        }
+                    }
+
                     log::info!("App cleanup completed");
                 });
             });

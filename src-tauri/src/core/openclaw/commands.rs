@@ -584,6 +584,86 @@ async fn test_gateway_connection() -> Result<(), String> {
     Ok(())
 }
 
+/// Validate gateway auth via WebSocket handshake + RPC health check.
+async fn validate_gateway_auth() -> Result<(), String> {
+    let mut ws_stream = connect_to_gateway().await
+        .map_err(|e| format!("Gateway unreachable: {}", e))?;
+
+    gateway_handshake(&mut ws_stream).await
+        .map_err(|e| format!("Gateway auth failed: {}", e))?;
+
+    let health_id = next_request_id();
+    let health_request = serde_json::json!({
+        "type": "req",
+        "id": health_id,
+        "method": "health",
+        "params": {}
+    });
+
+    let health_json = serde_json::to_string(&health_request)
+        .map_err(|e| format!("Failed to serialize health request: {}", e))?;
+
+    ws_stream.send(Message::Text(health_json))
+        .await
+        .map_err(|e| format!("Failed to send health request: {}", e))?;
+
+    let timeout = tokio::time::Duration::from_secs(5);
+    let health_result = tokio::time::timeout(timeout, async {
+        while let Some(msg) = ws_stream.next().await {
+            match msg {
+                Ok(Message::Text(text)) => {
+                    if let Ok(response) = serde_json::from_str::<GatewayResponse>(&text) {
+                        if response.msg_type == "res" && response.id == health_id {
+                            if response.ok {
+                                return Ok(());
+                            } else {
+                                let error_msg = response.error
+                                    .map(|e| {
+                                        e.get("message")
+                                            .and_then(|m| m.as_str())
+                                            .map(String::from)
+                                            .unwrap_or_else(|| e.to_string())
+                                    })
+                                    .unwrap_or_else(|| "Health check rejected".to_string());
+                                return Err(format!("Gateway health check failed: {}", error_msg));
+                            }
+                        }
+                    }
+                }
+                Ok(Message::Close(_)) => return Err("Connection closed during health check".to_string()),
+                Err(e) => return Err(format!("WebSocket error during health check: {}", e)),
+                _ => {}
+            }
+        }
+        Err("Connection closed before health response".to_string())
+    }).await;
+
+    let _ = ws_stream.close(None).await;
+
+    match health_result {
+        Ok(inner) => inner,
+        Err(_) => Err("Gateway health check timed out".to_string()),
+    }
+}
+
+/// Auto-fix gateway config issues via `openclaw doctor --fix`.
+async fn run_doctor_fix() -> Result<(), String> {
+    let output = openclaw_command(&["doctor", "--fix"]).await
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run openclaw doctor: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log::warn!("openclaw doctor --fix failed: {}", stderr);
+        Err(format!("Doctor fix failed: {}", stderr.trim()))
+    }
+}
+
 /// Restart the gateway. Docker: `docker restart`. Direct process: stop → install → start
 /// (launchd caches service args, so a plain `gateway restart` won't pick up config changes).
 async fn restart_gateway_cli() -> Result<(), String> {
@@ -736,8 +816,9 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
         if !cli_stopped {
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             {
+                // Match full command line — the actual process is `bun /path/to/openclaw gateway`
                 let _ = Command::new("pkill")
-                    .args(["-f", "openclaw-gateway"])
+                    .args(["-f", "openclaw"])
                     .output()
                     .await;
             }
@@ -762,6 +843,32 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+
+        // Port-based kill as last resort — kill whatever is holding the port
+        if crate::core::openclaw::lifecycle::is_port_in_use(OPENCLAW_PORT).await {
+            log::warn!("Port {} still in use after stop attempts, trying port-based kill", OPENCLAW_PORT);
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            {
+                let _ = Command::new("sh")
+                    .args(["-c", &format!("lsof -ti :{} | xargs kill -9", OPENCLAW_PORT)])
+                    .output()
+                    .await;
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                // Find and kill PID by port using netstat
+                if let Ok(output) = Command::new("cmd")
+                    .args(["/C", &format!("for /f \"tokens=5\" %a in ('netstat -aon ^| findstr :{} ^| findstr LISTENING') do taskkill /F /PID %a", OPENCLAW_PORT)])
+                    .creation_flags(0x08000000)
+                    .output()
+                    .await
+                {
+                    let _ = output;
+                }
+            }
         }
     }
 }
@@ -2087,7 +2194,62 @@ pub async fn openclaw_enable(
         }
     })?;
 
-    // Step 6: Get final status
+    let gateway_wait = if is_docker { 60 } else { 15 };
+    if !wait_for_gateway_ready(gateway_wait).await {
+        return Err(serde_json::to_string(&EnableError {
+            code: EnableErrorCode::GatewayStartFailed,
+            message: "Gateway did not become responsive after starting.".to_string(),
+            recovery: vec![RecoveryOption {
+                label: "Retry".to_string(),
+                action: RecoveryAction::Retry,
+                description: "Try the setup again.".to_string(),
+            }],
+        })
+        .unwrap_or_else(|_| "Gateway not responsive".to_string()));
+    }
+
+    // Validate gateway auth + health (direct process only)
+    if !is_docker {
+        emit("validating", 85, "Validating configuration...", sandbox_info.as_deref());
+        steps_completed.push(EnableStep::ValidatingConfig);
+
+        match validate_gateway_auth().await {
+            Ok(()) => {}
+            Err(e) => {
+                log::warn!("Gateway validation failed: {}", e);
+                let _ = run_doctor_fix().await;
+                let _ = restart_gateway_cli().await;
+
+                if wait_for_gateway_ready(15).await {
+                    if let Err(retry_err) = validate_gateway_auth().await {
+                        return Err(serde_json::to_string(&EnableError {
+                            code: EnableErrorCode::ValidationFailed,
+                            message: format!("Validation failed after auto-fix: {}", retry_err),
+                            recovery: vec![RecoveryOption {
+                                label: "Retry".to_string(),
+                                action: RecoveryAction::Retry,
+                                description: "Try the setup again.".to_string(),
+                            }],
+                        })
+                        .unwrap_or_else(|_| retry_err));
+                    }
+                } else {
+                    return Err(serde_json::to_string(&EnableError {
+                        code: EnableErrorCode::ValidationFailed,
+                        message: format!("Gateway did not recover after auto-fix: {}", e),
+                        recovery: vec![RecoveryOption {
+                            label: "Retry".to_string(),
+                            action: RecoveryAction::Retry,
+                            description: "Try the setup again.".to_string(),
+                        }],
+                    })
+                    .unwrap_or_else(|_| e));
+                }
+            }
+        }
+    }
+
+    // Get final status
     emit("complete", 100, "OpenClaw is ready!", sandbox_info.as_deref());
     let final_status = openclaw_status(state).await?;
 
@@ -2279,14 +2441,19 @@ pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClaw
     })
 }
 
-/// Restart the OpenClaw gateway via the sandbox abstraction.
+/// Restart the OpenClaw gateway. Blocks until the gateway is responsive.
 #[tauri::command]
 pub async fn openclaw_restart(state: State<'_, OpenClawState>) -> Result<(), String> {
-    log::info!("Restarting OpenClaw gateway");
-
     openclaw_stop(state.clone()).await?;
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-    openclaw_start(state).await
+    openclaw_start(state).await?;
+
+    let max_wait = if is_docker_container_running().await { 60 } else { 15 };
+    if !wait_for_gateway_ready(max_wait).await {
+        return Err("Gateway did not become responsive after restart".to_string());
+    }
+
+    Ok(())
 }
 
 /// Get the OpenClaw configuration directory path
@@ -3950,19 +4117,38 @@ pub async fn security_get_status() -> Result<SecurityStatus, String> {
 /// Set the authentication mode
 ///
 /// Changes how users authenticate to the OpenClaw gateway.
+/// When set to `None`, also removes the gateway auth token from `openclaw.json`.
 #[tauri::command]
 pub async fn security_set_auth_mode(mode: AuthMode) -> Result<(), String> {
     log::info!("Setting auth mode to {:?}", mode);
 
     let mut config = security::load_security_config().await?;
-    config.auth_mode = mode;
-    security::save_security_config(&config).await
+    config.auth_mode = mode.clone();
+    security::save_security_config(&config).await?;
+
+    // Sync auth mode to the gateway config
+    if mode == AuthMode::None {
+        if let Ok(mut oc_config) = read_openclaw_config() {
+            if let Some(auth) = oc_config.pointer_mut("/gateway/auth") {
+                if let Some(obj) = auth.as_object_mut() {
+                    obj.remove("token");
+                }
+            }
+            if let Err(e) = write_openclaw_config(&oc_config) {
+                log::warn!("Failed to clear gateway auth token: {}", e);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Generate and store a new access token
 ///
 /// Returns the plaintext token (only shown once). The token is
 /// stored as a hash and cannot be retrieved after this.
+/// Also updates the gateway auth token in `openclaw.json` so the
+/// OpenClaw gateway enforces the same token.
 #[tauri::command]
 pub async fn security_generate_token() -> Result<String, String> {
     log::info!("Generating new access token");
@@ -3974,6 +4160,14 @@ pub async fn security_generate_token() -> Result<String, String> {
     config.token_hash = Some(hash);
     config.auth_mode = AuthMode::Token;
     security::save_security_config(&config).await?;
+
+    // Sync the token to the gateway config so OpenClaw actually uses it
+    if let Ok(mut oc_config) = read_openclaw_config() {
+        oc_config["gateway"]["auth"]["token"] = serde_json::json!(token);
+        if let Err(e) = write_openclaw_config(&oc_config) {
+            log::warn!("Failed to sync token to gateway config: {}", e);
+        }
+    }
 
     Ok(token)
 }
