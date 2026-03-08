@@ -300,7 +300,7 @@
     "runtimeMode": "Mode Berjalan",
     "dockerSandbox": "Kontainer Docker",
     "directProcess": "Proses Langsung",
-    "securityAdvisory": "OpenClaw berjalan tanpa isolasi. Untuk keamanan lebih baik, aktifkan Docker untuk menjalankan OpenClaw dalam kontainer.",
+    "securityAdvisory": "OpenClaw berjalan tanpa isolasi sandbox. Untuk keamanan lebih baik, instal dan buka Docker Desktop, lalu mulai ulang OpenClaw untuk menjalankannya dalam kontainer.",
     "logViewer": "Log Sandbox",
     "noLogs": "Tidak ada log",
     "copyLogs": "Salin Semua",

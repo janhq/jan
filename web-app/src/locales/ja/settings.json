@@ -297,7 +297,7 @@
     "runtimeMode": "実行モード",
     "dockerSandbox": "Docker コンテナ",
     "directProcess": "ダイレクトプロセス",
-    "securityAdvisory": "OpenClawはサンドボックス隔離なしで実行されています。より安全な環境にするには、Dockerを有効にしてOpenClawをコンテナで実行してください。",
+    "securityAdvisory": "OpenClawはサンドボックス隔離なしで実行されています。より安全な環境にするには、Docker Desktopをインストールして開き、OpenClawを再起動してコンテナで実行してください。",
     "logViewer": "サンドボックスログ",
     "noLogs": "ログがありません",
     "copyLogs": "すべてコピー",

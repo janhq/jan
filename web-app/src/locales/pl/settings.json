@@ -300,7 +300,7 @@
     "runtimeMode": "Tryb uruchomienia",
     "dockerSandbox": "Kontener Docker",
     "directProcess": "Proces bezpośredni",
-    "securityAdvisory": "OpenClaw działa bez izolacji. Aby uzyskać lepsze bezpieczeństwo, włącz Docker, aby uruchomić OpenClaw w kontenerze.",
+    "securityAdvisory": "OpenClaw działa bez izolacji sandbox. Aby uzyskać lepsze bezpieczeństwo, zainstaluj i otwórz Docker Desktop, a następnie uruchom ponownie OpenClaw, aby uruchomić go w kontenerze.",
     "logViewer": "Logi piaskownicy",
     "noLogs": "Brak logów",
     "copyLogs": "Kopiuj wszystko",
