@@ -250,16 +250,13 @@ export function EnableProgressDialog({
     }
   }
 
-  const isDocker = sandboxInfo?.startsWith('Docker') ?? false
-
   const allSteps = [
     'checking_dependencies',
     'checking_installation',
     'installing',
     'configuring',
     'starting',
-    // Validation only runs for direct process, not Docker
-    ...(!isDocker ? ['validating'] : []),
+    'validating',
     'complete',
   ]
 

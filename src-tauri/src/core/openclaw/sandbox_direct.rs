@@ -136,7 +136,6 @@ impl Sandbox for DirectProcessSandbox {
         if !stopped_via_cli {
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             {
-                // Match full command line — the actual process is `bun /path/to/openclaw gateway`
                 let _ = tokio::process::Command::new("pkill")
                     .args(["-f", "openclaw"])
                     .output()
@@ -158,7 +157,7 @@ impl Sandbox for DirectProcessSandbox {
             }
         }
 
-        // Port-based kill as last resort — kill whatever is holding the port
+        // Port-based kill fallback
         if tokio::net::TcpStream::connect(format!("127.0.0.1:{}", super::OPENCLAW_PORT))
             .await
             .is_ok()
