@@ -77,8 +77,14 @@ impl DockerSandbox {
     }
 
     async fn get_client() -> Result<bollard::Docker, String> {
-        bollard::Docker::connect_with_local_defaults()
-            .map_err(|e| format!("Failed to connect to Docker: {}", e))
+        if std::env::var("DOCKER_HOST").is_ok() {
+            bollard::Docker::connect_with_local_defaults()
+        } else {
+            // connect_with_local_defaults falls back to HTTP localhost:2375,
+            // but standard Linux Docker only listens on /var/run/docker.sock.
+            bollard::Docker::connect_with_socket_defaults()
+        }
+        .map_err(|e| format!("Failed to connect to Docker: {}", e))
     }
 
     /// Check if the jan-openclaw container already exists (running or stopped).

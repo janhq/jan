@@ -816,7 +816,6 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
         if !cli_stopped {
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             {
-                // Match full command line — the actual process is `bun /path/to/openclaw gateway`
                 let _ = Command::new("pkill")
                     .args(["-f", "openclaw"])
                     .output()
@@ -845,9 +844,8 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
 
-        // Port-based kill as last resort — kill whatever is holding the port
+        // Port-based kill fallback
         if crate::core::openclaw::lifecycle::is_port_in_use(OPENCLAW_PORT).await {
-            log::warn!("Port {} still in use after stop attempts, trying port-based kill", OPENCLAW_PORT);
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             {
                 let _ = Command::new("sh")
@@ -859,7 +857,6 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
             #[cfg(target_os = "windows")]
             {
                 use std::os::windows::process::CommandExt;
-                // Find and kill PID by port using netstat
                 if let Ok(output) = Command::new("cmd")
                     .args(["/C", &format!("for /f \"tokens=5\" %a in ('netstat -aon ^| findstr :{} ^| findstr LISTENING') do taskkill /F /PID %a", OPENCLAW_PORT)])
                     .creation_flags(0x08000000)
@@ -2208,11 +2205,43 @@ pub async fn openclaw_enable(
         .unwrap_or_else(|_| "Gateway not responsive".to_string()));
     }
 
-    // Validate gateway auth + health (direct process only)
-    if !is_docker {
-        emit("validating", 85, "Validating configuration...", sandbox_info.as_deref());
-        steps_completed.push(EnableStep::ValidatingConfig);
+    emit("validating", 85, "Validating configuration...", sandbox_info.as_deref());
+    steps_completed.push(EnableStep::ValidatingConfig);
 
+    // Docker: port binds early but app layer may still be initialising.
+    // Poll validate_gateway_auth with retries instead of restarting.
+    if is_docker {
+        let deadline = tokio::time::Instant::now()
+            + tokio::time::Duration::from_secs(90);
+        let mut last_err = String::new();
+        loop {
+            match validate_gateway_auth().await {
+                Ok(()) => {
+                    last_err.clear();
+                    break;
+                }
+                Err(e) => {
+                    last_err = e;
+                    if tokio::time::Instant::now() >= deadline {
+                        break;
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                }
+            }
+        }
+        if !last_err.is_empty() {
+            return Err(serde_json::to_string(&EnableError {
+                code: EnableErrorCode::ValidationFailed,
+                message: format!("Gateway validation timed out: {}", last_err),
+                recovery: vec![RecoveryOption {
+                    label: "Retry".to_string(),
+                    action: RecoveryAction::Retry,
+                    description: "Try the setup again.".to_string(),
+                }],
+            })
+            .unwrap_or_else(|_| last_err));
+        }
+    } else {
         match validate_gateway_auth().await {
             Ok(()) => {}
             Err(e) => {
@@ -4114,10 +4143,7 @@ pub async fn security_get_status() -> Result<SecurityStatus, String> {
     })
 }
 
-/// Set the authentication mode
-///
-/// Changes how users authenticate to the OpenClaw gateway.
-/// When set to `None`, also removes the gateway auth token from `openclaw.json`.
+/// Set the authentication mode.
 #[tauri::command]
 pub async fn security_set_auth_mode(mode: AuthMode) -> Result<(), String> {
     log::info!("Setting auth mode to {:?}", mode);
@@ -4126,7 +4152,6 @@ pub async fn security_set_auth_mode(mode: AuthMode) -> Result<(), String> {
     config.auth_mode = mode.clone();
     security::save_security_config(&config).await?;
 
-    // Sync auth mode to the gateway config
     if mode == AuthMode::None {
         if let Ok(mut oc_config) = read_openclaw_config() {
             if let Some(auth) = oc_config.pointer_mut("/gateway/auth") {
@@ -4143,12 +4168,8 @@ pub async fn security_set_auth_mode(mode: AuthMode) -> Result<(), String> {
     Ok(())
 }
 
-/// Generate and store a new access token
-///
-/// Returns the plaintext token (only shown once). The token is
-/// stored as a hash and cannot be retrieved after this.
-/// Also updates the gateway auth token in `openclaw.json` so the
-/// OpenClaw gateway enforces the same token.
+/// Generate and store a new access token.
+/// Returns the plaintext token (only shown once).
 #[tauri::command]
 pub async fn security_generate_token() -> Result<String, String> {
     log::info!("Generating new access token");
@@ -4161,7 +4182,7 @@ pub async fn security_generate_token() -> Result<String, String> {
     config.auth_mode = AuthMode::Token;
     security::save_security_config(&config).await?;
 
-    // Sync the token to the gateway config so OpenClaw actually uses it
+    // Also write to gateway config so OpenClaw enforces this token
     if let Ok(mut oc_config) = read_openclaw_config() {
         oc_config["gateway"]["auth"]["token"] = serde_json::json!(token);
         if let Err(e) = write_openclaw_config(&oc_config) {

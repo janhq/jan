@@ -472,7 +472,6 @@ pub fn run() {
                                     .await
                                 }
                                 None => {
-                                    // Fallback: use DirectProcessSandbox to stop any running gateway
                                     let direct =
                                         crate::core::openclaw::sandbox_direct::DirectProcessSandbox;
                                     let mut handle =

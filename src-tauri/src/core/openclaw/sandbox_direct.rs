@@ -120,7 +120,22 @@ impl Sandbox for DirectProcessSandbox {
 
     async fn stop(&self, handle: &mut SandboxHandle) -> Result<(), String> {
         if let SandboxHandle::Process(child) = handle {
-            let _ = child.kill().await;
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(pid) = child.id() {
+                    use std::os::windows::process::CommandExt;
+                    let mut cmd = tokio::process::Command::new("taskkill");
+                    cmd.args(["/F", "/T", "/PID", &pid.to_string()]);
+                    cmd.creation_flags(0x08000000);
+                    let _ = cmd.output().await;
+                } else {
+                    let _ = child.kill().await;
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = child.kill().await;
+            }
             return Ok(());
         }
 
@@ -136,7 +151,6 @@ impl Sandbox for DirectProcessSandbox {
         if !stopped_via_cli {
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             {
-                // Match full command line — the actual process is `bun /path/to/openclaw gateway`
                 let _ = tokio::process::Command::new("pkill")
                     .args(["-f", "openclaw"])
                     .output()
@@ -148,7 +162,7 @@ impl Sandbox for DirectProcessSandbox {
                 use std::os::windows::process::CommandExt;
                 let kill = |im: &'static str| async move {
                     let mut cmd = tokio::process::Command::new("taskkill");
-                    cmd.args(["/F", "/IM", im]);
+                    cmd.args(["/F", "/T", "/IM", im]);
                     cmd.creation_flags(0x08000000);
                     let _ = cmd.output().await;
                 };
@@ -158,7 +172,7 @@ impl Sandbox for DirectProcessSandbox {
             }
         }
 
-        // Port-based kill as last resort — kill whatever is holding the port
+        // Port-based kill fallback
         if tokio::net::TcpStream::connect(format!("127.0.0.1:{}", super::OPENCLAW_PORT))
             .await
             .is_ok()
@@ -182,7 +196,7 @@ impl Sandbox for DirectProcessSandbox {
             {
                 use std::os::windows::process::CommandExt;
                 let mut cmd = tokio::process::Command::new("cmd");
-                cmd.args(["/C", &format!("for /f \"tokens=5\" %a in ('netstat -aon ^| findstr :{} ^| findstr LISTENING') do taskkill /F /PID %a", super::OPENCLAW_PORT)]);
+                cmd.args(["/C", &format!("for /f \"tokens=5\" %%a in ('netstat -aon ^| findstr :{} ^| findstr LISTENING') do taskkill /F /T /PID %%a", super::OPENCLAW_PORT)]);
                 cmd.creation_flags(0x08000000);
                 let _ = cmd.output().await;
             }
