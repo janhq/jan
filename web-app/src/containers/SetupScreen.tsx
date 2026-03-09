@@ -331,14 +331,12 @@ function SetupScreen() {
 
   // Navigate when download completes - using event listener for reliability
   useEffect(() => {
-    if (hasNavigatedRef.current) return
 
     const onDownloadSuccess = async (state: { modelId: string }) => {
       if (!defaultVariant || hasNavigatedRef.current) return
       if (state.modelId !== defaultVariant.model_id) return
 
       console.log('SetupScreen: Download completed, navigating to home...')
-      hasNavigatedRef.current = true
 
       // Wait a bit for model provider to update
       await new Promise((resolve) => setTimeout(resolve, 500))

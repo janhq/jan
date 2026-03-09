@@ -255,6 +255,7 @@ const SettingsMenu = () => {
                 className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
               >
                 <span>{t('common:openclaw')}</span>
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400">{t('common:experimental')}</span>
               </Link>
             </div>
           </div>

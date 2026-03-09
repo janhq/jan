@@ -5,6 +5,7 @@
   "local_api_server": "Lokální API server",
   "https_proxy": "HTTPS Proxy",
   "extensions": "Rozšíření",
+  "experimental": "Experimentální",
   "general": "Obecné",
   "settings": "Nastavení",
   "modelProviders": "Poskytovatelé modelů",

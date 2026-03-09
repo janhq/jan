@@ -6,6 +6,7 @@
   "https_proxy": "HTTPSプロキシ",
   "extensions": "拡張機能",
   "attachments": "添付ファイル",
+  "experimental": "実験的",
   "general": "全般",
   "settings": "設定",
   "modelProviders": "モデルプロバイダー",

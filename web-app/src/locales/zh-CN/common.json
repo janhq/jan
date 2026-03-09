@@ -6,6 +6,7 @@
   "https_proxy": "HTTPS 代理",
   "extensions": "扩展",
   "attachments": "附件",
+  "experimental": "实验性",
   "general": "通用",
   "settings": "设置",
   "modelProviders": "模型提供商",
