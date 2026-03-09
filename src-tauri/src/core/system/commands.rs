@@ -341,10 +341,19 @@ pub struct CliInstallStatus {
 
 /// Check if the `jan` CLI binary is accessible on PATH.
 #[tauri::command]
-pub fn check_jan_cli_installed() -> CliInstallStatus {
+pub async fn check_jan_cli_installed() -> CliInstallStatus {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    match std::process::Command::new(which_cmd).arg("jan").output() {
-        Ok(out) if out.status.success() => CliInstallStatus {
+    let mut cmd = std::process::Command::new(which_cmd);
+    cmd.arg("jan");
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    match tokio::task::spawn_blocking(move || cmd.output()).await {
+        Ok(Ok(out)) if out.status.success() => CliInstallStatus {
             installed: true,
             path: Some(String::from_utf8_lossy(&out.stdout).trim().to_string()),
         },
