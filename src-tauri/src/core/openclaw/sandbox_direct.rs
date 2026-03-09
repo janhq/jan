@@ -102,10 +102,9 @@ impl Sandbox for DirectProcessSandbox {
 
             Ok(SandboxHandle::Named("direct-process".to_string()))
         } else {
-            // Service registration failed (e.g. Windows without admin).
-            // Fall back to `openclaw gateway` as a child process.
             log::info!("Service install unavailable, starting gateway as child process");
             let mut cmd = build_openclaw_command(&["gateway"], &config.config_dir);
+            cmd.stdout(Stdio::null()).stderr(Stdio::null());
             for (key, value) in &config.env_vars {
                 cmd.env(key, value);
             }
@@ -142,10 +141,8 @@ impl Sandbox for DirectProcessSandbox {
         let mut stopped_via_cli = false;
         let config_dir = super::get_openclaw_config_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let mut stop_cmd = build_openclaw_command(&["gateway", "stop"], &config_dir);
-        if let Ok(mut child) = stop_cmd.spawn() {
-            if let Ok(status) = child.wait().await {
-                stopped_via_cli = status.success();
-            }
+        if let Ok(output) = stop_cmd.output().await {
+            stopped_via_cli = output.status.success();
         }
 
         if !stopped_via_cli {

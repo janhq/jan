@@ -160,6 +160,7 @@ pub fn run() {
         core::openclaw::commands::openclaw_start,
         core::openclaw::commands::openclaw_stop,
         core::openclaw::commands::openclaw_status,
+        core::openclaw::commands::openclaw_check_gateway,
         core::openclaw::commands::openclaw_restart,
         core::openclaw::commands::openclaw_get_config_dir,
         core::openclaw::commands::openclaw_ensure_jan_origin,
