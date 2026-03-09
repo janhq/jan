@@ -11,7 +11,7 @@
   "settings": "設定",
   "modelProviders": "モデルプロバイダー",
   "manageProviders": "Manage providers",
-  "hiddenProviders": "{{count}} hidden",
+  "hiddenProviders": "{{count}} disabled",
   "interface": "外観",
   "privacy": "プライバシー",
   "keyboardShortcuts": "ショートカット",

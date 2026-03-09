@@ -15,7 +15,7 @@
   "settings": "Settings",
   "modelProviders": "Model Providers",
   "manageProviders": "Manage providers",
-  "hiddenProviders": "{{count}} hidden",
+  "hiddenProviders": "{{count}} disabled",
   "hideProvider": "Hide provider",
   "showProvider": "Show provider",
   "interface": "Interface",

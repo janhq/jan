@@ -11,7 +11,7 @@
   "settings": "設定",
   "modelProviders": "模型提供者",
   "manageProviders": "Manage providers",
-  "hiddenProviders": "{{count}} hidden",
+  "hiddenProviders": "{{count}} disabled",
   "interface": "外觀",
   "privacy": "隱私",
   "keyboardShortcuts": "快捷鍵",

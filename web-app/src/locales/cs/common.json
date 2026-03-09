@@ -10,7 +10,7 @@
   "settings": "Nastavení",
   "modelProviders": "Poskytovatelé modelů",
   "manageProviders": "Manage providers",
-  "hiddenProviders": "{{count}} hidden",
+  "hiddenProviders": "{{count}} disabled",
   "attachments": "Přílohy",
   "interface": "Rozhraní",
   "privacy": "Soukromí",

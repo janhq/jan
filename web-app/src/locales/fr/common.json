@@ -11,7 +11,7 @@
   "settings": "Configurations",
   "modelProviders": "Fournisseurs de Modèles",
   "manageProviders": "Manage providers",
-  "hiddenProviders": "{{count}} hidden",
+  "hiddenProviders": "{{count}} disabled",
   "interface": "Interface",
   "privacy": "Confidentialité",
   "keyboardShortcuts": "Raccourcis Clavier",
