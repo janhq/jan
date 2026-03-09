@@ -314,6 +314,10 @@
     "copyUrl": "Salin URL",
     "openUrl": "Buka URL",
     "activeTunnel": "Terowongan Aktif",
+    "openclawFolder": "OpenClaw Folder",
+    "openclawFolderDesc": "Edit Soul.md, User.md dan file konfigurasi lainnya",
+    "gatewayUrl": "OpenClaw Dashboard",
+    "gatewayUrlDesc": "Buka dasbor web",
     "addChannel": {
       "title": "Tambah Channel",
       "description": "Pilih platform pesan untuk disambungkan",

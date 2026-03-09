@@ -314,6 +314,10 @@
     "copyUrl": "复制 URL",
     "openUrl": "打开 URL",
     "activeTunnel": "活跃隧道",
+    "openclawFolder": "OpenClaw Folder",
+    "openclawFolderDesc": "编辑 Soul.md、User.md 及其他配置文件",
+    "gatewayUrl": "OpenClaw Dashboard",
+    "gatewayUrlDesc": "打开网页控制台",
     "addChannel": {
       "title": "添加频道",
       "description": "选择要连接的消息平台",

@@ -354,6 +354,7 @@ const isRunning = status?.running ?? false
               {isRunning && (
                 <CardItem
                   title={t('settings:remoteAccess.gatewayUrl')}
+                  description={t('settings:remoteAccess.gatewayUrlDesc')}
                   actions={
                     <div className="flex items-center gap-2">
                       <code className="text-sm font-mono text-foreground bg-secondary px-2 py-1 rounded">

@@ -311,6 +311,10 @@
     "copyUrl": "URLをコピー",
     "openUrl": "URLを開く",
     "activeTunnel": "アクティブトンネル",
+    "openclawFolder": "OpenClaw Folder",
+    "openclawFolderDesc": "Soul.md、User.md などの設定ファイルを編集する",
+    "gatewayUrl": "OpenClaw Dashboard",
+    "gatewayUrlDesc": "ウェブダッシュボードを開く",
     "addChannel": {
       "title": "チャンネルを追加",
       "description": "接続するメッセージングプラットフォームを選択",

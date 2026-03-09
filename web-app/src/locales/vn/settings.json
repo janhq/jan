@@ -314,6 +314,10 @@
     "copyUrl": "Sao chép URL",
     "openUrl": "Mở URL",
     "activeTunnel": "Đường hầm hoạt động",
+    "openclawFolder": "OpenClaw Folder",
+    "openclawFolderDesc": "Chỉnh sửa Soul.md, User.md và các tệp cấu hình khác",
+    "gatewayUrl": "OpenClaw Dashboard",
+    "gatewayUrlDesc": "Mở bảng điều khiển web",
     "addChannel": {
       "title": "Thêm kênh",
       "description": "Chọn nền tảng nhắn tin để kết nối",
