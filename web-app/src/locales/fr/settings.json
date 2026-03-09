@@ -338,7 +338,7 @@
     "runtimeMode": "Mode d'exécution",
     "dockerSandbox": "Conteneur Docker",
     "directProcess": "Processus direct",
-    "securityAdvisory": "OpenClaw s'exécute sans isolation. Pour une meilleure sécurité, activez Docker pour exécuter OpenClaw dans un conteneur.",
+    "securityAdvisory": "OpenClaw s'exécute sans isolation sandbox. Pour une meilleure sécurité, installez et ouvrez Docker Desktop, puis redémarrez OpenClaw pour l'exécuter dans un conteneur.",
     "logViewer": "Logs du bac à sable",
     "noLogs": "Aucun log disponible",
     "copyLogs": "Tout copier",

@@ -300,7 +300,7 @@
     "runtimeMode": "运行模式",
     "dockerSandbox": "Docker 容器",
     "directProcess": "直接进程",
-    "securityAdvisory": "OpenClaw 正在无沙箱隔离的环境下运行。为了更好的安全性，请启用 Docker 以在容器中运行 OpenClaw。",
+    "securityAdvisory": "OpenClaw 正在无沙箱隔离的环境下运行。为了更好的安全性，请安装并打开 Docker Desktop，然后重新启动 OpenClaw 以在容器中运行。",
     "logViewer": "沙箱日志",
     "noLogs": "暂无日志",
     "copyLogs": "全部复制",

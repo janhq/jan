@@ -13,6 +13,9 @@
   "privacy": "Конфиденциальность",
   "keyboardShortcuts": "Сочетания клавиш",
   "newChat": "Новый чат",
+  "newAgentChat": "Новый чат агента",
+  "chats": "Чаты",
+  "openclawAgent": "OpenClaw Агент",
   "favorites": "Избранное",
   "recents": "Недавние",
   "hub": "Хаб",
@@ -242,6 +245,7 @@
   },
   "projects": {
     "title": "Проекты",
+    "new": "Новые Проекты",
     "addProject": "Добавить проект",
     "addToProject": "Добавить в проект",
     "removeFromProject": "Удалить из проекта",

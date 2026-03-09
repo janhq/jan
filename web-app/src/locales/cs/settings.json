@@ -332,7 +332,7 @@
     "runtimeMode": "Režim běhu",
     "dockerSandbox": "Docker kontejner",
     "directProcess": "Přímý proces",
-    "securityAdvisory": "OpenClaw běží bez izolace. Pro lepší bezpečnost povolte Docker pro spuštění OpenClaw v kontejneru.",
+    "securityAdvisory": "OpenClaw běží bez izolace sandboxu. Pro lepší bezpečnost nainstalujte a otevřete Docker Desktop, poté restartujte OpenClaw pro spuštění v kontejneru.",
     "logViewer": "Logy pískoviště",
     "noLogs": "Žádné logy",
     "copyLogs": "Kopírovat vše",

@@ -344,7 +344,7 @@
     "runtimeMode": "Runtime Mode",
     "dockerSandbox": "Docker Container",
     "directProcess": "Direct Process",
-    "securityAdvisory": "OpenClaw is running without sandbox isolation. For better security, enable Docker to run OpenClaw in a container.",
+    "securityAdvisory": "OpenClaw is running without sandbox isolation. For better security, install and open Docker Desktop, then restart OpenClaw to run it in a container.",
     "logViewer": "Sandbox Logs",
     "noLogs": "No logs available",
     "copyLogs": "Copy All",
