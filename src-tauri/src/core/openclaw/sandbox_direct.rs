@@ -111,7 +111,9 @@ impl Sandbox for DirectProcessSandbox {
             #[cfg(target_os = "windows")]
             {
                 use std::os::windows::process::CommandExt;
-                cmd.creation_flags(0x08000000 | 0x00000008); // CREATE_NO_WINDOW | DETACHED_PROCESS
+                // CREATE_NO_WINDOW only — DETACHED_PROCESS conflicts and can
+                // cause Windows to allocate a visible console for the child.
+                cmd.creation_flags(0x08000000);
             }
             for (key, value) in &config.env_vars {
                 cmd.env(key, value);
