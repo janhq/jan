@@ -352,6 +352,10 @@
     "copyUrl": "Копировать URL",
     "openUrl": "Открыть URL",
     "activeTunnel": "Активный туннель",
+    "openclawFolder": "OpenClaw Folder",
+    "openclawFolderDesc": "Редактируйте Soul.md, User.md и другие конфигурационные файлы",
+    "gatewayUrl": "OpenClaw Dashboard",
+    "gatewayUrlDesc": "Открыть веб-панель управления",
     "addChannel": {
       "title": "Добавить канал",
       "description": "Выберите мессенджер для подключения",

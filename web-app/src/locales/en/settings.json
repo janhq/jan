@@ -358,6 +358,10 @@
     "copyUrl": "Copy URL",
     "openUrl": "Open URL",
     "activeTunnel": "Active Tunnel",
+    "openclawFolder": "OpenClaw Folder",
+    "openclawFolderDesc": "Open the folder to edit Soul.md, User.md and other config files",
+    "gatewayUrl": "OpenClaw Dashboard",
+    "gatewayUrlDesc": "Open the web dashboard",
     "addChannel": {
       "title": "Add Channel",
       "description": "Select a messaging platform to connect",

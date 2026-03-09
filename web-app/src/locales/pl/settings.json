@@ -314,6 +314,10 @@
     "copyUrl": "Kopiuj URL",
     "openUrl": "Otwórz URL",
     "activeTunnel": "Aktywny tunel",
+    "openclawFolder": "OpenClaw Folder",
+    "openclawFolderDesc": "Edytuj Soul.md, User.md i inne pliki konfiguracyjne",
+    "gatewayUrl": "OpenClaw Dashboard",
+    "gatewayUrlDesc": "Otwórz panel sterowania w przeglądarce",
     "addChannel": {
       "title": "Dodaj kanał",
       "description": "Wybierz platformę komunikacyjną do połączenia",

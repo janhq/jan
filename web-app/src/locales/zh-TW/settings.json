@@ -314,6 +314,10 @@
     "copyUrl": "複製 URL",
     "openUrl": "開啟 URL",
     "activeTunnel": "活躍隧道",
+    "openclawFolder": "OpenClaw Folder",
+    "openclawFolderDesc": "編輯 Soul.md、User.md 及其他設定檔",
+    "gatewayUrl": "OpenClaw Dashboard",
+    "gatewayUrlDesc": "開啟網頁控制台",
     "addChannel": {
       "title": "新增頻道",
       "description": "選擇要連接的訊息平台",

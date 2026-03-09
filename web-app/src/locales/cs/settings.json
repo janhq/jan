@@ -346,6 +346,10 @@
     "copyUrl": "Kopírovat URL",
     "openUrl": "Otevřít URL",
     "activeTunnel": "Aktivní tunel",
+    "openclawFolder": "OpenClaw Folder",
+    "openclawFolderDesc": "Upravte Soul.md, User.md a další konfigurační soubory",
+    "gatewayUrl": "OpenClaw Dashboard",
+    "gatewayUrlDesc": "Otevřete webový dashboard",
     "addChannel": {
       "title": "Přidat kanál",
       "description": "Vyberte messaging platformu k připojení",

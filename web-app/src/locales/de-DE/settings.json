@@ -314,6 +314,10 @@
     "copyUrl": "URL kopieren",
     "openUrl": "URL öffnen",
     "activeTunnel": "Aktiver Tunnel",
+    "openclawFolder": "OpenClaw Folder",
+    "openclawFolderDesc": "Soul.md, User.md und andere Konfigurationsdateien bearbeiten",
+    "gatewayUrl": "OpenClaw Dashboard",
+    "gatewayUrlDesc": "Das Web-Dashboard öffnen",
     "addChannel": {
       "title": "Kanal hinzufügen",
       "description": "Wählen Sie eine Messaging-Plattform zum Verbinden",
