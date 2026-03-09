@@ -23,6 +23,7 @@ import {
   IconExternalLink,
   IconFileText,
   IconAlertTriangle,
+  IconFolder,
 } from '@tabler/icons-react'
 import type {
   ChannelType,
@@ -57,6 +58,8 @@ const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
   const [, setSecurityStatus] = useState<SecurityStatus | null>(null)
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null)
   const [whatsappConfig, setWhatsAppConfig] = useState<WhatsAppConfig | null>(null)
+  const [gatewayToken, setGatewayToken] = useState<string>('')
+  const [gatewayPort, setGatewayPort] = useState<number>(18789)
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -114,6 +117,8 @@ const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
     fetchWhatsAppConfig()
     fetchTunnelStatus()
     fetchSecurityStatus()
+    invoke<string>('openclaw_get_auth_token').then(setGatewayToken).catch(() => {})
+    invoke<{ gateway: { port: number } }>('openclaw_get_config').then((c) => setGatewayPort(c.gateway.port)).catch(() => {})
   }, [fetchStatus, fetchTelegramConfig, fetchWhatsAppConfig, fetchTunnelStatus, fetchSecurityStatus])
 
   const refreshAllStatus = useCallback(async () => {
@@ -205,7 +210,7 @@ const isRunning = status?.running ?? false
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Status Card */}
             {/* <Card title={t('settings:remoteAccess.title')}>
-              <CardItem 
+              <CardItem
                 title={t('settings:remoteAccess.status')}
                 actions={
                   <div className="flex items-center gap-2">
@@ -326,6 +331,56 @@ const isRunning = status?.running ?? false
                     {t('settings:remoteAccess.securityAdvisory')}
                   </p>
                 </div>
+              )}
+
+              <CardItem
+                title={t('settings:remoteAccess.openclawFolder')}
+                description={t('settings:remoteAccess.openclawFolderDesc')}
+                actions={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={async () => {
+                      const dir = await invoke<string>('openclaw_get_config_dir')
+                      await invoke('open_file_explorer', { path: dir })
+                    }}
+                    title={t('settings:remoteAccess.openclawFolder')}
+                  >
+                    <IconFolder className="h-4 w-4" />
+                  </Button>
+                }
+              />
+
+              {isRunning && (
+                <CardItem
+                  title={t('settings:remoteAccess.gatewayUrl')}
+                  actions={
+                    <div className="flex items-center gap-2">
+                      <code className="text-sm font-mono text-foreground bg-secondary px-2 py-1 rounded">
+                        {gatewayToken
+                          ? `http://localhost:${gatewayPort}?token=****`
+                          : `http://localhost:${gatewayPort}`}
+                      </code>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => handleCopyUrl(gatewayToken ? `http://localhost:${gatewayPort}?token=${gatewayToken}` : `http://localhost:${gatewayPort}`)}
+                        title={t('settings:remoteAccess.copyUrl')}
+                      >
+                        <IconCopy className="h-4 w-4" />
+                      </Button>
+                      <a
+                        href={gatewayToken ? `http://localhost:${gatewayPort}?token=${gatewayToken}` : `http://localhost:${gatewayPort}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={t('settings:remoteAccess.openUrl')}
+                        className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent transition-colors"
+                      >
+                        <IconExternalLink className="h-4 w-4" />
+                      </a>
+                    </div>
+                  }
+                />
               )}
 
               <div className="space-y-3 mt-4">
