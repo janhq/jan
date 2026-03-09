@@ -333,7 +333,7 @@ const isRunning = status?.running ?? false
                 </div>
               )}
 
-              <CardItem
+              {isRunning && (<CardItem
                 title={t('settings:remoteAccess.openclawFolder')}
                 description={t('settings:remoteAccess.openclawFolderDesc')}
                 actions={
@@ -350,6 +350,7 @@ const isRunning = status?.running ?? false
                   </Button>
                 }
               />
+              )}
 
               {isRunning && (
                 <CardItem
