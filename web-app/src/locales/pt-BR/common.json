@@ -10,6 +10,8 @@
   "general": "Geral",
   "settings": "Configurações",
   "modelProviders": "Provedores de Modelo",
+  "manageProviders": "Manage providers",
+  "hiddenProviders": "{{count}} disabled",
   "appearance": "Aparência",
   "privacy": "Privacidade",
   "keyboardShortcuts": "Atalhos",

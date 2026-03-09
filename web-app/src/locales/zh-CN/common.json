@@ -10,6 +10,8 @@
   "general": "通用",
   "settings": "设置",
   "modelProviders": "模型提供商",
+  "manageProviders": "Manage providers",
+  "hiddenProviders": "{{count}} disabled",
   "interface": "外观",
   "privacy": "隐私",
   "keyboardShortcuts": "快捷键",

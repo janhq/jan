@@ -10,6 +10,8 @@
   "general": "Umum",
   "settings": "Pengaturan",
   "modelProviders": "Penyedia Model",
+  "manageProviders": "Manage providers",
+  "hiddenProviders": "{{count}} disabled",
   "interface": "Tampilan",
   "privacy": "Privasi",
   "keyboardShortcuts": "Pintasan",

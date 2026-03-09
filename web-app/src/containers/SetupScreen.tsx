@@ -336,24 +336,39 @@ function SetupScreen() {
       if (!defaultVariant || hasNavigatedRef.current) return
       if (state.modelId !== defaultVariant.model_id) return
 
+      // Mark navigated immediately to prevent duplicate handling from both events
+      hasNavigatedRef.current = true
+
       console.log('SetupScreen: Download completed, navigating to home...')
 
-      // Wait a bit for model provider to update
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      // Poll until the model appears in the provider list (max 10s)
+      const modelId = defaultVariant.model_id
+      let modelFound = false
+      for (let i = 0; i < 20; i++) {
+        const result = selectModelProvider('llamacpp', modelId)
+        if (result) {
+          modelFound = true
+          break
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
 
-      toast.dismiss(`model-validation-started-${defaultVariant.model_id}`)
+      if (!modelFound) {
+        console.warn('SetupScreen: Model not found in provider after waiting, selecting anyway')
+        selectModelProvider('llamacpp', modelId)
+      }
+
+      toast.dismiss(`model-validation-started-${modelId}`)
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
-
-      selectModelProvider('llamacpp', defaultVariant.model_id)
       localStorage.setItem(
         localStorageKey.lastUsedModel,
-        JSON.stringify({ provider: 'llamacpp', model: defaultVariant.model_id })
+        JSON.stringify({ provider: 'llamacpp', model: modelId })
       )
       navigate({
         to: route.home,
         replace: true,
         search: {
-          threadModel: { id: defaultVariant.model_id, provider: 'llamacpp' },
+          threadModel: { id: modelId, provider: 'llamacpp' },
         },
       })
     }

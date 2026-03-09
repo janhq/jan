@@ -10,6 +10,8 @@
   "general": "Общие",
   "settings": "Настройки",
   "modelProviders": "Поставщики моделей",
+  "manageProviders": "Manage providers",
+  "hiddenProviders": "{{count}} disabled",
   "interface": "Интерфейс",
   "privacy": "Конфиденциальность",
   "keyboardShortcuts": "Сочетания клавиш",

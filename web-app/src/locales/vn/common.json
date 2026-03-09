@@ -10,6 +10,8 @@
   "general": "Chung",
   "settings": "Cài đặt",
   "modelProviders": "Nhà cung cấp Mô hình",
+  "manageProviders": "Manage providers",
+  "hiddenProviders": "{{count}} disabled",
   "interface": "Giao diện",
   "privacy": "Quyền riêng tư",
   "keyboardShortcuts": "Phím tắt",
