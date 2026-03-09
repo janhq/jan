@@ -12,6 +12,9 @@ pub mod security;
 pub mod tailscale;
 pub mod tunnels;
 
+#[cfg(test)]
+mod tests;
+
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
