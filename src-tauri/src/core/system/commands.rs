@@ -353,10 +353,24 @@ pub async fn check_jan_cli_installed() -> CliInstallStatus {
     }
 
     match tokio::task::spawn_blocking(move || cmd.output()).await {
-        Ok(Ok(out)) if out.status.success() => CliInstallStatus {
-            installed: true,
-            path: Some(String::from_utf8_lossy(&out.stdout).trim().to_string()),
-        },
+        Ok(Ok(out)) if out.status.success() => {
+            let raw = String::from_utf8_lossy(&out.stdout);
+            #[cfg(windows)]
+            let path = {
+                // `where` returns one path per line; pick the first that isn't a
+                // dev-build artifact (i.e. skip paths containing \target\)
+                raw.lines()
+                    .map(str::trim)
+                    .filter(|p| !p.is_empty() && !p.to_ascii_lowercase().contains("\\target\\"))
+                    .next()
+                    .map(str::to_string)
+                    // fall back to the raw first line if every path looks like a build dir
+                    .or_else(|| raw.lines().map(str::trim).find(|p| !p.is_empty()).map(str::to_string))
+            };
+            #[cfg(not(windows))]
+            let path = Some(raw.trim().to_string());
+            CliInstallStatus { installed: path.is_some(), path }
+        }
         _ => CliInstallStatus { installed: false, path: None },
     }
 }
