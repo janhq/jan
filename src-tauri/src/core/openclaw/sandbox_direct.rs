@@ -64,27 +64,30 @@ impl Sandbox for DirectProcessSandbox {
             log::warn!("Failed to ensure node shim: {}", e);
         }
 
-        // On Windows, schtasks requires admin and may fail.
-        let install_args = if super::resolve_bundled_bun().is_some() {
-            vec!["gateway", "install", "--runtime", "bun"]
+        let use_child_process = if cfg!(target_os = "windows") {
+            true
         } else {
-            vec!["gateway", "install"]
-        };
-        let mut install_cmd = build_openclaw_command(&install_args.iter().map(|s| *s).collect::<Vec<_>>(), &config.config_dir);
-        let service_installed = match install_cmd.output().await {
-            Ok(output) if !output.status.success() => {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                log::error!("gateway install failed: {}", stderr.trim());
-                false
+            let install_args = if super::resolve_bundled_bun().is_some() {
+                vec!["gateway", "install", "--runtime", "bun"]
+            } else {
+                vec!["gateway", "install"]
+            };
+            let mut install_cmd = build_openclaw_command(&install_args.iter().map(|s| *s).collect::<Vec<_>>(), &config.config_dir);
+            match install_cmd.output().await {
+                Ok(output) if output.status.success() => false,
+                Ok(output) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    log::error!("gateway install failed: {}", stderr.trim());
+                    true
+                }
+                Err(e) => {
+                    log::error!("Failed to run gateway install: {}", e);
+                    true
+                }
             }
-            Err(e) => {
-                log::error!("Failed to run gateway install: {}", e);
-                false
-            }
-            _ => true,
         };
 
-        if service_installed {
+        if !use_child_process {
             let mut cmd = build_openclaw_command(&["gateway", "start"], &config.config_dir);
             for (key, value) in &config.env_vars {
                 cmd.env(key, value);
@@ -102,9 +105,14 @@ impl Sandbox for DirectProcessSandbox {
 
             Ok(SandboxHandle::Named("direct-process".to_string()))
         } else {
-            log::info!("Service install unavailable, starting gateway as child process");
+            log::info!("Starting gateway as child process");
             let mut cmd = build_openclaw_command(&["gateway"], &config.config_dir);
-            cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x00000008); // DETACHED_PROCESS
+            }
             for (key, value) in &config.env_vars {
                 cmd.env(key, value);
             }

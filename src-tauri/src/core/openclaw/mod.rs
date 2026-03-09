@@ -123,8 +123,6 @@ pub fn resolve_bundled_bun() -> Option<std::path::PathBuf> {
     None
 }
 
-/// Create a `node` shim (symlink on Unix, copy on Windows) pointing to bundled Bun.
-/// Used as fallback for shebang resolution in service files.
 pub fn ensure_bun_node_shim() -> Result<(), String> {
     let bun_path = resolve_bundled_bun().ok_or("Bundled Bun not found")?;
     let runtime_dir = get_openclaw_runtime_dir()?;
@@ -169,24 +167,27 @@ pub fn ensure_bun_node_shim() -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        let needs_copy = if node_shim.exists() {
-            let bun_modified = std::fs::metadata(&bun_path)
-                .and_then(|m| m.modified())
-                .ok();
-            let shim_modified = std::fs::metadata(&node_shim)
-                .and_then(|m| m.modified())
-                .ok();
-            match (bun_modified, shim_modified) {
-                (Some(b), Some(s)) => b > s,
-                _ => true,
-            }
-        } else {
-            true
-        };
+        let bun_modified = std::fs::metadata(&bun_path)
+            .and_then(|m| m.modified())
+            .ok();
 
-        if needs_copy {
-            std::fs::copy(&bun_path, &node_shim)
-                .map_err(|e| format!("Failed to copy bun as node: {}", e))?;
+        for shim in &[node_shim, runtime_bin.join("bun.exe")] {
+            let needs_copy = if shim.exists() {
+                let shim_modified = std::fs::metadata(shim)
+                    .and_then(|m| m.modified())
+                    .ok();
+                match (bun_modified, shim_modified) {
+                    (Some(b), Some(s)) => b > s,
+                    _ => true,
+                }
+            } else {
+                true
+            };
+
+            if needs_copy {
+                std::fs::copy(&bun_path, shim)
+                    .map_err(|e| format!("Failed to copy bun to {}: {}", shim.display(), e))?;
+            }
         }
     }
 
