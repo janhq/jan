@@ -1,5 +1,4 @@
 import { invoke } from '@tauri-apps/api/core'
-import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useAppState } from '@/hooks/useAppState'
 
@@ -176,6 +175,15 @@ export async function getOpenClawAuthToken(forceRefresh = false): Promise<string
   }
 }
 
+/** TCP-level gateway reachability check via Tauri IPC. Works on all platforms. */
+export async function checkOpenClawGateway(): Promise<boolean> {
+  try {
+    return await invoke<boolean>('openclaw_check_gateway')
+  } catch {
+    return false
+  }
+}
+
 /** Get the currently configured model in OpenClaw. */
 export async function getOpenClawModel(): Promise<string | null> {
   try {
@@ -185,27 +193,3 @@ export async function getOpenClawModel(): Promise<string | null> {
   }
 }
 
-/** Verify the OpenClaw gateway is reachable. Throws if not. */
-export async function checkOpenClawGatewayReachable(): Promise<void> {
-  try {
-    const res = await httpFetch(`${OPENCLAW_GATEWAY_URL}/models`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(5_000),
-    })
-    if (!res.ok) {
-      const body = await res.text().catch(() => '')
-      throw new Error(
-        `OpenClaw gateway returned HTTP ${res.status}${body ? `: ${body}` : ''}`
-      )
-    }
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith('OpenClaw gateway returned')) {
-      throw error
-    }
-    const msg = error instanceof Error ? error.message : String(error)
-    throw new Error(
-      `Cannot reach the OpenClaw gateway at ${OPENCLAW_GATEWAY_URL}. ` +
-      `Please make sure the local API server is running.\n\nDetails: ${msg}`
-    )
-  }
-}

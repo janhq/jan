@@ -2394,6 +2394,13 @@ pub async fn openclaw_stop(state: State<'_, OpenClawState>) -> Result<(), String
     }
 }
 
+/// Lightweight gateway reachability check (TCP only, no HTTP).
+/// Used by the frontend before sending agent-mode chat requests.
+#[tauri::command]
+pub async fn openclaw_check_gateway() -> bool {
+    check_gateway_responding().await
+}
+
 /// Get the current OpenClaw status, including sandbox information.
 #[tauri::command]
 pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClawStatus, String> {

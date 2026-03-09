@@ -16,7 +16,7 @@ import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useAgentMode } from '@/hooks/useAgentMode'
-import { getOpenClawAuthToken, ensureOpenClawHttpApi, OPENCLAW_GATEWAY_URL, checkOpenClawGatewayReachable } from '@/utils/openclaw'
+import { getOpenClawAuthToken, ensureOpenClawHttpApi, checkOpenClawGateway, OPENCLAW_GATEWAY_URL } from '@/utils/openclaw'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionManager } from '@/lib/extension'
@@ -281,12 +281,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     if (isAgentMode) {
       // Agent mode: route to OpenClaw gateway
       await ensureOpenClawHttpApi()
+
+      const gatewayReachable = await checkOpenClawGateway()
+      if (!gatewayReachable) {
+        throw new Error('Cannot reach the OpenClaw gateway. Please check that Remote Access is running in Settings.')
+      }
+
       const authToken = await getOpenClawAuthToken()
       if (!authToken) {
         throw new Error('OpenClaw is not available. Please check that it is running in Settings > Remote Access.')
       }
-
-      await checkOpenClawGatewayReachable()
 
       const openclawProvider: ProviderObject = {
         active: true,
