@@ -491,7 +491,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full text-muted-foreground">
         <BotIcon className="shrink-0 size-4" />
         <span className="text-sm font-medium leading-normal">
-          OpenClaw Agent
+          {t('common:openclawAgent')}
         </span>
       </div>
     )

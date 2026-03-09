@@ -13,6 +13,9 @@
   "privacy": "Confidentialité",
   "keyboardShortcuts": "Raccourcis Clavier",
   "newChat": "Nouvelle discussion",
+  "newAgentChat": "Nouvelle discussion Agent",
+  "chats": "Discussions",
+  "openclawAgent": "OpenClaw Agent",
   "favorites": "Favoris",
   "recents": "Récents",
   "hub": "Concentrateur Hub",
@@ -241,6 +244,7 @@
   },
   "projects": {
     "title": "Projets",
+    "new": "Nouveaux Projets",
     "addProject": "Ajouter un projet",
     "addToProject": "Ajouter au projet",
     "removeFromProject": "Retirer du projet",

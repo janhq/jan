@@ -11,11 +11,13 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { MoreHorizontal } from "lucide-react"
 import { useMemo, useState } from "react"
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useThreads } from "@/hooks/useThreads"
 import ThreadList from "@/containers/ThreadList"
 import { DeleteAllThreadsDialog } from "@/containers/dialogs/DeleteAllThreadsDialog"
 
 export function NavChats() {
+  const { t } = useTranslation()
   const getFilteredThreads = useThreads((state) => state.getFilteredThreads)
   const threads = useThreads((state) => state.threads)
   const deleteAllThreads = useThreads((state) => state.deleteAllThreads)
@@ -32,7 +34,7 @@ export function NavChats() {
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>Chats</SidebarGroupLabel>
+      <SidebarGroupLabel>{t('common:chats')}</SidebarGroupLabel>
       {threadsWithoutProject.length > 1 && 
         <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
           <DropdownMenuTrigger asChild>
