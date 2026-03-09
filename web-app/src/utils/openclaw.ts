@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useAppState } from '@/hooks/useAppState'
 
@@ -148,10 +149,13 @@ export async function ensureOpenClawHttpApi(): Promise<void> {
     const changed = await invoke<boolean>('openclaw_ensure_http_api')
     if (changed) {
       await invoke('openclaw_restart')
+      await new Promise((resolve) => setTimeout(resolve, 2000))
     }
     httpApiEnsured = true
-  } catch {
-    // Fail silently — the send will fail with a clearer error
+  } catch (error) {
+    throw new Error(
+      `Failed to initialize OpenClaw HTTP API: ${error instanceof Error ? error.message : String(error)}`
+    )
   }
 }
 
@@ -178,5 +182,30 @@ export async function getOpenClawModel(): Promise<string | null> {
     return await invoke<string>('openclaw_get_model')
   } catch {
     return null
+  }
+}
+
+/** Verify the OpenClaw gateway is reachable. Throws if not. */
+export async function checkOpenClawGatewayReachable(): Promise<void> {
+  try {
+    const res = await httpFetch(`${OPENCLAW_GATEWAY_URL}/models`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(5_000),
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      throw new Error(
+        `OpenClaw gateway returned HTTP ${res.status}${body ? `: ${body}` : ''}`
+      )
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('OpenClaw gateway returned')) {
+      throw error
+    }
+    const msg = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `Cannot reach the OpenClaw gateway at ${OPENCLAW_GATEWAY_URL}. ` +
+      `Please make sure the local API server is running.\n\nDetails: ${msg}`
+    )
   }
 }

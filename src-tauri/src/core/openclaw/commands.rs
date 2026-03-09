@@ -1568,11 +1568,9 @@ pub async fn openclaw_configure(config_input: Option<OpenClawConfigInput>) -> Re
             existing["models"]["providers"]["jan"]["apiKey"] =
                 serde_json::json!(config.models.providers.jan.api_key);
         }
-        // Always update the jan provider baseUrl when an explicit URL was provided
-        if config.models.providers.jan.base_url != DEFAULT_JAN_BASE_URL {
-            existing["models"]["providers"]["jan"]["baseUrl"] =
-                serde_json::json!(config.models.providers.jan.base_url);
-        }
+        // Always update the jan provider baseUrl so a stale port is never kept
+        existing["models"]["providers"]["jan"]["baseUrl"] =
+            serde_json::json!(config.models.providers.jan.base_url);
         existing
     } else {
         defaults
