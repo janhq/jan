@@ -10,6 +10,8 @@
   "general": "全般",
   "settings": "設定",
   "modelProviders": "モデルプロバイダー",
+  "manageProviders": "Manage providers",
+  "hiddenProviders": "{{count}} hidden",
   "interface": "外観",
   "privacy": "プライバシー",
   "keyboardShortcuts": "ショートカット",

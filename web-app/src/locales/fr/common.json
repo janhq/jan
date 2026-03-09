@@ -10,6 +10,8 @@
   "general": "Général",
   "settings": "Configurations",
   "modelProviders": "Fournisseurs de Modèles",
+  "manageProviders": "Manage providers",
+  "hiddenProviders": "{{count}} hidden",
   "interface": "Interface",
   "privacy": "Confidentialité",
   "keyboardShortcuts": "Raccourcis Clavier",
