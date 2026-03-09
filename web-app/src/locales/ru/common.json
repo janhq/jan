@@ -5,6 +5,7 @@
   "local_api_server": "Локальный API-сервер",
   "https_proxy": "HTTPS-прокси",
   "extensions": "Расширения",
+  "experimental": "Экспериментально",
   "attachments": "Вложения",
   "general": "Общие",
   "settings": "Настройки",

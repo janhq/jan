@@ -493,6 +493,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         <span className="text-sm font-medium leading-normal">
           {t('common:openclawAgent')}
         </span>
+        <span className="text-xs ml-1 font-medium px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400">
+          {t('common:experimental')}
+        </span>
       </div>
     )
   }

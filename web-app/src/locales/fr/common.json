@@ -5,6 +5,7 @@
   "local_api_server": "Serveur Local API",
   "https_proxy": "Mandataire Proxy HTTPS",
   "extensions": "Extensions",
+  "experimental": "Expérimental",
   "attachments": "Pièces jointes",
   "general": "Général",
   "settings": "Configurations",
