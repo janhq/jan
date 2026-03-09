@@ -80,10 +80,7 @@ pub fn get_openclaw_bin_path() -> Result<std::path::PathBuf, String> {
 
 /// Resolve the bundled Bun path. Returns None if unavailable.
 ///
-/// Resolution order:
-/// 1. Next to executable (macOS, Windows, dev mode)
-/// 2. `$APPDIR/usr/bin/bun` (Linux AppImage — exe is in usr/lib/, bun is in usr/bin/)
-/// 3. `/usr/bin/bun` (Linux deb)
+/// Looks for bun next to the current executable (same approach as MCP).
 pub fn resolve_bundled_bun() -> Option<std::path::PathBuf> {
     let bun_name = if cfg!(target_os = "windows") { "bun.exe" } else { "bun" };
 
@@ -95,27 +92,6 @@ pub fn resolve_bundled_bun() -> Option<std::path::PathBuf> {
                 if jan_utils::system::can_override_npx(s) {
                     return Some(candidate);
                 }
-            }
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(appdir) = std::env::var("APPDIR") {
-            let candidate = std::path::PathBuf::from(&appdir).join("usr").join("bin").join("bun");
-            if candidate.exists() {
-                let s = candidate.to_string_lossy().to_string();
-                if jan_utils::system::can_override_npx(s) {
-                    return Some(candidate);
-                }
-            }
-        }
-
-        let system_bun = std::path::PathBuf::from("/usr/bin/bun");
-        if system_bun.exists() {
-            let s = system_bun.to_string_lossy().to_string();
-            if jan_utils::system::can_override_npx(s) {
-                return Some(system_bun);
             }
         }
     }
