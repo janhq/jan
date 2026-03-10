@@ -29,14 +29,13 @@ use std::path::PathBuf;
     name = "jan",
     about = "Serve local AI models and wire them to agents — no cloud required",
     long_about = "Jan runs local AI models (LlamaCPP / MLX) and exposes them via an\n\
-OpenAI-compatible API, then wires AI coding agents like Claude Code or opencode\n\
+OpenAI-compatible API, then wires AI coding agent like Claude Code\n\
 directly to your own hardware — no cloud account, no usage fees, full privacy.\n\n\
 Models downloaded in the Jan desktop app are automatically available here.",
     after_help = "Examples:\n  \
   jan launch claude                               # pick a model, then run Claude Code against it\n  \
   jan launch claude --model qwen3.5-35b-a3b       # use a specific model\n  \
   jan launch openclaw --model qwen3.5-35b-a3b     # wire openclaw to a local model\n  \
-  jan launch opencode --model qwen3.5-35b-a3b     # wire opencode to a local model\n  \
   jan serve qwen3.5-35b-a3b                       # expose a model at localhost:6767/v1\n  \
   jan serve qwen3.5-35b-a3b --fit                 # auto-fit context to available VRAM\n  \
   jan serve qwen3.5-35b-a3b --detach              # run in the background\n  \
