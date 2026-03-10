@@ -285,8 +285,14 @@ pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_change
         // On a normal launch where the version hasn't changed, skip reinstall if already on PATH.
         if !version_changed {
             let which_cmd = if cfg!(windows) { "where" } else { "which" };
-            if std::process::Command::new(which_cmd)
-                .arg("jan")
+            let mut cmd = std::process::Command::new(which_cmd);
+            cmd.arg("jan");
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            }
+            if cmd
                 .output()
                 .map(|o| o.status.success())
                 .unwrap_or(false)
