@@ -119,15 +119,25 @@ async fn check_openclaw_installed() -> Result<Option<String>, String> {
 }
 
 async fn check_runtime_version() -> Option<String> {
-    let bun_path = super::resolve_bundled_bun()?;
-    let mut cmd = Command::new(&bun_path);
+    if let Some(bun_path) = super::resolve_bundled_bun() {
+        let mut cmd = Command::new(&bun_path);
+        cmd.arg("--version");
+        hide_window(&mut cmd);
+        let output = cmd.output().await.ok()?;
+
+        if output.status.success() {
+            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            return Some(format!("bun {}", version));
+        }
+    }
+
+    let mut cmd = Command::new("node");
     cmd.arg("--version");
     hide_window(&mut cmd);
     let output = cmd.output().await.ok()?;
 
     if output.status.success() {
-        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        Some(format!("bun {}", version))
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
         None
     }
@@ -224,6 +234,7 @@ pub async fn stop_gateway() -> Result<(), String> {
             let _ = cmd.output().await;
         };
         kill("bun.exe").await;
+        kill("node.exe").await;
         kill("openclaw.exe").await;
     }
 

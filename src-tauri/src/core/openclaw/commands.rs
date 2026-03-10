@@ -478,7 +478,7 @@ pub async fn openclaw_setup_for_channels(state: tauri::State<'_, OpenClawState>)
                         gateway_running: false,
                         device_paired: false,
                         error: result.error,
-                        message: Some("Bundled Bun runtime not found. Please reinstall Jan.".to_string()),
+                        message: Some("Please install Bun or Node.js 22+ and OpenClaw manually".to_string()),
                     });
                 }
                 Err(e) => {
@@ -489,7 +489,7 @@ pub async fn openclaw_setup_for_channels(state: tauri::State<'_, OpenClawState>)
                         gateway_running: false,
                         device_paired: false,
                         error: Some(e),
-                        message: Some("Bundled Bun runtime not found. Please reinstall Jan.".to_string()),
+                        message: Some("Please install Bun or Node.js 22+ and OpenClaw manually".to_string()),
                     });
                 }
             }
@@ -707,10 +707,44 @@ async fn restart_gateway_cli() -> Result<(), String> {
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    let mut cmd = openclaw_command(&["gateway", "run", "--force"]).await;
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    if let Err(e) = cmd.spawn() {
-        log::warn!("Failed to spawn openclaw gateway: {}", e);
+    // Re-register service with --runtime bun when bundled Bun is available.
+    // On Windows this requires admin (schtasks) and may fail.
+    let install_args: Vec<&str> = if super::resolve_bundled_bun().is_some() {
+        vec!["gateway", "install", "--runtime", "bun"]
+    } else {
+        vec!["gateway", "install"]
+    };
+    let install_output = openclaw_command(&install_args).await
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await;
+    let service_installed = install_output
+        .as_ref()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if service_installed {
+        let output = openclaw_command(&["gateway", "start"]).await
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| format!("Failed to start gateway: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            log::warn!("Gateway start failed: {}", stderr);
+        }
+    } else {
+        // Service registration failed (e.g. Windows without admin).
+        // Spawn `openclaw gateway` as a foreground child process.
+        log::info!("Service install unavailable, restarting gateway as child process");
+        let mut cmd = openclaw_command(&["gateway"]).await;
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        if let Err(e) = cmd.spawn() {
+            log::warn!("Failed to spawn openclaw gateway: {}", e);
+        }
     }
     Ok(())
 }
@@ -813,6 +847,7 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
                     let _ = cmd.output().await;
                 };
                 kill("bun.exe").await;
+                kill("node.exe").await;
                 kill("openclaw.exe").await;
             }
         }
@@ -990,17 +1025,20 @@ async fn ensure_gateway_bind_lan() {
     }
 }
 
-/// Check if bundled Bun is available and meets version requirements.
+/// Check if bundled Bun or Node.js is installed and meets version requirements.
 #[tauri::command]
 pub async fn openclaw_check_dependencies() -> NodeCheckResult {
+    // First try: bundled Bun
     if let Some(bun_path) = super::resolve_bundled_bun() {
         let mut cmd = tokio::process::Command::new(&bun_path);
         cmd.arg("--version");
         hide_window(&mut cmd);
+        let output = cmd.output().await;
 
-        if let Ok(output) = cmd.output().await {
+        if let Ok(output) = output {
             if output.status.success() {
                 let version_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                // Bun returns version like "1.2.3", prepend "bun " for clarity
                 let version_with_runtime = format!("bun {}", version_output);
                 let version_str = version_output.trim_start_matches('v');
 
@@ -1009,6 +1047,7 @@ pub async fn openclaw_check_dependencies() -> NodeCheckResult {
                     .next()
                     .and_then(|v| v.parse().ok());
 
+                // Bun 1.0+ meets requirements
                 let meets_requirements = major_version.map(|v| v >= 1).unwrap_or(false);
 
                 return NodeCheckResult {
@@ -1026,12 +1065,58 @@ pub async fn openclaw_check_dependencies() -> NodeCheckResult {
         }
     }
 
-    NodeCheckResult {
-        installed: false,
-        version: None,
-        major_version: None,
-        meets_requirements: false,
-        error: Some("Bundled Bun runtime not found".to_string()),
+    // Fallback: check for Node.js
+    let mut node_cmd = Command::new("node");
+    node_cmd.arg("--version");
+    hide_window(&mut node_cmd);
+    let output = node_cmd.output().await;
+
+    match output {
+        Ok(output) => {
+            if output.status.success() {
+                let version_output = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let version_str = version_output.trim_start_matches('v');
+
+                let major_version: Option<u32> = version_str
+                    .split('.')
+                    .next()
+                    .and_then(|v| v.parse().ok());
+
+                let meets_requirements = major_version
+                    .map(|v| v >= 22)
+                    .unwrap_or(false);
+
+                let version_clone = version_output.clone();
+                NodeCheckResult {
+                    installed: true,
+                    version: Some(version_clone),
+                    major_version,
+                    meets_requirements,
+                    error: if !meets_requirements {
+                        Some(format!("Node.js version 22 is required, found {}", version_str))
+                    } else {
+                        None
+                    },
+                }
+            } else {
+                NodeCheckResult {
+                    installed: false,
+                    version: None,
+                    major_version: None,
+                    meets_requirements: false,
+                    error: Some("Could not find a JavaScript runtime (Bun or Node.js)".to_string()),
+                }
+            }
+        }
+        Err(e) => {
+            NodeCheckResult {
+                installed: false,
+                version: None,
+                major_version: None,
+                meets_requirements: false,
+                error: Some(format!("Could not find a JavaScript runtime: {}", e)),
+            }
+        }
     }
 }
 
@@ -1127,7 +1212,7 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
             return Ok(InstallResult {
                 success: false,
                 version: None,
-                error: node_check.error.or_else(|| Some("Bundled Bun runtime not found".to_string())),
+                error: node_check.error.or_else(|| Some("A JavaScript runtime (Bun or Node.js) is required but not found".to_string())),
             });
         }
 
@@ -1143,18 +1228,27 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
 
         let _ = super::ensure_bun_node_shim();
 
-        let bun_path = super::resolve_bundled_bun()
-            .ok_or_else(|| "Bundled Bun runtime not found".to_string())?;
-        let runtime_dir = super::get_openclaw_runtime_dir()?;
-        let mut cmd = tokio::process::Command::new(&bun_path);
-        cmd.args(["install", "-g", &pinned_package])
-            .env("BUN_INSTALL", runtime_dir.to_string_lossy().as_ref())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        hide_window(&mut cmd);
-        let output = cmd.output()
-            .await
-            .map_err(|e| format!("Failed to run bun install: {}", e))?;
+        let output = if let Some(bun_path) = super::resolve_bundled_bun() {
+            let runtime_dir = super::get_openclaw_runtime_dir()?;
+            let mut cmd = tokio::process::Command::new(&bun_path);
+            cmd.args(["install", "-g", &pinned_package])
+                .env("BUN_INSTALL", runtime_dir.to_string_lossy().as_ref())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            hide_window(&mut cmd);
+            cmd.output()
+                .await
+                .map_err(|e| format!("Failed to run bun install: {}", e))?
+        } else {
+            let mut cmd = Command::new("npm");
+            cmd.args(["install", "-g", &pinned_package])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            hide_window(&mut cmd);
+            cmd.output()
+                .await
+                .map_err(|e| format!("Failed to run npm install: {}", e))?
+        };
 
         if !output.status.success() {
             // Parse error output for better error messages
@@ -1923,7 +2017,8 @@ pub async fn openclaw_enable(
         );
     };
 
-    // Step 1: Detect sandbox type FIRST (before runtime check)
+    // Step 1: Detect sandbox type FIRST (before Node.js check)
+    // This is important because for Docker, Node.js runs inside container
     let detected = crate::core::openclaw::sandbox::detect_sandbox().await;
     let sandbox_name = detected.name().to_string();
     let tier = detected.isolation_tier();
@@ -1951,12 +2046,12 @@ pub async fn openclaw_enable(
             error: None,
         }
     } else {
-        // For direct process, bundled Bun must be available
+        // For direct process, a JS runtime (bundled Bun or Node.js) must be available
         let check = openclaw_check_dependencies().await;
         if !check.installed {
             return Err(serde_json::to_string(&EnableError {
                 code: EnableErrorCode::RuntimeNotFound,
-                message: "Bundled Bun runtime not found. Please reinstall Jan.".to_string(),
+                message: "Could not find a JavaScript runtime. Bundled Bun was not found, and Node.js 22+ is not installed.".to_string(),
                 recovery: vec![RecoveryOption {
                     label: "Retry".to_string(),
                     action: RecoveryAction::Retry,
@@ -2048,14 +2143,14 @@ pub async fn openclaw_enable(
                         ));
                     }
 
-                    // Check runtime (bundled Bun, required for direct process)
+                    // Check runtime (bundled Bun or Node.js, required for direct process)
                     let node_check = openclaw_check_dependencies().await;
                     if !node_check.installed {
                         return Err(serde_json::to_string(&EnableError {
                             code: EnableErrorCode::RuntimeNotFound,
                             message: format!(
                                 "Docker image unavailable and no JavaScript runtime found. \
-                                 Original error: {}. Bundled Bun runtime not found.",
+                                 Original error: {}. Bundled Bun was not found and Node.js 22+ is not installed.",
                                 e
                             ),
                             recovery: vec![RecoveryOption {
@@ -2071,7 +2166,7 @@ pub async fn openclaw_enable(
                             code: EnableErrorCode::RuntimeVersionTooLow,
                             message: format!(
                                 "Docker image unavailable and runtime version too low. \
-                                 Original error: {}. Bun 1.0+ required.",
+                                 Original error: {}. Bun 1.0+ or Node.js 22+ required.",
                                 e
                             ),
                             recovery: vec![RecoveryOption {
@@ -2083,7 +2178,7 @@ pub async fn openclaw_enable(
                         .unwrap_or_else(|_| "Runtime version too low".to_string()));
                     }
 
-                    // Now install via bun
+                    // Now install via bun/npm
                     emit("installing", 45, "Installing OpenClaw...", sandbox_info.as_deref());
                     let install_result = openclaw_install().await?;
                     if !install_result.success {
@@ -2386,7 +2481,7 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
     if !is_docker {
         let node_check = openclaw_check_dependencies().await;
         if !node_check.installed || !node_check.meets_requirements {
-            return Err(node_check.error.unwrap_or_else(|| "Bundled Bun runtime not found".to_string()));
+            return Err(node_check.error.unwrap_or_else(|| "JavaScript runtime requirements not met (Bun or Node.js 22+)".to_string()));
         }
     }
 
