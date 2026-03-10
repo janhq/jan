@@ -49,7 +49,7 @@ function RemoteAccess() {
   const [disconnectingChannel, setDisconnectingChannel] = useState<ChannelType | null>(null)
   const [isTelegramWizardOpen, setIsTelegramWizardOpen] = useState(false)
   const [isWhatsAppWizardOpen, setIsWhatsAppWizardOpen] = useState(false)
-const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
+  const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
   const [isSecurityDialogOpen, setIsSecurityDialogOpen] = useState(false)
   const [isTunnelDialogOpen, setIsTunnelDialogOpen] = useState(false)
   const [isEnableDialogOpen, setIsEnableDialogOpen] = useState(false)
@@ -68,7 +68,7 @@ const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
 
       // Ensure Jan's origin is configured when OpenClaw was started externally
       if (statusData.running) {
-        await invoke('openclaw_ensure_jan_origin').catch(() => {})
+        await invoke('openclaw_ensure_jan_origin').catch(() => { })
       }
     } catch {
       toast.error(t('settings:remoteAccess.startError'))
@@ -117,8 +117,6 @@ const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
     fetchWhatsAppConfig()
     fetchTunnelStatus()
     fetchSecurityStatus()
-    invoke<string>('openclaw_get_auth_token').then(setGatewayToken).catch(() => {})
-    invoke<{ gateway: { port: number } }>('openclaw_get_config').then((c) => setGatewayPort(c.gateway.port)).catch(() => {})
   }, [fetchStatus, fetchTelegramConfig, fetchWhatsAppConfig, fetchTunnelStatus, fetchSecurityStatus])
 
   const refreshAllStatus = useCallback(async () => {
@@ -192,8 +190,15 @@ const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
     }
   }
 
-const isRunning = status?.running ?? false
+  const isRunning = status?.running ?? false
   const isInstalled = status?.installed ?? false
+
+  useEffect(() => {
+    if (isRunning) {
+      invoke<string>('openclaw_get_auth_token').then(setGatewayToken).catch(() => { })
+      invoke<{ gateway: { port: number } }>('openclaw_get_config').then((c) => setGatewayPort(c.gateway.port)).catch(() => { })
+    }
+  }, [isRunning])
 
   return (
     <div className="flex flex-col h-svh w-full">
