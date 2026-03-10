@@ -15,6 +15,9 @@ import { ChannelCard } from '@/containers/ChannelCard'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useEffect, useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { getLastUsedModel } from '@/utils/getModelToStart'
+import { isLocalProvider } from '@/lib/utils'
 import { toast } from 'sonner'
 import { setOpenClawRunningState } from '@/utils/openclaw'
 import {
@@ -44,6 +47,28 @@ export const Route = createFileRoute(route.settings.remote_access as any)({
 
 function RemoteAccess() {
   const { t } = useTranslation()
+  const { selectedModel, providers, selectModelProvider } = useModelProvider()
+  const firstAvailableModel = providers
+    .filter((p) => isLocalProvider(p.provider))
+    .flatMap((p) => p.models.map((m) => ({ provider: p.provider, model: m })))
+    .at(0)
+  const hasAnyModel = firstAvailableModel !== undefined
+
+  const handleStartEnable = useCallback(() => {
+    if (!selectedModel) {
+      const lastUsed = getLastUsedModel()
+      const lastUsedExists = lastUsed && providers.some(
+        (p) => p.provider === lastUsed.provider && p.models.some((m) => m.id === lastUsed.model)
+      )
+      if (lastUsedExists) {
+        selectModelProvider(lastUsed!.provider, lastUsed!.model)
+      } else if (firstAvailableModel) {
+        selectModelProvider(firstAvailableModel.provider, firstAvailableModel.model.id)
+      }
+    }
+    setIsEnableDialogOpen(true)
+  }, [selectedModel, providers, firstAvailableModel, selectModelProvider])
+
   const [status, setStatus] = useState<OpenClawStatus | null>(null)
   const [isStopping, setIsStopping] = useState(false)
   const [disconnectingChannel, setDisconnectingChannel] = useState<ChannelType | null>(null)
@@ -290,12 +315,13 @@ const isRunning = status?.running ?? false
                         {t('settings:remoteAccess.stop')}
                       </Button>
                     ) : (
-                      <Button size="sm" onClick={() => setIsEnableDialogOpen(true)}>
+                      <Button size="sm" onClick={handleStartEnable} disabled={!hasAnyModel}>
                         {t('settings:remoteAccess.start')}
                       </Button>
                     )}
                   </div>
                 }
+                description={!isRunning && !hasAnyModel ? t('settings:remoteAccess.noLocalModelAvailable') : undefined}
               />
 
               {isRunning && status?.sandbox_type && (
