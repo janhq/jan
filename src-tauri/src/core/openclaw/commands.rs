@@ -724,6 +724,14 @@ async fn restart_gateway_cli() -> Result<(), String> {
         .map(|o| o.status.success())
         .unwrap_or(false);
 
+    // Patch LaunchAgent plist so macOS shows the Jan app icon
+    // in the "Background Items Added" notification.
+    #[cfg(target_os = "macos")]
+    if service_installed {
+        let bundle_id = super::sandbox_direct::resolve_bundle_identifier();
+        super::sandbox_direct::patch_launchagent_associated_bundle_id(&bundle_id);
+    }
+
     if service_installed {
         let output = openclaw_command(&["gateway", "start"]).await
             .stdout(Stdio::piped())

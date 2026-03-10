@@ -4,6 +4,119 @@ use super::sandbox::{IsolationTier, Sandbox, SandboxConfig, SandboxHandle, Sandb
 
 pub struct DirectProcessSandbox;
 
+/// Patch OpenClaw LaunchAgent plists to include `AssociatedBundleIdentifiers`.
+///
+/// macOS 13+ uses this key to associate background login items with their parent
+/// app, which makes the "Background Items Added" notification display the app
+/// icon instead of a generic placeholder.  Without this key macOS falls back to
+/// showing the organisation name from the signing certificate.
+///
+/// Reference: <https://developer.apple.com/documentation/servicemanagement/updating-helper-executables-from-earlier-versions-of-macos>
+#[cfg(target_os = "macos")]
+pub fn patch_launchagent_associated_bundle_id(bundle_id: &str) {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => {
+            log::warn!("patch_launchagent: could not resolve home directory");
+            return;
+        }
+    };
+    let launch_agents = home.join("Library/LaunchAgents");
+    let entries = match std::fs::read_dir(&launch_agents) {
+        Ok(e) => e,
+        Err(e) => {
+            log::warn!("patch_launchagent: cannot read LaunchAgents dir: {}", e);
+            return;
+        }
+    };
+
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.contains("openclaw") || !name.ends_with(".plist") {
+            continue;
+        }
+
+        let path = entry.path();
+        let path_str = path.to_string_lossy().to_string();
+
+        // Remove existing key first (ignore errors — key may not exist yet)
+        let _ = std::process::Command::new("/usr/libexec/PlistBuddy")
+            .args(["-c", "Delete :AssociatedBundleIdentifiers", &path_str])
+            .output();
+
+        // Add the array key
+        if let Err(e) = std::process::Command::new("/usr/libexec/PlistBuddy")
+            .args(["-c", "Add :AssociatedBundleIdentifiers array", &path_str])
+            .output()
+        {
+            log::warn!("patch_launchagent: failed to add array key to {}: {}", name, e);
+            continue;
+        }
+
+        // Add the bundle identifier as the first entry
+        match std::process::Command::new("/usr/libexec/PlistBuddy")
+            .args([
+                "-c",
+                &format!("Add :AssociatedBundleIdentifiers:0 string {}", bundle_id),
+                &path_str,
+            ])
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                log::info!(
+                    "patch_launchagent: patched {} with AssociatedBundleIdentifiers = [{}]",
+                    name,
+                    bundle_id
+                );
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                log::warn!(
+                    "patch_launchagent: PlistBuddy failed for {}: {}",
+                    name,
+                    stderr.trim()
+                );
+            }
+            Err(e) => {
+                log::warn!("patch_launchagent: failed to run PlistBuddy for {}: {}", name, e);
+            }
+        }
+    }
+}
+
+/// Resolve the app's bundle identifier at runtime from the parent `.app` bundle's
+/// `Info.plist`.  Falls back to `"jan.ai.app"` so the patch is always attempted.
+#[cfg(target_os = "macos")]
+pub fn resolve_bundle_identifier() -> String {
+    // The running binary lives at  Jan.app/Contents/MacOS/<binary>.
+    // Walk up to the .app bundle and read its Info.plist.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(macos_dir) = exe.parent() {
+            let info_plist = macos_dir.parent().map(|p| p.join("Info.plist")); // Contents/Info.plist
+            if let Some(ref plist_path) = info_plist {
+                if plist_path.exists() {
+                    if let Ok(output) = std::process::Command::new("/usr/libexec/PlistBuddy")
+                        .args([
+                            "-c",
+                            "Print :CFBundleIdentifier",
+                            &plist_path.to_string_lossy(),
+                        ])
+                        .output()
+                    {
+                        if output.status.success() {
+                            let id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                            if !id.is_empty() {
+                                return id;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "jan.ai.app".to_string()
+}
+
 /// Returns the BUN_INSTALL directory under Jan's data folder, creating it if needed.
 fn get_bunx_dir() -> Option<std::path::PathBuf> {
     let dir = super::get_openclaw_base_dir().ok()?.join("bunx");
@@ -128,7 +241,17 @@ impl Sandbox for DirectProcessSandbox {
             };
             let mut install_cmd = build_openclaw_command(&install_args.iter().map(|s| *s).collect::<Vec<_>>(), &config.config_dir);
             match install_cmd.output().await {
-                Ok(output) if output.status.success() => false,
+                Ok(output) if output.status.success() => {
+                    // Patch the LaunchAgent plist so macOS shows the Jan app
+                    // icon in the "Background Items Added" notification
+                    // instead of a generic icon with the certificate org name.
+                    #[cfg(target_os = "macos")]
+                    {
+                        let bundle_id = resolve_bundle_identifier();
+                        patch_launchagent_associated_bundle_id(&bundle_id);
+                    }
+                    false
+                }
                 Ok(output) => {
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     log::error!("gateway install failed: {}", stderr.trim());
