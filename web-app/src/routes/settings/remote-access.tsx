@@ -15,6 +15,7 @@ import { ChannelCard } from '@/containers/ChannelCard'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useEffect, useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { toast } from 'sonner'
 import { setOpenClawRunningState } from '@/utils/openclaw'
 import {
@@ -360,26 +361,28 @@ const isRunning = status?.running ?? false
                     <div className="flex items-center gap-2">
                       <code className="text-sm font-mono text-foreground bg-secondary px-2 py-1 rounded">
                         {gatewayToken
-                          ? `http://localhost:${gatewayPort}?token=****`
-                          : `http://localhost:${gatewayPort}`}
+                          ? `http://127.0.0.1:${gatewayPort}?token=****`
+                          : `http://127.0.0.1:${gatewayPort}`}
                       </code>
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => handleCopyUrl(gatewayToken ? `http://localhost:${gatewayPort}?token=${gatewayToken}` : `http://localhost:${gatewayPort}`)}
+                        onClick={() => handleCopyUrl(gatewayToken ? `http://127.0.0.1:${gatewayPort}?token=${gatewayToken}` : `http://127.0.0.1:${gatewayPort}`)}
                         title={t('settings:remoteAccess.copyUrl')}
                       >
                         <IconCopy className="h-4 w-4" />
                       </Button>
-                      <a
-                        href={gatewayToken ? `http://localhost:${gatewayPort}?token=${gatewayToken}` : `http://localhost:${gatewayPort}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => {
+                          const url = gatewayToken ? `http://127.0.0.1:${gatewayPort}?token=${gatewayToken}` : `http://127.0.0.1:${gatewayPort}`
+                          openUrl(url).catch(() => window.open(url, '_blank'))
+                        }}
                         title={t('settings:remoteAccess.openUrl')}
-                        className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent transition-colors"
                       >
                         <IconExternalLink className="h-4 w-4" />
-                      </a>
+                      </Button>
                     </div>
                   }
                 />
