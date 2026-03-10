@@ -152,21 +152,55 @@ impl Sandbox for DirectProcessSandbox {
                 cmd.env(key, value);
             }
 
-            let output = cmd
-                .output()
-                .await
-                .map_err(|e| format!("Failed to run openclaw gateway start: {}", e))?;
 
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(format!("Failed to start OpenClaw gateway: {}", stderr));
+            let mut child = cmd
+                .spawn()
+                .map_err(|e| format!("Failed to spawn openclaw gateway: {}", e))?;
+
+            // Drain stdout and stderr in background so the pipes don't block
+            if let Some(stdout) = child.stdout.take() {
+                tokio::spawn(async move {
+                    use tokio::io::{AsyncBufReadExt, BufReader};
+                    let mut lines = BufReader::new(stdout).lines();
+                    while let Ok(Some(line)) = lines.next_line().await {
+                        log::info!("openclaw stdout: {}", line);
+                    }
+                });
+            }
+            if let Some(stderr) = child.stderr.take() {
+                tokio::spawn(async move {
+                    use tokio::io::{AsyncBufReadExt, BufReader};
+                    let mut lines = BufReader::new(stderr).lines();
+                    while let Ok(Some(line)) = lines.next_line().await {
+                        log::info!("openclaw stderr: {}", line);
+                    }
+                });
             }
 
-            Ok(SandboxHandle::Named("direct-process".to_string()))
+            // Log when the process exits
+            let pid = child.id();
+            tokio::spawn(async move {
+                // We can't await the child here since we've already moved it into the handle,
+                // so poll the port instead as a proxy for the process being alive.
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    let alive = tokio::net::TcpStream::connect(
+                        format!("127.0.0.1:{}", super::OPENCLAW_PORT)
+                    ).await.is_ok();
+                    if !alive {
+                        log::warn!("openclaw gateway process (pid {:?}) appears to have exited", pid);
+                        break;
+                    }
+                }
+            });
+
+            Ok(SandboxHandle::Process(child))
         } else {
             log::info!("Starting gateway as child process");
             let mut cmd = build_openclaw_command(&["gateway"], &config.config_dir);
-            cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
             #[cfg(target_os = "windows")]
             {
                 use std::os::windows::process::CommandExt;
@@ -208,7 +242,8 @@ impl Sandbox for DirectProcessSandbox {
         }
 
         let mut stopped_via_cli = false;
-        let config_dir = super::get_openclaw_config_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let config_dir =
+            super::get_openclaw_config_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let mut stop_cmd = build_openclaw_command(&["gateway", "stop"], &config_dir);
         if let Ok(output) = stop_cmd.output().await {
             stopped_via_cli = output.status.success();
