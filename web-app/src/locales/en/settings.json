@@ -333,6 +333,7 @@
     "settings": "Settings",
     "install": "Install",
     "start": "Start",
+    "noLocalModelAvailable": "A local model is required to enable OpenClaw. Download a model first.",
     "stop": "Stop",
     "startError": "Couldn't start Remote Access. Please try again.",
     "stopError": "Couldn't stop Remote Access. Please try again.",
