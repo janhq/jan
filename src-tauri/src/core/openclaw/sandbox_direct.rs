@@ -122,8 +122,7 @@ impl Sandbox for DirectProcessSandbox {
             log::warn!("openclaw global install failed, will attempt to run anyway: {}", e);
         }
 
-        let mut cmd =
-            build_openclaw_command(&["gateway", "run", "--force"], &config.config_dir);
+        let mut cmd = build_openclaw_command(&["gateway", "start"], &config.config_dir);
         for (key, value) in &config.env_vars {
             cmd.env(key, value);
         }
