@@ -29,14 +29,13 @@ use std::path::PathBuf;
     name = "jan",
     about = "Serve local AI models and wire them to agents — no cloud required",
     long_about = "Jan runs local AI models (LlamaCPP / MLX) and exposes them via an\n\
-OpenAI-compatible API, then wires AI coding agents like Claude Code or opencode\n\
+OpenAI-compatible API, then wires AI coding agent like Claude Code\n\
 directly to your own hardware — no cloud account, no usage fees, full privacy.\n\n\
 Models downloaded in the Jan desktop app are automatically available here.",
     after_help = "Examples:\n  \
   jan launch claude                               # pick a model, then run Claude Code against it\n  \
   jan launch claude --model qwen3.5-35b-a3b       # use a specific model\n  \
   jan launch openclaw --model qwen3.5-35b-a3b     # wire openclaw to a local model\n  \
-  jan launch opencode --model qwen3.5-35b-a3b     # wire opencode to a local model\n  \
   jan serve qwen3.5-35b-a3b                       # expose a model at localhost:6767/v1\n  \
   jan serve qwen3.5-35b-a3b --fit                 # auto-fit context to available VRAM\n  \
   jan serve qwen3.5-35b-a3b --detach              # run in the background\n  \
@@ -104,12 +103,6 @@ enum Commands {
     Models {
         #[command(subcommand)]
         cmd: ModelsCommands,
-    },
-    /// Show app configuration and data folder location
-    #[command(display_order = 12)]
-    App {
-        #[command(subcommand)]
-        cmd: AppCommands,
     },
 }
 
@@ -234,16 +227,6 @@ enum ModelsCommands {
     },
 }
 
-// ── App subcommands ────────────────────────────────────────────────────────
-
-#[derive(Subcommand)]
-enum AppCommands {
-    /// Print the Jan data folder path (where models, threads, and config are stored)
-    DataFolder,
-    /// Print the Jan configuration as JSON
-    Config,
-}
-
 // ── ASCII logo ─────────────────────────────────────────────────────────────
 
 /// Build a left-aligned, bright-yellow ASCII logo for the help header.
@@ -300,7 +283,6 @@ async fn main() {
     match cli.command {
         Commands::Threads { cmd } => handle_threads(cmd).await,
         Commands::Models { cmd } => handle_models(cmd).await,
-        Commands::App { cmd } => handle_app(cmd),
         Commands::Serve { args } => handle_serve(args).await,
         Commands::Launch { program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size, fit, verbose, select } => {
             let program = program.unwrap_or_else(select_program_interactively);
@@ -1096,7 +1078,7 @@ async fn handle_launch(
     }
     eprintln!();
     let launch_cmd = if is_openclaw {
-        format!("npx openclaw {}", program_args.join(" "))
+        format!("openclaw {}", program_args.join(" "))
     } else {
         format!("{} {}", program, program_args.join(" "))
     };
@@ -1356,28 +1338,5 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         rope_freq_base: 0.0,
         rope_freq_scale: 0.0,
         ctx_shift: false,
-    }
-}
-
-// ── App handlers ───────────────────────────────────────────────────────────
-
-fn handle_app(cmd: AppCommands) {
-    match cmd {
-        AppCommands::DataFolder => {
-            let folder = cli_get_data_folder();
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&serde_json::json!({ "data_folder": folder }))
-                    .unwrap()
-            );
-        }
-
-        AppCommands::Config => match cli_get_config() {
-            Ok(config) => println!("{}", serde_json::to_string_pretty(&config).unwrap()),
-            Err(e) => {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
-        },
     }
 }

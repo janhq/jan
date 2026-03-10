@@ -13,47 +13,61 @@ fn hide_window(cmd: &mut Command) {
 #[cfg(not(target_os = "windows"))]
 fn hide_window(_cmd: &mut Command) {}
 
+/// Returns the BUN_INSTALL directory (`~/.jan/.bunx`), creating it if needed.
+fn get_bunx_dir() -> Option<std::path::PathBuf> {
+    let dir = dirs::home_dir()?.join(".jan").join(".bunx");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        log::warn!("Failed to create BUN_INSTALL dir {:?}: {}", dir, e);
+    }
+    Some(dir)
+}
+
 /// Build a command for openclaw. On Unix, uses bun as explicit interpreter
 /// to bypass shebang resolution. On Windows, runs openclaw.exe directly.
-fn build_openclaw_command(args: &[&str]) -> Command {
-    let _ = super::ensure_bun_node_shim();
+fn build_openclaw_command(args: &[&str]) -> tokio::process::Command {
+    let bunx_dir = get_bunx_dir();
 
-    let openclaw_path = super::get_openclaw_bin_path().ok();
-    let use_installed_binary = openclaw_path
-        .as_ref()
-        .map(|p| p.exists())
-        .unwrap_or(false);
-    let bun_path = super::resolve_bundled_bun();
-    let use_bun_interpreter = !cfg!(target_os = "windows")
-        && use_installed_binary
-        && bun_path.is_some();
+    let installed_bin = bunx_dir.as_ref().map(|d| {
+        if cfg!(target_os = "windows") {
+            d.join("bin").join("openclaw.exe")
+        } else {
+            d.join("bin").join("openclaw")
+        }
+    });
 
-    if use_bun_interpreter {
-        let mut cmd = Command::new(bun_path.unwrap());
-        cmd.arg(openclaw_path.unwrap());
-        if let Some(new_path) = super::build_augmented_path() {
-            cmd.env("PATH", new_path);
-        }
-        cmd.args(args);
-        hide_window(&mut cmd);
-        cmd
-    } else if use_installed_binary {
-        let mut cmd = Command::new(openclaw_path.unwrap());
-        if let Some(new_path) = super::build_augmented_path() {
-            cmd.env("PATH", new_path);
-        }
-        cmd.args(args);
-        hide_window(&mut cmd);
-        cmd
+    let mut cmd = if installed_bin.as_ref().map(|p| p.exists()).unwrap_or(false) {
+        log::info!("Running openclaw from installed path: {:?}", installed_bin);
+        tokio::process::Command::new(installed_bin.unwrap())
+    } else if let Some(bun) = super::resolve_bundled_bun() {
+        log::info!("openclaw not installed yet, falling back to bun x");
+        let mut c = tokio::process::Command::new(bun);
+        c.arg("x");
+        c.arg("openclaw");
+        c
     } else {
-        let mut cmd = Command::new("openclaw");
-        if let Some(new_path) = super::build_augmented_path() {
-            cmd.env("PATH", new_path);
-        }
-        cmd.args(args);
-        hide_window(&mut cmd);
-        cmd
+        tokio::process::Command::new("openclaw")
+    };
+
+    cmd.args(args)
+        // .current_dir(config_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    if let Some(dir) = bunx_dir {
+        cmd.env("BUN_INSTALL", dir);
     }
+
+    if let Some(new_path) = super::build_augmented_path() {
+        cmd.env("PATH", new_path);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+
+    cmd
 }
 
 async fn check_openclaw_installed() -> Result<Option<String>, String> {
@@ -105,15 +119,25 @@ async fn check_openclaw_installed() -> Result<Option<String>, String> {
 }
 
 async fn check_runtime_version() -> Option<String> {
-    let bun_path = super::resolve_bundled_bun()?;
-    let mut cmd = Command::new(&bun_path);
+    if let Some(bun_path) = super::resolve_bundled_bun() {
+        let mut cmd = Command::new(&bun_path);
+        cmd.arg("--version");
+        hide_window(&mut cmd);
+        let output = cmd.output().await.ok()?;
+
+        if output.status.success() {
+            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            return Some(format!("bun {}", version));
+        }
+    }
+
+    let mut cmd = Command::new("node");
     cmd.arg("--version");
     hide_window(&mut cmd);
     let output = cmd.output().await.ok()?;
 
     if output.status.success() {
-        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        Some(format!("bun {}", version))
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
         None
     }
@@ -210,6 +234,7 @@ pub async fn stop_gateway() -> Result<(), String> {
             let _ = cmd.output().await;
         };
         kill("bun.exe").await;
+        kill("node.exe").await;
         kill("openclaw.exe").await;
     }
 
