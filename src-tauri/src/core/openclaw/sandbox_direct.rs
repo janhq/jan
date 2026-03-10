@@ -22,7 +22,7 @@ async fn install_openclaw_globally() -> Result<(), String> {
     log::info!("Installing openclaw globally into {:?}", bunx_dir);
 
     let mut cmd = tokio::process::Command::new(&bun_path);
-    cmd.args(["add", "-g", "openclaw"])
+    cmd.args(["add", "-g", &format!("openclaw@{}", super::constants::OPENCLAW_VERSION)])
         .env("BUN_INSTALL", &bunx_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
