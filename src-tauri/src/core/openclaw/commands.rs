@@ -709,11 +709,7 @@ async fn restart_gateway_cli() -> Result<(), String> {
 
     // Re-register service with --runtime bun when bundled Bun is available.
     // On Windows this requires admin (schtasks) and may fail.
-    let install_args: Vec<&str> = if super::resolve_bundled_bun().is_some() {
-        vec!["gateway", "install", "--runtime", "bun"]
-    } else {
-        vec!["gateway", "install"]
-    };
+    let install_args: Vec<&str> = vec!["gateway", "install"];
     let install_output = openclaw_command(&install_args).await
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -3924,7 +3920,7 @@ pub async fn whatsapp_check_auth() -> Result<WhatsAppAuthStatus, String> {
                                           err.contains("restart required") ||
                                           err.contains("Stream Errored") ||
                                           err.contains("not linked") ||
-                                          err.contains("not configured");    
+                                          err.contains("not configured");
 
                         if !is_transient && !linked {
                             return Ok(WhatsAppAuthStatus {

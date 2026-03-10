@@ -121,11 +121,7 @@ impl Sandbox for DirectProcessSandbox {
         let use_child_process = if cfg!(target_os = "windows") {
             true
         } else {
-            let install_args = if super::resolve_bundled_bun().is_some() {
-                vec!["gateway", "install", "--runtime", "bun"]
-            } else {
-                vec!["gateway", "install"]
-            };
+            let install_args = vec!["gateway", "install"];
             let mut install_cmd = build_openclaw_command(&install_args.iter().map(|s| *s).collect::<Vec<_>>(), &config.config_dir);
             match install_cmd.output().await {
                 Ok(output) if output.status.success() => false,
