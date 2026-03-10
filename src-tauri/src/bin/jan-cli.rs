@@ -104,12 +104,6 @@ enum Commands {
         #[command(subcommand)]
         cmd: ModelsCommands,
     },
-    /// Show app configuration and data folder location
-    #[command(display_order = 12)]
-    App {
-        #[command(subcommand)]
-        cmd: AppCommands,
-    },
 }
 
 
@@ -233,16 +227,6 @@ enum ModelsCommands {
     },
 }
 
-// ── App subcommands ────────────────────────────────────────────────────────
-
-#[derive(Subcommand)]
-enum AppCommands {
-    /// Print the Jan data folder path (where models, threads, and config are stored)
-    DataFolder,
-    /// Print the Jan configuration as JSON
-    Config,
-}
-
 // ── ASCII logo ─────────────────────────────────────────────────────────────
 
 /// Build a left-aligned, bright-yellow ASCII logo for the help header.
@@ -299,7 +283,6 @@ async fn main() {
     match cli.command {
         Commands::Threads { cmd } => handle_threads(cmd).await,
         Commands::Models { cmd } => handle_models(cmd).await,
-        Commands::App { cmd } => handle_app(cmd),
         Commands::Serve { args } => handle_serve(args).await,
         Commands::Launch { program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size, fit, verbose, select } => {
             let program = program.unwrap_or_else(select_program_interactively);
@@ -1355,28 +1338,5 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         rope_freq_base: 0.0,
         rope_freq_scale: 0.0,
         ctx_shift: false,
-    }
-}
-
-// ── App handlers ───────────────────────────────────────────────────────────
-
-fn handle_app(cmd: AppCommands) {
-    match cmd {
-        AppCommands::DataFolder => {
-            let folder = cli_get_data_folder();
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&serde_json::json!({ "data_folder": folder }))
-                    .unwrap()
-            );
-        }
-
-        AppCommands::Config => match cli_get_config() {
-            Ok(config) => println!("{}", serde_json::to_string_pretty(&config).unwrap()),
-            Err(e) => {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
-        },
     }
 }
