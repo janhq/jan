@@ -107,6 +107,18 @@ fn next_request_id() -> String {
     REQUEST_ID_COUNTER.fetch_add(1, Ordering::SeqCst).to_string()
 }
 
+/// Returns true if `installed` is older than `required` (CalVer comparison).
+/// Returns false if either version cannot be parsed.
+pub(crate) fn needs_upgrade(installed: &str, required: &str) -> bool {
+    let parse = |v: &str| -> Option<Vec<u32>> {
+        v.split('.').map(|s| s.parse::<u32>().ok()).collect()
+    };
+    match (parse(installed), parse(required)) {
+        (Some(a), Some(b)) => a < b,
+        _ => false,
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct GatewayRequest {
     #[serde(rename = "type")]
@@ -446,11 +458,14 @@ pub async fn openclaw_setup_for_channels(state: tauri::State<'_, OpenClawState>)
     }
 
     let openclaw_version = match check_openclaw_installed().await {
-        Ok(Some(version)) => {
+        Ok(Some(version)) if !needs_upgrade(&version, OPENCLAW_VERSION) => {
             log::info!("OpenClaw installed: {}", version);
             Some(version)
         }
-        Ok(None) => {
+        Ok(maybe_version) => {
+            if let Some(ref v) = maybe_version {
+                log::info!("OpenClaw {} outdated, upgrading to {}", v, OPENCLAW_VERSION);
+            }
             match openclaw_install().await {
                 Ok(result) if result.success => {
                     result.version
@@ -1183,7 +1198,15 @@ async fn check_node_version_docker() -> Option<String> {
 pub async fn openclaw_install() -> Result<InstallResult, String> {
     let already_installed = check_openclaw_installed().await.ok().flatten();
 
-    if already_installed.is_none() {
+    let should_install = match &already_installed {
+        None => true,
+        Some(version) => needs_upgrade(version, OPENCLAW_VERSION),
+    };
+
+    if should_install {
+        if let Some(ref old_version) = already_installed {
+            log::info!("Upgrading OpenClaw from {} to {}", old_version, OPENCLAW_VERSION);
+        }
         let node_check = openclaw_check_dependencies().await;
         if !node_check.installed {
             return Ok(InstallResult {
@@ -2066,20 +2089,27 @@ pub async fn openclaw_enable(
     steps_completed.push(EnableStep::CheckingInstallation);
 
     let already_installed = if is_docker {
-        // For Docker: check if the Docker image exists locally
         let docker_installed = crate::core::openclaw::sandbox_docker::DockerSandbox::is_installed().await;
         let docker_exists = docker_installed == Some(true);
-        log::info!("Installation check: docker_container={}, sandbox={}", docker_exists, sandbox_name);
+        let image_ready = if docker_exists {
+            crate::core::openclaw::sandbox_docker::DockerSandbox::is_image_available().await
+        } else {
+            false
+        };
+        log::info!("Installation check: docker_container={}, image_ready={}", docker_exists, image_ready);
 
-        if docker_exists {
+        if image_ready {
             emit("already_installed", 40, "OpenClaw container exists in Docker.", sandbox_info.as_deref());
         }
-        docker_exists
+        image_ready
     } else {
-        // For non-Docker: check openclaw package on host
-        let pkg_installed = check_openclaw_installed().await.ok().flatten().is_some();
-        log::info!("Installation check: installed={}, sandbox={}", pkg_installed, sandbox_name);
-        pkg_installed
+        let pkg_version = check_openclaw_installed().await.ok().flatten();
+        let up_to_date = match &pkg_version {
+            Some(v) => !needs_upgrade(v, OPENCLAW_VERSION),
+            None => false,
+        };
+        log::info!("Installation check: version={:?}, up_to_date={}", pkg_version, up_to_date);
+        up_to_date
     };
 
     // Step 3: Install if needed

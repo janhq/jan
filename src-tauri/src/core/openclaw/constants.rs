@@ -3,7 +3,7 @@ pub const OPENCLAW_PACKAGE_NAME: &str = "openclaw";
 
 /// Pinned OpenClaw version (npm semver and Docker image tag)
 /// This ensures config compatibility across installs.
-pub const OPENCLAW_VERSION: &str = "2026.3.1";
+pub const OPENCLAW_VERSION: &str = "2026.3.2";
 
 /// Default OpenClaw gateway port
 pub const DEFAULT_OPENCLAW_PORT: u16 = 18789;
