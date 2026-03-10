@@ -185,7 +185,7 @@ pub struct OpenClawStatus {
     pub installed: bool,
     /// Whether the gateway is running
     pub running: bool,
-    /// Runtime version (Bun or Node.js, if installed)
+    /// Runtime version (if installed)
     pub runtime_version: Option<String>,
     /// Installed OpenClaw version (if installed)
     pub openclaw_version: Option<String>,
@@ -201,12 +201,12 @@ pub struct OpenClawStatus {
     pub isolation_tier: Option<String>,
 }
 
-/// Node.js check result
+/// Runtime check result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeCheckResult {
-    /// Whether Node.js is installed
+    /// Whether the runtime is installed
     pub installed: bool,
-    /// Node.js version (if installed)
+    /// Runtime version (if installed)
     pub version: Option<String>,
     /// Major version number
     pub major_version: Option<u32>,
