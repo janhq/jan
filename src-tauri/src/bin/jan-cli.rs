@@ -1096,7 +1096,7 @@ async fn handle_launch(
     }
     eprintln!();
     let launch_cmd = if is_openclaw {
-        format!("npx openclaw {}", program_args.join(" "))
+        format!("openclaw {}", program_args.join(" "))
     } else {
         format!("{} {}", program, program_args.join(" "))
     };
