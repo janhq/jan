@@ -81,6 +81,31 @@ pub fn get_openclaw_bin_path() -> Result<std::path::PathBuf, String> {
     Ok(bin_path)
 }
 
+/// Resolve the JS entry point for OpenClaw on Windows.
+///
+/// On Windows, `bun install -g` creates `bin/openclaw.exe` which is a hardlinked
+/// launcher that triggers file-system validation errors. Instead, we find the
+/// actual JS entry point (`openclaw.mjs`) in the global node_modules so that
+/// `bun.exe <entry.mjs>` can be used as interpreter — same pattern as Unix.
+///
+/// Searches:
+///   1. `$BUN_INSTALL/install/global/node_modules/openclaw/openclaw.mjs`
+///   2. `$BUN_INSTALL/node_modules/openclaw/openclaw.mjs`
+#[cfg(target_os = "windows")]
+pub fn get_openclaw_js_entry() -> Option<std::path::PathBuf> {
+    let runtime_dir = get_openclaw_runtime_dir().ok()?;
+    let candidates = [
+        runtime_dir.join("install").join("global").join("node_modules").join("openclaw").join("openclaw.mjs"),
+        runtime_dir.join("node_modules").join("openclaw").join("openclaw.mjs"),
+    ];
+    for candidate in &candidates {
+        if candidate.exists() {
+            return Some(candidate.clone());
+        }
+    }
+    None
+}
+
 /// Resolve the bundled Bun path. Returns None if unavailable.
 ///
 /// Looks for bun next to the current executable (same approach as MCP).

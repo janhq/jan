@@ -4,8 +4,8 @@ use super::sandbox::{IsolationTier, Sandbox, SandboxConfig, SandboxHandle, Sandb
 
 pub struct DirectProcessSandbox;
 
-/// Build a command for openclaw. On Unix, uses bun as explicit interpreter
-/// to bypass shebang resolution. On Windows, uses bunx to avoid exe hardlink issues.
+/// Build a command for openclaw. Uses bun as explicit interpreter for the
+/// JS entry point on all platforms (bypasses shebang on Unix, .exe hardlink on Windows).
 fn build_openclaw_command(args: &[&str], config_dir: &std::path::Path) -> tokio::process::Command {
     let openclaw_path = super::get_openclaw_bin_path().ok();
     let use_installed_binary = openclaw_path
@@ -14,14 +14,15 @@ fn build_openclaw_command(args: &[&str], config_dir: &std::path::Path) -> tokio:
         .unwrap_or(false);
     let bun_path = super::resolve_bundled_bun();
 
-    let mut cmd = if cfg!(target_os = "windows") && bun_path.is_some() {
-        // On Windows, use `bunx openclaw <args>` to avoid openclaw.exe hardlink issues.
-        // Set BUN_INSTALL so bunx resolves the globally-installed openclaw package.
+    #[cfg(target_os = "windows")]
+    let js_entry = super::get_openclaw_js_entry();
+    #[cfg(not(target_os = "windows"))]
+    let js_entry: Option<std::path::PathBuf> = None;
+
+    let mut cmd = if cfg!(target_os = "windows") && bun_path.is_some() && js_entry.is_some() {
+        // On Windows, use `bun.exe <openclaw.mjs>` to bypass the .exe hardlink issues.
         let mut c = tokio::process::Command::new(bun_path.unwrap());
-        c.args(["x", "openclaw"]);
-        if let Ok(runtime_dir) = super::get_openclaw_runtime_dir() {
-            c.env("BUN_INSTALL", runtime_dir.to_string_lossy().as_ref());
-        }
+        c.arg(js_entry.unwrap());
         c
     } else if !cfg!(target_os = "windows") && use_installed_binary && bun_path.is_some() {
         let mut c = tokio::process::Command::new(bun_path.unwrap());
