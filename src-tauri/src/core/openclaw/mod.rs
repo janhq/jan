@@ -24,7 +24,6 @@ use tokio::sync::Mutex;
 use sandbox::{Sandbox, SandboxMode};
 use tunnels::TunnelState;
 
-/// When true, config dir resolves to `~/.openclaw/sandbox/docker/` instead of `~/.openclaw/`.
 static DOCKER_MODE_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 pub fn set_docker_mode(active: bool) {
@@ -33,6 +32,17 @@ pub fn set_docker_mode(active: bool) {
 
 pub fn is_docker_mode() -> bool {
     DOCKER_MODE_ACTIVE.load(Ordering::SeqCst)
+}
+
+/// Base directory for all OpenClaw data, rooted under Jan's data folder.
+/// Returns `<jan_data_folder>/openclaw/`.
+pub fn get_openclaw_base_dir() -> Result<PathBuf, String> {
+    let jan_data = crate::core::app::commands::resolve_jan_data_folder();
+    let base = jan_data.join("openclaw");
+    if !base.exists() {
+        std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
+    }
+    Ok(base)
 }
 
 /// OpenClaw configuration directory, isolated per sandbox mode.
@@ -62,8 +72,8 @@ pub const MIN_BUN_VERSION: &str = "1.0";
 
 /// OpenClaw runtime directory (where Bun and OpenClaw are installed)
 pub fn get_openclaw_runtime_dir() -> Result<std::path::PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let runtime_dir = home.join(".jan").join("openclaw-runtime");
+    let base = get_openclaw_base_dir()?;
+    let runtime_dir = base.join("runtime");
     if !runtime_dir.exists() {
         std::fs::create_dir_all(&runtime_dir).map_err(|e| e.to_string())?;
     }
