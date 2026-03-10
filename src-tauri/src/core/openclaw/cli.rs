@@ -14,7 +14,7 @@ fn hide_window(cmd: &mut Command) {
 fn hide_window(_cmd: &mut Command) {}
 
 /// Build a command for openclaw. On Unix, uses bun as explicit interpreter
-/// to bypass shebang resolution. On Windows, runs openclaw.exe directly.
+/// to bypass shebang resolution. On Windows, uses bunx to avoid exe hardlink issues.
 fn build_openclaw_command(args: &[&str]) -> Command {
     let _ = super::ensure_bun_node_shim();
 
@@ -24,11 +24,23 @@ fn build_openclaw_command(args: &[&str]) -> Command {
         .map(|p| p.exists())
         .unwrap_or(false);
     let bun_path = super::resolve_bundled_bun();
-    let use_bun_interpreter = !cfg!(target_os = "windows")
-        && use_installed_binary
-        && bun_path.is_some();
 
-    if use_bun_interpreter {
+    if cfg!(target_os = "windows") && bun_path.is_some() {
+        // On Windows, use `bunx openclaw <args>` to avoid openclaw.exe hardlink issues.
+        // Set BUN_INSTALL so bunx resolves the globally-installed openclaw package.
+        let mut cmd = Command::new(bun_path.unwrap());
+        cmd.arg("x");
+        cmd.arg("openclaw");
+        if let Ok(runtime_dir) = super::get_openclaw_runtime_dir() {
+            cmd.env("BUN_INSTALL", runtime_dir.to_string_lossy().as_ref());
+        }
+        if let Some(new_path) = super::build_augmented_path() {
+            cmd.env("PATH", new_path);
+        }
+        cmd.args(args);
+        hide_window(&mut cmd);
+        cmd
+    } else if !cfg!(target_os = "windows") && use_installed_binary && bun_path.is_some() {
         let mut cmd = Command::new(bun_path.unwrap());
         cmd.arg(openclaw_path.unwrap());
         if let Some(new_path) = super::build_augmented_path() {
@@ -60,7 +72,15 @@ async fn check_openclaw_installed() -> Result<Option<String>, String> {
     if let Ok(openclaw_path) = super::get_openclaw_bin_path() {
         if openclaw_path.exists() {
             let bun_path = super::resolve_bundled_bun();
-            let mut cmd = if !cfg!(target_os = "windows") && bun_path.is_some() {
+            let mut cmd = if cfg!(target_os = "windows") && bun_path.is_some() {
+                // On Windows, use `bunx openclaw` to avoid exe hardlink issues
+                let mut c = Command::new(bun_path.unwrap());
+                c.args(["x", "openclaw"]);
+                if let Ok(runtime_dir) = super::get_openclaw_runtime_dir() {
+                    c.env("BUN_INSTALL", runtime_dir.to_string_lossy().as_ref());
+                }
+                c
+            } else if !cfg!(target_os = "windows") && bun_path.is_some() {
                 let mut c = Command::new(bun_path.unwrap());
                 c.arg(&openclaw_path);
                 c

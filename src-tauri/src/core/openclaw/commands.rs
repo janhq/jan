@@ -43,7 +43,7 @@ async fn is_docker_container_running() -> bool {
 }
 
 /// Build a `Command` for openclaw: docker exec when container is running,
-/// otherwise direct process with bun interpreter (Unix) or native exe (Windows).
+/// otherwise direct process with bun interpreter (Unix) or bunx (Windows).
 async fn openclaw_command(args: &[&str]) -> Command {
     if is_docker_container_running().await {
         let mut cmd = Command::new("docker");
@@ -67,11 +67,23 @@ async fn openclaw_command(args: &[&str]) -> Command {
             .map(|p| p.exists())
             .unwrap_or(false);
         let bun_path = super::resolve_bundled_bun();
-        let use_bun_interpreter = !cfg!(target_os = "windows")
-            && use_installed_binary
-            && bun_path.is_some();
 
-        let mut cmd = if use_bun_interpreter {
+        let mut cmd = if cfg!(target_os = "windows") && bun_path.is_some() {
+            // On Windows, use `bunx openclaw <args>` to avoid openclaw.exe hardlink issues.
+            // Set BUN_INSTALL so bunx resolves the globally-installed openclaw package
+            // (same pattern as MCP helpers.rs).
+            let mut c = Command::new(bun_path.unwrap());
+            c.arg("x");
+            c.arg("openclaw");
+            if let Ok(runtime_dir) = super::get_openclaw_runtime_dir() {
+                c.env("BUN_INSTALL", runtime_dir.to_string_lossy().as_ref());
+            }
+            if let Some(new_path) = super::build_augmented_path() {
+                c.env("PATH", new_path);
+            }
+            c.args(args);
+            c
+        } else if !cfg!(target_os = "windows") && use_installed_binary && bun_path.is_some() {
             let mut c = Command::new(bun_path.unwrap());
             c.arg(openclaw_path.unwrap());
             if let Some(new_path) = super::build_augmented_path() {
@@ -793,40 +805,14 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
             let _ = cmd.output().await;
         }
     } else {
-        // Try to use resolved openclaw path first, fallback to bare command
-        let openclaw_path = super::get_openclaw_bin_path().ok();
-        let use_installed_binary = openclaw_path
-            .as_ref()
-            .map(|p| p.exists())
+        // Use openclaw_command() which handles bunx on Windows, bun interpreter on Unix
+        let cli_stopped = openclaw_command(&["gateway", "stop"]).await
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map(|o| o.status.success())
             .unwrap_or(false);
-
-        let cli_stopped = if use_installed_binary {
-            let mut cmd = Command::new(openclaw_path.unwrap());
-            cmd.args(["gateway", "stop"])
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
-            if let Some(new_path) = super::build_augmented_path() {
-                cmd.env("PATH", new_path);
-            }
-            hide_window(&mut cmd);
-            cmd.output()
-                .await
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-        } else {
-            let mut cmd = Command::new("openclaw");
-            cmd.args(["gateway", "stop"])
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
-            if let Some(new_path) = super::build_augmented_path() {
-                cmd.env("PATH", new_path);
-            }
-            hide_window(&mut cmd);
-            cmd.output()
-                .await
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-        };
 
         if !cli_stopped {
             #[cfg(any(target_os = "macos", target_os = "linux"))]

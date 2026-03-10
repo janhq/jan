@@ -5,7 +5,7 @@ use super::sandbox::{IsolationTier, Sandbox, SandboxConfig, SandboxHandle, Sandb
 pub struct DirectProcessSandbox;
 
 /// Build a command for openclaw. On Unix, uses bun as explicit interpreter
-/// to bypass shebang resolution. On Windows, runs openclaw.exe directly.
+/// to bypass shebang resolution. On Windows, uses bunx to avoid exe hardlink issues.
 fn build_openclaw_command(args: &[&str], config_dir: &std::path::Path) -> tokio::process::Command {
     let openclaw_path = super::get_openclaw_bin_path().ok();
     let use_installed_binary = openclaw_path
@@ -13,11 +13,17 @@ fn build_openclaw_command(args: &[&str], config_dir: &std::path::Path) -> tokio:
         .map(|p| p.exists())
         .unwrap_or(false);
     let bun_path = super::resolve_bundled_bun();
-    let use_bun_interpreter = !cfg!(target_os = "windows")
-        && use_installed_binary
-        && bun_path.is_some();
 
-    let mut cmd = if use_bun_interpreter {
+    let mut cmd = if cfg!(target_os = "windows") && bun_path.is_some() {
+        // On Windows, use `bunx openclaw <args>` to avoid openclaw.exe hardlink issues.
+        // Set BUN_INSTALL so bunx resolves the globally-installed openclaw package.
+        let mut c = tokio::process::Command::new(bun_path.unwrap());
+        c.args(["x", "openclaw"]);
+        if let Ok(runtime_dir) = super::get_openclaw_runtime_dir() {
+            c.env("BUN_INSTALL", runtime_dir.to_string_lossy().as_ref());
+        }
+        c
+    } else if !cfg!(target_os = "windows") && use_installed_binary && bun_path.is_some() {
         let mut c = tokio::process::Command::new(bun_path.unwrap());
         c.arg(openclaw_path.unwrap());
         c
