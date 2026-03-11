@@ -49,7 +49,7 @@ function RemoteAccess() {
   const { t } = useTranslation()
   const { selectedModel, providers, selectModelProvider } = useModelProvider()
   const firstAvailableModel = providers
-    .filter((p) => isLocalProvider(p.provider))
+    .filter((p) => isLocalProvider(p.provider) || !!p.api_key)
     .flatMap((p) => p.models.map((m) => ({ provider: p.provider, model: m })))
     .at(0)
   const hasAnyModel = firstAvailableModel !== undefined
@@ -58,7 +58,10 @@ function RemoteAccess() {
     if (!selectedModel) {
       const lastUsed = getLastUsedModel()
       const lastUsedExists = lastUsed && providers.some(
-        (p) => p.provider === lastUsed.provider && p.models.some((m) => m.id === lastUsed.model)
+        (p) =>
+          p.provider === lastUsed.provider &&
+          (isLocalProvider(p.provider) || !!p.api_key) &&
+          p.models.some((m) => m.id === lastUsed.model)
       )
       if (lastUsedExists) {
         selectModelProvider(lastUsed!.provider, lastUsed!.model)
@@ -326,7 +329,7 @@ function RemoteAccess() {
                     )}
                   </div>
                 }
-                description={!isRunning && !hasAnyModel ? t('settings:remoteAccess.noLocalModelAvailable') : undefined}
+                description={!isRunning && !hasAnyModel ? t('settings:remoteAccess.noModelAvailable') : undefined}
               />
 
               {isRunning && status?.sandbox_type && (
