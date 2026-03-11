@@ -335,9 +335,58 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       }
     }
 
+    // Fix for Anthropic serial tool-use (error 400): when an assistant message
+    // contains tool parts interleaved with text parts (serial tool calls),
+    // split it into separate messages so convertToModelMessages produces the
+    // tool_use / tool_result pairing that the Claude API requires.
+    // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
+    const messagesToConvert = (() => {
+      const selectedProviderName = useModelProvider.getState().selectedProvider
+      if (isAgentMode || selectedProviderName !== 'anthropic') {
+        return options.messages
+      }
+      return options.messages.flatMap((message) => {
+        if (message.role !== 'assistant') return [message]
+
+        const parts = Array.isArray(message.parts) ? message.parts : []
+        if (parts.length === 0) return [message]
+
+        const isToolPart = (p: (typeof parts)[number]) =>
+          p.type.startsWith('tool-')
+
+        const waves: (typeof parts)[] = []
+        let currentWave: typeof parts = []
+        let seenToolParts = false
+
+        for (const part of parts) {
+          if (isToolPart(part)) {
+            seenToolParts = true
+            currentWave.push(part)
+          } else if (part.type === 'text' && seenToolParts) {
+            // Text after tool parts marks the start of a new wave
+            waves.push(currentWave)
+            currentWave = [part]
+            seenToolParts = false
+          } else {
+            currentWave.push(part)
+          }
+        }
+        if (currentWave.length > 0) waves.push(currentWave)
+
+        // No serial tool calls detected — return original message unchanged
+        if (waves.length <= 1) return [message]
+
+        return waves.map((waveParts, i) => ({
+          ...message,
+          id: `${message.id}_w${i}`,
+          parts: waveParts,
+        }))
+      })
+    })()
+
     // Convert UI messages to model messages
     const baseMessages = convertToModelMessages(
-      this.mapUserInlineAttachments(options.messages)
+      this.mapUserInlineAttachments(messagesToConvert)
     )
 
     // If continuing a truncated response, append the partial assistant content as a
