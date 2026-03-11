@@ -74,23 +74,23 @@ async fn openclaw_command(args: &[&str]) -> Command {
         let mut cmd = if use_bun_interpreter {
             let mut c = Command::new(bun_path.unwrap());
             c.arg(openclaw_path.unwrap());
-            if let Some(new_path) = super::build_augmented_path() {
-                c.env("PATH", new_path);
-            }
+            // if let Some(new_path) = super::build_augmented_path() {
+            //     c.env("PATH", new_path);
+            // }
             c.args(args);
             c
         } else if use_installed_binary {
             let mut c = Command::new(openclaw_path.unwrap());
-            if let Some(new_path) = super::build_augmented_path() {
-                c.env("PATH", new_path);
-            }
+            // if let Some(new_path) = super::build_augmented_path() {
+            //     c.env("PATH", new_path);
+            // }
             c.args(args);
             c
         } else {
             let mut c = Command::new("openclaw");
-            if let Some(new_path) = super::build_augmented_path() {
-                c.env("PATH", new_path);
-            }
+            // if let Some(new_path) = super::build_augmented_path() {
+            //     c.env("PATH", new_path);
+            // }
             c.args(args);
             c
         };
@@ -815,9 +815,9 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
             cmd.args(["gateway", "stop"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
-            if let Some(new_path) = super::build_augmented_path() {
-                cmd.env("PATH", new_path);
-            }
+            // if let Some(new_path) = super::build_augmented_path() {
+            //     cmd.env("PATH", new_path);
+            // }
             hide_window(&mut cmd);
             cmd.output()
                 .await
@@ -828,9 +828,9 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
             cmd.args(["gateway", "stop"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
-            if let Some(new_path) = super::build_augmented_path() {
-                cmd.env("PATH", new_path);
-            }
+            // if let Some(new_path) = super::build_augmented_path() {
+            //     cmd.env("PATH", new_path);
+            // }
             hide_window(&mut cmd);
             cmd.output()
                 .await

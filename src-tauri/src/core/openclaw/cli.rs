@@ -57,9 +57,9 @@ fn build_openclaw_command(args: &[&str]) -> tokio::process::Command {
         cmd.env("BUN_INSTALL", dir);
     }
 
-    if let Some(new_path) = super::build_augmented_path() {
-        cmd.env("PATH", new_path);
-    }
+    // if let Some(new_path) = super::build_augmented_path() {
+    //     cmd.env("PATH", new_path);
+    // }
 
     #[cfg(target_os = "windows")]
     {
@@ -82,9 +82,9 @@ async fn check_openclaw_installed() -> Result<Option<String>, String> {
                 Command::new(&openclaw_path)
             };
             cmd.arg("--version");
-            if let Some(new_path) = super::build_augmented_path() {
-                cmd.env("PATH", new_path);
-            }
+            // if let Some(new_path) = super::build_augmented_path() {
+            //     cmd.env("PATH", new_path);
+            // }
             hide_window(&mut cmd);
             let output = cmd.output().await;
 
@@ -99,9 +99,9 @@ async fn check_openclaw_installed() -> Result<Option<String>, String> {
 
     let mut cmd = Command::new("openclaw");
     cmd.arg("--version");
-    if let Some(new_path) = super::build_augmented_path() {
-        cmd.env("PATH", new_path);
-    }
+    // if let Some(new_path) = super::build_augmented_path() {
+    //     cmd.env("PATH", new_path);
+    // }
     hide_window(&mut cmd);
     let output = cmd.output().await;
 
