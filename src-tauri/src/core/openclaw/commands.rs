@@ -86,9 +86,9 @@ fn build_openclaw_command(args: &[&str]) -> tokio::process::Command {
         cmd.env("BUN_INSTALL", dir);
     }
 
-    if let Some(new_path) = super::build_augmented_path() {
-        cmd.env("PATH", new_path);
-    }
+    // if let Some(new_path) = super::build_augmented_path() {
+    //     cmd.env("PATH", new_path);
+    // }
 
     #[cfg(target_os = "windows")]
     {
@@ -838,9 +838,9 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
             cmd.args(["gateway", "stop"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
-            if let Some(new_path) = super::build_augmented_path() {
-                cmd.env("PATH", new_path);
-            }
+            // if let Some(new_path) = super::build_augmented_path() {
+            //     cmd.env("PATH", new_path);
+            // }
             hide_window(&mut cmd);
             cmd.output()
                 .await
@@ -851,9 +851,9 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
             cmd.args(["gateway", "stop"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
-            if let Some(new_path) = super::build_augmented_path() {
-                cmd.env("PATH", new_path);
-            }
+            // if let Some(new_path) = super::build_augmented_path() {
+            //     cmd.env("PATH", new_path);
+            // }
             hide_window(&mut cmd);
             cmd.output()
                 .await
