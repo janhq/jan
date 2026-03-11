@@ -20,6 +20,10 @@ import { Callout, Tabs } from 'nextra/components'
 
 # Jan CLI
 
+<Callout type="info">
+Available since **Jan 0.7.8** (March 2026).
+</Callout>
+
 The `jan` CLI lets you serve local AI models and launch autonomous agents from your terminal — no cloud account, no usage fees, full privacy.
 
 ```
@@ -66,6 +70,8 @@ Jan CLI is installed automatically when you launch the Jan desktop app for the f
 The CLI binary is installed at `~/.local/bin/jan` on macOS/Linux. Make sure this path is in your `$PATH` to use the `jan` command from any terminal.
 </Callout>
 
+The Jan desktop app helps you manage inference backends (LlamaCPP, MLX) and models — or use the CLI to manage them. Both share the same data folder, so models installed via either interface are available to both.
+
 ## Quick Start
 
 Getting started takes a single command:
@@ -90,7 +96,7 @@ jan serve [MODEL_ID] [OPTIONS]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `MODEL_ID` | Model ID to load (omit to pick interactively) | — |
+| `MODEL_ID` | Model ID to load (omit to pick interactively). Can be a local model ID or a HuggingFace repo ID (e.g., `unsloth/Qwen3.5-9B-GGUF`) | — |
 | `--port` | Port to listen on (0 = random free port) | `6767` |
 | `--n-gpu-layers` | GPU layers to offload (-1 = all, 0 = CPU only) | `-1` |
 | `--ctx-size` | Context window size in tokens | `32768` |
@@ -122,7 +128,26 @@ jan serve qwen3.5-35b-a3b             # serve a specific model
 jan serve qwen3.5-35b-a3b --fit       # auto-fit context to available VRAM
 jan serve qwen3.5-35b-a3b --detach    # run in background
 jan serve qwen3.5-35b-a3b --port 8080 # serve on a custom port
+jan serve unsloth/Qwen3.5-9B-GGUF     # download and serve a HuggingFace model
 ```
+
+<Callout type="info">
+When using a HuggingFace repo ID (e.g., `unsloth/Qwen3.5-9B-GGUF`), if the model isn't downloaded yet, Jan will automatically download it from HuggingFace.
+</Callout>
+
+#### LlamaCPP Server Arguments
+
+You can pass additional arguments to the underlying LlamaCPP server using environment variables with the `LLAMA_ARG_` prefix:
+
+```bash
+export LLAMA_ARG_HOST=0.0.0.0          # bind to specific host
+export LLAMA_ARG_N_GPU_LAYERS=32       # set GPU layers
+export LLAMA_ARG_CTX_SIZE=8192         # set context size
+export LLAMA_ARG_THREADS=8             # set CPU threads
+jan serve qwen3.5-35b-a3b
+```
+
+Any LlamaCPP server flag can be passed this way — just prefix the flag name with `LLAMA_ARG_`.
 
 ---
 
