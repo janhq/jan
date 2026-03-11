@@ -38,7 +38,7 @@ Error logs are essential for troubleshooting issues and getting help from Jan te
 2. Choose **App Log**
 
 <br/>
-![App log](./_assets/trouble-shooting-02.png)
+![App log](./_assets/server-troubleshooting.png)
 <br/>
 
 #### Through Terminal
@@ -205,57 +205,11 @@ To verify GPU acceleration is turned on:
 3. Verify your selected GPU(s) are visible in **System Monitor** from Jan's footer
 
 <br/>
-![Hardware](./_assets/trouble-shooting-01.png)
+![Hardware](./_assets/hardware-settings.png)
 <br/>
 
 
-### Step 3: GPU Settings Check
-
-1. Go to **Settings** > **General** > **Data Folder**
-2. Click on **Open Containing Folder**
-3. Open `settings.json` file
-
-Example `settings.json`:
-
-```
-{
-  "notify": true,
-  "run_mode": "gpu",
-  "nvidia_driver": {
-    "exist": true,
-    "version": "531.18"
-  },
-  "cuda": {
-    "exist": true,
-    "version": "12"
-  },
-  "gpus": [
-    {
-      "id": "0",
-      "vram": "12282"
-    },
-    {
-      "id": "1",
-      "vram": "6144"
-    },
-    {
-      "id": "2",
-      "vram": "6144"
-    }
-  ],
-  "gpu_highest_vram": "0"
-}
-```
-**Key Configuration Values:**
-- `run_mode`: Should be "gpu" for GPU acceleration
-- `nvidia_driver`: Shows driver status and version
-- `cuda`: Shows CUDA toolkit status and version
-- `gpus`: Lists available GPUs and their VRAM (in MB)
-- `gpu_highest_vram`: ID of GPU with most VRAM
-
-
-
-### Step 4: Restart Jan
+### Step 3: Restart Jan
 
 Restart Jan to make sure it works.
 
@@ -390,12 +344,32 @@ The "Unexpected token" error usually relates to OpenAI API authentication or reg
 2. Verify your network can reach OpenAI's API endpoints
 
 
-## Need Further Support?
-If you can't find what you need in our troubleshooting guide, feel free reach out to us for extra help:
-- **Copy** your [app logs](/docs/desktop/troubleshooting#how-to-get-error-logs)
-- Go to our [Discord](https://discord.com/invite/FTk2MvZwJH) & send it to **#🆘|jan-help** channel for further support.
+## Performance Issues
 
+**Models Running Slowly:**
+- Enable GPU acceleration (see NVIDIA section above)
+- Use appropriate model size for your hardware
+- Close other memory-intensive applications
+- Check Task Manager/Activity Monitor for resource usage
+
+**High Memory Usage:**
+- Switch to smaller model variants
+- Reduce context length in model settings
+- Enable model offloading in engine settings
+
+**Frequent Crashes:**
+- Update graphics drivers
+- Check system temperature
+- Reduce GPU layers if using GPU acceleration
+- Verify adequate power supply (desktop systems)
+
+## Need Further Support?
+
+If these solutions don't work:
+
+1. **Gather Information:** Copy your [error logs](/docs/desktop/troubleshooting#how-to-get-error-logs) and note your system specs
+2. **Get Community Support:** Join our [Discord](https://discord.com/invite/FTk2MvZwJH) and post in **#🆘|jan-help** with your logs and system info
 
 <Callout type="info">
-Check the logs to ensure the information is what you intend to send. We retain your logs for only **24 hours**, so report any issues promptly.
+Remove personal information before sharing logs. We only keep logs for **24 hours**, so report issues promptly.
 </Callout>
