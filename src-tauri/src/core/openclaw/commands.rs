@@ -42,6 +42,63 @@ async fn is_docker_container_running() -> bool {
         .unwrap_or(false)
 }
 
+/// Returns the BUN_INSTALL directory (`~/.jan/.bunx`), creating it if needed.
+fn get_bunx_dir() -> Option<std::path::PathBuf> {
+    let dir = dirs::home_dir()?.join(".jan").join(".bunx");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        log::warn!("Failed to create BUN_INSTALL dir {:?}: {}", dir, e);
+    }
+    Some(dir)
+}
+
+/// Build a command for openclaw. On Unix, uses bun as explicit interpreter
+/// to bypass shebang resolution. On Windows, runs openclaw.exe directly.
+fn build_openclaw_command(args: &[&str]) -> tokio::process::Command {
+    let bunx_dir = get_bunx_dir();
+
+    let installed_bin = bunx_dir.as_ref().map(|d| {
+        if cfg!(target_os = "windows") {
+            d.join("bin").join("openclaw.exe")
+        } else {
+            d.join("bin").join("openclaw")
+        }
+    });
+
+    let mut cmd = if installed_bin.as_ref().map(|p| p.exists()).unwrap_or(false) {
+        log::info!("Running openclaw from installed path: {:?}", installed_bin);
+        tokio::process::Command::new(installed_bin.unwrap())
+    } else if let Some(bun) = super::resolve_bundled_bun() {
+        log::info!("openclaw not installed yet, falling back to bun x");
+        let mut c = tokio::process::Command::new(bun);
+        c.arg("x");
+        c.arg("openclaw");
+        c
+    } else {
+        tokio::process::Command::new("openclaw")
+    };
+
+    cmd.args(args)
+        // .current_dir(config_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    if let Some(dir) = bunx_dir {
+        cmd.env("BUN_INSTALL", dir);
+    }
+
+    if let Some(new_path) = super::build_augmented_path() {
+        cmd.env("PATH", new_path);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+
+    cmd
+}
+
 /// Build a `Command` for openclaw: docker exec when container is running,
 /// otherwise direct process with bun interpreter (Unix) or native exe (Windows).
 async fn openclaw_command(args: &[&str]) -> Command {
@@ -59,41 +116,7 @@ async fn openclaw_command(args: &[&str]) -> Command {
         hide_window(&mut cmd);
         cmd
     } else {
-        let _ = super::ensure_bun_node_shim();
-
-        let openclaw_path = super::get_openclaw_bin_path().ok();
-        let use_installed_binary = openclaw_path
-            .as_ref()
-            .map(|p| p.exists())
-            .unwrap_or(false);
-        let bun_path = super::resolve_bundled_bun();
-        let use_bun_interpreter = !cfg!(target_os = "windows")
-            && use_installed_binary
-            && bun_path.is_some();
-
-        let mut cmd = if use_bun_interpreter {
-            let mut c = Command::new(bun_path.unwrap());
-            c.arg(openclaw_path.unwrap());
-            if let Some(new_path) = super::build_augmented_path() {
-                c.env("PATH", new_path);
-            }
-            c.args(args);
-            c
-        } else if use_installed_binary {
-            let mut c = Command::new(openclaw_path.unwrap());
-            if let Some(new_path) = super::build_augmented_path() {
-                c.env("PATH", new_path);
-            }
-            c.args(args);
-            c
-        } else {
-            let mut c = Command::new("openclaw");
-            if let Some(new_path) = super::build_augmented_path() {
-                c.env("PATH", new_path);
-            }
-            c.args(args);
-            c
-        };
+        let mut cmd = build_openclaw_command(args);
         hide_window(&mut cmd);
         cmd
     }
@@ -679,8 +702,7 @@ async fn run_doctor_fix() -> Result<(), String> {
     }
 }
 
-/// Restart the gateway. Docker: `docker restart`. Direct process: stop → install → start
-/// (launchd caches service args, so a plain `gateway restart` won't pick up config changes).
+/// Restart the gateway. Docker: `docker restart`. Direct process: stop → spawn child.
 async fn restart_gateway_cli() -> Result<(), String> {
     if is_docker_container_running().await {
         let mut cmd = Command::new("docker");
@@ -707,20 +729,12 @@ async fn restart_gateway_cli() -> Result<(), String> {
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    // Re-register service with --runtime bun when bundled Bun is available.
-    // On Windows this requires admin (schtasks) and may fail.
-    let install_args: Vec<&str> = vec!["gateway", "install"];
-    let install_output = openclaw_command(&install_args).await
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await;
-    let service_installed = install_output
-        .as_ref()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    // Check if a system service is already registered (launchd plist on Mac,
+    // systemd unit on Linux) — if so, use `gateway start` to let the service
+    // manager handle it. Otherwise spawn as a direct child process.
+    let service_exists = is_gateway_service_registered();
 
-    if service_installed {
+    if service_exists {
         let output = openclaw_command(&["gateway", "start"]).await
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -730,19 +744,42 @@ async fn restart_gateway_cli() -> Result<(), String> {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            log::warn!("Gateway start failed: {}", stderr);
+            log::warn!("Gateway start via service failed: {}, falling back to child process", stderr);
+            let mut cmd = openclaw_command(&["gateway"]).await;
+            cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+            hide_window(&mut cmd);
+            if let Err(e) = cmd.spawn() {
+                log::warn!("Failed to spawn openclaw gateway: {}", e);
+            }
         }
     } else {
-        // Service registration failed (e.g. Windows without admin).
-        // Spawn `openclaw gateway` as a foreground child process.
-        log::info!("Service install unavailable, restarting gateway as child process");
+        log::info!("No gateway service registered, restarting as child process");
         let mut cmd = openclaw_command(&["gateway"]).await;
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        hide_window(&mut cmd);
         if let Err(e) = cmd.spawn() {
             log::warn!("Failed to spawn openclaw gateway: {}", e);
         }
     }
     Ok(())
+}
+
+/// Check if a gateway system service is already registered (without running `gateway install`).
+fn is_gateway_service_registered() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            return home.join("Library/LaunchAgents/ai.openclaw.gateway.plist").exists();
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(".config/systemd/user/openclaw-gateway.service").exists();
+        }
+    }
+    // Windows uses Task Scheduler — no simple file check, default to child process.
+    false
 }
 
 /// Clear stale files that may cause setup failures.
