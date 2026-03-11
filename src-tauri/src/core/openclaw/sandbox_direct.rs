@@ -90,7 +90,6 @@ fn build_openclaw_command(args: &[&str], config_dir: &std::path::Path) -> tokio:
     };
 
     cmd.args(args)
-        .current_dir(config_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
