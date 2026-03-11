@@ -247,7 +247,7 @@ const SettingsMenu = () => {
           <div className="mt-4">
             <span className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {t('common:integrations')}
-              <span className="text-[10px] ml-2 font-medium px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400">{t('common:experimental')}</span>
+              <span className="text-[11px] capitalize ml-2 font-medium px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400">{t('common:experimental')}</span>
             </span>
             <div className="mt-1 flex flex-col gap-1">
               <Link
