@@ -362,8 +362,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           if (isToolPart(part)) {
             seenToolParts = true
             currentWave.push(part)
-          } else if (part.type === 'text' && seenToolParts) {
-            // Text after tool parts marks the start of a new wave
+          } else if (!isToolPart(part) && seenToolParts) {
+            // Any non-tool part (text, reasoning, file, etc.) after tool parts
+            // marks the start of a new wave
             waves.push(currentWave)
             currentWave = [part]
             seenToolParts = false
