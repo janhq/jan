@@ -42,9 +42,9 @@ async fn is_docker_container_running() -> bool {
         .unwrap_or(false)
 }
 
-/// Returns the BUN_INSTALL directory (`~/.jan/.bunx`), creating it if needed.
+/// Returns the BUN_INSTALL directory under Jan's data folder, creating it if needed.
 fn get_bunx_dir() -> Option<std::path::PathBuf> {
-    let dir = dirs::home_dir()?.join(".jan").join(".bunx");
+    let dir = super::get_openclaw_base_dir().ok()?.join("bunx");
     if let Err(e) = std::fs::create_dir_all(&dir) {
         log::warn!("Failed to create BUN_INSTALL dir {:?}: {}", dir, e);
     }
