@@ -65,20 +65,8 @@ fn build_openclaw_command(args: &[&str], config_dir: &std::path::Path) -> tokio:
     });
 
     let mut cmd = if installed_bin.as_ref().map(|p| p.exists()).unwrap_or(false) {
-        let bin = installed_bin.unwrap();
-        #[cfg(not(target_os = "windows"))]
-        let cmd = {
-            log::info!("Running openclaw via node from installed path: {:?}", bin);
-            let mut c = tokio::process::Command::new("node");
-            c.arg(&bin);
-            c
-        };
-        #[cfg(target_os = "windows")]
-        let cmd = {
-            log::info!("Running openclaw from installed path: {:?}", bin);
-            tokio::process::Command::new(&bin)
-        };
-        cmd
+        log::info!("Running openclaw from installed path: {:?}", installed_bin);
+        tokio::process::Command::new(installed_bin.unwrap())
     } else if let Some(bun) = super::resolve_bundled_bun() {
         log::info!("openclaw not installed yet, falling back to bun x");
         let mut c = tokio::process::Command::new(bun);
