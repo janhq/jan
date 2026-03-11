@@ -30,7 +30,9 @@ const SettingsMenu = () => {
 
   const createProvider = useCallback(
     (name: string) => {
-      if (providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())) {
+      if (
+        providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())
+      ) {
         toast.error(t('provider:providerAlreadyExists', { name }))
         return
       }
@@ -44,7 +46,10 @@ const SettingsMenu = () => {
       }
       addProvider(newProvider)
       setTimeout(() => {
-        navigate({ to: route.settings.providers, params: { providerName: name } })
+        navigate({
+          to: route.settings.providers,
+          params: { providerName: name },
+        })
       }, 0)
     },
     [providers, addProvider, t, navigate]
@@ -155,9 +160,7 @@ const SettingsMenu = () => {
 
   return (
     <>
-      <div
-        className='h-full w-54 shrink-0 px-1.5 flex overflow-auto'
-      >
+      <div className="h-full w-58 shrink-0 px-1.5 flex overflow-auto">
         <div className="flex flex-col gap-1 w-full font-medium">
           {menuSettings.map((menu) => {
             if (!menu.isEnabled) {
@@ -170,9 +173,7 @@ const SettingsMenu = () => {
                   className="block px-2 gap-1.5 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary py-1 w-full rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
                 >
                   <div className="flex items-center justify-between">
-                    <span>
-                      {t(menu.title)}
-                    </span>
+                    <span>{t(menu.title)}</span>
                     {menu.hasSubMenu && (
                       <button
                         onClick={(e) => {
@@ -247,7 +248,9 @@ const SettingsMenu = () => {
           <div className="mt-4">
             <span className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {t('common:integrations')}
-              <span className="text-[11px] capitalize ml-2 font-medium px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400">{t('common:experimental')}</span>
+              <span className="text-[11px] capitalize ml-2 font-medium px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400">
+                {t('common:experimental')}
+              </span>
             </span>
             <div className="mt-1 flex flex-col gap-1">
               <Link
@@ -264,7 +267,7 @@ const SettingsMenu = () => {
               </Link>
             </div>
           </div>
-          
+
           {/* Model Providers section */}
           <div className="mt-4">
             <div className="flex items-center justify-between pl-2">
@@ -291,13 +294,17 @@ const SettingsMenu = () => {
                     className={cn(
                       'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-foreground',
                       isRouteActive && 'bg-secondary',
-                      provider.provider === 'llama.cpp' && stepSetupRemoteProvider && 'hidden'
+                      provider.provider === 'llama.cpp' &&
+                        stepSetupRemoteProvider &&
+                        'hidden'
                     )}
                     onClick={() =>
                       navigate({
                         to: route.settings.providers,
                         params: { providerName: provider.provider },
-                        ...(stepSetupRemoteProvider ? { search: { step: 'setup_remote_provider' } } : {}),
+                        ...(stepSetupRemoteProvider
+                          ? { search: { step: 'setup_remote_provider' } }
+                          : {}),
                       })
                     }
                   >
@@ -315,40 +322,52 @@ const SettingsMenu = () => {
                     className="flex items-center justify-between px-2 py-1 w-full rounded-sm text-muted-foreground hover:bg-secondary/60"
                     onClick={() => setExpandedProviders(!expandedProviders)}
                   >
-                    <span className="text-sm">{t('common:hiddenProviders', { count: hiddenProviders.length })}</span>
-                    {expandedProviders ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+                    <span className="text-sm">
+                      {t('common:hiddenProviders', {
+                        count: hiddenProviders.length,
+                      })}
+                    </span>
+                    {expandedProviders ? (
+                      <IconChevronDown size={14} />
+                    ) : (
+                      <IconChevronRight size={14} />
+                    )}
                   </button>
-                  {expandedProviders && hiddenProviders.map((provider) => {
-                    const isRouteActive = matches.some(
-                      (match) =>
-                        match.routeId === '/settings/providers/$providerName' &&
-                        'providerName' in match.params &&
-                        match.params.providerName === provider.provider
-                    )
-                    return (
-                      <div
-                        key={provider.provider}
-                        className={cn(
-                          'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-muted-foreground',
-                          isRouteActive && 'bg-secondary'
-                        )}
-                        onClick={() => navigate({ to: route.settings.providers, params: { providerName: provider.provider } })}
-                      >
-                        <ProvidersAvatar provider={provider} />
-                        <div className="truncate flex-1">
-                          <span>{getProviderTitle(provider.provider)}</span>
+                  {expandedProviders &&
+                    hiddenProviders.map((provider) => {
+                      const isRouteActive = matches.some(
+                        (match) =>
+                          match.routeId ===
+                            '/settings/providers/$providerName' &&
+                          'providerName' in match.params &&
+                          match.params.providerName === provider.provider
+                      )
+                      return (
+                        <div
+                          key={provider.provider}
+                          className={cn(
+                            'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-muted-foreground',
+                            isRouteActive && 'bg-secondary'
+                          )}
+                          onClick={() =>
+                            navigate({
+                              to: route.settings.providers,
+                              params: { providerName: provider.provider },
+                            })
+                          }
+                        >
+                          <ProvidersAvatar provider={provider} />
+                          <div className="truncate flex-1">
+                            <span>{getProviderTitle(provider.provider)}</span>
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
                 </>
               )}
             </div>
             <div className="m-3" />
           </div>
-          
-
-          
         </div>
       </div>
     </>
