@@ -1421,6 +1421,13 @@ const JAN_ALLOWED_ORIGINS: &[&str] = &[
     "http://127.0.0.1",
 ];
 
+fn required_origins(gateway_port: u64) -> Vec<String> {
+    let mut origins: Vec<String> = JAN_ALLOWED_ORIGINS.iter().map(|s| s.to_string()).collect();
+    origins.push(format!("http://127.0.0.1:{}", gateway_port));
+    origins.push(format!("http://localhost:{}", gateway_port));
+    origins
+}
+
 /// Ensure Jan's origins are in the OpenClaw config's gateway.controlUi.allowedOrigins
 /// This patches an existing config without overwriting other settings
 /// Returns true if the config was modified, false if already correct
@@ -1471,11 +1478,14 @@ pub async fn openclaw_ensure_jan_origin() -> Result<bool, String> {
     let mut modified = false;
     let mut new_origins: Vec<serde_json::Value> = allowed_origins;
 
-    for origin in JAN_ALLOWED_ORIGINS {
-        if !existing_origins.contains(*origin) {
+    let gateway_port = config
+        .pointer("/gateway/port")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(super::OPENCLAW_PORT as u64);
+    for origin in required_origins(gateway_port) {
+        if !existing_origins.contains(&origin) {
             new_origins.push(serde_json::json!(origin));
             modified = true;
-            log::info!("Adding Jan origin to allowedOrigins: {}", origin);
         }
     }
 
@@ -1674,8 +1684,12 @@ pub async fn openclaw_configure(config_input: Option<OpenClawConfigInput>) -> Re
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
-    for origin in JAN_ALLOWED_ORIGINS {
-        if !existing_origins.contains(*origin) {
+    let gateway_port = merged
+        .pointer("/gateway/port")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(super::OPENCLAW_PORT as u64);
+    for origin in required_origins(gateway_port) {
+        if !existing_origins.contains(&origin) {
             origins.push(serde_json::json!(origin));
         }
     }
@@ -2480,6 +2494,7 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
         };
 
         if docker_status == Some(crate::core::openclaw::sandbox::SandboxStatus::Running) {
+            let _ = openclaw_ensure_jan_origin().await;
             return Ok(());
         }
 
