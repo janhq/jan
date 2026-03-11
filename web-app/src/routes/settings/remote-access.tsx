@@ -332,6 +332,12 @@ function RemoteAccess() {
                 description={!isRunning && !hasAnyModel ? t('settings:remoteAccess.noModelAvailable') : undefined}
               />
 
+              {!isRunning && (
+                <p className="text-sm text-muted-foreground px-1">
+                  {t('settings:remoteAccess.nodejsPrerequisite')}
+                </p>
+              )}
+
               {isRunning && status?.sandbox_type && (
                 <CardItem
                   title={t('settings:remoteAccess.runtimeMode')}
