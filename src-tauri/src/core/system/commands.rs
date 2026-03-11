@@ -30,10 +30,7 @@ fn detect_shell_env_file(home_dir: &str, is_macos: bool) -> (&'static str, Strin
 }
 
 // Helper function to write env vars to a shell config file
-fn write_env_to_shell(
-    env_file_path: &str,
-    env_vars: &[(String, String)],
-) -> Result<(), String> {
+fn write_env_to_shell(env_file_path: &str, env_vars: &[(String, String)]) -> Result<(), String> {
     let marker = "# Jan Local API Server - Claude Code Config";
     let new_entries: String = env_vars
         .iter()
@@ -237,7 +234,11 @@ pub fn launch_claude_code_with_config(
     if cfg!(target_os = "macos") {
         let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
         let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, true);
-        log::info!("Detected shell: {}, writing env to: {}", shell_name, env_file_path);
+        log::info!(
+            "Detected shell: {}, writing env to: {}",
+            shell_name,
+            env_file_path
+        );
 
         // Try direct write first
         match std::fs::OpenOptions::new()
@@ -252,8 +253,7 @@ pub fn launch_claude_code_with_config(
             Err(_) => {
                 // Use admin privileges to write
                 let marker = "# Jan Local API Server - Claude Code Config";
-                let existing_content =
-                    std::fs::read_to_string(&env_file_path).unwrap_or_default();
+                let existing_content = std::fs::read_to_string(&env_file_path).unwrap_or_default();
                 let cleaned: Vec<&str> = existing_content
                     .split('\n')
                     .filter(|line| {
@@ -288,14 +288,21 @@ pub fn launch_claude_code_with_config(
                     .output()
                     .map_err(|e| e.to_string())?;
 
-                log::info!("Env vars written to {} with admin privileges", env_file_path);
+                log::info!(
+                    "Env vars written to {} with admin privileges",
+                    env_file_path
+                );
                 return Ok(());
             }
         }
     } else if cfg!(target_os = "linux") {
         let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
         let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, false);
-        log::info!("Detected shell: {}, writing env to: {}", shell_name, env_file_path);
+        log::info!(
+            "Detected shell: {}, writing env to: {}",
+            shell_name,
+            env_file_path
+        );
 
         match std::fs::OpenOptions::new()
             .write(true)
@@ -365,13 +372,24 @@ pub async fn check_jan_cli_installed() -> CliInstallStatus {
                     .next()
                     .map(str::to_string)
                     // fall back to the raw first line if every path looks like a build dir
-                    .or_else(|| raw.lines().map(str::trim).find(|p| !p.is_empty()).map(str::to_string))
+                    .or_else(|| {
+                        raw.lines()
+                            .map(str::trim)
+                            .find(|p| !p.is_empty())
+                            .map(str::to_string)
+                    })
             };
             #[cfg(not(windows))]
             let path = Some(raw.trim().to_string());
-            CliInstallStatus { installed: path.is_some(), path }
+            CliInstallStatus {
+                installed: path.is_some(),
+                path,
+            }
         }
-        _ => CliInstallStatus { installed: false, path: None },
+        _ => CliInstallStatus {
+            installed: false,
+            path: None,
+        },
     }
 }
 
@@ -380,8 +398,14 @@ pub async fn check_jan_cli_installed() -> CliInstallStatus {
 /// Copies the bundled `jan` binary to the best writable directory on PATH.
 /// Install order (Unix): `/usr/local/bin` (writable probe), then `~/.local/bin`.
 /// Windows: `%LOCALAPPDATA%\Programs\Jan\`
-pub fn install_jan_cli_sync<R: Runtime>(app_handle: &AppHandle<R>) -> Result<CliInstallStatus, String> {
-    let bin_name = if cfg!(windows) { "jan-cli.exe" } else { "jan-cli" };
+pub fn install_jan_cli_sync<R: Runtime>(
+    app_handle: &AppHandle<R>,
+) -> Result<CliInstallStatus, String> {
+    let bin_name = if cfg!(windows) {
+        "jan-cli.exe"
+    } else {
+        "jan-cli"
+    };
     let dest_bin_name = if cfg!(windows) { "jan.exe" } else { "jan" };
     let bundled = app_handle
         .path()
@@ -416,7 +440,9 @@ pub fn install_jan_cli_sync<R: Runtime>(app_handle: &AppHandle<R>) -> Result<Cli
 
 /// Copy the bundled `jan` binary to the system PATH (Tauri command wrapper).
 #[tauri::command]
-pub async fn install_jan_cli<R: Runtime>(app_handle: AppHandle<R>) -> Result<CliInstallStatus, String> {
+pub async fn install_jan_cli<R: Runtime>(
+    app_handle: AppHandle<R>,
+) -> Result<CliInstallStatus, String> {
     install_jan_cli_sync(&app_handle)
 }
 
@@ -454,7 +480,11 @@ pub fn clear_claude_code_env() -> Result<(), String> {
     if cfg!(target_os = "macos") {
         let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
         let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, true);
-        log::info!("Clearing CC env from shell: {}, file: {}", shell_name, env_file_path);
+        log::info!(
+            "Clearing CC env from shell: {}, file: {}",
+            shell_name,
+            env_file_path
+        );
 
         let cleaned = build_cleaned_env_content(&env_file_path);
 
@@ -483,14 +513,21 @@ pub fn clear_claude_code_env() -> Result<(), String> {
                     .output()
                     .map_err(|e| e.to_string())?;
 
-                log::info!("CC env cleared from {} with admin privileges", env_file_path);
+                log::info!(
+                    "CC env cleared from {} with admin privileges",
+                    env_file_path
+                );
                 return Ok(());
             }
         }
     } else if cfg!(target_os = "linux") {
         let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
         let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, false);
-        log::info!("Clearing CC env from shell: {}, file: {}", shell_name, env_file_path);
+        log::info!(
+            "Clearing CC env from shell: {}, file: {}",
+            shell_name,
+            env_file_path
+        );
 
         let cleaned = build_cleaned_env_content(&env_file_path);
 
@@ -536,8 +573,8 @@ fn jan_cli_install_dir() -> Result<PathBuf, String> {
                 return Ok(usr_local_bin);
             }
         }
-        let home = std::env::var("HOME")
-            .map_err(|_| "Cannot determine home directory".to_string())?;
+        let home =
+            std::env::var("HOME").map_err(|_| "Cannot determine home directory".to_string())?;
         Ok(PathBuf::from(home).join(".local").join("bin"))
     }
     #[cfg(windows)]
@@ -562,12 +599,18 @@ fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
 
     // Use PowerShell to read the user-scoped PATH directly from the registry.
     // This avoids %PATH% expansion which would include the system PATH and corrupt the user value.
-    let read_output = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "[Environment]::GetEnvironmentVariable('Path', 'User')",
-        ])
+    let mut cmd = Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-Command",
+        "[Environment]::GetEnvironmentVariable('Path', 'User')",
+    ]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let read_output = cmd
         .output()
         .map_err(|e| format!("Failed to read user PATH: {}", e))?;
 
@@ -590,15 +633,23 @@ fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
     };
 
     // Write back using PowerShell — also broadcasts WM_SETTINGCHANGE so shells notice immediately
-    let write_output = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            &format!(
-                "[Environment]::SetEnvironmentVariable('Path', '{}', 'User')",
-                new_path.replace('\'', "''") // escape single quotes for PS string
-            ),
-        ])
+    let mut cmd_write = Command::new("powershell");
+    cmd_write.args([
+        "-NoProfile",
+        "-Command",
+        &format!(
+            "[Environment]::SetEnvironmentVariable('Path', '{}', 'User')",
+            new_path.replace('\'', "''") // escape single quotes for PS string
+        ),
+    ]);
+
+     #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd_write.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let write_output = cmd_write
         .output()
         .map_err(|e| format!("Failed to update user PATH: {}", e))?;
 
