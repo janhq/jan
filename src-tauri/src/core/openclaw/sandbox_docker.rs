@@ -77,8 +77,60 @@ impl DockerSandbox {
     }
 
     async fn get_client() -> Result<bollard::Docker, String> {
-        bollard::Docker::connect_with_local_defaults()
-            .map_err(|e| format!("Failed to connect to Docker: {}", e))
+        // Windows: Docker Desktop uses a named pipe (//./pipe/docker_engine).
+        // connect_with_local_defaults() handles this and DOCKER_HOST.
+        #[cfg(target_os = "windows")]
+        {
+            return bollard::Docker::connect_with_local_defaults()
+                .map_err(|e| format!("Failed to connect to Docker: {}", e));
+        }
+
+        // macOS/Linux: try DOCKER_HOST, then probe known socket paths.
+        #[cfg(not(target_os = "windows"))]
+        {
+            if std::env::var("DOCKER_HOST").is_ok() {
+                return bollard::Docker::connect_with_local_defaults()
+                    .map_err(|e| format!("Failed to connect to Docker: {}", e));
+            }
+
+            let mut candidates: Vec<String> = vec![
+                "/var/run/docker.sock".to_string(),
+            ];
+
+            if let Ok(home) = std::env::var("HOME") {
+                candidates.push(format!("{}/.docker/run/docker.sock", home));
+            }
+
+            #[cfg(target_os = "linux")]
+            {
+                let uid = unsafe { libc::getuid() };
+                candidates.push(format!("/run/user/{}/docker.sock", uid));
+            }
+
+            for socket_path in &candidates {
+                if !std::path::Path::new(socket_path).exists() {
+                    continue;
+                }
+                let uri = format!("unix://{}", socket_path);
+                match bollard::Docker::connect_with_socket(
+                    &uri,
+                    120,
+                    &bollard::API_DEFAULT_VERSION,
+                ) {
+                    Ok(client) => {
+                        log::info!("DockerSandbox: connected via {}", socket_path);
+                        return Ok(client);
+                    }
+                    Err(e) => {
+                        log::info!("DockerSandbox: socket {} found but connect failed: {}", socket_path, e);
+                    }
+                }
+            }
+
+            // Fallback for non-standard socket locations (Colima, Rancher Desktop, etc.)
+            bollard::Docker::connect_with_local_defaults()
+                .map_err(|_| "Failed to connect to Docker: no working socket found".to_string())
+        }
     }
 
     /// Check if the jan-openclaw container already exists (running or stopped).

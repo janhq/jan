@@ -61,6 +61,22 @@ Click **New Agent Chat** from the left sidebar (or press `⌘M`) to open a new a
 
 </Steps>
 
+## Troubleshooting
+
+If the agent responds with empty or blank messages, try the following steps:
+
+### 1. Check that the Local API Server is running
+
+Go to **Settings > Local API Server** and make sure the server is running. If it's stopped, click **Start Server**. OpenClaw routes requests through the local API server, so it must be running for the agent to respond.
+
+### 2. Increase the context size to at least 32k
+
+A context window that is too small can cause the agent to produce empty responses, especially for multi-step tasks. Go to the model dropdown in the chat area, click the **gear icon** next to your loaded model, and set **Context Length** to at least **32768**. If you enabled OpenClaw through the setup wizard, this should already be configured automatically.
+
+### 3. Verify that a local model is loaded
+
+OpenClaw in local mode requires a model to be loaded in the **llamacpp** engine. Check the model dropdown at the top of the chat — it should show an active local model (not just "Select a model"). If no model is loaded, select one from the dropdown and wait for it to finish loading before chatting with the agent again.
+
 ## What's Next
 
 You're all set — start from here and explore what OpenClaw can do for you. We'll be adding a lot of useful real-world use cases and guides to the docs soon.

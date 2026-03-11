@@ -42,6 +42,63 @@ async fn is_docker_container_running() -> bool {
         .unwrap_or(false)
 }
 
+/// Returns the BUN_INSTALL directory under Jan's data folder, creating it if needed.
+fn get_bunx_dir() -> Option<std::path::PathBuf> {
+    let dir = super::get_openclaw_base_dir().ok()?.join("bunx");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        log::warn!("Failed to create BUN_INSTALL dir {:?}: {}", dir, e);
+    }
+    Some(dir)
+}
+
+/// Build a command for openclaw. On Unix, uses bun as explicit interpreter
+/// to bypass shebang resolution. On Windows, runs openclaw.exe directly.
+fn build_openclaw_command(args: &[&str]) -> tokio::process::Command {
+    let bunx_dir = get_bunx_dir();
+
+    let installed_bin = bunx_dir.as_ref().map(|d| {
+        if cfg!(target_os = "windows") {
+            d.join("bin").join("openclaw.exe")
+        } else {
+            d.join("bin").join("openclaw")
+        }
+    });
+
+    let mut cmd = if installed_bin.as_ref().map(|p| p.exists()).unwrap_or(false) {
+        log::info!("Running openclaw from installed path: {:?}", installed_bin);
+        tokio::process::Command::new(installed_bin.unwrap())
+    } else if let Some(bun) = super::resolve_bundled_bun() {
+        log::info!("openclaw not installed yet, falling back to bun x");
+        let mut c = tokio::process::Command::new(bun);
+        c.arg("x");
+        c.arg("openclaw");
+        c
+    } else {
+        tokio::process::Command::new("openclaw")
+    };
+
+    cmd.args(args)
+        // .current_dir(config_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    if let Some(dir) = bunx_dir {
+        cmd.env("BUN_INSTALL", dir);
+    }
+
+    // if let Some(new_path) = super::build_augmented_path() {
+    //     cmd.env("PATH", new_path);
+    // }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+
+    cmd
+}
+
 /// Build a `Command` for openclaw: docker exec when container is running,
 /// otherwise direct process with bun interpreter (Unix) or native exe (Windows).
 async fn openclaw_command(args: &[&str]) -> Command {
@@ -59,41 +116,7 @@ async fn openclaw_command(args: &[&str]) -> Command {
         hide_window(&mut cmd);
         cmd
     } else {
-        let _ = super::ensure_bun_node_shim();
-
-        let openclaw_path = super::get_openclaw_bin_path().ok();
-        let use_installed_binary = openclaw_path
-            .as_ref()
-            .map(|p| p.exists())
-            .unwrap_or(false);
-        let bun_path = super::resolve_bundled_bun();
-        let use_bun_interpreter = !cfg!(target_os = "windows")
-            && use_installed_binary
-            && bun_path.is_some();
-
-        let mut cmd = if use_bun_interpreter {
-            let mut c = Command::new(bun_path.unwrap());
-            c.arg(openclaw_path.unwrap());
-            if let Some(new_path) = super::build_augmented_path() {
-                c.env("PATH", new_path);
-            }
-            c.args(args);
-            c
-        } else if use_installed_binary {
-            let mut c = Command::new(openclaw_path.unwrap());
-            if let Some(new_path) = super::build_augmented_path() {
-                c.env("PATH", new_path);
-            }
-            c.args(args);
-            c
-        } else {
-            let mut c = Command::new("openclaw");
-            if let Some(new_path) = super::build_augmented_path() {
-                c.env("PATH", new_path);
-            }
-            c.args(args);
-            c
-        };
+        let mut cmd = build_openclaw_command(args);
         hide_window(&mut cmd);
         cmd
     }
@@ -105,6 +128,18 @@ const MAX_WA_RESTART_ATTEMPTS: u8 = 3;
 
 fn next_request_id() -> String {
     REQUEST_ID_COUNTER.fetch_add(1, Ordering::SeqCst).to_string()
+}
+
+/// Returns true if `installed` is older than `required` (CalVer comparison).
+/// Returns false if either version cannot be parsed.
+pub(crate) fn needs_upgrade(installed: &str, required: &str) -> bool {
+    let parse = |v: &str| -> Option<Vec<u32>> {
+        v.split('.').map(|s| s.parse::<u32>().ok()).collect()
+    };
+    match (parse(installed), parse(required)) {
+        (Some(a), Some(b)) => a < b,
+        _ => false,
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -446,11 +481,14 @@ pub async fn openclaw_setup_for_channels(state: tauri::State<'_, OpenClawState>)
     }
 
     let openclaw_version = match check_openclaw_installed().await {
-        Ok(Some(version)) => {
+        Ok(Some(version)) if !needs_upgrade(&version, OPENCLAW_VERSION) => {
             log::info!("OpenClaw installed: {}", version);
             Some(version)
         }
-        Ok(None) => {
+        Ok(maybe_version) => {
+            if let Some(ref v) = maybe_version {
+                log::info!("OpenClaw {} outdated, upgrading to {}", v, OPENCLAW_VERSION);
+            }
             match openclaw_install().await {
                 Ok(result) if result.success => {
                     result.version
@@ -584,8 +622,87 @@ async fn test_gateway_connection() -> Result<(), String> {
     Ok(())
 }
 
-/// Restart the gateway. Docker: `docker restart`. Direct process: stop → install → start
-/// (launchd caches service args, so a plain `gateway restart` won't pick up config changes).
+/// Validate gateway auth via WebSocket handshake + RPC health check.
+async fn validate_gateway_auth() -> Result<(), String> {
+    let mut ws_stream = connect_to_gateway().await
+        .map_err(|e| format!("Gateway unreachable: {}", e))?;
+
+    gateway_handshake(&mut ws_stream).await
+        .map_err(|e| format!("Gateway auth failed: {}", e))?;
+
+    let health_id = next_request_id();
+    let health_request = serde_json::json!({
+        "type": "req",
+        "id": health_id,
+        "method": "health",
+        "params": {}
+    });
+
+    let health_json = serde_json::to_string(&health_request)
+        .map_err(|e| format!("Failed to serialize health request: {}", e))?;
+
+    ws_stream.send(Message::Text(health_json))
+        .await
+        .map_err(|e| format!("Failed to send health request: {}", e))?;
+
+    let timeout = tokio::time::Duration::from_secs(5);
+    let health_result = tokio::time::timeout(timeout, async {
+        while let Some(msg) = ws_stream.next().await {
+            match msg {
+                Ok(Message::Text(text)) => {
+                    if let Ok(response) = serde_json::from_str::<GatewayResponse>(&text) {
+                        if response.msg_type == "res" && response.id == health_id {
+                            if response.ok {
+                                return Ok(());
+                            } else {
+                                let error_msg = response.error
+                                    .map(|e| {
+                                        e.get("message")
+                                            .and_then(|m| m.as_str())
+                                            .map(String::from)
+                                            .unwrap_or_else(|| e.to_string())
+                                    })
+                                    .unwrap_or_else(|| "Health check rejected".to_string());
+                                return Err(format!("Gateway health check failed: {}", error_msg));
+                            }
+                        }
+                    }
+                }
+                Ok(Message::Close(_)) => return Err("Connection closed during health check".to_string()),
+                Err(e) => return Err(format!("WebSocket error during health check: {}", e)),
+                _ => {}
+            }
+        }
+        Err("Connection closed before health response".to_string())
+    }).await;
+
+    let _ = ws_stream.close(None).await;
+
+    match health_result {
+        Ok(inner) => inner,
+        Err(_) => Err("Gateway health check timed out".to_string()),
+    }
+}
+
+/// Auto-fix gateway config issues via `openclaw doctor --fix`.
+async fn run_doctor_fix() -> Result<(), String> {
+    let output = openclaw_command(&["doctor", "--fix"]).await
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run openclaw doctor: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log::warn!("openclaw doctor --fix failed: {}", stderr);
+        Err(format!("Doctor fix failed: {}", stderr.trim()))
+    }
+}
+
+/// Restart the gateway. Docker: `docker restart`. Direct process: stop → spawn child.
 async fn restart_gateway_cli() -> Result<(), String> {
     if is_docker_container_running().await {
         let mut cmd = Command::new("docker");
@@ -612,24 +729,12 @@ async fn restart_gateway_cli() -> Result<(), String> {
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    // Re-register service with --runtime bun when bundled Bun is available.
-    // On Windows this requires admin (schtasks) and may fail.
-    let install_args: Vec<&str> = if super::resolve_bundled_bun().is_some() {
-        vec!["gateway", "install", "--runtime", "bun"]
-    } else {
-        vec!["gateway", "install"]
-    };
-    let install_output = openclaw_command(&install_args).await
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await;
-    let service_installed = install_output
-        .as_ref()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    // Check if a system service is already registered (launchd plist on Mac,
+    // systemd unit on Linux) — if so, use `gateway start` to let the service
+    // manager handle it. Otherwise spawn as a direct child process.
+    let service_exists = is_gateway_service_registered();
 
-    if service_installed {
+    if service_exists {
         let output = openclaw_command(&["gateway", "start"]).await
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -639,19 +744,42 @@ async fn restart_gateway_cli() -> Result<(), String> {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            log::warn!("Gateway start failed: {}", stderr);
+            log::warn!("Gateway start via service failed: {}, falling back to child process", stderr);
+            let mut cmd = openclaw_command(&["gateway"]).await;
+            cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+            hide_window(&mut cmd);
+            if let Err(e) = cmd.spawn() {
+                log::warn!("Failed to spawn openclaw gateway: {}", e);
+            }
         }
     } else {
-        // Service registration failed (e.g. Windows without admin).
-        // Spawn `openclaw gateway` as a foreground child process.
-        log::info!("Service install unavailable, restarting gateway as child process");
+        log::info!("No gateway service registered, restarting as child process");
         let mut cmd = openclaw_command(&["gateway"]).await;
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        hide_window(&mut cmd);
         if let Err(e) = cmd.spawn() {
             log::warn!("Failed to spawn openclaw gateway: {}", e);
         }
     }
     Ok(())
+}
+
+/// Check if a gateway system service is already registered (without running `gateway install`).
+fn is_gateway_service_registered() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            return home.join("Library/LaunchAgents/ai.openclaw.gateway.plist").exists();
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(".config/systemd/user/openclaw-gateway.service").exists();
+        }
+    }
+    // Windows uses Task Scheduler — no simple file check, default to child process.
+    false
 }
 
 /// Clear stale files that may cause setup failures.
@@ -710,9 +838,9 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
             cmd.args(["gateway", "stop"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
-            if let Some(new_path) = super::build_augmented_path() {
-                cmd.env("PATH", new_path);
-            }
+            // if let Some(new_path) = super::build_augmented_path() {
+            //     cmd.env("PATH", new_path);
+            // }
             hide_window(&mut cmd);
             cmd.output()
                 .await
@@ -723,9 +851,9 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
             cmd.args(["gateway", "stop"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
-            if let Some(new_path) = super::build_augmented_path() {
-                cmd.env("PATH", new_path);
-            }
+            // if let Some(new_path) = super::build_augmented_path() {
+            //     cmd.env("PATH", new_path);
+            // }
             hide_window(&mut cmd);
             cmd.output()
                 .await
@@ -737,7 +865,7 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             {
                 let _ = Command::new("pkill")
-                    .args(["-f", "openclaw-gateway"])
+                    .args(["-f", "openclaw"])
                     .output()
                     .await;
             }
@@ -762,6 +890,30 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+
+        // Port-based kill fallback
+        if crate::core::openclaw::lifecycle::is_port_in_use(OPENCLAW_PORT).await {
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            {
+                let _ = Command::new("sh")
+                    .args(["-c", &format!("lsof -ti :{} | xargs kill -9", OPENCLAW_PORT)])
+                    .output()
+                    .await;
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                if let Ok(output) = Command::new("cmd")
+                    .args(["/C", &format!("for /f \"tokens=5\" %a in ('netstat -aon ^| findstr :{} ^| findstr LISTENING') do taskkill /F /PID %a", OPENCLAW_PORT)])
+                    .creation_flags(0x08000000)
+                    .output()
+                    .await
+                {
+                    let _ = output;
+                }
+            }
         }
     }
 }
@@ -1079,7 +1231,15 @@ async fn check_node_version_docker() -> Option<String> {
 pub async fn openclaw_install() -> Result<InstallResult, String> {
     let already_installed = check_openclaw_installed().await.ok().flatten();
 
-    if already_installed.is_none() {
+    let should_install = match &already_installed {
+        None => true,
+        Some(version) => needs_upgrade(version, OPENCLAW_VERSION),
+    };
+
+    if should_install {
+        if let Some(ref old_version) = already_installed {
+            log::info!("Upgrading OpenClaw from {} to {}", old_version, OPENCLAW_VERSION);
+        }
         let node_check = openclaw_check_dependencies().await;
         if !node_check.installed {
             return Ok(InstallResult {
@@ -1098,8 +1258,6 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
         }
 
         let pinned_package = format!("{}@{}", OPENCLAW_PACKAGE_NAME, OPENCLAW_VERSION);
-
-        let _ = super::ensure_bun_node_shim();
 
         let output = if let Some(bun_path) = super::resolve_bundled_bun() {
             let runtime_dir = super::get_openclaw_runtime_dir()?;
@@ -1263,6 +1421,13 @@ const JAN_ALLOWED_ORIGINS: &[&str] = &[
     "http://127.0.0.1",
 ];
 
+fn required_origins(gateway_port: u64) -> Vec<String> {
+    let mut origins: Vec<String> = JAN_ALLOWED_ORIGINS.iter().map(|s| s.to_string()).collect();
+    origins.push(format!("http://127.0.0.1:{}", gateway_port));
+    origins.push(format!("http://localhost:{}", gateway_port));
+    origins
+}
+
 /// Ensure Jan's origins are in the OpenClaw config's gateway.controlUi.allowedOrigins
 /// This patches an existing config without overwriting other settings
 /// Returns true if the config was modified, false if already correct
@@ -1313,11 +1478,14 @@ pub async fn openclaw_ensure_jan_origin() -> Result<bool, String> {
     let mut modified = false;
     let mut new_origins: Vec<serde_json::Value> = allowed_origins;
 
-    for origin in JAN_ALLOWED_ORIGINS {
-        if !existing_origins.contains(*origin) {
+    let gateway_port = config
+        .pointer("/gateway/port")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(super::OPENCLAW_PORT as u64);
+    for origin in required_origins(gateway_port) {
+        if !existing_origins.contains(&origin) {
             new_origins.push(serde_json::json!(origin));
             modified = true;
-            log::info!("Adding Jan origin to allowedOrigins: {}", origin);
         }
     }
 
@@ -1464,17 +1632,68 @@ pub async fn openclaw_configure(config_input: Option<OpenClawConfigInput>) -> Re
             existing["models"]["providers"]["jan"]["apiKey"] =
                 serde_json::json!(config.models.providers.jan.api_key);
         }
-        // Always update the jan provider baseUrl when an explicit URL was provided
-        if config.models.providers.jan.base_url != DEFAULT_JAN_BASE_URL {
-            existing["models"]["providers"]["jan"]["baseUrl"] =
-                serde_json::json!(config.models.providers.jan.base_url);
-        }
+        // Always update the jan provider baseUrl so a stale port is never kept
+        existing["models"]["providers"]["jan"]["baseUrl"] =
+            serde_json::json!(config.models.providers.jan.base_url);
         existing
     } else {
         defaults
     };
 
     strip_invalid_config_keys(&mut merged);
+
+    // Ensure gateway.auth.token exists when mode is "token".
+    // On Mac, `gateway install` auto-generates the token, but on Windows/Linux
+    // the child-process path (`openclaw gateway`) skips `gateway install`
+    // entirely, leaving the config without a token.
+    let auth_mode = merged
+        .pointer("/gateway/auth/mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("token");
+    let has_token = merged
+        .pointer("/gateway/auth/token")
+        .and_then(|v| v.as_str())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
+    if auth_mode == "token" && !has_token {
+        let token = security::generate_access_token();
+        merged["gateway"]["auth"]["token"] = serde_json::json!(token);
+    }
+
+    // Ensure controlUi settings so Jan can connect without device pairing.
+    // The openclaw_install step sets these via CLI, but on fresh installs
+    // the CLI commands may fail silently.
+    if merged.pointer("/gateway/controlUi").is_none() {
+        merged["gateway"]["controlUi"] = serde_json::json!({});
+    }
+    let has_disable_device_auth = merged
+        .pointer("/gateway/controlUi/dangerouslyDisableDeviceAuth")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !has_disable_device_auth {
+        merged["gateway"]["controlUi"]["dangerouslyDisableDeviceAuth"] = serde_json::json!(true);
+    }
+    // Ensure Jan's allowed origins for WebSocket connections
+    let existing_origins: std::collections::HashSet<String> = merged
+        .pointer("/gateway/controlUi/allowedOrigins")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(String::from).collect())
+        .unwrap_or_default();
+    let mut origins: Vec<serde_json::Value> = merged
+        .pointer("/gateway/controlUi/allowedOrigins")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let gateway_port = merged
+        .pointer("/gateway/port")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(super::OPENCLAW_PORT as u64);
+    for origin in required_origins(gateway_port) {
+        if !existing_origins.contains(&origin) {
+            origins.push(serde_json::json!(origin));
+        }
+    }
+    merged["gateway"]["controlUi"]["allowedOrigins"] = serde_json::Value::Array(origins);
 
     let config_json = serde_json::to_string_pretty(&merged)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
@@ -1915,20 +2134,27 @@ pub async fn openclaw_enable(
     steps_completed.push(EnableStep::CheckingInstallation);
 
     let already_installed = if is_docker {
-        // For Docker: check if the Docker image exists locally
         let docker_installed = crate::core::openclaw::sandbox_docker::DockerSandbox::is_installed().await;
         let docker_exists = docker_installed == Some(true);
-        log::info!("Installation check: docker_container={}, sandbox={}", docker_exists, sandbox_name);
+        let image_ready = if docker_exists {
+            crate::core::openclaw::sandbox_docker::DockerSandbox::is_image_available().await
+        } else {
+            false
+        };
+        log::info!("Installation check: docker_container={}, image_ready={}", docker_exists, image_ready);
 
-        if docker_exists {
+        if image_ready {
             emit("already_installed", 40, "OpenClaw container exists in Docker.", sandbox_info.as_deref());
         }
-        docker_exists
+        image_ready
     } else {
-        // For non-Docker: check openclaw package on host
-        let pkg_installed = check_openclaw_installed().await.ok().flatten().is_some();
-        log::info!("Installation check: installed={}, sandbox={}", pkg_installed, sandbox_name);
-        pkg_installed
+        let pkg_version = check_openclaw_installed().await.ok().flatten();
+        let up_to_date = match &pkg_version {
+            Some(v) => !needs_upgrade(v, OPENCLAW_VERSION),
+            None => false,
+        };
+        log::info!("Installation check: version={:?}, up_to_date={}", pkg_version, up_to_date);
+        up_to_date
     };
 
     // Step 3: Install if needed
@@ -2056,12 +2282,21 @@ pub async fn openclaw_enable(
         .unwrap_or(e)
     })?;
 
-    // Step 5: Start the gateway
+    // Step 5: Start the gateway (with doctor --fix auto-recovery for non-Docker)
     emit("starting", 75, "Starting OpenClaw gateway...", sandbox_info.as_deref());
     steps_completed.push(EnableStep::Starting);
-    openclaw_start(state.clone()).await.map_err(|e| {
+
+    // Phase A: attempt start + wait-for-ready
+    let mut doctor_already_ran = false;
+    let start_err = match openclaw_start(state.clone()).await {
+        Ok(()) => None,
+        Err(e) => Some(e),
+    };
+
+    // Port conflicts cannot be fixed by doctor — bail immediately
+    if let Some(ref e) = start_err {
         if e.contains("Port") || e.contains("port") {
-            serde_json::to_string(&EnableError {
+            return Err(serde_json::to_string(&EnableError {
                 code: EnableErrorCode::PortInUse,
                 message: e.clone(),
                 recovery: vec![RecoveryOption {
@@ -2072,22 +2307,144 @@ pub async fn openclaw_enable(
                     description: format!("Try port {} instead.", OPENCLAW_PORT + 1),
                 }],
             })
-            .unwrap_or(e)
-        } else {
-            serde_json::to_string(&EnableError {
+            .unwrap_or_else(|_| e.clone()));
+        }
+    }
+
+    let gateway_responsive = if start_err.is_none() {
+        let gateway_wait = if is_docker { 60 } else { 15 };
+        wait_for_gateway_ready(gateway_wait).await
+    } else {
+        false
+    };
+
+    if !gateway_responsive && !is_docker {
+        // Non-Docker: run doctor --fix and retry before giving up
+        let original_err = start_err.unwrap_or_else(|| "Gateway did not become responsive after starting.".to_string());
+        log::warn!("Gateway start/wait failed: {}. Running doctor --fix.", original_err);
+        emit("starting", 78, "Auto-fixing configuration and retrying...", sandbox_info.as_deref());
+
+        let _ = run_doctor_fix().await;
+        doctor_already_ran = true;
+        let _ = restart_gateway_cli().await;
+
+        if !wait_for_gateway_ready(15).await {
+            return Err(serde_json::to_string(&EnableError {
                 code: EnableErrorCode::GatewayStartFailed,
-                message: e.clone(),
+                message: format!("Gateway did not recover after auto-fix: {}", original_err),
                 recovery: vec![RecoveryOption {
                     label: "Retry".to_string(),
                     action: RecoveryAction::Retry,
-                    description: "Try starting the gateway again.".to_string(),
+                    description: "Try the setup again.".to_string(),
                 }],
             })
-            .unwrap_or(e)
+            .unwrap_or_else(|_| original_err));
         }
-    })?;
+    } else if !gateway_responsive {
+        // Docker: start/wait failed — no doctor, just fail
+        let original_err = start_err.unwrap_or_else(|| "Gateway did not become responsive after starting.".to_string());
+        return Err(serde_json::to_string(&EnableError {
+            code: EnableErrorCode::GatewayStartFailed,
+            message: original_err.clone(),
+            recovery: vec![RecoveryOption {
+                label: "Retry".to_string(),
+                action: RecoveryAction::Retry,
+                description: "Try the setup again.".to_string(),
+            }],
+        })
+        .unwrap_or_else(|_| original_err));
+    }
 
-    // Step 6: Get final status
+    // Phase B: validate gateway auth
+    emit("validating", 85, "Validating configuration...", sandbox_info.as_deref());
+    steps_completed.push(EnableStep::ValidatingConfig);
+
+    if is_docker {
+        // Docker: port binds early but app layer may still be initialising.
+        // Poll validate_gateway_auth with retries instead of restarting.
+        let deadline = tokio::time::Instant::now()
+            + tokio::time::Duration::from_secs(90);
+        let mut last_err = String::new();
+        loop {
+            match validate_gateway_auth().await {
+                Ok(()) => {
+                    last_err.clear();
+                    break;
+                }
+                Err(e) => {
+                    last_err = e;
+                    if tokio::time::Instant::now() >= deadline {
+                        break;
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                }
+            }
+        }
+        if !last_err.is_empty() {
+            return Err(serde_json::to_string(&EnableError {
+                code: EnableErrorCode::ValidationFailed,
+                message: format!("Gateway validation timed out: {}", last_err),
+                recovery: vec![RecoveryOption {
+                    label: "Retry".to_string(),
+                    action: RecoveryAction::Retry,
+                    description: "Try the setup again.".to_string(),
+                }],
+            })
+            .unwrap_or_else(|_| last_err));
+        }
+    } else {
+        match validate_gateway_auth().await {
+            Ok(()) => {}
+            Err(e) => {
+                if doctor_already_ran {
+                    // Doctor already ran during start/wait retry — don't retry again
+                    return Err(serde_json::to_string(&EnableError {
+                        code: EnableErrorCode::ValidationFailed,
+                        message: format!("Validation failed after auto-fix: {}", e),
+                        recovery: vec![RecoveryOption {
+                            label: "Retry".to_string(),
+                            action: RecoveryAction::Retry,
+                            description: "Try the setup again.".to_string(),
+                        }],
+                    })
+                    .unwrap_or_else(|_| e));
+                }
+
+                // Doctor hasn't run yet (start+wait passed on first try) — try it now
+                log::warn!("Gateway validation failed: {}. Running doctor --fix.", e);
+                let _ = run_doctor_fix().await;
+                let _ = restart_gateway_cli().await;
+
+                if !wait_for_gateway_ready(15).await {
+                    return Err(serde_json::to_string(&EnableError {
+                        code: EnableErrorCode::ValidationFailed,
+                        message: format!("Gateway did not recover after auto-fix: {}", e),
+                        recovery: vec![RecoveryOption {
+                            label: "Retry".to_string(),
+                            action: RecoveryAction::Retry,
+                            description: "Try the setup again.".to_string(),
+                        }],
+                    })
+                    .unwrap_or_else(|_| e.clone()));
+                }
+
+                if let Err(retry_err) = validate_gateway_auth().await {
+                    return Err(serde_json::to_string(&EnableError {
+                        code: EnableErrorCode::ValidationFailed,
+                        message: format!("Validation failed after auto-fix: {}", retry_err),
+                        recovery: vec![RecoveryOption {
+                            label: "Retry".to_string(),
+                            action: RecoveryAction::Retry,
+                            description: "Try the setup again.".to_string(),
+                        }],
+                    })
+                    .unwrap_or_else(|_| retry_err));
+                }
+            }
+        }
+    }
+
+    // Get final status
     emit("complete", 100, "OpenClaw is ready!", sandbox_info.as_deref());
     let final_status = openclaw_status(state).await?;
 
@@ -2137,6 +2494,7 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
         };
 
         if docker_status == Some(crate::core::openclaw::sandbox::SandboxStatus::Running) {
+            let _ = openclaw_ensure_jan_origin().await;
             return Ok(());
         }
 
@@ -2203,6 +2561,13 @@ pub async fn openclaw_stop(state: State<'_, OpenClawState>) -> Result<(), String
             direct.stop(&mut handle).await
         }
     }
+}
+
+/// Lightweight gateway reachability check (TCP only, no HTTP).
+/// Used by the frontend before sending agent-mode chat requests.
+#[tauri::command]
+pub async fn openclaw_check_gateway() -> bool {
+    check_gateway_responding().await
 }
 
 /// Get the current OpenClaw status, including sandbox information.
@@ -2279,14 +2644,19 @@ pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClaw
     })
 }
 
-/// Restart the OpenClaw gateway via the sandbox abstraction.
+/// Restart the OpenClaw gateway. Blocks until the gateway is responsive.
 #[tauri::command]
 pub async fn openclaw_restart(state: State<'_, OpenClawState>) -> Result<(), String> {
-    log::info!("Restarting OpenClaw gateway");
-
     openclaw_stop(state.clone()).await?;
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-    openclaw_start(state).await
+    openclaw_start(state).await?;
+
+    let max_wait = if is_docker_container_running().await { 60 } else { 15 };
+    if !wait_for_gateway_ready(max_wait).await {
+        return Err("Gateway did not become responsive after restart".to_string());
+    }
+
+    Ok(())
 }
 
 /// Get the OpenClaw configuration directory path
@@ -3600,7 +3970,7 @@ pub async fn whatsapp_check_auth() -> Result<WhatsAppAuthStatus, String> {
                                           err.contains("restart required") ||
                                           err.contains("Stream Errored") ||
                                           err.contains("not linked") ||
-                                          err.contains("not configured");    
+                                          err.contains("not configured");
 
                         if !is_transient && !linked {
                             return Ok(WhatsAppAuthStatus {
@@ -3947,22 +4317,33 @@ pub async fn security_get_status() -> Result<SecurityStatus, String> {
     })
 }
 
-/// Set the authentication mode
-///
-/// Changes how users authenticate to the OpenClaw gateway.
+/// Set the authentication mode.
 #[tauri::command]
 pub async fn security_set_auth_mode(mode: AuthMode) -> Result<(), String> {
     log::info!("Setting auth mode to {:?}", mode);
 
     let mut config = security::load_security_config().await?;
-    config.auth_mode = mode;
-    security::save_security_config(&config).await
+    config.auth_mode = mode.clone();
+    security::save_security_config(&config).await?;
+
+    if mode == AuthMode::None {
+        if let Ok(mut oc_config) = read_openclaw_config() {
+            if let Some(auth) = oc_config.pointer_mut("/gateway/auth") {
+                if let Some(obj) = auth.as_object_mut() {
+                    obj.remove("token");
+                }
+            }
+            if let Err(e) = write_openclaw_config(&oc_config) {
+                log::warn!("Failed to clear gateway auth token: {}", e);
+            }
+        }
+    }
+
+    Ok(())
 }
 
-/// Generate and store a new access token
-///
-/// Returns the plaintext token (only shown once). The token is
-/// stored as a hash and cannot be retrieved after this.
+/// Generate and store a new access token.
+/// Returns the plaintext token (only shown once).
 #[tauri::command]
 pub async fn security_generate_token() -> Result<String, String> {
     log::info!("Generating new access token");
@@ -3974,6 +4355,14 @@ pub async fn security_generate_token() -> Result<String, String> {
     config.token_hash = Some(hash);
     config.auth_mode = AuthMode::Token;
     security::save_security_config(&config).await?;
+
+    // Also write to gateway config so OpenClaw enforces this token
+    if let Ok(mut oc_config) = read_openclaw_config() {
+        oc_config["gateway"]["auth"]["token"] = serde_json::json!(token);
+        if let Err(e) = write_openclaw_config(&oc_config) {
+            log::warn!("Failed to sync token to gateway config: {}", e);
+        }
+    }
 
     Ok(token)
 }

@@ -14,6 +14,15 @@ use tokio::sync::Mutex;
 use super::models::{TunnelConfig, TunnelInfo, TunnelProvider, TunnelProviderStatus, TunnelProvidersStatus};
 use super::get_openclaw_config_dir;
 
+#[cfg(target_os = "windows")]
+fn hide_window(cmd: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(0x08000000);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn hide_window(_cmd: &mut Command) {}
+
 /// Shared tunnel state for managing active tunnel processes
 #[derive(Clone)]
 pub struct TunnelState {
@@ -72,10 +81,10 @@ pub async fn save_tunnel_config(config: &TunnelConfig) -> Result<(), String> {
 pub async fn detect_ngrok() -> TunnelProviderStatus {
     log::debug!("Detecting ngrok installation");
 
-    let output = Command::new("ngrok")
-        .arg("version")
-        .output()
-        .await;
+    let mut cmd = Command::new("ngrok");
+    cmd.arg("version");
+    hide_window(&mut cmd);
+    let output = cmd.output().await;
 
     match output {
         Ok(output) => {
@@ -120,10 +129,10 @@ pub async fn detect_ngrok() -> TunnelProviderStatus {
 /// Check if ngrok is authenticated
 async fn check_ngrok_authenticated() -> bool {
     // Try to check ngrok config for authtoken
-    let output = Command::new("ngrok")
-        .args(["config", "check"])
-        .output()
-        .await;
+    let mut cmd = Command::new("ngrok");
+    cmd.args(["config", "check"]);
+    hide_window(&mut cmd);
+    let output = cmd.output().await;
 
     match output {
         Ok(output) => output.status.success(),
@@ -135,10 +144,10 @@ async fn check_ngrok_authenticated() -> bool {
 pub async fn detect_cloudflared() -> TunnelProviderStatus {
     log::debug!("Detecting cloudflared installation");
 
-    let output = Command::new("cloudflared")
-        .arg("version")
-        .output()
-        .await;
+    let mut cmd = Command::new("cloudflared");
+    cmd.arg("version");
+    hide_window(&mut cmd);
+    let output = cmd.output().await;
 
     match output {
         Ok(output) => {
@@ -183,10 +192,10 @@ pub async fn detect_cloudflared() -> TunnelProviderStatus {
 /// Check if cloudflared is authenticated (has tunnels)
 async fn check_cloudflared_authenticated() -> bool {
     // Try to list tunnels to see if authenticated
-    let output = Command::new("cloudflared")
-        .args(["tunnel", "list"])
-        .output()
-        .await;
+    let mut cmd = Command::new("cloudflared");
+    cmd.args(["tunnel", "list"]);
+    hide_window(&mut cmd);
+    let output = cmd.output().await;
 
     match output {
         Ok(output) => {
@@ -202,10 +211,10 @@ async fn check_cloudflared_authenticated() -> bool {
 pub async fn detect_tailscale() -> TunnelProviderStatus {
     log::info!("Detecting Tailscale installation");
 
-    let output = Command::new("tailscale")
-        .arg("version")
-        .output()
-        .await;
+    let mut cmd = Command::new("tailscale");
+    cmd.arg("version");
+    hide_window(&mut cmd);
+    let output = cmd.output().await;
 
     match output {
         Ok(output) => {
@@ -246,10 +255,10 @@ pub async fn detect_tailscale() -> TunnelProviderStatus {
 
 /// Check if Tailscale is authenticated
 async fn check_tailscale_authenticated() -> bool {
-    let output = Command::new("tailscale")
-        .args(["status", "--json"])
-        .output()
-        .await;
+    let mut cmd = Command::new("tailscale");
+    cmd.args(["status", "--json"]);
+    hide_window(&mut cmd);
+    let output = cmd.output().await;
 
     match output {
         Ok(output) => {
@@ -315,9 +324,10 @@ pub async fn start_ngrok_tunnel(
 
     // If auth token provided, configure ngrok
     if let Some(token) = &auth_token {
-        let output = Command::new("ngrok")
-            .args(["config", "add-authtoken", token])
-            .output()
+        let mut cmd = Command::new("ngrok");
+        cmd.args(["config", "add-authtoken", token]);
+        hide_window(&mut cmd);
+        let output = cmd.output()
             .await
             .map_err(|e| format!("Failed to configure ngrok auth token: {}", e))?;
 
@@ -328,11 +338,12 @@ pub async fn start_ngrok_tunnel(
     }
 
     // Start ngrok with JSON log format
-    let mut child = Command::new("ngrok")
-        .args(["http", &port.to_string(), "--log=stdout", "--log-format=json"])
+    let mut cmd = Command::new("ngrok");
+    cmd.args(["http", &port.to_string(), "--log=stdout", "--log-format=json"])
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .stderr(Stdio::piped());
+    hide_window(&mut cmd);
+    let mut child = cmd.spawn()
         .map_err(|e| format!("Failed to start ngrok: {}", e))?;
 
     // Read stdout to get the public URL
@@ -458,18 +469,18 @@ pub async fn stop_ngrok_tunnel(tunnel_state: &TunnelState) -> Result<(), String>
         // Try to kill any orphaned ngrok processes
         #[cfg(unix)]
         {
-            let _ = Command::new("pkill")
-                .args(["-f", "ngrok"])
-                .output()
-                .await;
+            let mut cmd = Command::new("pkill");
+            cmd.args(["-f", "ngrok"]);
+            hide_window(&mut cmd);
+            let _ = cmd.output().await;
         }
 
         #[cfg(windows)]
         {
-            let _ = Command::new("taskkill")
-                .args(["/F", "/IM", "ngrok.exe"])
-                .output()
-                .await;
+            let mut cmd = Command::new("taskkill");
+            cmd.args(["/F", "/IM", "ngrok.exe"]);
+            hide_window(&mut cmd);
+            let _ = cmd.output().await;
         }
 
         Ok(())
@@ -497,11 +508,12 @@ pub async fn start_cloudflared_tunnel(
     // Build command args based on whether we have a named tunnel or quick tunnel
     let (child, public_url) = if let Some(name) = tunnel_name {
         // Named tunnel (requires pre-configuration)
-        let child = Command::new("cloudflared")
-            .args(["tunnel", "run", "--url", &url, &name])
+        let mut cmd = Command::new("cloudflared");
+        cmd.args(["tunnel", "run", "--url", &url, &name])
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+        hide_window(&mut cmd);
+        let child = cmd.spawn()
             .map_err(|e| format!("Failed to start cloudflared: {}", e))?;
 
         // For named tunnels, the URL is typically <tunnel-name>.<domain>
@@ -512,11 +524,12 @@ pub async fn start_cloudflared_tunnel(
         (child, tunnel_url)
     } else {
         // Quick tunnel (no account required)
-        let mut child = Command::new("cloudflared")
-            .args(["tunnel", "--url", &url])
+        let mut cmd = Command::new("cloudflared");
+        cmd.args(["tunnel", "--url", &url])
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+        hide_window(&mut cmd);
+        let mut child = cmd.spawn()
             .map_err(|e| format!("Failed to start cloudflared: {}", e))?;
 
         // Read stderr to get the public URL (cloudflared outputs to stderr)
@@ -581,9 +594,10 @@ pub async fn start_cloudflared_tunnel(
 
 /// Get cloudflared tunnel URL for a named tunnel
 async fn get_cloudflared_tunnel_url(tunnel_name: &str) -> Option<String> {
-    let output = Command::new("cloudflared")
-        .args(["tunnel", "info", tunnel_name, "--output", "json"])
-        .output()
+    let mut cmd = Command::new("cloudflared");
+    cmd.args(["tunnel", "info", tunnel_name, "--output", "json"]);
+    hide_window(&mut cmd);
+    let output = cmd.output()
         .await
         .ok()?;
 
@@ -623,18 +637,18 @@ pub async fn stop_cloudflared_tunnel(tunnel_state: &TunnelState) -> Result<(), S
         // Try to kill any orphaned cloudflared processes
         #[cfg(unix)]
         {
-            let _ = Command::new("pkill")
-                .args(["-f", "cloudflared tunnel"])
-                .output()
-                .await;
+            let mut cmd = Command::new("pkill");
+            cmd.args(["-f", "cloudflared tunnel"]);
+            hide_window(&mut cmd);
+            let _ = cmd.output().await;
         }
 
         #[cfg(windows)]
         {
-            let _ = Command::new("taskkill")
-                .args(["/F", "/IM", "cloudflared.exe"])
-                .output()
-                .await;
+            let mut cmd = Command::new("taskkill");
+            cmd.args(["/F", "/IM", "cloudflared.exe"]);
+            hide_window(&mut cmd);
+            let _ = cmd.output().await;
         }
 
         Ok(())
@@ -658,9 +672,10 @@ pub async fn start_tailscale_tunnel(
     }
 
     // First, get the Tailscale hostname
-    let status_output = Command::new("tailscale")
-        .args(["status", "--json"])
-        .output()
+    let mut cmd = Command::new("tailscale");
+    cmd.args(["status", "--json"]);
+    hide_window(&mut cmd);
+    let status_output = cmd.output()
         .await
         .map_err(|e| format!("Failed to get Tailscale status: {}", e))?;
 
@@ -683,9 +698,10 @@ pub async fn start_tailscale_tunnel(
     // Use funnel if requested (publicly accessible), otherwise serve (tailnet only)
     let command = if use_funnel { "funnel" } else { "serve" };
 
-    let output = Command::new("tailscale")
-        .args([command, &port.to_string()])
-        .output()
+    let mut cmd = Command::new("tailscale");
+    cmd.args([command, &port.to_string()]);
+    hide_window(&mut cmd);
+    let output = cmd.output()
         .await
         .map_err(|e| format!("Failed to start Tailscale {}: {}", command, e))?;
 
@@ -723,9 +739,10 @@ pub async fn stop_tailscale_tunnel(tunnel_state: &TunnelState) -> Result<(), Str
     log::info!("Stopping Tailscale Serve/Funnel");
 
     // Reset serve configuration
-    let output = Command::new("tailscale")
-        .args(["serve", "reset"])
-        .output()
+    let mut cmd = Command::new("tailscale");
+    cmd.args(["serve", "reset"]);
+    hide_window(&mut cmd);
+    let output = cmd.output()
         .await
         .map_err(|e| format!("Failed to stop Tailscale serve: {}", e))?;
 
@@ -735,10 +752,10 @@ pub async fn stop_tailscale_tunnel(tunnel_state: &TunnelState) -> Result<(), Str
     }
 
     // Also reset funnel
-    let _ = Command::new("tailscale")
-        .args(["funnel", "reset"])
-        .output()
-        .await;
+    let mut cmd = Command::new("tailscale");
+    cmd.args(["funnel", "reset"]);
+    hide_window(&mut cmd);
+    let _ = cmd.output().await;
 
     // Clear active tunnel
     let mut active = tunnel_state.active_tunnel.lock().await;
@@ -818,9 +835,10 @@ pub async fn set_ngrok_token(
     log::info!("Setting ngrok auth token");
 
     // Configure ngrok with the token
-    let output = Command::new("ngrok")
-        .args(["config", "add-authtoken", &token])
-        .output()
+    let mut cmd = Command::new("ngrok");
+    cmd.args(["config", "add-authtoken", &token]);
+    hide_window(&mut cmd);
+    let output = cmd.output()
         .await
         .map_err(|e| format!("Failed to configure ngrok: {}", e))?;
 
@@ -845,9 +863,10 @@ pub async fn set_cloudflare_tunnel(
     log::info!("Setting Cloudflare tunnel ID: {}", tunnel_id);
 
     // Verify the tunnel exists
-    let output = Command::new("cloudflared")
-        .args(["tunnel", "info", &tunnel_id])
-        .output()
+    let mut cmd = Command::new("cloudflared");
+    cmd.args(["tunnel", "info", &tunnel_id]);
+    hide_window(&mut cmd);
+    let output = cmd.output()
         .await
         .map_err(|e| format!("Failed to verify Cloudflare tunnel: {}", e))?;
 

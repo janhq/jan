@@ -75,51 +75,14 @@ export function WhatsAppWizardDialog({
       setQrCodeImage(null)
       setErrorMessage(null)
       setConfig(null)
-      if (pollingInterval) {
-        clearInterval(pollingInterval)
-        setPollingInterval(null)
-      }
+      setPollingInterval((prev) => {
+        if (prev) {
+          clearInterval(prev)
+        }
+        return null
+      })
     }
   }, [isOpen])
-
-  const startAuthentication = useCallback(async () => {
-    try {
-      setIsLoading(true)
-      setErrorMessage(null)
-
-      setStep('setting_up')
-      const status = await invoke<WhatsAppAuthStatus>('whatsapp_start_auth')
-      setAuthStatus(status)
-
-      if (status.error) {
-        setErrorMessage(status.error)
-        setStep('error')
-        return
-      }
-
-      if (status.authenticated) {
-        const whatsappConfig = await invoke<WhatsAppConfig>('whatsapp_get_config')
-        setConfig(whatsappConfig)
-        setStep('success')
-        onConnected(whatsappConfig)
-        return
-      }
-
-      if (status.qr_code) {
-        setQrCodeImage(status.qr_code)
-      }
-
-      setStep('scanning')
-      startPolling()
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : String(error)
-      )
-      setStep('error')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
 
   const startPolling = useCallback(() => {
     const interval = setInterval(async () => {
@@ -172,6 +135,45 @@ export function WhatsAppWizardDialog({
     setPollingInterval(interval)
     setIsPolling(true)
   }, [onConnected])
+
+  const startAuthentication = useCallback(async () => {
+    try {
+      setIsLoading(true)
+      setErrorMessage(null)
+
+      setStep('setting_up')
+      const status = await invoke<WhatsAppAuthStatus>('whatsapp_start_auth')
+      setAuthStatus(status)
+
+      if (status.error) {
+        setErrorMessage(status.error)
+        setStep('error')
+        return
+      }
+
+      if (status.authenticated) {
+        const whatsappConfig = await invoke<WhatsAppConfig>('whatsapp_get_config')
+        setConfig(whatsappConfig)
+        setStep('success')
+        onConnected(whatsappConfig)
+        return
+      }
+
+      if (status.qr_code) {
+        setQrCodeImage(status.qr_code)
+      }
+
+      setStep('scanning')
+      startPolling()
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : String(error)
+      )
+      setStep('error')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [onConnected, startPolling])
 
   const handleDisconnect = useCallback(async () => {
     try {

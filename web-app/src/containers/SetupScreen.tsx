@@ -6,7 +6,7 @@ import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
-import { DownloadEvent, events } from '@janhq/core'
+import { AppEvent, events } from '@janhq/core'
 import type { CatalogModel } from '@/services/models/types'
 import {
   NEW_JAN_MODEL_HF_REPO,
@@ -83,7 +83,8 @@ loadCacheFromStorage()
 function SetupScreen() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { getProviderByName, selectModelProvider } = useModelProvider()
+  const { getProviderByName, selectModelProvider, setProviders } =
+    useModelProvider()
 
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
@@ -331,37 +332,48 @@ function SetupScreen() {
 
   // Navigate when download completes - using event listener for reliability
   useEffect(() => {
-    if (hasNavigatedRef.current) return
 
-    const onDownloadSuccess = async (state: { modelId: string }) => {
+    const onModelImported = async (payload: { modelId: string }) => {
       if (!defaultVariant || hasNavigatedRef.current) return
-      if (state.modelId !== defaultVariant.model_id) return
+      if (payload.modelId !== defaultVariant.model_id) return
 
-      console.log('SetupScreen: Download completed, navigating to home...')
       hasNavigatedRef.current = true
 
-      // Wait a bit for model provider to update
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      console.log('SetupScreen: Model imported, navigating to home...')
 
-      toast.dismiss(`model-validation-started-${defaultVariant.model_id}`)
+      // Refresh providers so the model is available in the store before selecting
+      const providers = await serviceHub.providers().getProviders()
+      setProviders(providers)
+
+      // On Windows the provider may list model IDs with backslashes (from filesystem paths)
+      // while the catalog uses forward slashes, so try both formats
+      const catalogId = defaultVariant.model_id
+      const backslashId = catalogId.replace(/\//g, '\\')
+      const found = selectModelProvider('llamacpp', catalogId)
+        || selectModelProvider('llamacpp', backslashId)
+      const modelId = found ? found.id : catalogId
+
+      toast.dismiss(`model-validation-started-${catalogId}`)
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
-
-      selectModelProvider('llamacpp', defaultVariant.model_id)
       localStorage.setItem(
         localStorageKey.lastUsedModel,
-        JSON.stringify({ provider: 'llamacpp', model: defaultVariant.model_id })
+        JSON.stringify({ provider: 'llamacpp', model: modelId })
       )
-      navigate({ to: route.home, replace: true })
+      navigate({
+        to: route.home,
+        replace: true,
+        search: {
+          threadModel: { id: modelId, provider: 'llamacpp' },
+        },
+      })
     }
 
-    events.on(DownloadEvent.onFileDownloadAndVerificationSuccess, onDownloadSuccess)
-    events.on(DownloadEvent.onFileDownloadSuccess, onDownloadSuccess)
+    events.on(AppEvent.onModelImported, onModelImported)
 
     return () => {
-      events.off(DownloadEvent.onFileDownloadAndVerificationSuccess, onDownloadSuccess)
-      events.off(DownloadEvent.onFileDownloadSuccess, onDownloadSuccess)
+      events.off(AppEvent.onModelImported, onModelImported)
     }
-  }, [defaultVariant, navigate, selectModelProvider])
+  }, [defaultVariant, navigate, selectModelProvider, serviceHub, setProviders])
 
   useEffect(() => {
     if (
