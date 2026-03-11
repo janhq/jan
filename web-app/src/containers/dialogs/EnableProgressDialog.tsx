@@ -18,6 +18,8 @@ import {
   IconRefresh,
 } from '@tabler/icons-react'
 import { setOpenClawRunningState, syncAllModelsToOpenClaw } from '@/utils/openclaw'
+import { ensureModelForServer } from '@/utils/ensureModelForServer'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
@@ -70,7 +72,7 @@ const STEP_LABELS: Record<string, string> = {
   already_installed: 'OpenClaw installed',
   configuring: 'Configuring',
   starting: 'Starting gateway',
-  syncing_models: 'Syncing models',
+  validating: 'Validating configuration',
   complete: 'Complete',
 }
 
@@ -120,10 +122,18 @@ export function EnableProgressDialog({
 
       if (result.success) {
         setOpenClawRunningState(true)
-        // Sync models after gateway starts
-        setProgress(95)
+
+        setProgress(90)
+        setMessage('Loading model...')
+        try {
+          await ensureModelForServer({
+            modelsService: getServiceHub().models(),
+          })
+        } catch {
+          // Non-fatal — remote models can still work via OpenClaw
+        }
+
         setMessage('Syncing models...')
-        setCurrentStep('syncing_models')
         try {
           const { providers, selectedModel } = useModelProvider.getState()
           await syncAllModelsToOpenClaw(providers, selectedModel?.id)
@@ -255,6 +265,7 @@ export function EnableProgressDialog({
     'installing',
     'configuring',
     'starting',
+    'validating',
     'complete',
   ]
 

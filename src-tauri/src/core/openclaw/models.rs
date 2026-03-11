@@ -549,6 +549,7 @@ pub enum EnableStep {
     Installing,
     Configuring,
     Starting,
+    ValidatingConfig,
     SyncingModels,
 }
 
@@ -599,6 +600,7 @@ pub enum EnableErrorCode {
     PortInUse,
     ConfigWriteFailed,
     GatewayStartFailed,
+    ValidationFailed,
 }
 
 /// A recovery option the user can take

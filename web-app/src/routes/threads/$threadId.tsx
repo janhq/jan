@@ -53,6 +53,7 @@ import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
+import { useAgentMode } from '@/hooks/useAgentMode'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -793,9 +794,12 @@ function ThreadDetail() {
   handleContextSizeIncreaseRef.current = handleContextSizeIncrease
   setContinueFromContentRef.current = setContinueFromContent
 
-  // Auto-trigger context size increase when the model reports a context limit error
+  // Skip auto-context-increase in agent mode
+  const agentModeActive = useAgentMode(
+    (s) => s.agentThreads[threadId] === true
+  )
   useEffect(() => {
-    if (!error) return
+    if (!error || agentModeActive) return
     const isContextError =
       (error.message?.toLowerCase().includes('context') &&
         (error.message?.toLowerCase().includes('size') ||
@@ -808,10 +812,12 @@ function ThreadDetail() {
     }
   }, [error]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Clear once the new stream starts
   useEffect(() => {
-    if (isAutoIncreasingContext && status === 'streaming') {
+    if (isAutoIncreasingContext && (status === 'streaming' || status === 'error')) {
       setIsAutoIncreasingContext(false)
+    }
+    if (status === 'error' && pendingContinueMessage) {
+      setPendingContinueMessage(null)
     }
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 

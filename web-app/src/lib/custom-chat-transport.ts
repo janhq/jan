@@ -16,7 +16,7 @@ import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useAgentMode } from '@/hooks/useAgentMode'
-import { getOpenClawAuthToken, ensureOpenClawHttpApi, OPENCLAW_GATEWAY_URL } from '@/utils/openclaw'
+import { getOpenClawAuthToken, ensureOpenClawHttpApi, checkOpenClawGateway, OPENCLAW_GATEWAY_URL } from '@/utils/openclaw'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionManager } from '@/lib/extension'
@@ -64,16 +64,20 @@ function prependTextDeltaToUIStream(
   let prefixEmitted = false
   return new ReadableStream<UIMessageChunk>({
     async pull(controller) {
-      const { done, value } = await reader.read()
-      if (done) {
-        controller.close()
-        return
-      }
-      controller.enqueue(value)
-      if (!prefixEmitted && (value as { type: string }).type === 'text-start') {
-        prefixEmitted = true
-        const id = (value as { type: 'text-start'; id: string }).id
-        controller.enqueue({ type: 'text-delta', id, delta: prefixText } as UIMessageChunk)
+      try {
+        const { done, value } = await reader.read()
+        if (done) {
+          controller.close()
+          return
+        }
+        controller.enqueue(value)
+        if (!prefixEmitted && (value as { type: string }).type === 'text-start') {
+          prefixEmitted = true
+          const id = (value as { type: 'text-start'; id: string }).id
+          controller.enqueue({ type: 'text-delta', id, delta: prefixText } as UIMessageChunk)
+        }
+      } catch (error) {
+        controller.error(error)
       }
     },
     cancel() {
@@ -283,6 +287,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Agent mode: route to OpenClaw gateway
       effectiveProviderName = 'openclaw'
       await ensureOpenClawHttpApi()
+
+      const gatewayReachable = await checkOpenClawGateway()
+      if (!gatewayReachable) {
+        throw new Error('Cannot reach the OpenClaw gateway. Please check that Remote Access is running in Settings.')
+      }
+
       const authToken = await getOpenClawAuthToken()
       if (!authToken) {
         throw new Error('OpenClaw is not available. Please check that it is running in Settings > Remote Access.')
@@ -481,19 +491,49 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         return undefined
       },
       onError: (error) => {
-        // Note: By default, the AI SDK will return "An error occurred",
-        // which is intentionally vague in case the error contains sensitive information like API keys.
-        // If you want to provide more detailed error messages, keep the code below. Otherwise, remove this whole onError callback.
-        if (error == null) {
-          return 'Unknown error'
+        const errorMessage = error == null
+          ? 'Unknown error'
+          : typeof error === 'string'
+            ? error
+            : error instanceof Error
+              ? error.message
+              : JSON.stringify(error)
+
+        if (isAgentMode) {
+          const lower = errorMessage.toLowerCase()
+
+          if (
+            lower.includes('connection refused') ||
+            lower.includes('econnrefused') ||
+            lower.includes('failed to fetch') ||
+            lower.includes('network error') ||
+            lower.includes('connect error')
+          ) {
+            return `Cannot connect to the local server. Please check that the API server is running.\n\nOriginal error: ${errorMessage}`
+          }
+
+          if (
+            lower.includes('model not found') ||
+            lower.includes('model_not_found') ||
+            lower.includes('no model loaded') ||
+            lower.includes('no running session') ||
+            lower.includes('no slot available')
+          ) {
+            return `No model is currently loaded. Please start a model first in the model settings.\n\nOriginal error: ${errorMessage}`
+          }
+
+          if (
+            (lower.includes('context') && (lower.includes('size') || lower.includes('length') || lower.includes('limit') || lower.includes('exceed'))) ||
+            lower.includes('prompt is too long') ||
+            lower.includes('maximum context') ||
+            lower.includes('token limit') ||
+            lower.includes('too many tokens')
+          ) {
+            return `The prompt exceeds the model's context size. Try increasing the context size in model settings or using a shorter prompt.\n\nOriginal error: ${errorMessage}`
+          }
         }
-        if (typeof error === 'string') {
-          return error
-        }
-        if (error instanceof Error) {
-          return error.message
-        }
-        return JSON.stringify(error)
+
+        return errorMessage
       },
       onFinish: ({ responseMessage }) => {
         // Call the token usage callback with usage data when stream completes
@@ -512,9 +552,39 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // When continuing a truncated response, inject the partial content as the
     // very first text-delta so the new message immediately shows it and the
     // user sees a seamless continuation rather than an empty box.
-    return continueContent
+    const finalStream = continueContent
       ? prependTextDeltaToUIStream(uiStream, continueContent)
       : uiStream
+
+    // In agent mode, detect empty responses (HTTP 200 but no text content)
+    // and inject an error chunk so the UI shows a message instead of an empty bubble.
+    if (!isAgentMode) return finalStream
+
+    let hasTextContent = false
+    let hasError = false
+    return finalStream.pipeThrough(
+      new TransformStream<UIMessageChunk, UIMessageChunk>({
+        transform(chunk, controller) {
+          if ((chunk as { type: string }).type === 'text-delta') {
+            hasTextContent = true
+          }
+          if ((chunk as { type: string }).type === 'error') {
+            hasError = true
+          }
+          controller.enqueue(chunk)
+        },
+        flush(controller) {
+          if (!hasTextContent && !hasError) {
+            controller.enqueue({
+              type: 'error',
+              errorText:
+                'The agent returned an empty response. This usually means ' +
+                'the local model server is not running or the model failed to process the request.',
+            } as UIMessageChunk)
+          }
+        },
+      })
+    )
   }
 
   async reconnectToStream(
