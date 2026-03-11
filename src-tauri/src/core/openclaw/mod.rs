@@ -73,7 +73,7 @@ pub const MIN_BUN_VERSION: &str = "1.0";
 /// OpenClaw runtime directory (where Bun and OpenClaw are installed)
 pub fn get_openclaw_runtime_dir() -> Result<std::path::PathBuf, String> {
     let base = get_openclaw_base_dir()?;
-    let runtime_dir = base.join("runtime");
+    let runtime_dir = base.join("bunx");
     if !runtime_dir.exists() {
         std::fs::create_dir_all(&runtime_dir).map_err(|e| e.to_string())?;
     }
