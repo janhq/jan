@@ -121,6 +121,9 @@ impl Sandbox for DirectProcessSandbox {
         let use_child_process = if cfg!(target_os = "windows") {
             true
         } else {
+            if let Err(e) = install_openclaw_globally().await {
+                log::warn!("openclaw global install failed, will attempt to run anyway: {}", e);
+            }
             let install_args = vec!["gateway", "install"];
             let mut install_cmd = build_openclaw_command(&install_args.iter().map(|s| *s).collect::<Vec<_>>(), &config.config_dir);
             match install_cmd.output().await {
@@ -138,9 +141,6 @@ impl Sandbox for DirectProcessSandbox {
         };
 
         if !use_child_process {
-            if let Err(e) = install_openclaw_globally().await {
-                log::warn!("openclaw global install failed, will attempt to run anyway: {}", e);
-            }
 
             let mut cmd =
                 build_openclaw_command(&["gateway", "start"], &config.config_dir);
