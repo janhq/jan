@@ -274,8 +274,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ? useAgentMode.getState().isAgentMode(this.threadId)
       : false
 
+    // Capture the effective provider name early so the Anthropic serial
+    // tool-use repair later uses the same value that was used to create the
+    // model, even if the user switches provider mid-request.
+    let effectiveProviderName: string | undefined
+
     if (isAgentMode) {
       // Agent mode: route to OpenClaw gateway
+      effectiveProviderName = 'openclaw'
       await ensureOpenClawHttpApi()
       const authToken = await getOpenClawAuthToken()
       if (!authToken) {
@@ -306,6 +312,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Normal mode: use selected provider
       const modelId = useModelProvider.getState().selectedModel?.id
       const providerId = useModelProvider.getState().selectedProvider
+      effectiveProviderName = providerId
       const provider = useModelProvider.getState().getProviderByName(providerId)
       if (this.serviceHub && modelId && provider) {
         try {
@@ -341,8 +348,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // tool_use / tool_result pairing that the Claude API requires.
     // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
     const messagesToConvert = (() => {
-      const selectedProviderName = useModelProvider.getState().selectedProvider
-      if (isAgentMode || selectedProviderName !== 'anthropic') {
+      if (isAgentMode || effectiveProviderName !== 'anthropic') {
         return options.messages
       }
       return options.messages.flatMap((message) => {
