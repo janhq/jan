@@ -27,9 +27,9 @@ async fn install_openclaw_globally() -> Result<(), String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    if let Some(new_path) = super::build_augmented_path() {
-        cmd.env("PATH", new_path);
-    }
+    // if let Some(new_path) = super::build_augmented_path() {
+    //     cmd.env("PATH", new_path);
+    // }
 
     #[cfg(target_os = "windows")]
     {
@@ -65,8 +65,20 @@ fn build_openclaw_command(args: &[&str], config_dir: &std::path::Path) -> tokio:
     });
 
     let mut cmd = if installed_bin.as_ref().map(|p| p.exists()).unwrap_or(false) {
-        log::info!("Running openclaw from installed path: {:?}", installed_bin);
-        tokio::process::Command::new(installed_bin.unwrap())
+        let bin = installed_bin.unwrap();
+        #[cfg(not(target_os = "windows"))]
+        let cmd = {
+            log::info!("Running openclaw via node from installed path: {:?}", bin);
+            let mut c = tokio::process::Command::new("node");
+            c.arg(&bin);
+            c
+        };
+        #[cfg(target_os = "windows")]
+        let cmd = {
+            log::info!("Running openclaw from installed path: {:?}", bin);
+            tokio::process::Command::new(&bin)
+        };
+        cmd
     } else if let Some(bun) = super::resolve_bundled_bun() {
         log::info!("openclaw not installed yet, falling back to bun x");
         let mut c = tokio::process::Command::new(bun);
@@ -78,7 +90,6 @@ fn build_openclaw_command(args: &[&str], config_dir: &std::path::Path) -> tokio:
     };
 
     cmd.args(args)
-        .current_dir(config_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -86,9 +97,9 @@ fn build_openclaw_command(args: &[&str], config_dir: &std::path::Path) -> tokio:
         cmd.env("BUN_INSTALL", dir);
     }
 
-    if let Some(new_path) = super::build_augmented_path() {
-        cmd.env("PATH", new_path);
-    }
+    // if let Some(new_path) = super::build_augmented_path() {
+    //     cmd.env("PATH", new_path);
+    // }
 
     #[cfg(target_os = "windows")]
     {
@@ -114,13 +125,12 @@ impl Sandbox for DirectProcessSandbox {
     }
 
     async fn start(&self, config: &SandboxConfig) -> Result<SandboxHandle, String> {
-        if let Err(e) = super::ensure_bun_node_shim() {
-            log::warn!("Failed to ensure node shim: {}", e);
-        }
-
         let use_child_process = if cfg!(target_os = "windows") {
             true
         } else {
+            if let Err(e) = install_openclaw_globally().await {
+                log::warn!("openclaw global install failed, will attempt to run anyway: {}", e);
+            }
             let install_args = vec!["gateway", "install"];
             let mut install_cmd = build_openclaw_command(&install_args.iter().map(|s| *s).collect::<Vec<_>>(), &config.config_dir);
             match install_cmd.output().await {
@@ -138,9 +148,6 @@ impl Sandbox for DirectProcessSandbox {
         };
 
         if !use_child_process {
-            if let Err(e) = install_openclaw_globally().await {
-                log::warn!("openclaw global install failed, will attempt to run anyway: {}", e);
-            }
 
             let mut cmd =
                 build_openclaw_command(&["gateway", "start"], &config.config_dir);

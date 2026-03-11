@@ -334,6 +334,8 @@
     "install": "Install",
     "start": "Start",
     "noLocalModelAvailable": "A local model is required to enable OpenClaw. Download a model first.",
+    "noModelAvailable": "A model is required to enable OpenClaw. Download a local model or configure a remote provider with an API key.",
+    "nodejsPrerequisite": "Node.js (v22 or later) is required to run OpenClaw. Please ensure it is installed before enabling.",
     "stop": "Stop",
     "startError": "Couldn't start Remote Access. Please try again.",
     "stopError": "Couldn't stop Remote Access. Please try again.",
