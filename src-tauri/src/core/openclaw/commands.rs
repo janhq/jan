@@ -679,8 +679,7 @@ async fn run_doctor_fix() -> Result<(), String> {
     }
 }
 
-/// Restart the gateway. Docker: `docker restart`. Direct process: stop → install → start
-/// (launchd caches service args, so a plain `gateway restart` won't pick up config changes).
+/// Restart the gateway. Docker: `docker restart`. Direct process: stop → spawn child.
 async fn restart_gateway_cli() -> Result<(), String> {
     if is_docker_container_running().await {
         let mut cmd = Command::new("docker");
@@ -707,40 +706,14 @@ async fn restart_gateway_cli() -> Result<(), String> {
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    // Re-register service with --runtime bun when bundled Bun is available.
-    // On Windows this requires admin (schtasks) and may fail.
-    let install_args: Vec<&str> = vec!["gateway", "install"];
-    let install_output = openclaw_command(&install_args).await
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await;
-    let service_installed = install_output
-        .as_ref()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-
-    if service_installed {
-        let output = openclaw_command(&["gateway", "start"]).await
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await
-            .map_err(|e| format!("Failed to start gateway: {}", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            log::warn!("Gateway start failed: {}", stderr);
-        }
-    } else {
-        // Service registration failed (e.g. Windows without admin).
-        // Spawn `openclaw gateway` as a foreground child process.
-        log::info!("Service install unavailable, restarting gateway as child process");
-        let mut cmd = openclaw_command(&["gateway"]).await;
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-        if let Err(e) = cmd.spawn() {
-            log::warn!("Failed to spawn openclaw gateway: {}", e);
-        }
+    log::info!("Restarting gateway as child process");
+    let mut cmd = openclaw_command(&["gateway"]).await;
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    hide_window(&mut cmd);
+    if let Err(e) = cmd.spawn() {
+        log::warn!("Failed to spawn openclaw gateway: {}", e);
     }
     Ok(())
 }
