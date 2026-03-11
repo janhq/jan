@@ -13,7 +13,6 @@
     "type": "separator"
   },
   "agents": "Agents",
-  "cli": "CLI",
   "projects": "Projects",
   "assistants": "Assistants",
   "file-upload": "File Upload",
@@ -27,16 +26,12 @@
     "display": "hidden",
     "title": "Privacy Policy"
   },
-  "janservers": {
-    "title": "Jan Servers",
-    "type": "separator"
-  },
-  "api-preference": "API Reference",
-  "server-troubleshooting": "Server Troubleshooting",
   "reference-separator": {
     "title": "Reference",
     "type": "separator"
   },
+  "api-preference": "API Reference",
+  "cli": "CLI",
   "mcp": "Model Context Protocol",
   "remote-models": "Cloud Providers",
   "data-folder": "Jan Data Folder",
