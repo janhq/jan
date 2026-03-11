@@ -118,102 +118,31 @@ impl Sandbox for DirectProcessSandbox {
             log::warn!("Failed to ensure node shim: {}", e);
         }
 
-        let use_child_process = if cfg!(target_os = "windows") {
-            true
-        } else {
-            let install_args = vec!["gateway", "install"];
-            let mut install_cmd = build_openclaw_command(&install_args.iter().map(|s| *s).collect::<Vec<_>>(), &config.config_dir);
-            match install_cmd.output().await {
-                Ok(output) if output.status.success() => false,
-                Ok(output) => {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    log::error!("gateway install failed: {}", stderr.trim());
-                    true
-                }
-                Err(e) => {
-                    log::error!("Failed to run gateway install: {}", e);
-                    true
-                }
-            }
-        };
-
-        if !use_child_process {
-            if let Err(e) = install_openclaw_globally().await {
-                log::warn!("openclaw global install failed, will attempt to run anyway: {}", e);
-            }
-
-            let mut cmd =
-                build_openclaw_command(&["gateway", "start"], &config.config_dir);
-            for (key, value) in &config.env_vars {
-                cmd.env(key, value);
-            }
-
-
-            let mut child = cmd
-                .spawn()
-                .map_err(|e| format!("Failed to spawn openclaw gateway: {}", e))?;
-
-            // Drain stdout and stderr in background so the pipes don't block
-            if let Some(stdout) = child.stdout.take() {
-                tokio::spawn(async move {
-                    use tokio::io::{AsyncBufReadExt, BufReader};
-                    let mut lines = BufReader::new(stdout).lines();
-                    while let Ok(Some(line)) = lines.next_line().await {
-                        log::info!("openclaw stdout: {}", line);
-                    }
-                });
-            }
-            if let Some(stderr) = child.stderr.take() {
-                tokio::spawn(async move {
-                    use tokio::io::{AsyncBufReadExt, BufReader};
-                    let mut lines = BufReader::new(stderr).lines();
-                    while let Ok(Some(line)) = lines.next_line().await {
-                        log::info!("openclaw stderr: {}", line);
-                    }
-                });
-            }
-
-            // Log when the process exits
-            let pid = child.id();
-            tokio::spawn(async move {
-                // We can't await the child here since we've already moved it into the handle,
-                // so poll the port instead as a proxy for the process being alive.
-                loop {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                    let alive = tokio::net::TcpStream::connect(
-                        format!("127.0.0.1:{}", super::OPENCLAW_PORT)
-                    ).await.is_ok();
-                    if !alive {
-                        log::warn!("openclaw gateway process (pid {:?}) appears to have exited", pid);
-                        break;
-                    }
-                }
-            });
-
-            Ok(SandboxHandle::Process(child))
-        } else {
-            log::info!("Starting gateway as child process");
-            let mut cmd = build_openclaw_command(&["gateway"], &config.config_dir);
-            cmd.stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null());
-            #[cfg(target_os = "windows")]
-            {
-                use std::os::windows::process::CommandExt;
-                // CREATE_NO_WINDOW only — DETACHED_PROCESS conflicts and can
-                // cause Windows to allocate a visible console for the child.
-                cmd.creation_flags(0x08000000);
-            }
-            for (key, value) in &config.env_vars {
-                cmd.env(key, value);
-            }
-
-            let child = cmd
-                .spawn()
-                .map_err(|e| format!("Failed to spawn openclaw gateway: {}", e))?;
-
-            Ok(SandboxHandle::Process(child))
+        if let Err(e) = install_openclaw_globally().await {
+            log::warn!("openclaw global install failed, will attempt to run anyway: {}", e);
         }
+
+        log::info!("Starting gateway as child process");
+        let mut cmd = build_openclaw_command(&["gateway"], &config.config_dir);
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            // CREATE_NO_WINDOW only — DETACHED_PROCESS conflicts and can
+            // cause Windows to allocate a visible console for the child.
+            cmd.creation_flags(0x08000000);
+        }
+        for (key, value) in &config.env_vars {
+            cmd.env(key, value);
+        }
+
+        let child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to spawn openclaw gateway: {}", e))?;
+
+        Ok(SandboxHandle::Process(child))
     }
 
     async fn stop(&self, handle: &mut SandboxHandle) -> Result<(), String> {
