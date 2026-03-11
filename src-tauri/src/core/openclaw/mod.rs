@@ -73,7 +73,7 @@ pub const MIN_BUN_VERSION: &str = "1.0";
 /// OpenClaw runtime directory (where Bun and OpenClaw are installed)
 pub fn get_openclaw_runtime_dir() -> Result<std::path::PathBuf, String> {
     let base = get_openclaw_base_dir()?;
-    let runtime_dir = base.join("runtime");
+    let runtime_dir = base.join("bunx");
     if !runtime_dir.exists() {
         std::fs::create_dir_all(&runtime_dir).map_err(|e| e.to_string())?;
     }
@@ -110,77 +110,6 @@ pub fn resolve_bundled_bun() -> Option<std::path::PathBuf> {
     }
 
     None
-}
-
-pub fn ensure_bun_node_shim() -> Result<(), String> {
-    let bun_path = resolve_bundled_bun().ok_or("Bundled Bun not found")?;
-    let runtime_dir = get_openclaw_runtime_dir()?;
-    let runtime_bin = runtime_dir.join("bin");
-    std::fs::create_dir_all(&runtime_bin).map_err(|e| e.to_string())?;
-
-    let node_shim = if cfg!(target_os = "windows") {
-        runtime_bin.join("node.exe")
-    } else {
-        runtime_bin.join("node")
-    };
-
-    #[cfg(unix)]
-    {
-        if node_shim.exists() || node_shim.symlink_metadata().is_ok() {
-            if let Ok(target) = std::fs::read_link(&node_shim) {
-                if target == bun_path {
-                    return Ok(());
-                }
-            }
-            let _ = std::fs::remove_file(&node_shim);
-        }
-
-        // AppImage: copy instead of symlink (mount path is ephemeral)
-        #[cfg(target_os = "linux")]
-        {
-            if std::env::var("APPIMAGE").is_ok() {
-                std::fs::copy(&bun_path, &node_shim)
-                    .map_err(|e| format!("Failed to copy bun as node: {}", e))?;
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(
-                    &node_shim,
-                    std::fs::Permissions::from_mode(0o755),
-                );
-                return Ok(());
-            }
-        }
-
-        std::os::unix::fs::symlink(&bun_path, &node_shim)
-            .map_err(|e| format!("Failed to create node->bun symlink: {}", e))?;
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let bun_modified = std::fs::metadata(&bun_path)
-            .and_then(|m| m.modified())
-            .ok();
-
-        for shim in &[node_shim, runtime_bin.join("bun.exe")] {
-            let needs_copy = if shim.exists() {
-                let shim_modified = std::fs::metadata(shim)
-                    .and_then(|m| m.modified())
-                    .ok();
-                match (bun_modified, shim_modified) {
-                    (Some(b), Some(s)) => b > s,
-                    _ => true,
-                }
-            } else {
-                true
-            };
-
-            if needs_copy {
-                std::fs::copy(&bun_path, shim)
-                    .map_err(|e| format!("Failed to copy bun to {}: {}", shim.display(), e))?;
-            }
-        }
-    }
-
-    Ok(())
 }
 
 pub const PATH_SEPARATOR: &str = if cfg!(target_os = "windows") { ";" } else { ":" };
