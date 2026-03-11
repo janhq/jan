@@ -125,10 +125,6 @@ impl Sandbox for DirectProcessSandbox {
     }
 
     async fn start(&self, config: &SandboxConfig) -> Result<SandboxHandle, String> {
-        if let Err(e) = super::ensure_bun_node_shim() {
-            log::warn!("Failed to ensure node shim: {}", e);
-        }
-
         let use_child_process = if cfg!(target_os = "windows") {
             true
         } else {

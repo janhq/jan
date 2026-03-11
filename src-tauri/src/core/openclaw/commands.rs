@@ -1259,8 +1259,6 @@ pub async fn openclaw_install() -> Result<InstallResult, String> {
 
         let pinned_package = format!("{}@{}", OPENCLAW_PACKAGE_NAME, OPENCLAW_VERSION);
 
-        let _ = super::ensure_bun_node_shim();
-
         let output = if let Some(bun_path) = super::resolve_bundled_bun() {
             let runtime_dir = super::get_openclaw_runtime_dir()?;
             let mut cmd = tokio::process::Command::new(&bun_path);
