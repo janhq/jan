@@ -493,75 +493,85 @@ export default class llamacpp_extension extends AIEngine {
       const version = rawVersion.trim()
       const backend = rawBackend.trim()
 
-      // Map the backend type before downloading to ensure consistency
-      const effectiveBackendType = await mapOldBackendToNew(backend)
-
-      // Normalize the target backend string to use the effective backend type
-      targetBackendString = `${version}/${effectiveBackendType}`
+      // Normalize the target backend string to use trimmed values
+      targetBackendString = `${version}/${backend}`
 
       logger.info(
-        `Updating backend to ${targetBackendString} (backend type: ${effectiveBackendType})`
+        `Updating backend to ${targetBackendString} (backend type: ${backend})`
       )
 
-      // Download new backend using the effective backend type
-      await this.ensureBackendReady(effectiveBackendType, version)
+      // Download new backend using the original asset/backend name
+      await this.ensureBackendReady(backend, version)
 
       // Add delay on Windows
       if (IS_WINDOWS) {
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
+      // Map backend type for stored preference only (not for download/config)
+      const effectiveBackendType = await mapOldBackendToNew(backend)
       const currentStoredBackend = this.getStoredBackendType()
 
-      // Update configuration
+      // Snapshot config so we can rollback on failure
+      const previousVersionBackend = this.config.version_backend
+      const previousDevice = this.config.device
+
+      // Update configuration using the original backend name (matches asset/directory)
       this.config.version_backend = targetBackendString
       this.config.device = ''
 
-      // Store the backend type preference only if it changed
-      if (currentStoredBackend !== effectiveBackendType) {
-        this.setStoredBackendType(effectiveBackendType)
-        logger.info(
-          `Updated stored backend type preference: ${effectiveBackendType}`
+      try {
+        // Store the backend type preference only if it changed
+        if (currentStoredBackend !== effectiveBackendType) {
+          this.setStoredBackendType(effectiveBackendType)
+          logger.info(
+            `Updated stored backend type preference: ${effectiveBackendType}`
+          )
+        }
+
+        // Update settings
+        const settings = await this.getSettings()
+        await this.updateSettings(
+          settings.map((item) => {
+            if (item.key === 'version_backend') {
+              item.controllerProps.value = targetBackendString
+            }
+            return item
+          })
         )
+
+        logger.info(`Successfully updated to backend: ${targetBackendString}`)
+
+        // Emit for updating frontend
+        if (events && typeof events.emit === 'function') {
+          logger.info(
+            `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
+          )
+          events.emit('settingsChanged', {
+            key: 'version_backend',
+            value: targetBackendString,
+          })
+        }
+
+        // Clean up old versions of the same backend type using Rust command
+        const janDataFolderPath = await getJanDataFolderPath()
+        const backendsDir = await joinPath([
+          janDataFolderPath,
+          'llamacpp',
+          'backends',
+        ])
+
+        if (IS_WINDOWS) {
+          await new Promise((resolve) => setTimeout(resolve, 500))
+        }
+
+        await removeOldBackendVersions(backendsDir, version, backend)
+      } catch (postUpdateError) {
+        // Rollback config mutation so state matches the { wasUpdated: false } return
+        this.config.version_backend = previousVersionBackend
+        this.config.device = previousDevice
+        throw postUpdateError
       }
-
-      // Update settings
-      const settings = await this.getSettings()
-      await this.updateSettings(
-        settings.map((item) => {
-          if (item.key === 'version_backend') {
-            item.controllerProps.value = targetBackendString
-          }
-          return item
-        })
-      )
-
-      logger.info(`Successfully updated to backend: ${targetBackendString}`)
-
-      // Emit for updating frontend
-      if (events && typeof events.emit === 'function') {
-        logger.info(
-          `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
-        )
-        events.emit('settingsChanged', {
-          key: 'version_backend',
-          value: targetBackendString,
-        })
-      }
-
-      // Clean up old versions of the same backend type using Rust command
-      const janDataFolderPath = await getJanDataFolderPath()
-      const backendsDir = await joinPath([
-        janDataFolderPath,
-        'llamacpp',
-        'backends',
-      ])
-
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 500))
-      }
-
-      await removeOldBackendVersions(backendsDir, version, effectiveBackendType)
 
       return { wasUpdated: true, newBackend: targetBackendString }
     } catch (error) {
