@@ -28,6 +28,7 @@ const mockServiceHub = {
     getSystemUsage: vi.fn().mockResolvedValue(null),
     getLlamacppDevices: vi.fn().mockResolvedValue([]), // cspell: disable-line
     setActiveGpus: vi.fn().mockResolvedValue(undefined),
+    refreshHardwareInfo: vi.fn().mockResolvedValue(undefined),
     // Legacy methods for backward compatibility
     getGpuInfo: vi.fn().mockResolvedValue([]),
     getCpuInfo: vi.fn().mockResolvedValue({}),
