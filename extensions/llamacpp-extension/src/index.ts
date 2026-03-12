@@ -725,13 +725,18 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
-    this.config[key] = value
-
     if (key === 'version_backend') {
-      // Skip download if updateBackend() is already handling it
+      // Skip entirely if updateBackend() is already handling it —
+      // updateBackend() will commit to in-memory config itself after all
+      // side effects succeed.
       if (this.isUpdatingBackend) {
         return
       }
+    }
+
+    this.config[key] = value
+
+    if (key === 'version_backend') {
       const valueStr = value as string
       // Async logic wrapped in IIFE since onSettingUpdate is void
       ;(async () => {
