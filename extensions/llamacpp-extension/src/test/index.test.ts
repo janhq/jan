@@ -13,6 +13,12 @@ vi.mock('../backend', () => ({
   getBackendDir: vi.fn(),
 }))
 
+// Mock tauri-plugin-llamacpp-api
+vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({
+  mapOldBackendToNew: vi.fn(),
+  removeOldBackendVersions: vi.fn(),
+}))
+
 describe('llamacpp_extension', () => {
   let extension: llamacpp_extension
 
