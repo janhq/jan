@@ -512,48 +512,47 @@ export default class llamacpp_extension extends AIEngine {
       const effectiveBackendType = await mapOldBackendToNew(backend)
       const currentStoredBackend = this.getStoredBackendType()
 
-      // Snapshot config so we can rollback on failure
-      const previousVersionBackend = this.config.version_backend
-      const previousDevice = this.config.device
+      // Persist settings and stored preference before mutating in-memory config,
+      // so that if any of these steps fail, config remains consistent.
 
-      // Update configuration using the original backend name (matches asset/directory)
+      // Store the backend type preference only if it changed
+      if (currentStoredBackend !== effectiveBackendType) {
+        this.setStoredBackendType(effectiveBackendType)
+        logger.info(
+          `Updated stored backend type preference: ${effectiveBackendType}`
+        )
+      }
+
+      // Update settings
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (item.key === 'version_backend') {
+            item.controllerProps.value = targetBackendString
+          }
+          return item
+        })
+      )
+
+      // All critical side effects succeeded — now commit to in-memory config
       this.config.version_backend = targetBackendString
       this.config.device = ''
 
-      try {
-        // Store the backend type preference only if it changed
-        if (currentStoredBackend !== effectiveBackendType) {
-          this.setStoredBackendType(effectiveBackendType)
-          logger.info(
-            `Updated stored backend type preference: ${effectiveBackendType}`
-          )
-        }
+      logger.info(`Successfully updated to backend: ${targetBackendString}`)
 
-        // Update settings
-        const settings = await this.getSettings()
-        await this.updateSettings(
-          settings.map((item) => {
-            if (item.key === 'version_backend') {
-              item.controllerProps.value = targetBackendString
-            }
-            return item
-          })
+      // Emit for updating frontend
+      if (events && typeof events.emit === 'function') {
+        logger.info(
+          `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
         )
+        events.emit('settingsChanged', {
+          key: 'version_backend',
+          value: targetBackendString,
+        })
+      }
 
-        logger.info(`Successfully updated to backend: ${targetBackendString}`)
-
-        // Emit for updating frontend
-        if (events && typeof events.emit === 'function') {
-          logger.info(
-            `Emitting settingsChanged event for version_backend with value: ${targetBackendString}`
-          )
-          events.emit('settingsChanged', {
-            key: 'version_backend',
-            value: targetBackendString,
-          })
-        }
-
-        // Clean up old versions of the same backend type using Rust command
+      // Clean up old versions — best-effort, don't fail the update if this errors
+      try {
         const janDataFolderPath = await getJanDataFolderPath()
         const backendsDir = await joinPath([
           janDataFolderPath,
@@ -566,11 +565,8 @@ export default class llamacpp_extension extends AIEngine {
         }
 
         await removeOldBackendVersions(backendsDir, version, backend)
-      } catch (postUpdateError) {
-        // Rollback config mutation so state matches the { wasUpdated: false } return
-        this.config.version_backend = previousVersionBackend
-        this.config.device = previousDevice
-        throw postUpdateError
+      } catch (cleanupError) {
+        logger.warn('Failed to remove old backend versions:', cleanupError)
       }
 
       return { wasUpdated: true, newBackend: targetBackendString }
