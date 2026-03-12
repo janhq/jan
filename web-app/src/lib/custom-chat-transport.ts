@@ -278,8 +278,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ? useAgentMode.getState().isAgentMode(this.threadId)
       : false
 
+    // Capture the effective provider name early so the Anthropic serial
+    // tool-use repair later uses the same value that was used to create the
+    // model, even if the user switches provider mid-request.
+    let effectiveProviderName: string | undefined
+
     if (isAgentMode) {
       // Agent mode: route to OpenClaw gateway
+      effectiveProviderName = 'openclaw'
       await ensureOpenClawHttpApi()
 
       const gatewayReachable = await checkOpenClawGateway()
@@ -316,6 +322,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Normal mode: use selected provider
       const modelId = useModelProvider.getState().selectedModel?.id
       const providerId = useModelProvider.getState().selectedProvider
+      effectiveProviderName = providerId
       const provider = useModelProvider.getState().getProviderByName(providerId)
       if (this.serviceHub && modelId && provider) {
         try {
@@ -345,9 +352,58 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       }
     }
 
+    // Fix for Anthropic serial tool-use (error 400): when an assistant message
+    // contains tool parts interleaved with text parts (serial tool calls),
+    // split it into separate messages so convertToModelMessages produces the
+    // tool_use / tool_result pairing that the Claude API requires.
+    // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
+    const messagesToConvert = (() => {
+      if (isAgentMode || effectiveProviderName !== 'anthropic') {
+        return options.messages
+      }
+      return options.messages.flatMap((message) => {
+        if (message.role !== 'assistant') return [message]
+
+        const parts = Array.isArray(message.parts) ? message.parts : []
+        if (parts.length === 0) return [message]
+
+        const isToolPart = (p: (typeof parts)[number]) =>
+          p.type.startsWith('tool-')
+
+        const waves: (typeof parts)[] = []
+        let currentWave: typeof parts = []
+        let seenToolParts = false
+
+        for (const part of parts) {
+          if (isToolPart(part)) {
+            seenToolParts = true
+            currentWave.push(part)
+          } else if (!isToolPart(part) && seenToolParts) {
+            // Any non-tool part (text, reasoning, file, etc.) after tool parts
+            // marks the start of a new wave
+            waves.push(currentWave)
+            currentWave = [part]
+            seenToolParts = false
+          } else {
+            currentWave.push(part)
+          }
+        }
+        if (currentWave.length > 0) waves.push(currentWave)
+
+        // No serial tool calls detected — return original message unchanged
+        if (waves.length <= 1) return [message]
+
+        return waves.map((waveParts, i) => ({
+          ...message,
+          id: `${message.id}_w${i}`,
+          parts: waveParts,
+        }))
+      })
+    })()
+
     // Convert UI messages to model messages
     const baseMessages = convertToModelMessages(
-      this.mapUserInlineAttachments(options.messages)
+      this.mapUserInlineAttachments(messagesToConvert)
     )
 
     // If continuing a truncated response, append the partial assistant content as a
