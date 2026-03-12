@@ -27,10 +27,6 @@ async fn install_openclaw_globally() -> Result<(), String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    // if let Some(new_path) = super::build_augmented_path() {
-    //     cmd.env("PATH", new_path);
-    // }
-
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -53,7 +49,7 @@ async fn install_openclaw_globally() -> Result<(), String> {
 
 /// Build a command that runs the globally-installed openclaw binary from BUN_INSTALL/bin/.
 /// Falls back to `bun x openclaw` if the installed binary is not found.
-fn build_openclaw_command(args: &[&str], config_dir: &std::path::Path) -> tokio::process::Command {
+fn build_openclaw_command(args: &[&str], _config_dir: &std::path::Path) -> tokio::process::Command {
     let bunx_dir = get_bunx_dir();
 
     let installed_bin = bunx_dir.as_ref().map(|d| {
@@ -96,10 +92,6 @@ fn build_openclaw_command(args: &[&str], config_dir: &std::path::Path) -> tokio:
     if let Some(dir) = bunx_dir {
         cmd.env("BUN_INSTALL", dir);
     }
-
-    // if let Some(new_path) = super::build_augmented_path() {
-    //     cmd.env("PATH", new_path);
-    // }
 
     #[cfg(target_os = "windows")]
     {

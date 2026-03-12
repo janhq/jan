@@ -1,5 +1,7 @@
 pub mod cli;
 pub mod commands;
+pub mod commands_telegram;
+pub mod commands_whatsapp;
 pub mod constants;
 pub mod health;
 pub mod lifecycle;
