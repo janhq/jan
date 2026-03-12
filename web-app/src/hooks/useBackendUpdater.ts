@@ -276,7 +276,16 @@ export const useBackendUpdater = () => {
           throw new Error('Current backend not found')
         }
 
-        const [, backendType] = currentBackend.split('/')
+        const parts = currentBackend.split('/')
+        const versionPart = parts[0]?.trim()
+        const backendType = parts[1]?.trim()
+
+        if (!versionPart || !backendType) {
+          throw new Error(
+            `Invalid current backend format: "${currentBackend}". Expected "version/backendType".`
+          )
+        }
+
         targetBackendString = `${updateState.updateInfo.newVersion}/${backendType}`
       }
 
