@@ -770,6 +770,7 @@ async fn proxy_request(
     let mut buffered_body: Option<Bytes> = None;
     let mut target_base_url: Option<String> = None;
     let mut is_anthropic_messages = false;
+    let mut provider_name: Option<String> = None;
 
     match (method.clone(), destination_path.as_str()) {
         // Anthropic /messages endpoint - tries /messages first, falls back to /chat/completions on error
@@ -803,7 +804,7 @@ async fn proxy_request(
                         let pc = provider_configs.lock().await;
 
                         // Try to find a provider for this model
-                        let provider_name: Option<String> = pc
+                        provider_name = pc
                             .iter()
                             .find(|(_, config)| config.models.iter().any(|m| m == model_id))
                             .map(|(_, config)| config.provider.clone())
@@ -935,7 +936,7 @@ async fn proxy_request(
                         let pc = provider_configs.lock().await;
 
                         // Try to find a provider that has this model configured
-                        let provider_name = pc
+                        provider_name = pc
                             .iter()
                             .find(|(_, config)| {
                                 // Check if any model in this provider matches
