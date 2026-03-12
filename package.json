@@ -32,7 +32,7 @@
     "build:tauri": "pnpm run build:icon && pnpm run copy:assets:tauri && run-script-os",
     "build:tauri:plugin:api": "cd src-tauri/plugins && pnpm install && pnpm -r run build",
     "build:icon": "tauri icon ./src-tauri/icons/icon.png",
-    "build:core": "cd core && pnpm run build && pnpm pack && mv janhq-core-*.tgz package.tgz",
+    "build:core": "cd core && pnpm run build && pnpm pack --pack-destination . --filename package.tgz",
     "build:web": "pnpm --filter @janhq/web-app run build",
     "build:extensions": "rimraf ./pre-install/*.tgz || true && pnpm --filter @janhq/core run build && cd extensions && pnpm install --no-frozen-lockfile && cd .. && run-script-os",
     "build:extensions:darwin": "cd extensions && pnpm -r run build:publish",
