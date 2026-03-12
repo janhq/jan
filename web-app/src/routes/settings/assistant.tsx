@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { useAssistant } from '@/hooks/useAssistant'
 
 import HeaderPage from '@/containers/HeaderPage'
-import { IconCirclePlus, IconPencil, IconTrash } from '@tabler/icons-react'
+import { IconCirclePlus, IconPencil, IconStar, IconStarFilled, IconTrash } from '@tabler/icons-react'
 import AddEditAssistant from '@/containers/dialogs/AddEditAssistant'
 import { DeleteAssistantDialog } from '@/containers/dialogs'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
@@ -21,7 +21,7 @@ export const Route = createFileRoute(route.settings.assistant as any)({
 
 function AssistantContent() {
   const { t } = useTranslation()
-  const { assistants, addAssistant, updateAssistant, deleteAssistant } =
+  const { assistants, addAssistant, updateAssistant, deleteAssistant, defaultAssistantId, setDefaultAssistant } =
     useAssistant()
   const [open, setOpen] = useState(false)
   const [editingKey, setEditingKey] = useState<string | null>(null)
@@ -75,35 +75,53 @@ function AssistantContent() {
       <div className="flex h-[calc(100%-60px)]">
         <div className="flex h-svh w-full">
           <SettingsMenu />
-          <div className="space-y-3 p-4 pt-0 w-full overflow-y-auto">
+          <div className="flex flex-col p-4 pt-0 w-full overflow-y-auto">
             {assistants
               .slice()
               .sort((a, b) => a.created_at - b.created_at)
               .map((assistant) => (
                 <div
-                  className="bg-secondary dark:bg-secondary/20 p-4 rounded-lg flex items-center gap-4"
+                  className="group flex items-center gap-3 px-3 py-3 rounded-lg my-2 bg-secondary/20 hover:bg-secondary dark:hover:bg-secondary/20 transition-colors"
                   key={assistant.id}
                 >
-                  <div className="flex items-start gap-3 flex-1">
+                  <div className="size-9 shrink-0 flex items-center justify-center bg-secondary dark:bg-secondary/40 rounded-lg">
                     {assistant?.avatar && (
-                      <div className="shrink-0 w-8 h-8 relative flex items-center justify-center bg-secondary rounded-md">
-                        <AvatarEmoji
-                          avatar={assistant?.avatar}
-                          imageClassName="w-5 h-5 object-contain"
-                          textClassName="text-lg"
-                        />
-                      </div>
+                      <AvatarEmoji
+                        avatar={assistant?.avatar}
+                        imageClassName="size-6 object-contain"
+                        textClassName="text-2xl"
+                      />
                     )}
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-base font-studio font-medium line-clamp-1">
+                  </div>
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-studio font-medium truncate">
                         {assistant.name}
-                      </h3>
-                      <p className="text-muted-foreground leading-normal text-xs line-clamp-2 mt-1">
+                      </span>
+                      {defaultAssistantId === assistant.id && (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full text-muted-foreground bg-foreground/10 leading-none shrink-0">
+                          {t('assistants:isDefault')}
+                        </span>
+                      )}
+                    </div>
+                    {assistant.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-1 pr-12 mt-0.5">
                         {assistant.description}
                       </p>
-                    </div>
+                    )}
                   </div>
-                  <div className="flex items-center">
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      title={defaultAssistantId === assistant.id ? t('assistants:isDefault') : t('assistants:setAsDefault')}
+                      onClick={() => setDefaultAssistant(assistant.id)}
+                    >
+                      {defaultAssistantId === assistant.id
+                        ? <IconStarFilled className="text-amber-400 size-4" />
+                        : <IconStar className="text-muted-foreground size-4" />
+                      }
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon-sm"

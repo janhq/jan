@@ -142,6 +142,7 @@ const ChatInput = memo(function ChatInput({
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
   const assistants = useAssistant((state) => state.assistants)
+  const defaultAssistantId = useAssistant((state) => state.defaultAssistantId)
 
   // Agent mode (OpenClaw)
   // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
@@ -188,7 +189,9 @@ const ChatInput = memo(function ChatInput({
 
   // Check if selected model is currently loaded/active
   const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
-  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>(assistants[0])
+  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>(
+    () => assistants.find((a) => a.id === defaultAssistantId) ?? assistants[0]
+  )
 
   // No auto-selection: let the user explicitly pick an assistant
 
