@@ -280,9 +280,9 @@ export const useBackendUpdater = () => {
         const versionPart = parts[0]?.trim()
         const backendType = parts[1]?.trim()
 
-        if (!versionPart || !backendType) {
+        if (parts.length !== 2 || !versionPart || !backendType) {
           throw new Error(
-            `Invalid current backend format: "${currentBackend}". Expected "version/backendType".`
+            `Invalid current backend format: "${currentBackend}". Expected exactly "version/backendType".`
           )
         }
 

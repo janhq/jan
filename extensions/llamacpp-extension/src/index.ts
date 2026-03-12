@@ -477,13 +477,19 @@ export default class llamacpp_extension extends AIEngine {
 
       this.isUpdatingBackend = true
 
-      const [version, backend] = targetBackendString.split('/')
+      const backendParts = targetBackendString.split('/')
 
-      if (!version?.trim() || !backend?.trim()) {
+      if (
+        backendParts.length !== 2 ||
+        !backendParts[0]?.trim() ||
+        !backendParts[1]?.trim()
+      ) {
         throw new Error(
           `Invalid backend string format: "${targetBackendString}". Expected "version/backend".`
         )
       }
+
+      const [version, backend] = backendParts
 
       logger.info(
         `Updating backend to ${targetBackendString} (backend type: ${backend})`
