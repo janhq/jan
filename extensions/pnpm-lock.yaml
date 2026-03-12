@@ -430,7 +430,7 @@ packages:
     engines: {node: '>=12'}
 
   '@janhq/core@file:../core/package.tgz':
-    resolution: {integrity: sha512-SpiVBzY7dYhhfomBQQOc77u+Dh/Hh27ugtZMm3bcJJHVau2DUK7RjIpKs0Dm0Do3+OEY4mCUFqgJ4copoqAiKA==, tarball: file:../core/package.tgz}
+    resolution: {integrity: sha512-mhgDvYcVV8aXFtmJw3MoX4fKrdVctezW3lSQRVkukY82Fpzt2AAFv3PyIvRkeNv5b7C3Yr85eomHPdHpfF+BcQ==, tarball: file:../core/package.tgz}
     version: 0.1.10
     peerDependencies:
       react: 19.0.0
