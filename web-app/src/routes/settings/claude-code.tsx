@@ -303,12 +303,17 @@ function ClaudeCodeIntegration() {
                     size="sm"
                     variant="outline"
                     onClick={async () => {
+                      const hasModels = helperModels.big || helperModels.medium || helperModels.small
                       clearModels()
-                      try {
-                        await invoke('clear_claude_code_env')
+                      if (hasModels) {
+                        try {
+                          await invoke('clear_claude_code_env')
+                          toast.success('Claude Code settings cleared')
+                        } catch (e) {
+                          toast.error(`Failed to clear env file: ${e}`)
+                        }
+                      } else {
                         toast.success('Claude Code settings cleared')
-                      } catch (e) {
-                        toast.error(`Failed to clear env file: ${e}`)
                       }
                     }}
                   >
