@@ -4,9 +4,6 @@ import llamacpp_extension from '../index'
 // Mock fetch globally
 global.fetch = vi.fn()
 
-// Stub IS_WINDOWS global (injected by bundler at build time)
-vi.stubGlobal('IS_WINDOWS', false)
-
 // Mock backend functions
 vi.mock('../backend', () => ({
   isBackendInstalled: vi.fn(),
@@ -409,6 +406,7 @@ describe('llamacpp_extension', () => {
 
   describe('updateBackend', () => {
     beforeEach(() => {
+      vi.stubGlobal('IS_WINDOWS', false)
       extension['config'] = {
         version_backend: 'v1.0.0/linux-avx2-x64',
         device: '',
