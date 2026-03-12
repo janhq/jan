@@ -2824,6 +2824,7 @@ __metadata:
     "@types/istanbul-reports": "npm:3.0.4"
     "@types/lodash.clonedeep": "npm:4.5.9"
     "@types/lodash.debounce": "npm:4.0.9"
+    "@types/matter-js": "npm:^0"
     "@types/mdast": "npm:^4.0.4"
     "@types/node": "npm:22.14.1"
     "@types/react": "npm:19.1.2"
@@ -2856,7 +2857,8 @@ __metadata:
     lodash.clonedeep: "npm:4.5.0"
     lodash.debounce: "npm:4.0.8"
     lucide-react: "npm:^0.563.0"
-    motion: "npm:^12.29.2"
+    matter-js: "npm:^0.20.0"
+    motion: "npm:^12.35.0"
     next-themes: "npm:0.4.6"
     posthog-js: "npm:1.255.1"
     radix-ui: "npm:^1.4.3"
@@ -6929,6 +6931,13 @@ __metadata:
   version: 4.17.20
   resolution: "@types/lodash@npm:4.17.20"
   checksum: 10c0/98cdd0faae22cbb8079a01a3bb65aa8f8c41143367486c1cbf5adc83f16c9272a2a5d2c1f541f61d0d73da543c16ee1d21cf2ef86cb93cd0cc0ac3bced6dd88f
+  languageName: node
+  linkType: hard
+
+"@types/matter-js@npm:^0":
+  version: 0.20.2
+  resolution: "@types/matter-js@npm:0.20.2"
+  checksum: 10c0/da953eb54e3c0595ee4d9c36a95568161d41bdc42ae6fca0d479c0f0855e84c92925059d4bdb64a03d16ee5b7eca55af645bd26d2dfc581d574a42519ff1d345
   languageName: node
   linkType: hard
 
@@ -11167,6 +11176,28 @@ __metadata:
   languageName: node
   linkType: hard
 
+"framer-motion@npm:^12.35.2":
+  version: 12.35.2
+  resolution: "framer-motion@npm:12.35.2"
+  dependencies:
+    motion-dom: "npm:^12.35.2"
+    motion-utils: "npm:^12.29.2"
+    tslib: "npm:^2.4.0"
+  peerDependencies:
+    "@emotion/is-prop-valid": "*"
+    react: ^18.0.0 || ^19.0.0
+    react-dom: ^18.0.0 || ^19.0.0
+  peerDependenciesMeta:
+    "@emotion/is-prop-valid":
+      optional: true
+    react:
+      optional: true
+    react-dom:
+      optional: true
+  checksum: 10c0/10df5d7def46869f93797ba4eef2bbb8a1468b288849b4d2d8ddcbe4d42ac717eb814209112d6c8045a6fabf98ce588174734452b1fb847d66b5565da1afa9a1
+  languageName: node
+  linkType: hard
+
 "fs-extra@npm:^11.2.0":
   version: 11.3.1
   resolution: "fs-extra@npm:11.3.1"
@@ -13932,6 +13963,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"matter-js@npm:^0.20.0":
+  version: 0.20.0
+  resolution: "matter-js@npm:0.20.0"
+  checksum: 10c0/95d58f407205ad24c96422109c959999f474ef29af79b4c2ad7550bca97cdcdac99df31ebe35ab858d9863c8f6cd5205339fbbff70909b56a3e2a6a57200c51b
+  languageName: node
+  linkType: hard
+
 "md5.js@npm:^1.3.4":
   version: 1.3.5
   resolution: "md5.js@npm:1.3.5"
@@ -14988,6 +15026,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"motion-dom@npm:^12.35.2":
+  version: 12.35.2
+  resolution: "motion-dom@npm:12.35.2"
+  dependencies:
+    motion-utils: "npm:^12.29.2"
+  checksum: 10c0/37fbb846b6a009b2ce06b303199e0da0e0b64f33ce153bc56263191b8655571048e9e4ef94de993d87e8ebdbf9c18de4afefea05727df447168d6a94f4098105
+  languageName: node
+  linkType: hard
+
 "motion-utils@npm:^12.23.6":
   version: 12.23.6
   resolution: "motion-utils@npm:12.23.6"
@@ -15002,7 +15049,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"motion@npm:^12.23.26, motion@npm:^12.29.2":
+"motion@npm:^12.23.26":
   version: 12.34.3
   resolution: "motion@npm:12.34.3"
   dependencies:
@@ -15020,6 +15067,27 @@ __metadata:
     react-dom:
       optional: true
   checksum: 10c0/bb16391e893c2df81e1447d920cb97f54da1c2660ca648c9bfee6cc5b482f96b4bcb223eee02da40e78bd33c4211168b444e3fefefeb1177e338f0e1063b4be1
+  languageName: node
+  linkType: hard
+
+"motion@npm:^12.35.0":
+  version: 12.35.2
+  resolution: "motion@npm:12.35.2"
+  dependencies:
+    framer-motion: "npm:^12.35.2"
+    tslib: "npm:^2.4.0"
+  peerDependencies:
+    "@emotion/is-prop-valid": "*"
+    react: ^18.0.0 || ^19.0.0
+    react-dom: ^18.0.0 || ^19.0.0
+  peerDependenciesMeta:
+    "@emotion/is-prop-valid":
+      optional: true
+    react:
+      optional: true
+    react-dom:
+      optional: true
+  checksum: 10c0/d52b9004fc316f49cbd360347a9840b219388e6339ab1f749176d3837c83700578e33cc97f05fef31565dc5ca11afd0832133644701eccebecc2e12a65370f11
   languageName: node
   linkType: hard
 
