@@ -1,4 +1,3 @@
-pub mod cli;
 pub mod commands;
 pub mod commands_telegram;
 pub mod commands_whatsapp;
@@ -112,31 +111,6 @@ pub fn resolve_bundled_bun() -> Option<std::path::PathBuf> {
     }
 
     None
-}
-
-pub const PATH_SEPARATOR: &str = if cfg!(target_os = "windows") { ";" } else { ":" };
-
-/// Prepend bundled Bun dir and openclaw-runtime/bin to PATH.
-pub fn build_augmented_path() -> Option<String> {
-    let mut path_entries = Vec::new();
-    if let Some(bun_path) = resolve_bundled_bun() {
-        if let Some(bun_dir) = bun_path.parent() {
-            path_entries.push(bun_dir.to_string_lossy().to_string());
-        }
-    }
-    if let Ok(runtime_dir) = get_openclaw_runtime_dir() {
-        path_entries.push(runtime_dir.join("bin").to_string_lossy().to_string());
-    }
-    if path_entries.is_empty() {
-        return None;
-    }
-    let current_path = std::env::var("PATH").unwrap_or_default();
-    Some(format!(
-        "{}{}{}",
-        path_entries.join(PATH_SEPARATOR),
-        PATH_SEPARATOR,
-        current_path
-    ))
 }
 
 /// OpenClaw Manager state

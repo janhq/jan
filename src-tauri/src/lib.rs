@@ -1,5 +1,4 @@
 pub mod core;
-pub mod openclaw_cli;
 pub use core::openclaw::OpenClawState;
 
 

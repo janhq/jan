@@ -1,8 +1,9 @@
 // Re-export telegram and whatsapp commands so lib.rs paths stay unchanged
 pub use super::commands_telegram::*;
 pub use super::commands_whatsapp::*;
+
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -20,22 +21,22 @@ use crate::core::openclaw::{
 
 /// On Windows, prevent console window popups for background commands.
 #[cfg(target_os = "windows")]
-fn hide_window(cmd: &mut Command) {
+pub(crate) fn hide_window(cmd: &mut Command) {
     use std::os::windows::process::CommandExt;
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 }
 
 #[cfg(not(target_os = "windows"))]
-fn hide_window(_cmd: &mut Command) {}
+pub(crate) fn hide_window(_cmd: &mut Command) {}
 
 /// Request ID counter for WebSocket messages
 static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// Container name for the Docker sandbox
-const DOCKER_CONTAINER_NAME: &str = "jan-openclaw";
+pub(crate) const DOCKER_CONTAINER_NAME: &str = "jan-openclaw";
 
 /// Check if the Docker container `jan-openclaw` is running.
-async fn is_docker_container_running() -> bool {
+pub(crate) async fn is_docker_container_running() -> bool {
     let mut cmd = Command::new("docker");
     cmd.args(["inspect", "--format", "{{.State.Running}}", DOCKER_CONTAINER_NAME]);
     hide_window(&mut cmd);
@@ -99,7 +100,7 @@ fn build_openclaw_command(args: &[&str]) -> tokio::process::Command {
 
 /// Build a `Command` for openclaw: docker exec when container is running,
 /// otherwise direct process with bun interpreter (Unix) or native exe (Windows).
-async fn openclaw_command(args: &[&str]) -> Command {
+pub(crate) async fn openclaw_command(args: &[&str]) -> Command {
     if is_docker_container_running().await {
         let mut cmd = Command::new("docker");
         let mut full_args: Vec<&str> = vec![
@@ -121,8 +122,8 @@ async fn openclaw_command(args: &[&str]) -> Command {
 }
 
 /// Gateway restart attempts counter during WhatsApp auth polling (reset per session).
-static WA_RESTART_COUNT: AtomicU8 = AtomicU8::new(0);
-const MAX_WA_RESTART_ATTEMPTS: u8 = 3;
+/// (Used by commands_whatsapp module)
+
 
 fn next_request_id() -> String {
     REQUEST_ID_COUNTER.fetch_add(1, Ordering::SeqCst).to_string()
@@ -363,7 +364,7 @@ async fn gateway_handshake(ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStr
 }
 
 /// Send a request to the Gateway and wait for response with configurable timeout.
-async fn gateway_request_with_timeout(
+pub(crate) async fn gateway_request_with_timeout(
     method: &str,
     params: serde_json::Value,
     timeout_secs: u64,
@@ -435,7 +436,7 @@ async fn gateway_request_with_timeout(
 }
 
 /// Send a request to the Gateway with default 30s timeout.
-async fn gateway_request(
+pub(crate) async fn gateway_request(
     method: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
@@ -701,7 +702,7 @@ async fn run_doctor_fix() -> Result<(), String> {
 }
 
 /// Restart the gateway. Docker: `docker restart`. Direct process: stop → spawn child.
-async fn restart_gateway_cli() -> Result<(), String> {
+pub(crate) async fn restart_gateway_cli() -> Result<(), String> {
     if is_docker_container_running().await {
         let mut cmd = Command::new("docker");
         cmd.args(["restart", DOCKER_CONTAINER_NAME])
@@ -1012,7 +1013,7 @@ async fn ensure_gateway_config_for_jan() -> Result<bool, String> {
 
 /// Ensure gateway.bind is "lan" in config. If the gateway is running
 /// and the config changed, restarts it so the service picks up bind=lan.
-async fn ensure_gateway_bind_lan() {
+pub(crate) async fn ensure_gateway_bind_lan() {
     let config_path = match get_openclaw_config_path() {
         Ok(p) => p,
         Err(_) => return,
@@ -1801,7 +1802,7 @@ pub async fn openclaw_get_config() -> Result<OpenClawConfig, String> {
 
 /// Read the OpenClaw config file as a JSON Value.
 /// Preserves all fields including unknown ones.
-fn read_openclaw_config() -> Result<serde_json::Value, String> {
+pub(crate) fn read_openclaw_config() -> Result<serde_json::Value, String> {
     let config_path = get_openclaw_config_path()?;
     let content = std::fs::read_to_string(&config_path)
         .map_err(|e| format!("Failed to read OpenClaw config: {}", e))?;
@@ -1811,7 +1812,7 @@ fn read_openclaw_config() -> Result<serde_json::Value, String> {
 
 /// Write a JSON Value back to the OpenClaw config file.
 /// Automatically sanitises the config (strip invalid keys, ensure required keys).
-fn write_openclaw_config(config: &serde_json::Value) -> Result<(), String> {
+pub(crate) fn write_openclaw_config(config: &serde_json::Value) -> Result<(), String> {
     let config_path = get_openclaw_config_path()?;
     let mut sanitized = config.clone();
     strip_invalid_config_keys(&mut sanitized);
@@ -2003,7 +2004,7 @@ pub async fn openclaw_get_model() -> Result<String, String> {
 }
 
 /// Check if OpenClaw gateway is responding on the expected port
-async fn check_gateway_responding() -> bool {
+pub(crate) async fn check_gateway_responding() -> bool {
     // Use TCP connection check - OpenClaw serves a dashboard UI, not a JSON health endpoint
     match tokio::net::TcpStream::connect(format!("127.0.0.1:{}", OPENCLAW_PORT)).await {
         Ok(_) => {
@@ -2016,7 +2017,7 @@ async fn check_gateway_responding() -> bool {
 
 /// Wait for the gateway to become responsive, polling every 500ms up to `max_wait_secs`.
 /// Returns true if the gateway responded before the deadline, false otherwise.
-async fn wait_for_gateway_ready(max_wait_secs: u64) -> bool {
+pub(crate) async fn wait_for_gateway_ready(max_wait_secs: u64) -> bool {
     let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(max_wait_secs);
     // Always give the process at least 1s to bind the port
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
@@ -2661,7 +2662,7 @@ pub fn openclaw_get_config_dir() -> Result<String, String> {
 /// Enable a channel plugin in OpenClaw.
 /// In Docker mode, writes directly to the config file to avoid CLI commands
 /// that restart the gateway (killing the container's PID 1).
-async fn enable_channel_plugin(channel: &str) -> Result<(), String> {
+pub(crate) async fn enable_channel_plugin(channel: &str) -> Result<(), String> {
     log::info!("Enabling {} plugin", channel);
 
     if is_docker_container_running().await {
