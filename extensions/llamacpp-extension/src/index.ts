@@ -493,27 +493,25 @@ export default class llamacpp_extension extends AIEngine {
       const version = rawVersion.trim()
       const backend = rawBackend.trim()
 
-      // Normalize the target backend string to use trimmed values
-      targetBackendString = `${version}/${backend}`
+      // Map the backend type before downloading to ensure consistency
+      const effectiveBackendType = await mapOldBackendToNew(backend)
+
+      // Normalize the target backend string to use the effective backend type
+      targetBackendString = `${version}/${effectiveBackendType}`
 
       logger.info(
-        `Updating backend to ${targetBackendString} (backend type: ${backend})`
+        `Updating backend to ${targetBackendString} (backend type: ${effectiveBackendType})`
       )
 
-      // Download new backend
-      await this.ensureBackendReady(backend, version)
+      // Download new backend using the effective backend type
+      await this.ensureBackendReady(effectiveBackendType, version)
 
       // Add delay on Windows
       if (IS_WINDOWS) {
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
-      // We ensure consistency by mapping the backend type, although targetBackendString should already be correct
-      const effectiveBackendType = await mapOldBackendToNew(backend)
       const currentStoredBackend = this.getStoredBackendType()
-
-      // Re-construct to be sure
-      targetBackendString = `${version}/${effectiveBackendType}`
 
       // Update configuration
       this.config.version_backend = targetBackendString
@@ -563,7 +561,7 @@ export default class llamacpp_extension extends AIEngine {
         await new Promise((resolve) => setTimeout(resolve, 500))
       }
 
-      await removeOldBackendVersions(backendsDir, version, backend)
+      await removeOldBackendVersions(backendsDir, version, effectiveBackendType)
 
       return { wasUpdated: true, newBackend: targetBackendString }
     } catch (error) {

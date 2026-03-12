@@ -474,6 +474,10 @@ describe('llamacpp_extension', () => {
         vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
         vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
 
+        const { mapOldBackendToNew, removeOldBackendVersions } = await import('@janhq/tauri-plugin-llamacpp-api')
+        vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
+        vi.mocked(removeOldBackendVersions).mockResolvedValue([])
+
         expect(extension['isUpdatingBackend']).toBe(false)
 
         await extension.updateBackend('v2.0.0/linux-avx2-x64')
@@ -523,6 +527,10 @@ describe('llamacpp_extension', () => {
         vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
         vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
 
+        const { mapOldBackendToNew, removeOldBackendVersions } = await import('@janhq/tauri-plugin-llamacpp-api')
+        vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
+        vi.mocked(removeOldBackendVersions).mockResolvedValue([])
+
         await extension.updateBackend('v2.0.0/linux-avx2-x64')
 
         // setStoredBackendType should be called with the backend type only, not "version/backend"
@@ -542,6 +550,10 @@ describe('llamacpp_extension', () => {
         const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
         vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
         vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
+
+        const { mapOldBackendToNew, removeOldBackendVersions } = await import('@janhq/tauri-plugin-llamacpp-api')
+        vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
+        vi.mocked(removeOldBackendVersions).mockResolvedValue([])
 
         await extension.updateBackend(' v2.0.0 / linux-avx2-x64 ')
 
