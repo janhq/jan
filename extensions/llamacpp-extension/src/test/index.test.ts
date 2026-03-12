@@ -4,6 +4,9 @@ import llamacpp_extension from '../index'
 // Mock fetch globally
 global.fetch = vi.fn()
 
+// Stub IS_WINDOWS global (injected by bundler at build time)
+vi.stubGlobal('IS_WINDOWS', false)
+
 // Mock backend functions
 vi.mock('../backend', () => ({
   isBackendInstalled: vi.fn(),
