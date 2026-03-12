@@ -411,6 +411,9 @@ importers:
       '@types/istanbul-reports':
         specifier: 3.0.4
         version: 3.0.4
+      '@types/lodash':
+        specifier: 4.17.24
+        version: 4.17.24
       '@types/lodash.clonedeep':
         specifier: 4.5.9
         version: 4.5.9
@@ -3510,8 +3513,8 @@ packages:
   '@types/lodash.debounce@4.0.9':
     resolution: {integrity: sha512-Ma5JcgTREwpLRwMM+XwBR7DaWe96nC38uCBDFKZWbNKD+osjVzdpnUSwBcqCptrp16sSOLBAUb50Car5I0TCsQ==}
 
-  '@types/lodash@4.17.20':
-    resolution: {integrity: sha512-H3MHACvFUEiujabxhaI/ImO6gUrd8oOurg7LQtS7mbwIXA/cUqWrvBsaeJ23aZEPk1TAYkurjfMbSELfoCXlGA==}
+  '@types/lodash@4.17.24':
+    resolution: {integrity: sha512-gIW7lQLZbue7lRSWEFql49QJJWThrTFFeIMJdp3eH4tKoxm1OvEPg02rm4wCCSHS0cL3/Fizimb35b7k8atwsQ==}
 
   '@types/matter-js@0.20.2':
     resolution: {integrity: sha512-3PPKy3QxvZ89h9+wdBV2488I1JLVs7DEpIkPvgO8JC1mUdiVSO37ZIvVctOTD7hIq8OAL2gJ3ugGSuUip6DhCw==}
@@ -6118,9 +6121,6 @@ packages:
 
   lodash.sortby@4.7.0:
     resolution: {integrity: sha512-HDWXG8isMntAyRF5vZ7xKuEvOhT4AhlRt/3czTSjvGUxjYCBVRQY48ViDHyfYz9VIoBkW4TMGQNapx+l3RUwdA==}
-
-  lodash@4.17.21:
-    resolution: {integrity: sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvSg==}
 
   lodash@4.17.23:
     resolution: {integrity: sha512-LgVTMpQtIopCi79SJeDiP0TfWi5CNEc/L/aRdTh3yIvmZXTnheWpKjSZhnvMl8iXbC1tFg9gdHHDMLoV7CnG+w==}
@@ -12040,13 +12040,13 @@ snapshots:
 
   '@types/lodash.clonedeep@4.5.9':
     dependencies:
-      '@types/lodash': 4.17.20
+      '@types/lodash': 4.17.24
 
   '@types/lodash.debounce@4.0.9':
     dependencies:
-      '@types/lodash': 4.17.20
+      '@types/lodash': 4.17.24
 
-  '@types/lodash@4.17.20': {}
+  '@types/lodash@4.17.24': {}
 
   '@types/matter-js@0.20.2': {}
 
@@ -15096,8 +15096,6 @@ snapshots:
   lodash.merge@4.6.2: {}
 
   lodash.sortby@4.7.0: {}
-
-  lodash@4.17.21: {}
 
   lodash@4.17.23: {}
 
@@ -18456,7 +18454,7 @@ snapshots:
       fast-json-stable-stringify: 2.1.0
       fs-extra: 9.1.0
       glob: 7.2.3
-      lodash: 4.17.21
+      lodash: 4.17.23
       pretty-bytes: 5.6.0
       rollup: 2.79.2
       source-map: 0.8.0-beta.0

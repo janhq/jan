@@ -115,6 +115,7 @@
     "@types/culori": "2.1.1",
     "@types/istanbul-lib-report": "3.0.3",
     "@types/istanbul-reports": "3.0.4",
+    "@types/lodash": "4.17.24",
     "@types/lodash.clonedeep": "4.5.9",
     "@types/lodash.debounce": "4.0.9",
     "@types/matter-js": "^0",
