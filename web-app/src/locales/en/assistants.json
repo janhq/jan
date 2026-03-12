@@ -31,5 +31,7 @@
   "personality": "Personality",
   "capabilities": "Capabilities",
   "instructionsDateHint": "Tip: Use {{current_date}} to insert today’s date.",
-  "maxToolSteps": "Max tool steps"
+  "maxToolSteps": "Max tool steps",
+  "setAsDefault": "Set as default assistant",
+  "isDefault": "Default"
 }
