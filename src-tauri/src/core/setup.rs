@@ -8,7 +8,7 @@ use std::{
 use tar::Archive;
 use tauri::{App, Emitter, Manager, Runtime, WindowEvent, Wry};
 
-#[cfg(desktop)]
+#[cfg(feature = "desktop")]
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
@@ -346,7 +346,7 @@ pub fn setup_mcp<R: Runtime>(app: &App<R>) {
     });
 }
 
-#[cfg(desktop)]
+#[cfg(feature = "desktop")]
 pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
     let show_i = MenuItem::with_id(app.handle(), "open", "Open Jan", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app.handle(), "quit", "Quit", true, None::<&str>)?;

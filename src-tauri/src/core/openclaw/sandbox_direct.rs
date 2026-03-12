@@ -53,7 +53,7 @@ async fn install_openclaw_globally() -> Result<(), String> {
 
 /// Build a command that runs the globally-installed openclaw binary from BUN_INSTALL/bin/.
 /// Falls back to `bun x openclaw` if the installed binary is not found.
-fn build_openclaw_command(args: &[&str], config_dir: &std::path::Path) -> tokio::process::Command {
+fn build_openclaw_command(args: &[&str], _config_dir: &std::path::Path) -> tokio::process::Command {
     let bunx_dir = get_bunx_dir();
 
     let installed_bin = bunx_dir.as_ref().map(|d| {
