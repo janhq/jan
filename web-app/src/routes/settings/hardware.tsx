@@ -294,11 +294,9 @@ function HardwareContent() {
               {/* Llamacpp Devices Information */}
               {!IS_MACOS && llamacpp && (
                 <Card
+                  title="GPUs"
                   header={
-                    <div className="flex items-center justify-between mb-4">
-                      <h1 className="text-foreground font-studio font-medium text-base">
-                        GPUs
-                      </h1>
+                    <div className="flex items-center justify-end mb-2">
                       <Button
                         variant="ghost"
                         size="sm"
