@@ -8,10 +8,12 @@ pub mod vendor;
 pub use constants::*;
 pub use types::*;
 
-use std::sync::OnceLock;
+use std::sync::RwLock;
 use tauri::Runtime;
 
-static SYSTEM_INFO: OnceLock<SystemInfo> = OnceLock::new();
+/// Cached system info. Uses Option so we can invalidate on Linux after sleep/resume
+/// (GPU detection can return empty until the driver is ready again).
+static SYSTEM_INFO: RwLock<Option<SystemInfo>> = RwLock::new(None);
 
 pub use commands::get_system_info;
 
@@ -20,7 +22,8 @@ pub fn init<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("hardware")
         .invoke_handler(tauri::generate_handler![
             commands::get_system_info,
-            commands::get_system_usage
+            commands::get_system_usage,
+            commands::refresh_system_info
         ])
         .build()
 }

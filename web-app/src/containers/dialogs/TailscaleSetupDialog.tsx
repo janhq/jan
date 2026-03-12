@@ -152,7 +152,7 @@ export function TailscaleSetupDialog({
         setIsConfiguringServe(false)
       }
     },
-    [fetchTailscaleInfo]
+    [fetchTailscaleInfo, t]
   )
 
   const handleConfigureFunnel = useCallback(
@@ -177,7 +177,7 @@ export function TailscaleSetupDialog({
         setIsConfiguringFunnel(false)
       }
     },
-    [fetchTailscaleInfo]
+    [fetchTailscaleInfo, t]
   )
 
   const handleCopyUrl = useCallback((url: string) => {

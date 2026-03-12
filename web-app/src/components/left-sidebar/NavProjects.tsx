@@ -27,6 +27,7 @@ import { Link, useNavigate } from "@tanstack/react-router"
 
 
 import { useState } from "react"
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { ThreadFolder } from "@/services/projects/types"
 import AddProjectDialog from "@/containers/dialogs/AddProjectDialog"
 import { DeleteProjectDialog } from "@/containers/dialogs/DeleteProjectDialog"
@@ -90,6 +91,7 @@ function ProjectItem({
 }
 
 export function NavProjects() {
+  const { t } = useTranslation()
   const { isMobile } = useSidebar()
   const { folders, updateFolder } = useThreadManagement()
 
@@ -122,7 +124,7 @@ export function NavProjects() {
   return (
     <>
       <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-        <SidebarGroupLabel>Projects</SidebarGroupLabel>
+        <SidebarGroupLabel>{t('common:projects.title')}</SidebarGroupLabel>
         <SidebarMenu>
           {folders.map((item) => (
             <ProjectItem

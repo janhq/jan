@@ -30,4 +30,8 @@ export class TauriHardwareService extends DefaultHardwareService {
     // TODO: llama.cpp extension should handle this
     console.log(data)
   }
+
+  async refreshHardwareInfo(): Promise<void> {
+    await invoke('plugin:hardware|refresh_system_info')
+  }
 }

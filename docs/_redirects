@@ -119,6 +119,8 @@
 /docs/desktop/mac                               /docs/desktop/install/mac 302
 /handbook/open-superintelligence                /handbook/why/open-superintelligence 302
 
+/guides                                          /docs 302
+/guides/*                                        /docs/:splat 302
 /guides/integrations/continue/                  /docs/desktop/server-examples/continue-dev 302
 /continue-dev                                   /docs/desktop/server-examples/continue-dev 302
 /integrations                                   /docs/desktop/server-examples/continue-dev 302

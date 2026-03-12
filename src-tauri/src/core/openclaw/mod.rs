@@ -12,6 +12,9 @@ pub mod security;
 pub mod tailscale;
 pub mod tunnels;
 
+#[cfg(test)]
+mod tests;
+
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -21,7 +24,6 @@ use tokio::sync::Mutex;
 use sandbox::{Sandbox, SandboxMode};
 use tunnels::TunnelState;
 
-/// When true, config dir resolves to `~/.openclaw/sandbox/docker/` instead of `~/.openclaw/`.
 static DOCKER_MODE_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 pub fn set_docker_mode(active: bool) {
@@ -30,6 +32,17 @@ pub fn set_docker_mode(active: bool) {
 
 pub fn is_docker_mode() -> bool {
     DOCKER_MODE_ACTIVE.load(Ordering::SeqCst)
+}
+
+/// Base directory for all OpenClaw data, rooted under Jan's data folder.
+/// Returns `<jan_data_folder>/openclaw/`.
+pub fn get_openclaw_base_dir() -> Result<PathBuf, String> {
+    let jan_data = crate::core::app::commands::resolve_jan_data_folder();
+    let base = jan_data.join("openclaw");
+    if !base.exists() {
+        std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
+    }
+    Ok(base)
 }
 
 /// OpenClaw configuration directory, isolated per sandbox mode.
@@ -59,8 +72,8 @@ pub const MIN_BUN_VERSION: &str = "1.0";
 
 /// OpenClaw runtime directory (where Bun and OpenClaw are installed)
 pub fn get_openclaw_runtime_dir() -> Result<std::path::PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let runtime_dir = home.join(".jan").join("openclaw-runtime");
+    let base = get_openclaw_base_dir()?;
+    let runtime_dir = base.join("bunx");
     if !runtime_dir.exists() {
         std::fs::create_dir_all(&runtime_dir).map_err(|e| e.to_string())?;
     }
@@ -80,10 +93,7 @@ pub fn get_openclaw_bin_path() -> Result<std::path::PathBuf, String> {
 
 /// Resolve the bundled Bun path. Returns None if unavailable.
 ///
-/// Resolution order:
-/// 1. Next to executable (macOS, Windows, dev mode)
-/// 2. `$APPDIR/usr/bin/bun` (Linux AppImage — exe is in usr/lib/, bun is in usr/bin/)
-/// 3. `/usr/bin/bun` (Linux deb)
+/// Looks for bun next to the current executable (same approach as MCP).
 pub fn resolve_bundled_bun() -> Option<std::path::PathBuf> {
     let bun_name = if cfg!(target_os = "windows") { "bun.exe" } else { "bun" };
 
@@ -99,98 +109,7 @@ pub fn resolve_bundled_bun() -> Option<std::path::PathBuf> {
         }
     }
 
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(appdir) = std::env::var("APPDIR") {
-            let candidate = std::path::PathBuf::from(&appdir).join("usr").join("bin").join("bun");
-            if candidate.exists() {
-                let s = candidate.to_string_lossy().to_string();
-                if jan_utils::system::can_override_npx(s) {
-                    return Some(candidate);
-                }
-            }
-        }
-
-        let system_bun = std::path::PathBuf::from("/usr/bin/bun");
-        if system_bun.exists() {
-            let s = system_bun.to_string_lossy().to_string();
-            if jan_utils::system::can_override_npx(s) {
-                return Some(system_bun);
-            }
-        }
-    }
-
     None
-}
-
-/// Create a `node` shim (symlink on Unix, copy on Windows) pointing to bundled Bun.
-/// Used as fallback for shebang resolution in service files.
-pub fn ensure_bun_node_shim() -> Result<(), String> {
-    let bun_path = resolve_bundled_bun().ok_or("Bundled Bun not found")?;
-    let runtime_dir = get_openclaw_runtime_dir()?;
-    let runtime_bin = runtime_dir.join("bin");
-    std::fs::create_dir_all(&runtime_bin).map_err(|e| e.to_string())?;
-
-    let node_shim = if cfg!(target_os = "windows") {
-        runtime_bin.join("node.exe")
-    } else {
-        runtime_bin.join("node")
-    };
-
-    #[cfg(unix)]
-    {
-        if node_shim.exists() || node_shim.symlink_metadata().is_ok() {
-            if let Ok(target) = std::fs::read_link(&node_shim) {
-                if target == bun_path {
-                    return Ok(());
-                }
-            }
-            let _ = std::fs::remove_file(&node_shim);
-        }
-
-        // AppImage: copy instead of symlink (mount path is ephemeral)
-        #[cfg(target_os = "linux")]
-        {
-            if std::env::var("APPIMAGE").is_ok() {
-                std::fs::copy(&bun_path, &node_shim)
-                    .map_err(|e| format!("Failed to copy bun as node: {}", e))?;
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(
-                    &node_shim,
-                    std::fs::Permissions::from_mode(0o755),
-                );
-                return Ok(());
-            }
-        }
-
-        std::os::unix::fs::symlink(&bun_path, &node_shim)
-            .map_err(|e| format!("Failed to create node->bun symlink: {}", e))?;
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let needs_copy = if node_shim.exists() {
-            let bun_modified = std::fs::metadata(&bun_path)
-                .and_then(|m| m.modified())
-                .ok();
-            let shim_modified = std::fs::metadata(&node_shim)
-                .and_then(|m| m.modified())
-                .ok();
-            match (bun_modified, shim_modified) {
-                (Some(b), Some(s)) => b > s,
-                _ => true,
-            }
-        } else {
-            true
-        };
-
-        if needs_copy {
-            std::fs::copy(&bun_path, &node_shim)
-                .map_err(|e| format!("Failed to copy bun as node: {}", e))?;
-        }
-    }
-
-    Ok(())
 }
 
 pub const PATH_SEPARATOR: &str = if cfg!(target_os = "windows") { ";" } else { ":" };

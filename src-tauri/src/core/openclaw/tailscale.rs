@@ -8,6 +8,15 @@ use tokio::process::Command;
 
 use super::models::{TailscaleInfo, TailscaleStatus};
 
+#[cfg(target_os = "windows")]
+fn hide_window(cmd: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(0x08000000);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn hide_window(_cmd: &mut Command) {}
+
 /// Tailscale status JSON response structure
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -74,10 +83,10 @@ pub async fn detect_tailscale() -> TailscaleStatus {
     log::info!("Detecting Tailscale installation");
 
     // Try to get Tailscale version
-    let version_output = Command::new(get_tailscale_cmd())
-        .arg("version")
-        .output()
-        .await;
+    let mut cmd = Command::new(get_tailscale_cmd());
+    cmd.arg("version");
+    hide_window(&mut cmd);
+    let version_output = cmd.output().await;
 
     match version_output {
         Ok(output) => {
@@ -90,10 +99,10 @@ pub async fn detect_tailscale() -> TailscaleStatus {
                     .to_string();
 
                 // Check if Tailscale daemon is running and user is logged in
-                let status_output = Command::new(get_tailscale_cmd())
-                    .args(["status", "--json"])
-                    .output()
-                    .await;
+                let mut cmd = Command::new(get_tailscale_cmd());
+                cmd.args(["status", "--json"]);
+                hide_window(&mut cmd);
+                let status_output = cmd.output().await;
 
                 match status_output {
                     Ok(status) => {
@@ -182,10 +191,10 @@ pub async fn detect_tailscale() -> TailscaleStatus {
 pub async fn get_tailscale_status() -> TailscaleInfo {
     log::info!("Getting Tailscale status");
 
-    let output = Command::new(get_tailscale_cmd())
-        .args(["status", "--json"])
-        .output()
-        .await;
+    let mut cmd = Command::new(get_tailscale_cmd());
+    cmd.args(["status", "--json"]);
+    hide_window(&mut cmd);
+    let output = cmd.output().await;
 
     let mut info = TailscaleInfo::default();
 
@@ -232,10 +241,10 @@ pub async fn get_tailscale_status() -> TailscaleInfo {
 /// Check the current Tailscale Serve status
 /// Returns (serve_enabled, funnel_enabled, serve_url)
 async fn check_serve_status() -> (bool, bool, Option<String>) {
-    let output = Command::new(get_tailscale_cmd())
-        .args(["serve", "status", "--json"])
-        .output()
-        .await;
+    let mut cmd = Command::new(get_tailscale_cmd());
+    cmd.args(["serve", "status", "--json"]);
+    hide_window(&mut cmd);
+    let output = cmd.output().await;
 
     match output {
         Ok(output) => {
@@ -292,13 +301,15 @@ pub async fn configure_tailscale_serve(port: u16) -> Result<String, String> {
 
     // Configure Tailscale Serve to forward HTTPS to localhost:port
     // The command is: tailscale serve https / http://localhost:PORT
-    let output = Command::new(get_tailscale_cmd())
-        .args([
-            "serve",
-            "https",
-            "/",
-            &format!("http://localhost:{}", port),
-        ])
+    let mut cmd = Command::new(get_tailscale_cmd());
+    cmd.args([
+        "serve",
+        "https",
+        "/",
+        &format!("http://localhost:{}", port),
+    ]);
+    hide_window(&mut cmd);
+    let output = cmd
         .output()
         .await
         .map_err(|e| format!("Failed to run tailscale serve: {}", e))?;
@@ -325,8 +336,10 @@ pub async fn configure_tailscale_serve(port: u16) -> Result<String, String> {
 pub async fn remove_tailscale_serve() -> Result<(), String> {
     log::info!("Removing Tailscale Serve configuration");
 
-    let output = Command::new(get_tailscale_cmd())
-        .args(["serve", "off"])
+    let mut cmd = Command::new(get_tailscale_cmd());
+    cmd.args(["serve", "off"]);
+    hide_window(&mut cmd);
+    let output = cmd
         .output()
         .await
         .map_err(|e| format!("Failed to run tailscale serve off: {}", e))?;
@@ -366,8 +379,10 @@ pub async fn enable_tailscale_funnel(port: u16) -> Result<String, String> {
 
     // Enable Funnel - this also sets up serve if not already configured
     // The command is: tailscale funnel PORT
-    let output = Command::new(get_tailscale_cmd())
-        .args(["funnel", &port.to_string()])
+    let mut cmd = Command::new(get_tailscale_cmd());
+    cmd.args(["funnel", &port.to_string()]);
+    hide_window(&mut cmd);
+    let output = cmd
         .output()
         .await
         .map_err(|e| format!("Failed to run tailscale funnel: {}", e))?;
@@ -398,8 +413,10 @@ pub async fn enable_tailscale_funnel(port: u16) -> Result<String, String> {
 pub async fn disable_tailscale_funnel() -> Result<(), String> {
     log::info!("Disabling Tailscale Funnel");
 
-    let output = Command::new(get_tailscale_cmd())
-        .args(["funnel", "off"])
+    let mut cmd = Command::new(get_tailscale_cmd());
+    cmd.args(["funnel", "off"]);
+    hide_window(&mut cmd);
+    let output = cmd
         .output()
         .await
         .map_err(|e| format!("Failed to run tailscale funnel off: {}", e))?;

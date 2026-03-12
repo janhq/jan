@@ -141,7 +141,7 @@ export const ImportVisionModelDialog = ({
         }
       }
     },
-    [modelName, serviceHub]
+    [serviceHub]
   )
 
   const validateModelFile = useCallback(

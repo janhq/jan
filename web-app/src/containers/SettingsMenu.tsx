@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   IconChevronDown,
   IconChevronRight,
-  IconCirclePlus,
+  IconPlus,
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
@@ -17,10 +17,12 @@ import { AddProviderDialog } from '@/containers/dialogs'
 import { openAIProviderSettings } from '@/constants/providers'
 import cloneDeep from 'lodash/cloneDeep'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 
 const SettingsMenu = () => {
   const { t } = useTranslation()
   const [expandedProviders, setExpandedProviders] = useState(true)
+
   const matches = useMatches()
   const navigate = useNavigate()
 
@@ -28,7 +30,9 @@ const SettingsMenu = () => {
 
   const createProvider = useCallback(
     (name: string) => {
-      if (providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())) {
+      if (
+        providers.some((e) => e.provider.toLowerCase() === name.toLowerCase())
+      ) {
         toast.error(t('provider:providerAlreadyExists', { name }))
         return
       }
@@ -42,18 +46,24 @@ const SettingsMenu = () => {
       }
       addProvider(newProvider)
       setTimeout(() => {
-        navigate({ to: route.settings.providers, params: { providerName: name } })
+        navigate({
+          to: route.settings.providers,
+          params: { providerName: name },
+        })
       }, 0)
     },
     [providers, addProvider, t, navigate]
   )
 
-  // Filter providers that have active API keys (or are llama.cpp which doesn't need one)
-  // On web: exclude llamacpp provider as it's not available
   const activeProviders = providers.filter((provider) => {
     if (!provider.active) return false
     if (!IS_MACOS && provider.provider === 'mlx') return false
+    return true
+  })
 
+  const hiddenProviders = providers.filter((provider) => {
+    if (provider.active) return false
+    if (!IS_MACOS && provider.provider === 'mlx') return false
     return true
   })
 
@@ -150,9 +160,7 @@ const SettingsMenu = () => {
 
   return (
     <>
-      <div
-        className='h-full w-54 shrink-0 px-1.5 flex overflow-auto'
-      >
+      <div className="h-full w-58 shrink-0 px-1.5 flex overflow-auto">
         <div className="flex flex-col gap-1 w-full font-medium">
           {menuSettings.map((menu) => {
             if (!menu.isEnabled) {
@@ -165,9 +173,7 @@ const SettingsMenu = () => {
                   className="block px-2 gap-1.5 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary py-1 w-full rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
                 >
                   <div className="flex items-center justify-between">
-                    <span>
-                      {t(menu.title)}
-                    </span>
+                    <span>{t(menu.title)}</span>
                     {menu.hasSubMenu && (
                       <button
                         onClick={(e) => {
@@ -242,6 +248,9 @@ const SettingsMenu = () => {
           <div className="mt-4">
             <span className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {t('common:integrations')}
+              <span className="text-[11px] capitalize ml-2 font-medium px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400">
+                {t('common:experimental')}
+              </span>
             </span>
             <div className="mt-1 flex flex-col gap-1">
               <Link
@@ -258,45 +267,22 @@ const SettingsMenu = () => {
               </Link>
             </div>
           </div>
-          
+
           {/* Model Providers section */}
           <div className="mt-4">
-            <span className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {t('common:modelProviders')}
-            </span>
-            <div className="mt-1 flex flex-col gap-1">
-              <Link
-                to={route.settings.model_providers}
-                className="flex items-center justify-between px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
-              >
-                <span>{t('common:modelProviders')}</span>
-                {activeProviders.length > 0 && (
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      toggleProvidersExpansion()
-                    }}
-                    className="text-muted-foreground/60 hover:text-muted-foreground/80"
-                  >
-                    {expandedProviders ? (
-                      <IconChevronDown size={16} />
-                    ) : (
-                      <IconChevronRight size={16} />
-                    )}
-                  </button>
-                )}
-              </Link>
-              {expandedProviders && (
-                <AddProviderDialog onCreateProvider={createProvider}>
-                  <button className="flex items-center gap-1.5 px-2 py-1 w-full cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm">
-                    <IconCirclePlus size={16} />
-                    <span>{t('common:addProvider')}</span>
-                  </button>
-                </AddProviderDialog>
-              )}
-              {expandedProviders && activeProviders.map((provider) => {
-                const isActive = matches.some(
+            <div className="flex items-center justify-between pl-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {t('common:modelProviders')}
+              </span>
+              <AddProviderDialog onCreateProvider={createProvider}>
+                <Button variant="ghost" size="icon-xs">
+                  <IconPlus size={12} />
+                </Button>
+              </AddProviderDialog>
+            </div>
+            <div className="mt-1 flex flex-col gap-0.5">
+              {activeProviders.map((provider) => {
+                const isRouteActive = matches.some(
                   (match) =>
                     match.routeId === '/settings/providers/$providerName' &&
                     'providerName' in match.params &&
@@ -307,7 +293,7 @@ const SettingsMenu = () => {
                     key={provider.provider}
                     className={cn(
                       'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-foreground',
-                      isActive && 'bg-secondary',
+                      isRouteActive && 'bg-secondary',
                       provider.provider === 'llama.cpp' &&
                         stepSetupRemoteProvider &&
                         'hidden'
@@ -323,17 +309,65 @@ const SettingsMenu = () => {
                     }
                   >
                     <ProvidersAvatar provider={provider} />
-                    <div className="truncate">
+                    <div className="truncate flex-1">
                       <span>{getProviderTitle(provider.provider)}</span>
                     </div>
                   </div>
                 )
               })}
-              <div className="m-2" />
-            </div>
-          </div>
 
-          
+              {hiddenProviders.length > 0 && (
+                <>
+                  <button
+                    className="flex items-center justify-between px-2 py-1 w-full rounded-sm text-muted-foreground hover:bg-secondary/60"
+                    onClick={() => setExpandedProviders(!expandedProviders)}
+                  >
+                    <span className="text-sm">
+                      {t('common:hiddenProviders', {
+                        count: hiddenProviders.length,
+                      })}
+                    </span>
+                    {expandedProviders ? (
+                      <IconChevronDown size={14} />
+                    ) : (
+                      <IconChevronRight size={14} />
+                    )}
+                  </button>
+                  {expandedProviders &&
+                    hiddenProviders.map((provider) => {
+                      const isRouteActive = matches.some(
+                        (match) =>
+                          match.routeId ===
+                            '/settings/providers/$providerName' &&
+                          'providerName' in match.params &&
+                          match.params.providerName === provider.provider
+                      )
+                      return (
+                        <div
+                          key={provider.provider}
+                          className={cn(
+                            'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-muted-foreground',
+                            isRouteActive && 'bg-secondary'
+                          )}
+                          onClick={() =>
+                            navigate({
+                              to: route.settings.providers,
+                              params: { providerName: provider.provider },
+                            })
+                          }
+                        >
+                          <ProvidersAvatar provider={provider} />
+                          <div className="truncate flex-1">
+                            <span>{getProviderTitle(provider.provider)}</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                </>
+              )}
+            </div>
+            <div className="m-3" />
+          </div>
         </div>
       </div>
     </>

@@ -48,6 +48,7 @@ function ClaudeCodeIntegration() {
     apiKey,
     trustedHosts,
     proxyTimeout,
+    setLastServerModels,
   } = useLocalApiServer()
 
   const { serverStatus, setServerStatus } = useAppState()
@@ -135,21 +136,38 @@ function ClaudeCodeIntegration() {
         }
       }
 
-      const actualPort = await window.core?.api?.startServer({
-        host: serverHost,
-        port: serverPort,
-        prefix: apiPrefix,
-        apiKey,
-        trustedHosts,
-        isCorsEnabled: corsEnabled,
-        isVerboseEnabled: verboseLogs,
-        proxyTimeout: proxyTimeout,
-      })
+      let actualPort: number | undefined
+      try {
+        actualPort = await window.core?.api?.startServer({
+          host: serverHost,
+          port: serverPort,
+          prefix: apiPrefix,
+          apiKey,
+          trustedHosts,
+          isCorsEnabled: corsEnabled,
+          isVerboseEnabled: verboseLogs,
+          proxyTimeout: proxyTimeout,
+        })
+      } catch (startErr) {
+        const msg =
+          startErr instanceof Error ? startErr.message : String(startErr)
+        if (!msg.includes('already running')) throw startErr
+      }
 
       if (actualPort && actualPort !== serverPort) {
         setServerPort(actualPort)
       }
       setServerStatus('running')
+
+      // Persist whichever models are actually running so next startup can restore them
+      const activeModels = await serviceHub.models().getActiveModels().catch(() => [] as string[])
+      if (activeModels.length > 0) {
+        const serverModels = activeModels.flatMap((id) => {
+          const p = providers.find((p) => p?.models?.some((m) => m.id === id))
+          return p ? [{ model: id, provider: p.provider }] : []
+        })
+        if (serverModels.length > 0) setLastServerModels(serverModels)
+      }
     }
 
     try {

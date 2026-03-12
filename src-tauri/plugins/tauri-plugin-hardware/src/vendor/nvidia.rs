@@ -4,11 +4,13 @@ use crate::types::{GpuInfo, GpuUsage};
 use {
     crate::types::Vendor,
     nvml_wrapper::{error::NvmlError, Nvml},
-    std::sync::OnceLock,
+    std::sync::RwLock,
 };
 
+/// NVML handle. On Linux we use RwLock so we can invalidate after sleep/resume
+/// and re-initialize when the driver is ready again.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-static NVML: OnceLock<Option<Nvml>> = OnceLock::new();
+static NVML: RwLock<Option<Nvml>> = RwLock::new(None);
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct NvidiaInfo {
@@ -16,33 +18,58 @@ pub struct NvidiaInfo {
     pub compute_capability: String,
 }
 
+/// Run a closure with the current NVML handle, initializing if needed.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-fn get_nvml() -> Option<&'static Nvml> {
-    NVML.get_or_init(|| {
-        // Try to initialize NVML, with fallback for Linux
-        let result = Nvml::init().or_else(|e| {
-            if cfg!(target_os = "linux") {
-                log::debug!("NVML init failed, trying Linux fallback: {}", e);
-                let lib_path = std::ffi::OsStr::new("libnvidia-ml.so.1");
-                Nvml::builder().lib_path(lib_path).init()
-            } else {
-                Err(e)
-            }
-        });
-
-        match result {
-            Ok(nvml) => {
-                log::debug!("NVML initialized successfully");
-                Some(nvml)
-            }
-            Err(e) => {
-                log::debug!("Unable to initialize NVML: {}", e);
-                None
+fn with_nvml<F, R>(f: F) -> R
+where
+    F: FnOnce(Option<&Nvml>) -> R,
+{
+    // Try read first for the common case (already initialized)
+    {
+        let guard = NVML.read().expect("RwLock poisoned");
+        if guard.is_some() {
+            return f(guard.as_ref());
+        }
+    }
+    // Not initialized or was invalidated: try to init
+    {
+        let mut guard = NVML.write().expect("RwLock poisoned");
+        if guard.is_none() {
+            let result = Nvml::init().or_else(|e| {
+                if cfg!(target_os = "linux") {
+                    log::debug!("NVML init failed, trying Linux fallback: {}", e);
+                    let lib_path = std::ffi::OsStr::new("libnvidia-ml.so.1");
+                    Nvml::builder().lib_path(lib_path).init()
+                } else {
+                    Err(e)
+                }
+            });
+            match result {
+                Ok(nvml) => {
+                    log::debug!("NVML initialized successfully");
+                    *guard = Some(nvml);
+                }
+                Err(e) => {
+                    log::debug!("Unable to initialize NVML: {}", e);
+                }
             }
         }
-    })
-    .as_ref()
+        return f(guard.as_ref());
+    }
 }
+
+/// Invalidates the NVML handle so the next use re-initializes. Call after system
+/// resume on Linux when the GPU driver state has been reset.
+#[cfg(target_os = "linux")]
+pub fn invalidate_nvml() {
+    let mut guard = NVML.write().expect("RwLock poisoned");
+    *guard = None;
+    log::debug!("NVML invalidated (e.g. after resume); will re-init on next use");
+}
+
+/// No-op on non-Linux; invalidation is only needed for Linux sleep/resume.
+#[cfg(not(target_os = "linux"))]
+pub fn invalidate_nvml() {}
 
 impl GpuInfo {
     pub fn get_usage_nvidia(&self) -> GpuUsage {
@@ -72,14 +99,16 @@ impl GpuInfo {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn get_nvidia_memory_usage(&self, index: u32) -> Result<GpuUsage, NvmlError> {
-        let nvml = get_nvml().ok_or(NvmlError::Unknown)?;
-        let device = nvml.device_by_index(index)?;
-        let mem_info = device.memory_info()?;
+        with_nvml(|nvml| {
+            let nvml = nvml.ok_or(NvmlError::Unknown)?;
+            let device = nvml.device_by_index(index)?;
+            let mem_info = device.memory_info()?;
 
-        Ok(GpuUsage {
-            uuid: self.uuid.clone(),
-            used_memory: mem_info.used / (1024 * 1024), // bytes to MiB
-            total_memory: mem_info.total / (1024 * 1024), // bytes to MiB
+            Ok(GpuUsage {
+                uuid: self.uuid.clone(),
+                used_memory: mem_info.used / (1024 * 1024), // bytes to MiB
+                total_memory: mem_info.total / (1024 * 1024), // bytes to MiB
+            })
         })
     }
 }
@@ -100,32 +129,34 @@ pub fn get_nvidia_gpus() -> Vec<GpuInfo> {
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn get_nvidia_gpus_internal() -> Vec<GpuInfo> {
-    let nvml = match get_nvml() {
-        Some(nvml) => nvml,
-        None => {
-            log::debug!("NVML not available");
-            return vec![];
+    with_nvml(|nvml| {
+        let nvml = match nvml {
+            Some(n) => n,
+            None => {
+                log::debug!("NVML not available");
+                return vec![];
+            }
+        };
+
+        let (num_gpus, driver_version) = match (nvml.device_count(), nvml.sys_driver_version()) {
+            (Ok(count), Ok(version)) => (count, version),
+            (Err(e), _) | (_, Err(e)) => {
+                log::error!("Failed to get NVIDIA system info: {}", e);
+                return vec![];
+            }
+        };
+
+        let mut gpus = Vec::with_capacity(num_gpus as usize);
+
+        for i in 0..num_gpus {
+            match create_gpu_info(nvml, i, &driver_version) {
+                Ok(gpu_info) => gpus.push(gpu_info),
+                Err(e) => log::warn!("Failed to get info for NVIDIA GPU {}: {}", i, e),
+            }
         }
-    };
 
-    let (num_gpus, driver_version) = match (nvml.device_count(), nvml.sys_driver_version()) {
-        (Ok(count), Ok(version)) => (count, version),
-        (Err(e), _) | (_, Err(e)) => {
-            log::error!("Failed to get NVIDIA system info: {}", e);
-            return vec![];
-        }
-    };
-
-    let mut gpus = Vec::with_capacity(num_gpus as usize);
-
-    for i in 0..num_gpus {
-        match create_gpu_info(nvml, i, &driver_version) {
-            Ok(gpu_info) => gpus.push(gpu_info),
-            Err(e) => log::warn!("Failed to get info for NVIDIA GPU {}: {}", i, e),
-        }
-    }
-
-    gpus
+        gpus
+    })
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

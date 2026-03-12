@@ -15,6 +15,9 @@ import { ChannelCard } from '@/containers/ChannelCard'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useEffect, useState, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { getLastUsedModel } from '@/utils/getModelToStart'
+import { isLocalProvider } from '@/lib/utils'
 import { toast } from 'sonner'
 import { setOpenClawRunningState } from '@/utils/openclaw'
 import {
@@ -23,6 +26,7 @@ import {
   IconExternalLink,
   IconFileText,
   IconAlertTriangle,
+  IconFolder,
 } from '@tabler/icons-react'
 import type {
   ChannelType,
@@ -43,12 +47,37 @@ export const Route = createFileRoute(route.settings.remote_access as any)({
 
 function RemoteAccess() {
   const { t } = useTranslation()
+  const { selectedModel, providers, selectModelProvider } = useModelProvider()
+  const firstAvailableModel = providers
+    .filter((p) => isLocalProvider(p.provider) || !!p.api_key)
+    .flatMap((p) => p.models.map((m) => ({ provider: p.provider, model: m })))
+    .at(0)
+  const hasAnyModel = firstAvailableModel !== undefined
+
+  const handleStartEnable = useCallback(() => {
+    if (!selectedModel) {
+      const lastUsed = getLastUsedModel()
+      const lastUsedExists = lastUsed && providers.some(
+        (p) =>
+          p.provider === lastUsed.provider &&
+          (isLocalProvider(p.provider) || !!p.api_key) &&
+          p.models.some((m) => m.id === lastUsed.model)
+      )
+      if (lastUsedExists) {
+        selectModelProvider(lastUsed!.provider, lastUsed!.model)
+      } else if (firstAvailableModel) {
+        selectModelProvider(firstAvailableModel.provider, firstAvailableModel.model.id)
+      }
+    }
+    setIsEnableDialogOpen(true)
+  }, [selectedModel, providers, firstAvailableModel, selectModelProvider])
+
   const [status, setStatus] = useState<OpenClawStatus | null>(null)
   const [isStopping, setIsStopping] = useState(false)
   const [disconnectingChannel, setDisconnectingChannel] = useState<ChannelType | null>(null)
   const [isTelegramWizardOpen, setIsTelegramWizardOpen] = useState(false)
   const [isWhatsAppWizardOpen, setIsWhatsAppWizardOpen] = useState(false)
-const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
+  const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
   const [isSecurityDialogOpen, setIsSecurityDialogOpen] = useState(false)
   const [isTunnelDialogOpen, setIsTunnelDialogOpen] = useState(false)
   const [isEnableDialogOpen, setIsEnableDialogOpen] = useState(false)
@@ -57,6 +86,8 @@ const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
   const [, setSecurityStatus] = useState<SecurityStatus | null>(null)
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null)
   const [whatsappConfig, setWhatsAppConfig] = useState<WhatsAppConfig | null>(null)
+  const [gatewayToken, setGatewayToken] = useState<string>('')
+  const [gatewayPort, setGatewayPort] = useState<number>(18789)
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -65,7 +96,7 @@ const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
 
       // Ensure Jan's origin is configured when OpenClaw was started externally
       if (statusData.running) {
-        await invoke('openclaw_ensure_jan_origin').catch(() => {})
+        await invoke('openclaw_ensure_jan_origin').catch(() => { })
       }
     } catch {
       toast.error(t('settings:remoteAccess.startError'))
@@ -187,8 +218,15 @@ const [isTailscaleDialogOpen, setIsTailscaleDialogOpen] = useState(false)
     }
   }
 
-const isRunning = status?.running ?? false
+  const isRunning = status?.running ?? false
   const isInstalled = status?.installed ?? false
+
+  useEffect(() => {
+    if (isRunning) {
+      invoke<string>('openclaw_get_auth_token').then(setGatewayToken).catch(() => { })
+      invoke<{ gateway: { port: number } }>('openclaw_get_config').then((c) => setGatewayPort(c.gateway.port)).catch(() => { })
+    }
+  }, [isRunning])
 
   return (
     <div className="flex flex-col h-svh w-full">
@@ -205,7 +243,7 @@ const isRunning = status?.running ?? false
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Status Card */}
             {/* <Card title={t('settings:remoteAccess.title')}>
-              <CardItem 
+              <CardItem
                 title={t('settings:remoteAccess.status')}
                 actions={
                   <div className="flex items-center gap-2">
@@ -285,13 +323,20 @@ const isRunning = status?.running ?? false
                         {t('settings:remoteAccess.stop')}
                       </Button>
                     ) : (
-                      <Button size="sm" onClick={() => setIsEnableDialogOpen(true)}>
+                      <Button size="sm" onClick={handleStartEnable} disabled={!hasAnyModel}>
                         {t('settings:remoteAccess.start')}
                       </Button>
                     )}
                   </div>
                 }
+                description={!isRunning && !hasAnyModel ? t('settings:remoteAccess.noModelAvailable') : undefined}
               />
+
+              {!isRunning && (
+                <p className="text-sm text-muted-foreground px-1">
+                  {t('settings:remoteAccess.nodejsPrerequisite')}
+                </p>
+              )}
 
               {isRunning && status?.sandbox_type && (
                 <CardItem
@@ -326,6 +371,58 @@ const isRunning = status?.running ?? false
                     {t('settings:remoteAccess.securityAdvisory')}
                   </p>
                 </div>
+              )}
+
+              {isRunning && (<CardItem
+                title={t('settings:remoteAccess.openclawFolder')}
+                description={t('settings:remoteAccess.openclawFolderDesc')}
+                actions={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={async () => {
+                      const dir = await invoke<string>('openclaw_get_config_dir')
+                      await invoke('open_file_explorer', { path: dir })
+                    }}
+                    title={t('settings:remoteAccess.openclawFolder')}
+                  >
+                    <IconFolder className="h-4 w-4" />
+                  </Button>
+                }
+              />
+              )}
+
+              {isRunning && (
+                <CardItem
+                  title={t('settings:remoteAccess.gatewayUrl')}
+                  description={t('settings:remoteAccess.gatewayUrlDesc')}
+                  actions={
+                    <div className="flex items-center gap-2">
+                      <code className="text-sm font-mono text-foreground bg-secondary px-2 py-1 rounded">
+                        {gatewayToken
+                          ? `http://localhost:${gatewayPort}?token=****`
+                          : `http://localhost:${gatewayPort}`}
+                      </code>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => handleCopyUrl(gatewayToken ? `http://localhost:${gatewayPort}?token=${gatewayToken}` : `http://localhost:${gatewayPort}`)}
+                        title={t('settings:remoteAccess.copyUrl')}
+                      >
+                        <IconCopy className="h-4 w-4" />
+                      </Button>
+                      <a
+                        href={gatewayToken ? `http://localhost:${gatewayPort}?token=${gatewayToken}` : `http://localhost:${gatewayPort}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={t('settings:remoteAccess.openUrl')}
+                        className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent transition-colors"
+                      >
+                        <IconExternalLink className="h-4 w-4" />
+                      </a>
+                    </div>
+                  }
+                />
               )}
 
               <div className="space-y-3 mt-4">

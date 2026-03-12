@@ -253,7 +253,7 @@ pub fn change_app_data_folder<R: Runtime>(
         copy_dir_recursive(
             &current_data_folder,
             &new_data_folder_path,
-            &[".uvx", ".npx"],
+            &[".uvx", ".npx", "openclaw/runtime", "openclaw/bunx"],
         )
         .map_err(|e| format!("Failed to copy data to new folder: {e}"))?;
     } else {
