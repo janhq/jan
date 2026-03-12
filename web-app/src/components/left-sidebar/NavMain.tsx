@@ -86,7 +86,7 @@ const getNavMainItems = (
     ),
   },
   {
-    title: 'New Agent Chat',
+    title: 'common:newAgentChat',
     animatedIcon: BotIcon,
     onClick: onJanClaw,
     shortcut: (
@@ -194,7 +194,7 @@ export function NavMain() {
       useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
       navigate({ to: route.home })
     }
-  ).filter((item) => item.title !== 'New Agent Chat' || openClawAvailable)
+  ).filter((item) => item.title !== 'common:newAgentChat' || openClawAvailable)
 
   const handleCreateProject = async (name: string, assistantId?: string) => {
     const newProject = await addFolder(name, assistantId)

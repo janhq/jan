@@ -160,6 +160,7 @@ pub fn run() {
         core::openclaw::commands::openclaw_start,
         core::openclaw::commands::openclaw_stop,
         core::openclaw::commands::openclaw_status,
+        core::openclaw::commands::openclaw_check_gateway,
         core::openclaw::commands::openclaw_restart,
         core::openclaw::commands::openclaw_get_config_dir,
         core::openclaw::commands::openclaw_ensure_jan_origin,
@@ -456,11 +457,46 @@ pub fn run() {
                         }
                     }
 
-                    // Clean up Claude Code env vars from shell config on exit
-                    if let Err(e) = crate::core::system::commands::clear_claude_code_env() {
-                        log::warn!("Failed to clear Claude Code env vars: {}", e);
-                    } else {
-                        log::info!("Claude Code env vars cleaned up successfully");
+                    // OpenClaw gateway cleanup
+                    {
+                        use crate::core::openclaw::sandbox::Sandbox;
+                        use crate::core::openclaw::OpenClawState;
+                        let openclaw_state = app_handle.state::<OpenClawState>();
+                        let openclaw_future = async {
+                            let sandbox_guard = openclaw_state.sandbox.lock().await;
+                            match sandbox_guard.as_ref() {
+                                Some(sandbox) => {
+                                    crate::core::openclaw::lifecycle::stop_openclaw(
+                                        sandbox.as_ref(),
+                                        &openclaw_state,
+                                    )
+                                    .await
+                                }
+                                None => {
+                                    let direct =
+                                        crate::core::openclaw::sandbox_direct::DirectProcessSandbox;
+                                    let mut handle =
+                                        crate::core::openclaw::sandbox::SandboxHandle::Named(
+                                            "exit-cleanup".to_string(),
+                                        );
+                                    direct.stop(&mut handle).await
+                                }
+                            }
+                        };
+                        match tokio::time::timeout(
+                            tokio::time::Duration::from_secs(10),
+                            openclaw_future,
+                        )
+                        .await
+                        {
+                            Ok(Ok(_)) => {
+                                log::info!("OpenClaw cleanup completed successfully")
+                            }
+                            Ok(Err(e)) => log::warn!("OpenClaw cleanup failed: {}", e),
+                            Err(_) => {
+                                log::warn!("OpenClaw cleanup timed out after 10 seconds")
+                            }
+                        }
                     }
 
                     log::info!("App cleanup completed");

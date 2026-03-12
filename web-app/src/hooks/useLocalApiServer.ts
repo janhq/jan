@@ -6,6 +6,9 @@ type LocalApiServerState = {
   // Run local API server once app opens
   enableOnStartup: boolean
   setEnableOnStartup: (value: boolean) => void
+  // Last models that were running when server started (can be multiple local/remote models)
+  lastServerModels: { model: string; provider: string }[]
+  setLastServerModels: (models: { model: string; provider: string }[]) => void
   // Server host option (127.0.0.1 or 0.0.0.0)
   serverHost: '127.0.0.1' | '0.0.0.0'
   setServerHost: (value: '127.0.0.1' | '0.0.0.0') => void
@@ -38,6 +41,8 @@ export const useLocalApiServer = create<LocalApiServerState>()(
     (set) => ({
       enableOnStartup: false,
       setEnableOnStartup: (value) => set({ enableOnStartup: value }),
+      lastServerModels: [],
+      setLastServerModels: (models) => set({ lastServerModels: models }),
       serverHost: '0.0.0.0',
       setServerHost: (value) => set({ serverHost: value }),
       // Use port 0 (auto-assign) for mobile to avoid conflicts, 1337 for desktop
@@ -67,6 +72,15 @@ export const useLocalApiServer = create<LocalApiServerState>()(
     {
       name: localStorageKey.settingLocalApiServer,
       storage: createJSONStorage(() => localStorage),
+      version: 1,
+      migrate: (persistedState: unknown, version: number) => {
+        const state = persistedState as Partial<LocalApiServerState>
+        if (version < 1) {
+          // v0 → v1: add lastServerModels field
+          state.lastServerModels = []
+        }
+        return state
+      },
     }
   )
 )

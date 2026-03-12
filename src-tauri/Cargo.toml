@@ -138,6 +138,7 @@ tempfile = "3.20.0"
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "=0.30.1", features = ["signal", "process", "resource"] }
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 libc = "0.2.172"

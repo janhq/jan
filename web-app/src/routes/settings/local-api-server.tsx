@@ -20,10 +20,8 @@ import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { getModelToStart } from '@/utils/getModelToStart'
-import { invoke } from '@tauri-apps/api/core'
 import { LogViewer } from '@/components/LogViewer'
-import { EngineManager } from '@janhq/core'
+import { ensureModelForServer } from '@/utils/ensureModelForServer'
 
 import {
   Popover,
@@ -63,11 +61,10 @@ function LocalAPIServerContent() {
     apiKey,
     trustedHosts,
     proxyTimeout,
+    setLastServerModels,
   } = useLocalApiServer()
 
   const { serverStatus, setServerStatus } = useAppState()
-  const { selectedModel, selectedProvider, getProviderByName } =
-    useModelProvider()
   const [showApiKeyError, setShowApiKeyError] = useState(false)
   const setActiveModels = useAppState((state) => state.setActiveModels)
 
@@ -110,157 +107,32 @@ function LocalAPIServerContent() {
 
       setServerStatus('pending')
 
-      const MIN_CONTEXT_SIZE = 32768
-
-      // Helper to get context size from a model
-      const getModelCtxSize = (modelId: string): number | undefined => {
-        const allProviders = useModelProvider.getState().providers
-        for (const provider of allProviders) {
-          if (!provider?.models) continue
-          const model = provider.models.find(
-            (m: { id: string }) => m.id === modelId
-          )
-          const ctxLen = model?.settings?.ctx_len?.controller_props?.value as
-            | number
-            | undefined
-          if (ctxLen !== undefined) return ctxLen
-        }
-        return undefined
-      }
-
-      // Check if there's already a loaded model
-      serviceHub
-        .models()
-        .getActiveModels()
-        .then(async (loadedModels) => {
-          if (loadedModels && loadedModels.length > 0) {
-            console.log(`Using already loaded model: ${loadedModels[0]}`)
-
-            // Check if the model has sufficient context size (32k)
-            const modelId = loadedModels[0]
-            const currentCtxSize = getModelCtxSize(modelId)
-
-            if (
-              currentCtxSize !== undefined &&
-              currentCtxSize < MIN_CONTEXT_SIZE
-            ) {
-              console.log(
-                `Model ${modelId} has context size ${currentCtxSize}, less than minimum ${MIN_CONTEXT_SIZE}. Restarting with larger context...`
-              )
-
-              // Find the provider for this model
-              const allProviders = useModelProvider.getState().providers
-              let modelProvider = allProviders.find((p) =>
-                p?.models?.some((m: { id: string }) => m.id === modelId)
-              )
-
-              if (!modelProvider) {
-                modelProvider = getProviderByName(selectedProvider)
-              }
-
-              if (modelProvider) {
-                setIsModelLoading(true)
-
-                // Stop the current model
-                await serviceHub
-                  .models()
-                  .stopModel(modelId, modelProvider.provider)
-
-                // Start with larger context size - access engine via EngineManager
-                const settings = { ctx_size: MIN_CONTEXT_SIZE }
-                const engine = EngineManager.instance().get(
-                  modelProvider.provider
-                )
-                if (engine) {
-                  await engine.load(modelId, settings, false, true)
-                }
-
-                console.log(
-                  `Model ${modelId} restarted with context size ${MIN_CONTEXT_SIZE}`
-                )
-                setIsModelLoading(false)
-              }
-            }
-
-            // Model already loaded, just start the server
-            return Promise.resolve()
-          } else {
-            // No loaded model, start one first
-            const modelToStart = getModelToStart({
-              selectedModel,
-              selectedProvider,
-              getProviderByName,
-            })
-
-            // Only start server if we have a model to load
-            if (!modelToStart) {
-              console.warn(
-                'Cannot start Local API Server: No model available to load'
-              )
-              throw new Error('No model available to load')
-            }
-
-            // Check if the model has sufficient context size (32k)
-            const currentCtxSize = getModelCtxSize(modelToStart.model)
-            let finalProvider = modelToStart.provider
-
-            // If context size is less than minimum, we need to create modified settings
-            if (
-              currentCtxSize !== undefined &&
-              currentCtxSize < MIN_CONTEXT_SIZE
-            ) {
-              console.log(
-                `Model ${modelToStart.model} has context size ${currentCtxSize}, less than minimum ${MIN_CONTEXT_SIZE}. Starting with larger context...`
-              )
-
-              // Create a modified provider with enforced ctx_size
-              finalProvider = {
-                ...modelToStart.provider,
-                models: modelToStart.provider.models.map(
-                  (m: { id: string; settings?: Record<string, unknown> }) => {
-                    if (m.id === modelToStart.model) {
-                      return {
-                        ...m,
-                        settings: {
-                          ...m.settings,
-                          ctx_len: {
-                            ...(m.settings?.ctx_len as object | undefined),
-                            controller_props: {
-                              ...((
-                                m.settings?.ctx_len as {
-                                  controller_props?: object
-                                }
-                              )?.controller_props ?? {}),
-                              value: MIN_CONTEXT_SIZE,
-                            },
-                          },
-                        },
-                      }
-                    }
-                    return m
-                  }
-                ) as Model[],
-              }
-            }
-
-            setIsModelLoading(true) // Start loading state
-
-            // Start the model first (with modified settings if needed)
-            return serviceHub
-              .models()
-              .startModel(finalProvider, modelToStart.model, true)
-              .then(() => {
-                console.log(`Model ${modelToStart.model} started successfully`)
-                setIsModelLoading(false) // Model loaded, stop loading state
-                // Refresh active models after starting
-                serviceHub
-                  .models()
-                  .getActiveModels()
-                  .then((models) => setActiveModels(models || []))
-                // Add a small delay for the backend to update state
-                return new Promise((resolve) => setTimeout(resolve, 500))
-              })
+      ensureModelForServer({
+        modelsService: serviceHub.models(),
+        onLoadStart: () => setIsModelLoading(true),
+        onLoadEnd: () => setIsModelLoading(false),
+      })
+        .then(async (result) => {
+          if (result.status === 'no_model_available') {
+            throw new Error('No model available to load')
           }
+
+          // Remember loaded models for next startup
+          const activeModels = await serviceHub.models().getActiveModels()
+          if (activeModels && activeModels.length > 0) {
+            const allProviders = useModelProvider.getState().providers
+            const serverModels = activeModels.flatMap((id: string) => {
+              const p = allProviders.find((p) =>
+                p?.models?.some((m: { id: string }) => m.id === id)
+              )
+              return p ? [{ model: id, provider: p.provider }] : []
+            })
+            if (serverModels.length > 0) setLastServerModels(serverModels)
+          }
+
+          // Refresh active models in app state
+          const models = await serviceHub.models().getActiveModels()
+          setActiveModels(models || [])
         })
         .then(() => {
           // Then start the server
@@ -321,24 +193,12 @@ function LocalAPIServerContent() {
       setServerStatus('pending')
       window.core?.api
         ?.stopServer()
-        .then(async () => {
+        .then(() => {
           setServerStatus('stopped')
-          // Clean up Claude Code env vars from shell config when server stops
-          try {
-            await invoke('clear_claude_code_env')
-          } catch (e) {
-            console.warn('Failed to clear Claude Code env vars:', e)
-          }
         })
-        .catch(async (error: unknown) => {
+        .catch((error: unknown) => {
           console.error('Error stopping server:', error)
           setServerStatus('stopped')
-          // Still try to clean up env vars even if stop had an error
-          try {
-            await invoke('clear_claude_code_env')
-          } catch (e) {
-            console.warn('Failed to clear Claude Code env vars:', e)
-          }
         })
     }
   }

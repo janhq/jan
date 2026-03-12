@@ -147,14 +147,14 @@ export async function ensureOpenClawHttpApi(): Promise<void> {
   try {
     const changed = await invoke<boolean>('openclaw_ensure_http_api')
     if (changed) {
-      console.log('[openclaw] Enabled HTTP chat completions endpoint, restarting gateway…')
       await invoke('openclaw_restart')
-      // Give the gateway a moment to become ready after restart
       await new Promise((resolve) => setTimeout(resolve, 2000))
     }
     httpApiEnsured = true
-  } catch {
-    // Fail silently — the send will fail with a clearer error
+  } catch (error) {
+    throw new Error(
+      `Failed to initialize OpenClaw HTTP API: ${error instanceof Error ? error.message : String(error)}`
+    )
   }
 }
 
@@ -175,6 +175,15 @@ export async function getOpenClawAuthToken(forceRefresh = false): Promise<string
   }
 }
 
+/** TCP-level gateway reachability check via Tauri IPC. Works on all platforms. */
+export async function checkOpenClawGateway(): Promise<boolean> {
+  try {
+    return await invoke<boolean>('openclaw_check_gateway')
+  } catch {
+    return false
+  }
+}
+
 /** Get the currently configured model in OpenClaw. */
 export async function getOpenClawModel(): Promise<string | null> {
   try {
@@ -183,3 +192,4 @@ export async function getOpenClawModel(): Promise<string | null> {
     return null
   }
 }
+
