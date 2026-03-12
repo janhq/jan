@@ -6,6 +6,7 @@ export interface BackendUpdateInfo {
   updateNeeded: boolean
   newVersion: string
   currentVersion?: string
+  targetBackend?: string
 }
 
 interface ExtensionSetting {
@@ -256,22 +257,28 @@ export const useBackendUpdater = () => {
         throw new Error('Extension does not support backend updates')
       }
 
-      // Get current backend version to construct target backend string
       const extension = extensionToUse as LlamacppExtension
-      const settings = await extension.getSettings?.()
-      const currentBackendSetting = settings?.find(
-        (s) => s.key === 'version_backend'
-      )
-      const currentBackend = currentBackendSetting?.controllerProps
-        ?.value as string
 
-      if (!currentBackend) {
-        throw new Error('Current backend not found')
+      // Use the exact target backend from checkBackendForUpdates if available,
+      // to avoid mismatches between old/new backend name formats
+      let targetBackendString = updateState.updateInfo.targetBackend
+
+      if (!targetBackendString) {
+        // Fallback: construct from current settings if targetBackend wasn't provided
+        const settings = await extension.getSettings?.()
+        const currentBackendSetting = settings?.find(
+          (s) => s.key === 'version_backend'
+        )
+        const currentBackend = currentBackendSetting?.controllerProps
+          ?.value as string
+
+        if (!currentBackend) {
+          throw new Error('Current backend not found')
+        }
+
+        const [, backendType] = currentBackend.split('/')
+        targetBackendString = `${updateState.updateInfo.newVersion}/${backendType}`
       }
-
-      // Extract backend type from current backend string (e.g., "b3224/cuda12" -> "cuda12")
-      const [, backendType] = currentBackend.split('/')
-      const targetBackendString = `${updateState.updateInfo.newVersion}/${backendType}`
 
       // Call the extension's updateBackend method
       const result = await extension.updateBackend?.(targetBackendString)

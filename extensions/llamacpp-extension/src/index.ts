@@ -126,6 +126,7 @@ export default class llamacpp_extension extends AIEngine {
   private apiSecret: string = 'JustAskNow'
   private pendingDownloads: Map<string, Promise<void>> = new Map()
   private isConfiguringBackends: boolean = false
+  private isUpdatingBackend: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private unlistenValidationStarted?: () => void
 
@@ -474,6 +475,8 @@ export default class llamacpp_extension extends AIEngine {
           `Invalid backend string: ${targetBackendString} supplied to update function`
         )
 
+      this.isUpdatingBackend = true
+
       const [version, backend] = targetBackendString.split('/')
 
       logger.info(
@@ -497,6 +500,7 @@ export default class llamacpp_extension extends AIEngine {
 
       // Update configuration
       this.config.version_backend = targetBackendString
+      this.config.device = ''
 
       // Store the backend type preference only if it changed
       if (currentStoredBackend !== targetBackendString) {
@@ -548,6 +552,8 @@ export default class llamacpp_extension extends AIEngine {
     } catch (error) {
       logger.error('Backend update failed:', error)
       return { wasUpdated: false, newBackend: this.config.version_backend }
+    } finally {
+      this.isUpdatingBackend = false
     }
   }
 
@@ -701,6 +707,10 @@ export default class llamacpp_extension extends AIEngine {
     this.config[key] = value
 
     if (key === 'version_backend') {
+      // Skip download if updateBackend() is already handling it
+      if (this.isUpdatingBackend) {
+        return
+      }
       const valueStr = value as string
       // Async logic wrapped in IIFE since onSettingUpdate is void
       ;(async () => {
