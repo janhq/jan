@@ -489,7 +489,12 @@ export default class llamacpp_extension extends AIEngine {
         )
       }
 
-      const [version, backend] = backendParts
+      const [rawVersion, rawBackend] = backendParts
+      const version = rawVersion.trim()
+      const backend = rawBackend.trim()
+
+      // Normalize the target backend string to use trimmed values
+      targetBackendString = `${version}/${backend}`
 
       logger.info(
         `Updating backend to ${targetBackendString} (backend type: ${backend})`
@@ -515,10 +520,10 @@ export default class llamacpp_extension extends AIEngine {
       this.config.device = ''
 
       // Store the backend type preference only if it changed
-      if (currentStoredBackend !== targetBackendString) {
-        this.setStoredBackendType(targetBackendString)
+      if (currentStoredBackend !== effectiveBackendType) {
+        this.setStoredBackendType(effectiveBackendType)
         logger.info(
-          `Updated stored backend type preference: ${targetBackendString}`
+          `Updated stored backend type preference: ${effectiveBackendType}`
         )
       }
 
