@@ -515,15 +515,7 @@ export default class llamacpp_extension extends AIEngine {
       // Persist settings and stored preference before mutating in-memory config,
       // so that if any of these steps fail, config remains consistent.
 
-      // Store the backend type preference only if it changed
-      if (currentStoredBackend !== effectiveBackendType) {
-        this.setStoredBackendType(effectiveBackendType)
-        logger.info(
-          `Updated stored backend type preference: ${effectiveBackendType}`
-        )
-      }
-
-      // Update settings
+      // Update settings first — if this fails, we haven't mutated any state yet
       const settings = await this.getSettings()
       await this.updateSettings(
         settings.map((item) => {
@@ -533,6 +525,14 @@ export default class llamacpp_extension extends AIEngine {
           return item
         })
       )
+
+      // Store the backend type preference only if it changed
+      if (currentStoredBackend !== effectiveBackendType) {
+        this.setStoredBackendType(effectiveBackendType)
+        logger.info(
+          `Updated stored backend type preference: ${effectiveBackendType}`
+        )
+      }
 
       // All critical side effects succeeded — now commit to in-memory config
       this.config.version_backend = targetBackendString

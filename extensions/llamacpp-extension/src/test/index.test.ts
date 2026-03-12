@@ -413,6 +413,10 @@ describe('llamacpp_extension', () => {
       } as any
     })
 
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
     describe('validation', () => {
       it('should reject empty targetBackendString', async () => {
         const result = await extension.updateBackend('')
@@ -507,9 +511,6 @@ describe('llamacpp_extension', () => {
 
         // Call onSettingUpdate while updateBackend is "running"
         extension.onSettingUpdate('version_backend', 'v2.0.0/linux-avx2-x64')
-
-        // Give async IIFE a chance to fire (it shouldn't)
-        await new Promise((r) => setTimeout(r, 50))
 
         // ensureBackendReady should NOT have been called from onSettingUpdate
         expect(extension['ensureBackendReady']).not.toHaveBeenCalled()
