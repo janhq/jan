@@ -263,7 +263,41 @@ export const useBackendUpdater = () => {
       // to avoid mismatches between old/new backend name formats
       let targetBackendString = updateState.updateInfo.targetBackend
 
-      if (!targetBackendString) {
+      if (targetBackendString) {
+        // Validate and normalize the provided target backend string
+        const rawParts = targetBackendString.split('/')
+        const versionPart = rawParts[0]?.trim()
+        const backendTypePart = rawParts[1]?.trim()
+
+        if (rawParts.length !== 2 || !versionPart || !backendTypePart) {
+          // Malformed targetBackend; fall back to constructing from current settings
+          const settings = await extension.getSettings?.()
+          const currentBackendSetting = settings?.find(
+            (s) => s.key === 'version_backend'
+          )
+          const currentBackend = currentBackendSetting?.controllerProps
+            ?.value as string
+
+          if (!currentBackend) {
+            throw new Error('Current backend not found')
+          }
+
+          const parts = currentBackend.split('/')
+          const currentVersionPart = parts[0]?.trim()
+          const currentBackendType = parts[1]?.trim()
+
+          if (parts.length !== 2 || !currentVersionPart || !currentBackendType) {
+            throw new Error(
+              `Invalid current backend format: "${currentBackend}". Expected "version/backendType".`
+            )
+          }
+
+          targetBackendString = `${updateState.updateInfo.newVersion}/${currentBackendType}`
+        } else {
+          // Normalize to "version/backendType" with trimmed parts
+          targetBackendString = `${versionPart}/${backendTypePart}`
+        }
+      } else {
         // Fallback: construct from current settings if targetBackend wasn't provided
         const settings = await extension.getSettings?.()
         const currentBackendSetting = settings?.find(
@@ -282,7 +316,7 @@ export const useBackendUpdater = () => {
 
         if (parts.length !== 2 || !versionPart || !backendType) {
           throw new Error(
-            `Invalid current backend format: "${currentBackend}". Expected exactly "version/backendType".`
+            `Invalid current backend format: "${currentBackend}". Expected "version/backendType".`
           )
         }
 
