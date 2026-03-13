@@ -16,6 +16,11 @@ interface ExtensionSetting {
   }
 }
 
+interface BackendUpdateResult {
+  wasUpdated: boolean
+  reason?: 'in_progress' | 'error' | string
+}
+
 interface ExtensionWithSettings {
   getSettings?: () => Promise<ExtensionSetting[] | undefined>
 }
@@ -323,7 +328,8 @@ export const useBackendUpdater = () => {
       }
 
       // Call the extension's updateBackend method
-      const result = await extension.updateBackend?.(targetBackendString)
+      const rawResult = await extension.updateBackend?.(targetBackendString)
+      const result = rawResult as BackendUpdateResult | undefined
 
       if (result?.wasUpdated === true) {
         // Reset update state on successful update
@@ -337,13 +343,16 @@ export const useBackendUpdater = () => {
           ...newState,
         }))
         syncStateToOtherInstances(newState)
-      } else if (result?.wasUpdated === false) {
+      } else if (result?.wasUpdated === false && result.reason === 'in_progress') {
         // Benign no-op (e.g., another update is already in progress).
         // Do not treat this as a failure; just clear the local isUpdating flag.
         setUpdateState((prev) => ({
           ...prev,
           isUpdating: false,
         }))
+      } else if (result?.wasUpdated === false && result.reason && result.reason !== 'in_progress') {
+        // Explicit failure reason from extension: surface as an error.
+        throw new Error(`Backend update failed: ${result.reason}`)
       } else {
         throw new Error('Backend update failed')
       }
