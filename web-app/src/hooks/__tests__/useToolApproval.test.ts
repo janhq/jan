@@ -240,8 +240,9 @@ describe('useToolApproval', () => {
       // Start the async operation
       let approvalPromise: Promise<boolean>
 
-      act(() => {
+      await act(async () => {
         approvalPromise = result.current.showApprovalModal('tool-a', 'thread-1')
+        await Promise.resolve()
       })
 
       // Check that modal is open and props are set
@@ -269,8 +270,9 @@ describe('useToolApproval', () => {
       // Start the async operation
       let approvalPromise: Promise<boolean>
 
-      act(() => {
+      await act(async () => {
         approvalPromise = result.current.showApprovalModal('tool-a', 'thread-1')
+        await Promise.resolve()
       })
 
       // Call onApprove with allowOnce=true
@@ -292,8 +294,9 @@ describe('useToolApproval', () => {
       // Start the async operation
       let approvalPromise: Promise<boolean>
 
-      act(() => {
+      await act(async () => {
         approvalPromise = result.current.showApprovalModal('tool-a', 'thread-1')
+        await Promise.resolve()
       })
 
       // Call onApprove with allowOnce=false
@@ -315,8 +318,9 @@ describe('useToolApproval', () => {
       // Start the async operation
       let approvalPromise: Promise<boolean>
 
-      act(() => {
+      await act(async () => {
         approvalPromise = result.current.showApprovalModal('tool-a', 'thread-1')
+        await Promise.resolve()
       })
 
       // Call onDeny
@@ -352,8 +356,9 @@ describe('useToolApproval', () => {
 
       // First request
       let firstPromise: Promise<boolean>
-      act(() => {
+      await act(async () => {
         firstPromise = result.current.showApprovalModal('tool-a', 'thread-1')
+        await Promise.resolve()
       })
 
       act(() => {
@@ -366,8 +371,9 @@ describe('useToolApproval', () => {
 
       // Second request for same tool should resolve immediately
       let secondPromise: Promise<boolean>
-      act(() => {
+      await act(async () => {
         secondPromise = result.current.showApprovalModal('tool-a', 'thread-1')
+        await Promise.resolve()
       })
 
       const secondResult = await secondPromise!
@@ -380,8 +386,9 @@ describe('useToolApproval', () => {
 
       // Approve tool-a permanently
       let firstPromise: Promise<boolean>
-      act(() => {
+      await act(async () => {
         firstPromise = result.current.showApprovalModal('tool-a', 'thread-1')
+        await Promise.resolve()
       })
 
       act(() => {
@@ -393,8 +400,9 @@ describe('useToolApproval', () => {
 
       // Approve tool-b once only
       let secondPromise: Promise<boolean>
-      act(() => {
+      await act(async () => {
         secondPromise = result.current.showApprovalModal('tool-b', 'thread-1')
+        await Promise.resolve()
       })
 
       act(() => {
@@ -413,8 +421,9 @@ describe('useToolApproval', () => {
 
       // First request - deny
       let firstPromise: Promise<boolean>
-      act(() => {
+      await act(async () => {
         firstPromise = result.current.showApprovalModal('tool-a', 'thread-1')
+        await Promise.resolve()
       })
 
       act(() => {
@@ -427,8 +436,9 @@ describe('useToolApproval', () => {
 
       // Second request - approve
       let secondPromise: Promise<boolean>
-      act(() => {
+      await act(async () => {
         secondPromise = result.current.showApprovalModal('tool-a', 'thread-1')
+        await Promise.resolve()
       })
 
       act(() => {
