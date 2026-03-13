@@ -182,6 +182,7 @@ pub struct SystemFeatures {
 }
 
 #[derive(Serialize)]
+#[allow(dead_code)]
 pub struct SupportedBackendsResult {
     supported_backend_names: Vec<String>,
     merged_backends: Vec<BackendInfo>,
@@ -301,11 +302,13 @@ pub struct GpuInfo {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct NvidiaInfo {
     compute_capability: String,
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct VulkanInfo {
     api_version: String,
 }
@@ -468,6 +471,7 @@ pub struct UpdateCheckResult {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct BackendConfigResult {
     pub best_available: String,
     pub effective_backend: String,
