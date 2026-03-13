@@ -585,12 +585,6 @@ export default class llamacpp_extension extends AIEngine {
 
       return { wasUpdated: true, newBackend: targetBackendString }
     } catch (error) {
-      if (error instanceof BackendUpdateInProgressError) {
-        // Propagate the specific "in progress" error so callers can distinguish it
-        // from genuine backend update failures.
-        logger.warn('Backend update call received while another update is in progress')
-        throw error
-      }
       logger.error('Backend update failed:', error)
       return { wasUpdated: false, newBackend: this.config.version_backend }
     } finally {
