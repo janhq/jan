@@ -343,14 +343,22 @@ export const useBackendUpdater = () => {
           ...newState,
         }))
         syncStateToOtherInstances(newState)
-      } else if (result?.wasUpdated === false && result.reason === 'in_progress') {
-        // Benign no-op (e.g., another update is already in progress).
-        // Do not treat this as a failure; just clear the local isUpdating flag.
+      } else if (
+        result?.wasUpdated === false &&
+        (result.reason === 'in_progress' || typeof result.reason === 'undefined')
+      ) {
+        // Benign no-op (e.g., another update is already in progress or the
+        // extension returned a no-op response without a reason). Do not treat
+        // this as a failure; just clear the local isUpdating flag.
         setUpdateState((prev) => ({
           ...prev,
           isUpdating: false,
         }))
-      } else if (result?.wasUpdated === false && result.reason && result.reason !== 'in_progress') {
+      } else if (
+        result?.wasUpdated === false &&
+        result.reason &&
+        result.reason !== 'in_progress'
+      ) {
         // Explicit failure reason from extension: surface as an error.
         throw new Error(`Backend update failed: ${result.reason}`)
       } else {
