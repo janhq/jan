@@ -471,9 +471,9 @@ export default class llamacpp_extension extends AIEngine {
   ): Promise<{ wasUpdated: boolean; newBackend: string }> {
     if (this.isUpdatingBackend) {
       logger.warn('Backend update already in progress, skipping new update request')
-      // Treat concurrent update requests as a benign no-op and report the current backend
-      // as successfully updated to avoid surfacing a false "Backend update failed" in the UI.
-      return { wasUpdated: true, newBackend: this.config.version_backend }
+      // Treat concurrent update requests as a benign no-op and report that no new update
+      // was performed, while still returning the current backend value.
+      return { wasUpdated: false, newBackend: this.config.version_backend }
     }
 
     this.isUpdatingBackend = true
