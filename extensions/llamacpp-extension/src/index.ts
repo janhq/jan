@@ -63,6 +63,14 @@ import {
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
+// Specific error used to indicate that a backend update is already in progress.
+export class BackendUpdateInProgressError extends Error {
+  constructor(message = 'Backend update already in progress') {
+    super(message)
+    this.name = 'BackendUpdateInProgressError'
+  }
+}
+
 // Error message constant - matches web-app/src/utils/error.ts
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
 
@@ -471,7 +479,8 @@ export default class llamacpp_extension extends AIEngine {
   ): Promise<{ wasUpdated: boolean; newBackend: string }> {
     if (this.isUpdatingBackend) {
       logger.warn('Backend update already in progress, skipping new update request')
-      return { wasUpdated: false, newBackend: this.config.version_backend }
+      // Signal this as a distinct, handled outcome so callers can treat it as a no-op.
+      throw new BackendUpdateInProgressError()
     }
 
     this.isUpdatingBackend = true
@@ -576,6 +585,12 @@ export default class llamacpp_extension extends AIEngine {
 
       return { wasUpdated: true, newBackend: targetBackendString }
     } catch (error) {
+      if (error instanceof BackendUpdateInProgressError) {
+        // Propagate the specific "in progress" error so callers can distinguish it
+        // from genuine backend update failures.
+        logger.warn('Backend update call received while another update is in progress')
+        throw error
+      }
       logger.error('Backend update failed:', error)
       return { wasUpdated: false, newBackend: this.config.version_backend }
     } finally {
