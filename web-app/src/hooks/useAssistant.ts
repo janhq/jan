@@ -73,7 +73,11 @@ Current date: {{current_date}}`,
 
 const getDefaultAssistantIdFromStorage = (): string => {
   try {
-    return localStorage.getItem(localStorageKey.defaultAssistantId) ?? defaultAssistant.id
+    const stored = localStorage.getItem(localStorageKey.defaultAssistantId)
+    if (stored) return stored
+    // First install: persist the built-in default so it's explicit
+    localStorage.setItem(localStorageKey.defaultAssistantId, defaultAssistant.id)
+    return defaultAssistant.id
   } catch (error) {
     console.debug('Failed to get default assistant from localStorage:', error)
     return defaultAssistant.id
