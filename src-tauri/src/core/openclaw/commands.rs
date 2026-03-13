@@ -1,5 +1,9 @@
+// Re-export telegram and whatsapp commands so lib.rs paths stay unchanged
+pub use super::commands_telegram::*;
+pub use super::commands_whatsapp::*;
+
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -17,22 +21,22 @@ use crate::core::openclaw::{
 
 /// On Windows, prevent console window popups for background commands.
 #[cfg(target_os = "windows")]
-fn hide_window(cmd: &mut Command) {
+pub(crate) fn hide_window(cmd: &mut Command) {
     use std::os::windows::process::CommandExt;
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 }
 
 #[cfg(not(target_os = "windows"))]
-fn hide_window(_cmd: &mut Command) {}
+pub(crate) fn hide_window(_cmd: &mut Command) {}
 
 /// Request ID counter for WebSocket messages
 static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// Container name for the Docker sandbox
-const DOCKER_CONTAINER_NAME: &str = "jan-openclaw";
+pub(crate) const DOCKER_CONTAINER_NAME: &str = "jan-openclaw";
 
 /// Check if the Docker container `jan-openclaw` is running.
-async fn is_docker_container_running() -> bool {
+pub(crate) async fn is_docker_container_running() -> bool {
     let mut cmd = Command::new("docker");
     cmd.args(["inspect", "--format", "{{.State.Running}}", DOCKER_CONTAINER_NAME]);
     hide_window(&mut cmd);
@@ -78,17 +82,12 @@ fn build_openclaw_command(args: &[&str]) -> tokio::process::Command {
     };
 
     cmd.args(args)
-        // .current_dir(config_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
     if let Some(dir) = bunx_dir {
         cmd.env("BUN_INSTALL", dir);
     }
-
-    // if let Some(new_path) = super::build_augmented_path() {
-    //     cmd.env("PATH", new_path);
-    // }
 
     #[cfg(target_os = "windows")]
     {
@@ -101,7 +100,7 @@ fn build_openclaw_command(args: &[&str]) -> tokio::process::Command {
 
 /// Build a `Command` for openclaw: docker exec when container is running,
 /// otherwise direct process with bun interpreter (Unix) or native exe (Windows).
-async fn openclaw_command(args: &[&str]) -> Command {
+pub(crate) async fn openclaw_command(args: &[&str]) -> Command {
     if is_docker_container_running().await {
         let mut cmd = Command::new("docker");
         let mut full_args: Vec<&str> = vec![
@@ -123,8 +122,8 @@ async fn openclaw_command(args: &[&str]) -> Command {
 }
 
 /// Gateway restart attempts counter during WhatsApp auth polling (reset per session).
-static WA_RESTART_COUNT: AtomicU8 = AtomicU8::new(0);
-const MAX_WA_RESTART_ATTEMPTS: u8 = 3;
+/// (Used by commands_whatsapp module)
+
 
 fn next_request_id() -> String {
     REQUEST_ID_COUNTER.fetch_add(1, Ordering::SeqCst).to_string()
@@ -365,7 +364,7 @@ async fn gateway_handshake(ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStr
 }
 
 /// Send a request to the Gateway and wait for response with configurable timeout.
-async fn gateway_request_with_timeout(
+pub(crate) async fn gateway_request_with_timeout(
     method: &str,
     params: serde_json::Value,
     timeout_secs: u64,
@@ -437,7 +436,7 @@ async fn gateway_request_with_timeout(
 }
 
 /// Send a request to the Gateway with default 30s timeout.
-async fn gateway_request(
+pub(crate) async fn gateway_request(
     method: &str,
     params: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
@@ -703,7 +702,7 @@ async fn run_doctor_fix() -> Result<(), String> {
 }
 
 /// Restart the gateway. Docker: `docker restart`. Direct process: stop → spawn child.
-async fn restart_gateway_cli() -> Result<(), String> {
+pub(crate) async fn restart_gateway_cli() -> Result<(), String> {
     if is_docker_container_running().await {
         let mut cmd = Command::new("docker");
         cmd.args(["restart", DOCKER_CONTAINER_NAME])
@@ -838,9 +837,6 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
             cmd.args(["gateway", "stop"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
-            // if let Some(new_path) = super::build_augmented_path() {
-            //     cmd.env("PATH", new_path);
-            // }
             hide_window(&mut cmd);
             cmd.output()
                 .await
@@ -851,9 +847,6 @@ async fn stop_other_sandbox_instance(stop_docker: bool) {
             cmd.args(["gateway", "stop"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
-            // if let Some(new_path) = super::build_augmented_path() {
-            //     cmd.env("PATH", new_path);
-            // }
             hide_window(&mut cmd);
             cmd.output()
                 .await
@@ -1020,7 +1013,7 @@ async fn ensure_gateway_config_for_jan() -> Result<bool, String> {
 
 /// Ensure gateway.bind is "lan" in config. If the gateway is running
 /// and the config changed, restarts it so the service picks up bind=lan.
-async fn ensure_gateway_bind_lan() {
+pub(crate) async fn ensure_gateway_bind_lan() {
     let config_path = match get_openclaw_config_path() {
         Ok(p) => p,
         Err(_) => return,
@@ -1809,7 +1802,7 @@ pub async fn openclaw_get_config() -> Result<OpenClawConfig, String> {
 
 /// Read the OpenClaw config file as a JSON Value.
 /// Preserves all fields including unknown ones.
-fn read_openclaw_config() -> Result<serde_json::Value, String> {
+pub(crate) fn read_openclaw_config() -> Result<serde_json::Value, String> {
     let config_path = get_openclaw_config_path()?;
     let content = std::fs::read_to_string(&config_path)
         .map_err(|e| format!("Failed to read OpenClaw config: {}", e))?;
@@ -1819,7 +1812,7 @@ fn read_openclaw_config() -> Result<serde_json::Value, String> {
 
 /// Write a JSON Value back to the OpenClaw config file.
 /// Automatically sanitises the config (strip invalid keys, ensure required keys).
-fn write_openclaw_config(config: &serde_json::Value) -> Result<(), String> {
+pub(crate) fn write_openclaw_config(config: &serde_json::Value) -> Result<(), String> {
     let config_path = get_openclaw_config_path()?;
     let mut sanitized = config.clone();
     strip_invalid_config_keys(&mut sanitized);
@@ -2011,7 +2004,7 @@ pub async fn openclaw_get_model() -> Result<String, String> {
 }
 
 /// Check if OpenClaw gateway is responding on the expected port
-async fn check_gateway_responding() -> bool {
+pub(crate) async fn check_gateway_responding() -> bool {
     // Use TCP connection check - OpenClaw serves a dashboard UI, not a JSON health endpoint
     match tokio::net::TcpStream::connect(format!("127.0.0.1:{}", OPENCLAW_PORT)).await {
         Ok(_) => {
@@ -2024,7 +2017,7 @@ async fn check_gateway_responding() -> bool {
 
 /// Wait for the gateway to become responsive, polling every 500ms up to `max_wait_secs`.
 /// Returns true if the gateway responded before the deadline, false otherwise.
-async fn wait_for_gateway_ready(max_wait_secs: u64) -> bool {
+pub(crate) async fn wait_for_gateway_ready(max_wait_secs: u64) -> bool {
     let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(max_wait_secs);
     // Always give the process at least 1s to bind the port
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
@@ -2666,143 +2659,10 @@ pub fn openclaw_get_config_dir() -> Result<String, String> {
     Ok(path.to_string_lossy().to_string())
 }
 
-/// Telegram bot token validation result
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TelegramTokenValidation {
-    /// Whether the token is valid
-    pub valid: bool,
-    /// Bot username if valid
-    pub bot_username: Option<String>,
-    /// Bot name if valid
-    pub bot_name: Option<String>,
-    /// Error message if invalid
-    pub error: Option<String>,
-}
-
-/// Telegram channel configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TelegramConfig {
-    /// Bot token
-    pub bot_token: String,
-    /// Bot username
-    pub bot_username: Option<String>,
-    /// Whether the channel is connected
-    pub connected: bool,
-    /// Pairing code (if not yet paired)
-    pub pairing_code: Option<String>,
-    /// Number of paired users
-    pub paired_users: u32,
-}
-
-/// Validate a Telegram bot token by calling the Telegram Bot API.
-/// Retries up to 3 times on transient connection errors.
-#[tauri::command]
-pub async fn telegram_validate_token(token: String) -> TelegramTokenValidation {
-    if token.len() < 30 || !token.contains(':') {
-        return TelegramTokenValidation {
-            valid: false,
-            bot_username: None,
-            bot_name: None,
-            error: Some("Invalid token format. Telegram tokens should look like: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz".to_string()),
-        };
-    }
-
-    let url = format!("https://api.telegram.org/bot{}/getMe", token);
-
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            return TelegramTokenValidation {
-                valid: false,
-                bot_username: None,
-                bot_name: None,
-                error: Some(format!("Failed to create HTTP client: {}", e)),
-            };
-        }
-    };
-
-    const MAX_RETRIES: u32 = 3;
-    let mut last_err = String::new();
-
-    for attempt in 0..MAX_RETRIES {
-        if attempt > 0 {
-            tokio::time::sleep(std::time::Duration::from_millis(500 * u64::from(attempt))).await;
-        }
-
-        match client.get(&url).send().await {
-            Ok(response) => {
-                if response.status().is_success() {
-                    match response.json::<serde_json::Value>().await {
-                        Ok(data) => {
-                            if data.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
-                                let result = data.get("result");
-                                let username = result.and_then(|r| r.get("username")).and_then(|v| v.as_str()).map(String::from);
-                                let name = result.and_then(|r| r.get("first_name")).and_then(|v| v.as_str()).map(String::from);
-
-                                return TelegramTokenValidation {
-                                    valid: true,
-                                    bot_username: username,
-                                    bot_name: name,
-                                    error: None,
-                                };
-                            } else {
-                                let description = data.get("description").and_then(|v| v.as_str()).unwrap_or("Unknown error");
-                                return TelegramTokenValidation {
-                                    valid: false,
-                                    bot_username: None,
-                                    bot_name: None,
-                                    error: Some(format!("Token validation failed: {}", description)),
-                                };
-                            }
-                        }
-                        Err(e) => {
-                            return TelegramTokenValidation {
-                                valid: false,
-                                bot_username: None,
-                                bot_name: None,
-                                error: Some(format!("Failed to parse API response: {}", e)),
-                            };
-                        }
-                    }
-                } else {
-                    return TelegramTokenValidation {
-                        valid: false,
-                        bot_username: None,
-                        bot_name: None,
-                        error: Some(format!("API returned error: {}", response.status())),
-                    };
-                }
-            }
-            Err(e) => {
-                last_err = format!("{}", e);
-                let is_transient = e.is_connect() || e.is_timeout() || e.is_request();
-                if !is_transient {
-                    break;
-                }
-                log::warn!("Telegram API connection error (attempt {}): {}", attempt + 1, e);
-            }
-        }
-    }
-
-    TelegramTokenValidation {
-        valid: false,
-        bot_username: None,
-        bot_name: None,
-        error: Some(format!(
-            "Failed to connect to Telegram API after {} attempts: {}",
-            MAX_RETRIES, last_err
-        )),
-    }
-}
-
 /// Enable a channel plugin in OpenClaw.
 /// In Docker mode, writes directly to the config file to avoid CLI commands
 /// that restart the gateway (killing the container's PID 1).
-async fn enable_channel_plugin(channel: &str) -> Result<(), String> {
+pub(crate) async fn enable_channel_plugin(channel: &str) -> Result<(), String> {
     log::info!("Enabling {} plugin", channel);
 
     if is_docker_container_running().await {
@@ -2849,422 +2709,6 @@ async fn enable_channel_plugin(channel: &str) -> Result<(), String> {
         }
     }
 
-    Ok(())
-}
-
-/// Configure Telegram channel with the bot token.
-/// In Docker mode, writes config directly + restarts the container.
-#[tauri::command]
-pub async fn telegram_configure(token: String) -> Result<TelegramConfig, String> {
-    log::info!("Configuring Telegram channel");
-
-    let validation = telegram_validate_token(token.clone()).await;
-    if !validation.valid {
-        return Err(validation.error.unwrap_or_else(|| "Invalid token".to_string()));
-    }
-
-    ensure_gateway_bind_lan().await;
-
-    enable_channel_plugin("telegram").await?;
-
-    if is_docker_container_running().await {
-        let mut config = read_openclaw_config()?;
-
-        // Schema: botToken, enabled, dmPolicy, groupPolicy, streaming
-        let channels = config
-            .as_object_mut()
-            .ok_or("Config is not an object")?
-            .entry("channels")
-            .or_insert_with(|| serde_json::json!({}));
-        let channels_obj = channels
-            .as_object_mut()
-            .ok_or("channels is not an object")?;
-        channels_obj.insert("telegram".to_string(), serde_json::json!({
-            "botToken": token,
-            "enabled": true,
-            "dmPolicy": "pairing",
-            "groupPolicy": "allowlist",
-            "streaming": "off"
-        }));
-
-        // Ensure pairing credentials file exists
-        let config_dir = get_openclaw_config_dir()?;
-        let creds_dir = config_dir.join("credentials");
-        std::fs::create_dir_all(&creds_dir)
-            .map_err(|e| format!("Failed to create credentials dir: {}", e))?;
-        let pairing_path = creds_dir.join("telegram-pairing.json");
-        if !pairing_path.exists() {
-            std::fs::write(
-                &pairing_path,
-                serde_json::to_string_pretty(&serde_json::json!({
-                    "requests": [],
-                    "version": 1
-                })).unwrap(),
-            )
-            .map_err(|e| format!("Failed to write telegram-pairing.json: {}", e))?;
-        }
-
-        write_openclaw_config(&config)?;
-    } else {
-        let add_output = openclaw_command(&[
-                "channels",
-                "add",
-                "--channel", "telegram",
-                "--token", &token,
-                "--account", "default",
-            ]).await
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await
-            .map_err(|e| format!("Failed to run openclaw channels add: {}", e))?;
-
-        let add_stderr = String::from_utf8_lossy(&add_output.stderr);
-        let add_stdout = String::from_utf8_lossy(&add_output.stdout);
-
-        if !add_output.status.success() {
-            let combined = format!("{}{}", add_stdout, add_stderr);
-            if !combined.contains("already exists") && !combined.contains("updated") && !combined.contains("Added") {
-                return Err(format!(
-                    "Failed to add Telegram channel: {}",
-                    if !add_stderr.is_empty() { add_stderr.to_string() } else { add_stdout.to_string() }
-                ));
-            }
-        }
-    }
-
-    // Clear stale pending pairing codes from the credentials file.
-    // This ensures the 3-code cap is reset so the user can get a fresh code
-    // when they type /start in Telegram.
-    {
-        let config_dir = get_openclaw_config_dir()?;
-        let pairing_path = config_dir.join("credentials").join("telegram-pairing.json");
-        let creds_dir = config_dir.join("credentials");
-        std::fs::create_dir_all(&creds_dir).ok();
-        let empty = serde_json::json!({ "version": 1, "requests": [] });
-        std::fs::write(&pairing_path, serde_json::to_string_pretty(&empty).unwrap())
-            .map_err(|e| format!("Failed to clear pairing state: {}", e))?;
-        log::info!("Reset pairing state for fresh code generation");
-    }
-
-    // Restart gateway so it picks up both the new channel config and the
-    // clean pairing state. Use readiness polling instead of a fixed sleep.
-    if check_gateway_responding().await {
-        log::info!("Restarting gateway to apply Telegram config and pairing state");
-        let _ = restart_gateway_cli().await;
-        if !wait_for_gateway_ready(10).await {
-            log::warn!("Gateway did not become responsive after Telegram configure restart");
-        }
-    }
-
-    // Store in local config for Jan's reference
-    let telegram_settings = serde_json::json!({
-        "enabled": true,
-        "bot_token": token,
-        "bot_username": validation.bot_username,
-        "connected": true,
-    });
-
-    let config_dir = get_openclaw_config_dir()?;
-    let telegram_config_path = config_dir.join("telegram.json");
-
-    std::fs::write(&telegram_config_path, serde_json::to_string_pretty(&telegram_settings).unwrap())
-        .map_err(|e| format!("Failed to save Telegram config: {}", e))?;
-
-    log::info!("Telegram configured successfully via OpenClaw");
-
-    Ok(TelegramConfig {
-        bot_token: token,
-        bot_username: validation.bot_username,
-        connected: true, // Channel is added and connected
-        pairing_code: None,
-        paired_users: 0,
-    })
-}
-
-/// Get current Telegram configuration.
-///
-/// Reads the local `telegram.json` reference file and reconciles it with the
-/// live gateway state (if running) and the main `openclaw.json` config.
-/// This ensures the UI shows the correct status regardless of whether the
-/// channel was originally configured in Docker mode or direct process mode.
-#[tauri::command]
-pub async fn telegram_get_config() -> Result<TelegramConfig, String> {
-    let config_dir = get_openclaw_config_dir()?;
-    let telegram_config_path = config_dir.join("telegram.json");
-
-    // Start with local file data (if it exists)
-    let mut bot_token = String::new();
-    let mut bot_username: Option<String> = None;
-    let mut connected = false;
-    let mut paired_users: u32 = 0;
-
-    if telegram_config_path.exists() {
-        if let Ok(config_json) = std::fs::read_to_string(&telegram_config_path) {
-            if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&config_json) {
-                bot_token = settings.get("bot_token").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                bot_username = settings.get("bot_username").and_then(|v| v.as_str()).map(String::from);
-                connected = settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false);
-                paired_users = settings.get("paired_users").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-            }
-        }
-    }
-
-    // If no local file, try to recover from openclaw.json (read-only — never
-    // write back here; only explicit user actions should modify local files)
-    if bot_token.is_empty() {
-        if let Ok(main_config) = read_openclaw_config() {
-            if let Some(tg) = main_config.get("channels").and_then(|c| c.get("telegram")) {
-                if let Some(token) = tg.get("botToken").and_then(|v| v.as_str()) {
-                    if !token.is_empty() {
-                        log::info!("Recovered Telegram config from openclaw.json (in-memory only)");
-                        bot_token = token.to_string();
-                    }
-                }
-            }
-        }
-    }
-
-    // If the gateway is running, check live channel status (read-only — report
-    // actual state but never persist it; only connect/disconnect actions write)
-    if !bot_token.is_empty() && check_gateway_responding().await {
-        let params = serde_json::json!({ "probe": true, "timeoutMs": 5000 });
-        if let Ok(status) = gateway_request("channels.status", params).await {
-            if let Some(telegram) = status.get("channels").and_then(|c| c.get("telegram")) {
-                let gw_configured = telegram.get("configured").and_then(|v| v.as_bool()).unwrap_or(false);
-                let gw_running = telegram.get("running").and_then(|v| v.as_bool()).unwrap_or(false);
-                let gw_probe_ok = telegram.get("probe")
-                    .and_then(|p| p.get("ok"))
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-
-                let live_connected = gw_configured && gw_running && gw_probe_ok;
-                connected = live_connected;
-            }
-        }
-    }
-
-    Ok(TelegramConfig {
-        bot_token,
-        bot_username,
-        connected,
-        pairing_code: None,
-        paired_users,
-    })
-}
-
-/// Clear all pending Telegram pairing codes.
-///
-/// OpenClaw caps pending pairing requests at 3 per channel.  After that,
-/// `/start` silently does nothing until a code is approved or expires (1 h).
-/// By resetting the pairing state file we guarantee the user always gets a
-/// fresh code slot when they open the wizard or tap `/start` again.
-///
-/// After clearing, we restart the gateway so it reloads the empty state from
-/// disk (the running process may have the old requests cached in memory).
-#[tauri::command]
-pub async fn telegram_clear_pending_pairing() -> Result<(), String> {
-    log::info!("Clearing pending Telegram pairing codes");
-
-    let config_dir = get_openclaw_config_dir()?;
-    let pairing_path = config_dir.join("credentials").join("telegram-pairing.json");
-
-    if pairing_path.exists() {
-        // Reset to an empty request list (keep the version marker)
-        let empty = serde_json::json!({ "version": 1, "requests": [] });
-        std::fs::write(&pairing_path, serde_json::to_string_pretty(&empty).unwrap())
-            .map_err(|e| format!("Failed to clear pairing state: {}", e))?;
-        log::info!("Cleared pending pairing codes at {:?}", pairing_path);
-
-        // Restart gateway so it picks up the clean state
-        if check_gateway_responding().await {
-            log::info!("Restarting gateway to reload pairing state");
-            let _ = restart_gateway_cli().await;
-            wait_for_gateway_ready(8).await;
-        }
-    } else {
-        log::info!("No pairing state file to clear");
-    }
-
-    Ok(())
-}
-
-/// Read pending Telegram pairing codes from the credentials file.
-///
-/// Returns a list of pairing code strings that are currently pending approval.
-/// The frontend can poll this to auto-populate the pairing code input field
-/// when a user types `/start` in Telegram.
-#[tauri::command]
-pub async fn telegram_get_pending_pairing_codes() -> Result<Vec<String>, String> {
-    let config_dir = get_openclaw_config_dir()?;
-    let pairing_path = config_dir.join("credentials").join("telegram-pairing.json");
-
-    if !pairing_path.exists() {
-        return Ok(vec![]);
-    }
-
-    let content = std::fs::read_to_string(&pairing_path)
-        .map_err(|e| format!("Failed to read pairing file: {}", e))?;
-    let data: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse pairing file: {}", e))?;
-
-    let codes = data
-        .get("requests")
-        .and_then(|r| r.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|req| {
-                    req.get("code")
-                        .and_then(|c| c.as_str())
-                        .map(String::from)
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
-    Ok(codes)
-}
-
-/// Check if Telegram channel is actually connected in OpenClaw gateway
-#[tauri::command]
-pub async fn telegram_check_pairing() -> Result<bool, String> {
-    log::info!("Checking Telegram channel status via OpenClaw gateway");
-
-    // Try gateway WebSocket API first (same pattern as WhatsApp status check)
-    let params = serde_json::json!({
-        "probe": true,
-        "timeoutMs": 10000
-    });
-
-    if let Ok(status) = gateway_request("channels.status", params).await {
-        if let Some(channels) = status.get("channels") {
-            if let Some(telegram) = channels.get("telegram") {
-                // Telegram uses configured+running+probe.ok (not connected/linked like WhatsApp)
-                let configured = telegram.get("configured")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                let running = telegram.get("running")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                let probe_ok = telegram.get("probe")
-                    .and_then(|p| p.get("ok"))
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-
-                log::info!("Telegram channel status - configured: {}, running: {}, probe.ok: {}", configured, running, probe_ok);
-                return Ok(configured && running && probe_ok);
-            }
-        }
-        log::info!("Telegram channel not found in gateway status response");
-        return Ok(false);
-    }
-
-    // Fallback: try openclaw channels status --probe CLI
-    log::info!("Gateway WebSocket unavailable, falling back to CLI check");
-    let status_output = openclaw_command(&["channels", "status", "--probe"]).await
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await;
-
-    match status_output {
-        Ok(output) => {
-            let stdout = String::from_utf8_lossy(&output.stdout).to_lowercase();
-            // Look for telegram in the output with connected/enabled/online status
-            for line in stdout.lines() {
-                if line.contains("telegram") {
-                    let is_connected = line.contains("connected")
-                        || line.contains("online")
-                        || line.contains("enabled");
-                    log::info!("Telegram CLI status line: {}, connected: {}", line.trim(), is_connected);
-                    return Ok(is_connected);
-                }
-            }
-            log::info!("Telegram not found in channels status output");
-            Ok(false)
-        }
-        Err(e) => {
-            log::warn!("Failed to check channel status via CLI: {}", e);
-            // Last resort: check local config
-            let config_dir = get_openclaw_config_dir()?;
-            let telegram_config_path = config_dir.join("telegram.json");
-            if telegram_config_path.exists() {
-                let config_json = std::fs::read_to_string(&telegram_config_path)
-                    .map_err(|e| format!("Failed to read Telegram config: {}", e))?;
-                let settings: serde_json::Value = serde_json::from_str(&config_json)
-                    .map_err(|e| format!("Failed to parse Telegram config: {}", e))?;
-                Ok(settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false))
-            } else {
-                Ok(false)
-            }
-        }
-    }
-}
-
-/// Approve a Telegram pairing code so the user can chat with Jan via the bot
-///
-/// When dmPolicy is set to "pairing", users must be approved before they can
-/// interact with the bot. This runs `openclaw pairing approve telegram <code>`
-#[tauri::command]
-pub async fn telegram_approve_pairing(code: String) -> Result<(), String> {
-    log::info!("Approving Telegram pairing code: {}", code);
-
-    let output = openclaw_command(&["pairing", "approve", "telegram", &code]).await
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run openclaw pairing approve: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    log::info!("Pairing approve stdout: {}", stdout);
-    if !stderr.is_empty() {
-        log::info!("Pairing approve stderr: {}", stderr);
-    }
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        let error_msg = if !stderr.is_empty() {
-            stderr.to_string()
-        } else {
-            stdout.to_string()
-        };
-        Err(format!("Failed to approve pairing: {}", error_msg.trim()))
-    }
-}
-
-/// Disconnect Telegram channel
-#[tauri::command]
-pub async fn telegram_disconnect() -> Result<(), String> {
-    log::info!("Disconnecting Telegram channel");
-
-    // 1. Remove channel from openclaw.json — gateway hot-reloads on file change
-    if let Ok(mut config) = read_openclaw_config() {
-        if let Some(channels) = config.get_mut("channels").and_then(|c| c.as_object_mut()) {
-            channels.remove("telegram");
-            write_openclaw_config(&config)
-                .map_err(|e| format!("Failed to update config: {}", e))?;
-            log::info!("Telegram channel removed from openclaw.json (hot-reload will stop bot)");
-        }
-    }
-
-    // 2. Delete local config file
-    let config_dir = get_openclaw_config_dir()?;
-    let telegram_config_path = config_dir.join("telegram.json");
-    if telegram_config_path.exists() {
-        let _ = std::fs::remove_file(&telegram_config_path);
-    }
-
-    // Also clean up pairing file
-    let pairing_path = config_dir.join("credentials").join("telegram-pairing.json");
-    if pairing_path.exists() {
-        let _ = std::fs::remove_file(&pairing_path);
-    }
-
-    log::info!("Telegram channel fully disconnected and credentials removed");
     Ok(())
 }
 
@@ -3416,802 +2860,6 @@ pub async fn openclaw_channel_status(channel: String) -> Result<ChannelStatus, S
         connected: is_enabled,
         status_info,
     })
-}
-
-// ============================================
-// WhatsApp Integration Commands
-// ============================================
-
-/// WhatsApp configuration structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WhatsAppConfig {
-    /// Account ID (e.g., "default")
-    pub account_id: String,
-    /// Session path for WhatsApp session data
-    pub session_path: String,
-    /// Whether the channel is connected
-    pub connected: bool,
-    /// Phone number of the connected account (if connected)
-    pub phone_number: Option<String>,
-    /// QR code data (base64 encoded image) for authentication
-    pub qr_code: Option<String>,
-    /// Number of contacts synced
-    pub contacts_count: u32,
-}
-
-impl Default for WhatsAppConfig {
-    fn default() -> Self {
-        Self {
-            account_id: "default".to_string(),
-            session_path: String::new(),
-            connected: false,
-            phone_number: None,
-            qr_code: None,
-            contacts_count: 0,
-        }
-    }
-}
-
-/// WhatsApp authentication status
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WhatsAppAuthStatus {
-    /// Whether authentication is in progress
-    pub in_progress: bool,
-    /// Whether the QR code is ready to be scanned
-    pub qr_code_ready: bool,
-    /// QR code data (base64 encoded image)
-    pub qr_code: Option<String>,
-    /// Whether authentication is complete
-    pub authenticated: bool,
-    /// Error message if any
-    pub error: Option<String>,
-}
-
-/// Get the WhatsApp configuration file path
-fn get_whatsapp_config_path() -> Result<std::path::PathBuf, String> {
-    let config_dir = get_openclaw_config_dir()?;
-    Ok(config_dir.join("whatsapp.json"))
-}
-
-/// Check if WhatsApp is connected by reading the config.
-/// Delegates to `whatsapp_get_config` which reconciles across sandbox modes.
-#[tauri::command]
-pub async fn whatsapp_validate_connection() -> Result<bool, String> {
-    log::info!("Validating WhatsApp connection");
-    let config = whatsapp_get_config().await?;
-    Ok(config.connected)
-}
-
-/// Start WhatsApp authentication - 1-click setup that handles everything
-///
-/// This function handles the complete setup flow automatically:
-/// 1. Ensures OpenClaw is installed and configured
-/// 2. Starts the Gateway if not running
-/// 3. Ensures device pairing for Gateway connection
-/// 4. Enables the WhatsApp plugin
-/// 5. Adds the WhatsApp channel configuration
-/// 6. Initiates the QR code login flow
-///
-/// Users don't need to run any terminal commands - everything is automatic.
-#[tauri::command]
-pub async fn whatsapp_start_auth(state: tauri::State<'_, OpenClawState>) -> Result<WhatsAppAuthStatus, String> {
-    log::info!("Starting WhatsApp 1-click setup and authentication");
-
-    // Reset the restart counter for this new auth session
-    WA_RESTART_COUNT.store(0, Ordering::SeqCst);
-
-    // Step 1: Run the unified setup to ensure OpenClaw is ready
-    log::info!("Running OpenClaw setup...");
-    let setup_result = openclaw_setup_for_channels(state).await?;
-
-    if !setup_result.success {
-        return Ok(WhatsAppAuthStatus {
-            in_progress: false,
-            qr_code_ready: false,
-            qr_code: None,
-            authenticated: false,
-            error: Some(format!(
-                "OpenClaw setup failed at step '{}': {}",
-                setup_result.step,
-                setup_result.error.unwrap_or_else(|| "Unknown error".to_string())
-            )),
-        });
-    }
-
-    log::info!("OpenClaw setup complete, checking if WhatsApp is already linked...");
-
-    // Step 2: Check if WhatsApp is already linked (authenticated with a phone)
-    // If so, we don't need to show QR code
-    let params = serde_json::json!({
-        "probe": false,
-        "timeoutMs": 5000
-    });
-
-    if let Ok(status) = gateway_request("channels.status", params).await {
-        if let Some(channels) = status.get("channels") {
-            if let Some(whatsapp) = channels.get("whatsapp") {
-                let linked = whatsapp.get("linked")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                let connected = whatsapp.get("connected")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-
-                if linked {
-                    log::info!("WhatsApp is already linked to a phone");
-
-                    // Update local config to reflect linked status
-                    update_whatsapp_connected_status(true).await.ok();
-
-                    return Ok(WhatsAppAuthStatus {
-                        in_progress: false,
-                        qr_code_ready: false,
-                        qr_code: None,
-                        authenticated: true,
-                        error: None,
-                    });
-                }
-
-                if connected {
-                    log::info!("WhatsApp is connected but not yet linked, need QR code");
-                }
-            }
-        }
-    }
-
-    log::info!("WhatsApp not linked, proceeding with QR code setup");
-
-    // Get the WhatsApp session/auth directory
-    let config_dir = get_openclaw_config_dir()?;
-    let auth_dir = config_dir.join("whatsapp_auth");
-
-    if !auth_dir.exists() {
-        std::fs::create_dir_all(&auth_dir)
-            .map_err(|e| format!("Failed to create WhatsApp auth directory: {}", e))?;
-    }
-
-    // Enable the WhatsApp plugin (must be done before adding channel)
-    enable_channel_plugin("whatsapp").await?;
-
-    // Now add WhatsApp channel using CLI.
-    // With config directory isolation, auth_dir is always the correct host path
-    // for the active sandbox — no Docker-specific path rewriting needed.
-    let add_output = openclaw_command(&[
-            "channels",
-            "add",
-            "--channel", "whatsapp",
-            "--account", "default",
-            "--auth-dir", &auth_dir.to_string_lossy(),
-        ]).await
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run openclaw channels add: {}", e))?;
-
-    let add_stderr = String::from_utf8_lossy(&add_output.stderr);
-    let add_stdout = String::from_utf8_lossy(&add_output.stdout);
-
-    log::info!("OpenClaw channels add output: {}", add_stdout);
-    if !add_stderr.is_empty() {
-        log::info!("OpenClaw channels add stderr: {}", add_stderr);
-    }
-
-    if !add_output.status.success() {
-        // Check if it failed because channel already exists (which is fine)
-        let combined = format!("{}{}", add_stdout, add_stderr);
-        if !combined.contains("already exists") && !combined.contains("Added") && !combined.contains("updated") {
-            return Ok(WhatsAppAuthStatus {
-                in_progress: false,
-                qr_code_ready: false,
-                qr_code: None,
-                authenticated: false,
-                error: Some(format!(
-                    "Failed to add WhatsApp channel: {}",
-                    if !add_stderr.is_empty() { add_stderr.to_string() } else { add_stdout.to_string() }
-                )),
-            });
-        }
-    }
-
-    // Now get QR code via Gateway RPC (web.login.start)
-    // This returns the QR as a base64 PNG data URL that can be displayed in the UI
-    log::info!("Requesting QR code via Gateway RPC...");
-
-    let qr_params = serde_json::json!({
-        "accountId": "default",
-        "timeoutMs": 60000,
-        "force": true
-    });
-
-    // Use 65s transport timeout so the server-side 60s timeoutMs can fire first
-    match gateway_request_with_timeout("web.login.start", qr_params, 65).await {
-        Ok(qr_payload) => {
-            let qr_code = qr_payload.get("qrDataUrl")
-                .and_then(|v| v.as_str())
-                .map(String::from);
-
-            if qr_code.is_some() {
-                log::info!("QR code received successfully");
-
-                // Save state to local config
-                let whatsapp_config = WhatsAppConfig {
-                    account_id: "default".to_string(),
-                    session_path: auth_dir.to_string_lossy().to_string(),
-                    connected: false,
-                    phone_number: None,
-                    qr_code: qr_code.clone(),
-                    contacts_count: 0,
-                };
-
-                let config_path = get_whatsapp_config_path()?;
-                std::fs::write(
-                    &config_path,
-                    serde_json::to_string_pretty(&whatsapp_config).unwrap()
-                ).map_err(|e| format!("Failed to save WhatsApp config: {}", e))?;
-
-                return Ok(WhatsAppAuthStatus {
-                    in_progress: true,
-                    qr_code_ready: true,
-                    qr_code,
-                    authenticated: false,
-                    error: None,
-                });
-            } else {
-                log::warn!("QR code response missing qrDataUrl");
-                return Ok(WhatsAppAuthStatus {
-                    in_progress: false,
-                    qr_code_ready: false,
-                    qr_code: None,
-                    authenticated: false,
-                    error: Some("QR code generation failed - missing qrDataUrl".to_string()),
-                });
-            }
-        }
-        Err(e) => {
-            log::error!("Failed to get QR code: {}", e);
-
-            // Check for specific error messages
-            if e.contains("Unsupported channel") || e.contains("web login provider is not available") {
-                return Ok(WhatsAppAuthStatus {
-                    in_progress: false,
-                    qr_code_ready: false,
-                    qr_code: None,
-                    authenticated: false,
-                    error: Some(
-                        "WhatsApp channel is not yet supported in this version of OpenClaw. \
-                        Please check for OpenClaw updates.".to_string()
-                    ),
-                });
-            }
-
-            return Ok(WhatsAppAuthStatus {
-                in_progress: false,
-                qr_code_ready: false,
-                qr_code: None,
-                authenticated: false,
-                error: Some(format!("Failed to get QR code: {}", e)),
-            });
-        }
-    }
-}
-
-/// Get the QR code for WhatsApp authentication
-/// This polls OpenClaw's Gateway for the QR code
-#[tauri::command]
-pub async fn whatsapp_get_qr_code() -> Result<WhatsAppAuthStatus, String> {
-    log::info!("Getting WhatsApp QR code from OpenClaw Gateway");
-
-    // First check if Gateway is running
-    if !check_gateway_responding().await {
-        return Ok(WhatsAppAuthStatus {
-            in_progress: false,
-            qr_code_ready: false,
-            qr_code: None,
-            authenticated: false,
-            error: Some("OpenClaw Gateway is not running".to_string()),
-        });
-    }
-
-    // Check channel status via Gateway
-    let params = serde_json::json!({
-        "probe": true,
-        "timeoutMs": 5000
-    });
-
-    match gateway_request("channels.status", params).await {
-        Ok(payload) => {
-            log::debug!("Channel status response: {:?}", payload);
-
-            // Check if WhatsApp channel is linked (authenticated) or connected
-            if let Some(channels) = payload.get("channels") {
-                if let Some(whatsapp) = channels.get("whatsapp") {
-                    let connected = whatsapp.get("connected")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    let linked = whatsapp.get("linked")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-
-                    // If linked, WhatsApp is already authenticated - no QR needed
-                    if linked {
-                        log::info!("WhatsApp is already linked, no QR code needed");
-                        update_whatsapp_connected_status(true).await?;
-
-                        return Ok(WhatsAppAuthStatus {
-                            in_progress: false,
-                            qr_code_ready: false,
-                            qr_code: None,
-                            authenticated: true,
-                            error: None,
-                        });
-                    }
-
-                    if connected && !linked {
-                        log::info!("WhatsApp connected but not linked, need to get QR code");
-                    }
-                }
-            }
-
-            // If not linked, try to get/refresh QR code
-            let qr_params = serde_json::json!({
-                "accountId": "default",
-                "timeoutMs": 30000
-            });
-
-            match gateway_request("web.login.start", qr_params).await {
-                Ok(qr_payload) => {
-                    let qr_code = qr_payload.get("qrDataUrl")
-                        .and_then(|v| v.as_str())
-                        .map(String::from);
-
-                    Ok(WhatsAppAuthStatus {
-                        in_progress: true,
-                        qr_code_ready: qr_code.is_some(),
-                        qr_code,
-                        authenticated: false,
-                        error: None,
-                    })
-                }
-                Err(e) => {
-                    // Fall back to local config
-                    let config_path = get_whatsapp_config_path()?;
-                    if config_path.exists() {
-                        let config_json = std::fs::read_to_string(&config_path)
-                            .map_err(|e| format!("Failed to read WhatsApp config: {}", e))?;
-                        let settings: serde_json::Value = serde_json::from_str(&config_json)
-                            .map_err(|e| format!("Failed to parse WhatsApp config: {}", e))?;
-                        let qr_code = settings.get("qr_code").and_then(|v| v.as_str()).map(String::from);
-
-                        Ok(WhatsAppAuthStatus {
-                            in_progress: true,
-                            qr_code_ready: qr_code.is_some(),
-                            qr_code,
-                            authenticated: false,
-                            error: Some(format!("Could not refresh QR code: {}", e)),
-                        })
-                    } else {
-                        Ok(WhatsAppAuthStatus {
-                            in_progress: false,
-                            qr_code_ready: false,
-                            qr_code: None,
-                            authenticated: false,
-                            error: Some(format!("Failed to get QR code: {}", e)),
-                        })
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            log::error!("Failed to get channel status: {}", e);
-            Ok(WhatsAppAuthStatus {
-                in_progress: false,
-                qr_code_ready: false,
-                qr_code: None,
-                authenticated: false,
-                error: Some(format!("Failed to check WhatsApp status: {}", e)),
-            })
-        }
-    }
-}
-
-/// Update local WhatsApp connected status
-async fn update_whatsapp_connected_status(connected: bool) -> Result<(), String> {
-    let config_path = get_whatsapp_config_path()?;
-
-    let mut config = if config_path.exists() {
-        let config_json = std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("Failed to read WhatsApp config: {}", e))?;
-        serde_json::from_str::<WhatsAppConfig>(&config_json)
-            .unwrap_or_default()
-    } else {
-        WhatsAppConfig::default()
-    };
-
-    config.connected = connected;
-    if connected {
-        config.qr_code = None; // Clear QR code when connected
-    }
-
-    std::fs::write(
-        &config_path,
-        serde_json::to_string_pretty(&config).unwrap()
-    ).map_err(|e| format!("Failed to save WhatsApp config: {}", e))?;
-
-    Ok(())
-}
-
-/// Check if WhatsApp authentication is complete
-#[tauri::command]
-pub async fn whatsapp_check_auth() -> Result<WhatsAppAuthStatus, String> {
-    log::info!("Checking WhatsApp authentication status via OpenClaw Gateway");
-
-    // Check Gateway status first
-    if !check_gateway_responding().await {
-        // Fall back to local config
-        let config_path = get_whatsapp_config_path()?;
-        if !config_path.exists() {
-            return Ok(WhatsAppAuthStatus {
-                in_progress: false,
-                qr_code_ready: false,
-                qr_code: None,
-                authenticated: false,
-                error: Some("WhatsApp not configured".to_string()),
-            });
-        }
-
-        let config_json = std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("Failed to read WhatsApp config: {}", e))?;
-        let settings: serde_json::Value = serde_json::from_str(&config_json)
-            .map_err(|e| format!("Failed to parse WhatsApp config: {}", e))?;
-
-        let connected = settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false);
-        let qr_code = settings.get("qr_code").and_then(|v| v.as_str()).map(String::from);
-
-        return Ok(WhatsAppAuthStatus {
-            in_progress: !connected,
-            qr_code_ready: qr_code.is_some(),
-            qr_code,
-            authenticated: connected,
-            error: if !connected { Some("OpenClaw Gateway is not running".to_string()) } else { None },
-        });
-    }
-
-    // Check channel status via Gateway
-    let params = serde_json::json!({
-        "probe": true,
-        "timeoutMs": 5000
-    });
-
-    match gateway_request("channels.status", params).await {
-        Ok(payload) => {
-            log::debug!("Channel status response: {:?}", payload);
-
-            // Check if WhatsApp channel is connected or linked
-            if let Some(channels) = payload.get("channels") {
-                if let Some(whatsapp) = channels.get("whatsapp") {
-                    let connected = whatsapp.get("connected")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-
-                    let linked = whatsapp.get("linked")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-
-                    let running = whatsapp.get("running")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-
-                    // "linked" means the account is paired with a phone (QR scanned)
-                    // "connected" means the WebSocket is currently active
-                    // "running" means the channel process is running
-                    // All three must be true for WhatsApp to actually work
-                    if linked && connected && running {
-                        log::info!("WhatsApp is fully connected (linked + running + connected)");
-                        update_whatsapp_connected_status(true).await?;
-
-                        return Ok(WhatsAppAuthStatus {
-                            in_progress: false,
-                            qr_code_ready: false,
-                            qr_code: None,
-                            authenticated: true,
-                            error: None,
-                        });
-                    }
-
-                    if linked && (!connected || !running) {
-                        // QR was scanned but the Gateway hasn't established the WhatsApp
-                        // WebSocket connection yet. This is a transient state — the
-                        // Gateway may need a restart to kick-start the connection.
-                        log::info!(
-                            "WhatsApp linked but not fully connected (running: {}, connected: {}), \
-                            waiting for gateway to establish connection",
-                            running, connected
-                        );
-
-                        // Restart the gateway up to MAX_WA_RESTART_ATTEMPTS times per
-                        // auth session to nudge it into connecting. Counter is reset
-                        // in whatsapp_start_auth.
-                        let attempt = WA_RESTART_COUNT.fetch_add(1, Ordering::SeqCst);
-                        if attempt < MAX_WA_RESTART_ATTEMPTS {
-                            log::info!(
-                                "Restarting gateway to establish WhatsApp connection (attempt {}/{})",
-                                attempt + 1, MAX_WA_RESTART_ATTEMPTS
-                            );
-                            let _ = restart_gateway_cli().await;
-                            // Give the gateway time to come back before the next poll
-                            wait_for_gateway_ready(8).await;
-                        }
-
-                        // Return in_progress so the frontend keeps polling
-                        return Ok(WhatsAppAuthStatus {
-                            in_progress: true,
-                            qr_code_ready: false,
-                            qr_code: None,
-                            authenticated: false,
-                            error: None,
-                        });
-                    }
-
-                    if connected && !linked {
-                        // Connected but not linked - waiting for QR scan
-                        log::info!("WhatsApp connected but waiting for QR scan");
-                    }
-
-                    // Check for errors
-                    let last_error = whatsapp.get("lastError")
-                        .and_then(|v| v.as_str())
-                        .map(String::from);
-
-                    // Only report fatal errors, not transient ones like 515 stream errors
-                    // These can occur during connection establishment but the link often succeeds after
-                    if let Some(ref err) = last_error {
-                        let is_transient = err.contains("515") ||
-                                          err.contains("restart required") ||
-                                          err.contains("Stream Errored") ||
-                                          err.contains("not linked") ||
-                                          err.contains("not configured");
-
-                        if !is_transient && !linked {
-                            return Ok(WhatsAppAuthStatus {
-                                in_progress: false,
-                                qr_code_ready: false,
-                                qr_code: None,
-                                authenticated: false,
-                                error: last_error,
-                            });
-                        }
-                        // For transient errors, continue checking - don't report as error yet
-                    }
-                }
-            }
-
-            // Still waiting for authentication — refresh the QR code from Gateway.
-            // WhatsApp QR codes expire every ~20s, so we must fetch a fresh one
-            // rather than serving the stale one from local config.
-            let qr_params = serde_json::json!({
-                "accountId": "default",
-                "timeoutMs": 5000
-            });
-
-            let qr_code = match gateway_request("web.login.start", qr_params).await {
-                Ok(qr_payload) => {
-                    let qr = qr_payload.get("qrDataUrl")
-                        .and_then(|v| v.as_str())
-                        .map(String::from);
-
-                    // Update local config with fresh QR
-                    if let Some(ref qr_data) = qr {
-                        if let Ok(config_path) = get_whatsapp_config_path() {
-                            if config_path.exists() {
-                                if let Ok(content) = std::fs::read_to_string(&config_path) {
-                                    if let Ok(mut cfg) = serde_json::from_str::<serde_json::Value>(&content) {
-                                        cfg["qr_code"] = serde_json::json!(qr_data);
-                                        let _ = std::fs::write(&config_path, serde_json::to_string_pretty(&cfg).unwrap_or_default());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    qr
-                }
-                Err(_) => {
-                    // Fall back to local config if Gateway call fails
-                    let config_path = get_whatsapp_config_path()?;
-                    if config_path.exists() {
-                        std::fs::read_to_string(&config_path).ok()
-                            .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
-                            .and_then(|settings| settings.get("qr_code").and_then(|v| v.as_str()).map(String::from))
-                    } else {
-                        None
-                    }
-                }
-            };
-
-            Ok(WhatsAppAuthStatus {
-                in_progress: true,
-                qr_code_ready: qr_code.is_some(),
-                qr_code,
-                authenticated: false,
-                error: None,
-            })
-        }
-        Err(e) => {
-            log::error!("Failed to check channel status: {}", e);
-
-            // Fall back to local config
-            let config_path = get_whatsapp_config_path()?;
-            if config_path.exists() {
-                let config_json = std::fs::read_to_string(&config_path)
-                    .map_err(|e| format!("Failed to read WhatsApp config: {}", e))?;
-                let settings: serde_json::Value = serde_json::from_str(&config_json)
-                    .map_err(|e| format!("Failed to parse WhatsApp config: {}", e))?;
-
-                let connected = settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false);
-                let qr_code = settings.get("qr_code").and_then(|v| v.as_str()).map(String::from);
-
-                Ok(WhatsAppAuthStatus {
-                    in_progress: !connected,
-                    qr_code_ready: qr_code.is_some(),
-                    qr_code,
-                    authenticated: connected,
-                    error: Some(format!("Gateway error: {}", e)),
-                })
-            } else {
-                Ok(WhatsAppAuthStatus {
-                    in_progress: false,
-                    qr_code_ready: false,
-                    qr_code: None,
-                    authenticated: false,
-                    error: Some(format!("Failed to check WhatsApp status: {}", e)),
-                })
-            }
-        }
-    }
-}
-
-/// Get current WhatsApp configuration.
-///
-/// Reconciles across sandbox modes (Docker vs direct process):
-/// 1. Reads local `whatsapp.json` first
-/// 2. Falls back to `openclaw.json` if local file is absent or empty (cross-mode recovery)
-/// 3. Probes live gateway `channels.status` to verify actual connected/linked state
-/// 4. Persists reconciled state back to local file
-///
-/// This ensures the UI shows the correct status regardless of whether the
-/// channel was originally configured in Docker mode or direct process mode.
-#[tauri::command]
-pub async fn whatsapp_get_config() -> Result<WhatsAppConfig, String> {
-    let config_path = get_whatsapp_config_path()?;
-
-    // Start with local file data (if it exists)
-    let mut account_id = "default".to_string();
-    let mut session_path = String::new();
-    let mut connected = false;
-    let mut phone_number: Option<String> = None;
-    let mut qr_code: Option<String> = None;
-    let mut contacts_count: u32 = 0;
-    let mut has_local_data = false;
-
-    if config_path.exists() {
-        if let Ok(config_json) = std::fs::read_to_string(&config_path) {
-            if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&config_json) {
-                account_id = settings.get("account_id").and_then(|v| v.as_str()).unwrap_or("default").to_string();
-                session_path = settings.get("session_path").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                connected = settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false);
-                phone_number = settings.get("phone_number").and_then(|v| v.as_str()).map(String::from);
-                qr_code = settings.get("qr_code").and_then(|v| v.as_str()).map(String::from);
-                contacts_count = settings.get("contacts_count").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                // Consider local data present if connected or has phone number
-                has_local_data = connected || phone_number.is_some();
-            }
-        }
-    }
-
-    // If no meaningful local data, check openclaw.json (read-only — never write
-    // back here; only explicit user actions should modify local files)
-    if !has_local_data {
-        if let Ok(main_config) = read_openclaw_config() {
-            if let Some(wa) = main_config.get("channels").and_then(|c| c.get("whatsapp")) {
-                let enabled = wa.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
-                if enabled {
-                    log::info!("WhatsApp channel enabled in openclaw.json (in-memory only)");
-                }
-            }
-        }
-    }
-
-    // If the gateway is running, check live channel status (read-only — report
-    // actual state but never persist it; only connect/disconnect actions write)
-    if check_gateway_responding().await {
-        let params = serde_json::json!({ "probe": true, "timeoutMs": 5000 });
-        if let Ok(status) = gateway_request("channels.status", params).await {
-            if let Some(whatsapp) = status.get("channels").and_then(|c| c.get("whatsapp")) {
-                let gw_running = whatsapp.get("running")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                let gw_linked = whatsapp.get("linked")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-
-                // linked=true just means session auth exists (credentials kept after disconnect).
-                // The channel is only truly active when the gateway is running it.
-                connected = gw_running && gw_linked;
-            }
-        }
-    }
-
-    Ok(WhatsAppConfig {
-        account_id,
-        session_path,
-        connected,
-        phone_number,
-        qr_code,
-        contacts_count,
-    })
-}
-
-/// Get connected WhatsApp contacts
-#[tauri::command]
-pub async fn whatsapp_get_contacts() -> Result<Vec<String>, String> {
-    log::info!("Getting WhatsApp contacts");
-
-    let config_path = get_whatsapp_config_path()?;
-
-    if !config_path.exists() {
-        return Ok(vec![]);
-    }
-
-    let config_json = std::fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read WhatsApp config: {}", e))?;
-
-    let settings: serde_json::Value = serde_json::from_str(&config_json)
-        .map_err(|e| format!("Failed to parse WhatsApp config: {}", e))?;
-
-    // In production, this would return actual contacts from OpenClaw
-    // For now, return the phone number if connected
-    let connected = settings.get("connected").and_then(|v| v.as_bool()).unwrap_or(false);
-    let phone_number = settings.get("phone_number").and_then(|v| v.as_str()).map(String::from);
-
-    if connected {
-        if let Some(phone) = phone_number {
-            return Ok(vec![phone]);
-        }
-    }
-
-    Ok(vec![])
-}
-
-/// Disconnect WhatsApp session
-#[tauri::command]
-pub async fn whatsapp_disconnect() -> Result<(), String> {
-    log::info!("Disconnecting WhatsApp channel");
-
-    // 1. Remove channel from openclaw.json — gateway hot-reloads on file change
-    if let Ok(mut config) = read_openclaw_config() {
-        if let Some(channels) = config.get_mut("channels").and_then(|c| c.as_object_mut()) {
-            channels.remove("whatsapp");
-            write_openclaw_config(&config)
-                .map_err(|e| format!("Failed to update config: {}", e))?;
-            log::info!("WhatsApp channel removed from openclaw.json (hot-reload will stop bot)");
-        }
-    }
-
-    // 2. Delete local config file
-    let config_path = get_whatsapp_config_path()?;
-    if config_path.exists() {
-        let _ = std::fs::remove_file(&config_path);
-    }
-
-    // 3. Delete WhatsApp auth/session directory
-    let config_dir = get_openclaw_config_dir()?;
-    let auth_dir = config_dir.join("whatsapp_auth");
-    if auth_dir.exists() {
-        let _ = std::fs::remove_dir_all(&auth_dir);
-    }
-
-    log::info!("WhatsApp channel fully disconnected and credentials removed");
-    Ok(())
 }
 
 // ============================================
@@ -4723,3 +3371,4 @@ pub async fn tunnel_stop_cloudflared(
     let tunnel_state = state.tunnel_state.clone();
     tunnels::stop_cloudflared_tunnel(&tunnel_state).await
 }
+
