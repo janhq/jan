@@ -35,5 +35,6 @@
   "setAsDefault": "Set as default assistant",
   "isDefault": "Default",
   "defaultAssistantSection": "Default Assistant",
+  "defaultAssistantDesc": "Used when starting a new chat",
   "allAssistants": "All Assistants"
 }
