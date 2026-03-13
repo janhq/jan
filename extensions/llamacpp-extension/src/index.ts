@@ -475,6 +475,11 @@ export default class llamacpp_extension extends AIEngine {
           `Invalid backend string: ${targetBackendString} supplied to update function`
         )
 
+      if (this.isUpdatingBackend) {
+        logger.warn('Backend update already in progress, skipping new update request')
+        return { wasUpdated: false, newBackend: this.config.version_backend }
+      }
+
       this.isUpdatingBackend = true
 
       const backendParts = targetBackendString.split('/')
