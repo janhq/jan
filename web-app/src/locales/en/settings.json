@@ -202,7 +202,10 @@
     "verboseLogs": "Verbose Server Logs",
     "verboseLogsDesc": "Enable detailed server logs for debugging.",
     "proxyTimeout": "Request timeout",
-    "proxyTimeoutDesc": "Time to wait for a response from the local model, seconds."
+    "proxyTimeoutDesc": "Time to wait for a response from the local model, seconds.",
+    "defaultModel": "Default Model Local API Server",
+    "defaultModelDesc": "Local model to load automatically when the server starts.",
+    "defaultModelPlaceholder": "Select a local model"
   },
   "privacy": {
     "analytics": "Analytics",
