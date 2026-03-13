@@ -469,18 +469,18 @@ export default class llamacpp_extension extends AIEngine {
   async updateBackend(
     targetBackendString: string
   ): Promise<{ wasUpdated: boolean; newBackend: string }> {
+    if (this.isUpdatingBackend) {
+      logger.warn('Backend update already in progress, skipping new update request')
+      return { wasUpdated: false, newBackend: this.config.version_backend }
+    }
+
+    this.isUpdatingBackend = true
+
     try {
       if (!targetBackendString)
         throw new Error(
           `Invalid backend string: ${targetBackendString} supplied to update function`
         )
-
-      if (this.isUpdatingBackend) {
-        logger.warn('Backend update already in progress, skipping new update request')
-        return { wasUpdated: false, newBackend: this.config.version_backend }
-      }
-
-      this.isUpdatingBackend = true
 
       const backendParts = targetBackendString.split('/')
 
