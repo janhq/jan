@@ -372,7 +372,7 @@ export const useBackendUpdater = () => {
       }))
       throw error
     }
-  }, [updateState.updateInfo, syncStateToOtherInstances])
+  }, [updateState.updateInfo, updateState.isUpdating, syncStateToOtherInstances])
 
   const installBackend = useCallback(async (filePath: string) => {
     try {
