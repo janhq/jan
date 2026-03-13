@@ -91,6 +91,7 @@ function AssistantContent() {
             <Card>
               <CardItem
                 title={t('assistants:defaultAssistantSection')}
+                description={t('assistants:defaultAssistantDesc')}
                 actions={
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
