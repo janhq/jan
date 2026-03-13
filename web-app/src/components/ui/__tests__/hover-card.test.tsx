@@ -4,7 +4,11 @@ import { HoverCard, HoverCardTrigger, HoverCardContent } from '../hover-card'
 
 // Mock Radix UI
 vi.mock('@radix-ui/react-hover-card', () => ({
-  Root: ({ children, ...props }: any) => <div data-testid="hover-card-root" {...props}>{children}</div>,
+  Root: ({ children, openDelay, ...props }: any) => (
+    <div data-testid="hover-card-root" data-open-delay={openDelay} {...props}>
+      {children}
+    </div>
+  ),
   Trigger: ({ children, ...props }: any) => <button data-testid="hover-card-trigger" {...props}>{children}</button>,
   Portal: ({ children, ...props }: any) => <div data-testid="hover-card-portal" {...props}>{children}</div>,
   Content: ({ children, className, align, sideOffset, ...props }: any) => (
@@ -43,7 +47,7 @@ describe('HoverCard Components', () => {
       )
 
       const hoverCard = screen.getByTestId('hover-card-root')
-      expect(hoverCard).toHaveAttribute('openDelay', '500')
+      expect(hoverCard).toHaveAttribute('data-open-delay', '500')
     })
   })
 
@@ -63,13 +67,13 @@ describe('HoverCard Components', () => {
 
     it('should pass through props to trigger component', () => {
       render(
-        <HoverCardTrigger disabled>
+        <HoverCardTrigger aria-disabled="true">
           <span>Disabled trigger</span>
         </HoverCardTrigger>
       )
 
       const trigger = screen.getByTestId('hover-card-trigger')
-      expect(trigger).toHaveAttribute('disabled')
+      expect(trigger).toHaveAttribute('aria-disabled', 'true')
     })
   })
 
@@ -149,7 +153,7 @@ describe('HoverCard Components', () => {
       render(
         <HoverCard>
           <HoverCardTrigger>
-            <button>Trigger</button>
+            <span>Trigger</span>
           </HoverCardTrigger>
           <HoverCardContent>
             <div>Hover content</div>
