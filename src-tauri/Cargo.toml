@@ -172,3 +172,8 @@ debug = false       # No debug info
 debug-assertions = false  # No debug assertions
 incremental = false # Disable incremental compilation for release
 rpath = false       # Don't include rpath
+
+[[bin]]
+name = "test_proxy"
+path = "src/bin/test_proxy.rs"
+required-features = ["cli"]

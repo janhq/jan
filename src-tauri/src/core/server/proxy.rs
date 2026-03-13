@@ -1371,7 +1371,11 @@ async fn proxy_request(
     let buffered_body_for_req = buffered_body.clone();
 
     if let Some(key) = session_api_key_for_req {
+        outbound_req = outbound_req.header("x-api-key", key.clone());
         outbound_req = outbound_req.header("Authorization", format!("Bearer {key}"));
+    } else if let Some(original_auth) = headers.get(hyper::header::AUTHORIZATION) {
+        outbound_req = outbound_req.header("Authorization", original_auth);
+        log::debug!("Forwarding original Authorization header (OAuth)");
     } else {
         log::debug!("No session API key available for this request");
     }
