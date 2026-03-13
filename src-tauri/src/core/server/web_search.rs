@@ -35,15 +35,15 @@ pub async fn execute_web_search(client: &Client, query: &str) -> Vec<SearchResul
 /// Parse DuckDuckGo Lite HTML response to extract search results.
 ///
 /// DuckDuckGo Lite returns results in a table format where each result has:
-/// - A link in an <a> tag with class="result-link"
-/// - A snippet in a <td> tag with class="result-snippet"
+/// - A link in an <a> tag with class='result-link' (single quotes in practice)
+/// - A snippet in a <td> tag with class='result-snippet'
 fn parse_duckduckgo_lite_html(html: &str) -> Vec<SearchResult> {
     let mut results = Vec::new();
 
     // Extract result links and snippets from the HTML
     // DuckDuckGo Lite uses a table-based layout with specific classes
     let mut pos = 0;
-    while let Some(link_start) = html[pos..].find("class=\"result-link\"") {
+    while let Some(link_start) = find_class_attr(&html[pos..], "result-link") {
         let link_start = pos + link_start;
 
         // Find the href in this <a> tag - search backwards for href="
@@ -66,7 +66,7 @@ fn parse_duckduckgo_lite_html(html: &str) -> Vec<SearchResult> {
 
         // Find the next snippet after this link
         let snippet =
-            if let Some(snippet_start) = html[link_start..].find("class=\"result-snippet\"") {
+            if let Some(snippet_start) = find_class_attr(&html[link_start..], "result-snippet") {
                 let snippet_start = link_start + snippet_start;
                 if let Some(gt) = html[snippet_start..].find('>') {
                     let text_start = snippet_start + gt + 1;
@@ -101,6 +101,21 @@ fn parse_duckduckgo_lite_html(html: &str) -> Vec<SearchResult> {
     }
 
     results
+}
+
+/// Find a class attribute in HTML, matching both single and double quotes.
+/// DuckDuckGo Lite uses single quotes (class='result-link') while other HTML
+/// may use double quotes (class="result-link").
+/// Returns the byte offset of the match within `html`, if found.
+fn find_class_attr(html: &str, class_name: &str) -> Option<usize> {
+    let double_quoted = format!("class=\"{class_name}\"");
+    let single_quoted = format!("class='{class_name}'");
+    match (html.find(&double_quoted), html.find(&single_quoted)) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
 }
 
 /// Extract an attribute value from an HTML tag string
@@ -209,6 +224,57 @@ mod tests {
         assert_eq!(results[0].snippet, "This is a snippet about example.");
         assert_eq!(results[1].title, "Test Page");
         assert_eq!(results[1].url, "https://test.org");
+    }
+
+    #[test]
+    fn test_parse_duckduckgo_lite_html_single_quotes() {
+        // Real DuckDuckGo Lite uses single quotes for class attributes
+        let html = r#"
+        <table>
+            <tr>
+                <td valign="top">1.&nbsp;</td>
+                <td><a rel="nofollow" href="https://rust-lang.org/" class='result-link'>Rust Programming Language</a></td>
+            </tr>
+            <tr>
+                <td>&nbsp;&nbsp;&nbsp;</td>
+                <td class='result-snippet'>Rust is a fast, reliable, and productive <b>programming</b> language.</td>
+            </tr>
+            <tr>
+                <td valign="top">2.&nbsp;</td>
+                <td><a rel="nofollow" href="https://en.wikipedia.org/wiki/Rust_(programming_language)" class='result-link'>Rust (programming language) - Wikipedia</a></td>
+            </tr>
+            <tr>
+                <td>&nbsp;&nbsp;&nbsp;</td>
+                <td class='result-snippet'>Rust is a general-purpose <b>programming</b> language.</td>
+            </tr>
+        </table>
+        "#;
+
+        let results = parse_duckduckgo_lite_html(html);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].title, "Rust Programming Language");
+        assert_eq!(results[0].url, "https://rust-lang.org/");
+        assert_eq!(
+            results[0].snippet,
+            "Rust is a fast, reliable, and productive programming language."
+        );
+        assert_eq!(results[1].title, "Rust (programming language) - Wikipedia");
+        assert_eq!(
+            results[1].url,
+            "https://en.wikipedia.org/wiki/Rust_(programming_language)"
+        );
+    }
+
+    #[test]
+    fn test_find_class_attr() {
+        assert_eq!(find_class_attr(r#"class="foo""#, "foo"), Some(0));
+        assert_eq!(find_class_attr("class='foo'", "foo"), Some(0));
+        assert_eq!(find_class_attr("class='bar'", "foo"), None);
+        // Single quote match should win when it appears first
+        assert_eq!(
+            find_class_attr("class='foo' class=\"foo\"", "foo"),
+            Some(0)
+        );
     }
 
     #[test]
