@@ -16,8 +16,12 @@ interface ExtensionSetting {
   }
 }
 
+interface ExtensionWithSettings {
+  getSettings?: () => Promise<ExtensionSetting[] | undefined>
+}
+
 async function getCurrentBackendTypeFromSettings(
-  extension: ExtensionManager
+  extension: ExtensionWithSettings
 ): Promise<string> {
   const settings = await extension.getSettings?.()
   const currentBackendSetting = settings?.find(
