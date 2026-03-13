@@ -84,7 +84,7 @@ function AssistantContent() {
         </div>
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">
-        <div className="flex h-svh w-full">
+        <div className="flex w-full overflow-y-auto">
           <SettingsMenu />
           <div className="flex flex-col gap-4 p-4 pt-4 w-full overflow-y-auto">
             {/* Default Assistant */}
