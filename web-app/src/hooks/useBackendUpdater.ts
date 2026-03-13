@@ -251,6 +251,11 @@ export const useBackendUpdater = () => {
     if (!updateState.updateInfo) return
 
     try {
+      // If an update is already in progress, avoid triggering a duplicate update.
+      if (updateState.isUpdating) {
+        return
+      }
+
       setUpdateState((prev) => ({
         ...prev,
         isUpdating: true,
@@ -320,8 +325,8 @@ export const useBackendUpdater = () => {
       // Call the extension's updateBackend method
       const result = await extension.updateBackend?.(targetBackendString)
 
-      if (result?.wasUpdated) {
-        // Reset update state
+      if (result?.wasUpdated === true) {
+        // Reset update state on successful update
         const newState = {
           isUpdateAvailable: false,
           updateInfo: null,
@@ -332,6 +337,13 @@ export const useBackendUpdater = () => {
           ...newState,
         }))
         syncStateToOtherInstances(newState)
+      } else if (result?.wasUpdated === false) {
+        // Benign no-op (e.g., another update is already in progress).
+        // Do not treat this as a failure; just clear the local isUpdating flag.
+        setUpdateState((prev) => ({
+          ...prev,
+          isUpdating: false,
+        }))
       } else {
         throw new Error('Backend update failed')
       }
