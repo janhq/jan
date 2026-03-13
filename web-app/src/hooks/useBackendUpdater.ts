@@ -311,28 +311,10 @@ export const useBackendUpdater = () => {
         }
       } else {
         // Fallback: construct from current settings if targetBackend wasn't provided
-        const settings = await extension.getSettings?.()
-        const currentBackendSetting = settings?.find(
-          (s) => s.key === 'version_backend'
+        const currentBackendType = await getCurrentBackendTypeFromSettings(
+          extension
         )
-        const currentBackend = currentBackendSetting?.controllerProps
-          ?.value as string
-
-        if (!currentBackend) {
-          throw new Error('Current backend not found')
-        }
-
-        const parts = currentBackend.split('/')
-        const versionPart = parts[0]?.trim()
-        const backendType = parts[1]?.trim()
-
-        if (parts.length !== 2 || !versionPart || !backendType) {
-          throw new Error(
-            `Invalid current backend format: "${currentBackend}". Expected "version/backendType".`
-          )
-        }
-
-        targetBackendString = `${updateState.updateInfo.newVersion}/${backendType}`
+        targetBackendString = `${updateState.updateInfo.newVersion}/${currentBackendType}`
       }
 
       // Call the extension's updateBackend method

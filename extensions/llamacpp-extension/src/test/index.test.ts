@@ -513,13 +513,12 @@ describe('llamacpp_extension', () => {
         expect(result.wasUpdated).toBe(false)
       })
 
-      it('should reject with BackendUpdateInProgressError when an update is already in progress', async () => {
+      it('should return no-op when an update is already in progress', async () => {
         // Simulate an update already in progress
         extension['isUpdatingBackend'] = true
 
-        await expect(
-          extension.updateBackend('v2.0.0/linux-avx2-x64'),
-        ).rejects.toHaveProperty('name', 'BackendUpdateInProgressError')
+        const result = await extension.updateBackend('v2.0.0/linux-avx2-x64')
+        expect(result.wasUpdated).toBe(false)
       })
     })
 
