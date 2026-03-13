@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
-import { cn } from '@/lib/utils'
+import { cn, sanitizeModelId } from '@/lib/utils'
 import {
   useState,
   useMemo,
@@ -172,15 +172,25 @@ function HubContent() {
         ?.map((model) => ({
           ...model,
           quants: model.quants?.filter((variant) => {
-            // Check both llamacpp and mlx providers
+            // Check both direct match and with developer prefix (like DownloadButton does)
             const isLlamaCppDownloaded = useModelProvider
               .getState()
               .getProviderByName('llamacpp')
-              ?.models.some((m: { id: string }) => m.id === variant.model_id)
+              ?.models.some(
+                (m: { id: string }) =>
+                  m.id === variant.model_id ||
+                  m.id === `${model.developer}/${sanitizeModelId(variant.model_id)}`
+              )
+
             const isMlxDownloaded = useModelProvider
               .getState()
               .getProviderByName('mlx')
-              ?.models.some((m: { id: string }) => m.id === variant.model_id)
+              ?.models.some(
+                (m: { id: string }) =>
+                  m.id === variant.model_id ||
+                  m.id === `${model.developer}/${sanitizeModelId(variant.model_id)}`
+              )
+
             return isLlamaCppDownloaded || isMlxDownloaded
           }),
         }))

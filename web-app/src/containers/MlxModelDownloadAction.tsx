@@ -53,14 +53,27 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
   const downloadProgress =
     downloadProcesses.find((e) => e.id === modelId)?.progress || 0
 
+  // Get the actual downloaded model ID (with or without developer prefix)
+  const downloadedModelId = useMemo(() => {
+    const mlxProvider = useModelProvider.getState().getProviderByName('mlx')
+    const foundModel = mlxProvider?.models.find(
+      (m: { id: string }) =>
+        m.id === modelId ||
+        m.id === `${model.developer}/${modelId}`
+    )
+    return foundModel?.id || modelId
+  }, [modelId, model.developer])
+
   // Check if MLX model is already downloaded
   useEffect(() => {
     const mlxProvider = useModelProvider.getState().getProviderByName('mlx')
     const downloaded = mlxProvider?.models.some(
-      (m: { id: string }) => m.id === modelId
+      (m: { id: string }) =>
+        m.id === modelId ||
+        m.id === `${model.developer}/${modelId}`
     )
     setDownloaded(!!downloaded)
-  }, [modelId])
+  }, [modelId, model.developer])
 
   // Listen for download success
   useEffect(() => {
@@ -87,12 +100,12 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
       params: {},
       search: {
         threadModel: {
-          id: modelId,
+          id: downloadedModelId,
           provider: 'mlx',
         },
       },
     })
-  }, [navigate, modelId])
+  }, [navigate, downloadedModelId])
 
   const handleDownloadMlxModel = useCallback(async () => {
     addLocalDownloadingModel(modelId)
