@@ -109,6 +109,15 @@ export const providerModels = {
     supportsToolCalls: ['sonar', 'sonar-pro', 'sonar-reasoning-pro'],
     supportsN: true,
   },
+  minimax: {
+    models: ['MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    supportsCompletion: true,
+    supportsStreaming: ['MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    supportsJSON: [],
+    supportsImages: [],
+    supportsToolCalls: ['MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    supportsN: true,
+  },
   openrouter: {
     models: true,
     supportsCompletion: true,
