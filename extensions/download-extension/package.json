@@ -9,7 +9,7 @@
   "scripts": {
     "test": "vitest run",
     "build": "rolldown -c rolldown.config.mjs",
-    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
+    "build:publish": "rimraf *.tgz --glob || true && pnpm run build && pnpm pack && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
     "cpx": "1.5.0",
@@ -28,9 +28,5 @@
     "@janhq/core": "../../core/package.tgz",
     "@tauri-apps/api": "2.8.0"
   },
-  "bundleDependencies": [],
-  "installConfig": {
-    "hoistingLimits": "workspaces"
-  },
-  "packageManager": "yarn@4.5.3"
+  "packageManager": "pnpm@10.30.3"
 }

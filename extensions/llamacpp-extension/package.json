@@ -10,7 +10,7 @@
   "license": "AGPL-3.0",
   "scripts": {
     "build": "rolldown -c rolldown.config.mjs",
-    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish": "rimraf *.tgz --glob || true && pnpm run build && pnpm pack && cpx *.tgz ../../pre-install",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
@@ -46,8 +46,5 @@
   "bundleDependencies": [
     "fetch-retry"
   ],
-  "installConfig": {
-    "hoistingLimits": "workspaces"
-  },
-  "packageManager": "yarn@4.5.3"
+  "packageManager": "pnpm@10.30.3"
 }

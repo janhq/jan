@@ -45,9 +45,9 @@ export const Route = createFileRoute('/settings/general')({
 
 ```bash
 # Development
-yarn dev
-yarn build
-yarn test
+pnpm run dev
+pnpm run build
+pnpm test
 ```
 
 ### State Management

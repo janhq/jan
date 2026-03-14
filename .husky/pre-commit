@@ -1,1 +1,1 @@
-yarn lint --fix --quiet
+pnpm run lint --fix --quiet

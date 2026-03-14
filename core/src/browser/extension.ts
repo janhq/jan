@@ -29,9 +29,6 @@ export interface Compatibility {
  * This class should be extended by any class that represents an extension.
  */
 export abstract class BaseExtension implements ExtensionType {
-  protected settingFolderName = 'settings'
-  protected settingFileName = 'settings.json'
-
   /** @type {string} Name of the extension. */
   name: string
 
