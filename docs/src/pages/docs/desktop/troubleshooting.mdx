@@ -393,6 +393,23 @@ The "Unexpected token" error usually relates to OpenAI API authentication or reg
 - Reduce GPU layers if using GPU acceleration
 - Verify adequate power supply (desktop systems)
 
+## Jan CLI
+
+### Windows: running `jan` opens the Jan application window
+
+If typing `jan` in a terminal opens the Jan desktop app instead of the CLI, your system is resolving the `jan` command to the app launcher rather than the CLI binary.
+
+To fix this, add the CLI binary directory to your `Path` environment variable:
+
+1. Open **System Properties** → **Advanced** → **Environment Variables**
+2. Under **System variables** (or **User variables**), select **Path** and click **Edit**
+3. Click **New** and add:
+   ```
+   C:\Users\<username>\AppData\Local\Programs\Jan\resources\bin
+   ```
+   Replace `<username>` with your Windows username.
+4. Click **OK** to save, then open a new terminal window and try `jan` again.
+
 ## Need Further Support?
 
 If these solutions don't work:
