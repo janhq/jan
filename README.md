@@ -78,7 +78,6 @@ The easiest way to get started is by downloading one of the following versions f
   </tr>
 </table>
 
-
 Download from [jan.ai](https://jan.ai/) or [GitHub Releases](https://github.com/janhq/jan/releases).
 
 ## Features
@@ -113,6 +112,7 @@ make dev
 This handles everything: installs dependencies, builds core components, and launches the app.
 
 **Available make targets:**
+
 - `make dev` - Full development setup and launch
 - `make build` - Production build
 - `make test` - Run tests and linting
@@ -122,10 +122,10 @@ This handles everything: installs dependencies, builds core components, and laun
 
 ```bash
 pnpm install
-pnpm run build:tauri:plugin:api
-pnpm run build:core
-pnpm run build:extensions
-pnpm run dev
+pnpm build:tauri:plugin:api
+pnpm build:core
+pnpm build:extensions
+pnpm dev
 ```
 
 ## System Requirements
@@ -145,7 +145,6 @@ If things go sideways:
 1. Check our [troubleshooting docs](https://jan.ai/docs/desktop/troubleshooting)
 2. Copy your error logs and system specs
 3. Ask for help in our [Discord](https://discord.gg/FTk2MvZwJH) `#🆘|jan-help` channel
-
 
 ## Contributing
 

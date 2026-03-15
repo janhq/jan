@@ -16,7 +16,7 @@ TypeScript SDK providing extension system, APIs, and type definitions for all Ja
 ### Key Principles
 
 1. **Platform Agnostic** - Works everywhere (browser, Node.js)
-2. **Extension-Based** - New features = new extensions  
+2. **Extension-Based** - New features = new extensions
 3. **Type Everything** - TypeScript required
 4. **Event-Driven** - Components communicate via events
 
@@ -24,13 +24,13 @@ TypeScript SDK providing extension system, APIs, and type definitions for all Ja
 
 ```bash
 # Build the SDK
-pnpm run build
+pnpm build
 
 # Run tests
 pnpm test
 
 # Watch mode
-pnpm run test:watch
+pnpm test:watch
 ```
 
 ### Event System

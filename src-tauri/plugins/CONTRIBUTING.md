@@ -7,9 +7,11 @@ Native Rust plugins for hardware access, process management, and system integrat
 ## Current Plugins
 
 ### `/tauri-plugin-hardware`
+
 - Hardware detection (CPU, GPU, memory)
 
-### `/tauri-plugin-llamacpp`  
+### `/tauri-plugin-llamacpp`
+
 - llama.cpp process management and model inference
 
 ## Plugin Structure
@@ -72,7 +74,7 @@ export async function myCommand(param: string): Promise<string> {
 
 ```bash
 cargo build    # Build plugin
-pnpm run build # Build JavaScript
+pnpm build # Build JavaScript
 cargo test     # Run tests
 ```
 
@@ -101,7 +103,7 @@ cd ../../
 pnpm tauri dev
 
 # Test JavaScript API
-pnpm run build && node -e "const plugin = require('./dist-js'); console.log(plugin)"
+pnpm build && node -e "const plugin = require('./dist-js'); console.log(plugin)"
 ```
 
 ## Best Practices

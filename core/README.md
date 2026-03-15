@@ -16,7 +16,6 @@ import * as core from '@janhq/core'
 1. Download an extension template, for example, [https://github.com/janhq/extension-template](https://github.com/janhq/extension-template).
 
 2. Update the source code:
-
    1. Open `index.ts` in your code editor.
    2. Rename the extension class from `SampleExtension` to your preferred extension name.
    3. Import modules from the core package.
@@ -32,7 +31,9 @@ import * as core from '@janhq/core'
       export default class MyExtension extends BaseExtension {
         // On extension load
         onLoad() {
-          core.events.on(MessageEvent.OnMessageSent, (data) => MyExtension.inference(data, this))
+          core.events.on(MessageEvent.OnMessageSent, (data) =>
+            MyExtension.inference(data, this)
+          )
         }
 
         // Customized inference logic
@@ -63,6 +64,6 @@ import * as core from '@janhq/core'
       ```
    3. Compile the source code. The following command keeps running in the terminal and rebuilds the extension when you modify the source code.
       ```bash
-      pnpm run build
+      pnpm build
       ```
    4. Select the generated .tgz from Jan > Settings > Extension > Manual Installation.

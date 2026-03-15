@@ -10,7 +10,7 @@
   "license": "AGPL-3.0",
   "scripts": {
     "build": "rolldown -c rolldown.config.mjs",
-    "build:publish": "rimraf *.tgz --glob || true && pnpm run build && pnpm pack && cpx *.tgz ../../pre-install",
+    "build:publish": "rimraf *.tgz --glob || true && pnpm build && pnpm pack && cpx *.tgz ../../pre-install",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",

@@ -1,1 +1,1 @@
-pnpm run lint --fix --quiet
+pnpm lint --fix --quiet

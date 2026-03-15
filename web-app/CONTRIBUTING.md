@@ -7,7 +7,7 @@ React frontend using TypeScript, TanStack Router, Radix UI, and Tailwind CSS. St
 ## Key Directories
 
 - **`/src/components/ui`** - UI components (buttons, dialogs, inputs)
-- **`/src/containers`** - Complex feature components (ChatInput, ThreadContent)  
+- **`/src/containers`** - Complex feature components (ChatInput, ThreadContent)
 - **`/src/hooks`** - Custom React hooks (useChat, useThreads, useAppState)
 - **`/src/routes`** - TanStack Router pages
 - **`/src/services`** - API layer for backend communication
@@ -37,7 +37,7 @@ export const MyComponent: React.FC<Props> = ({ title, onAction }) => {
 
 ```tsx
 export const Route = createFileRoute('/settings/general')({
-  component: GeneralSettings
+  component: GeneralSettings,
 })
 ```
 
@@ -45,8 +45,8 @@ export const Route = createFileRoute('/settings/general')({
 
 ```bash
 # Development
-pnpm run dev
-pnpm run build
+pnpm dev
+pnpm build
 pnpm test
 ```
 
@@ -59,7 +59,7 @@ const [value, setValue] = useState<string>('')
 // Global state (Zustand)
 export const useAppState = create<AppState>((set) => ({
   data: null,
-  setData: (data) => set({ data })
+  setData: (data) => set({ data }),
 }))
 ```
 

@@ -7,19 +7,23 @@ Extensions add specific features to Jan as self-contained modules.
 ## Current Extensions
 
 ### `/assistant-extension`
+
 - Assistant CRUD operations
 - `src/index.ts` - Main implementation
 
-### `/conversational-extension` 
+### `/conversational-extension`
+
 - Message handling, conversation state
 - `src/index.ts` - Chat logic
 
 ### `/download-extension`
+
 - Model downloads with progress tracking
 - `src/index.ts` - Download logic
 - `settings.json` - Download settings
 
 ### `/llamacpp-extension`
+
 - Local model inference via llama.cpp
 - `src/index.ts` - Entry point
 - `src/backend.ts` - llama.cpp integration
@@ -31,7 +35,7 @@ Extensions add specific features to Jan as self-contained modules.
 
 ```bash
 mkdir my-extension
-cd my-extension  
+cd my-extension
 pnpm init
 ```
 
@@ -54,7 +58,7 @@ export default class MyExtension extends Extension {
   async onLoad() {
     // Extension initialization
   }
-  
+
   async onUnload() {
     // Cleanup
   }
@@ -65,7 +69,7 @@ export default class MyExtension extends Extension {
 
 ```bash
 # Build extension
-pnpm run build
+pnpm build
 
 # Run tests
 pnpm test
@@ -74,6 +78,7 @@ pnpm test
 ## Common Patterns
 
 ### Service Registration
+
 ```typescript
 async onLoad() {
   this.registerService('myService', {
@@ -82,7 +87,8 @@ async onLoad() {
 }
 ```
 
-### Event Handling  
+### Event Handling
+
 ```typescript
 async onLoad() {
   this.on('model:loaded', (model) => {
@@ -94,7 +100,7 @@ async onLoad() {
 ## Extension Lifecycle
 
 1. **Jan starts** → Discovers extensions
-2. **Loading** → Calls `onLoad()` method  
+2. **Loading** → Calls `onLoad()` method
 3. **Active** → Extension responds to events
 4. **Unloading** → Calls `onUnload()` on shutdown
 
@@ -114,11 +120,13 @@ console.log(window.core.api)
 ## Common Issues
 
 **Extension not loading?**
+
 - Check package.json format: `@janhq/extension-name`
 - Ensure `onLoad()` doesn't throw errors
 - Verify exports in index.ts
 
 **Events not working?**
+
 - Check event name spelling
 - Ensure listeners are set up in `onLoad()`
 
