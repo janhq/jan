@@ -115,17 +115,35 @@ describe('RenderMarkdown', () => {
     it('does not interfere with actual LaTeX inline math', () => {
       const content = 'The equation $x + y = z$ is simple'
       render(<RenderMarkdown content={content} />)
-      const markdownContainer = document.querySelector('.markdown')
+      const katexContainer = document.querySelector('.katex')
       // LaTeX should be rendered (KaTeX will process it)
-      expect(markdownContainer).toBeTruthy()
+      expect(katexContainer).toBeTruthy()
+    })
+
+    it('does not interfere with actual LaTeX inline math (numerical expression)', () => {
+      const content = 'The equation $12 \\times 12 = 144$ is simple'
+      render(<RenderMarkdown content={content} />)
+      const katexContainer = document.querySelector('.katex')
+      // LaTeX should be rendered (KaTeX will process it)
+      expect(katexContainer).toBeTruthy()
     })
 
     it('does not interfere with display math blocks', () => {
       const content = '$$\nx^2 + y^2 = r^2\n$$'
       render(<RenderMarkdown content={content} />)
-      const markdownContainer = document.querySelector('.markdown')
+      const katexContainer = document.querySelector('.katex')
       // Display math should be rendered
-      expect(markdownContainer).toBeTruthy()
+      expect(katexContainer).toBeTruthy()
+    })
+
+    it('does not interfere with display math blocks (numerical expression)', () => {
+      const content = '$$12 \\times 12 = 144$$'
+      render(<RenderMarkdown content={content} />)
+      const katexContainer = document.querySelector('.katex')
+      const katexError = document.querySelector('.katex-error')
+      // Display math should be rendered
+      expect(katexContainer).toBeTruthy()
+      expect(katexError).toBeNull()
     })
   })
 
@@ -287,9 +305,17 @@ describe('RenderMarkdown', () => {
     it('converts \\[...\\] to $$ display math', () => {
       const content = 'Here is math:\n\\[\nx^2 + y^2\n\\]\nDone'
       render(<RenderMarkdown content={content} />)
-      const markdownContainer = document.querySelector('.markdown')
+      const katexContainer = document.querySelector('.katex')
       // Display math should be rendered by KaTeX
-      expect(markdownContainer).toBeTruthy()
+      expect(katexContainer).toBeTruthy()
+    })
+
+    it('converts \\[...\\] to $$ display math (numerical expression)', () => {
+      const content = 'Here is math:\n\\[\n3^2 + 4^2\n\\]\nDone'
+      render(<RenderMarkdown content={content} />)
+      const katexContainer = document.querySelector('.katex')
+      // Display math should be rendered by KaTeX
+      expect(katexContainer).toBeTruthy()
     })
   })
 
@@ -297,9 +323,17 @@ describe('RenderMarkdown', () => {
     it('converts \\(...\\) to $ inline math', () => {
       const content = 'The formula \\(E = mc^2\\) is famous'
       render(<RenderMarkdown content={content} />)
-      const markdownContainer = document.querySelector('.markdown')
+      const katexContainer = document.querySelector('.katex')
       // Inline math should be rendered
-      expect(markdownContainer).toBeTruthy()
+      expect(katexContainer).toBeTruthy()
+    })
+
+    it('converts \\(...\\) to $ inline math (numerical expression)', () => {
+      const content = 'The formula \\(3^2 + 4^2 = 5^2\\) is famous'
+      render(<RenderMarkdown content={content} />)
+      const katexContainer = document.querySelector('.katex')
+      // Inline math should be rendered
+      expect(katexContainer).toBeTruthy()
     })
   })
 
@@ -308,8 +342,10 @@ describe('RenderMarkdown', () => {
       const content = '```\nconst price = $100\n```'
       render(<RenderMarkdown content={content} />)
       const markdownContainer = document.querySelector('.markdown')
+      const text = markdownContainer?.textContent || ''
       // Code blocks should preserve original content
       expect(markdownContainer).toBeTruthy()
+      expect(text).toContain('$100')
     })
 
     it('does not process dollar amounts inside inline code', () => {
@@ -318,6 +354,16 @@ describe('RenderMarkdown', () => {
       const markdownContainer = document.querySelector('.markdown')
       const text = markdownContainer?.textContent || ''
       expect(text).toContain('$100')
+    })
+  })
+
+  describe('LaTeX normalization - HTML tag recognition', () => {
+    it('does not treat invalid ("<",">") pairs as HTML tag', () => {
+      const content = '$1 < $2, So choose the $1 one.\n\n> quoted content'
+      render(<RenderMarkdown content={content} />)
+      const katexContainer = document.querySelector('.katex')
+      // Should not treat < $2, So choose the $1 one.\n\n> as HTML tag
+      expect(katexContainer).toBeNull()
     })
   })
 })
