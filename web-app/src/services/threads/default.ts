@@ -16,6 +16,15 @@ export class DefaultThreadsService implements ThreadsService {
         .then((threads) => {
           if (!Array.isArray(threads)) return []
 
+          // new String("id") !== "id"
+          threads.forEach((e) => {
+            e.id = e.id.toString()
+            e.assistants?.forEach((a) => {
+              a.id = a.id.toString()
+              a.model.id = a.model.id.toString()
+            })
+          })
+
           // Filter out temporary threads from the list
           const filteredThreads = threads.filter(
             (e) => e.id !== TEMPORARY_CHAT_ID

@@ -89,6 +89,7 @@ import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { isOpenClawRunning } from '@/utils/openclaw'
+import { AssistantsMenu } from '@/components/AssistantsMenu'
 
 type ChatInputProps = {
   className?: string
@@ -141,7 +142,12 @@ const ChatInput = memo(function ChatInput({
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
-  const assistants = useAssistant((state) => state.assistants)
+  const { 
+    loading,
+    currentAssistant,
+    setCurrentAssistant,
+    assistants
+  } = useAssistant()
 
   // Agent mode (OpenClaw)
   // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
@@ -187,8 +193,19 @@ const ChatInput = memo(function ChatInput({
   const activeModels = useAppState(useShallow((state) => state.activeModels))
 
   // Check if selected model is currently loaded/active
-  const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
-  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>(assistants[0])
+  const isModelActive = selectedModel?.id
+    ? activeModels.includes(selectedModel.id)
+    : false
+  const [selectedAssistantId, setSelectedAssistantId] = useState<
+    string | undefined
+  >(loading ? undefined : currentAssistant?.id || '')
+
+  useEffect(() => {
+    setSelectedAssistantId(currentAssistant?.id || '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
+
+  const avatar = assistants.find((a) => a.id === selectedAssistantId)?.avatar
 
   // No auto-selection: let the user explicitly pick an assistant
 
@@ -355,6 +372,8 @@ const ChatInput = memo(function ChatInput({
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
+      const assistant = currentThread?.assistants?.[0]
+      setCurrentAssistant(assistant)
       // Build file parts for AI SDK
       const files = attachments
         .filter((att) => att.type === 'image' && att.dataUrl)
@@ -433,7 +452,9 @@ const ChatInput = memo(function ChatInput({
         // When no projectId, use the selected assistant from dropdown (if any)
         const assistant = projectAssistantId
           ? assistants.find((a) => a.id === projectAssistantId)
-          : selectedAssistant
+          : assistants.find((a) => a.id === selectedAssistantId)
+
+        setCurrentAssistant(assistant)
 
         const newThread = await createThread(
           {
@@ -444,9 +465,6 @@ const ChatInput = memo(function ChatInput({
           assistant,
           projectMetadata
         )
-
-        // Clear selected assistant after creating thread
-        setSelectedAssistant(undefined)
 
         // Transfer agent mode from home screen to the new thread
         if (isAgentMode) {
@@ -1470,7 +1488,6 @@ const ChatInput = memo(function ChatInput({
                                     )}
                                   </div>
                                 )}
-
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>
@@ -1619,66 +1636,60 @@ const ChatInput = memo(function ChatInput({
                           <span>Use Assistant</span>
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
-                          <DropdownMenuItem
-                            className={!selectedAssistant && !currentThread?.assistants?.length ? 'bg-accent' : ''}
-                            onClick={() => {
-                              setSelectedAssistant(undefined)
-                              if (currentThreadId) {
-                                updateCurrentThreadAssistant(undefined as unknown as Assistant)
-                              }
-                            }}
-                          >
-                            <div className="flex items-center gap-2 w-full">
-                              <span className="text-muted-foreground">—</span>
-                              <span>None</span>
-                              {!selectedAssistant && !currentThread?.assistants?.length && (
-                                <span className="ml-auto text-xs text-muted-foreground">✓</span>
-                              )}
-                            </div>
-                          </DropdownMenuItem>
-                          {assistants.length > 0 ? (
-                            assistants.map((assistant) => {
-                              const isSelected = initialMessage && selectedAssistant?.id === assistant.id ||
-                                (assistant && currentThread?.assistants?.some((a) => a.id === assistant.id))
-                              return (
-                                <DropdownMenuItem
-                                  key={assistant.id}
-                                  className={isSelected ? 'bg-accent' : ''}
-                                  onClick={() => {
-                                    setSelectedAssistant(assistant)
-                                    if (currentThreadId) {
-                                      updateCurrentThreadAssistant(assistant)
-                                    }
-                                  }}
-                                >
-                                  <div className="flex items-center gap-2 w-full">
-                                    <AvatarEmoji
-                                      avatar={assistant.avatar}
-                                      imageClassName="w-4 h-4 object-contain"
-                                      textClassName="text-sm"
-                                    />
-                                    <span>{assistant.name || 'Unnamed Assistant'}</span>
-                                    {isSelected && (
-                                      <span className="ml-auto text-xs text-muted-foreground">
-                                        ✓
-                                      </span>
-                                    )}
-                                  </div>
-                                </DropdownMenuItem>
-                              )
-                            })
-                          ) : (
-                            <DropdownMenuItem disabled>
-                              <span className="text-muted-foreground">
-                                No assistants available
-                              </span>
-                            </DropdownMenuItem>
-                          )}
+                          <AssistantsMenu
+                            selectedAssistant={selectedAssistantId}
+                            setSelectedAssistant={setSelectedAssistantId}
+                            currentThread={currentThread}
+                            updateCurrentThreadAssistant={
+                              updateCurrentThreadAssistant
+                            }
+                            assistants={assistants}
+                          />
                         </DropdownMenuSubContent>
                       </DropdownMenuSub>
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
+                )}
+                {!projectId && initialMessage && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="secondary"
+                        size="icon-sm"
+                        className="rounded-full mr-2 mb-1"
+                      >
+                        {avatar && (
+                          <AvatarEmoji
+                            avatar={avatar}
+                            imageClassName="w-4 h-4 object-contain"
+                            textClassName="text-xs relative inline-block 
+                          after:absolute after:inset-0 
+                          after:bg-white after:mix-blend-saturation after:opacity-50"
+                          />
+                        )}
+                        {selectedAssistantId === '' && (
+                          <IconUser
+                            size={18}
+                            className="text-muted-foreground
+                          after:absolute after:inset-0 after:bg-white after:mix-blend-saturation
+                          after:opacity-50"
+                          />
+                        )}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <AssistantsMenu
+                        selectedAssistant={selectedAssistantId}
+                        setSelectedAssistant={setSelectedAssistantId}
+                        currentThread={currentThread}
+                        updateCurrentThreadAssistant={
+                          updateCurrentThreadAssistant
+                        }
+                        assistants={assistants}
+                      />
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
                 {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />

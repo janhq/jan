@@ -88,7 +88,7 @@ export function DataProvider() {
 
   const { checkForUpdate } = useAppUpdater()
   const { setServers, setSettings } = useMCPServers()
-  const { setAssistants, initializeWithLastUsed } = useAssistant()
+  const { setAssistants } = useAssistant()
   const { setThreads } = useThreads()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
@@ -136,7 +136,8 @@ export function DataProvider() {
         // Only update assistants if we have valid data
         if (data && Array.isArray(data) && data.length > 0) {
           setAssistants(data as unknown as Assistant[])
-          initializeWithLastUsed()
+        } else {
+          setAssistants(null)
         }
       })
       .catch((error) => {

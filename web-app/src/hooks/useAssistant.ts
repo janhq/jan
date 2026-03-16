@@ -5,25 +5,16 @@ import { localStorageKey } from '@/constants/localStorage'
 
 interface AssistantState {
   assistants: Assistant[]
-  currentAssistant: Assistant | null
+  currentAssistant: Assistant | undefined
+  loading: boolean
   addAssistant: (assistant: Assistant) => void
   updateAssistant: (assistant: Assistant) => void
   deleteAssistant: (id: string) => void
-  setCurrentAssistant: (assistant: Assistant, saveToStorage?: boolean) => void
-  setAssistants: (assistants: Assistant[]) => void
-  getLastUsedAssistant: () => string | null
-  setLastUsedAssistant: (assistantId: string) => void
-  initializeWithLastUsed: () => void
-}
-
-// Helper functions for localStorage
-const getLastUsedAssistantId = (): string | null => {
-  try {
-    return localStorage.getItem(localStorageKey.lastUsedAssistant)
-  } catch (error) {
-    console.debug('Failed to get last used assistant from localStorage:', error)
-    return null
-  }
+  setCurrentAssistant: (
+    assistant: Assistant | undefined,
+    saveToStorage?: boolean
+  ) => void
+  setAssistants: (assistants: Assistant[] | null) => void
 }
 
 const setLastUsedAssistantId = (assistantId: string) => {
@@ -69,11 +60,32 @@ You have tools to search for and access real-time, up-to-date data. Use them. Se
 Current date: {{current_date}}`,
 }
 
+const getLastUsedAssistantId = (assistants: Assistant[]): string => {
+  let lastUsedId
+  try {
+    lastUsedId = localStorage.getItem(localStorageKey.lastUsedAssistant)
+  } catch (error) {
+    console.debug('Failed to get last used assistant from localStorage:', error)
+  }
+
+  if (lastUsedId) {
+    const lastUsedAssistant = assistants.find((a) => a.id === lastUsedId)
+    if (lastUsedAssistant) {
+      return lastUsedId
+    }
+  }
+
+  if (lastUsedId === '') return ''
+
+  return defaultAssistant.id
+}
+
 // Platform-aware initial state
 const getInitialAssistantState = () => {
   return {
     assistants: [defaultAssistant],
     currentAssistant: defaultAssistant,
+    loading: true,
   }
 }
 
@@ -134,32 +146,18 @@ export const useAssistant = create<AssistantState>((set, get) => ({
     if (assistant !== get().currentAssistant) {
       set({ currentAssistant: assistant })
       if (saveToStorage) {
-        setLastUsedAssistantId(assistant.id)
+        setLastUsedAssistantId(assistant?.id || '')
       }
     }
   },
   setAssistants: (assistants) => {
-    set({ assistants })
-  },
-  getLastUsedAssistant: () => {
-    return getLastUsedAssistantId()
-  },
-  setLastUsedAssistant: (assistantId) => {
-    setLastUsedAssistantId(assistantId)
-  },
-  initializeWithLastUsed: () => {
-    const lastUsedId = getLastUsedAssistantId()
-    if (lastUsedId) {
-      const lastUsedAssistant = get().assistants.find(
-        (a) => a.id === lastUsedId
-      )
-      if (lastUsedAssistant) {
-        set({ currentAssistant: lastUsedAssistant })
-      } else {
-        // Fallback to default if last used assistant was deleted
-        set({ currentAssistant: defaultAssistant })
-        setLastUsedAssistantId(defaultAssistant.id)
-      }
+    if (assistants) {
+      assistants.forEach((a) => (a.id = a.id.toString())) // new String("id") !== "id"
+      const lastUsedId = getLastUsedAssistantId(assistants)
+      const lastUsedAssist = assistants.find((a) => a.id === lastUsedId)
+      set({ assistants, currentAssistant: lastUsedAssist, loading: false })
+    } else {
+      set({ loading: false })
     }
   },
 }))
