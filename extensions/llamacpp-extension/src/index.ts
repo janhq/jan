@@ -149,6 +149,9 @@ export default class llamacpp_extension extends AIEngine {
     }
     this.config = loadedConfig as LlamacppConfig
 
+    // Migration v1: upgrade f16 KV cache defaults to q8_0
+    await this.migrateKvCacheDefaults()
+
     this.autoUnload = this.config.auto_unload
     this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env
@@ -196,6 +199,37 @@ export default class llamacpp_extension extends AIEngine {
     } catch (error) {
       logger.warn('Failed to clear backend type from localStorage:', error)
     }
+  }
+
+  private async migrateKvCacheDefaults(): Promise<void> {
+    const MIGRATION_KEY = 'llamacpp_kv_cache_migrated_v1'
+    if (localStorage.getItem(MIGRATION_KEY)) return
+
+    const keysToMigrate = ['cache_type_k', 'cache_type_v'] as const
+    const needsMigration = keysToMigrate.some(
+      (k) => this.config[k] === 'f16'
+    )
+
+    if (needsMigration) {
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (
+            keysToMigrate.includes(item.key as (typeof keysToMigrate)[number]) &&
+            item.controllerProps.value === 'f16'
+          ) {
+            item.controllerProps.value = 'q8_0'
+          }
+          return item
+        })
+      )
+      for (const k of keysToMigrate) {
+        if (this.config[k] === 'f16') this.config[k] = 'q8_0'
+      }
+      logger.info('Migrated KV cache types from f16 to q8_0')
+    }
+
+    localStorage.setItem(MIGRATION_KEY, '1')
   }
 
   async configureBackends(): Promise<void> {
