@@ -99,33 +99,85 @@ Jan 致力于通过易于使用的产品，将开源 AI 的精华呈现给大众
 
 适合喜欢探索过程的用户：
 
-### 前置要求
+### 前置要求 (Prerequisites)
 
 - Node.js ≥ 20.0.0
 - Yarn ≥ 4.5.3
+- Make ≥ 3.81
+- Rust (用于 Tauri 构建)
+- (仅限 macOS Apple Silicon) MetalToolchain 命令：`xcodebuild -downloadComponent MetalToolchain`
 
-### 步骤
+### 使用 Make 运行
 
-1. **克隆仓库**：
-   ```bash
-   git clone https://github.com/janhq/jan
-   cd jan
-   ```
+```bash
+git clone https://github.com/janhq/jan
+cd jan
+make dev
+```
 
-2. **安装依赖**：
-   ```bash
-   yarn install
-   ```
+这将处理所有步骤：安装依赖、构建核心组件并启动应用程序。
 
-3. **开发模式运行**：
-   ```bash
-   yarn dev
-   ```
+**可用的 make 命令：**
+- `make dev` - 完整的开发环境设置与启动
+- `make build` - 生产版本构建
+- `make test` - 运行测试和 lint 检查
+- `make clean` - 清除所有生成文件并重新开始
+
+### 手动构建命令
+
+```bash
+yarn install
+yarn build:tauri:plugin:api
+yarn build:core
+yarn build:extensions
+yarn dev
+```
+
+## 系统要求 (System Requirements)
+
+**获得良好体验的最低配置：**
+
+- **macOS**: 13.6+ (3B 模型需 8GB RAM，7B 需 16GB，13B 需 32GB)
+- **Windows**: 10+，支持 NVIDIA/AMD/Intel Arc GPU 加速
+- **Linux**: 大多数发行版均可，支持 GPU 加速
+
+有关详细的兼容性说明，请查看我们的[安装指南](https://jan.ai/docs/desktop/mac)。
+
+## 故障排除 (Troubleshooting)
+
+如果运行出现问题：
+
+1. 查看我们的[故障排除文档](https://jan.ai/docs/desktop/troubleshooting)
+2. 复制您的错误日志和系统规格信息
+3. 在我们的 Discord `#🆘|jan-help` 频道寻求帮助：[Discord](https://discord.gg/FTk2MvZwJH)
+
 
 ## 贡献 (Contributing)
 
-欢迎参与贡献！请参阅我们的 [贡献指南](CONTRIBUTING.md) 以获取更多信息。
+欢迎参与贡献！请参阅 [CONTRIBUTING.md](CONTRIBUTING.md) 以获取完整信息。
+
+## 相关链接 (Links)
+
+- [文档](https://jan.ai/docs) - 建议阅读的操作手册
+- [API 参考](https://jan.ai/api-reference) - 供开发者参考
+- [更新日志](https://jan.ai/changelog) - 了解修复和变更内容
+- [Discord](https://discord.gg/FTk2MvZwJH) - 社区所在地
+
+## 联系我们 (Contact)
+
+- **Bug 反馈**: [GitHub Issues](https://github.com/janhq/jan/issues)
+- **商务合作**: hello@jan.ai
+- **人才招聘**: hr@jan.ai
+- **综合讨论**: [Discord](https://discord.gg/FTk2MvZwJH)
 
 ## 许可证 (License)
 
-Jan 采用 [AGPL-3.0 许可证](LICENSE)。
+Apache 2.0 - 因为分享即是关爱。
+
+## 致谢 (Acknowledgements)
+
+站在巨人的肩膀上构建：
+
+- [Llama.cpp](https://github.com/ggerganov/llama.cpp)
+- [Tauri](https://tauri.app/)
+- [Scalar](https://github.com/scalar/scalar)
