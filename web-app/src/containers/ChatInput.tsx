@@ -1629,7 +1629,7 @@ const ChatInput = memo(function ChatInput({
                       </span>
                     </DropdownMenuItem>
                     {/* Use Assistant - only show when no projectId */}
-                    {!projectId && (
+                    {!projectId && !initialMessage && (
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger>
                           <IconUser size={18} className="text-muted-foreground" />

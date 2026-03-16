@@ -18,6 +18,7 @@ export const formatDate = (
     // Time mode: short month + time, fixed UTC for stable output in tests
     return new Date(date).toLocaleString('en-US', {
       ...base,
+      timeZone: 'UTC',
       month: 'short',
       hour: 'numeric',
       minute: 'numeric',
@@ -28,6 +29,7 @@ export const formatDate = (
   // Date-only mode: long month, no timezone adjustment
   return new Date(date).toLocaleDateString('en-US', {
     ...base,
+    timeZone: 'UTC',
     month: 'long',
   })
 }
