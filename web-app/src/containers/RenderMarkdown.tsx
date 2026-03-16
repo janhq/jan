@@ -1,4 +1,4 @@
- 
+
 import { Components } from 'react-markdown'
 import { memo, useMemo } from 'react'
 import { cn, disableIndentedCodeBlockPlugin } from '@/lib/utils'
@@ -37,38 +37,42 @@ const normalizeLatex = (input: string): string => {
     return latexCache.get(input)!
   }
 
-  const segments = input.split(/(```[\s\S]*?```|`[^`]*`|<[^>]+>)/g)
+  const segments = input.split(/(```[\s\S]*?```|`[^`]*`|<[a-zA-Z/_!][^>]*>)/g)
 
-  const result = segments
-    .map((segment) => {
-      if (!segment) return ''
+  let result = '';
 
-      // Skip code blocks, inline code, html tags
-      if (/^```[\s\S]*```$/.test(segment)) return segment
-      if (/^`[^`]*`$/.test(segment)) return segment
-      if (/^<[^>]+>$/.test(segment)) return segment
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    if (!segment) continue;
 
-      let s = segment
+    // Captured code blocks, inline code, html tags
+    if (i % 2 === 1) {
+      result += segment;
+      continue;
+    }
 
-      // --- Display math: \[...\] surrounded by newlines
+    let s = segment;
+
+    // --- Escape suspicious $<number> to prevent Markdown from treating it as LaTeX
+    // Example: "$1" → "\$1"
+    s = s.replace(/\$(\d+)(?![^\n]*\$([^\d]|$))/g, (_, num) => '\\$' + num)
+
+    // --- Display math: \[...\] surrounded by newlines
+    if (s.includes('\\['))
       s = s.replace(
         /(^|\n)\\\[\s*\n([\s\S]*?)\n\s*\\\](?=\n|$)/g,
         (_, pre, inner) => `${pre}$$\n${inner.trim()}\n$$`
       )
 
-      // --- Inline math: space \( ... \)
+    // --- Inline math: space \( ... \)
+    if (s.includes('\\('))
       s = s.replace(
         /(^|[^$\\])\\\((.+?)\\\)(?=[^$\\]|$)/g,
         (_, pre, inner) => `${pre}$${inner.trim()}$`
       )
 
-      // --- Escape $<number> to prevent Markdown from treating it as LaTeX
-      // Example: "$1" → "\$1"
-      s = s.replace(/\$(\d+)/g, (_, num) => '\\$' + num)
-
-      return s
-    })
-    .join('')
+    result += s;
+  }
 
   // Cache the result (with size limit to prevent memory leaks)
   if (latexCache.size > 100) {
