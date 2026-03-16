@@ -12,6 +12,7 @@ Default permissions for the Foundation Models plugin
 - `allow-find-foundation-models-session`
 - `allow-get-foundation-models-loaded`
 - `allow-get-foundation-models-all-sessions`
+- `allow-check-foundation-models-availability`
 
 ## Permission Table
 
@@ -21,6 +22,32 @@ Default permissions for the Foundation Models plugin
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`foundation-models:allow-check-foundation-models-availability`
+
+</td>
+<td>
+
+Enables the check_foundation_models_availability command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`foundation-models:deny-check-foundation-models-availability`
+
+</td>
+<td>
+
+Denies the check_foundation_models_availability command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>
