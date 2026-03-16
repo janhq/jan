@@ -122,16 +122,15 @@ struct FoundationModelsHTTPServer: Sendable {
         let requestId = "chatcmpl-\(UUID().uuidString)"
         let created = currentTimestamp()
         let modelId = self.modelId
+        let messages = chatRequest.messages
 
-        let session = buildSession(from: chatRequest.messages)
-        let lastUserMessage = extractLastUserMessage(from: chatRequest.messages)
-
-        // Build a streaming body using NIO ByteBuffer sequences
         let (stream, continuation) = AsyncStream<ByteBuffer>.makeStream()
 
-        let task = Task {
+        let task = Task { [self] in
             do {
-                // Send role delta first
+                let session = self.buildSession(from: messages)
+                let lastUserMessage = self.extractLastUserMessage(from: messages)
+
                 let roleDelta = ChatCompletionChunk(
                     id: requestId,
                     object: "chat.completion.chunk",
@@ -149,8 +148,14 @@ struct FoundationModelsHTTPServer: Sendable {
                     continuation.yield(buffer)
                 }
 
-                // Stream content tokens
-                for try await partial in session.streamResponse(to: lastUserMessage) {
+                var previousText = ""
+                for try await snapshot in session.streamResponse(to: lastUserMessage) {
+                    let currentText = snapshot.content
+                    let delta = String(currentText.dropFirst(previousText.count))
+                    previousText = currentText
+
+                    if delta.isEmpty { continue }
+
                     let chunk = ChatCompletionChunk(
                         id: requestId,
                         object: "chat.completion.chunk",
@@ -159,7 +164,7 @@ struct FoundationModelsHTTPServer: Sendable {
                         choices: [
                             ChunkChoice(
                                 index: 0,
-                                delta: DeltaContent(role: nil, content: partial),
+                                delta: DeltaContent(role: nil, content: delta),
                                 finish_reason: nil
                             )
                         ]
