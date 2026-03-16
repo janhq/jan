@@ -849,6 +849,18 @@ mod tests {
     }
 
     #[test]
+    fn test_cache_type_v_with_auto_flash_attn() {
+        // "auto" != "off", so cache_type_v should be included (changed from requiring "on")
+        let mut config = default_config(); // flash_attn defaults to "auto"
+        config.cache_type_v = "q8_0".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--cache-type-v", "q8_0");
+    }
+
+    #[test]
     fn test_cache_type_v_f16_not_added() {
         let mut config = default_config();
         config.flash_attn = "on".to_string();
