@@ -36,7 +36,7 @@
     "build:web": "pnpm --filter @janhq/web-app run build",
     "build:extensions": "rimraf ./pre-install/*.tgz || true && pnpm --filter @janhq/core run build && cd extensions && pnpm install --no-frozen-lockfile && cd .. && run-script-os",
     "build:extensions:darwin": "cd extensions && pnpm -r run build:publish",
-    "build:extensions:win32": "cd extensions && pnpm -r --filter '!@janhq/mlx-extension' run build:publish",
+    "build:extensions:win32": "cd extensions && pnpm -r --filter !@janhq/mlx-extension run build:publish",
     "build:extensions:linux": "cd extensions && pnpm -r --filter '!@janhq/mlx-extension' run build:publish",
     "prepare": "husky"
   },
