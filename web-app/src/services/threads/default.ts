@@ -18,10 +18,10 @@ export class DefaultThreadsService implements ThreadsService {
 
           // new String("id") !== "id"
           threads.forEach((e) => {
-            if (e.id) e.id = e.id.toString()
+            e.id = e.id?.toString()
             e.assistants?.forEach((a) => {
-              if (a.id) a.id = a.id.toString()
-              if (a.model) a.model.id = a.model.id.toString()
+              a.id = a.id?.toString()
+              if (a.model) a.model.id = a.model.id?.toString()
             })
           })
 

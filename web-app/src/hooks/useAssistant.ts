@@ -152,7 +152,7 @@ export const useAssistant = create<AssistantState>((set, get) => ({
   },
   setAssistants: (assistants) => {
     if (assistants) {
-      assistants.forEach((a) => (a.id = a.id.toString())) // new String("id") !== "id"
+      assistants.forEach((a) => (a.id = a.id?.toString())) // new String("id") !== "id"
       const lastUsedId = getLastUsedAssistantId(assistants)
       const lastUsedAssist = assistants.find((a) => a.id === lastUsedId)
       set({ assistants, currentAssistant: lastUsedAssist, loading: false })
