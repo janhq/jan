@@ -34,11 +34,13 @@ default = [
 hardware = ["dep:tauri-plugin-hardware"]
 deep-link = ["dep:tauri-plugin-deep-link"]
 mlx = ["dep:tauri-plugin-mlx"]
+foundation-models = ["dep:tauri-plugin-foundation-models"]
 docker = ["dep:bollard"]
 desktop = [
     "deep-link",
     "hardware",
     "mlx",
+    "foundation-models",
     "docker"
 ]
 mobile = [
@@ -95,6 +97,7 @@ tauri-plugin-deep-link = { version = "2", optional = true }
 tauri-plugin-hardware = { path = "./plugins/tauri-plugin-hardware", optional = true }
 tauri-plugin-llamacpp = { path = "./plugins/tauri-plugin-llamacpp" }
 tauri-plugin-mlx = { path = "./plugins/tauri-plugin-mlx", optional = true }
+tauri-plugin-foundation-models = { path = "./plugins/tauri-plugin-foundation-models", optional = true }
 tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db" }
 tauri-plugin-rag = { path = "./plugins/tauri-plugin-rag" }
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
