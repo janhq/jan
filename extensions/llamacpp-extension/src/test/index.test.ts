@@ -13,6 +13,18 @@ vi.mock('../backend', () => ({
   getBackendDir: vi.fn(),
 }))
 
+// Mock tauri-plugin-llamacpp-api (partial mock)
+vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
+  const actual = await vi.importActual<
+    typeof import('@janhq/tauri-plugin-llamacpp-api')
+  >('@janhq/tauri-plugin-llamacpp-api')
+
+  return {
+    ...actual,
+    mapOldBackendToNew: vi.fn(),
+    removeOldBackendVersions: vi.fn(),
+  }
+})
 describe('llamacpp_extension', () => {
   let extension: llamacpp_extension
 
@@ -401,6 +413,178 @@ describe('llamacpp_extension', () => {
       const result = await extension.getLoadedModels()
       
       expect(result).toEqual(['model1', 'model2'])
+    })
+  })
+
+  describe('updateBackend', () => {
+    beforeEach(() => {
+      vi.stubGlobal('IS_WINDOWS', false)
+      extension['config'] = {
+        version_backend: 'v1.0.0/linux-avx2-x64',
+        device: '',
+      } as any
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    describe('validation', () => {
+      it('should reject empty targetBackendString', async () => {
+        const result = await extension.updateBackend('')
+        expect(result).toEqual({
+          wasUpdated: false,
+          newBackend: 'v1.0.0/linux-avx2-x64',
+        })
+      })
+
+      it('should reject targetBackendString with no slash', async () => {
+        const result = await extension.updateBackend('v1.2.3')
+        expect(result).toEqual({
+          wasUpdated: false,
+          newBackend: 'v1.0.0/linux-avx2-x64',
+        })
+      })
+
+      it('should reject targetBackendString with trailing slash', async () => {
+        const result = await extension.updateBackend('v1.2.3/')
+        expect(result).toEqual({
+          wasUpdated: false,
+          newBackend: 'v1.0.0/linux-avx2-x64',
+        })
+      })
+
+      it('should reject targetBackendString with leading slash', async () => {
+        const result = await extension.updateBackend('/linux-avx2-x64')
+        expect(result).toEqual({
+          wasUpdated: false,
+          newBackend: 'v1.0.0/linux-avx2-x64',
+        })
+      })
+
+      it('should reject targetBackendString with extra segments', async () => {
+        const result = await extension.updateBackend('v1/backend/extra')
+        expect(result).toEqual({
+          wasUpdated: false,
+          newBackend: 'v1.0.0/linux-avx2-x64',
+        })
+      })
+
+      it('should reject targetBackendString with whitespace-only parts', async () => {
+        const result = await extension.updateBackend(' / ')
+        expect(result).toEqual({
+          wasUpdated: false,
+          newBackend: 'v1.0.0/linux-avx2-x64',
+        })
+      })
+    })
+
+    describe('isUpdatingBackend flag', () => {
+      it('should reset isUpdatingBackend to false after successful update', async () => {
+        extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
+        extension['getStoredBackendType'] = vi.fn().mockReturnValue('linux-avx2-x64')
+        extension['setStoredBackendType'] = vi.fn()
+        extension['getSettings'] = vi.fn().mockResolvedValue([])
+        extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+        const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
+        vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+        vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
+
+        const { mapOldBackendToNew, removeOldBackendVersions } = await import('@janhq/tauri-plugin-llamacpp-api')
+        vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
+        vi.mocked(removeOldBackendVersions).mockResolvedValue([])
+
+        expect(extension['isUpdatingBackend']).toBe(false)
+
+        await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        expect(extension['isUpdatingBackend']).toBe(false)
+      })
+
+      it('should reset isUpdatingBackend to false after failed update', async () => {
+        extension['ensureBackendReady'] = vi.fn().mockRejectedValue(new Error('download failed'))
+
+        expect(extension['isUpdatingBackend']).toBe(false)
+
+        const result = await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        expect(extension['isUpdatingBackend']).toBe(false)
+        expect(result.wasUpdated).toBe(false)
+      })
+
+      it('should return no-op when an update is already in progress', async () => {
+        // Simulate an update already in progress
+        extension['isUpdatingBackend'] = true
+
+        const result = await extension.updateBackend('v2.0.0/linux-avx2-x64')
+        expect(result.wasUpdated).toBe(false)
+      })
+    })
+
+    describe('onSettingUpdate guard', () => {
+      it('should skip ensureBackendReady in onSettingUpdate when updateBackend is in progress', async () => {
+        extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
+
+        // Simulate updateBackend in progress
+        extension['isUpdatingBackend'] = true
+
+        // Call onSettingUpdate while updateBackend is "running"
+        extension.onSettingUpdate('version_backend', 'v2.0.0/linux-avx2-x64')
+
+        // ensureBackendReady should NOT have been called from onSettingUpdate
+        expect(extension['ensureBackendReady']).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('stored backend type', () => {
+      it('should store effectiveBackendType, not the full version/backend string', async () => {
+        extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
+        extension['getStoredBackendType'] = vi.fn().mockReturnValue('old-backend-type')
+        extension['setStoredBackendType'] = vi.fn()
+        extension['getSettings'] = vi.fn().mockResolvedValue([])
+        extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+        const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
+        vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+        vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
+
+        const { mapOldBackendToNew, removeOldBackendVersions } = await import('@janhq/tauri-plugin-llamacpp-api')
+        vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
+        vi.mocked(removeOldBackendVersions).mockResolvedValue([])
+
+        await extension.updateBackend('v2.0.0/linux-avx2-x64')
+
+        // setStoredBackendType should be called with the backend type only, not "version/backend"
+        const storedValue = vi.mocked(extension['setStoredBackendType']).mock.calls[0]?.[0]
+        expect(storedValue).not.toContain('/')
+      })
+    })
+
+    describe('trimming', () => {
+      it('should trim whitespace from version and backend before use', async () => {
+        extension['ensureBackendReady'] = vi.fn().mockResolvedValue(undefined)
+        extension['getStoredBackendType'] = vi.fn().mockReturnValue('linux-avx2-x64')
+        extension['setStoredBackendType'] = vi.fn()
+        extension['getSettings'] = vi.fn().mockResolvedValue([])
+        extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+        const { getJanDataFolderPath, joinPath } = await import('@janhq/core')
+        vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+        vi.mocked(joinPath).mockResolvedValue('/path/to/jan/llamacpp/backends')
+
+        const { mapOldBackendToNew, removeOldBackendVersions } = await import('@janhq/tauri-plugin-llamacpp-api')
+        vi.mocked(mapOldBackendToNew).mockResolvedValue('linux-avx2-x64')
+        vi.mocked(removeOldBackendVersions).mockResolvedValue([])
+
+        await extension.updateBackend(' v2.0.0 / linux-avx2-x64 ')
+
+        // ensureBackendReady should receive trimmed values
+        expect(extension['ensureBackendReady']).toHaveBeenCalledWith(
+          'linux-avx2-x64',
+          'v2.0.0'
+        )
+      })
     })
   })
 })

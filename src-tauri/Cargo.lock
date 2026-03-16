@@ -68,6 +68,7 @@ dependencies = [
  "url",
  "uuid",
  "windows-sys 0.60.2",
+ "zbus",
  "zip 0.6.6",
 ]
 

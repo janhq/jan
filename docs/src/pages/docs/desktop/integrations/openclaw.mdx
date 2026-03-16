@@ -14,7 +14,7 @@ keywords:
   ]
 ---
 
-import { Steps } from 'nextra/components'
+import { Callout, Steps } from 'nextra/components'
 
 # Agents
 
@@ -23,6 +23,11 @@ Jan supports autonomous AI agents that run entirely on your own hardware — no 
 ## OpenClaw Agent
 
 OpenClaw is Jan's first default agent. Unlike a chatbot that only answers questions, OpenClaw acts as a personal assistant that can take real actions on your behalf.
+
+<Callout type="warning">
+OpenClaw requires Node.js v22.12 or later to be installed.
+</Callout>
+
 
 **What it can do:**
 - Read and manage local files on your computer
@@ -63,19 +68,36 @@ Click **New Agent Chat** from the left sidebar (or press `⌘M`) to open a new a
 
 ## Troubleshooting
 
-If the agent responds with empty or blank messages, try the following steps:
+#### **Q**: The agent responds with empty or blank messages
 
-### 1. Check that the Local API Server is running
+**1. Check that the Local API Server is running**
 
 Go to **Settings > Local API Server** and make sure the server is running. If it's stopped, click **Start Server**. OpenClaw routes requests through the local API server, so it must be running for the agent to respond.
 
-### 2. Increase the context size to at least 32k
+**2. Increase the context size to at least 32k**
 
 A context window that is too small can cause the agent to produce empty responses, especially for multi-step tasks. Go to the model dropdown in the chat area, click the **gear icon** next to your loaded model, and set **Context Length** to at least **32768**. If you enabled OpenClaw through the setup wizard, this should already be configured automatically.
 
-### 3. Verify that a local model is loaded
+**3. Verify that a local model is loaded**
 
 OpenClaw in local mode requires a model to be loaded in the **llamacpp** engine. Check the model dropdown at the top of the chat — it should show an active local model (not just "Select a model"). If no model is loaded, select one from the dropdown and wait for it to finish loading before chatting with the agent again.
+
+#### **Q**: Timeout waiting for port to respond
+
+![Port timeout](../_assets/port_18789_error.png)
+
+**1. Verify that Node.js v22.12 or later is installed**
+
+Open a terminal and run `node -v`. If Node.js is not installed or the version is below v22.12, download and install it from [nodejs.org](https://nodejs.org/).
+
+**2. (macOS) Delete the OpenClaw gateway plist and reconnect**
+
+If Node.js is already installed correctly, the gateway launch agent may be in a bad state. 
+On macOS, delete this file `~/Library/LaunchAgents/ai.openclaw.gateway.plist` and try connecting again:
+
+```bash
+rm ~/Library/LaunchAgents/ai.openclaw.gateway.plist
+```
 
 ## What's Next
 

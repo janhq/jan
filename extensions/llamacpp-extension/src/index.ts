@@ -126,6 +126,7 @@ export default class llamacpp_extension extends AIEngine {
   private apiSecret: string = 'JustAskNow'
   private pendingDownloads: Map<string, Promise<void>> = new Map()
   private isConfiguringBackends: boolean = false
+  private isUpdatingBackend: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private unlistenValidationStarted?: () => void
 
@@ -468,19 +469,45 @@ export default class llamacpp_extension extends AIEngine {
   async updateBackend(
     targetBackendString: string
   ): Promise<{ wasUpdated: boolean; newBackend: string }> {
+    if (this.isUpdatingBackend) {
+      logger.warn('Backend update already in progress, skipping new update request')
+      // Treat concurrent update requests as a benign no-op and report that no new update
+      // was performed, while still returning the current backend value.
+      return { wasUpdated: false, newBackend: this.config.version_backend }
+    }
+
+    this.isUpdatingBackend = true
+
     try {
       if (!targetBackendString)
         throw new Error(
           `Invalid backend string: ${targetBackendString} supplied to update function`
         )
 
-      const [version, backend] = targetBackendString.split('/')
+      const backendParts = targetBackendString.split('/')
+
+      if (
+        backendParts.length !== 2 ||
+        !backendParts[0]?.trim() ||
+        !backendParts[1]?.trim()
+      ) {
+        throw new Error(
+          `Invalid backend string format: "${targetBackendString}". Expected "version/backend".`
+        )
+      }
+
+      const [rawVersion, rawBackend] = backendParts
+      const version = rawVersion.trim()
+      const backend = rawBackend.trim()
+
+      // Normalize the target backend string to use trimmed values
+      targetBackendString = `${version}/${backend}`
 
       logger.info(
         `Updating backend to ${targetBackendString} (backend type: ${backend})`
       )
 
-      // Download new backend
+      // Download new backend using the original asset/backend name
       await this.ensureBackendReady(backend, version)
 
       // Add delay on Windows
@@ -488,25 +515,14 @@ export default class llamacpp_extension extends AIEngine {
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
-      // We ensure consistency by mapping the backend type, although targetBackendString should already be correct
+      // Map backend type for stored preference only (not for download/config)
       const effectiveBackendType = await mapOldBackendToNew(backend)
       const currentStoredBackend = this.getStoredBackendType()
 
-      // Re-construct to be sure
-      targetBackendString = `${version}/${effectiveBackendType}`
+      // Persist settings and stored preference before mutating in-memory config,
+      // so that if any of these steps fail, config remains consistent.
 
-      // Update configuration
-      this.config.version_backend = targetBackendString
-
-      // Store the backend type preference only if it changed
-      if (currentStoredBackend !== targetBackendString) {
-        this.setStoredBackendType(targetBackendString)
-        logger.info(
-          `Updated stored backend type preference: ${targetBackendString}`
-        )
-      }
-
-      // Update settings
+      // Update settings first — if this fails, we haven't mutated any state yet
       const settings = await this.getSettings()
       await this.updateSettings(
         settings.map((item) => {
@@ -516,6 +532,18 @@ export default class llamacpp_extension extends AIEngine {
           return item
         })
       )
+
+      // Store the backend type preference only if it changed
+      if (currentStoredBackend !== effectiveBackendType) {
+        this.setStoredBackendType(effectiveBackendType)
+        logger.info(
+          `Updated stored backend type preference: ${effectiveBackendType}`
+        )
+      }
+
+      // All critical side effects succeeded — now commit to in-memory config
+      this.config.version_backend = targetBackendString
+      this.config.device = ''
 
       logger.info(`Successfully updated to backend: ${targetBackendString}`)
 
@@ -530,24 +558,30 @@ export default class llamacpp_extension extends AIEngine {
         })
       }
 
-      // Clean up old versions of the same backend type using Rust command
-      const janDataFolderPath = await getJanDataFolderPath()
-      const backendsDir = await joinPath([
-        janDataFolderPath,
-        'llamacpp',
-        'backends',
-      ])
+      // Clean up old versions — best-effort, don't fail the update if this errors
+      try {
+        const janDataFolderPath = await getJanDataFolderPath()
+        const backendsDir = await joinPath([
+          janDataFolderPath,
+          'llamacpp',
+          'backends',
+        ])
 
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 500))
+        if (IS_WINDOWS) {
+          await new Promise((resolve) => setTimeout(resolve, 500))
+        }
+
+        await removeOldBackendVersions(backendsDir, version, backend)
+      } catch (cleanupError) {
+        logger.warn('Failed to remove old backend versions:', cleanupError)
       }
-
-      await removeOldBackendVersions(backendsDir, version, backend)
 
       return { wasUpdated: true, newBackend: targetBackendString }
     } catch (error) {
       logger.error('Backend update failed:', error)
       return { wasUpdated: false, newBackend: this.config.version_backend }
+    } finally {
+      this.isUpdatingBackend = false
     }
   }
 
@@ -698,6 +732,15 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
+    if (key === 'version_backend') {
+      // Skip entirely if updateBackend() is already handling it —
+      // updateBackend() will commit to in-memory config itself after all
+      // side effects succeed.
+      if (this.isUpdatingBackend) {
+        return
+      }
+    }
+
     this.config[key] = value
 
     if (key === 'version_backend') {
