@@ -485,6 +485,67 @@ describe('llamacpp_extension', () => {
     })
   })
 
+  describe('migrateFitDefault', () => {
+    beforeEach(() => {
+      vi.mocked(localStorage.getItem).mockReturnValue(null)
+    })
+
+    it('should skip migration if already migrated', async () => {
+      vi.mocked(localStorage.getItem).mockReturnValue('1')
+      extension['config'] = { fit: true } as any
+      extension['getSettings'] = vi.fn()
+
+      await extension['migrateFitDefault']()
+
+      expect(extension['getSettings']).not.toHaveBeenCalled()
+    })
+
+    it('should set migration key without calling updateSettings when fit is already false', async () => {
+      extension['config'] = { fit: false } as any
+      extension['getSettings'] = vi.fn()
+      extension['updateSettings'] = vi.fn()
+
+      await extension['migrateFitDefault']()
+
+      expect(extension['getSettings']).not.toHaveBeenCalled()
+      expect(extension['updateSettings']).not.toHaveBeenCalled()
+      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_fit_disabled_v1', '1')
+    })
+
+    it('should disable fit when it is true', async () => {
+      extension['config'] = { fit: true } as any
+      extension['getSettings'] = vi.fn().mockResolvedValue([
+        { key: 'fit', controllerProps: { value: true } },
+        { key: 'ctx_size', controllerProps: { value: 2048 } },
+      ])
+      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+      await extension['migrateFitDefault']()
+
+      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
+      expect(updatedSettings.find((s: any) => s.key === 'fit').controllerProps.value).toBe(false)
+      expect(updatedSettings.find((s: any) => s.key === 'ctx_size').controllerProps.value).toBe(2048)
+      expect(extension['config'].fit).toBe(false)
+      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_fit_disabled_v1', '1')
+    })
+
+    it('should not modify other settings during fit migration', async () => {
+      extension['config'] = { fit: true } as any
+      extension['getSettings'] = vi.fn().mockResolvedValue([
+        { key: 'fit', controllerProps: { value: true } },
+        { key: 'fit_target', controllerProps: { value: '1024' } },
+        { key: 'fit_ctx', controllerProps: { value: '' } },
+      ])
+      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+      await extension['migrateFitDefault']()
+
+      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
+      expect(updatedSettings.find((s: any) => s.key === 'fit_target').controllerProps.value).toBe('1024')
+      expect(updatedSettings.find((s: any) => s.key === 'fit_ctx').controllerProps.value).toBe('')
+    })
+  })
+
   describe('getLoadedModels', () => {
     it('should return list of loaded models', async () => {
       extension['activeSessions'].set(123, {

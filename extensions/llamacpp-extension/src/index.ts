@@ -152,6 +152,9 @@ export default class llamacpp_extension extends AIEngine {
     // Migration v1: upgrade f16 KV cache defaults to q8_0
     await this.migrateKvCacheDefaults()
 
+    // Migration v2: disable fit by default
+    await this.migrateFitDefault()
+
     this.autoUnload = this.config.auto_unload
     this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env
@@ -227,6 +230,27 @@ export default class llamacpp_extension extends AIEngine {
         if (this.config[k] === 'f16') this.config[k] = 'q8_0'
       }
       logger.info('Migrated KV cache types from f16 to q8_0')
+    }
+
+    localStorage.setItem(MIGRATION_KEY, '1')
+  }
+
+  private async migrateFitDefault(): Promise<void> {
+    const MIGRATION_KEY = 'llamacpp_fit_disabled_v1'
+    if (localStorage.getItem(MIGRATION_KEY)) return
+
+    if (this.config.fit === true) {
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (item.key === 'fit') {
+            item.controllerProps.value = false
+          }
+          return item
+        })
+      )
+      this.config.fit = false
+      logger.info('Migrated fit setting: disabled by default')
     }
 
     localStorage.setItem(MIGRATION_KEY, '1')
