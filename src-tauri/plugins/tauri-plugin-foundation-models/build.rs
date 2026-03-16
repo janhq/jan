@@ -7,6 +7,7 @@ const COMMANDS: &[&str] = &[
     "find_foundation_models_session",
     "get_foundation_models_loaded",
     "get_foundation_models_all_sessions",
+    "check_foundation_models_availability",
 ];
 
 fn main() {

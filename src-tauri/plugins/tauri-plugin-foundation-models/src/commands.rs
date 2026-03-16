@@ -259,3 +259,40 @@ pub async fn get_foundation_models_all_sessions<R: Runtime>(
     let map = state.sessions.lock().await;
     Ok(map.values().map(|s| s.info.clone()).collect())
 }
+
+/// Run the server binary with `--check` and return a machine-readable
+/// availability token: `"available"`, `"notEligible"`,
+/// `"appleIntelligenceNotEnabled"`, `"modelNotReady"`, `"unavailable"`,
+/// or `"binaryNotFound"` if the binary is missing.
+///
+/// Always returns `Ok` — the caller decides what to do with the status.
+#[tauri::command]
+pub async fn check_foundation_models_availability<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+) -> Result<String, String> {
+    let resource_dir = app_handle
+        .path()
+        .resource_dir()
+        .map_err(|e| e.to_string())?;
+    let binary_path = resource_dir.join("bin").join("foundation-models-server");
+
+    if !binary_path.exists() {
+        return Ok("binaryNotFound".to_string());
+    }
+
+    let output = tokio::process::Command::new(&binary_path)
+        .arg("--check")
+        .output()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let status = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .to_string();
+
+    if status.is_empty() {
+        Ok("unavailable".to_string())
+    } else {
+        Ok(status)
+    }
+}

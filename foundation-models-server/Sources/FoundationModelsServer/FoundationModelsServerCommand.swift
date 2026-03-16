@@ -21,6 +21,25 @@ struct FoundationModelsServerCommand: AsyncParsableCommand {
 
     func run() async throws {
         let availability = SystemLanguageModel.default.availability
+
+        // In --check mode, always print a machine-readable status token and exit 0.
+        // Callers (e.g. the Tauri plugin) parse this string to decide visibility.
+        if check {
+            switch availability {
+            case .available:
+                print("available")
+            case .unavailable(.deviceNotEligible):
+                print("notEligible")
+            case .unavailable(.appleIntelligenceNotEnabled):
+                print("appleIntelligenceNotEnabled")
+            case .unavailable(.modelNotReady):
+                print("modelNotReady")
+            default:
+                print("unavailable")
+            }
+            return
+        }
+
         guard case .available = availability else {
             let reason: String
             switch availability {
@@ -35,11 +54,6 @@ struct FoundationModelsServerCommand: AsyncParsableCommand {
             }
             fputs("[foundation-models] ERROR: \(reason)\n", stderr)
             throw ExitCode(1)
-        }
-
-        if check {
-            print("[foundation-models] Foundation Models is available")
-            return
         }
 
         log("[foundation-models] Foundation Models Server starting...")

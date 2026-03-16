@@ -9,4 +9,5 @@ permissions = [
     "allow-find-foundation-models-session",
     "allow-get-foundation-models-loaded",
     "allow-get-foundation-models-all-sessions",
+    "allow-check-foundation-models-availability",
 ]

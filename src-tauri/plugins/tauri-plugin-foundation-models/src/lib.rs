@@ -24,6 +24,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::find_foundation_models_session,
             commands::get_foundation_models_loaded,
             commands::get_foundation_models_all_sessions,
+            commands::check_foundation_models_availability,
         ])
         .setup(|app, _api| {
             app.manage(state::FoundationModelsState::new());

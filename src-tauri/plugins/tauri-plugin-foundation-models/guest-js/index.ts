@@ -48,3 +48,17 @@ export async function getAllFoundationModelsSessions(): Promise<SessionInfo[]> {
 export async function cleanupFoundationModelsProcesses(): Promise<void> {
   return await invoke('plugin:foundation-models|cleanup_foundation_models_processes')
 }
+
+/**
+ * Run `foundation-models-server --check` and return a machine-readable
+ * availability token. Possible values:
+ *   - `"available"`                  — device is eligible and ready
+ *   - `"notEligible"`                — device does not support Apple Intelligence
+ *   - `"appleIntelligenceNotEnabled"` — Apple Intelligence disabled in Settings
+ *   - `"modelNotReady"`              — model is still downloading
+ *   - `"unavailable"`                — other unavailability reason
+ *   - `"binaryNotFound"`             — server binary was not bundled (non-macOS build)
+ */
+export async function checkFoundationModelsAvailability(): Promise<string> {
+  return await invoke('plugin:foundation-models|check_foundation_models_availability')
+}

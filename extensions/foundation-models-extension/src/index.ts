@@ -17,6 +17,7 @@
 
 import {
   AIEngine,
+  EngineManager,
   modelInfo,
   SessionInfo,
   UnloadResult,
@@ -27,12 +28,14 @@ import {
 } from '@janhq/core'
 
 import { info, warn, error as logError } from '@tauri-apps/plugin-log'
+import { invoke } from '@tauri-apps/api/core'
 import {
   loadFoundationModelsServer,
   unloadFoundationModelsServer,
   isFoundationModelsProcessRunning,
   getFoundationModelsRandomPort,
   findFoundationModelsSession,
+  checkFoundationModelsAvailability,
 } from '@janhq/tauri-plugin-foundation-models-api'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -78,8 +81,23 @@ export default class FoundationModelsExtension extends AIEngine {
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   override async onLoad(): Promise<void> {
-    super.onLoad()
-    // No settings to register for now; the model is always the system model.
+    super.onLoad() // registers into EngineManager
+
+    // Check device eligibility and silently remove ourselves if not supported.
+    // This prevents the provider from appearing in the UI on ineligible devices.
+    try {
+      const availability = await checkFoundationModelsAvailability()
+      if (availability !== 'available') {
+        logger.warn(
+          `Foundation Models not available on this device (status: ${availability}). ` +
+          'Hiding provider.'
+        )
+        EngineManager.instance().engines.delete(this.provider)
+      }
+    } catch (err) {
+      logger.warn('Could not determine Foundation Models availability — hiding provider.', err)
+      EngineManager.instance().engines.delete(this.provider)
+    }
   }
 
   override async onUnload(): Promise<void> {
@@ -328,6 +346,20 @@ export default class FoundationModelsExtension extends AIEngine {
     )
   }
 
+  override async abortImport(_modelId: string): Promise<void> {
+    // No download to abort — the model is managed by the OS.
+  }
+
+  override async getLoadedModels(): Promise<string[]> {
+    const session = await findFoundationModelsSession()
+    return session ? [APPLE_MODEL_ID] : []
+  }
+
+  override async isToolSupported(_modelId: string): Promise<boolean> {
+    // The Foundation Models framework supports function calling.
+    return true
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   /**
@@ -336,7 +368,6 @@ export default class FoundationModelsExtension extends AIEngine {
    * Tauri `generate_api_key` command can be reused.
    */
   private async generateApiKey(port: number): Promise<string> {
-    const { invoke } = await import('@tauri-apps/api/core')
     return invoke<string>('plugin:llamacpp|generate_api_key', {
       modelId: APPLE_MODEL_ID + port,
       apiSecret: API_SECRET,
