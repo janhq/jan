@@ -1811,7 +1811,8 @@ const ChatInput = memo(function ChatInput({
                     </Tooltip>
                   ))}
 
-                {!projectId && isAgentMode && (
+                {/* Agent mode toggle hidden — kept as dead code for future use */}
+                {false && !projectId && isAgentMode && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
