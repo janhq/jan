@@ -705,6 +705,20 @@ Section Install
     File /a "/oname=jan-cli.exe" "D:\a\jan\jan\src-tauri\resources\bin\jan-cli.exe"
     SetOutPath $INSTDIR
 
+  ; Create bin directory with jan CLI wrapper (VS Code style - this folder is added to PATH)
+    CreateDirectory "$INSTDIR\bin"
+    SetOutPath "$INSTDIR\bin"
+    File /a "/oname=jan.cmd" "D:\a\jan\jan\src-tauri\resources\bin\jan.cmd"
+    SetOutPath $INSTDIR
+
+  ; Add $INSTDIR\bin to user PATH so 'jan' works from any terminal
+    FileOpen $0 "$TEMP\jan_addpath.ps1" w
+    FileWrite $0 '$$p=[Environment]::GetEnvironmentVariable("PATH","User");if(!$$p){$$p=""};if($$p -notlike "*$INSTDIR\bin*"){[Environment]::SetEnvironmentVariable("PATH",$$p+";$INSTDIR\bin","User")}'
+    FileClose $0
+    nsExec::Exec '"powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$TEMP\jan_addpath.ps1"'
+    Delete "$TEMP\jan_addpath.ps1"
+    SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
+
   ; Copy external binaries
     File /a "/oname=bun.exe" "D:\a\jan\jan\src-tauri\resources\bin\bun-x86_64-pc-windows-msvc.exe"
     File /a "/oname=uv.exe" "D:\a\jan\jan\src-tauri\resources\bin\uv-x86_64-pc-windows-msvc.exe"
@@ -846,6 +860,16 @@ Section Uninstall
 
   ; Delete uninstaller
   Delete "$INSTDIR\uninstall.exe"
+
+  ; Remove $INSTDIR\bin from user PATH and delete CLI wrapper
+    FileOpen $0 "$TEMP\jan_rmpath.ps1" w
+    FileWrite $0 '$$p=[Environment]::GetEnvironmentVariable("PATH","User");$$p=($$p.Split(";") | Where-Object{$$_ -ne "$INSTDIR\bin"}) -join ";";[Environment]::SetEnvironmentVariable("PATH",$$p,"User")'
+    FileClose $0
+    nsExec::Exec '"powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$TEMP\jan_rmpath.ps1"'
+    Delete "$TEMP\jan_rmpath.ps1"
+    SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
+    Delete "$INSTDIR\bin\jan.cmd"
+    RMDir "$INSTDIR\bin"
 
   RMDir /REBOOTOK "$INSTDIR\resources\pre-install"
   RMDir /r /REBOOTOK "$INSTDIR\resources"

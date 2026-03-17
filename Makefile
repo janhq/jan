@@ -192,6 +192,7 @@ ifeq ($(shell uname -s),Darwin)
 else ifeq ($(OS),Windows_NT)
 	cd src-tauri && cargo build --release --features cli --bin jan-cli
 	cp src-tauri/target/release/jan-cli.exe src-tauri/resources/bin/jan-cli.exe
+	{ echo '@echo off'; echo '"%~dp0..\resources\bin\jan-cli.exe" %*'; } > src-tauri/resources/bin/jan.cmd
 else
 	cd src-tauri && cargo build --release --features cli --bin jan-cli
 	cp src-tauri/target/release/jan-cli src-tauri/resources/bin/jan-cli
