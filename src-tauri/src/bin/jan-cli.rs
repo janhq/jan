@@ -1330,13 +1330,14 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         no_mmap: false,
         mlock: false,
         no_kv_offload: false,
-        cache_type_k: String::new(),
-        cache_type_v: String::new(),
+        cache_type_k: "q8_0".to_string(),
+        cache_type_v: "q8_0".to_string(),
         defrag_thold: -1.0,
         rope_scaling: String::new(),
         rope_scale: 0.0,
         rope_freq_base: 0.0,
         rope_freq_scale: 0.0,
         ctx_shift: false,
+        parallel: 1
     }
 }
