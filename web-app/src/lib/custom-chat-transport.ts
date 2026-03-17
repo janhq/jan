@@ -15,8 +15,6 @@ import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAssistant } from '@/hooks/useAssistant'
-import { useAgentMode } from '@/hooks/useAgentMode'
-import { getOpenClawAuthToken, ensureOpenClawHttpApi, checkOpenClawGateway, OPENCLAW_GATEWAY_URL } from '@/utils/openclaw'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionManager } from '@/lib/extension'
@@ -273,83 +271,38 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Ensure tools updated before sending messages
     await this.refreshTools()
 
-    // Check if agent mode is active for this thread
-    const isAgentMode = this.threadId
-      ? useAgentMode.getState().isAgentMode(this.threadId)
-      : false
-
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
     // model, even if the user switches provider mid-request.
-    let effectiveProviderName: string | undefined
-
-    if (isAgentMode) {
-      // Agent mode: route to OpenClaw gateway
-      effectiveProviderName = 'openclaw'
-      await ensureOpenClawHttpApi()
-
-      const gatewayReachable = await checkOpenClawGateway()
-      if (!gatewayReachable) {
-        throw new Error('Cannot reach the OpenClaw gateway. Please check that Remote Access is running in Settings.')
-      }
-
-      const authToken = await getOpenClawAuthToken()
-      if (!authToken) {
-        throw new Error('OpenClaw is not available. Please check that it is running in Settings > Remote Access.')
-      }
-
-      const openclawProvider: ProviderObject = {
-        active: true,
-        provider: 'openclaw',
-        api_key: authToken,
-        base_url: OPENCLAW_GATEWAY_URL,
-        settings: [],
-        models: [],
-        custom_header: this.threadId
-          ? [{ header: 'x-openclaw-session-key', value: this.threadId }]
-          : [],
-      }
-
+    const modelId = useModelProvider.getState().selectedModel?.id
+    const providerId = useModelProvider.getState().selectedProvider
+    const effectiveProviderName = providerId
+    const provider = useModelProvider.getState().getProviderByName(providerId)
+    if (this.serviceHub && modelId && provider) {
       try {
-        this.model = await ModelFactory.createModel('openclaw', openclawProvider)
+        const updatedProvider = useModelProvider
+          .getState()
+          .getProviderByName(providerId)
+
+        // Get assistant parameters from current assistant
+        const currentAssistant = useAssistant.getState().currentAssistant
+        const inferenceParams = currentAssistant?.parameters
+
+        // Create the model using the factory
+        // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
+        this.model = await ModelFactory.createModel(
+          modelId,
+          updatedProvider ?? provider,
+          inferenceParams ?? {}
+        )
       } catch (error) {
-        console.error('Failed to create OpenClaw model:', error)
+        console.error('Failed to create model:', error)
         throw new Error(
-          `Failed to connect to OpenClaw: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+          `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
         )
       }
     } else {
-      // Normal mode: use selected provider
-      const modelId = useModelProvider.getState().selectedModel?.id
-      const providerId = useModelProvider.getState().selectedProvider
-      effectiveProviderName = providerId
-      const provider = useModelProvider.getState().getProviderByName(providerId)
-      if (this.serviceHub && modelId && provider) {
-        try {
-          const updatedProvider = useModelProvider
-            .getState()
-            .getProviderByName(providerId)
-
-          // Get assistant parameters from current assistant
-          const currentAssistant = useAssistant.getState().currentAssistant
-          const inferenceParams = currentAssistant?.parameters
-
-          // Create the model using the factory
-          // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
-          this.model = await ModelFactory.createModel(
-            modelId,
-            updatedProvider ?? provider,
-            inferenceParams ?? {}
-          )
-        } catch (error) {
-          console.error('Failed to create model:', error)
-          throw new Error(
-            `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
-          )
-        }
-      } else {
-        throw new Error('ServiceHub not initialized or model/provider missing.')
-      }
+      throw new Error('ServiceHub not initialized or model/provider missing.')
     }
 
     // Fix for Anthropic serial tool-use (error 400): when an assistant message
@@ -358,7 +311,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // tool_use / tool_result pairing that the Claude API requires.
     // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
     const messagesToConvert = (() => {
-      if (isAgentMode || effectiveProviderName !== 'anthropic') {
+      if (effectiveProviderName !== 'anthropic') {
         return options.messages
       }
       return options.messages.flatMap((message) => {
@@ -415,11 +368,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       : baseMessages
 
     // Include tools only if we have tools loaded AND model supports them
-    // In agent mode, OpenClaw manages its own tools
     const hasTools = Object.keys(this.tools).length > 0
     const selectedModel = useModelProvider.getState().selectedModel
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
-    const shouldEnableTools = !isAgentMode && hasTools && modelSupportsTools
+    const shouldEnableTools = hasTools && modelSupportsTools
 
     // Track stream timing and token count for token speed calculation
     let streamStartTime: number | undefined
@@ -499,40 +451,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               ? error.message
               : JSON.stringify(error)
 
-        if (isAgentMode) {
-          const lower = errorMessage.toLowerCase()
-
-          if (
-            lower.includes('connection refused') ||
-            lower.includes('econnrefused') ||
-            lower.includes('failed to fetch') ||
-            lower.includes('network error') ||
-            lower.includes('connect error')
-          ) {
-            return `Cannot connect to the local server. Please check that the API server is running.\n\nOriginal error: ${errorMessage}`
-          }
-
-          if (
-            lower.includes('model not found') ||
-            lower.includes('model_not_found') ||
-            lower.includes('no model loaded') ||
-            lower.includes('no running session') ||
-            lower.includes('no slot available')
-          ) {
-            return `No model is currently loaded. Please start a model first in the model settings.\n\nOriginal error: ${errorMessage}`
-          }
-
-          if (
-            (lower.includes('context') && (lower.includes('size') || lower.includes('length') || lower.includes('limit') || lower.includes('exceed'))) ||
-            lower.includes('prompt is too long') ||
-            lower.includes('maximum context') ||
-            lower.includes('token limit') ||
-            lower.includes('too many tokens')
-          ) {
-            return `The prompt exceeds the model's context size. Try increasing the context size in model settings or using a shorter prompt.\n\nOriginal error: ${errorMessage}`
-          }
-        }
-
         return errorMessage
       },
       onFinish: ({ responseMessage }) => {
@@ -556,35 +474,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ? prependTextDeltaToUIStream(uiStream, continueContent)
       : uiStream
 
-    // In agent mode, detect empty responses (HTTP 200 but no text content)
-    // and inject an error chunk so the UI shows a message instead of an empty bubble.
-    if (!isAgentMode) return finalStream
-
-    let hasTextContent = false
-    let hasError = false
-    return finalStream.pipeThrough(
-      new TransformStream<UIMessageChunk, UIMessageChunk>({
-        transform(chunk, controller) {
-          if ((chunk as { type: string }).type === 'text-delta') {
-            hasTextContent = true
-          }
-          if ((chunk as { type: string }).type === 'error') {
-            hasError = true
-          }
-          controller.enqueue(chunk)
-        },
-        flush(controller) {
-          if (!hasTextContent && !hasError) {
-            controller.enqueue({
-              type: 'error',
-              errorText:
-                'The agent returned an empty response. This usually means ' +
-                'the local model server is not running or the model failed to process the request.',
-            } as UIMessageChunk)
-          }
-        },
-      })
-    )
+    return finalStream
   }
 
   async reconnectToStream(

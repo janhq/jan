@@ -342,7 +342,7 @@ __metadata:
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=4d03b5&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=6c8a42&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
@@ -354,7 +354,7 @@ __metadata:
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=4d03b5&locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=6c8a42&locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
@@ -366,19 +366,7 @@ __metadata:
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fdownload-extension%40workspace%3Adownload-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=4d03b5&locator=%40janhq%2Fdownload-extension%40workspace%3Adownload-extension"
-  dependencies:
-    rxjs: "npm:^7.8.1"
-    ulidx: "npm:^2.3.0"
-  peerDependencies:
-    react: 19.0.0
-  checksum: 10c0/c80736877d9b0d9498d76588a1e92664f467a84265aee7cb6be497b89ed4b1e1c9379c12686c4676bb438eb268ba97caae607b01686e3dc0d485933a4ab69af7
-  languageName: node
-  linkType: hard
-
-"@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Ffoundation-models-extension%40workspace%3Afoundation-models-extension":
-  version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=4d03b5&locator=%40janhq%2Ffoundation-models-extension%40workspace%3Afoundation-models-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=6c8a42&locator=%40janhq%2Fdownload-extension%40workspace%3Adownload-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
@@ -390,7 +378,7 @@ __metadata:
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=4d03b5&locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=6c8a42&locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
@@ -402,7 +390,7 @@ __metadata:
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fmlx-extension%40workspace%3Amlx-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=4d03b5&locator=%40janhq%2Fmlx-extension%40workspace%3Amlx-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=6c8a42&locator=%40janhq%2Fmlx-extension%40workspace%3Amlx-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
@@ -414,7 +402,7 @@ __metadata:
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Frag-extension%40workspace%3Arag-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=4d03b5&locator=%40janhq%2Frag-extension%40workspace%3Arag-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=6c8a42&locator=%40janhq%2Frag-extension%40workspace%3Arag-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
@@ -426,7 +414,7 @@ __metadata:
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fvector-db-extension%40workspace%3Avector-db-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=4d03b5&locator=%40janhq%2Fvector-db-extension%40workspace%3Avector-db-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=6c8a42&locator=%40janhq%2Fvector-db-extension%40workspace%3Avector-db-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
@@ -448,21 +436,6 @@ __metadata:
     run-script-os: "npm:1.1.6"
     typescript: "npm:5.8.3"
     vitest: "npm:3.2.4"
-  languageName: unknown
-  linkType: soft
-
-"@janhq/foundation-models-extension@workspace:foundation-models-extension":
-  version: 0.0.0-use.local
-  resolution: "@janhq/foundation-models-extension@workspace:foundation-models-extension"
-  dependencies:
-    "@janhq/core": ../../core/package.tgz
-    "@janhq/tauri-plugin-foundation-models-api": "link:../../src-tauri/plugins/tauri-plugin-foundation-models"
-    "@tauri-apps/api": "npm:2.8.0"
-    "@tauri-apps/plugin-log": "npm:^2.6.0"
-    cpx: "npm:1.5.0"
-    rimraf: "npm:3.0.2"
-    rolldown: "npm:1.0.0-beta.1"
-    typescript: "npm:5.9.2"
   languageName: unknown
   linkType: soft
 
@@ -518,12 +491,6 @@ __metadata:
     rolldown: "npm:1.0.0-beta.1"
     typescript: "npm:5.9.2"
   languageName: unknown
-  linkType: soft
-
-"@janhq/tauri-plugin-foundation-models-api@link:../../src-tauri/plugins/tauri-plugin-foundation-models::locator=%40janhq%2Ffoundation-models-extension%40workspace%3Afoundation-models-extension":
-  version: 0.0.0-use.local
-  resolution: "@janhq/tauri-plugin-foundation-models-api@link:../../src-tauri/plugins/tauri-plugin-foundation-models::locator=%40janhq%2Ffoundation-models-extension%40workspace%3Afoundation-models-extension"
-  languageName: node
   linkType: soft
 
 "@janhq/tauri-plugin-hardware-api@link:../../src-tauri/plugins/tauri-plugin-hardware::locator=%40janhq%2Fllamacpp-extension%40workspace%3Allamacpp-extension":

@@ -18,7 +18,6 @@
   "newChat": "新建聊天",
   "newAgentChat": "新建智能体聊天",
   "chats": "聊天",
-  "openclawAgent": "OpenClaw 智能体",
   "favorites": "收藏",
   "recents": "最近",
   "hub": "中心",
@@ -106,7 +105,7 @@
     "increaseContextSizeDescription": "您想要增加上下文大小吗？",
     "increaseContextSize": "增加上下文大小"
   },
-    "customAvatar": "自定义头像",
+  "customAvatar": "自定义头像",
   "editAssistant": "编辑助手",
   "jan": "Jan",
   "metadata": "元数据",
