@@ -19,7 +19,6 @@ export const route = {
     https_proxy: '/settings/https-proxy',
     hardware: '/settings/hardware',
     assistant: '/settings/assistant',
-    remote_access: '/settings/remote-access',
     claude_code: '/settings/claude-code',
   },
   hub: {

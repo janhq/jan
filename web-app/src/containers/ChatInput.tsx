@@ -88,7 +88,6 @@ import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionD
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
-import { isOpenClawRunning } from '@/utils/openclaw'
 
 type ChatInputProps = {
   className?: string
@@ -143,20 +142,15 @@ const ChatInput = memo(function ChatInput({
   const createThread = useThreads((state) => state.createThread)
   const assistants = useAssistant((state) => state.assistants)
 
-  // Agent mode (OpenClaw)
+  // Agent mode
   // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
   const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
-  const [openClawAvailable, setOpenClawAvailable] = useState(false)
   const isAgentMode = useAgentMode((state) =>
     state.agentThreads[agentModeKey] === true
   )
   // When projectId is present, treat as normal chat (disable agent mode UI)
   const effectiveAgentMode = isAgentMode && !projectId
   const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
-
-  useEffect(() => {
-    isOpenClawRunning().then(setOpenClawAvailable)
-  }, [currentThreadId])
 
   const handleAgentToggle = useCallback(() => {
     toggleAgentMode(agentModeKey)
@@ -1814,7 +1808,7 @@ const ChatInput = memo(function ChatInput({
                     </Tooltip>
                   ))}
 
-                {openClawAvailable && !projectId && isAgentMode && (
+                {!projectId && isAgentMode && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button

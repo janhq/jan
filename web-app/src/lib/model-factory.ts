@@ -185,9 +185,6 @@ export class ModelFactory {
       case 'xai':
         return this.createXaiModel(modelId, provider)
 
-      case 'openclaw':
-        return this.createOpenAICompatibleModel(modelId, provider)
-
       default:
         return this.createOpenAICompatibleModel(modelId, provider, parameters)
     }
