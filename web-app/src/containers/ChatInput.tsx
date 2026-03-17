@@ -193,9 +193,7 @@ const ChatInput = memo(function ChatInput({
   const activeModels = useAppState(useShallow((state) => state.activeModels))
 
   // Check if selected model is currently loaded/active
-  const isModelActive = selectedModel?.id
-    ? activeModels.includes(selectedModel.id)
-    : false
+  const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
   const [selectedAssistantId, setSelectedAssistantId] = useState<
     string | undefined
   >(loading ? undefined : currentAssistant?.id || '')
