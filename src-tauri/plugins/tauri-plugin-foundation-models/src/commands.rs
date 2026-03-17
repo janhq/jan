@@ -181,7 +181,7 @@ pub async fn load_foundation_models_server<R: Runtime>(
         .path()
         .resource_dir()
         .map_err(ServerError::Tauri)?;
-    let binary_path = resource_dir.join("bin").join("foundation-models-server");
+    let binary_path = resource_dir.join("resources/bin/foundation-models-server");
 
     load_foundation_models_server_impl(
         state.sessions.clone(),
@@ -274,7 +274,7 @@ pub async fn check_foundation_models_availability<R: Runtime>(
         .path()
         .resource_dir()
         .map_err(|e| e.to_string())?;
-    let binary_path = resource_dir.join("bin").join("foundation-models-server");
+    let binary_path = resource_dir.join("resources/bin/foundation-models-server");
 
     if !binary_path.exists() {
         return Ok("binaryNotFound".to_string());
