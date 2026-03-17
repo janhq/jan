@@ -22,6 +22,7 @@
     "@janhq/core": "../../core/package.tgz",
     "@janhq/tauri-plugin-foundation-models-api": "link:../../src-tauri/plugins/tauri-plugin-foundation-models",
     "@tauri-apps/api": "2.8.0",
+    "@tauri-apps/plugin-http": "2.5.0",
     "@tauri-apps/plugin-log": "^2.6.0"
   },
   "engines": {
