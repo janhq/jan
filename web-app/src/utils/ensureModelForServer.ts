@@ -47,49 +47,6 @@ export async function ensureModelForServer(
   const loadedModels = await modelsService.getActiveModels()
 
   if (loadedModels && loadedModels.length > 0) {
-    // When a default model is configured, stop ALL loaded models then restart:
-    // 1) the default model (with enforced ctx), 2) any other models that were running
-    if (modelOverride) {
-      const overrideProvider = findProviderForModel(modelOverride.model)
-      if (overrideProvider) {
-        const otherModels = loadedModels.filter((id) => id !== modelOverride.model)
-
-        onLoadStart?.()
-        try {
-          // Stop everything currently loaded
-          await Promise.allSettled(
-            loadedModels.map((id) =>
-              modelsService.stopModel(id, findProviderForModel(id)?.provider)
-            )
-          )
-
-          // Start the default model with enforced ctx_len
-          const ctxSize = getModelCtxSize(modelOverride.model)
-          const finalProvider =
-            ctxSize === undefined || ctxSize < MIN_CONTEXT_SIZE
-              ? createProviderWithEnforcedCtx(overrideProvider, modelOverride.model, MIN_CONTEXT_SIZE)
-              : overrideProvider
-          await modelsService.startModel(finalProvider, modelOverride.model, true)
-          if (ctxSize === undefined || ctxSize < MIN_CONTEXT_SIZE) {
-            updateProviderStoreCtxLen(overrideProvider.provider, modelOverride.model, MIN_CONTEXT_SIZE)
-          }
-
-          // Restart any other models that were loaded alongside the default
-          await Promise.allSettled(
-            otherModels.map(async (modelId) => {
-              const provider = findProviderForModel(modelId)
-              if (!provider) return
-              await modelsService.startModel(provider, modelId, true)
-            })
-          )
-        } finally {
-          onLoadEnd?.()
-        }
-
-        return { status: 'loaded', modelId: modelOverride.model, providerName: overrideProvider.provider }
-      }
-    }
-
     const modelId = loadedModels[0]
     const providerName = findProviderForModel(modelId)?.provider ?? 'llamacpp'
     return { status: 'already_loaded', modelId, providerName }
