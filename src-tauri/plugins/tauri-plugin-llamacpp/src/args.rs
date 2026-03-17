@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+fn default_parallel() -> i32 {
+     1
+ }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlamacppConfig {
     pub version_backend: String,
@@ -38,6 +41,7 @@ pub struct LlamacppConfig {
     pub rope_freq_base: f32,
     pub rope_freq_scale: f32,
     pub ctx_shift: bool,
+    #[serde(default = "default_parallel")]
     pub parallel: i32,
 }
 
