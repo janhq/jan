@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
 
+import { normalizeLlamacppConfig } from '@janhq/tauri-plugin-llamacpp-api'
+
 // Mock fetch globally
 global.fetch = vi.fn()
 
@@ -394,6 +396,156 @@ describe('llamacpp_extension', () => {
     })
   })
 
+  describe('migrateKvCacheDefaults', () => {
+    beforeEach(() => {
+      vi.mocked(localStorage.getItem).mockReturnValue(null)
+    })
+
+    it('should skip migration if already migrated', async () => {
+      vi.mocked(localStorage.getItem).mockReturnValue('1')
+      extension['config'] = { cache_type_k: 'f16', cache_type_v: 'f16' } as any
+      extension['getSettings'] = vi.fn()
+
+      await extension['migrateKvCacheDefaults']()
+
+      expect(extension['getSettings']).not.toHaveBeenCalled()
+    })
+
+    it('should set migration key without calling updateSettings when no f16 values', async () => {
+      extension['config'] = { cache_type_k: 'q8_0', cache_type_v: 'q8_0' } as any
+      extension['getSettings'] = vi.fn()
+      extension['updateSettings'] = vi.fn()
+
+      await extension['migrateKvCacheDefaults']()
+
+      expect(extension['getSettings']).not.toHaveBeenCalled()
+      expect(extension['updateSettings']).not.toHaveBeenCalled()
+      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_kv_cache_migrated_v1', '1')
+    })
+
+    it('should migrate cache_type_k from f16 to q8_0', async () => {
+      extension['config'] = { cache_type_k: 'f16', cache_type_v: 'q8_0' } as any
+      extension['getSettings'] = vi.fn().mockResolvedValue([
+        { key: 'cache_type_k', controllerProps: { value: 'f16' } },
+        { key: 'cache_type_v', controllerProps: { value: 'q8_0' } },
+      ])
+      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+      await extension['migrateKvCacheDefaults']()
+
+      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
+      expect(updatedSettings.find((s: any) => s.key === 'cache_type_k').controllerProps.value).toBe('q8_0')
+      expect(updatedSettings.find((s: any) => s.key === 'cache_type_v').controllerProps.value).toBe('q8_0')
+      expect(extension['config'].cache_type_k).toBe('q8_0')
+      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_kv_cache_migrated_v1', '1')
+    })
+
+    it('should migrate cache_type_v from f16 to q8_0', async () => {
+      extension['config'] = { cache_type_k: 'q8_0', cache_type_v: 'f16' } as any
+      extension['getSettings'] = vi.fn().mockResolvedValue([
+        { key: 'cache_type_k', controllerProps: { value: 'q8_0' } },
+        { key: 'cache_type_v', controllerProps: { value: 'f16' } },
+      ])
+      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+      await extension['migrateKvCacheDefaults']()
+
+      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
+      expect(updatedSettings.find((s: any) => s.key === 'cache_type_v').controllerProps.value).toBe('q8_0')
+      expect(extension['config'].cache_type_v).toBe('q8_0')
+    })
+
+    it('should migrate both cache types when both are f16', async () => {
+      extension['config'] = { cache_type_k: 'f16', cache_type_v: 'f16' } as any
+      extension['getSettings'] = vi.fn().mockResolvedValue([
+        { key: 'cache_type_k', controllerProps: { value: 'f16' } },
+        { key: 'cache_type_v', controllerProps: { value: 'f16' } },
+      ])
+      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+      await extension['migrateKvCacheDefaults']()
+
+      expect(extension['config'].cache_type_k).toBe('q8_0')
+      expect(extension['config'].cache_type_v).toBe('q8_0')
+      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_kv_cache_migrated_v1', '1')
+    })
+
+    it('should not overwrite non-f16 values in settings during migration', async () => {
+      extension['config'] = { cache_type_k: 'f16', cache_type_v: 'q4_0' } as any
+      extension['getSettings'] = vi.fn().mockResolvedValue([
+        { key: 'cache_type_k', controllerProps: { value: 'f16' } },
+        { key: 'cache_type_v', controllerProps: { value: 'q4_0' } },
+      ])
+      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+      await extension['migrateKvCacheDefaults']()
+
+      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
+      expect(updatedSettings.find((s: any) => s.key === 'cache_type_v').controllerProps.value).toBe('q4_0')
+    })
+  })
+
+  describe('migrateFitDefault', () => {
+    beforeEach(() => {
+      vi.mocked(localStorage.getItem).mockReturnValue(null)
+    })
+
+    it('should skip migration if already migrated', async () => {
+      vi.mocked(localStorage.getItem).mockReturnValue('1')
+      extension['config'] = { fit: true } as any
+      extension['getSettings'] = vi.fn()
+
+      await extension['migrateFitDefault']()
+
+      expect(extension['getSettings']).not.toHaveBeenCalled()
+    })
+
+    it('should set migration key without calling updateSettings when fit is already false', async () => {
+      extension['config'] = { fit: false } as any
+      extension['getSettings'] = vi.fn()
+      extension['updateSettings'] = vi.fn()
+
+      await extension['migrateFitDefault']()
+
+      expect(extension['getSettings']).not.toHaveBeenCalled()
+      expect(extension['updateSettings']).not.toHaveBeenCalled()
+      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_fit_disabled_v1', '1')
+    })
+
+    it('should disable fit when it is true', async () => {
+      extension['config'] = { fit: true } as any
+      extension['getSettings'] = vi.fn().mockResolvedValue([
+        { key: 'fit', controllerProps: { value: true } },
+        { key: 'ctx_size', controllerProps: { value: 2048 } },
+      ])
+      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+      await extension['migrateFitDefault']()
+
+      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
+      expect(updatedSettings.find((s: any) => s.key === 'fit').controllerProps.value).toBe(false)
+      expect(updatedSettings.find((s: any) => s.key === 'ctx_size').controllerProps.value).toBe(2048)
+      expect(extension['config'].fit).toBe(false)
+      expect(localStorage.setItem).toHaveBeenCalledWith('llamacpp_fit_disabled_v1', '1')
+    })
+
+    it('should not modify other settings during fit migration', async () => {
+      extension['config'] = { fit: true } as any
+      extension['getSettings'] = vi.fn().mockResolvedValue([
+        { key: 'fit', controllerProps: { value: true } },
+        { key: 'fit_target', controllerProps: { value: '1024' } },
+        { key: 'fit_ctx', controllerProps: { value: '' } },
+      ])
+      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+      await extension['migrateFitDefault']()
+
+      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
+      expect(updatedSettings.find((s: any) => s.key === 'fit_target').controllerProps.value).toBe('1024')
+      expect(updatedSettings.find((s: any) => s.key === 'fit_ctx').controllerProps.value).toBe('')
+    })
+  })
+
   describe('getLoadedModels', () => {
     it('should return list of loaded models', async () => {
       extension['activeSessions'].set(123, {
@@ -585,6 +737,40 @@ describe('llamacpp_extension', () => {
           'v2.0.0'
         )
       })
+    })
+  })
+})
+
+describe('normalizeLlamacppConfig', () => {
+  describe('parallel field', () => {
+    it('should default parallel to 1 when undefined', () => {
+      const result = normalizeLlamacppConfig({})
+      expect(result.parallel).toBe(1)
+    })
+
+    it('should default parallel to 1 when null', () => {
+      const result = normalizeLlamacppConfig({ parallel: null })
+      expect(result.parallel).toBe(1)
+    })
+
+    it('should default parallel to 1 when empty string', () => {
+      const result = normalizeLlamacppConfig({ parallel: '' })
+      expect(result.parallel).toBe(1)
+    })
+
+    it('should parse parallel as a number', () => {
+      const result = normalizeLlamacppConfig({ parallel: 4 })
+      expect(result.parallel).toBe(4)
+    })
+
+    it('should parse parallel from a string number', () => {
+      const result = normalizeLlamacppConfig({ parallel: '2' })
+      expect(result.parallel).toBe(2)
+    })
+
+    it('should allow parallel of 0 (disables the flag)', () => {
+      const result = normalizeLlamacppConfig({ parallel: 0 })
+      expect(result.parallel).toBe(0)
     })
   })
 })
