@@ -39,14 +39,14 @@ export function KeyboardShortcutsProvider() {
     },
   })
 
-  // New Agent Chat
-  useKeyboardShortcut({
-    ...newAgentChatShortcut,
-    callback: () => {
-      useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
-      router.navigate({ to: route.home })
-    },
-  })
+  // New Agent Chat — disabled, kept as dead code for future use
+  // useKeyboardShortcut({
+  //   ...newAgentChatShortcut,
+  //   callback: () => {
+  //     useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
+  //     router.navigate({ to: route.home })
+  //   },
+  // })
 
   // New Project
   useKeyboardShortcut({

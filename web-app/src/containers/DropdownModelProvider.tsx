@@ -473,7 +473,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
   const provider = getProviderByName(selectedProvider)
 
-  if (isAgentMode && !projectId) {
+  // Agent mode display hidden — kept as dead code for future use
+  if (false && isAgentMode && !projectId) {
     return (
       <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full text-muted-foreground">
         <BotIcon className="shrink-0 size-4" />
