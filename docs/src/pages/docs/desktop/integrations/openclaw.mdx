@@ -99,6 +99,161 @@ On macOS, delete this file `~/Library/LaunchAgents/ai.openclaw.gateway.plist` an
 rm ~/Library/LaunchAgents/ai.openclaw.gateway.plist
 ```
 
+## Uninstalling OpenClaw
+
+Currently, Jan does not have a built-in feature to uninstall OpenClaw. However, you can remove it manually by following the steps below.
+
+<Callout type="info">
+When you enable OpenClaw through Jan, Jan installs the OpenClaw binary into its own data folder (inside the `openclaw/bunx/bin/` subdirectory), which is **not** on your system PATH. This means running `openclaw` directly in a terminal will likely result in a "command not found" error. The instructions below account for this.
+
+The default Jan data folder locations are:
+- **macOS:** `~/Library/Application Support/Jan/data/`
+- **Linux:** `~/.local/share/Jan/data/`
+- **Windows:** `%APPDATA%\Jan\data\`
+
+If you have customized your Jan data folder, you can find the actual path in **Settings > Advanced > Jan Data Folder**.
+</Callout>
+
+### Step 1: Stop the Gateway and Uninstall the Service
+
+Use OpenClaw's built-in uninstall command to stop the gateway and remove the service registration. Since Jan's OpenClaw binary is not on your PATH, you have several options:
+
+#### Option A: Using npx (requires Node.js and npm)
+
+This is the simplest method if you have Node.js installed:
+
+```bash
+npx -y openclaw uninstall --all --yes --non-interactive
+```
+
+#### Option B: Using the full path to Jan's OpenClaw binary
+
+**macOS:**
+
+```bash
+"$HOME/Library/Application Support/Jan/data/openclaw/bunx/bin/openclaw" uninstall --all --yes --non-interactive
+```
+
+**Linux:**
+
+```bash
+~/.local/share/Jan/data/openclaw/bunx/bin/openclaw uninstall --all --yes --non-interactive
+```
+
+**Windows (PowerShell):**
+
+```powershell
+& "$env:APPDATA\Jan\data\openclaw\bunx\bin\openclaw.exe" uninstall --all --yes --non-interactive
+```
+
+#### Option C: If you installed OpenClaw yourself (npm/bun)
+
+If you installed OpenClaw globally yourself (outside of Jan), the `openclaw` command should already be on your PATH:
+
+```bash
+openclaw uninstall --all --yes --non-interactive
+```
+
+Then remove the global package:
+
+```bash
+# If installed with npm
+npm uninstall -g openclaw
+
+# If installed with bun
+bun remove -g openclaw
+```
+
+If none of the above options work, skip to Step 2 and follow the manual cleanup instructions for your platform.
+
+### Step 2: Remove the Gateway Service Manually (if Step 1 failed)
+
+If you were unable to run the uninstall command in Step 1, manually remove the gateway service for your platform:
+
+**macOS (launchd):**
+
+```bash
+launchctl bootout gui/$(id -u)/ai.openclaw.gateway 2>/dev/null
+rm -f ~/Library/LaunchAgents/ai.openclaw.gateway.plist
+```
+
+**Linux (systemd):**
+
+```bash
+systemctl --user disable --now openclaw-gateway.service 2>/dev/null
+rm -f ~/.config/systemd/user/openclaw-gateway.service
+systemctl --user daemon-reload
+```
+
+**Windows (Task Scheduler, run in PowerShell as Administrator):**
+
+```powershell
+schtasks /Delete /F /TN "OpenClaw Gateway"
+Remove-Item -Force "$env:USERPROFILE\.openclaw\gateway.cmd" -ErrorAction SilentlyContinue
+```
+
+### Step 3: Remove the OpenClaw Binary
+
+Delete Jan's internal OpenClaw installation directory.
+
+**macOS:**
+
+```bash
+rm -rf ~/Library/Application\ Support/Jan/data/openclaw
+```
+
+**Linux:**
+
+```bash
+rm -rf ~/.local/share/Jan/data/openclaw
+```
+
+**Windows (PowerShell):**
+
+```powershell
+Remove-Item -Recurse -Force "$env:APPDATA\Jan\data\openclaw"
+```
+
+### Step 4: Remove OpenClaw Configuration and State
+
+Delete the OpenClaw configuration, state, and workspace data:
+
+**macOS / Linux:**
+
+```bash
+rm -rf ~/.openclaw
+```
+
+**Windows (PowerShell):**
+
+```powershell
+Remove-Item -Recurse -Force "$env:USERPROFILE\.openclaw"
+```
+
+### Docker Mode
+
+If you were running OpenClaw in Docker mode, you can remove the container and image instead. You can do this via the command line or through Docker Desktop.
+
+**Via command line:**
+
+```bash
+# Stop and remove the container
+docker rm -f jan-openclaw
+
+# Remove the Docker image
+docker rmi openclaw
+```
+
+**Via Docker Desktop:**
+
+1. Open **Docker Desktop**
+2. Go to the **Containers** tab, find `jan-openclaw`, click the stop button, then delete it
+3. Go to the **Images** tab, find the `openclaw` image, and delete it
+
+<Callout type="info">
+After uninstalling, you can always reinstall OpenClaw later by going to **Settings > Integrations > OpenClaw** and clicking **Start** again.
+</Callout>
+
 ## What's Next
 
 You're all set — start from here and explore what OpenClaw can do for you. We'll be adding a lot of useful real-world use cases and guides to the docs soon.
