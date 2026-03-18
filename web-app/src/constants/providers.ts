@@ -419,4 +419,38 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.venice.ai/api/v1',
+    explore_models_url: 'https://venice.ai/models',
+    provider: 'venice',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Venice API uses API keys for authentication. Visit your [API Keys](https://venice.ai/settings/api) page to generate an API key for your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [Venice API documentation](https://docs.venice.ai/api-reference/chat-completions) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.venice.ai/api/v1',
+          value: 'https://api.venice.ai/api/v1',
+        },
+      },
+    ],
+    models: [],
+  },
 ]

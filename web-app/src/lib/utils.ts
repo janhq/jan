@@ -94,6 +94,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/xai.svg'
     case 'nvidia':
       return '/images/model-provider/nvidia.svg'
+    case 'venice':
+      return '/images/model-provider/venice.svg'
     default:
       return undefined
   }
@@ -119,6 +121,8 @@ export const getProviderTitle = (provider: string) => {
       return 'xAI'
     case 'nvidia':
       return 'NVIDIA NIM'
+    case 'venice':
+      return 'Venice'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }
