@@ -1,0 +1,63 @@
+{
+  "editServer": "Editar servidor MCP",
+  "addServer": "Agregar servidor MCP",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Verificando estado de la extensión..."
+    },
+    "notInstalled": {
+      "title": "Jan completa tareas en tu navegador",
+      "description": "Instala la extensión para darle a Jan acceso al navegador",
+      "getExtension": "Obtener extensión"
+    }
+  },
+  "serverName": "Nombre del servidor",
+  "enterServerName": "Ingresa el nombre del servidor",
+  "command": "Comando",
+  "enterCommand": "Ingresa el comando (uvx o npx)",
+  "arguments": "Argumentos",
+  "argument": "Argumento {{index}}",
+  "envVars": "Variables de entorno",
+  "key": "Clave",
+  "value": "Valor",
+  "save": "Guardar",
+  "status": "Estado",
+  "connected": "Conectado",
+  "disconnected": "Desconectado",
+  "deleteServer": {
+    "title": "Eliminar servidor MCP",
+    "description": "¿Estás seguro de que deseas eliminar el servidor MCP {{serverName}}? Esta acción no se puede deshacer.",
+    "delete": "Eliminar",
+    "success": "El servidor MCP {{serverName}} se eliminó correctamente"
+  },
+  "editJson": {
+    "title": "Editar JSON del servidor MCP: {{serverName}}",
+    "titleAll": "Editar JSON de todos los servidores MCP",
+    "placeholder": "Ingresa la configuración JSON",
+    "errorParse": "Error al analizar los datos iniciales",
+    "errorPaste": "Formato JSON inválido en el contenido pegado",
+    "errorFormat": "Formato JSON inválido",
+    "errorServerName": "El nombre del servidor es obligatorio y no puede estar vacío",
+    "errorMissingServerNameKey": "El JSON debe estar estructurado como {\"serverName\": {config}} - falta la clave del nombre del servidor",
+    "errorInvalidType": "Tipo inválido '{{type}}' para el servidor '{{serverName}}'. El tipo debe ser 'stdio', 'http' o 'sse'",
+    "save": "Guardar"
+  },
+  "checkParams": "Por favor verifica los parámetros según el tutorial.",
+  "title": "Servidores MCP",
+  "experimental": "Experimental",
+  "editAllJson": "Editar JSON de todos los servidores",
+  "findMore": "Encuentra más servidores MCP en",
+  "allowPermissions": "Permitir todos los permisos de herramientas MCP",
+  "allowPermissionsDesc": "Cuando está activado, todas las llamadas a herramientas MCP se aprobarán automáticamente sin mostrar diálogos de permisos. Esta configuración se aplica globalmente a todas las conversaciones, incluyendo chats nuevos.",
+  "noServers": "No se encontraron servidores MCP",
+  "args": "Args",
+  "env": "Env",
+  "serverStatusActive": "Servidor {{serverKey}} activado correctamente",
+  "serverStatusInactive": "Servidor {{serverKey}} desactivado correctamente",
+  "runtimeSettings": {
+    "title": "Configuración de ejecución",
+    "description": "Configura cómo Jan administra y reintenta los servidores MCP.",
+    "toolCallTimeout": "Tiempo de espera de llamada a herramienta (segundos)",
+    "toolCallTimeoutDesc": "Tiempo máximo de espera para una respuesta de herramienta MCP antes de expirar."
+  }
+}

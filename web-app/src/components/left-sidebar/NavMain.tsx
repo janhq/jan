@@ -42,6 +42,7 @@ import { useAgentMode } from '@/hooks/useAgentMode'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useAppState } from '@/hooks/useAppState'
 import { isOpenClawRunning } from '@/utils/openclaw'
+import { PlatformShortcuts, ShortcutAction } from '@/lib/shortcuts'
 
 type AnimatedIconHandle =
   | SearchIconHandle
@@ -81,7 +82,7 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3">N</Kbd>
+        <Kbd className="bg-transparent size-3 uppercase">{PlatformShortcuts[ShortcutAction.NEW_CHAT].key}</Kbd>
       </KbdGroup>
     ),
   },
@@ -94,7 +95,7 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3">M</Kbd>
+        <Kbd className="bg-transparent size-3 uppercase">{PlatformShortcuts[ShortcutAction.NEW_AGENT_CHAT].key}</Kbd>
       </KbdGroup>
     ),
   },
@@ -107,7 +108,7 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3">L</Kbd>
+        <Kbd className="bg-transparent size-3 uppercase">{PlatformShortcuts[ShortcutAction.NEW_PROJECT].key}</Kbd>
       </KbdGroup>
     ),
   },
@@ -120,7 +121,7 @@ const getNavMainItems = (
         <Kbd className="bg-transparent size-3">
           <PlatformMetaKey />
         </Kbd>
-        <Kbd className="bg-transparent size-3">K</Kbd>
+        <Kbd className="bg-transparent size-3 uppercase">{PlatformShortcuts[ShortcutAction.SEARCH].key} </Kbd>
       </KbdGroup>
     ),
   },

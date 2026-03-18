@@ -1,0 +1,12 @@
+/.vs
+.DS_Store
+package-lock.json
+yarn.lock
+
+/.tauri
+/target
+Cargo.lock
+node_modules/
+
+dist-js
+dist
