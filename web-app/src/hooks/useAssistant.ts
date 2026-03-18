@@ -6,10 +6,12 @@ import { localStorageKey } from '@/constants/localStorage'
 interface AssistantState {
   assistants: Assistant[]
   currentAssistant: Assistant | null
+  defaultAssistantId: string
   addAssistant: (assistant: Assistant) => void
   updateAssistant: (assistant: Assistant) => void
   deleteAssistant: (id: string) => void
   setCurrentAssistant: (assistant: Assistant, saveToStorage?: boolean) => void
+  setDefaultAssistant: (id: string) => void
   setAssistants: (assistants: Assistant[]) => void
   getLastUsedAssistant: () => string | null
   setLastUsedAssistant: (assistantId: string) => void
@@ -69,11 +71,33 @@ You have tools to search for and access real-time, up-to-date data. Use them. Se
 Current date: {{current_date}}`,
 }
 
+const getDefaultAssistantIdFromStorage = (): string => {
+  try {
+    const stored = localStorage.getItem(localStorageKey.defaultAssistantId)
+    if (stored) return stored
+    // First install: persist the built-in default so it's explicit
+    localStorage.setItem(localStorageKey.defaultAssistantId, defaultAssistant.id)
+    return defaultAssistant.id
+  } catch (error) {
+    console.debug('Failed to get default assistant from localStorage:', error)
+    return defaultAssistant.id
+  }
+}
+
+const setDefaultAssistantIdToStorage = (assistantId: string) => {
+  try {
+    localStorage.setItem(localStorageKey.defaultAssistantId, assistantId)
+  } catch (error) {
+    console.debug('Failed to set default assistant in localStorage:', error)
+  }
+}
+
 // Platform-aware initial state
 const getInitialAssistantState = () => {
   return {
     assistants: [defaultAssistant],
     currentAssistant: defaultAssistant,
+    defaultAssistantId: getDefaultAssistantIdFromStorage(),
   }
 }
 
@@ -119,8 +143,9 @@ export const useAssistant = create<AssistantState>((set, get) => ({
         console.error('Failed to delete assistant:', error)
       })
 
-    // Check if we're deleting the current assistant
+    // Check if we're deleting the current or default assistant
     const wasCurrentAssistant = state.currentAssistant?.id === id
+    const wasDefaultAssistant = state.defaultAssistantId === id
 
     set({ assistants: state.assistants.filter((a) => a.id !== id) })
 
@@ -129,6 +154,16 @@ export const useAssistant = create<AssistantState>((set, get) => ({
       set({ currentAssistant: defaultAssistant })
       setLastUsedAssistantId(defaultAssistant.id)
     }
+
+    // If the deleted assistant was the default, reset to the built-in default
+    if (wasDefaultAssistant) {
+      set({ defaultAssistantId: defaultAssistant.id })
+      setDefaultAssistantIdToStorage(defaultAssistant.id)
+    }
+  },
+  setDefaultAssistant: (id) => {
+    set({ defaultAssistantId: id })
+    setDefaultAssistantIdToStorage(id)
   },
   setCurrentAssistant: (assistant, saveToStorage = true) => {
     if (assistant !== get().currentAssistant) {

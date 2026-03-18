@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-check-foundation-models-availability"
+description = "Enables the check_foundation_models_availability command without any pre-configured scope."
+commands.allow = ["check_foundation_models_availability"]
+
+[[permission]]
+identifier = "deny-check-foundation-models-availability"
+description = "Denies the check_foundation_models_availability command without any pre-configured scope."
+commands.deny = ["check_foundation_models_availability"]

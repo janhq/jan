@@ -112,10 +112,55 @@ and toggle the **ON** switch if not enabled.
 </Tabs.Tab>
 
 <Tabs.Tab>
-AMD GPUs require **Vulkan** support.
+
+Jan supports AMD GPUs via two backends: **Vulkan** (default) and **llama.cpp HIP** (ROCm-accelerated). The HIP backend provides significantly better performance than Vulkan for supported AMD GPUs.
+
+<Steps>
+
+### Option A: Vulkan Backend (Default)
+
+Vulkan works out of the box with no additional setup.
 
 Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
 and toggle the **ON** switch if not enabled.
+
+### Option B: llama.cpp HIP Backend (Recommended)
+
+For better performance, use the HIP backend with ROCm installed.
+
+**1. Check GPU Detection**
+
+Verify your AMD GPU is recognized:
+- Open Device Manager > Display Adapters
+- Or run `dxdiag` and check the Display tab
+
+**2. Install ROCm**
+
+1. Download and install [AMD ROCm for Windows](https://www.amd.com/en/developer/resources/rocm-hub/hip-sdk.html) (**6.0 or higher**)
+2. Follow the installer instructions and restart your computer when prompted
+3. Verify installation:
+
+```sh
+hipInfo
+```
+
+**3. Download and Install llama.cpp HIP Backend**
+
+Jan does not ship with a pre-built HIP backend. You need to download it manually from the official llama.cpp releases:
+
+1. Go to the [llama.cpp releases page](https://github.com/ggerganov/llama.cpp/releases)
+2. Download the latest release with `hip` in the filename (e.g., `llama-<version>-bin-win-hip-x64.zip`)
+3. Extract the downloaded archive
+4. In Jan, navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Model Settings** > **llama.cpp**
+5. Click **Install from file** and select the extracted folder
+6. Go to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs** and toggle the **ON** switch if not enabled
+
+</Steps>
+
+<Callout type="info">
+The HIP backend requires a compatible AMD GPU (RX 6000 series or newer recommended) and ROCm installed. If you encounter issues, fall back to the Vulkan backend.
+</Callout>
+
 </Tabs.Tab>
 
 <Tabs.Tab>

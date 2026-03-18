@@ -80,6 +80,7 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     rope_freq_scale: asNumber(config.rope_freq_scale, 1.0),
 
     ctx_shift: asBool(config.ctx_shift),
+    parallel: asNumber(config.parallel, 1),
   }
 }
 
