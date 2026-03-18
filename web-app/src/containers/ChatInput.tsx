@@ -745,8 +745,9 @@ const ChatInput = memo(function ChatInput({
         multiple: true,
         filters: [
           {
-            name: 'Documents',
+            name: 'Documents & Code',
             extensions: [
+              // Documents
               'pdf',
               'docx',
               'txt',
@@ -758,7 +759,89 @@ const ChatInput = memo(function ChatInput({
               'pptx',
               'html',
               'htm',
+              // JavaScript / TypeScript
+              'js',
+              'mjs',
+              'cjs',
+              'ts',
+              'mts',
+              'cts',
+              'jsx',
+              'tsx',
+              // Python
+              'py',
+              'pyw',
+              'pyi',
+              // C / C++
+              'c',
+              'h',
+              'cpp',
+              'cc',
+              'cxx',
+              'hpp',
+              'hh',
+              // Systems languages
+              'rs',
+              'go',
+              'swift',
+              'zig',
+              // JVM languages
+              'java',
+              'kt',
+              'kts',
+              'scala',
+              'groovy',
+              // Scripting languages
+              'rb',
+              'php',
+              'lua',
+              'pl',
+              'r',
+              'jl',
+              // .NET
+              'cs',
+              'fs',
+              'vb',
+              // Shell
+              'sh',
+              'bash',
+              'zsh',
+              'fish',
+              'ps1',
+              // Web
+              'css',
+              'scss',
+              'sass',
+              'less',
+              'vue',
+              'svelte',
+              'astro',
+              // Data / config formats
+              'json',
+              'jsonc',
+              'yaml',
+              'yml',
+              'toml',
+              'xml',
+              'ini',
+              'cfg',
+              'conf',
+              'env',
+              // Query / markup
+              'sql',
+              'graphql',
+              'gql',
+              'tex',
+              'rst',
+              // Misc text
+              'log',
+              'diff',
+              'patch',
             ],
+          },
+          {
+            name: 'All Files',
+            extensions: ['*'],
           },
         ],
       })
