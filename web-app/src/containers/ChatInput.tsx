@@ -205,6 +205,8 @@ const ChatInput = memo(function ChatInput({
 
   const avatar = assistants.find((a) => a.id === selectedAssistantId)?.avatar
 
+  const assistantCount = assistants?.length || 0
+
   // No auto-selection: let the user explicitly pick an assistant
 
   // Jan Browser Extension hook
@@ -1627,7 +1629,7 @@ const ChatInput = memo(function ChatInput({
                       </span>
                     </DropdownMenuItem>
                     {/* Use Assistant - only show when no projectId */}
-                    {!projectId && !initialMessage && (
+                    {!projectId && (!initialMessage || assistantCount < 2) && (
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger>
                           <IconUser size={18} className="text-muted-foreground" />
@@ -1649,7 +1651,7 @@ const ChatInput = memo(function ChatInput({
                   </DropdownMenuContent>
                 </DropdownMenu>
                 )}
-                {!projectId && initialMessage && (
+                {!projectId && initialMessage && assistantCount >= 2 && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
