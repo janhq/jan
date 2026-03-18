@@ -231,7 +231,7 @@ ifeq ($(DETECTED_OS),Darwin)
 		src-tauri/target/x86_64-apple-darwin/release/jan-cli \
 		-output src-tauri/resources/bin/jan-cli
 	chmod +x src-tauri/resources/bin/jan-cli
-	mkdir -p src-tauri/target/universal-apple-darwin/release
+	$(call MKDIR,'src-tauri/target/universal-apple-darwin/release')
 
 	echo "Checking for code signing identity..."; \
 	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
