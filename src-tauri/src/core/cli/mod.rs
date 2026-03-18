@@ -559,3 +559,80 @@ pub fn cli_get_config() -> Result<serde_json::Value, String> {
     let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     serde_json::from_str(&data).map_err(|e| e.to_string())
 }
+
+// ── Agent (headless) ──────────────────────────────────────────────────────
+
+pub use tauri_plugin_agent::{
+    AgentEvent, AgentLoop, AgentResponse, ChatMessage, Dispatcher,
+    FinishReason, Manifest, RiskLevel, ToolDef,
+};
+
+/// Create a headless [`AgentLoop`] pointed at `base_url` (e.g. `http://localhost:1337`).
+///
+/// `mounts`     — host directories the code sandbox may read (empty = fully isolated).
+/// `agent_impl` — which agent backend to use; currently only `"react"` is supported.
+pub fn create_agent(
+    base_url:   String,
+    model_id:   String,
+    mounts:     Vec<PathBuf>,
+    api_key:    Option<String>,
+    agent_impl: &str,
+) -> AgentLoop {
+    if agent_impl != "react" {
+        eprintln!("warning: unknown --agent '{}'; falling back to 'react'", agent_impl);
+    }
+    log::info!(
+        "[agent] code execution: microsandbox (msb server) with WASM fallback \
+         (MICROSANDBOX_URL={})",
+        std::env::var("MICROSANDBOX_URL").unwrap_or_else(|_| "http://127.0.0.1:5555".into())
+    );
+
+    let dispatcher = match discover_tools_dir() {
+        Some(dir) => {
+            log::info!("[agent] tools dir: {}", dir.display());
+            Dispatcher::with_tools_dir(dir).with_mounts(mounts)
+        }
+        None => {
+            log::warn!("[agent] no tools dir found; set JAN_TOOLS_DIR or place tools/ next to the binary");
+            Dispatcher::new().with_mounts(mounts)
+        }
+    };
+    AgentLoop::new_with_key(base_url, model_id, api_key, dispatcher)
+}
+
+/// Locate the compiled WASM tools directory.
+///
+/// Search order:
+/// 1. `$JAN_TOOLS_DIR` — explicit override via environment variable.
+/// 2. `<exe_dir>/tools/` — production install (bundle tools/ next to jan-cli).
+/// 3. `<exe_dir>/../../plugins/tauri-plugin-sandbox/wasm/tools/` — dev build.
+fn discover_tools_dir() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("JAN_TOOLS_DIR") {
+        let p = PathBuf::from(dir);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))?;
+
+    let next_to_exe = exe_dir.join("tools");
+    if next_to_exe.is_dir() {
+        return Some(next_to_exe);
+    }
+
+    let dev_path = exe_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("plugins/tauri-plugin-sandbox/wasm/tools"));
+    if let Some(p) = dev_path {
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+
+    None
+}
+

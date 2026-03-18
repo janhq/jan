@@ -1,0 +1,19 @@
+[package]
+name = "js-runner"
+version = "0.1.0"
+edition = "2021"
+description = "Tiny JS executor compiled to wasm32-wasip1 — embedded by tauri-plugin-sandbox"
+
+[[bin]]
+name = "js-runner"
+path = "src/main.rs"
+
+[dependencies]
+boa_engine = "0.21"
+
+[profile.release]
+opt-level  = "z"
+lto        = true
+strip      = "symbols"
+panic      = "abort"
+codegen-units = 1

@@ -14,11 +14,11 @@ use indicatif::{ProgressBar, ProgressStyle};
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::{
     cli_delete_thread, cli_get_config, cli_get_data_folder, cli_get_thread,
-    cli_list_messages, cli_list_threads, discover_llamacpp_binary,
+    cli_list_messages, cli_list_threads, create_agent, discover_llamacpp_binary,
     discover_mlx_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
-    init_mlx_state, list_models, load_llama_model_impl, load_mlx_model_impl,
-    looks_like_hf_repo, resolve_model_by_id, resolve_model_engine, HfFileInfo,
-    LlamacppConfig, MlxConfig,
+    init_mlx_state, list_models,
+    load_llama_model_impl, load_mlx_model_impl, looks_like_hf_repo, resolve_model_by_id,
+    resolve_model_engine, AgentEvent, HfFileInfo, LlamacppConfig, MlxConfig,
 };
 use std::path::PathBuf;
 
@@ -103,6 +103,59 @@ enum Commands {
     Models {
         #[command(subcommand)]
         cmd: ModelsCommands,
+    },
+    /// Run the skill-augmented agent loop against the local Jan model server
+    #[command(display_order = 12)]
+    Agent {
+        #[command(subcommand)]
+        cmd: AgentCommands,
+    },
+}
+
+// ── Agent subcommands ──────────────────────────────────────────────────────
+
+#[derive(Subcommand)]
+enum AgentCommands {
+    /// Spin up a local model and start an interactive skill-augmented agent chat.
+    /// Use --api-url to point at an external OpenAI-compatible endpoint instead.
+    Chat {
+        #[command(flatten)]
+        serve: ServeArgs,
+        /// Host directories the agent's code sandbox may read (repeatable).
+        /// Example: --mount /home/user/project --mount /tmp/data
+        /// Omit for a fully isolated sandbox with no filesystem access.
+        #[arg(long, value_name = "DIR")]
+        mount: Vec<PathBuf>,
+        /// Use this API base URL instead of starting a local model
+        /// (e.g. https://api.openai.com/v1). The model name is the first
+        /// positional arg; --api-key is used as the Authorization key.
+        #[arg(long, value_name = "URL")]
+        api_url: Option<String>,
+        /// Agent backend to use. Currently only "react" is available.
+        /// Future values: "openai-assistant", "claude", etc.
+        #[arg(long, value_name = "IMPL", default_value = "react")]
+        agent: String,
+    },
+    /// Spin up a local model, run one agent prompt, then shut down.
+    /// Use --api-url to point at an external OpenAI-compatible endpoint instead.
+    Run {
+        /// The prompt to run
+        prompt: String,
+        #[command(flatten)]
+        serve: ServeArgs,
+        /// Host directories the agent's code sandbox may read (repeatable).
+        /// Example: --mount /home/user/project --mount /tmp/data
+        /// Omit for a fully isolated sandbox with no filesystem access.
+        #[arg(long, value_name = "DIR")]
+        mount: Vec<PathBuf>,
+        /// Use this API base URL instead of starting a local model
+        /// (e.g. https://api.openai.com/v1). The model name is the first
+        /// positional arg; --api-key is used as the Authorization key.
+        #[arg(long, value_name = "URL")]
+        api_url: Option<String>,
+        /// Agent backend to use. Currently only "react" is available.
+        #[arg(long, value_name = "IMPL", default_value = "react")]
+        agent: String,
     },
 }
 
@@ -289,7 +342,11 @@ async fn main() {
             let ctx_size_val = ctx_size.unwrap_or(32768);
             handle_launch(program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size_val, fit, ctx_size.is_none(), verbose, select).await
         }
+        Commands::Agent { cmd } => handle_agent(cmd).await,
     }
+
+    // Stop any workspace VMs that are still running.
+    tauri_plugin_sandbox::microvm::shutdown_workspaces().await;
 }
 
 
@@ -862,111 +919,26 @@ async fn handle_serve(args: ServeArgs) {
 
     let pb = start_progress(verbose, format!("Loading {} ({engine})…", model_id));
 
-    if engine == "mlx" {
-        use std::path::Path;
-
-        let bin_path = match bin {
-            Some(b) => b,
-            None => match discover_mlx_binary() {
-                Some(p) => p.to_string_lossy().into_owned(),
-                None => {
-                    finish_progress(pb, "✗ mlx-server binary not found");
-                    eprintln!("Install Jan from https://jan.ai or pass --bin <path>.");
-                    std::process::exit(1);
-                }
-            },
-        };
-
-        let mlx_state = Arc::new(init_mlx_state());
-        let mut envs: HashMap<String, String> = HashMap::new();
-        if !api_key.is_empty() {
-            envs.insert("MLX_API_KEY".to_string(), api_key);
+    match load_model_inner(
+        &engine, &model_id,
+        resolved_model_path, resolved_mmproj, bin,
+        port, &api_key, n_gpu_layers, ctx_size, fit, threads, timeout, embedding,
+    )
+    .await
+    {
+        Ok((pid, actual_port)) => {
+            let url = format!("http://127.0.0.1:{actual_port}");
+            finish_progress(pb, format!("✓ {model_id} ready · {url}"));
+            eprintln!();
+            eprintln!("  Endpoint  {url}/v1");
+            eprintln!();
+            eprintln!("  Press Ctrl+C to stop.");
+            wait_for_shutdown(pid).await;
         }
-
-        match load_mlx_model_impl(
-            mlx_state.mlx_server_process.clone(),
-            Path::new(&bin_path),
-            model_id.clone(),
-            resolved_model_path,
-            port,
-            MlxConfig { ctx_size },
-            envs,
-            embedding,
-            timeout,
-        )
-        .await
-        {
-            Ok(info) => {
-                let url = format!("http://127.0.0.1:{}", info.port);
-                finish_progress(pb, format!("✓ {model_id} ready · {url}"));
-                eprintln!();
-                eprintln!("  Endpoint  {url}/v1");
-                eprintln!();
-                eprintln!("  Press Ctrl+C to stop.");
-                wait_for_shutdown(info.pid).await;
-            }
-            Err(e) => {
-                finish_progress(pb, format!("✗ Failed to load {model_id}"));
-                eprintln!(
-                    "\n{}",
-                    serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}"))
-                );
-                std::process::exit(1);
-            }
-        }
-    } else {
-        // LlamaCPP path
-        let bin_path = match bin {
-            Some(b) => b,
-            None => match discover_llamacpp_binary() {
-                Some(p) => p.to_string_lossy().into_owned(),
-                None => {
-                    finish_progress(pb, "✗ llama-server binary not found");
-                    eprintln!("Install a backend from Jan's settings or pass --bin <path>.");
-                    std::process::exit(1);
-                }
-            },
-        };
-
-        let llama_state = Arc::new(init_llamacpp_state());
-        let mut envs: HashMap<String, String> = HashMap::new();
-        if !api_key.is_empty() {
-            envs.insert("LLAMA_API_KEY".to_string(), api_key);
-        }
-
-        let config = build_llamacpp_config(n_gpu_layers, ctx_size, timeout as i32, fit, threads);
-
-        match load_llama_model_impl(
-            llama_state.llama_server_process.clone(),
-            &bin_path,
-            model_id.clone(),
-            resolved_model_path,
-            port,
-            config,
-            envs,
-            resolved_mmproj,
-            embedding,
-            timeout,
-        )
-        .await
-        {
-            Ok(info) => {
-                let url = format!("http://127.0.0.1:{}", info.port);
-                finish_progress(pb, format!("✓ {model_id} ready · {url}"));
-                eprintln!();
-                eprintln!("  Endpoint  {url}/v1");
-                eprintln!();
-                eprintln!("  Press Ctrl+C to stop.");
-                wait_for_shutdown(info.pid).await;
-            }
-            Err(e) => {
-                finish_progress(pb, format!("✗ Failed to load {model_id}"));
-                eprintln!(
-                    "\n{}",
-                    serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}"))
-                );
-                std::process::exit(1);
-            }
+        Err(e) => {
+            finish_progress(pb, format!("✗ Failed to load {model_id}"));
+            eprintln!("\n{e}");
+            std::process::exit(1);
         }
     }
 }
@@ -1221,78 +1193,24 @@ async fn start_model_server(
 
     let pb = start_progress(verbose, format!("Loading {} ({engine})…", model_id));
 
-    if engine == "mlx" {
-        use std::path::Path;
-        let bin_path = match bin.or_else(|| discover_mlx_binary().map(|p| p.to_string_lossy().into_owned())) {
-            Some(p) => p,
-            None => {
-                finish_progress(pb, "✗ mlx-server binary not found");
-                eprintln!("Install Jan from https://jan.ai or pass --bin <path>.");
-                std::process::exit(1);
-            }
-        };
-        let mlx_state = Arc::new(init_mlx_state());
-        let mut envs: HashMap<String, String> = HashMap::new();
-        if !api_key.is_empty() { envs.insert("MLX_API_KEY".to_string(), api_key.clone()); }
-        let effective_ctx_size = if fit { 0 } else { ctx_size };
-        let info = match load_mlx_model_impl(
-            mlx_state.mlx_server_process.clone(),
-            Path::new(&bin_path),
-            model_id.to_string(),
-            model_path,
-            port,
-            MlxConfig { ctx_size: effective_ctx_size },
-            envs,
-            false,
-            120,
-        ).await {
-            Ok(info) => info,
-            Err(e) => {
-                finish_progress(pb, format!("✗ Failed to load {model_id}"));
-                eprintln!("{}", serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}")));
-                std::process::exit(1);
-            }
-        };
-        let url = format!("http://127.0.0.1:{}", info.port);
-        finish_progress(pb, format!("✓ {model_id} ready · {url}"));
-        (info.pid, info.port as u16)
-    } else {
-        let bin_path = match bin.or_else(|| discover_llamacpp_binary().map(|p| p.to_string_lossy().into_owned())) {
-            Some(p) => p,
-            None => {
-                finish_progress(pb, "✗ llama-server binary not found");
-                eprintln!("Install a backend from Jan's settings or pass --bin <path>.");
-                std::process::exit(1);
-            }
-        };
-        let llama_state = Arc::new(init_llamacpp_state());
-        let mut envs: HashMap<String, String> = HashMap::new();
-        if !api_key.is_empty() { envs.insert("LLAMA_API_KEY".to_string(), api_key.clone()); }
-        // When fit is on, let llama.cpp decide the context size automatically.
-        let effective_ctx_size = if fit { 0 } else { ctx_size };
-        let config = build_llamacpp_config(n_gpu_layers, effective_ctx_size, 120, fit, 0);
-        let info = match load_llama_model_impl(
-            llama_state.llama_server_process.clone(),
-            &bin_path,
-            model_id.to_string(),
-            model_path,
-            port,
-            config,
-            envs,
-            mmproj.map(|p| p.to_string_lossy().into_owned()),
-            false,
-            120,
-        ).await {
-            Ok(info) => info,
-            Err(e) => {
-                finish_progress(pb, format!("✗ Failed to load {model_id}"));
-                eprintln!("{}", serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}")));
-                std::process::exit(1);
-            }
-        };
-        let url = format!("http://127.0.0.1:{}", info.port);
-        finish_progress(pb, format!("✓ {model_id} ready · {url}"));
-        (info.pid, info.port as u16)
+    let effective_ctx_size = if fit { 0 } else { ctx_size };
+    match load_model_inner(
+        &engine, model_id,
+        model_path, mmproj.map(|p| p.to_string_lossy().into_owned()), bin,
+        port, &api_key, n_gpu_layers, effective_ctx_size, fit, 0, 120, false,
+    )
+    .await
+    {
+        Ok((pid, actual_port)) => {
+            let url = format!("http://127.0.0.1:{actual_port}");
+            finish_progress(pb, format!("✓ {model_id} ready · {url}"));
+            (pid, actual_port)
+        }
+        Err(e) => {
+            finish_progress(pb, format!("✗ Failed to load {model_id}"));
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -1339,5 +1257,399 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         rope_freq_scale: 0.0,
         ctx_shift: false,
         parallel: 1
+    }
+}
+
+
+// ── Core model loader ──────────────────────────────────────────────────
+
+/// Resolve the binary, init backend state, and load the model.
+/// Returns `(pid, actual_port)` or a human-readable error string.
+/// Engine-specific branching lives here and nowhere else.
+async fn load_model_inner(
+    engine: &str,
+    model_id: &str,
+    model_path: String,
+    mmproj: Option<String>,
+    bin: Option<String>,
+    port: u16,
+    api_key: &str,
+    n_gpu_layers: i32,
+    ctx_size: i32,
+    fit: bool,
+    threads: i32,
+    timeout: u64,
+    embedding: bool,
+) -> Result<(i32, u16), String> {
+    if engine == "mlx" {
+        use std::path::Path;
+        let bin_path = bin
+            .or_else(|| discover_mlx_binary().map(|p| p.to_string_lossy().into_owned()))
+            .ok_or_else(|| {
+                "mlx-server binary not found. \
+                 Install Jan from https://jan.ai or pass --bin <path>.".to_string()
+            })?;
+        let mlx_state = Arc::new(init_mlx_state());
+        let mut envs: HashMap<String, String> = HashMap::new();
+        if !api_key.is_empty() { envs.insert("MLX_API_KEY".into(), api_key.into()); }
+        load_mlx_model_impl(
+            mlx_state.mlx_server_process.clone(),
+            Path::new(&bin_path),
+            model_id.to_string(),
+            model_path,
+            port,
+            MlxConfig { ctx_size },
+            envs,
+            embedding,
+            timeout,
+        )
+        .await
+        .map(|info| (info.pid, info.port as u16))
+        .map_err(|e| serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}")))
+    } else {
+        let bin_path = bin
+            .or_else(|| discover_llamacpp_binary().map(|p| p.to_string_lossy().into_owned()))
+            .ok_or_else(|| {
+                "llama-server binary not found. \
+                 Install a backend from Jan's settings or pass --bin <path>.".to_string()
+            })?;
+        let llama_state = Arc::new(init_llamacpp_state());
+        let mut envs: HashMap<String, String> = HashMap::new();
+        if !api_key.is_empty() { envs.insert("LLAMA_API_KEY".into(), api_key.into()); }
+        let config = build_llamacpp_config(n_gpu_layers, ctx_size, timeout as i32, fit, threads);
+        load_llama_model_impl(
+            llama_state.llama_server_process.clone(),
+            &bin_path,
+            model_id.to_string(),
+            model_path,
+            port,
+            config,
+            envs,
+            mmproj,
+            embedding,
+            timeout,
+        )
+        .await
+        .map(|info| (info.pid, info.port as u16))
+        .map_err(|e| serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}")))
+    }
+}
+
+// ── Agent observability ────────────────────────────────────────────────────
+
+/// Build a live event handler that drives a spinner.
+///
+/// - The spinner message is updated on every `Thinking` / `ToolCall` / `Retrying`
+///   event so the user always sees what the agent is doing right now.
+/// - Completed events (`ToolResult`, `SkillLog`, …) are printed *above* the
+///   spinner via `pb.println()` — indicatif suspends the bar briefly, prints
+///   the line, then resumes without flickering.
+///
+/// Call `pb.finish_and_clear()` after `agent.run` returns.
+fn make_agent_handler(pb: ProgressBar) -> impl FnMut(AgentEvent) {
+    let dim    = Style::new().dim();
+    let green  = Style::new().green().bold();
+    let yellow = Style::new().yellow();
+    let red    = Style::new().red().bold();
+    let blue   = Style::new().blue();
+
+    move |event: AgentEvent| {
+        match &event {
+            AgentEvent::Thinking { step } => {
+                pb.set_message(format!("step {step} · thinking…"));
+            }
+            AgentEvent::ToolCall { step, tool_id, args } => {
+                let raw     = serde_json::to_string(args).unwrap_or_default();
+                let preview = if raw.len() > 80 { format!("{}…", &raw[..80]) } else { raw };
+                pb.set_message(format!("step {step} · 🔧 {tool_id}  {}", dim.apply_to(preview)));
+            }
+            AgentEvent::ToolResult { tool_id, ok, elapsed_ms, summary, .. } => {
+                let icon = if *ok {
+                    green.apply_to("✓").to_string()
+                } else {
+                    red.apply_to("✗").to_string()
+                };
+                let time_str = if *elapsed_ms >= 1000 {
+                    format!("{:.1}s", *elapsed_ms as f64 / 1000.0)
+                } else {
+                    format!("{elapsed_ms}ms")
+                };
+                let label = if *ok {
+                    dim.apply_to(tool_id.as_str()).to_string()
+                } else {
+                    red.apply_to(tool_id.as_str()).to_string()
+                };
+                pb.println(format!(
+                    "  {icon}  {label}  {}  {}",
+                    dim.apply_to(summary.as_str()),
+                    dim.apply_to(format!("({time_str})")),
+                ));
+            }
+            AgentEvent::ToolLog { tool_id, message, .. } => {
+                let trunc = if message.len() > 120 {
+                    format!("{}…", &message[..120])
+                } else {
+                    message.clone()
+                };
+                pb.println(format!(
+                    "     {} {}",
+                    blue.apply_to(format!("[{tool_id}]")),
+                    dim.apply_to(trunc),
+                ));
+            }
+            AgentEvent::TokenBudget { used, total } => {
+                let pct = (*used as f32 / *total as f32 * 100.0) as u32;
+                pb.println(format!(
+                    "{}",
+                    yellow.apply_to(format!("  ⚠  token budget {pct}% ({used}/{total})"))
+                ));
+            }
+            AgentEvent::Retrying { step, attempt, delay_ms } => {
+                let delay_sec = *delay_ms as f64 / 1000.0;
+                pb.set_message(format!(
+                    "step {step} · ↻ retry {attempt}/3 — waiting {delay_sec:.1}s"
+                ));
+            }
+            AgentEvent::ContextCompacted { turns_removed } => {
+                pb.println(format!(
+                    "{}",
+                    dim.apply_to(format!("  ✂  context compacted ({turns_removed} turns removed)"))
+                ));
+            }
+        }
+    }
+}
+
+// ── Agent handler ──────────────────────────────────────────────────────────
+
+/// Spin up a local model using the same engine-detection + loading logic as
+/// `handle_serve`, but return `(base_url, model_id, pid)` instead of blocking.
+async fn start_model_for_agent(
+    mut args: ServeArgs,
+) -> Result<(String, String, i32), String> {
+    // ── 1. Resolve model_id ────────────────────────────────────────────────
+    let model_id = match args.model_id.as_deref() {
+        Some(id) if !id.is_empty() => id.to_string(),
+        _ => {
+            if let Some(ref path) = args.model_path {
+                PathBuf::from(path)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "model".to_string())
+            } else {
+                select_model_interactively(args.select).await
+            }
+        }
+    };
+
+    // Use a random free port if the default is already taken
+    let port = args.port;
+
+    // ── 2. Detect engine + resolve paths ──────────────────────────────────
+    let ctx_size = if args.fit { 0 } else { args.ctx_size };
+
+    let (engine, resolved_model_path, resolved_mmproj) =
+        match resolve_model_engine(&model_id) {
+            Ok((eng, mp, mmp)) => (
+                eng,
+                args.model_path.unwrap_or_else(|| mp.to_string_lossy().into_owned()),
+                args.mmproj.or_else(|| mmp.map(|p| p.to_string_lossy().into_owned())),
+            ),
+            Err(_) if args.model_path.is_some() => {
+                ("llamacpp".to_string(), args.model_path.unwrap(), args.mmproj)
+            }
+            Err(_) if looks_like_hf_repo(&model_id) => {
+                auto_download_hf_model(&model_id, args.select).await;
+                match resolve_model_engine(&model_id) {
+                    Ok((eng, mp, mmp)) => (
+                        eng,
+                        mp.to_string_lossy().into_owned(),
+                        mmp.map(|p| p.to_string_lossy().into_owned()),
+                    ),
+                    Err(e) => return Err(e),
+                }
+            }
+            Err(e) => return Err(e),
+        };
+
+    let pb = start_progress(args.verbose, format!("Loading {} ({engine})…", model_id));
+
+    // ── 3. Load model ──────────────────────────────────────────────────────
+    let (pid, actual_port) = match load_model_inner(
+        &engine, &model_id,
+        resolved_model_path, resolved_mmproj, args.bin,
+        port, &args.api_key, args.n_gpu_layers, ctx_size, args.fit, args.threads, args.timeout, false,
+    )
+    .await
+    {
+        Ok(handle) => {
+            finish_progress(pb, format!("✓ {model_id} ready · http://127.0.0.1:{}", handle.1));
+            handle
+        }
+        Err(e) => {
+            finish_progress(pb, format!("✗ Failed to load {model_id}"));
+            return Err(e);
+        }
+    };
+
+    Ok((format!("http://127.0.0.1:{actual_port}"), model_id, pid))
+}
+
+/// Kill the model server process spawned by start_model_for_agent.
+fn stop_model(pid: i32) {
+    #[cfg(unix)]
+    {
+        use nix::sys::signal::{kill, Signal};
+        use nix::unistd::Pid;
+        let _ = kill(Pid::from_raw(pid), Signal::SIGTERM);
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows: terminate process by PID
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F"])
+            .output();
+    }
+}
+
+async fn handle_agent(cmd: AgentCommands) {
+    let dim   = Style::new().dim();
+    let bold  = Style::new().bold();
+    let green = Style::new().green().bold();
+    let cyan  = Style::new().cyan();
+    let red   = Style::new().red();
+
+    match cmd {
+        // ── jan agent chat ─────────────────────────────────────────────────
+        AgentCommands::Chat { serve, mount, api_url, agent } => {
+            use std::io::{self, BufRead, Write};
+
+            // When --api-url is given, skip local model startup entirely.
+            let (url, model_id, pid, api_key) = if let Some(ext_url) = api_url {
+                let model = serve.model_id.unwrap_or_else(|| "default".to_string());
+                let key   = if serve.api_key.is_empty() { None } else { Some(serve.api_key) };
+                (ext_url, model, -1i32, key)
+            } else {
+                match start_model_for_agent(serve).await {
+                    Ok((u, m, p)) => (u, m, p, None),
+                    Err(e) => { eprintln!("{} {e}", red.apply_to("error:")); std::process::exit(1); }
+                }
+            };
+
+            eprintln!();
+            println!("{}", bold.apply_to("Agent chat — type your message, Ctrl-C or /quit to exit"));
+            println!("{}", dim.apply_to(format!("  model        : {model_id}")));
+            println!("{}", dim.apply_to(format!("  endpoint     : {url}")));
+            println!("{}", dim.apply_to("  skills       : http.fetch · web.search · code.exec (baked)"));
+            println!();
+
+            let agent   = create_agent(url, model_id, mount, api_key, &agent);
+            let mut history = vec![];
+
+            let stdin = io::stdin();
+            loop {
+                print!("{}", bold.apply_to("You > "));
+                io::stdout().flush().ok();
+
+                let mut line = String::new();
+                match stdin.lock().read_line(&mut line) {
+                    Ok(0) | Err(_) => break, // EOF / Ctrl-D
+                    Ok(_) => {}
+                }
+                let input = line.trim().to_string();
+                if input.is_empty() { continue; }
+                if input == "/quit" || input == "/exit" || input == "exit" { break; }
+
+                eprintln!();
+                let pb = make_spinner("step 1 · thinking…");
+                match agent.run(&history, &input, &mut make_agent_handler(pb.clone())).await {
+                    Ok(resp) => {
+                        pb.finish_and_clear();
+                        println!();
+                        println!("{} {}", cyan.apply_to("Agent >"), resp.content);
+                        let reason_str = match resp.finish_reason {
+                            app_lib::core::cli::FinishReason::Stop => "stop",
+                            app_lib::core::cli::FinishReason::MaxSteps => "max_steps",
+                            app_lib::core::cli::FinishReason::BudgetExhausted => "budget_exhausted",
+                        };
+                        println!("{}", dim.apply_to(format!(
+                            "  [{} tokens · {} step{} · {}]",
+                            resp.tokens_used, resp.steps,
+                            if resp.steps == 1 { "" } else { "s" },
+                            reason_str
+                        )));
+                        println!();
+
+                        history.push(app_lib::core::cli::ChatMessage {
+                            role: "user".into(),
+                            content: Some(input),
+                            tool_calls: None,
+                            tool_call_id: None,
+                            name: None,
+                        });
+                        history.push(app_lib::core::cli::ChatMessage {
+                            role: "assistant".into(),
+                            content: Some(resp.content),
+                            tool_calls: None,
+                            tool_call_id: None,
+                            name: None,
+                        });
+                    }
+                    Err(e) => {
+                        pb.finish_and_clear();
+                        eprintln!("{} {}", red.apply_to("error:"), e);
+                    }
+                }
+            }
+
+            if pid > 0 {
+                println!("{}", dim.apply_to("Session ended — stopping model…"));
+                stop_model(pid);
+            }
+        }
+
+        // ── jan agent run ──────────────────────────────────────────────────
+        AgentCommands::Run { prompt, serve, mount, api_url, agent } => {
+            let (url, model_id, pid, api_key) = if let Some(ext_url) = api_url {
+                let model = serve.model_id.unwrap_or_else(|| "default".to_string());
+                let key   = if serve.api_key.is_empty() { None } else { Some(serve.api_key) };
+                (ext_url, model, -1i32, key)
+            } else {
+                match start_model_for_agent(serve).await {
+                    Ok((u, m, p)) => (u, m, p, None),
+                    Err(e) => { eprintln!("{} {e}", red.apply_to("error:")); std::process::exit(1); }
+                }
+            };
+            eprintln!("{}", dim.apply_to(format!("Agent running against {url} (model: {model_id})…")));
+
+            let agent = create_agent(url, model_id, mount, api_key, &agent);
+            eprintln!();
+            let pb     = make_spinner("step 1 · thinking…");
+            let result = agent.run(&[], &prompt, &mut make_agent_handler(pb.clone())).await;
+            pb.finish_and_clear();
+            eprintln!();
+            if pid > 0 { stop_model(pid); }
+
+            match result {
+                Ok(resp) => {
+                    println!("{}", resp.content);
+                    let reason_str = match resp.finish_reason {
+                        app_lib::core::cli::FinishReason::Stop => "stop",
+                        app_lib::core::cli::FinishReason::MaxSteps => "max_steps",
+                        app_lib::core::cli::FinishReason::BudgetExhausted => "budget_exhausted",
+                    };
+                    eprintln!("{}", dim.apply_to(format!(
+                        "[{} tokens · {} step{} · {}]",
+                        resp.tokens_used, resp.steps,
+                        if resp.steps == 1 { "" } else { "s" },
+                        reason_str
+                    )));
+                }
+                Err(e) => {
+                    eprintln!("{} {}", red.apply_to("error:"), e);
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 }

@@ -1,0 +1,15 @@
+[workspace]
+members = [
+    "web-search",
+    "http-fetch",
+    "code-exec",
+]
+resolver = "2"
+
+# Shared release profile: optimise for size (WASM binaries are distributed).
+[profile.release]
+opt-level  = "z"
+lto        = true
+strip      = "symbols"
+codegen-units = 1
+panic      = "abort"

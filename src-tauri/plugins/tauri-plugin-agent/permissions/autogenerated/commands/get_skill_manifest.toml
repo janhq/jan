@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-skill-manifest"
+description = "Enables the get_skill_manifest command without any pre-configured scope."
+commands.allow = ["get_skill_manifest"]
+
+[[permission]]
+identifier = "deny-get-skill-manifest"
+description = "Denies the get_skill_manifest command without any pre-configured scope."
+commands.deny = ["get_skill_manifest"]

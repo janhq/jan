@@ -64,3 +64,4 @@ test-data
 llm-docs
 .claude/agents
 .claude
+*.wasm

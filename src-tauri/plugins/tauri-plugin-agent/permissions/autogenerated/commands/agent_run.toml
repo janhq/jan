@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-agent-run"
+description = "Enables the agent_run command without any pre-configured scope."
+commands.allow = ["agent_run"]
+
+[[permission]]
+identifier = "deny-agent-run"
+description = "Denies the agent_run command without any pre-configured scope."
+commands.deny = ["agent_run"]

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-execute-skill"
+description = "Enables the execute_skill command without any pre-configured scope."
+commands.allow = ["execute_skill"]
+
+[[permission]]
+identifier = "deny-execute-skill"
+description = "Denies the execute_skill command without any pre-configured scope."
+commands.deny = ["execute_skill"]

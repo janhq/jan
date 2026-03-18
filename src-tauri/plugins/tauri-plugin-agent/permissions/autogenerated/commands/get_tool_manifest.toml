@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-tool-manifest"
+description = "Enables the get_tool_manifest command without any pre-configured scope."
+commands.allow = ["get_tool_manifest"]
+
+[[permission]]
+identifier = "deny-get-tool-manifest"
+description = "Denies the get_tool_manifest command without any pre-configured scope."
+commands.deny = ["get_tool_manifest"]
