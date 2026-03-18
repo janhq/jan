@@ -13,6 +13,12 @@ else
     DETECTED_OS := $(shell uname -s)
 endif
 
+ifeq ($(OS),Windows_NT)
+    MKDIR = if not exist "$(1)" mkdir "$(1)"
+else
+    MKDIR = mkdir -p $(1)
+endif
+
 # Default target, does nothing
 all:
 	@echo "Specify a target to run"
@@ -248,11 +254,7 @@ endif
 
 # Debug build for local dev (faster, native arch only)
 build-cli-dev:
-ifeq ($(DETECTED_OS),Windows)
-	if (!(Test-Path 'src-tauri\resources\bin')) { mkdir 'src-tauri\resources\bin' }"
-else
-	mkdir -p src-tauri/resources/bin
-endif	
+	$(call MKDIR,'src-tauri/resources/bin')	
 	cd src-tauri && cargo build --features cli --bin jan-cli
 	install -m755 src-tauri/target/debug/jan-cli src-tauri/resources/bin/jan-cli
 
