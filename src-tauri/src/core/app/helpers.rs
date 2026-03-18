@@ -24,8 +24,10 @@ pub fn copy_dir_recursive(
                 }
             }
             copy_dir_recursive(&src_path, &dst_path, exclude_dirs)?;
-        } else {
+        } else if file_type.is_file() || file_type.is_symlink() {
             fs::copy(&src_path, &dst_path)?;
+        } else {
+            log::debug!("Skipping non-regular file: {src_path:?}");
         }
     }
 
