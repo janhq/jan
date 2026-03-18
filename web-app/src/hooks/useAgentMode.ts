@@ -10,7 +10,7 @@ type AgentModeState = {
   toggleAgentMode: (threadId: string) => void
   setAgentMode: (threadId: string, enabled: boolean) => void
   removeThread: (threadId: string) => void
-  /** Clear agent mode for all threads (e.g. when OpenClaw is stopped). */
+  /** Clear agent mode for all threads. */
   clearAll: () => void
 }
 
