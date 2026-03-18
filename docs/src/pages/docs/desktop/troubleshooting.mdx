@@ -142,6 +142,36 @@ Following these steps, you can cleanly uninstall and reinstall Jan, ensuring a s
   Before reinstalling Jan, ensure it's completely removed from all shared spaces if installed on multiple user accounts on your device.
 </Callout>
 
+## Cannot Relocate Data Folder on Windows
+
+If you are unable to change the data folder location through Jan's interface on Windows, you can manually update it by editing the settings file:
+
+1. Fully **quit Jan** (right-click the system tray icon → Quit)
+
+2. Open File Explorer and navigate to:
+   ```
+   C:\Users\[username]\AppData\Roaming\Jan\
+   ```
+
+3. Open `settings.json` with a text editor (e.g. Notepad)
+
+4. Find the `"data_folder"` field and update its value to your desired path, for example:
+   ```json
+   {
+     "data_folder": "D:\\Jan"
+   }
+   ```
+
+5. Optionally, **copy your data** from the old folder to the new folder to preserve your models, chat history, and settings
+
+6. **Save** the file and **restart Jan**
+
+Jan will now use the new data folder location.
+
+<Callout type="info">
+  Use double backslashes (`\\`) for path separators in the JSON file, e.g. `"D:\\Jan\\data"`.
+</Callout>
+
 ## Troubleshooting NVIDIA GPU
 To resolve issues when Jan does not utilize the NVIDIA GPU on Windows and Linux systems.
 
@@ -362,6 +392,23 @@ The "Unexpected token" error usually relates to OpenAI API authentication or reg
 - Check system temperature
 - Reduce GPU layers if using GPU acceleration
 - Verify adequate power supply (desktop systems)
+
+## Jan CLI
+
+### Windows: running `jan` opens the Jan application window
+
+If typing `jan` in a terminal opens the Jan desktop app instead of the CLI, your system is resolving the `jan` command to the app launcher rather than the CLI binary.
+
+To fix this, add the CLI binary directory to your `Path` environment variable:
+
+1. Open **System Properties** → **Advanced** → **Environment Variables**
+2. Under **System variables** (or **User variables**), select **Path** and click **Edit**
+3. Click **New** and add:
+   ```
+   C:\Users\<username>\AppData\Local\Programs\Jan\resources\bin
+   ```
+   Replace `<username>` with your Windows username.
+4. Click **OK** to save, then open a new terminal window and try `jan-cli` instead.
 
 ## Need Further Support?
 

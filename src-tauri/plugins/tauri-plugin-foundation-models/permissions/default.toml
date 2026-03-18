@@ -1,0 +1,13 @@
+[default]
+description = "Default permissions for the Foundation Models plugin"
+permissions = [
+    "allow-cleanup-foundation-models-processes",
+    "allow-load-foundation-models-server",
+    "allow-unload-foundation-models-server",
+    "allow-is-foundation-models-process-running",
+    "allow-get-foundation-models-random-port",
+    "allow-find-foundation-models-session",
+    "allow-get-foundation-models-loaded",
+    "allow-get-foundation-models-all-sessions",
+    "allow-check-foundation-models-availability",
+]

@@ -6,6 +6,7 @@ export interface BackendUpdateInfo {
   updateNeeded: boolean
   newVersion: string
   currentVersion?: string
+  targetBackend?: string
 }
 
 interface ExtensionSetting {
@@ -13,6 +14,41 @@ interface ExtensionSetting {
   controllerProps?: {
     value: unknown
   }
+}
+
+interface BackendUpdateResult {
+  wasUpdated: boolean
+  reason?: 'in_progress' | 'error' | string
+}
+
+interface ExtensionWithSettings {
+  getSettings?: () => Promise<ExtensionSetting[] | undefined>
+}
+
+async function getCurrentBackendTypeFromSettings(
+  extension: ExtensionWithSettings
+): Promise<string> {
+  const settings = await extension.getSettings?.()
+  const currentBackendSetting = settings?.find(
+    (s) => s.key === 'version_backend'
+  )
+  const currentBackend = currentBackendSetting?.controllerProps?.value as string
+
+  if (!currentBackend) {
+    throw new Error('Current backend not found')
+  }
+
+  const parts = currentBackend.split('/')
+  const currentVersionPart = parts[0]?.trim()
+  const currentBackendType = parts[1]?.trim()
+
+  if (parts.length !== 2 || !currentVersionPart || !currentBackendType) {
+    throw new Error(
+      `Invalid current backend format: "${currentBackend}". Expected "version/backendType".`
+    )
+  }
+
+  return currentBackendType
 }
 
 interface LlamacppExtension {
@@ -220,6 +256,11 @@ export const useBackendUpdater = () => {
     if (!updateState.updateInfo) return
 
     try {
+      // If an update is already in progress, avoid triggering a duplicate update.
+      if (updateState.isUpdating) {
+        return
+      }
+
       setUpdateState((prev) => ({
         ...prev,
         isUpdating: true,
@@ -256,28 +297,42 @@ export const useBackendUpdater = () => {
         throw new Error('Extension does not support backend updates')
       }
 
-      // Get current backend version to construct target backend string
       const extension = extensionToUse as LlamacppExtension
-      const settings = await extension.getSettings?.()
-      const currentBackendSetting = settings?.find(
-        (s) => s.key === 'version_backend'
-      )
-      const currentBackend = currentBackendSetting?.controllerProps
-        ?.value as string
 
-      if (!currentBackend) {
-        throw new Error('Current backend not found')
+      // Use the exact target backend from checkBackendForUpdates if available,
+      // to avoid mismatches between old/new backend name formats
+      let targetBackendString = updateState.updateInfo.targetBackend
+
+      if (targetBackendString) {
+        // Validate and normalize the provided target backend string
+        const rawParts = targetBackendString.split('/')
+        const versionPart = rawParts[0]?.trim()
+        const backendTypePart = rawParts[1]?.trim()
+
+        if (rawParts.length !== 2 || !versionPart || !backendTypePart) {
+          // Malformed targetBackend; fall back to constructing from current settings
+          const currentBackendType = await getCurrentBackendTypeFromSettings(
+            extension
+          )
+          targetBackendString = `${updateState.updateInfo.newVersion}/${currentBackendType}`
+        } else {
+          // Normalize to "version/backendType" with trimmed parts
+          targetBackendString = `${versionPart}/${backendTypePart}`
+        }
+      } else {
+        // Fallback: construct from current settings if targetBackend wasn't provided
+        const currentBackendType = await getCurrentBackendTypeFromSettings(
+          extension
+        )
+        targetBackendString = `${updateState.updateInfo.newVersion}/${currentBackendType}`
       }
 
-      // Extract backend type from current backend string (e.g., "b3224/cuda12" -> "cuda12")
-      const [, backendType] = currentBackend.split('/')
-      const targetBackendString = `${updateState.updateInfo.newVersion}/${backendType}`
-
       // Call the extension's updateBackend method
-      const result = await extension.updateBackend?.(targetBackendString)
+      const rawResult = await extension.updateBackend?.(targetBackendString)
+      const result = rawResult as BackendUpdateResult | undefined
 
-      if (result?.wasUpdated) {
-        // Reset update state
+      if (result?.wasUpdated === true) {
+        // Reset update state on successful update
         const newState = {
           isUpdateAvailable: false,
           updateInfo: null,
@@ -288,6 +343,24 @@ export const useBackendUpdater = () => {
           ...newState,
         }))
         syncStateToOtherInstances(newState)
+      } else if (
+        result?.wasUpdated === false &&
+        (result.reason === 'in_progress' || typeof result.reason === 'undefined')
+      ) {
+        // Benign no-op (e.g., another update is already in progress or the
+        // extension returned a no-op response without a reason). Do not treat
+        // this as a failure; just clear the local isUpdating flag.
+        setUpdateState((prev) => ({
+          ...prev,
+          isUpdating: false,
+        }))
+      } else if (
+        result?.wasUpdated === false &&
+        result.reason &&
+        result.reason !== 'in_progress'
+      ) {
+        // Explicit failure reason from extension: surface as an error.
+        throw new Error(`Backend update failed: ${result.reason}`)
       } else {
         throw new Error('Backend update failed')
       }
@@ -299,7 +372,7 @@ export const useBackendUpdater = () => {
       }))
       throw error
     }
-  }, [updateState.updateInfo, syncStateToOtherInstances])
+  }, [updateState.updateInfo, updateState.isUpdating, syncStateToOtherInstances])
 
   const installBackend = useCallback(async (filePath: string) => {
     try {

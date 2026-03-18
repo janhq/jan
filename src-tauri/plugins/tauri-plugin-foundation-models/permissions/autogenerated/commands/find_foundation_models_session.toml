@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-find-foundation-models-session"
+description = "Enables the find_foundation_models_session command without any pre-configured scope."
+commands.allow = ["find_foundation_models_session"]
+
+[[permission]]
+identifier = "deny-find-foundation-models-session"
+description = "Denies the find_foundation_models_session command without any pre-configured scope."
+commands.deny = ["find_foundation_models_session"]
