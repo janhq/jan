@@ -24,14 +24,10 @@ import { predefinedProviders } from '@/constants/providers'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { ChevronsUpDown } from 'lucide-react'
-import { useAgentMode } from '@/hooks/useAgentMode'
-import { BotIcon } from 'lucide-react'
-import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
   useLastUsedModel?: boolean
-  projectId?: string 
 }
 
 interface SearchableModel {
@@ -56,7 +52,6 @@ const setLastUsedModel = (provider: string, model: string) => {
 
 const DropdownModelProvider = memo(function DropdownModelProvider({
   model,
-  projectId,
   useLastUsedModel = false,
 }: DropdownModelProviderProps) {
   const {
@@ -74,11 +69,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const { t } = useTranslation()
   const { favoriteModels } = useFavoriteModel()
   const serviceHub = useServiceHub()
-  const currentThreadId = useThreads((state) => state.currentThreadId)
-  const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
-  const isAgentMode = useAgentMode((state) =>
-    state.agentThreads[agentModeKey] === true
-  )
 
   // Search state
   const [open, setOpen] = useState(false)
@@ -473,20 +463,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
   const provider = getProviderByName(selectedProvider)
 
-  // Agent mode display hidden — kept as dead code for future use
-  if (false && isAgentMode && !projectId) {
-    return (
-      <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full text-muted-foreground">
-        <BotIcon className="shrink-0 size-4" />
-        <span className="text-sm font-medium leading-normal">
-          {t('common:newAgentChat')}
-        </span>
-        <span className="text-xs ml-1 font-medium px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400">
-          {t('common:experimental')}
-        </span>
-      </div>
-    )
-  }
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>

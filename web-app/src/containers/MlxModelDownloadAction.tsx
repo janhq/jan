@@ -168,7 +168,7 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
         description: error instanceof Error ? error.message : 'Unknown error',
       })
     }
-  }, [serviceHub, model, huggingfaceToken, addLocalDownloadingModel, removeLocalDownloadingModel, modelId])
+  }, [serviceHub, model, huggingfaceToken, addLocalDownloadingModel, removeLocalDownloadingModel, modelId, modelName])
 
   return (
     <div className="flex items-center">

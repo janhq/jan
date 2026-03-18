@@ -17,7 +17,6 @@ export function KeyboardShortcutsProvider() {
   // Get shortcut specs from centralized configuration
   const sidebarShortcut = PlatformShortcuts[ShortcutAction.TOGGLE_SIDEBAR]
   const newChatShortcut = PlatformShortcuts[ShortcutAction.NEW_CHAT]
-  const newAgentChatShortcut = PlatformShortcuts[ShortcutAction.NEW_AGENT_CHAT]
   const newProjectShortcut = PlatformShortcuts[ShortcutAction.NEW_PROJECT]
   const settingsShortcut = PlatformShortcuts[ShortcutAction.GO_TO_SETTINGS]
   const searchShortcut = PlatformShortcuts[ShortcutAction.SEARCH]
