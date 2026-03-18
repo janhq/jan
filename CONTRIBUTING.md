@@ -178,7 +178,7 @@ make dev
 3. Make your changes (and write tests!)
 4. Commit your changes (`git commit -am 'Add some feature'`)
 5. Push to the branch (`git push origin feature-name`)
-6. Open a new Pull Request against `dev` branch
+6. Open a new Pull Request against `main` branch
 
 ## Testing
 
@@ -204,8 +204,8 @@ cd autoqa && python main.py # End-to-end tests
 ## Git Conventions
 
 ### Branches
-- `main` - stable releases
-- `dev` - development (target this for PRs)
+- `main` - main branch with latest & completed commits (target this branch for PRs)
+- `release/*` - stable releases or upcoming release candidate
 - `feature/*` - new features
 - `fix/*` - bug fixes
 
