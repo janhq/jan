@@ -488,12 +488,6 @@ pub fn uninstall_jan_cli() -> Result<(), String> {
     #[cfg(windows)]
     {
         let bin_dir = jan_cli_bin_dir_windows()?;
-        let jan_exe = bin_dir.join("jan.exe");
-        let jan_cli_exe = bin_dir.join("jan-cli.exe");
-        if jan_exe.exists() {
-            std::fs::rename(&jan_exe, &jan_cli_exe)
-                .map_err(|e| format!("Failed to rename jan.exe back to jan-cli.exe: {}", e))?;
-        }
         remove_from_path_windows(&bin_dir)?;
         return Ok(());
     }
