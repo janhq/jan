@@ -444,8 +444,9 @@ pub fn install_jan_cli_sync<R: Runtime>(
     #[cfg(windows)]
     {
         if bundled.exists() {
-            std::fs::rename(&bundled, &dest)
-                .map_err(|e| format!("Failed to rename jan-cli.exe to jan.exe: {}", e))?;
+            if let Err(e) = std::fs::rename(&bundled, &dest) {
+                log::warn!("Could not rename jan-cli.exe to jan.exe: {}", e);
+            }
         }
         add_to_path_windows(&resource_bin_dir)?;
         return Ok(CliInstallStatus {
