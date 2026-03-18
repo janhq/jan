@@ -53,6 +53,7 @@ install-ios-rust-targets:
 dev: install-and-build
 	yarn download:bin
 	make build-mlx-server-if-exists
+	make build-foundation-models-server-if-exists
 	make build-cli-dev
 	yarn dev
 
@@ -116,6 +117,7 @@ endif
 	yarn copy:assets:tauri
 	yarn build:icon
 	yarn build:mlx-server
+	make build-foundation-models-server-if-exists
 	make build-cli
 	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
@@ -126,17 +128,21 @@ endif
 build-mlx-server:
 ifeq ($(shell uname -s),Darwin)
 	@echo "Building MLX server for Apple Silicon..."
-# 	cd mlx-server && swift build -c release
-	cd mlx-server && xcodebuild build -scheme mlx-server -destination 'platform=OS X' -configuration Release OTHER_LDFLAGS="-dead_strip"
-	@echo "Finding build products..."
-	@DERIVED_DATA=$$(find ~/Library/Developer/Xcode/DerivedData/mlx-server-*/Build/Products/Release -maxdepth 0 2>/dev/null | head -1); \
-	if [ -z "$$DERIVED_DATA" ]; then \
+	cd mlx-server && swift build -c release
+	@echo "Copying build products..."
+	@BUILD_DIR=$$(cd mlx-server && swift build -c release --show-bin-path); \
+	if [ -z "$$BUILD_DIR" ]; then \
 		echo "Error: Could not find build products"; \
 		exit 1; \
 	fi; \
-	echo "Copying mlx-server from $$DERIVED_DATA..."; \
-	cp "$$DERIVED_DATA/mlx-server" src-tauri/resources/bin/mlx-server; \
-	cp -r "$$DERIVED_DATA/mlx-swift_Cmlx.bundle" src-tauri/resources/bin/; \
+	mkdir -p src-tauri/resources/bin; \
+	echo "Copying mlx-server from $$BUILD_DIR..."; \
+	cp "$$BUILD_DIR/mlx-server" src-tauri/resources/bin/mlx-server; \
+	if [ -d "$$BUILD_DIR/mlx-swift_Cmlx.bundle" ]; then \
+		cp -r "$$BUILD_DIR/mlx-swift_Cmlx.bundle" src-tauri/resources/bin/; \
+	else \
+		mkdir -p src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
+	fi; \
 	chmod +x src-tauri/resources/bin/mlx-server; \
 	echo "MLX server built and copied successfully"; \
 	echo "Checking for code signing identity..."; \
@@ -144,8 +150,10 @@ ifeq ($(shell uname -s),Darwin)
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
 		echo "Signing mlx-server with identity: $$SIGNING_IDENTITY"; \
 		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/mlx-server; \
-		echo "Signing mlx-swift_Cmlx.bundle..."; \
-		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" --deep src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
+		if [ -d "src-tauri/resources/bin/mlx-swift_Cmlx.bundle" ]; then \
+			echo "Signing mlx-swift_Cmlx.bundle..."; \
+			codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" --deep src-tauri/resources/bin/mlx-swift_Cmlx.bundle; \
+		fi; \
 		echo "Code signing completed successfully"; \
 	else \
 		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
@@ -164,6 +172,40 @@ ifeq ($(shell uname -s),Darwin)
 	fi
 else
 	@echo "Skipping MLX server build (macOS only)"
+endif
+
+# Build Apple Foundation Models server (macOS 26+ only) - always builds
+build-foundation-models-server:
+ifeq ($(shell uname -s),Darwin)
+	@echo "Building Foundation Models server for macOS 26+..."
+	cd foundation-models-server && swift build -c release
+	@echo "Copying foundation-models-server binary..."
+	@cp foundation-models-server/.build/release/foundation-models-server src-tauri/resources/bin/foundation-models-server
+	@chmod +x src-tauri/resources/bin/foundation-models-server
+	@echo "Foundation Models server built and copied successfully"
+	@echo "Checking for code signing identity..."
+	@SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
+	if [ -n "$$SIGNING_IDENTITY" ]; then \
+		echo "Signing foundation-models-server with identity: $$SIGNING_IDENTITY"; \
+		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/foundation-models-server; \
+		echo "Code signing completed successfully"; \
+	else \
+		echo "Warning: No Developer ID Application identity found. Skipping code signing."; \
+	fi
+else
+	@echo "Skipping Foundation Models server build (macOS only)"
+endif
+
+# Build Foundation Models server only if not already present (for dev)
+build-foundation-models-server-if-exists:
+ifeq ($(shell uname -s),Darwin)
+	@if [ -f "src-tauri/resources/bin/foundation-models-server" ]; then \
+		echo "Foundation Models server already exists at src-tauri/resources/bin/foundation-models-server, skipping build..."; \
+	else \
+		make build-foundation-models-server; \
+	fi
+else
+	@echo "Skipping Foundation Models server build (macOS only)"
 endif
 
 # Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]

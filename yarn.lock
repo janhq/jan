@@ -2824,6 +2824,7 @@ __metadata:
     "@types/istanbul-reports": "npm:3.0.4"
     "@types/lodash.clonedeep": "npm:4.5.9"
     "@types/lodash.debounce": "npm:4.0.9"
+    "@types/matter-js": "npm:^0"
     "@types/mdast": "npm:^4.0.4"
     "@types/node": "npm:22.14.1"
     "@types/react": "npm:19.1.2"
@@ -2856,7 +2857,8 @@ __metadata:
     lodash.clonedeep: "npm:4.5.0"
     lodash.debounce: "npm:4.0.8"
     lucide-react: "npm:^0.563.0"
-    motion: "npm:^12.29.2"
+    matter-js: "npm:^0.20.0"
+    motion: "npm:^12.35.0"
     next-themes: "npm:0.4.6"
     posthog-js: "npm:1.255.1"
     radix-ui: "npm:^1.4.3"
@@ -6929,6 +6931,13 @@ __metadata:
   version: 4.17.20
   resolution: "@types/lodash@npm:4.17.20"
   checksum: 10c0/98cdd0faae22cbb8079a01a3bb65aa8f8c41143367486c1cbf5adc83f16c9272a2a5d2c1f541f61d0d73da543c16ee1d21cf2ef86cb93cd0cc0ac3bced6dd88f
+  languageName: node
+  linkType: hard
+
+"@types/matter-js@npm:^0":
+  version: 0.20.2
+  resolution: "@types/matter-js@npm:0.20.2"
+  checksum: 10c0/da953eb54e3c0595ee4d9c36a95568161d41bdc42ae6fca0d479c0f0855e84c92925059d4bdb64a03d16ee5b7eca55af645bd26d2dfc581d574a42519ff1d345
   languageName: node
   linkType: hard
 
@@ -11167,6 +11176,28 @@ __metadata:
   languageName: node
   linkType: hard
 
+"framer-motion@npm:^12.36.0":
+  version: 12.36.0
+  resolution: "framer-motion@npm:12.36.0"
+  dependencies:
+    motion-dom: "npm:^12.36.0"
+    motion-utils: "npm:^12.36.0"
+    tslib: "npm:^2.4.0"
+  peerDependencies:
+    "@emotion/is-prop-valid": "*"
+    react: ^18.0.0 || ^19.0.0
+    react-dom: ^18.0.0 || ^19.0.0
+  peerDependenciesMeta:
+    "@emotion/is-prop-valid":
+      optional: true
+    react:
+      optional: true
+    react-dom:
+      optional: true
+  checksum: 10c0/3acbb210d374ab80f4b086bcb8e7f722271f5d8e5d3e9f643ee0b5e7641bf34e100aaead68c99a4d478e67ccdda4b3ff89779bc0c9e5fe9aab8a955a5a6cfaa4
+  languageName: node
+  linkType: hard
+
 "fs-extra@npm:^11.2.0":
   version: 11.3.1
   resolution: "fs-extra@npm:11.3.1"
@@ -13932,6 +13963,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"matter-js@npm:^0.20.0":
+  version: 0.20.0
+  resolution: "matter-js@npm:0.20.0"
+  checksum: 10c0/95d58f407205ad24c96422109c959999f474ef29af79b4c2ad7550bca97cdcdac99df31ebe35ab858d9863c8f6cd5205339fbbff70909b56a3e2a6a57200c51b
+  languageName: node
+  linkType: hard
+
 "md5.js@npm:^1.3.4":
   version: 1.3.5
   resolution: "md5.js@npm:1.3.5"
@@ -14988,6 +15026,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"motion-dom@npm:^12.36.0":
+  version: 12.36.0
+  resolution: "motion-dom@npm:12.36.0"
+  dependencies:
+    motion-utils: "npm:^12.36.0"
+  checksum: 10c0/7f97b1e310310b44e6144f7303604d7c3f37f1e278b41ac5b57dca2abe082213d40a9f59cf5a2cb3442d27b8fd82e29f17f31d7b24d4b240f9b908fc97b42d80
+  languageName: node
+  linkType: hard
+
 "motion-utils@npm:^12.23.6":
   version: 12.23.6
   resolution: "motion-utils@npm:12.23.6"
@@ -15002,7 +15049,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"motion@npm:^12.23.26, motion@npm:^12.29.2":
+"motion-utils@npm:^12.36.0":
+  version: 12.36.0
+  resolution: "motion-utils@npm:12.36.0"
+  checksum: 10c0/fe08231759064eef5d351a869379246f1e1b2031bda357a6197d2a99ff6b472bce69f8250212713d8bff2ff46978f354ca8c3b8c8f0c5bd337d26a6793ba42fa
+  languageName: node
+  linkType: hard
+
+"motion@npm:^12.23.26":
   version: 12.34.3
   resolution: "motion@npm:12.34.3"
   dependencies:
@@ -15020,6 +15074,27 @@ __metadata:
     react-dom:
       optional: true
   checksum: 10c0/bb16391e893c2df81e1447d920cb97f54da1c2660ca648c9bfee6cc5b482f96b4bcb223eee02da40e78bd33c4211168b444e3fefefeb1177e338f0e1063b4be1
+  languageName: node
+  linkType: hard
+
+"motion@npm:^12.35.0":
+  version: 12.36.0
+  resolution: "motion@npm:12.36.0"
+  dependencies:
+    framer-motion: "npm:^12.36.0"
+    tslib: "npm:^2.4.0"
+  peerDependencies:
+    "@emotion/is-prop-valid": "*"
+    react: ^18.0.0 || ^19.0.0
+    react-dom: ^18.0.0 || ^19.0.0
+  peerDependenciesMeta:
+    "@emotion/is-prop-valid":
+      optional: true
+    react:
+      optional: true
+    react-dom:
+      optional: true
+  checksum: 10c0/3ad56cbc4d7de107dc8e72c4e5738b885fa455224461ca1e68545e5e790b9d5e27f4b01a6d9129899ee7e214cff10247f7b9b6edff25d3ef5ed292b212ed95a6
   languageName: node
   linkType: hard
 

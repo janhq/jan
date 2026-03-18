@@ -63,7 +63,6 @@ pub async fn unregister_provider_config(
         log::info!("Unregistered provider config: {provider}");
         Ok(())
     } else {
-        log::warn!("Provider config not found: {provider}");
         Ok(())
     }
 }
