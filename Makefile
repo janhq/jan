@@ -249,7 +249,7 @@ endif
 # Debug build for local dev (faster, native arch only)
 build-cli-dev:
 ifeq ($(DETECTED_OS),Windows)
-	mkdir src-tauri\resources\bin 2>NUL
+	if (!(Test-Path 'src-tauri\resources\bin')) { mkdir 'src-tauri\resources\bin' }"
 else
 	mkdir -p src-tauri/resources/bin
 endif	
