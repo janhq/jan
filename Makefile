@@ -6,15 +6,22 @@ REPORT_PORTAL_PROJECT_NAME ?= ""
 REPORT_PORTAL_LAUNCH_NAME ?= "Jan App"
 REPORT_PORTAL_DESCRIPTION ?= "Jan App report"
 
+# Detect OS
+ifeq ($(OS),Windows_NT)
+    DETECTED_OS := Windows
+else
+    DETECTED_OS := $(shell uname -s)
+endif
+
 # Default target, does nothing
 all:
 	@echo "Specify a target to run"
 
 # Installs yarn dependencies and builds core and extensions
 install-and-build:
-ifeq ($(OS),Windows_NT)
+ifeq ($(DETECTED_OS),Windows)
 	echo "skip"
-else ifeq ($(shell uname -s),Linux)
+else ifeq ($(DETECTED_OS),Linux)
 	chmod +x src-tauri/build-utils/*
 endif
 	yarn install
@@ -24,7 +31,7 @@ endif
 
 # Install required Rust targets for macOS universal builds
 install-rust-targets:
-ifeq ($(shell uname -s),Darwin)
+ifeq ($(DETECTED_OS),Darwin)
 	@echo "Detected macOS, installing universal build targets..."
 	rustup target add x86_64-apple-darwin
 	rustup target add aarch64-apple-darwin
@@ -89,7 +96,7 @@ dev-android: install-and-build install-android-rust-targets
 
 dev-ios: install-and-build install-ios-rust-targets
 	@echo "Setting up iOS development environment..."
-ifeq ($(shell uname -s),Darwin)
+ifeq ($(DETECTED_OS),Darwin)
 	@if [ ! -d "src-tauri/gen/ios" ]; then \
 		echo "iOS app not initialized. Initializing..."; \
 		yarn tauri ios init; \
@@ -111,7 +118,7 @@ lint: install-and-build
 # Testing
 test: lint install-rust-targets
 	yarn download:bin
-ifeq ($(OS),Windows_NT)
+ifeq ($(DETECTED_OS),Windows)
 endif
 	yarn test
 	yarn copy:assets:tauri
@@ -126,7 +133,7 @@ endif
 
 # Build MLX server (macOS Apple Silicon only) - always builds
 build-mlx-server:
-ifeq ($(shell uname -s),Darwin)
+ifeq ($(DETECTED_OS),Darwin)
 	@echo "Building MLX server for Apple Silicon..."
 	cd mlx-server && swift build -c release
 	@echo "Copying build products..."
@@ -164,7 +171,7 @@ endif
 
 # Build MLX server only if not already present (for dev)
 build-mlx-server-if-exists:
-ifeq ($(shell uname -s),Darwin)
+ifeq ($(DETECTED_OS),Darwin)
 	@if [ -f "src-tauri/resources/bin/mlx-server" ]; then \
 		echo "MLX server already exists at src-tauri/resources/bin/mlx-server, skipping build..."; \
 	else \
@@ -176,7 +183,7 @@ endif
 
 # Build Apple Foundation Models server (macOS 26+ only) - always builds
 build-foundation-models-server:
-ifeq ($(shell uname -s),Darwin)
+ifeq ($(DETECTED_OS),Darwin)
 	@echo "Building Foundation Models server for macOS 26+..."
 	cd foundation-models-server && swift build -c release
 	@echo "Copying foundation-models-server binary..."
@@ -198,7 +205,7 @@ endif
 
 # Build Foundation Models server only if not already present (for dev)
 build-foundation-models-server-if-exists:
-ifeq ($(shell uname -s),Darwin)
+ifeq ($(DETECTED_OS),Darwin)
 	@if [ -f "src-tauri/resources/bin/foundation-models-server" ]; then \
 		echo "Foundation Models server already exists at src-tauri/resources/bin/foundation-models-server, skipping build..."; \
 	else \
@@ -210,7 +217,7 @@ endif
 
 # Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
 build-cli:
-ifeq ($(shell uname -s),Darwin)
+ifeq ($(DETECTED_OS),Darwin)
 	cd src-tauri && cargo build --release --features cli --bin jan-cli --target aarch64-apple-darwin
 	cd src-tauri && cargo build --release --features cli --bin jan-cli --target x86_64-apple-darwin
 	lipo -create \
@@ -231,7 +238,7 @@ ifeq ($(shell uname -s),Darwin)
 	fi
 
 	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
-else ifeq ($(OS),Windows_NT)
+else ifeq ($(DETECTED_OS),Windows)
 	cd src-tauri && cargo build --release --features cli --bin jan-cli
 	cp src-tauri/target/release/jan-cli.exe src-tauri/resources/bin/jan-cli.exe
 else
@@ -241,7 +248,11 @@ endif
 
 # Debug build for local dev (faster, native arch only)
 build-cli-dev:
+ifeq ($(DETECTED_OS),Windows)
+	mkdir src-tauri/resources/bin
+else
 	mkdir -p src-tauri/resources/bin
+endif	
 	cd src-tauri && cargo build --features cli --bin jan-cli
 	install -m755 src-tauri/target/debug/jan-cli src-tauri/resources/bin/jan-cli
 
@@ -250,7 +261,7 @@ build: install-and-build install-rust-targets
 	yarn build
 
 clean:
-ifeq ($(OS),Windows_NT)
+ifeq ($(DETECTED_OS),Windows)
 	-powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out, .turbo, .yarn -Recurse -Directory | Remove-Item -Recurse -Force"
 	-powershell -Command "Get-ChildItem -Path . -Include package-lock.json, tsconfig.tsbuildinfo -Recurse -File | Remove-Item -Recurse -Force"
 	-powershell -Command "Remove-Item -Recurse -Force ./pre-install/*.tgz"
@@ -259,7 +270,7 @@ ifeq ($(OS),Windows_NT)
 	-powershell -Command "Remove-Item -Recurse -Force ./src-tauri/resources"
 	-powershell -Command "Remove-Item -Recurse -Force ./src-tauri/target"
 	-powershell -Command "if (Test-Path \"$($env:USERPROFILE)\jan\extensions\") { Remove-Item -Path \"$($env:USERPROFILE)\jan\extensions\" -Recurse -Force }"
-else ifeq ($(shell uname -s),Linux)
+else ifeq ($(DETECTED_OS),Linux)
 	find . -name "node_modules" -type d -prune -exec rm -rf '{}' +
 	find . -name ".next" -type d -exec rm -rf '{}' +
 	find . -name "dist" -type d -exec rm -rf '{}' +
