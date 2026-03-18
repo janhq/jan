@@ -47,6 +47,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-deep-link",
  "tauri-plugin-dialog",
+ "tauri-plugin-foundation-models",
  "tauri-plugin-hardware",
  "tauri-plugin-http",
  "tauri-plugin-llamacpp",
@@ -6581,6 +6582,21 @@ dependencies = [
  "tauri-plugin-fs",
  "thiserror 2.0.17",
  "url",
+]
+
+[[package]]
+name = "tauri-plugin-foundation-models"
+version = "0.6.599"
+dependencies = [
+ "jan-utils",
+ "log",
+ "nix",
+ "serde",
+ "sysinfo",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.17",
+ "tokio",
 ]
 
 [[package]]

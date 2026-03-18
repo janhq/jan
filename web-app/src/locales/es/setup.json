@@ -1,0 +1,13 @@
+{
+  "welcome": "Bienvenido a Jan",
+  "description": "Para comenzar, inicia rápidamente con el modelo Jan o elige configurar tu propio proveedor local o remoto",
+  "descriptionWeb": "Para comenzar, necesitarás conectarte a un modelo en la nube usando una clave API",
+  "quickStart": "Inicio rápido con el modelo Jan",
+  "quickStartDescription": "No requiere configuración",
+  "quickStartFailed": "Algo salió mal. Por favor, inténtalo de nuevo.",
+  "downloading": "Descargando el modelo Jan...",
+  "downloadingDescription": "Por favor espera mientras descargamos el modelo. Esto puede tardar unos minutos.",
+  "orDivider": "o",
+  "localModel": "Configurar modelo local",
+  "remoteProvider": "Configurar proveedor remoto"
+}
