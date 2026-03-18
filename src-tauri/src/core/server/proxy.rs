@@ -2,7 +2,7 @@ use futures_util::StreamExt;
 use hyper::body::Bytes;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
-use jan_utils::{is_cors_header, is_valid_host, remove_prefix};
+use jan_utils::{extract_host_from_origin, is_cors_header, is_valid_host, remove_prefix};
 use reqwest::Client;
 use serde_json;
 use std::collections::HashMap;
@@ -567,11 +567,14 @@ async fn proxy_request(
             );
 
         if !origin.is_empty() {
-            response = response
-                .header("Access-Control-Allow-Origin", origin)
-                .header("Access-Control-Allow-Credentials", "true");
-        } else {
-            response = response.header("Access-Control-Allow-Origin", "*");
+            let origin_host = extract_host_from_origin(origin);
+            if is_valid_host(&origin_host, &config.trusted_hosts) {
+                response = response
+                    .header("Access-Control-Allow-Origin", origin)
+                    .header("Access-Control-Allow-Credentials", "true");
+            } else {
+                log::warn!("CORS preflight: Origin '{origin}' is not trusted, not reflecting origin");
+            }
         }
 
         log::debug!("CORS preflight response: host_trusted={is_trusted}, origin='{origin}'");
@@ -1520,23 +1523,28 @@ fn add_cors_headers_with_host_and_origin(
     builder: hyper::http::response::Builder,
     _host: &str,
     origin: &str,
-    _trusted_hosts: &[Vec<String>],
+    trusted_hosts: &[Vec<String>],
 ) -> hyper::http::response::Builder {
     let mut builder = builder;
-    let allow_origin_header = if !origin.is_empty() {
-        origin.to_string()
+
+    let origin_trusted = if !origin.is_empty() {
+        let origin_host = extract_host_from_origin(origin);
+        is_valid_host(&origin_host, trusted_hosts)
     } else {
-        "*".to_string()
+        false
     };
 
     builder = builder
-        .header("Access-Control-Allow-Origin", allow_origin_header.clone())
         .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
         .header("Access-Control-Allow-Headers", "Authorization, Content-Type, Host, Accept, Accept-Language, Cache-Control, Connection, DNT, If-Modified-Since, Keep-Alive, Origin, User-Agent, X-Requested-With, X-CSRF-Token, X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, authorization, content-type, x-api-key")
         .header("Vary", "Origin");
 
-    if allow_origin_header != "*" {
-        builder = builder.header("Access-Control-Allow-Credentials", "true");
+    if origin_trusted {
+        builder = builder
+            .header("Access-Control-Allow-Origin", origin)
+            .header("Access-Control-Allow-Credentials", "true");
+    } else {
+        log::warn!("CORS: Origin '{}' is not trusted, not reflecting origin", origin);
     }
 
     builder
