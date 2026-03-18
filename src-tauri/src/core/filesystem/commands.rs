@@ -12,7 +12,19 @@ pub fn rm<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Res
         return Err("rm error: Invalid argument".to_string());
     }
 
+    let jan_data_folder =
+        crate::core::app::commands::get_jan_data_folder_path(app_handle.clone());
     let path = resolve_path(app_handle, &args[0]);
+    let canonical_data = jan_data_folder.canonicalize().unwrap_or(jan_data_folder);
+    let canonical_path = path.canonicalize().unwrap_or_else(|_| path.clone());
+    if !canonical_path.starts_with(&canonical_data) {
+        return Err(format!(
+            "rm error: path {} is not under jan data folder {}",
+            canonical_path.display(),
+            canonical_data.display()
+        ));
+    }
+
     if path.is_file() {
         fs::remove_file(&path).map_err(|e| e.to_string())?;
     } else if path.is_dir() {

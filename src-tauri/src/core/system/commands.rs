@@ -6,9 +6,34 @@ use tauri_plugin_llamacpp::cleanup_llama_processes;
 use crate::core::app::commands::{
     default_data_folder_path, get_jan_data_folder_path, update_app_configuration,
 };
+use crate::core::app::constants::{JAN_DATA_FILES, JAN_DATA_SUBDIRS};
 use crate::core::app::models::AppConfiguration;
 use crate::core::mcp::helpers::{stop_mcp_servers_with_context, ShutdownContext};
 use crate::core::state::AppState;
+
+fn is_safe_to_delete(path: &std::path::Path) -> bool {
+    let count = path.components().count();
+    count >= 3
+}
+
+fn remove_jan_data_contents(data_folder: &std::path::Path) {
+    for subdir in JAN_DATA_SUBDIRS {
+        let path = data_folder.join(subdir);
+        if path.is_dir() {
+            if let Err(e) = fs::remove_dir_all(&path) {
+                log::warn!("Failed to remove {}: {e}", path.display());
+            }
+        }
+    }
+    for file in JAN_DATA_FILES {
+        let path = data_folder.join(file);
+        if path.is_file() {
+            if let Err(e) = fs::remove_file(&path) {
+                log::warn!("Failed to remove {}: {e}", path.display());
+            }
+        }
+    }
+}
 
 /// Detect the user's default shell and return the appropriate env file path.
 /// Returns (shell_name, env_file_path).
@@ -86,14 +111,15 @@ pub fn factory_reset<R: Runtime>(app_handle: tauri::AppHandle<R>, state: State<'
         let _ = cleanup_llama_processes(app_handle.clone()).await;
 
         if data_folder.exists() {
-            if let Err(e) = fs::remove_dir_all(&data_folder) {
-                log::error!("Failed to remove data folder: {e}");
+            if !is_safe_to_delete(&data_folder) {
+                log::error!(
+                    "Refusing factory reset: path is too close to filesystem root: {}",
+                    data_folder.display()
+                );
                 return;
             }
+            remove_jan_data_contents(&data_folder);
         }
-
-        // Recreate the data folder
-        let _ = fs::create_dir_all(&data_folder).map_err(|e| e.to_string());
 
         // Reset the configuration
         let mut default_config = AppConfiguration::default();
