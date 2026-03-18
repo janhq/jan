@@ -107,6 +107,7 @@ export function DataProvider() {
     proxyTimeout,
     lastServerModels,
     setLastServerModels,
+    defaultModelLocalApiServer,
   } = useLocalApiServer()
   const setServerStatus = useAppState((state) => state.setServerStatus)
 
@@ -227,17 +228,24 @@ export function DataProvider() {
 
           setServerStatus('pending')
 
-          // Start the last models that were running with the server
-          if (lastServerModels.length > 0) {
+          // Start model(s): prefer user-configured default, fall back to last session's models
+          const modelsToStart = (() => {
+            if (defaultModelLocalApiServer) {
+              return [defaultModelLocalApiServer]
+            }
+            return lastServerModels
+          })()
+
+          if (modelsToStart.length > 0) {
             await Promise.allSettled(
-              lastServerModels.map(async ({ model, provider: providerName }) => {
+              modelsToStart.map(async ({ model, provider: providerName }) => {
                 const provider = getProviderByName(providerName)
                 if (!provider) return
                 try {
                   await serviceHub.models().startModel(provider, model, true)
-                  console.log(`Auto-started last server model: ${model}`)
+                  console.log(`Auto-started server model: ${model}`)
                 } catch (err) {
-                  console.warn(`Failed to auto-start last server model ${model}:`, err)
+                  console.warn(`Failed to auto-start server model ${model}:`, err)
                 }
               })
             )
