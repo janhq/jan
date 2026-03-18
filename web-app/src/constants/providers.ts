@@ -385,4 +385,38 @@ export const predefinedProviders = [
       },
     ],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://integrate.api.nvidia.com/v1',
+    explore_models_url: 'https://build.nvidia.com/models',
+    provider: 'nvidia',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The NVIDIA NIM API uses API keys for authentication. Visit [NVIDIA NGC API Keys](https://org.ngc.nvidia.com/setup/api-keys) to create an API key for your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The NVIDIA NIM OpenAI-compatible endpoint to use. See the [NVIDIA NIM API documentation](https://docs.api.nvidia.com/nim/reference/llm-apis) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://integrate.api.nvidia.com/v1',
+          value: 'https://integrate.api.nvidia.com/v1',
+        },
+      },
+    ],
+    models: [],
+  },
 ]
