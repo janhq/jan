@@ -110,12 +110,12 @@ export const providerModels = {
     supportsN: true,
   },
   minimax: {
-    models: ['MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    models: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
     supportsCompletion: true,
-    supportsStreaming: ['MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    supportsStreaming: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
     supportsJSON: [],
     supportsImages: [],
-    supportsToolCalls: ['MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    supportsToolCalls: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
     supportsN: true,
   },
   openrouter: {

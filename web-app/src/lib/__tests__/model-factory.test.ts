@@ -149,7 +149,7 @@ describe('ModelFactory', () => {
         active: true,
       }
 
-      const model = await ModelFactory.createModel('MiniMax-M2.5', provider)
+      const model = await ModelFactory.createModel('MiniMax-M2.7', provider)
       expect(model).toBeDefined()
       expect(model.type).toBe('openai-compatible')
     })

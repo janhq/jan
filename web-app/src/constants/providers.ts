@@ -359,6 +359,20 @@ export const predefinedProviders = [
     ],
     models: [
       {
+        id: 'MiniMax-M2.7',
+        name: 'MiniMax-M2.7',
+        version: '1.0',
+        description: 'Latest flagship model with enhanced reasoning and coding.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'MiniMax-M2.7-highspeed',
+        name: 'MiniMax-M2.7-highspeed',
+        version: '1.0',
+        description: 'High-speed version of M2.7 for low-latency scenarios.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
         id: 'MiniMax-M2.5',
         name: 'MiniMax-M2.5',
         version: '1.0',
