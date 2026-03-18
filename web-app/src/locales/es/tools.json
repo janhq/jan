@@ -1,0 +1,12 @@
+{
+  "toolApproval": {
+    "title": "Aprobación de herramienta requerida",
+    "description": "El asistente quiere usar",
+    "securityNotice": "Herramientas maliciosas o contenido de conversación podrían engañar al asistente para que intente acciones dañinas. Revisa cada llamada a herramienta cuidadosamente antes de aprobar.",
+    "deny": "Denegar",
+    "allowOnce": "Permitir una vez",
+    "alwaysAllow": "Permitir en el hilo",
+    "parameters": "Parámetros de la herramienta",
+    "permissionScope": "Los permisos otorgados aplican solo a esta conversación."
+  }
+}

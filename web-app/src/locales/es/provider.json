@@ -1,0 +1,5 @@
+{
+  "addProvider": "Agregar proveedor",
+  "addOpenAIProvider": "Agregar proveedor OpenAI",
+  "enterNameForProvider": "Ingresa un nombre para el proveedor"
+}

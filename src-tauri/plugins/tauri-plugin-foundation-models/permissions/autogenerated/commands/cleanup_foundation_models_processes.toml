@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-cleanup-foundation-models-processes"
+description = "Enables the cleanup_foundation_models_processes command without any pre-configured scope."
+commands.allow = ["cleanup_foundation_models_processes"]
+
+[[permission]]
+identifier = "deny-cleanup-foundation-models-processes"
+description = "Denies the cleanup_foundation_models_processes command without any pre-configured scope."
+commands.deny = ["cleanup_foundation_models_processes"]
