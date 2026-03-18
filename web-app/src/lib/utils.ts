@@ -92,6 +92,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/azure.svg'
     case 'xai':
       return '/images/model-provider/xai.svg'
+    case 'minimax':
+      return '/images/model-provider/minimax.svg'
     default:
       return undefined
   }
@@ -115,6 +117,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Hugging Face'
     case 'xai':
       return 'xAI'
+    case 'minimax':
+      return 'MiniMax'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }
