@@ -420,10 +420,6 @@ pub async fn check_jan_cli_installed() -> CliInstallStatus {
 }
 
 /// Core install logic — synchronous, no Tauri command overhead.
-///
-/// Copies the bundled `jan` binary to the best writable directory on PATH.
-/// Install order (Unix): `/usr/local/bin` (writable probe), then `~/.local/bin`.
-/// Windows: `%LOCALAPPDATA%\Programs\Jan\`
 pub fn install_jan_cli_sync<R: Runtime>(
     app_handle: &AppHandle<R>,
 ) -> Result<CliInstallStatus, String> {
@@ -433,35 +429,50 @@ pub fn install_jan_cli_sync<R: Runtime>(
         "jan-cli"
     };
     let dest_bin_name = if cfg!(windows) { "jan.exe" } else { "jan" };
-    let bundled = app_handle
+    let resource_bin_dir = app_handle
         .path()
         .resource_dir()
         .map_err(|e| e.to_string())?
-        .join("resources/bin")
-        .join(bin_name);
+        .join("resources/bin");
+    let bundled = resource_bin_dir.join(bin_name);
+    let dest = resource_bin_dir.join(dest_bin_name);
 
-    if !bundled.exists() {
+    if !bundled.exists() && !dest.exists() {
         return Err("Jan CLI binary not bundled with this version of Jan.".to_string());
     }
 
-    let install_dir = jan_cli_install_dir()?;
-    std::fs::create_dir_all(&install_dir).map_err(|e| e.to_string())?;
-    let dest = install_dir.join(dest_bin_name);
-
-    std::fs::copy(&bundled, &dest)
-        .map_err(|e| format!("Failed to copy jan to {}: {}", dest.display(), e))?;
+    #[cfg(windows)]
+    {
+        if bundled.exists() {
+            if let Err(e) = std::fs::rename(&bundled, &dest) {
+                log::warn!("Could not rename jan-cli.exe to jan.exe: {}", e);
+            }
+        }
+        add_to_path_windows(&resource_bin_dir)?;
+        return Ok(CliInstallStatus {
+            installed: true,
+            path: Some(dest.to_string_lossy().into_owned()),
+        });
+    }
 
     #[cfg(unix)]
     {
+        let install_dir = jan_cli_install_dir()?;
+        std::fs::create_dir_all(&install_dir).map_err(|e| e.to_string())?;
+        let dest = install_dir.join(dest_bin_name);
+
+        std::fs::copy(&bundled, &dest)
+            .map_err(|e| format!("Failed to copy jan to {}: {}", dest.display(), e))?;
+
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
             .map_err(|e| e.to_string())?;
-    }
 
-    Ok(CliInstallStatus {
-        installed: true,
-        path: Some(dest.to_string_lossy().into_owned()),
-    })
+        Ok(CliInstallStatus {
+            installed: true,
+            path: Some(dest.to_string_lossy().into_owned()),
+        })
+    }
 }
 
 /// Copy the bundled `jan` binary to the system PATH (Tauri command wrapper).
@@ -472,16 +483,25 @@ pub async fn install_jan_cli<R: Runtime>(
     install_jan_cli_sync(&app_handle)
 }
 
-/// Remove the installed `jan` CLI binary from the install directory.
+/// Remove the installed `jan` CLI binary.
 #[tauri::command]
 pub fn uninstall_jan_cli() -> Result<(), String> {
-    let bin_name = if cfg!(windows) { "jan.exe" } else { "jan" };
-    let dest = jan_cli_install_dir()?.join(bin_name);
-    if dest.exists() {
-        std::fs::remove_file(&dest)
-            .map_err(|e| format!("Failed to remove Jan CLI from {}: {}", dest.display(), e))?;
+    #[cfg(windows)]
+    {
+        let bin_dir = jan_cli_bin_dir_windows()?;
+        remove_from_path_windows(&bin_dir)?;
+        return Ok(());
     }
-    Ok(())
+
+    #[cfg(unix)]
+    {
+        let dest = jan_cli_install_dir()?.join("jan");
+        if dest.exists() {
+            std::fs::remove_file(&dest)
+                .map_err(|e| format!("Failed to remove Jan CLI from {}: {}", dest.display(), e))?;
+        }
+        Ok(())
+    }
 }
 
 /// Build the cleaned shell-file content with all Jan CC env vars stripped out.
@@ -587,44 +607,41 @@ pub fn clear_claude_code_env() -> Result<(), String> {
     }
 }
 
-/// Determine the best writable directory for the Jan CLI install.
+/// Determine the best writable directory for the Jan CLI install (Unix only).
+#[cfg(unix)]
 fn jan_cli_install_dir() -> Result<PathBuf, String> {
-    #[cfg(unix)]
-    {
-        let usr_local_bin = PathBuf::from("/usr/local/bin");
-        if usr_local_bin.exists() {
-            let probe = usr_local_bin.join(".jan_write_probe");
-            if std::fs::write(&probe, b"").is_ok() {
-                let _ = std::fs::remove_file(&probe);
-                return Ok(usr_local_bin);
-            }
+    let usr_local_bin = PathBuf::from("/usr/local/bin");
+    if usr_local_bin.exists() {
+        let probe = usr_local_bin.join(".jan_write_probe");
+        if std::fs::write(&probe, b"").is_ok() {
+            let _ = std::fs::remove_file(&probe);
+            return Ok(usr_local_bin);
         }
-        let home =
-            std::env::var("HOME").map_err(|_| "Cannot determine home directory".to_string())?;
-        Ok(PathBuf::from(home).join(".local").join("bin"))
     }
-    #[cfg(windows)]
-    {
-        let local_app_data = std::env::var("LOCALAPPDATA")
-            .map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
-        let install_dir = PathBuf::from(local_app_data).join("Programs").join("Jan");
-
-        // Add to PATH if not already present
-        add_to_path_windows(&install_dir)?;
-
-        Ok(install_dir)
-    }
+    let home =
+        std::env::var("HOME").map_err(|_| "Cannot determine home directory".to_string())?;
+    Ok(PathBuf::from(home).join(".local").join("bin"))
 }
 
-/// Add a directory to the Windows PATH for the current user.
+/// Return the directory containing the bundled CLI binary on Windows.
+#[cfg(windows)]
+fn jan_cli_bin_dir_windows() -> Result<PathBuf, String> {
+    let local_app_data = std::env::var("LOCALAPPDATA")
+        .map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
+    Ok(PathBuf::from(local_app_data)
+        .join("Programs")
+        .join("Jan")
+        .join("resources")
+        .join("bin"))
+}
+
+/// Add a directory to the Windows user PATH.
 #[cfg(windows)]
 fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
     use std::process::Command;
 
     let install_dir_str = install_dir.to_string_lossy().to_string();
 
-    // Use PowerShell to read the user-scoped PATH directly from the registry.
-    // This avoids %PATH% expansion which would include the system PATH and corrupt the user value.
     let mut cmd = Command::new("powershell");
     cmd.args([
         "-NoProfile",
@@ -644,32 +661,44 @@ fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
         .trim()
         .to_string();
 
-    // Check if already present
-    if existing_user_path
+    // Remove stale old-style PATH entry (..\\Programs\\Jan without \\resources\\bin)
+    // left by previous versions that placed jan.exe next to the GUI binary.
+    let old_jan_dir = install_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.to_string_lossy().to_string());
+
+    let parts: Vec<&str> = existing_user_path
         .split(';')
-        .any(|p| p.eq_ignore_ascii_case(&install_dir_str))
-    {
+        .filter(|p| !p.is_empty())
+        .filter(|p| {
+            if let Some(ref old) = old_jan_dir {
+                !p.eq_ignore_ascii_case(old)
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    if parts.iter().any(|p| p.eq_ignore_ascii_case(&install_dir_str)) {
         return Ok(());
     }
 
-    let new_path = if existing_user_path.is_empty() {
-        install_dir_str.clone()
-    } else {
-        format!("{};{}", install_dir_str, existing_user_path)
-    };
+    let mut new_parts = vec![install_dir_str.as_str()];
+    new_parts.extend(parts);
+    let new_path = new_parts.join(";");
 
-    // Write back using PowerShell — also broadcasts WM_SETTINGCHANGE so shells notice immediately
     let mut cmd_write = Command::new("powershell");
     cmd_write.args([
         "-NoProfile",
         "-Command",
         &format!(
             "[Environment]::SetEnvironmentVariable('Path', '{}', 'User')",
-            new_path.replace('\'', "''") // escape single quotes for PS string
+            new_path.replace('\'', "''")
         ),
     ]);
 
-     #[cfg(windows)]
+    #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         cmd_write.creation_flags(0x08000000); // CREATE_NO_WINDOW
@@ -687,5 +716,70 @@ fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
     }
 
     log::info!("Added {} to Windows user PATH", install_dir_str);
+    Ok(())
+}
+
+/// Remove a directory from the Windows user PATH.
+#[cfg(windows)]
+fn remove_from_path_windows(dir: &PathBuf) -> Result<(), String> {
+    use std::process::Command;
+
+    let dir_str = dir.to_string_lossy().to_string();
+
+    let mut cmd = Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-Command",
+        "[Environment]::GetEnvironmentVariable('Path', 'User')",
+    ]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let read_output = cmd
+        .output()
+        .map_err(|e| format!("Failed to read user PATH: {}", e))?;
+
+    let existing_user_path = String::from_utf8_lossy(&read_output.stdout)
+        .trim()
+        .to_string();
+
+    let new_path: String = existing_user_path
+        .split(';')
+        .filter(|p| !p.is_empty() && !p.eq_ignore_ascii_case(&dir_str))
+        .collect::<Vec<_>>()
+        .join(";");
+
+    if new_path.len() != existing_user_path.len() {
+        let mut cmd_write = Command::new("powershell");
+        cmd_write.args([
+            "-NoProfile",
+            "-Command",
+            &format!(
+                "[Environment]::SetEnvironmentVariable('Path', '{}', 'User')",
+                new_path.replace('\'', "''")
+            ),
+        ]);
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd_write.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+
+        let write_output = cmd_write
+            .output()
+            .map_err(|e| format!("Failed to update user PATH: {}", e))?;
+
+        if !write_output.status.success() {
+            return Err(format!(
+                "Failed to update PATH: {}",
+                String::from_utf8_lossy(&write_output.stderr)
+            ));
+        }
+
+        log::info!("Removed {} from Windows user PATH", dir_str);
+    }
     Ok(())
 }
