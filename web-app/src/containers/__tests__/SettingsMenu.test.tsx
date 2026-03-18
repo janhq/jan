@@ -45,7 +45,14 @@ vi.mock('@/hooks/useModelProvider', () => ({
         models: [],
       },
     ],
+    addProvider: vi.fn(),
   })),
+}))
+
+vi.mock('@/containers/dialogs', () => ({
+  AddProviderDialog: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
 }))
 
 vi.mock('@/lib/utils', () => ({
@@ -76,6 +83,13 @@ describe('SettingsMenu', () => {
 
     vi.mocked(useNavigate).mockReturnValue(mockNavigate)
     vi.mocked(useMatches).mockReturnValue(mockMatches)
+    vi.mocked(useModelProvider).mockReturnValue({
+      providers: [
+        { provider: 'openai', active: true, models: [] },
+        { provider: 'llama.cpp', active: true, models: [] },
+      ],
+      addProvider: vi.fn(),
+    })
   })
 
   it('renders all menu items', () => {
@@ -84,7 +98,6 @@ describe('SettingsMenu', () => {
     expect(screen.getByText('common:general')).toBeInTheDocument()
     expect(screen.getByText('common:interface')).toBeInTheDocument()
     expect(screen.getByText('common:privacy')).toBeInTheDocument()
-    expect(screen.getByText('common:modelProviders')).toBeInTheDocument()
   })
 
   it('renders keyboard shortcuts and other settings', () => {
@@ -107,25 +120,31 @@ describe('SettingsMenu', () => {
   it('shows expanded providers by default', () => {
     render(<SettingsMenu />)
 
-    // Providers should be expanded by default (expandedProviders starts as true)
+    // Providers ARE expanded by default (expandedProviders starts as true)
     expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
-    expect(screen.getByTestId('provider-avatar-llama.cpp')).toBeInTheDocument()
   })
 
-  it('collapses providers submenu when chevron is clicked', async () => {
+  it('collapses disabled providers section when toggle is clicked', async () => {
+    vi.mocked(useModelProvider).mockReturnValue({
+      providers: [
+        { provider: 'openai', active: true, models: [] },
+        { provider: 'anthropic', active: false, models: [] },
+      ],
+      addProvider: vi.fn(),
+    })
+
     const user = userEvent.setup()
     render(<SettingsMenu />)
 
-    // Providers should be visible initially
-    expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
+    // Disabled section is expanded by default — anthropic is visible
+    expect(screen.getByTestId('provider-avatar-anthropic')).toBeInTheDocument()
 
-    // Click the chevron to collapse
-    const chevronButtons = screen.getAllByRole('button')
-    const chevron = chevronButtons[0]
-    await user.click(chevron)
+    // Click the toggle to collapse the disabled section
+    const toggleButton = screen.getByText('common:hiddenProviders')
+    await user.click(toggleButton)
 
-    // After clicking, providers should be hidden
-    expect(screen.queryByTestId('provider-avatar-openai')).not.toBeInTheDocument()
+    // After collapsing, anthropic should be hidden
+    expect(screen.queryByTestId('provider-avatar-anthropic')).not.toBeInTheDocument()
   })
 
   it('auto-expands providers when on provider route', () => {
@@ -161,7 +180,7 @@ describe('SettingsMenu', () => {
     const user = userEvent.setup()
     render(<SettingsMenu />)
 
-    // Providers are expanded by default, so click on a provider directly
+    // Providers are expanded by default, click directly on a provider
     const openaiProvider = screen
       .getByTestId('provider-avatar-openai')
       .closest('div[class*="cursor-pointer"]')
@@ -189,27 +208,22 @@ describe('SettingsMenu', () => {
     expect(llamaCpp?.className).toContain('hidden')
   })
 
-  it('filters out inactive providers from submenu', () => {
+  it('shows inactive providers in disabled section', () => {
     vi.mocked(useModelProvider).mockReturnValue({
       providers: [
-        {
-          provider: 'openai',
-          active: true,
-          models: [],
-        },
-        {
-          provider: 'anthropic',
-          active: false,
-          models: [],
-        },
+        { provider: 'openai', active: true, models: [] },
+        { provider: 'anthropic', active: false, models: [] },
       ],
+      addProvider: vi.fn(),
     })
 
     render(<SettingsMenu />)
 
+    // Active provider shown normally
     expect(screen.getByTestId('provider-avatar-openai')).toBeInTheDocument()
-    expect(
-      screen.queryByTestId('provider-avatar-anthropic')
-    ).not.toBeInTheDocument()
+    // Inactive provider shown in the disabled section (expanded by default)
+    expect(screen.getByTestId('provider-avatar-anthropic')).toBeInTheDocument()
+    // Disabled section label is shown
+    expect(screen.getByText('common:hiddenProviders')).toBeInTheDocument()
   })
 })

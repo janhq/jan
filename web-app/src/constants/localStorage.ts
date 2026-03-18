@@ -19,12 +19,14 @@ export const localStorageKey = {
   mcpGlobalPermissions: 'mcp-global-permissions',
   lastUsedModel: 'last-used-model',
   lastUsedAssistant: 'last-used-assistant',
+  defaultAssistantId: 'default-assistant-id',
   favoriteModels: 'favorite-models',
   setupCompleted: 'setup-completed',
   threadManagement: 'thread-management',
   modelSupportCache: 'jan_model_support_cache',
   recentSearches: 'recent-searches',
   janModelPromptDismissed: 'jan-model-prompt-dismissed',
+  agentMode: 'agent-mode',
 }
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

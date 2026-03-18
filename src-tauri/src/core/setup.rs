@@ -6,9 +6,7 @@ use std::{
     sync::Arc,
 };
 use tar::Archive;
-use tauri::{
-    App, Emitter, Manager, Runtime, Wry, WindowEvent
-};
+use tauri::{App, Emitter, Manager, Runtime, WindowEvent, Wry};
 
 #[cfg(desktop)]
 use tauri::{
@@ -17,9 +15,9 @@ use tauri::{
 };
 use tauri_plugin_store::Store;
 
+use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::mcp::constants::DEFAULT_MCP_CONFIG;
 use crate::core::mcp::helpers::add_server_config;
-use crate::core::app::commands::get_jan_data_folder_path;
 
 use super::{
     extensions::commands::get_jan_extensions_path, mcp::helpers::run_mcp_commands, state::AppState,
@@ -214,16 +212,13 @@ pub fn migrate_mcp_servers(
 fn migrate_exa_to_http(app_handle: tauri::AppHandle) -> Result<(), String> {
     let config_path = get_jan_data_folder_path(app_handle).join("mcp_config.json");
 
-    let config_str = fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read MCP config: {e}"))?;
+    let config_str =
+        fs::read_to_string(&config_path).map_err(|e| format!("Failed to read MCP config: {e}"))?;
 
     let mut config: serde_json::Value = serde_json::from_str(&config_str)
         .map_err(|e| format!("Failed to parse MCP config: {e}"))?;
 
-    if let Some(servers) = config
-        .get_mut("mcpServers")
-        .and_then(|s| s.as_object_mut())
-    {
+    if let Some(servers) = config.get_mut("mcpServers").and_then(|s| s.as_object_mut()) {
         servers.insert(
             "exa".to_string(),
             serde_json::json!({
@@ -275,6 +270,51 @@ pub fn extract_extension_manifest<R: Read>(
     }
 
     Ok(None)
+}
+
+/// Install/update the bundled `jan` CLI binary.
+///
+/// - `version_changed`: pass `true` whenever the app version has changed (i.e. after an update).
+///   When `true` the binary is always overwritten so the CLI stays in sync with the new app.
+///   When `false` only installs if the binary is not yet present on PATH.
+///
+/// Runs in a background task — never blocks startup.
+/// Errors are logged as warnings and never prevent the app from starting.
+pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_changed: bool) {
+    tauri::async_runtime::spawn(async move {
+        // On a normal launch where the version hasn't changed, skip reinstall if already on PATH.
+        if !version_changed {
+            let which_cmd = if cfg!(windows) { "where" } else { "which" };
+            let mut cmd = std::process::Command::new(which_cmd);
+            cmd.arg("jan");
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            }
+            if cmd
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                log::debug!("jan CLI already on PATH — skipping reinstall");
+                return;
+            }
+        }
+
+        match crate::core::system::commands::install_jan_cli_sync(&app_handle) {
+            Ok(status) => {
+                log::info!(
+                    "jan CLI {} to {}",
+                    if version_changed { "updated" } else { "installed" },
+                    status.path.as_deref().unwrap_or("<unknown>")
+                );
+            }
+            Err(e) => {
+                log::warn!("jan CLI auto-install skipped: {e}");
+            }
+        }
+    });
 }
 
 pub fn setup_mcp<R: Runtime>(app: &App<R>) {
@@ -351,9 +391,73 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
 }
 
 pub fn setup_theme_listener<R: Runtime>(app: &App<R>) -> tauri::Result<()> {
-    // Setup theme listener for main window
+    // Setup GTK window theme listener for main window
     if let Some(window) = app.get_webview_window("main") {
         setup_window_theme_listener(app.handle().clone(), window);
+    }
+
+    // On Linux, also listen to XDG Desktop Portal color-scheme changes via D-Bus.
+    // This is needed because KDE Plasma and some other desktop environments
+    // don't always update GTK settings when the system theme changes,
+    // which means the GTK WindowEvent::ThemeChanged may never fire.
+    #[cfg(target_os = "linux")]
+    {
+        let app_handle = app.handle().clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = setup_xdg_portal_theme_listener(app_handle).await {
+                log::warn!("Failed to setup XDG Desktop Portal theme listener: {e}");
+                log::warn!("System theme changes from KDE/non-GNOME DEs may not be detected");
+            }
+        });
+    }
+
+    Ok(())
+}
+
+/// Listen to the XDG Desktop Portal `org.freedesktop.appearance` `color-scheme`
+/// setting via D-Bus. This fires reliably on KDE Plasma, GNOME, and other
+/// freedesktop-compliant desktop environments.
+#[cfg(target_os = "linux")]
+async fn setup_xdg_portal_theme_listener<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use futures_util::StreamExt;
+    use zbus::Connection;
+
+    let connection = Connection::session().await?;
+
+    // Build a proxy for the XDG Desktop Portal Settings interface
+    let proxy: zbus::Proxy<'_> = zbus::proxy::Builder::new(&connection)
+        .destination("org.freedesktop.portal.Desktop")?
+        .path("/org/freedesktop/portal/desktop")?
+        .interface("org.freedesktop.portal.Settings")?
+        .build()
+        .await?;
+
+    // Listen for all SettingChanged signals and filter for color-scheme
+    let mut signal_stream = proxy.receive_signal("SettingChanged").await?;
+
+    log::info!("XDG Desktop Portal theme listener active");
+
+    while let Some(signal) = signal_stream.next().await {
+        let body = signal.body();
+        if let Ok((namespace, key, value)) =
+            body.deserialize::<(String, String, zbus::zvariant::OwnedValue)>()
+        {
+            if namespace == "org.freedesktop.appearance" && key == "color-scheme" {
+                // color-scheme values: 0 = no preference, 1 = prefer dark, 2 = prefer light
+                let color_scheme = u32::try_from(value).unwrap_or(0);
+                let theme_str = match color_scheme {
+                    1 => "dark",
+                    2 => "light",
+                    _ => "light", // default to light for "no preference"
+                };
+                log::info!(
+                    "XDG Portal: system color-scheme changed to: {theme_str} (raw value: {color_scheme})"
+                );
+                let _ = app_handle.emit("theme-changed", theme_str);
+            }
+        }
     }
 
     Ok(())

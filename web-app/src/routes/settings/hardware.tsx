@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react'
 import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { HardwareData, SystemUsage } from '@/services/hardware/types'
-import { formatMegaBytes } from '@/lib/utils'
+import { cn, formatMegaBytes } from '@/lib/utils'
 import { toNumber } from '@/utils/number'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAppState } from '@/hooks/useAppState'
@@ -118,15 +118,33 @@ function HardwareContent() {
     }
   }
 
+  const handleRefreshHardware = async () => {
+    try {
+      setIsLoading(true)
+      await serviceHub.hardware().refreshHardwareInfo()
+      const [hardwareData, systemUsage] = await Promise.all([
+        serviceHub.hardware().getHardwareInfo(),
+        serviceHub.hardware().getSystemUsage(),
+      ])
+      if (hardwareData) setHardwareData(hardwareData)
+      if (systemUsage) updateSystemUsage(systemUsage)
+      if (!IS_MACOS) fetchDevices()
+    } catch (error) {
+      console.error('Failed to refresh hardware:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div className="flex items-center gap-2 justify-between w-full pr-3">
+        <div className={cn("flex items-center justify-between w-full mr-2 pr-3", !IS_MACOS && "pr-30")}>
           <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
           <Button
-            variant="secondary"
+            variant="outline"
             size="sm"
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 relative z-50"
             onClick={handleClickSystemMonitor}
           >
             <IconDeviceDesktopAnalytics className="text-muted-foreground size-5" />
@@ -275,7 +293,21 @@ function HardwareContent() {
 
               {/* Llamacpp Devices Information */}
               {!IS_MACOS && llamacpp && (
-                <Card title="GPUs">
+                <Card
+                  title="GPUs"
+                  header={
+                    <div className="flex items-center justify-end mb-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleRefreshHardware}
+                        disabled={isLoading}
+                      >
+                        {isLoading ? '...' : 'Refresh'}
+                      </Button>
+                    </div>
+                  }
+                >
                   {llamacppDevicesLoading ? (
                     <CardItem title="Loading devices..." actions={<></>} />
                   ) : llamacppDevicesError ? (

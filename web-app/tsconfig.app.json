@@ -23,7 +23,6 @@
     "noUncheckedSideEffectImports": true,
 
     /* Url */
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
       "@janhq/conversational-extension": ["../extensions/conversational-extension/src/index.ts"]

@@ -35,6 +35,11 @@ export abstract class RAGExtension extends BaseExtension {
   abstract ingestAttachments(threadId: string, files: AttachmentInput[]): Promise<IngestAttachmentsResult>
 
   /**
+   * Ingest files for a project-level collection (shared across all threads in the project)
+   */
+  abstract ingestAttachmentsForProject(projectId: string, files: AttachmentInput[]): Promise<IngestAttachmentsResult>
+
+  /**
    * Parse a document into plain text for inline ingestion or preprocessing.
    */
   abstract parseDocument(path: string, type?: string): Promise<string>

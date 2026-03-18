@@ -89,7 +89,7 @@ export function PromptVisionModel({
       >()
 
       for (const quantization of JAN_V2_VL_QUANTIZATIONS) {
-        const variant = janV2VLModel.quants.find((quant) =>
+        const variant = janV2VLModel.quants?.find((quant) =>
           quant.model_id.toLowerCase().includes(quantization)
         )
 
@@ -126,7 +126,7 @@ export function PromptVisionModel({
 
     for (const status of priorityOrder) {
       for (const quantization of JAN_V2_VL_QUANTIZATIONS) {
-        const variant = janV2VLModel.quants.find((quant) =>
+        const variant = janV2VLModel.quants?.find((quant) =>
           quant.model_id.toLowerCase().includes(quantization)
         )
 
@@ -137,13 +137,13 @@ export function PromptVisionModel({
     }
 
     for (const quantization of JAN_V2_VL_QUANTIZATIONS) {
-      const variant = janV2VLModel.quants.find((quant) =>
+      const variant = janV2VLModel.quants?.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
       )
       if (variant) return variant
     }
 
-    return janV2VLModel.quants[0]
+    return janV2VLModel.quants?.[0]
   }, [janV2VLModel, supportedVariants])
 
   const isDownloading = useMemo(() => {

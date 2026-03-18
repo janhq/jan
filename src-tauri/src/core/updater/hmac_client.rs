@@ -43,7 +43,12 @@ pub fn get_timestamp() -> String {
 
 /// Generate HMAC-SHA256 signature for request verification
 /// Message format: "{nonce_seed}:{timestamp}:{nonce}"
-pub fn generate_signature(secret_key: &str, nonce_seed: &str, timestamp: &str, nonce: &str) -> String {
+pub fn generate_signature(
+    secret_key: &str,
+    nonce_seed: &str,
+    timestamp: &str,
+    nonce: &str,
+) -> String {
     let message = format!("{}:{}:{}", nonce_seed, timestamp, nonce);
 
     let mut mac =

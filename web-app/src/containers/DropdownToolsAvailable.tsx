@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, memo } from 'react'
 
 import {
   DropDrawer,
@@ -29,7 +29,7 @@ interface DropdownToolsAvailableProps {
   onOpenChange?: (isOpen: boolean) => void
 }
 
-export default function DropdownToolsAvailable({
+export default memo(function DropdownToolsAvailable({
   children,
   initialMessage = false,
   onOpenChange,
@@ -269,4 +269,4 @@ export default function DropdownToolsAvailable({
       </DropDrawerContent>
     </DropDrawer>
   )
-}
+})

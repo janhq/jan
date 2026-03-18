@@ -17,7 +17,6 @@ const COMMANDS: &[&str] = &[
     "estimate_kv_cache_size",
     "get_model_size",
     "is_model_supported",
-    "plan_model_load",
     // backend management
     "map_old_backend_to_new",
     "get_local_installed_backends",

@@ -11,13 +11,13 @@ import {
   IconWorld,
   IconCodeCircle2,
 } from '@tabler/icons-react'
-import { Fragment } from 'react/jsx-runtime'
+import { Fragment, memo } from 'react'
 
 interface CapabilitiesProps {
   capabilities: string[]
 }
 
-const Capabilities = ({ capabilities }: CapabilitiesProps) => {
+const Capabilities = memo(function Capabilities({ capabilities }: CapabilitiesProps) {
   if (!capabilities.length) return null
 
   // Filter out proactive capability as it's now managed in MCP settings
@@ -77,6 +77,6 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
       })}
     </div>
   )
-}
+})
 
 export default Capabilities

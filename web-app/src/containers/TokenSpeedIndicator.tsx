@@ -57,7 +57,7 @@ export const TokenSpeedIndicator = memo(
       : (usage?.outputTokens ?? persistedTokenCount)
 
     // Hide the indicator if token speed is 0 and not streaming
-    if (!streaming && displaySpeed === 0) return
+    if (displaySpeed === 0) return
 
     // Show indicator during streaming OR when we have persisted data
     const shouldShow = streaming || (displaySpeed > 0 && displayTokenCount > 0)

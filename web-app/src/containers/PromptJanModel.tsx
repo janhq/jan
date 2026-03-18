@@ -11,7 +11,7 @@ import {
 } from '@/constants/models'
 
 export function PromptJanModel() {
-  
+
   const { setDismissed } = useJanModelPromptDismissed()
   const serviceHub = useServiceHub()
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
@@ -52,13 +52,13 @@ export function PromptJanModel() {
     if (!janNewModel) return null
 
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-      const variant = janNewModel.quants.find((quant) =>
+      const variant = janNewModel.quants?.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
       )
       if (variant) return variant
     }
 
-    return janNewModel.quants[0]
+    return janNewModel.quants?.[0]
   }, [janNewModel])
 
   const isDownloading = useMemo(() => {

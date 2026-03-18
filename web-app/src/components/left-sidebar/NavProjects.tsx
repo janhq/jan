@@ -1,5 +1,6 @@
 import {
   FolderEditIcon,
+  FolderIcon,
   FolderOpenIcon,
   MoreHorizontal,
   Trash2,
@@ -23,8 +24,10 @@ import {
 } from "@/components/ui/sidebar"
 import { useThreadManagement } from "@/hooks/useThreadManagement"
 import { Link, useNavigate } from "@tanstack/react-router"
-import { FoldersIcon, type FoldersIconHandle } from "@/components/animated-icon/folders"
-import { useRef, useState } from "react"
+
+
+import { useState } from "react"
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { ThreadFolder } from "@/services/projects/types"
 import AddProjectDialog from "@/containers/dialogs/AddProjectDialog"
 import { DeleteProjectDialog } from "@/containers/dialogs/DeleteProjectDialog"
@@ -40,7 +43,7 @@ function ProjectItem({
   onEdit: (project: ThreadFolder) => void
   onDelete: (project: ThreadFolder) => void
 }) {
-  const iconRef = useRef<FoldersIconHandle>(null)
+
   const navigate = useNavigate()
 
   return (
@@ -49,10 +52,8 @@ function ProjectItem({
         <Link
           to="/project/$projectId"
           params={{ projectId: item.id }}
-          onMouseEnter={() => iconRef.current?.startAnimation()}
-          onMouseLeave={() => iconRef.current?.stopAnimation()}
         >
-          <FoldersIcon ref={iconRef} className="text-foreground/70" size={16} />
+          <FolderIcon  className="text-foreground/70" size={16} />
           <span>{item.name}</span>
         </Link>
       </SidebarMenuButton>
@@ -90,6 +91,7 @@ function ProjectItem({
 }
 
 export function NavProjects() {
+  const { t } = useTranslation()
   const { isMobile } = useSidebar()
   const { folders, updateFolder } = useThreadManagement()
 
@@ -107,9 +109,9 @@ export function NavProjects() {
     setDeleteDialogOpen(true)
   }
 
-  const handleSaveEdit = async (name: string) => {
+  const handleSaveEdit = async (name: string, assistantId?: string) => {
     if (selectedProject) {
-      await updateFolder(selectedProject.id, name)
+      await updateFolder(selectedProject.id, name, assistantId)
       setEditDialogOpen(false)
       setSelectedProject(null)
     }
@@ -122,7 +124,7 @@ export function NavProjects() {
   return (
     <>
       <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-        <SidebarGroupLabel>Projects</SidebarGroupLabel>
+        <SidebarGroupLabel>{t('common:projects.title')}</SidebarGroupLabel>
         <SidebarMenu>
           {folders.map((item) => (
             <ProjectItem

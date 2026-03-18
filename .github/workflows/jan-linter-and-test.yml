@@ -76,7 +76,7 @@ jobs:
           path: coverage/lcov.info
 
   test-on-macos:
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'macos-latest' || 'macos-selfhosted-15-arm64' }}
+    runs-on: 'macos-latest'
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
@@ -101,6 +101,9 @@ jobs:
           corepack prepare yarn@4.5.3 --activate
           yarn --version
           yarn config set -H enableImmutableInstalls false
+
+      - name: Set up Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
 
       - name: Linter and test
         run: |
@@ -209,11 +212,11 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      
+
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
-          tool-cache: false 
+          tool-cache: false
           android: true
           dotnet: true
           haskell: true

@@ -12,11 +12,78 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
-import { getModelToStart } from '@/utils/getModelToStart'
 import { isDev } from '@/lib/utils'
+import { invoke } from '@tauri-apps/api/core'
+
+type ProviderCustomHeader = {
+  header: string
+  value: string
+}
+
+type RegisterProviderRequest = {
+  provider: string
+  api_key?: string
+  base_url?: string
+  custom_headers: ProviderCustomHeader[]
+  models: string[]
+}
+
+async function registerRemoteProvider(provider: ModelProvider) {
+  // Skip llamacpp - those are local models
+  if (provider.provider === 'llamacpp') return
+
+  // Skip providers without API key (they can't make requests)
+  if (!provider.api_key) {
+    console.log(`Provider ${provider.provider} has no API key, skipping registration`)
+    return
+  }
+
+  const request: RegisterProviderRequest = {
+    provider: provider.provider,
+    api_key: provider.api_key,
+    base_url: provider.base_url,
+    custom_headers: (provider.custom_header || []).map((h) => ({
+      header: h.header,
+      value: h.value,
+    })),
+    models: provider.models.map(e => e.id)
+  }
+
+  try {
+    await invoke('register_provider_config', { request })
+    console.log(`Registered remote provider: ${provider.provider}`)
+  } catch (error) {
+    console.error(`Failed to register provider ${provider.provider}:`, error)
+  }
+}
+
+// Track which providers have been registered so we can unregister stale ones
+let registeredProviderNames = new Set<string>()
+
+// Effect to sync remote providers when providers change
+const syncRemoteProviders = () => {
+  const providers = useModelProvider.getState().providers
+  const currentActive = new Set<string>()
+
+  providers.forEach((provider) => {
+    if (provider.active && provider.provider !== 'llamacpp' && provider.api_key) {
+      registerRemoteProvider(provider)
+      currentActive.add(provider.provider)
+    }
+  })
+
+  // Unregister providers that were previously registered but are now inactive/removed
+  for (const name of registeredProviderNames) {
+    if (!currentActive.has(name)) {
+      invoke('unregister_provider_config', { provider: name }).catch(() => {})
+    }
+  }
+
+  registeredProviderNames = currentActive
+}
 
 export function DataProvider() {
-  const { setProviders, selectedModel, selectedProvider, getProviderByName } =
+  const { setProviders, getProviderByName } =
     useModelProvider()
 
   const { checkForUpdate } = useAppUpdater()
@@ -25,7 +92,6 @@ export function DataProvider() {
   const { setThreads } = useThreads()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
-  const setActiveModels = useAppState((state) => state.setActiveModels)
 
   // Local API Server hooks
   const {
@@ -39,12 +105,24 @@ export function DataProvider() {
     corsEnabled,
     verboseLogs,
     proxyTimeout,
+    lastServerModels,
+    setLastServerModels,
+    defaultModelLocalApiServer,
   } = useLocalApiServer()
   const setServerStatus = useAppState((state) => state.setServerStatus)
 
   useEffect(() => {
     console.log('Initializing DataProvider...')
-    serviceHub.providers().getProviders().then(setProviders)
+    serviceHub.providers().getProviders().then((providers) => {
+      setProviders(providers)
+      // Register active remote providers with the backend
+      providers.forEach((provider) => {
+        if (provider.active) {
+          registerRemoteProvider(provider)
+          registeredProviderNames.add(provider.provider)
+        }
+      })
+    })
     serviceHub
       .mcp()
       .getMCPConfig()
@@ -94,6 +172,12 @@ export function DataProvider() {
       })
   }, [serviceHub, setThreads])
 
+  // Sync remote providers with backend when providers change
+  const providers = useModelProvider.getState().providers
+  useEffect(() => {
+    syncRemoteProviders()
+  }, [providers])
+
   // Check for app updates - initial check and periodic interval
   useEffect(() => {
     // Only check for updates if the auto updater is not disabled
@@ -120,65 +204,80 @@ export function DataProvider() {
 
   useEffect(() => {
     events.on(AppEvent.onModelImported, () => {
-      serviceHub.providers().getProviders().then(setProviders)
+      serviceHub.providers().getProviders().then((providers) => {
+        setProviders(providers)
+        syncRemoteProviders()
+      })
     })
   }, [serviceHub, setProviders])
 
   // Auto-start Local API Server on app startup if enabled
   useEffect(() => {
     if (enableOnStartup) {
-      // Validate API key before starting
-      if (!apiKey || apiKey.toString().trim().length === 0) {
-        console.warn('Cannot start Local API Server: API key is required')
-        return
-      }
-
-      const modelToStart = getModelToStart({
-        selectedModel,
-        selectedProvider,
-        getProviderByName,
-      })
-
-      // Only start server if we have a model to load
-      if (!modelToStart) {
-        console.warn(
-          'Cannot start Local API Server: No model available to load'
-        )
-        return
-      }
-
-      setServerStatus('pending')
-
-      // Start the model first
+      // Check if server is already running
       serviceHub
-        .models()
-        .startModel(modelToStart.provider, modelToStart.model)
-        .then(() => {
-          console.log(`Model ${modelToStart.model} started successfully`)
-          // Refresh active models after starting
-          serviceHub
-            .models()
-            .getActiveModels()
-            .then((models) => setActiveModels(models || []))
-
-          // Then start the server
-          return window.core?.api?.startServer({
-            host: serverHost,
-            port: serverPort,
-            prefix: apiPrefix,
-            apiKey,
-            trustedHosts,
-            isCorsEnabled: corsEnabled,
-            isVerboseEnabled: verboseLogs,
-            proxyTimeout: proxyTimeout,
-          })
-        })
-        .then((actualPort: number) => {
-          // Store the actual port that was assigned (important for mobile with port 0)
-          if (actualPort && actualPort !== serverPort) {
-            setServerPort(actualPort)
+        .app()
+        .getServerStatus()
+        .then(async (isRunning) => {
+          if (isRunning) {
+            console.log('Local API Server is already running')
+            setServerStatus('running')
+            return
           }
-          setServerStatus('running')
+
+          setServerStatus('pending')
+
+          // Start model(s): prefer user-configured default, fall back to last session's models
+          const modelsToStart = (() => {
+            if (defaultModelLocalApiServer) {
+              return [defaultModelLocalApiServer]
+            }
+            return lastServerModels
+          })()
+
+          if (modelsToStart.length > 0) {
+            await Promise.allSettled(
+              modelsToStart.map(async ({ model, provider: providerName }) => {
+                const provider = getProviderByName(providerName)
+                if (!provider) return
+                try {
+                  await serviceHub.models().startModel(provider, model, true)
+                  console.log(`Auto-started server model: ${model}`)
+                } catch (err) {
+                  console.warn(`Failed to auto-start server model ${model}:`, err)
+                }
+              })
+            )
+          }
+
+          return window.core?.api
+            ?.startServer({
+              host: serverHost,
+              port: serverPort,
+              prefix: apiPrefix,
+              apiKey,
+              trustedHosts,
+              isCorsEnabled: corsEnabled,
+              isVerboseEnabled: verboseLogs,
+              proxyTimeout: proxyTimeout,
+            })
+            .then(async (actualPort: number) => {
+              // Store the actual port that was assigned (important for mobile with port 0)
+              if (actualPort && actualPort !== serverPort) {
+                setServerPort(actualPort)
+              }
+              setServerStatus('running')
+              // Persist whichever models are actually running so next startup can restore them
+              const activeModels = await serviceHub.models().getActiveModels().catch(() => [] as string[])
+              if (activeModels.length > 0) {
+                const allProviders = useModelProvider.getState().providers
+                const serverModels = activeModels.flatMap((id) => {
+                  const p = allProviders.find((p) => p?.models?.some((m: { id: string }) => m.id === id))
+                  return p ? [{ model: id, provider: p.provider }] : []
+                })
+                if (serverModels.length > 0) setLastServerModels(serverModels)
+              }
+            })
         })
         .catch((error: unknown) => {
           console.error('Failed to start Local API Server on startup:', error)

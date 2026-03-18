@@ -5,7 +5,9 @@ import { ExtensionTypeEnum } from '@janhq/core'
 
 export class DefaultRAGService implements RAGService {
   async getTools(): Promise<MCPTool[]> {
-    const ext = ExtensionManager.getInstance().get<RAGExtension>(ExtensionTypeEnum.RAG)
+    const ext = ExtensionManager.getInstance().get<RAGExtension>(
+      ExtensionTypeEnum.RAG
+    )
     if (ext?.getTools) {
       try {
         return await ext.getTools()
@@ -16,29 +18,53 @@ export class DefaultRAGService implements RAGService {
     return []
   }
 
-  async callTool(args: { toolName: string; arguments: Record<string, unknown>; threadId?: string }): Promise<MCPToolCallResult> {
-    const ext = ExtensionManager.getInstance().get<RAGExtension>(ExtensionTypeEnum.RAG)
+  async callTool(args: {
+    toolName: string
+    arguments: Record<string, unknown>
+    threadId?: string
+    projectId?: string
+    scope: 'project' | 'thread'
+  }): Promise<MCPToolCallResult> {
+    const ext = ExtensionManager.getInstance().get<RAGExtension>(
+      ExtensionTypeEnum.RAG
+    )
     if (!ext?.callTool) {
-      return { error: 'RAG extension not available', content: [{ type: 'text', text: 'RAG extension not available' }] }
+      return {
+        error: 'RAG extension not available',
+        content: [{ type: 'text', text: 'RAG extension not available' }],
+      }
     }
     try {
-      // Inject thread context when scope requires it
-      type ToolCallArgs = Record<string, unknown> & { scope?: string; thread_id?: string }
+      // Inject context when scope requires it
+      type ToolCallArgs = Record<string, unknown> & {
+        scope?: string
+        thread_id?: string
+        project_id?: string
+      }
       const a: ToolCallArgs = { ...(args.arguments as Record<string, unknown>) }
-      if (!a.scope) a.scope = 'thread'
-      if (a.scope === 'thread' && !a.thread_id) {
+      if (args.scope === 'thread' && !a.thread_id) {
         a.thread_id = args.threadId
       }
+      if (args.scope === 'project' && !a.project_id) {
+        a.project_id = args.projectId
+        a.thread_id = args.projectId
+      }
+      a.scope = args.scope
       return await ext.callTool(args.toolName, a)
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      return { error: msg, content: [{ type: 'text', text: `RAG tool failed: ${msg}` }] }
+      const msg = e instanceof Error ? e.message : JSON.stringify(e)
+      return {
+        error: msg,
+        content: [{ type: 'text', text: `RAG tool failed: ${msg}` }],
+      }
     }
   }
 
   async getToolNames(): Promise<string[]> {
     try {
-      const ext = ExtensionManager.getInstance().get<RAGExtension>(ExtensionTypeEnum.RAG)
+      const ext = ExtensionManager.getInstance().get<RAGExtension>(
+        ExtensionTypeEnum.RAG
+      )
       if (ext?.getToolNames) return await ext.getToolNames()
       // No fallback to full tool list; return empty to save bandwidth
       return []
@@ -50,7 +76,9 @@ export class DefaultRAGService implements RAGService {
 
   async parseDocument(path: string, type?: string): Promise<string> {
     try {
-      const ext = ExtensionManager.getInstance().get<RAGExtension>(ExtensionTypeEnum.RAG)
+      const ext = ExtensionManager.getInstance().get<RAGExtension>(
+        ExtensionTypeEnum.RAG
+      )
       const parsed = await ext?.parseDocument?.(path, type)
       return parsed ?? ''
     } catch (e) {

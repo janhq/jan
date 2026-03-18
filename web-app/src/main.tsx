@@ -46,8 +46,21 @@ const setupMobileViewport = () => {
   }
 }
 
+// Prevent browser from opening dropped files
+const preventDefaultFileDrop = () => {
+  document.addEventListener('dragover', (e) => {
+    e.preventDefault()
+  })
+  document.addEventListener('drop', (e) => {
+    e.preventDefault()
+  })
+}
+
 // Initialize mobile setup
 setupMobileViewport()
+
+// Prevent files from opening when dropped
+preventDefaultFileDrop()
 
 // Create a new router instance
 const router = createRouter({ routeTree })

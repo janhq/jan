@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { DefaultThreadsService } from '../threads/default'
 import { ExtensionManager } from '@/lib/extension'
 import { ConversationalExtension, ExtensionTypeEnum } from '@janhq/core'
-import { defaultAssistant } from '@/hooks/useAssistant'
 
 // Mock ExtensionManager
 vi.mock('@/lib/extension', () => ({
@@ -11,17 +10,9 @@ vi.mock('@/lib/extension', () => ({
   },
 }))
 
-vi.mock('@/hooks/useAssistant', () => ({
-  defaultAssistant: {
-    id: 'jan',
-    name: 'Jan',
-    instructions: 'You are a helpful assistant.',
-  },
-}))
-
 describe('DefaultThreadsService', () => {
   let threadsService: DefaultThreadsService
-  
+
   const mockConversationalExtension = {
     listThreads: vi.fn(),
     createThread: vi.fn(),
@@ -139,11 +130,17 @@ describe('DefaultThreadsService', () => {
 
   describe('createThread', () => {
     it('should create thread successfully', async () => {
+      const realAssistant = {
+        id: 'assistant-1',
+        name: 'Test Assistant',
+        instructions: 'You are a helpful assistant.',
+      }
+
       const inputThread = {
         id: '1',
         title: 'New Thread',
         model: { id: 'gpt-4', provider: 'openai' },
-        assistants: [defaultAssistant],
+        assistants: [realAssistant],
         order: 1,
       }
 
@@ -151,7 +148,7 @@ describe('DefaultThreadsService', () => {
         id: '1',
         title: 'New Thread',
         updated: 1234567890,
-        assistants: [{ model: { id: 'gpt-4', engine: 'openai' } }],
+        assistants: [{ ...realAssistant, model: { id: 'gpt-4', engine: 'openai' } }],
         metadata: { order: 1 },
       }
 
@@ -167,7 +164,8 @@ describe('DefaultThreadsService', () => {
         updated: 1234567890,
         model: { id: 'gpt-4', provider: 'openai' },
         order: 1,
-        assistants: [{ model: { id: 'gpt-4', engine: 'openai' } }],
+        // Real assistants (with instructions) are preserved
+        assistants: [expect.objectContaining({ instructions: 'You are a helpful assistant.' })],
       })
     })
 
@@ -190,11 +188,17 @@ describe('DefaultThreadsService', () => {
 
   describe('updateThread', () => {
     it('should update thread successfully', async () => {
+      const realAssistant = {
+        id: 'assistant-1',
+        name: 'Test Assistant',
+        instructions: 'You are a helpful assistant.',
+      }
+
       const thread = {
         id: '1',
         title: 'Updated Thread',
         model: { id: 'gpt-4', provider: 'openai' },
-        assistants: [defaultAssistant],
+        assistants: [realAssistant],
         isFavorite: true,
         order: 2,
       }
@@ -286,7 +290,7 @@ describe('DefaultThreadsService', () => {
         {
           id: '1',
           title: 'Test Thread',
-          // missing metadata
+          // missing metadata and assistants
         },
       ]
 
@@ -301,7 +305,6 @@ describe('DefaultThreadsService', () => {
         updated: 0,
         order: undefined,
         isFavorite: undefined,
-        assistants: [defaultAssistant],
       })
     })
 
@@ -327,16 +330,21 @@ describe('DefaultThreadsService', () => {
         updated: 1234567890,
         order: 1,
         isFavorite: true,
-        assistants: [defaultAssistant],
       })
     })
 
     it('should handle createThread with missing model info', async () => {
+      const realAssistant = {
+        id: 'assistant-1',
+        name: 'Test Assistant',
+        instructions: 'You are a helpful assistant.',
+      }
+
       const inputThread = {
         id: '1',
         title: 'New Thread',
         // missing model
-        assistants: [defaultAssistant],
+        assistants: [realAssistant],
         order: 1,
       }
 
@@ -344,7 +352,7 @@ describe('DefaultThreadsService', () => {
         id: '1',
         title: 'New Thread',
         updated: 1234567890,
-        assistants: [{ model: { id: '*', engine: 'llamacpp' } }],
+        assistants: [{ ...realAssistant, model: { id: '*', engine: 'llamacpp' } }],
         metadata: { order: 1 },
       }
 
@@ -378,7 +386,7 @@ describe('DefaultThreadsService', () => {
         id: '1',
         title: 'New Thread',
         updated: 1234567890,
-        assistants: [{ model: { id: 'gpt-4', engine: 'openai' } }],
+        assistants: [{ id: 'model-only', name: 'Model', model: { id: 'gpt-4', engine: 'openai' } }],
         metadata: { order: 1 },
       }
 
@@ -388,11 +396,13 @@ describe('DefaultThreadsService', () => {
 
       const result = await threadsService.createThread(inputThread as Thread)
 
+      // Should create with model-only entry when no assistants provided
       expect(mockConversationalExtension.createThread).toHaveBeenCalledWith(
         expect.objectContaining({
           assistants: [
             expect.objectContaining({
-              ...defaultAssistant,
+              id: 'model-only',
+              name: 'Model',
               model: { id: 'gpt-4', engine: 'openai' },
             }),
           ],
@@ -426,11 +436,17 @@ describe('DefaultThreadsService', () => {
     })
 
     it('should handle updateThread with missing model info', () => {
+      const realAssistant = {
+        id: 'assistant-1',
+        name: 'Test Assistant',
+        instructions: 'You are a helpful assistant.',
+      }
+
       const thread = {
         id: '1',
         title: 'Updated Thread',
         // missing model
-        assistants: [defaultAssistant],
+        assistants: [realAssistant],
         isFavorite: true,
         order: 2,
       }

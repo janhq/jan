@@ -6,6 +6,60 @@ use super::{
 };
 use crate::core::state::AppState;
 
+/// Resolve the Jan config file path without an AppHandle (for CLI use).
+/// Mirrors the logic in get_configuration_file_path() using the dirs crate.
+pub fn resolve_config_file_path() -> PathBuf {
+    let package_name = env!("CARGO_PKG_NAME");
+
+    // On Linux, prefer the XDG config dir first (matches Tauri behaviour)
+    #[cfg(target_os = "linux")]
+    if let Some(config_dir) = dirs::config_dir() {
+        let path = config_dir.join(package_name);
+        if path.exists() {
+            return path.join(CONFIGURATION_FILE_NAME);
+        }
+    }
+
+    // Primary path: data_dir/Jan  (e.g. ~/Library/Application Support/Jan on macOS)
+    if let Some(data_dir) = dirs::data_dir() {
+        let path = data_dir.join(package_name);
+        if !path.exists() {
+            let _ = fs::create_dir_all(&path);
+        }
+        return path.join(CONFIGURATION_FILE_NAME);
+    }
+
+    // Last resort: home directory
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    PathBuf::from(home).join(CONFIGURATION_FILE_NAME)
+}
+
+/// Resolve the Jan data folder path without an AppHandle (for CLI use).
+/// Reads AppConfiguration from the config file; falls back to the default location.
+pub fn resolve_jan_data_folder() -> PathBuf {
+    let config_file = resolve_config_file_path();
+
+    if config_file.exists() {
+        if let Ok(content) = fs::read_to_string(&config_file) {
+            if let Ok(config) = serde_json::from_str::<AppConfiguration>(&content) {
+                return PathBuf::from(config.data_folder);
+            }
+        }
+    }
+
+    // Default: data_dir/Jan/data  (mirrors default_data_folder_path)
+    let app_name = std::env::var("APP_NAME").unwrap_or_else(|_| "Jan".to_string());
+    if let Some(data_dir) = dirs::data_dir() {
+        return data_dir.join(&app_name).join("data");
+    }
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    PathBuf::from(home).join(&app_name).join("data")
+}
+
 #[tauri::command]
 pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> AppConfiguration {
     let mut app_default_configuration = AppConfiguration::default();
@@ -34,15 +88,19 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
     }
 
     match fs::read_to_string(&configuration_file) {
-        Ok(content) => match serde_json::from_str::<AppConfiguration>(&content) {
-            Ok(app_configurations) => app_configurations,
-            Err(err) => {
-                log::error!("Failed to parse app config, returning default config instead. Error: {err}");
-                app_default_configuration
+        Ok(content) => {
+            match serde_json::from_str::<AppConfiguration>(&content) {
+                Ok(app_configurations) => app_configurations,
+                Err(err) => {
+                    log::error!("Failed to parse app config, returning default config instead. Error: {err}");
+                    app_default_configuration
+                }
             }
-        },
+        }
         Err(err) => {
-            log::error!("Failed to read app config, returning default config instead. Error: {err}");
+            log::error!(
+                "Failed to read app config, returning default config instead. Error: {err}"
+            );
             app_default_configuration
         }
     }
@@ -96,9 +154,7 @@ pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
 #[tauri::command]
 pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
     let app_path = app_handle.path().app_data_dir().unwrap_or_else(|err| {
-        log::error!(
-            "Failed to get app data directory: {err}. Using home directory instead."
-        );
+        log::error!("Failed to get app data directory: {err}. Using home directory instead.");
 
         let home_dir = std::env::var(if cfg!(target_os = "windows") {
             "USERPROFILE"
@@ -139,16 +195,25 @@ pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) 
 
 #[tauri::command]
 pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> String {
-    let mut path = app_handle.path().data_dir().unwrap();
+    let mut path = app_handle.path().data_dir().unwrap_or_else(|err| {
+        log::error!("Failed to get data directory: {err}. Falling back to home directory.");
+        let home = std::env::var(if cfg!(target_os = "windows") {
+            "USERPROFILE"
+        } else {
+            "HOME"
+        })
+        .unwrap_or_else(|_| ".".to_string());
+        PathBuf::from(home)
+    });
 
     let app_name = std::env::var("APP_NAME")
         .unwrap_or_else(|_| app_handle.config().product_name.clone().unwrap());
     path.push(app_name);
     path.push("data");
 
-    let mut path_str = path.to_str().unwrap().to_string();
+    let mut path_str = path.to_string_lossy().into_owned();
 
-    if let Some(stripped) = path.to_str().unwrap().to_string().strip_suffix(".ai.app") {
+    if let Some(stripped) = path_str.strip_suffix(".ai.app") {
         path_str = stripped.to_string();
     }
 
@@ -188,7 +253,7 @@ pub fn change_app_data_folder<R: Runtime>(
         copy_dir_recursive(
             &current_data_folder,
             &new_data_folder_path,
-            &[".uvx", ".npx"],
+            &[".uvx", ".npx", "openclaw/runtime", "openclaw/bunx"],
         )
         .map_err(|e| format!("Failed to copy data to new folder: {e}"))?;
     } else {

@@ -2,7 +2,7 @@ import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -14,6 +14,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
@@ -27,7 +30,9 @@ import {
   IconLoader2,
   IconWorld,
   IconBrandChrome,
+  IconUser,
 } from '@tabler/icons-react'
+import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -47,6 +52,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
+import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
 import { TokenCounter } from '@/components/TokenCounter'
@@ -81,6 +87,8 @@ import {
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
+import { useAgentMode } from '@/hooks/useAgentMode'
+import { isOpenClawRunning } from '@/utils/openclaw'
 
 type ChatInputProps = {
   className?: string
@@ -96,14 +104,14 @@ type ChatInputProps = {
   chatStatus?: ChatStatus
 }
 
-const ChatInput = ({
+const ChatInput = memo(function ChatInput({
   className,
   initialMessage,
   projectId,
   onSubmit,
   onStop,
   chatStatus,
-}: ChatInputProps) => {
+}: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
@@ -116,6 +124,10 @@ const ChatInput = ({
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const currentThreadId = useThreads((state) => state.currentThreadId)
+  const currentThread = useThreads((state) => state.getCurrentThread())
+  const updateCurrentThreadAssistant = useThreads(
+    (state) => state.updateCurrentThreadAssistant
+  )
   const updateCurrentThreadModel = useThreads(
     (state) => state.updateCurrentThreadModel
   )
@@ -129,8 +141,27 @@ const ChatInput = ({
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
-  const currentAssistant = useAssistant((state) => state.currentAssistant)
   const assistants = useAssistant((state) => state.assistants)
+  const defaultAssistantId = useAssistant((state) => state.defaultAssistantId)
+
+  // Agent mode (OpenClaw)
+  // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
+  const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
+  const [openClawAvailable, setOpenClawAvailable] = useState(false)
+  const isAgentMode = useAgentMode((state) =>
+    state.agentThreads[agentModeKey] === true
+  )
+  // When projectId is present, treat as normal chat (disable agent mode UI)
+  const effectiveAgentMode = isAgentMode && !projectId
+  const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
+
+  useEffect(() => {
+    isOpenClawRunning().then(setOpenClawAvailable)
+  }, [currentThreadId])
+
+  const handleAgentToggle = useCallback(() => {
+    toggleAgentMode(agentModeKey)
+  }, [agentModeKey, toggleAgentMode])
 
   // Get current thread messages for token counting
   const threadMessages = useMessages(
@@ -155,6 +186,14 @@ const ChatInput = ({
   const [hasMmproj, setHasMmproj] = useState(false)
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
+
+  // Check if selected model is currently loaded/active
+  const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
+  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>(
+    () => assistants.find((a) => a.id === defaultAssistantId) ?? assistants[0]
+  )
+
+  // No auto-selection: let the user explicitly pick an assistant
 
   // Jan Browser Extension hook
   const {
@@ -359,19 +398,22 @@ const ChatInput = ({
           JSON.stringify(messagePayload)
         )
         sessionStorage.setItem('temp-chat-nav', 'true')
+        // Transfer agent mode from home screen to temporary thread
+        if (isAgentMode && agentModeKey !== TEMPORARY_CHAT_ID) {
+          useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
+          useAgentMode.getState().removeThread(agentModeKey)
+        }
         router.navigate({
           to: route.threadsDetail,
           params: { threadId: TEMPORARY_CHAT_ID },
         })
       } else {
-        // Create a new thread and navigate to it
-        const assistant =
-          assistants.find((a) => a.id === currentAssistant?.id) || assistants[0]
-
-        // Get project metadata if projectId is provided
+        // Get project metadata and assistant if projectId is provided
         let projectMetadata:
           | { id: string; name: string; updated_at: number }
           | undefined
+        let projectAssistantId: string | undefined
+
         if (projectId) {
           try {
             const project = await serviceHub
@@ -383,11 +425,18 @@ const ChatInput = ({
                 name: project.name,
                 updated_at: project.updated_at,
               }
+              projectAssistantId = project.assistantId
             }
           } catch (e) {
             console.warn('Failed to fetch project metadata:', e)
           }
         }
+
+        // Only use assistant when chatting via project with an assigned assistant
+        // When no projectId, use the selected assistant from dropdown (if any)
+        const assistant = projectAssistantId
+          ? assistants.find((a) => a.id === projectAssistantId)
+          : selectedAssistant
 
         const newThread = await createThread(
           {
@@ -398,6 +447,15 @@ const ChatInput = ({
           assistant,
           projectMetadata
         )
+
+        // Clear selected assistant after creating thread
+        setSelectedAssistant(undefined)
+
+        // Transfer agent mode from home screen to the new thread
+        if (isAgentMode) {
+          useAgentMode.getState().setAgentMode(newThread.id, true)
+          useAgentMode.getState().removeThread(agentModeKey)
+        }
 
         // Store the initial message for the new thread
         sessionStorage.setItem(
@@ -785,7 +843,7 @@ const ChatInput = ({
       }
     } catch (e) {
       console.error('Failed to attach documents:', e)
-      const desc = e instanceof Error ? e.message : String(e)
+      const desc = e instanceof Error ? e.message : JSON.stringify(e)
       toast.error('Failed to attach documents', { description: desc })
     }
   }
@@ -847,6 +905,15 @@ const ChatInput = ({
     return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
   }
 
+  const hashBase64 = async (base64: string): Promise<string> => {
+    const binary = atob(base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    const hashBuffer = await crypto.subtle.digest('SHA-256', bytes)
+    const hashArray = Array.from(new Uint8Array(hashBuffer))
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
+  }
+
   const processImageFiles = async (files: File[]) => {
     const maxSize = 10 * 1024 * 1024 // 10MB in bytes
     const oversizedFiles: string[] = []
@@ -903,42 +970,66 @@ const ChatInput = ({
       })
     }
 
-    let duplicates: string[] = []
-    let newFiles: Attachment[] = []
-
-    setAttachmentsForThread(attachmentsKey, (currentAttachments) => {
-      const existingImageNames = new Set(
-        currentAttachments.filter((a) => a.type === 'image').map((a) => a.name)
-      )
-
-      duplicates = []
-      newFiles = []
-
-      for (const att of preparedFiles) {
-        if (existingImageNames.has(att.name)) {
-          duplicates.push(att.name)
-          continue
-        }
-        newFiles.push(att)
+    // Compute content hashes for deduplication (allows different images with same filename)
+    for (const att of preparedFiles) {
+      if (att.base64) {
+        att.contentHash = await hashBase64(att.base64)
       }
+    }
 
-      if (newFiles.length > 0) {
-        return [...currentAttachments, ...newFiles]
+    const duplicates: string[] = []
+    const newFiles: Attachment[] = []
+
+    const currentAttachments = useChatAttachments.getState().getAttachments(
+      attachmentsKey
+    )
+
+    const existingImageHashes = new Set<string>()
+    const existingImageNames = new Set<string>()
+    for (const a of currentAttachments) {
+      if (a.type !== 'image') continue
+      if (a.contentHash) {
+        existingImageHashes.add(a.contentHash)
+      } else if (a.base64) {
+        existingImageHashes.add(await hashBase64(a.base64))
+      } else {
+        existingImageNames.add(a.name)
       }
-      return currentAttachments
-    })
+    }
+
+    const seenHashesInBatch = new Set<string>()
+    for (const att of preparedFiles) {
+      const hash = att.contentHash
+      const isDuplicateByContent =
+        hash &&
+        (existingImageHashes.has(hash) || seenHashesInBatch.has(hash))
+      const isDuplicateByName =
+        existingImageNames.has(att.name)
+      if (isDuplicateByContent || isDuplicateByName) {
+        duplicates.push(att.name)
+        continue
+      }
+      if (hash) {
+        seenHashesInBatch.add(hash)
+      }
+      newFiles.push(att)
+    }
+
+    setAttachmentsForThread(attachmentsKey, (prev) =>
+      newFiles.length > 0 ? [...prev, ...newFiles] : prev
+    )
 
     if (currentThreadId && newFiles.length > 0) {
       void (async () => {
         for (const img of newFiles) {
+          const matchImg = (a: Attachment) =>
+            a.type === 'image' &&
+            (img.contentHash ? a.contentHash === img.contentHash : a.name === img.name)
+
           try {
             // Mark as processing
             setAttachmentsForThread(attachmentsKey, (prev) =>
-              prev.map((a) =>
-                a.name === img.name && a.type === 'image'
-                  ? { ...a, processing: true }
-                  : a
-              )
+              prev.map((a) => (matchImg(a) ? { ...a, processing: true } : a))
             )
 
             const result = await serviceHub
@@ -949,7 +1040,7 @@ const ChatInput = ({
               // Mark as processed with ID
               setAttachmentsForThread(attachmentsKey, (prev) =>
                 prev.map((a) =>
-                  a.name === img.name && a.type === 'image'
+                  matchImg(a)
                     ? {
                         ...a,
                         processing: false,
@@ -966,7 +1057,7 @@ const ChatInput = ({
             console.error('Failed to ingest image:', error)
             // Remove failed image
             setAttachmentsForThread(attachmentsKey, (prev) =>
-              prev.filter((a) => !(a.name === img.name && a.type === 'image'))
+              prev.filter((a) => !matchImg(a))
             )
             toast.error(`Failed to ingest ${img.name}`, {
               description:
@@ -1334,7 +1425,7 @@ const ChatInput = ({
 
           <div
             className={cn(
-              'relative z-20 px-0 pb-10 border rounded-3xl border-input dark:bg-input/30',
+              'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30',
               isFocused && 'ring-1 ring-ring/50',
               isDragOver && 'ring-2 ring-ring/50 border-primary'
             )}
@@ -1414,8 +1505,8 @@ const ChatInput = ({
                               onClick={() => handleRemoveAttachment(idx)}
                             >
                               <IconX
-                                className="text-destructive-fg"
-                                size={16}
+                                className="text-neutral-200"
+                                size={14}
                               />
                             </div>
                           )}
@@ -1426,6 +1517,7 @@ const ChatInput = ({
               </div>
             )}
             <TextareaAutosize
+              dir="auto"
               ref={textareaRef}
               minRows={2}
               rows={1}
@@ -1479,7 +1571,8 @@ const ChatInput = ({
                   isStreaming && 'opacity-50 pointer-events-none'
                 )}
               >
-                {/* Dropdown for attachments */}
+                {/* Dropdown for attachments — hidden in agent mode */}
+                {!effectiveAgentMode && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="secondary" size="icon-sm" className='rounded-full mr-2 mb-1'>
@@ -1521,8 +1614,75 @@ const ChatInput = ({
                           : 'Add documents or files'}
                       </span>
                     </DropdownMenuItem>
+                    {/* Use Assistant - only show when no projectId */}
+                    {!projectId && (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <IconUser size={18} className="text-muted-foreground" />
+                          <span>Use Assistant</span>
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                          <DropdownMenuItem
+                            className={!selectedAssistant && !currentThread?.assistants?.length ? 'bg-accent' : ''}
+                            onClick={() => {
+                              setSelectedAssistant(undefined)
+                              if (currentThreadId) {
+                                updateCurrentThreadAssistant(undefined as unknown as Assistant)
+                              }
+                            }}
+                          >
+                            <div className="flex items-center gap-2 w-full">
+                              <span className="text-muted-foreground">—</span>
+                              <span>None</span>
+                              {!selectedAssistant && !currentThread?.assistants?.length && (
+                                <span className="ml-auto text-xs text-muted-foreground">✓</span>
+                              )}
+                            </div>
+                          </DropdownMenuItem>
+                          {assistants.length > 0 ? (
+                            assistants.map((assistant) => {
+                              const isSelected = initialMessage && selectedAssistant?.id === assistant.id ||
+                                (assistant && currentThread?.assistants?.some((a) => a.id === assistant.id))
+                              return (
+                                <DropdownMenuItem
+                                  key={assistant.id}
+                                  className={isSelected ? 'bg-accent' : ''}
+                                  onClick={() => {
+                                    setSelectedAssistant(assistant)
+                                    if (currentThreadId) {
+                                      updateCurrentThreadAssistant(assistant)
+                                    }
+                                  }}
+                                >
+                                  <div className="flex items-center gap-2 w-full">
+                                    <AvatarEmoji
+                                      avatar={assistant.avatar}
+                                      imageClassName="w-4 h-4 object-contain"
+                                      textClassName="text-sm"
+                                    />
+                                    <span>{assistant.name || 'Unnamed Assistant'}</span>
+                                    {isSelected && (
+                                      <span className="ml-auto text-xs text-muted-foreground">
+                                        ✓
+                                      </span>
+                                    )}
+                                  </div>
+                                </DropdownMenuItem>
+                              )
+                            })
+                          ) : (
+                            <DropdownMenuItem disabled>
+                              <span className="text-muted-foreground">
+                                No assistants available
+                              </span>
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
+                )}
                 {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
                 ) : (
@@ -1531,7 +1691,7 @@ const ChatInput = ({
                     useLastUsedModel={initialMessage}
                   />
                 )} */}
-                {hasJanBrowserMCPConfig && modelSupportsBrowser && (
+                {!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1573,7 +1733,7 @@ const ChatInput = ({
                   </Tooltip>
                 )}
 
-                {selectedModel?.capabilities?.includes('embeddings') && (
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('embeddings') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1592,7 +1752,7 @@ const ChatInput = ({
                   </Tooltip>
                 )}
 
-                {selectedModel?.capabilities?.includes('tools') &&
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
                     // Use custom MCP component
@@ -1657,7 +1817,37 @@ const ChatInput = ({
                     </Tooltip>
                   ))}
 
-                {selectedModel?.capabilities?.includes('web_search') && (
+                {openClawAvailable && !projectId && isAgentMode && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant={isAgentMode ? "default" : "ghost"}
+                        size="icon-xs"
+                        onClick={currentThreadId ? handleAgentToggle : undefined}
+                        className={cn(
+                          isAgentMode && 'text-primary bg-primary/10 hover:bg-primary/10 items-center',
+                          !currentThreadId && 'cursor-default pointer-events-none'
+                        )}
+                      >
+                        <BotIcon
+                          className={cn(
+                            'text-muted-foreground -mt-0.5',
+                            isAgentMode && 'text-primary'
+                          )}
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {isAgentMode
+                          ? 'Agent mode active'
+                          : 'Enable agent mode'}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('web_search') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon-xs">
@@ -1673,7 +1863,7 @@ const ChatInput = ({
                   </Tooltip>
                 )}
 
-                {selectedModel?.capabilities?.includes('reasoning') && (
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('reasoning') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon-xs">
@@ -1694,6 +1884,7 @@ const ChatInput = ({
             <div className="flex items-center gap-2">
               {selectedProvider === 'llamacpp' &&
                 tokenCounterCompact &&
+                !effectiveAgentMode &&
                 !initialMessage &&
                 (threadMessages?.length > 0 || prompt.trim().length > 0) && (
                   <div className="flex-1 flex justify-center">
@@ -1760,6 +1951,8 @@ const ChatInput = ({
       )}
 
       {selectedProvider === 'llamacpp' &&
+        isModelActive &&
+        !effectiveAgentMode &&
         !tokenCounterCompact &&
         !initialMessage &&
         (threadMessages?.length > 0 || prompt.trim().length > 0) && (
@@ -1794,6 +1987,6 @@ const ChatInput = ({
       />
     </div>
   )
-}
+})
 
 export default ChatInput

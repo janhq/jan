@@ -10,7 +10,7 @@ sudo apt install -yqq libwebkit2gtk-4.1-dev \
     file \
     libxdo-dev \
     libssl-dev \
-    libayatana-appindicator3-dev \
+    libappindicator3-dev \
     librsvg2-dev \
     xdg-utils \
     libfuse2

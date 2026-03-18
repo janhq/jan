@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-foundation-models-random-port"
+description = "Enables the get_foundation_models_random_port command without any pre-configured scope."
+commands.allow = ["get_foundation_models_random_port"]
+
+[[permission]]
+identifier = "deny-get-foundation-models-random-port"
+description = "Denies the get_foundation_models_random_port command without any pre-configured scope."
+commands.deny = ["get_foundation_models_random_port"]

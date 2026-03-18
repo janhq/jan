@@ -48,6 +48,8 @@ export type MessageItemProps = {
   onDelete?: (messageId: string) => void
   assistant?: { avatar?: React.ReactNode; name?: string }
   showAssistant?: boolean
+  isAnimating?: boolean
+  hideActions?: boolean
 }
 
 export const MessageItem = memo(
@@ -55,6 +57,8 @@ export const MessageItem = memo(
     message,
     isLastMessage,
     status,
+    isAnimating,
+    hideActions,
     reasoningContainerRef,
     onRegenerate,
     onEdit,
@@ -65,6 +69,7 @@ export const MessageItem = memo(
       url: string
       filename?: string
     } | null>(null)
+
 
     const handleRegenerate = useCallback(() => {
       onRegenerate?.(message.id)
@@ -172,7 +177,7 @@ export const MessageItem = memo(
                   </div>
                 )}
                 {displayText && (
-                  <div className="select-text whitespace-pre-wrap">
+                  <div dir="auto" className="select-text whitespace-pre-wrap">
                     {displayText}
                   </div>
                 )}
@@ -184,6 +189,7 @@ export const MessageItem = memo(
                 content={part.text}
                 isStreaming={isStreaming && isLastPart}
                 messageId={message.id}
+                isAnimating={isAnimating}
               />
             </>
           )}
@@ -259,14 +265,14 @@ export const MessageItem = memo(
           <ReasoningTrigger />
           <div className="relative">
             {isStreaming && (
-              <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-background to-transparent pointer-events-none z-10" />
+              <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-neutral-50 mask-t-from-98% dark:from-background to-transparent pointer-events-none z-10" />
             )}
             <div
               ref={isStreaming ? reasoningContainerRef : null}
               className={twMerge(
                 'w-full overflow-auto relative',
                 isStreaming
-                  ? 'max-h-32 opacity-70 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+                  ? 'max-h-32 opacity-70 mt-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
                   : 'h-auto opacity-100'
               )}
             >
@@ -314,7 +320,7 @@ export const MessageItem = memo(
             {part.state === 'output-error' && (
               <ToolOutput
                 output={undefined}
-                errorText={part.error || 'Tool execution failed'}
+                errorText={part.error || part.errorText || 'Tool execution failed'}
                 resolver={(input) => Promise.resolve(input)}
               />
             )}
@@ -344,7 +350,7 @@ export const MessageItem = memo(
         })}
 
         {/* Message actions for user messages */}
-        {message.role === 'user' && (
+        {message.role === 'user' && !hideActions && (
           <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs mt-4">
             <CopyButton text={getFullTextContent()} />
 
@@ -363,13 +369,12 @@ export const MessageItem = memo(
         )}
 
         {/* Message actions for assistant messages (non-tool) */}
-        {message.role === 'assistant' &&
-          message.parts.some((p) => p.type === 'text' && p.text.length > 0) && (
+        {message.role === 'assistant' && (
             <div className="flex items-center gap-2 text-muted-foreground text-xs mt-1">
               <div
                 className={cn(
                   'flex items-center gap-1',
-                  isStreaming && 'hidden'
+                  (isStreaming || hideActions) && 'hidden'
                 )}
               >
                 <CopyButton text={getFullTextContent()} />
@@ -434,7 +439,8 @@ export const MessageItem = memo(
       prevProps.isFirstMessage === nextProps.isFirstMessage &&
       prevProps.isLastMessage === nextProps.isLastMessage &&
       prevProps.status === nextProps.status &&
-      prevProps.showAssistant === nextProps.showAssistant
+      prevProps.showAssistant === nextProps.showAssistant &&
+      prevProps.hideActions === nextProps.hideActions
     )
   }
 )

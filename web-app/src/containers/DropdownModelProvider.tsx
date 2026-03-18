@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback, memo } from 'react'
 import {
   Popover,
   PopoverContent,
@@ -23,11 +23,16 @@ import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/constants/providers'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
+import { syncModelToOpenClaw } from '@/utils/openclaw'
 import { ChevronsUpDown } from 'lucide-react'
+import { useAgentMode } from '@/hooks/useAgentMode'
+import { BotIcon } from 'lucide-react'
+import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
   useLastUsedModel?: boolean
+  projectId?: string 
 }
 
 interface SearchableModel {
@@ -50,10 +55,11 @@ const setLastUsedModel = (provider: string, model: string) => {
   }
 }
 
-const DropdownModelProvider = ({
+const DropdownModelProvider = memo(function DropdownModelProvider({
   model,
+  projectId,
   useLastUsedModel = false,
-}: DropdownModelProviderProps) => {
+}: DropdownModelProviderProps) {
   const {
     providers,
     getProviderByName,
@@ -69,6 +75,11 @@ const DropdownModelProvider = ({
   const { t } = useTranslation()
   const { favoriteModels } = useFavoriteModel()
   const serviceHub = useServiceHub()
+  const currentThreadId = useThreads((state) => state.currentThreadId)
+  const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
+  const isAgentMode = useAgentMode((state) =>
+    state.agentThreads[agentModeKey] === true
+  )
 
   // Search state
   const [open, setOpen] = useState(false)
@@ -267,13 +278,15 @@ const DropdownModelProvider = ({
         if (modelItem.embedding) return
 
         // Skip models that require API key but don't have one (except llamacpp)
+        // For custom providers, allow if they have at least one model loaded
+        const isPredefined = predefinedProviders.some((e) =>
+          e.provider.includes(provider.provider)
+        )
         if (
           provider &&
-          predefinedProviders.some((e) =>
-            e.provider.includes(provider.provider)
-          ) &&
           provider.provider !== 'llamacpp' &&
-          !provider.api_key?.length
+          !provider.api_key?.length &&
+          (isPredefined || provider.models.length === 0)
         )
           return
 
@@ -338,10 +351,39 @@ const DropdownModelProvider = ({
 
     if (!searchValue) {
       // When not searching, show all active providers (even without models)
-      providers.forEach((provider) => {
-        if (provider.active) {
-          groups[provider.provider] = []
-        }
+      // Sort: local first, then providers with API keys or custom with models, then others, alphabetically
+      const activeProviders = providers
+        .filter((p) => p.active)
+        .sort((a, b) => {
+          const aIsLocal = a.provider === 'llamacpp' || a.provider === 'mlx'
+          const bIsLocal = b.provider === 'llamacpp' || b.provider === 'mlx'
+          // Local (llamacpp) first
+          if (aIsLocal && !bIsLocal) return -1
+          if (!aIsLocal && bIsLocal) return 1
+
+          // Custom providers without API key but with models should be treated like "have API key"
+          const aIsPredefined = predefinedProviders.some((e) =>
+            e.provider.includes(a.provider)
+          )
+          const bIsPredefined = predefinedProviders.some((e) =>
+            e.provider.includes(b.provider)
+          )
+          const aHasApiKeyOrCustomModel =
+            (a.api_key?.length ?? 0) > 0 ||
+            (!aIsPredefined && a.models.length > 0)
+          const bHasApiKeyOrCustomModel =
+            (b.api_key?.length ?? 0) > 0 ||
+            (!bIsPredefined && b.models.length > 0)
+          // Providers with API keys or custom with models filled second
+          if (aHasApiKeyOrCustomModel && !bHasApiKeyOrCustomModel) return -1
+          if (!aHasApiKeyOrCustomModel && bHasApiKeyOrCustomModel) return 1
+
+          // Sort remaining by provider name
+          return a.provider.localeCompare(b.provider)
+        })
+
+      activeProviders.forEach((provider) => {
+        groups[provider.provider] = []
       })
     }
 
@@ -383,6 +425,19 @@ const DropdownModelProvider = ({
         searchableModel.provider.provider,
         searchableModel.model.id
       )
+
+      // Sync model to OpenClaw (async, don't block UI)
+      syncModelToOpenClaw(
+        searchableModel.model.id,
+        searchableModel.provider.provider,
+        getModelDisplayName(searchableModel.model)
+      ).catch((error) => {
+        console.debug(
+          'Error syncing model to OpenClaw:',
+          searchableModel.model.id,
+          error
+        )
+      })
 
       // Check mmproj existence for llamacpp models (async, don't block UI)
       if (searchableModel.provider.provider === 'llamacpp') {
@@ -431,45 +486,61 @@ const DropdownModelProvider = ({
 
   const provider = getProviderByName(selectedProvider)
 
+  if (isAgentMode && !projectId) {
+    return (
+      <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full text-muted-foreground">
+        <BotIcon className="shrink-0 size-4" />
+        <span className="text-sm font-medium leading-normal">
+          {t('common:openclawAgent')}
+        </span>
+        <span className="text-xs ml-1 font-medium px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400">
+          {t('common:experimental')}
+        </span>
+      </div>
+    )
+  }
+
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <div className="border px-4 py-1.5 flex items-center gap-1.5 rounded-full">
         <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-50"
-          >
-            {provider && (
-              <div className="shrink-0">
-                <ProvidersAvatar provider={provider} />
+          <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full">
+            <button
+              type="button"
+              className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-50"
+            >
+              {provider && (
+                <div className="shrink-0">
+                  <ProvidersAvatar provider={provider} />
+                </div>
+              )}
+              <span
+                className={cn(
+                  'text-foreground truncate leading-normal',
+                  !selectedModel?.id && 'text-muted-foreground'
+                )}
+              >
+                {displayModel}
+              </span>
+              <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+            </button>
+          {currentModel?.settings &&
+            provider &&
+            provider.provider === 'llamacpp' && (
+              <div onClick={(e) => e.stopPropagation()}>
+                <ModelSetting
+                  model={currentModel as Model}
+                  provider={provider}
+                />
               </div>
             )}
-            <span
-              className={cn(
-                'text-foreground truncate leading-normal',
-                !selectedModel?.id && 'text-muted-foreground'
-              )}
-            >
-              {displayModel}
-            </span>
-            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
-          </button>
+          <ModelSupportStatus
+            modelId={selectedModel?.id}
+            provider={selectedProvider}
+            contextSize={getContextSize()}
+            className="ml-0.5 shrink-0"
+          />
+        </div>
         </PopoverTrigger>
-        {currentModel?.settings &&
-          provider &&
-          provider.provider === 'llamacpp' && (
-            <ModelSetting
-              model={currentModel as Model}
-              provider={provider}
-            />
-          )}
-        <ModelSupportStatus
-          modelId={selectedModel?.id}
-          provider={selectedProvider}
-          contextSize={getContextSize()}
-          className="ml-0.5 shrink-0"
-        />
-      </div>
 
       <PopoverContent
         className={cn(
@@ -477,8 +548,8 @@ const DropdownModelProvider = ({
           searchValue.length === 0 && 'h-80'
         )}
         align="start"
-        sideOffset={16}
-        alignOffset={-10}
+        // sideOffset={16}
+        // alignOffset={-10}
         side="bottom"
         avoidCollisions={searchValue.length === 0 ? true : false}
       >
@@ -661,6 +732,6 @@ const DropdownModelProvider = ({
       </PopoverContent>
     </Popover>
   )
-}
+})
 
 export default DropdownModelProvider

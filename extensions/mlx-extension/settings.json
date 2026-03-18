@@ -1,0 +1,9 @@
+[
+  {
+    "key": "auto_unload",
+    "title": "Auto unload model",
+    "description": "Automatically unload other models when loading a new one",
+    "controllerType": "checkbox",
+    "controllerProps": { "value": true }
+  }
+]

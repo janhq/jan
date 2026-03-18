@@ -29,4 +29,22 @@ export class DefaultUploadsService implements UploadsService {
     }
     throw new Error('Failed to resolve ingested attachment id')
   }
+
+  async ingestFileAttachmentForProject(projectId: string, attachment: Attachment): Promise<UploadResult> {
+    if (attachment.type !== 'document') throw new Error('ingestFileAttachmentForProject: attachment is not document')
+    const ext = ExtensionManager.getInstance().get<RAGExtension>(ExtensionTypeEnum.RAG)
+    if (!ext?.ingestAttachmentsForProject) throw new Error('RAG extension does not support project-level ingestion')
+    const res: IngestAttachmentsResult = await ext.ingestAttachmentsForProject(projectId, [
+      { path: attachment.path!, name: attachment.name, type: attachment.fileType, size: attachment.size },
+    ])
+    const files = res.files
+    if (Array.isArray(files) && files[0]?.id) {
+      return {
+        id: files[0].id,
+        size: typeof files[0].size === 'number' ? Number(files[0].size) : undefined,
+        chunkCount: typeof files[0].chunk_count === 'number' ? Number(files[0].chunk_count) : undefined,
+      }
+    }
+    throw new Error('Failed to resolve ingested attachment id')
+  }
 }

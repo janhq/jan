@@ -27,88 +27,22 @@ twitter:
 ---
 
 import { Tabs, Callout, Steps } from 'nextra/components'
-import FAQBox from '@/components/FaqBox'
 import { Settings } from 'lucide-react'
+import { DownloadButton } from '@/components/DownloadButton'
 
 
 # Windows Installation
-
-## Compatibility
-
-**System requirements:**
-- **Operating System**: Windows 10 or higher.
-- **CPU**
-
-<Tabs items={['Intel', 'AMD']}>
-<Tabs.Tab>
-- Intel: Haswell (Q2 2013) or newer
-- Intel Celeron/Pentium: Tiger Lake (Q3 2020) or newer
-</Tabs.Tab>
-<Tabs.Tab>
-- Excavator processors (Q2 2015) and newer.
-</Tabs.Tab>
-</Tabs>
-
-<Callout type="info">
-Processor must support **AVX2 or newer**. See [full list of supported processors](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2).
-Performance is significantly degraded on AVX-only processors.
-</Callout>
-
-**Memory (RAM)**
-- 8GB → up to 3B parameter models (int4)
-- 16GB → up to 7B parameter models (int4)
-- 32GB → up to 13B parameter models (int4)
-
-<Callout type="info">
-Newer RAM generations provide better performance.
-</Callout>
-
-**GPU**:
-- 6GB → up to 3B parameter models
-- 8GB → up to 7B parameter models
-- 12GB → up to 13B parameter models
-
-<Callout type="info">
-Minimum 6GB VRAM recommended for NVIDIA, AMD, or Intel Arc GPUs.
-</Callout>
-
-**Storage:** 10GB free space minimum for app and models
-
+Jan runs on Windows 10 and higher, supporting NVIDIA, AMD, and Intel Arc GPUs.
 
 ## Install Jan
 
 <Steps>
 
-### Step 1: Download Application
+### Download
 
-<Tabs items={['Stable Release', 'Beta Release', 'Nightly Release']}>
-<Tabs.Tab>
-- [Download Stable Jan](https://app.jan.ai/download/latest/win-x64)
-- Official Website: [Download Jan](https://jan.ai/download)
-</Tabs.Tab>
-<Tabs.Tab>
+<DownloadButton href="https://app.jan.ai/download/latest/win-x64">Download Jan for Windows</DownloadButton>
 
-Beta: Contains newer features but may be unstable
-
-[Download Beta Jan](https://app.jan.ai/download/beta/win-x64)
-
-<Callout type="warning">
-May be unstable
-</Callout>
-</Tabs.Tab>
-<Tabs.Tab>
-
-Nightly: Development build with latest features
-
-[Download Nightly Jan](https://app.jan.ai/download/nightly/win-x64)
-
-<Callout type="warning">
-Unstable development build
-</Callout>
-</Tabs.Tab>
-</Tabs>
-
-### Step 2: Install Application
+### Install
 
 1. Run the downloaded `.exe` file
 2. Wait for installation to complete
@@ -116,16 +50,25 @@ Unstable development build
 
 </Steps>
 
-## Data Folder
+## Compatibility
 
-Default installation path:
+- **Operating System:** Windows 10 or higher
+- **CPU:** AVX2 support required — Intel Haswell (2013+), AMD Excavator (2015+)
+- **Memory:** 8GB minimum (16GB recommended)
+- **GPU:** 6GB VRAM minimum for NVIDIA, AMD, or Intel Arc GPUs
+- **Storage:** 10GB free space minimum
+
+## Jan Data Folder
+
+Jan stores all your data locally — downloaded models, conversation threads, settings, and logs generated from using the app. Nothing is sent to the cloud.
+
+Default location:
 
 ```sh
-# Default installation directory
 ~\Users\<YourUsername>\AppData\Roaming\Jan\data
 ```
 
-See [Jan Data Folder](/docs/desktop/data-folder) for complete folder structure details.
+See [Jan Data Folder](/docs/desktop/data-folder) for details.
 
 
 ## GPU Acceleration
@@ -169,10 +112,55 @@ and toggle the **ON** switch if not enabled.
 </Tabs.Tab>
 
 <Tabs.Tab>
-AMD GPUs require **Vulkan** support.
+
+Jan supports AMD GPUs via two backends: **Vulkan** (default) and **llama.cpp HIP** (ROCm-accelerated). The HIP backend provides significantly better performance than Vulkan for supported AMD GPUs.
+
+<Steps>
+
+### Option A: Vulkan Backend (Default)
+
+Vulkan works out of the box with no additional setup.
 
 Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
 and toggle the **ON** switch if not enabled.
+
+### Option B: llama.cpp HIP Backend (Recommended)
+
+For better performance, use the HIP backend with ROCm installed.
+
+**1. Check GPU Detection**
+
+Verify your AMD GPU is recognized:
+- Open Device Manager > Display Adapters
+- Or run `dxdiag` and check the Display tab
+
+**2. Install ROCm**
+
+1. Download and install [AMD ROCm for Windows](https://www.amd.com/en/developer/resources/rocm-hub/hip-sdk.html) (**6.0 or higher**)
+2. Follow the installer instructions and restart your computer when prompted
+3. Verify installation:
+
+```sh
+hipInfo
+```
+
+**3. Download and Install llama.cpp HIP Backend**
+
+Jan does not ship with a pre-built HIP backend. You need to download it manually from the official llama.cpp releases:
+
+1. Go to the [llama.cpp releases page](https://github.com/ggerganov/llama.cpp/releases)
+2. Download the latest release with `hip` in the filename (e.g., `llama-<version>-bin-win-hip-x64.zip`)
+3. Extract the downloaded archive
+4. In Jan, navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Model Settings** > **llama.cpp**
+5. Click **Install from file** and select the extracted folder
+6. Go to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs** and toggle the **ON** switch if not enabled
+
+</Steps>
+
+<Callout type="info">
+The HIP backend requires a compatible AMD GPU (RX 6000 series or newer recommended) and ROCm installed. If you encounter issues, fall back to the Vulkan backend.
+</Callout>
+
 </Tabs.Tab>
 
 <Tabs.Tab>

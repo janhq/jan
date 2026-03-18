@@ -1,6 +1,6 @@
 /**
  * Tauri commands for custom updater with HMAC request signing
- * 
+ *
  * Convention: First endpoint in tauri.conf.json uses HMAC signing, rest are fallbacks
  */
 use super::custom_updater::{CustomUpdater, UpdateInfo};
@@ -80,4 +80,3 @@ pub fn is_update_available(current_version: String, latest_version: String) -> b
     };
     updater.is_update_available(&current_version, &latest_version)
 }
-

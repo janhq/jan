@@ -46,10 +46,8 @@ import {
   readGgufMetadata,
   getModelSize,
   isModelSupported,
-  planModelLoadInternal,
   unloadLlamaModel,
   LlamacppConfig,
-  ModelPlan,
   DownloadItem,
   ModelConfig,
   EmbeddingResponse,
@@ -93,6 +91,15 @@ const logger = {
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 
+/**
+ * Parse the build number from a llama.cpp version string like "b6325".
+ * Returns the numeric portion, or null if the format doesn't match.
+ */
+function parseBuildNumber(version: string): number | null {
+  const match = version.match(/^b(\d+)$/)
+  return match ? parseInt(match[1], 10) : null
+}
+
 // Folder structure for llamacpp extension:
 // <Jan's data folder>/llamacpp
 //  - models/<modelId>/
@@ -112,7 +119,6 @@ export default class llamacpp_extension extends AIEngine {
   autoUnload: boolean = true
   timeout: number = 600
   llamacpp_env: string = ''
-  memoryMode: string = ''
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
@@ -120,6 +126,7 @@ export default class llamacpp_extension extends AIEngine {
   private apiSecret: string = 'JustAskNow'
   private pendingDownloads: Map<string, Promise<void>> = new Map()
   private isConfiguringBackends: boolean = false
+  private isUpdatingBackend: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private unlistenValidationStarted?: () => void
 
@@ -142,10 +149,15 @@ export default class llamacpp_extension extends AIEngine {
     }
     this.config = loadedConfig as LlamacppConfig
 
+    // Migration v1: upgrade f16 KV cache defaults to q8_0
+    await this.migrateKvCacheDefaults()
+
+    // Migration v2: disable fit by default
+    await this.migrateFitDefault()
+
     this.autoUnload = this.config.auto_unload
     this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env
-    this.memoryMode = this.config.memory_util || 'high'
 
     // This sets the base directory where model files for this provider are stored.
     this.getProviderPath()
@@ -190,6 +202,58 @@ export default class llamacpp_extension extends AIEngine {
     } catch (error) {
       logger.warn('Failed to clear backend type from localStorage:', error)
     }
+  }
+
+  private async migrateKvCacheDefaults(): Promise<void> {
+    const MIGRATION_KEY = 'llamacpp_kv_cache_migrated_v1'
+    if (localStorage.getItem(MIGRATION_KEY)) return
+
+    const keysToMigrate = ['cache_type_k', 'cache_type_v'] as const
+    const needsMigration = keysToMigrate.some(
+      (k) => this.config[k] === 'f16'
+    )
+
+    if (needsMigration) {
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (
+            keysToMigrate.includes(item.key as (typeof keysToMigrate)[number]) &&
+            item.controllerProps.value === 'f16'
+          ) {
+            item.controllerProps.value = 'q8_0'
+          }
+          return item
+        })
+      )
+      for (const k of keysToMigrate) {
+        if (this.config[k] === 'f16') this.config[k] = 'q8_0'
+      }
+      logger.info('Migrated KV cache types from f16 to q8_0')
+    }
+
+    localStorage.setItem(MIGRATION_KEY, '1')
+  }
+
+  private async migrateFitDefault(): Promise<void> {
+    const MIGRATION_KEY = 'llamacpp_fit_disabled_v1'
+    if (localStorage.getItem(MIGRATION_KEY)) return
+
+    if (this.config.fit === true) {
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (item.key === 'fit') {
+            item.controllerProps.value = false
+          }
+          return item
+        })
+      )
+      this.config.fit = false
+      logger.info('Migrated fit setting: disabled by default')
+    }
+
+    localStorage.setItem(MIGRATION_KEY, '1')
   }
 
   async configureBackends(): Promise<void> {
@@ -463,19 +527,45 @@ export default class llamacpp_extension extends AIEngine {
   async updateBackend(
     targetBackendString: string
   ): Promise<{ wasUpdated: boolean; newBackend: string }> {
+    if (this.isUpdatingBackend) {
+      logger.warn('Backend update already in progress, skipping new update request')
+      // Treat concurrent update requests as a benign no-op and report that no new update
+      // was performed, while still returning the current backend value.
+      return { wasUpdated: false, newBackend: this.config.version_backend }
+    }
+
+    this.isUpdatingBackend = true
+
     try {
       if (!targetBackendString)
         throw new Error(
           `Invalid backend string: ${targetBackendString} supplied to update function`
         )
 
-      const [version, backend] = targetBackendString.split('/')
+      const backendParts = targetBackendString.split('/')
+
+      if (
+        backendParts.length !== 2 ||
+        !backendParts[0]?.trim() ||
+        !backendParts[1]?.trim()
+      ) {
+        throw new Error(
+          `Invalid backend string format: "${targetBackendString}". Expected "version/backend".`
+        )
+      }
+
+      const [rawVersion, rawBackend] = backendParts
+      const version = rawVersion.trim()
+      const backend = rawBackend.trim()
+
+      // Normalize the target backend string to use trimmed values
+      targetBackendString = `${version}/${backend}`
 
       logger.info(
         `Updating backend to ${targetBackendString} (backend type: ${backend})`
       )
 
-      // Download new backend
+      // Download new backend using the original asset/backend name
       await this.ensureBackendReady(backend, version)
 
       // Add delay on Windows
@@ -483,25 +573,14 @@ export default class llamacpp_extension extends AIEngine {
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
-      // We ensure consistency by mapping the backend type, although targetBackendString should already be correct
+      // Map backend type for stored preference only (not for download/config)
       const effectiveBackendType = await mapOldBackendToNew(backend)
       const currentStoredBackend = this.getStoredBackendType()
 
-      // Re-construct to be sure
-      targetBackendString = `${version}/${effectiveBackendType}`
+      // Persist settings and stored preference before mutating in-memory config,
+      // so that if any of these steps fail, config remains consistent.
 
-      // Update configuration
-      this.config.version_backend = targetBackendString
-
-      // Store the backend type preference only if it changed
-      if (currentStoredBackend !== targetBackendString) {
-        this.setStoredBackendType(targetBackendString)
-        logger.info(
-          `Updated stored backend type preference: ${targetBackendString}`
-        )
-      }
-
-      // Update settings
+      // Update settings first — if this fails, we haven't mutated any state yet
       const settings = await this.getSettings()
       await this.updateSettings(
         settings.map((item) => {
@@ -511,6 +590,18 @@ export default class llamacpp_extension extends AIEngine {
           return item
         })
       )
+
+      // Store the backend type preference only if it changed
+      if (currentStoredBackend !== effectiveBackendType) {
+        this.setStoredBackendType(effectiveBackendType)
+        logger.info(
+          `Updated stored backend type preference: ${effectiveBackendType}`
+        )
+      }
+
+      // All critical side effects succeeded — now commit to in-memory config
+      this.config.version_backend = targetBackendString
+      this.config.device = ''
 
       logger.info(`Successfully updated to backend: ${targetBackendString}`)
 
@@ -525,24 +616,30 @@ export default class llamacpp_extension extends AIEngine {
         })
       }
 
-      // Clean up old versions of the same backend type using Rust command
-      const janDataFolderPath = await getJanDataFolderPath()
-      const backendsDir = await joinPath([
-        janDataFolderPath,
-        'llamacpp',
-        'backends',
-      ])
+      // Clean up old versions — best-effort, don't fail the update if this errors
+      try {
+        const janDataFolderPath = await getJanDataFolderPath()
+        const backendsDir = await joinPath([
+          janDataFolderPath,
+          'llamacpp',
+          'backends',
+        ])
 
-      if (IS_WINDOWS) {
-        await new Promise((resolve) => setTimeout(resolve, 500))
+        if (IS_WINDOWS) {
+          await new Promise((resolve) => setTimeout(resolve, 500))
+        }
+
+        await removeOldBackendVersions(backendsDir, version, backend)
+      } catch (cleanupError) {
+        logger.warn('Failed to remove old backend versions:', cleanupError)
       }
-
-      await removeOldBackendVersions(backendsDir, version, backend)
 
       return { wasUpdated: true, newBackend: targetBackendString }
     } catch (error) {
       logger.error('Backend update failed:', error)
       return { wasUpdated: false, newBackend: this.config.version_backend }
+    } finally {
+      this.isUpdatingBackend = false
     }
   }
 
@@ -693,6 +790,15 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
+    if (key === 'version_backend') {
+      // Skip entirely if updateBackend() is already handling it —
+      // updateBackend() will commit to in-memory config itself after all
+      // side effects succeed.
+      if (this.isUpdatingBackend) {
+        return
+      }
+    }
+
     this.config[key] = value
 
     if (key === 'version_backend') {
@@ -722,8 +828,6 @@ export default class llamacpp_extension extends AIEngine {
       this.autoUnload = value as boolean
     } else if (key === 'llamacpp_env') {
       this.llamacpp_env = value as string
-    } else if (key === 'memory_util') {
-      this.memoryMode = value as string
     } else if (key === 'timeout') {
       this.timeout = value as number
     }
@@ -1411,7 +1515,8 @@ export default class llamacpp_extension extends AIEngine {
   override async load(
     modelId: string,
     overrideSettings?: Partial<LlamacppConfig>,
-    isEmbedding: boolean = false
+    isEmbedding: boolean = false,
+    bypassAutoUnload: boolean = false
   ): Promise<SessionInfo> {
     const sInfo = await this.findSessionByModel(modelId)
     if (sInfo) {
@@ -1427,7 +1532,8 @@ export default class llamacpp_extension extends AIEngine {
     const loadingPromise = this.performLoad(
       modelId,
       overrideSettings,
-      isEmbedding
+      isEmbedding,
+      bypassAutoUnload
     )
     this.loadingModels.set(modelId, loadingPromise)
 
@@ -1442,7 +1548,8 @@ export default class llamacpp_extension extends AIEngine {
   private async performLoad(
     modelId: string,
     overrideSettings?: Partial<LlamacppConfig>,
-    isEmbedding: boolean = false
+    isEmbedding: boolean = false,
+    bypassAutoUnload: boolean = false
   ): Promise<SessionInfo> {
     const loadedModels = await this.getLoadedModels()
 
@@ -1454,6 +1561,7 @@ export default class llamacpp_extension extends AIEngine {
     if (
       this.autoUnload &&
       !isEmbedding &&
+      !bypassAutoUnload &&
       (loadedModels.length > 0 || otherLoadingPromises.length > 0)
     ) {
       // Wait for OTHER loading models to finish, then unload everything
@@ -1499,6 +1607,17 @@ export default class llamacpp_extension extends AIEngine {
       )
     }
 
+    // Version-aware flash_attn handling:
+    // llama.cpp b6325+ changed --flash-attn from a boolean flag to a string
+    // For older versions, "auto" is not a valid value so we fall back to "off"
+    // (i.e. don't send the flag at all).
+    if (cfg.flash_attn === 'auto' && !backend.startsWith('ik')) {
+      const buildNum = parseBuildNumber(version)
+      if (buildNum !== null && buildNum < 6325) {
+        cfg.flash_attn = 'off'
+      }
+    }
+
     // Ensure backend is downloaded and ready before proceeding
     await this.ensureBackendReady(backend, version)
 
@@ -1533,6 +1652,9 @@ export default class llamacpp_extension extends AIEngine {
     if (modelConfig.mmproj_path) {
       mmprojPath = await joinPath([janDataFolderPath, modelConfig.mmproj_path])
     }
+
+    // Migrate old env vars
+    if (typeof cfg.fit === 'string') cfg.fit = true
 
     logger.info(
       'Calling Tauri command load_llama_model with config:',
@@ -1632,16 +1754,31 @@ export default class llamacpp_extension extends AIEngine {
     body: string,
     abortController?: AbortController
   ): AsyncIterable<chatCompletionChunk> {
+    // AbortSignal.any() is not available in all runtimes (e.g. WebKit/JavaScriptCore),
+    // so we manually combine the timeout and external abort signals.
+    const combinedController = new AbortController()
+    const timeoutId = setTimeout(
+      () => combinedController.abort(new Error('Request timed out')),
+      this.timeout * 1000
+    )
+    if (abortController?.signal) {
+      if (abortController.signal.aborted) {
+        combinedController.abort(abortController.signal.reason)
+      } else {
+        abortController.signal.addEventListener(
+          'abort',
+          () => combinedController.abort(abortController.signal.reason),
+          { once: true }
+        )
+      }
+    }
     const response = await fetch(url, {
       method: 'POST',
       headers,
       body,
       connectTimeout: Number(this.timeout) * 1000, // default 10 minutes
-      signal: AbortSignal.any([
-        AbortSignal.timeout(this.timeout * 1000),
-        abortController?.signal,
-      ]),
-    })
+      signal: combinedController.signal,
+    }).finally(() => clearTimeout(timeoutId))
     if (!response.ok) {
       const errorData = await response.json().catch(() => null)
       throw new Error(
@@ -2062,85 +2199,6 @@ export default class llamacpp_extension extends AIEngine {
     return (await readGgufMetadata(modelPath)).metadata?.[
       'tokenizer.chat_template'
     ]?.includes('tools')
-  }
-  /**
-   * Get total system memory including both VRAM and RAM
-   */
-  private async getTotalSystemMemory(): Promise<SystemMemory> {
-    const devices = await this.getDevices()
-    let totalVRAM = 0
-
-    if (devices.length > 0) {
-      // Sum total VRAM across all GPUs
-      totalVRAM = devices
-        .map((d) => d.mem * 1024 * 1024)
-        .reduce((a, b) => a + b, 0)
-    }
-
-    // Get system RAM
-    const sys = await getSystemUsage()
-    const totalRAM = sys.used_memory * 1024 * 1024
-
-    const totalMemory = totalVRAM + totalRAM
-
-    logger.info(
-      `Total VRAM: ${totalVRAM} bytes, Total RAM: ${totalRAM} bytes, Total Memory: ${totalMemory} bytes`
-    )
-
-    return {
-      totalVRAM,
-      totalRAM,
-      totalMemory,
-    }
-  }
-
-  private async getLayerSize(
-    path: string,
-    meta: Record<string, string>
-  ): Promise<{ layerSize: number; totalLayers: number }> {
-    const modelSize = await getModelSize(path)
-    const arch = meta['general.architecture']
-    const totalLayers = Number(meta[`${arch}.block_count`]) + 2 // 1 for lm_head layer and 1 for embedding layer
-    if (!totalLayers) throw new Error('Invalid metadata: block_count not found')
-    return { layerSize: modelSize / totalLayers, totalLayers }
-  }
-
-  private isAbsolutePath(p: string): boolean {
-    // Normalize back‑slashes to forward‑slashes first.
-    const norm = p.replace(/\\/g, '/')
-    return (
-      norm.startsWith('/') || // POSIX absolute
-      /^[a-zA-Z]:/.test(norm) || // Drive‑letter Windows (C: or D:)
-      /^\/\/[^/]+/.test(norm) // UNC path //server/share
-    )
-  }
-  /*
-    * if (!this.isAbsolutePath(path))
-      path = await joinPath([await getJanDataFolderPath(), path])
-    if (mmprojPath && !this.isAbsolutePath(mmprojPath))
-      mmprojPath = await joinPath([await getJanDataFolderPath(), path])
-  */
-  async planModelLoad(
-    path: string,
-    mmprojPath?: string,
-    requestedCtx?: number
-  ): Promise<ModelPlan> {
-    if (!this.isAbsolutePath(path)) {
-      path = await joinPath([await getJanDataFolderPath(), path])
-    }
-    if (mmprojPath && !this.isAbsolutePath(mmprojPath))
-      mmprojPath = await joinPath([await getJanDataFolderPath(), path])
-    try {
-      const result = await planModelLoadInternal(
-        path,
-        this.memoryMode,
-        mmprojPath,
-        requestedCtx
-      )
-      return result
-    } catch (e) {
-      throw new Error(String(e))
-    }
   }
 
   /**

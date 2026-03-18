@@ -13,4 +13,7 @@ export interface UploadsService {
 
   // Ingest a document attachment in the context of a thread
   ingestFileAttachment(threadId: string, attachment: Attachment): Promise<UploadResult>
+
+  // Ingest a document attachment in the context of a project (shared across all threads)
+  ingestFileAttachmentForProject(projectId: string, attachment: Attachment): Promise<UploadResult>
 }

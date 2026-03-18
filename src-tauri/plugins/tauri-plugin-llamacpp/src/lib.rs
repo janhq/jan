@@ -13,8 +13,10 @@ mod gguf;
 mod path;
 mod process;
 pub mod state;
+pub use args::LlamacppConfig;
 pub use cleanup::cleanup_llama_processes;
-pub use state::LLamaBackendSession;
+pub use commands::load_llama_model_impl;
+pub use state::{LLamaBackendSession, LlamacppState};
 
 /// Initializes the plugin.
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
@@ -38,7 +40,6 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             gguf::commands::estimate_kv_cache_size,
             gguf::commands::get_model_size,
             gguf::commands::is_model_supported,
-            gguf::model_planner::plan_model_load,
             // Backend management
             backend::map_old_backend_to_new,
             backend::get_local_installed_backends,

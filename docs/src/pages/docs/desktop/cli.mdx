@@ -1,0 +1,246 @@
+---
+title: Jan CLI
+description: Serve local models and launch autonomous AI agents from your terminal using Jan.
+keywords:
+  [
+    Jan,
+    Jan CLI,
+    local AI,
+    terminal,
+    serve models,
+    AI agents,
+    Claude Code,
+    OpenClaw,
+    llama.cpp,
+    MLX,
+  ]
+---
+
+import { Callout, Tabs } from 'nextra/components'
+
+# Jan CLI
+
+<Callout type="info">
+Available since **Jan 0.7.8** (March 2026).
+</Callout>
+
+The `jan` CLI lets you serve local AI models and launch autonomous agents from your terminal — no cloud account, no usage fees, full privacy.
+
+```
+       ██╗ █████╗ ███╗  ██╗
+       ██║██╔══██╗████╗ ██║
+       ██║███████║██╔██╗██║
+  ██   ██║██╔══██║██║╚████║
+  ╚█████╔╝██║  ██║██║ ╚███║
+   ╚════╝ ╚═╝  ╚═╝╚═╝  ╚══╝
+
+Jan runs local AI models (LlamaCPP / MLX) and exposes them via an
+OpenAI-compatible API, then wires AI coding agents like Claude Code or opencode
+directly to your own hardware — no cloud account, no usage fees, full privacy.
+
+Models downloaded in the Jan desktop app are automatically available here.
+
+Usage: jan <COMMAND>
+
+Commands:
+  serve    Load a local model and expose it at localhost:6767/v1 (auto-detects LlamaCPP or MLX)
+  launch   Start a local model, then launch an AI agent with it pre-wired (env vars set automatically)
+  threads  List and inspect conversation threads saved by the Jan app
+  models   List and load models installed in the Jan data folder
+  help     Print this message or the help of the given subcommand(s)
+
+Examples:
+  jan launch claude                               # pick a model, then run Claude Code against it
+  jan launch claude --model qwen3.5-35b-a3b       # use a specific model
+  jan launch openclaw --model qwen3.5-35b-a3b     # wire openclaw to a local model
+  jan launch opencode --model qwen3.5-35b-a3b     # wire opencode to a local model
+  jan serve qwen3.5-35b-a3b                       # expose a model at localhost:6767/v1
+  jan serve qwen3.5-35b-a3b --fit                 # auto-fit context to available VRAM
+  jan serve qwen3.5-35b-a3b --detach              # run in the background
+  jan models list                                 # show all installed models
+```
+
+Models downloaded in the Jan desktop app are automatically available to the CLI.
+
+## Installation
+
+Jan CLI is installed automatically when you launch the Jan desktop app for the first time — no extra steps needed. You can uninstall or reinstall it at any time from **Settings > General > Jan CLI**.
+
+<Callout type="info">
+The CLI binary is installed at `~/.local/bin/jan` on macOS/Linux. Make sure this path is in your `$PATH` to use the `jan` command from any terminal.
+</Callout>
+
+The Jan desktop app helps you manage inference backends (LlamaCPP, MLX) and models — or use the CLI to manage them. Both share the same data folder, so models installed via either interface are available to both.
+
+## Quick Start
+
+Getting started takes a single command:
+
+```bash
+jan launch
+```
+
+Jan will ask you to pick an agent (Claude Code, OpenClaw, opencode), then automatically download and set up Jan's foundation model and wire it to the agent for you. No config files, no API keys, no cloud — your agent runs entirely on your own hardware.
+
+---
+
+## Commands
+
+### `jan serve`
+
+Load a local model and expose it at `localhost:6767/v1` as an OpenAI-compatible API. Auto-detects LlamaCPP or MLX.
+
+```bash
+jan serve [MODEL_ID] [OPTIONS]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `MODEL_ID` | Model ID to load (omit to pick interactively). Can be a local model ID or a HuggingFace repo ID (e.g., `unsloth/Qwen3.5-9B-GGUF`) | — |
+| `--port` | Port to listen on (0 = random free port) | `6767` |
+| `--n-gpu-layers` | GPU layers to offload (-1 = all, 0 = CPU only) | `-1` |
+| `--ctx-size` | Context window size in tokens | `32768` |
+| `--fit` | Auto-fit context to available VRAM | — |
+| `--api-key` | API key required by clients | `""` |
+| `-d, --detach` | Run in background, print PID | — |
+| `--threads` | CPU threads for inference (0 = auto) | `0` |
+| `--embedding` | Treat model as an embedding model | — |
+| `-v, --verbose` | Print full server logs | — |
+
+When no model ID is provided, an interactive selector is shown. If no models are installed yet, Jan will automatically download its default foundation model to get you started:
+
+```
+$ jan serve
+
+━━━ Select Model ━━━
+
+Choose a model:
+> janhq/Jan-v3-4B-base-instruct-gguf [LlamaCPP]
+  sentence-transformer-mini [LlamaCPP]
+  Jan-v3-4B-base-instruct-4bit [MLX]
+```
+
+**Examples:**
+
+```bash
+jan serve                              # pick a model interactively
+jan serve qwen3.5-35b-a3b             # serve a specific model
+jan serve qwen3.5-35b-a3b --fit       # auto-fit context to available VRAM
+jan serve qwen3.5-35b-a3b --detach    # run in background
+jan serve qwen3.5-35b-a3b --port 8080 # serve on a custom port
+jan serve unsloth/Qwen3.5-9B-GGUF     # download and serve a HuggingFace model
+```
+
+<Callout type="info">
+When using a HuggingFace repo ID (e.g., `unsloth/Qwen3.5-9B-GGUF`), if the model isn't downloaded yet, Jan will automatically download it from HuggingFace.
+</Callout>
+
+#### LlamaCPP Server Arguments
+
+You can pass additional arguments to the underlying LlamaCPP server using environment variables with the `LLAMA_ARG_` prefix:
+
+```bash
+export LLAMA_ARG_HOST=0.0.0.0          # bind to specific host
+export LLAMA_ARG_N_GPU_LAYERS=32       # set GPU layers
+export LLAMA_ARG_CTX_SIZE=8192         # set context size
+export LLAMA_ARG_THREADS=8             # set CPU threads
+jan serve qwen3.5-35b-a3b
+```
+
+Any LlamaCPP server flag can be passed this way — just prefix the flag name with `LLAMA_ARG_`.
+
+---
+
+### `jan launch`
+
+Start a local model, then launch an AI agent with it pre-wired — environment variables are set automatically so the agent connects to your local model.
+
+```bash
+jan launch [PROGRAM] [OPTIONS]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `PROGRAM` | Agent to launch: `claude`, `openclaw`, `opencode` (omit to pick interactively) | — |
+| `--model` | Model ID to load (omit to pick interactively) | — |
+| `--ctx-size` | Context window size in tokens | `4096` |
+| `--fit` | Auto-fit context to available VRAM | on for `claude` |
+| `--port` | Port for the model server | `6767` |
+| `--api-key` | API key (exported as `OPENAI_API_KEY` and `ANTHROPIC_AUTH_TOKEN`) | `jan` |
+| `-v, --verbose` | Print full server logs | — |
+
+When no agent or model is specified, interactive selectors are shown. If no models are installed, Jan will automatically download its default foundation model before launching the agent:
+
+```
+$ jan launch
+
+━━━ Select Agent ━━━
+
+Choose an agent to launch:
+> Claude Code  — Anthropic's AI coding agent
+  OpenClaw     — Open-source autonomous AI agent [not installed]
+```
+
+**Examples:**
+
+```bash
+jan launch claude                                    # pick a model, then run Claude Code
+jan launch claude --model qwen3.5-35b-a3b           # use a specific model with Claude Code
+jan launch openclaw --model qwen3.5-35b-a3b         # wire OpenClaw to a local model
+jan launch opencode --model qwen3.5-35b-a3b         # wire opencode to a local model
+```
+
+---
+
+### `jan models`
+
+List and manage models installed in the Jan data folder.
+
+```bash
+jan models list              # list all installed models
+jan models load <MODEL_ID>   # serve a model (alias for jan serve)
+jan models load-mlx <ID>     # load an MLX model (macOS / Apple Silicon only)
+```
+
+---
+
+### `jan threads`
+
+List and inspect conversation threads saved by the Jan desktop app.
+
+```bash
+jan threads list                    # list all threads
+jan threads get <ID>                # get a thread's metadata
+jan threads messages <THREAD_ID>    # list all messages in a thread
+jan threads delete <ID>             # permanently delete a thread
+```
+
+---
+
+## Common Workflows
+
+**Serve a model for use with any OpenAI-compatible client:**
+```bash
+jan serve jan-code-4b --fit
+```
+
+**Launch Claude Code against a local model:**
+```bash
+jan launch claude --model jan-code-4b
+```
+
+**Run a model in the background:**
+```bash
+jan serve jan-code-4b --detach
+```
+
+**List all installed models:**
+```bash
+jan models list
+```
+
+---
+
+## Troubleshooting
+
+For common issues — including Windows-specific problems like `jan` opening the desktop app instead of the CLI — see the [Troubleshooting guide](/docs/desktop/troubleshooting#jan-cli).

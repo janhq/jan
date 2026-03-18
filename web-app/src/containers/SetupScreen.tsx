@@ -6,6 +6,7 @@ import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
+import { AppEvent, events } from '@janhq/core'
 import type { CatalogModel } from '@/services/models/types'
 import {
   NEW_JAN_MODEL_HF_REPO,
@@ -16,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { IconEye, IconSquareCheck } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import HeaderPage from './HeaderPage'
 
 type CacheEntry = {
   status: 'RED' | 'YELLOW' | 'GREEN' | 'GREY'
@@ -81,7 +83,8 @@ loadCacheFromStorage()
 function SetupScreen() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { getProviderByName } = useModelProvider()
+  const { getProviderByName, selectModelProvider, setProviders } =
+    useModelProvider()
 
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
@@ -142,7 +145,7 @@ function SetupScreen() {
       >()
 
       for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-        const variant = janNewModel.quants.find((quant) =>
+        const variant = janNewModel.quants?.find((quant) =>
           quant.model_id.toLowerCase().includes(quantization)
         )
 
@@ -188,7 +191,6 @@ function SetupScreen() {
     fetchJanModel()
   }, [fetchJanModel])
 
-
   const defaultVariant = useMemo(() => {
     if (!janNewModel) return null
 
@@ -200,7 +202,7 @@ function SetupScreen() {
 
     for (const status of priorityOrder) {
       for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-        const variant = janNewModel.quants.find((quant) =>
+        const variant = janNewModel.quants?.find((quant) =>
           quant.model_id.toLowerCase().includes(quantization)
         )
 
@@ -213,7 +215,7 @@ function SetupScreen() {
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
       if (quantization === 'q8_0') continue
 
-      const variant = janNewModel.quants.find((quant) =>
+      const variant = janNewModel.quants?.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
       )
 
@@ -223,7 +225,7 @@ function SetupScreen() {
     }
 
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-      const variant = janNewModel.quants.find((quant) =>
+      const variant = janNewModel.quants?.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
       )
 
@@ -233,13 +235,13 @@ function SetupScreen() {
     }
 
     for (const quantization of SETUP_SCREEN_QUANTIZATIONS) {
-      const variant = janNewModel.quants.find((quant) =>
+      const variant = janNewModel.quants?.find((quant) =>
         quant.model_id.toLowerCase().includes(quantization)
       )
       if (variant) return variant
     }
 
-    return janNewModel.quants[0]
+    return janNewModel.quants?.[0]
   }, [janNewModel, supportedVariants])
 
   const downloadProcesses = useMemo(
@@ -262,7 +264,7 @@ function SetupScreen() {
     )
   }, [defaultVariant, localDownloadingModels, downloadProcesses])
 
-  const downloadedSize = useMemo(() => {
+   const downloadedSize = useMemo(() => {
     if (!defaultVariant) return { current: 0, total: 0 }
     const process = downloadProcesses.find(
       (e) => e.id === defaultVariant.model_id
@@ -316,7 +318,63 @@ function SetupScreen() {
     huggingfaceToken,
   ])
 
-  // Process queued quick start when metadata becomes available
+  // Auto-start download when screen is shown
+  const hasAutoStarted = useRef(false)
+  useEffect(() => {
+    if (hasAutoStarted.current || isDownloaded) return
+    hasAutoStarted.current = true
+    handleQuickStart()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Use ref to track if we've already navigated
+  const hasNavigatedRef = useRef(false)
+
+  // Navigate when download completes - using event listener for reliability
+  useEffect(() => {
+
+    const onModelImported = async (payload: { modelId: string }) => {
+      if (!defaultVariant || hasNavigatedRef.current) return
+      if (payload.modelId !== defaultVariant.model_id) return
+
+      hasNavigatedRef.current = true
+
+      console.log('SetupScreen: Model imported, navigating to home...')
+
+      // Refresh providers so the model is available in the store before selecting
+      const providers = await serviceHub.providers().getProviders()
+      setProviders(providers)
+
+      // On Windows the provider may list model IDs with backslashes (from filesystem paths)
+      // while the catalog uses forward slashes, so try both formats
+      const catalogId = defaultVariant.model_id
+      const backslashId = catalogId.replace(/\//g, '\\')
+      const found = selectModelProvider('llamacpp', catalogId)
+        || selectModelProvider('llamacpp', backslashId)
+      const modelId = found ? found.id : catalogId
+
+      toast.dismiss(`model-validation-started-${catalogId}`)
+      localStorage.setItem(localStorageKey.setupCompleted, 'true')
+      localStorage.setItem(
+        localStorageKey.lastUsedModel,
+        JSON.stringify({ provider: 'llamacpp', model: modelId })
+      )
+      navigate({
+        to: route.home,
+        replace: true,
+        search: {
+          threadModel: { id: modelId, provider: 'llamacpp' },
+        },
+      })
+    }
+
+    events.on(AppEvent.onModelImported, onModelImported)
+
+    return () => {
+      events.off(AppEvent.onModelImported, onModelImported)
+    }
+  }, [defaultVariant, navigate, selectModelProvider, serviceHub, setProviders])
+
   useEffect(() => {
     if (
       quickStartQueued &&
@@ -366,100 +424,91 @@ function SetupScreen() {
     if (
       quickStartInitiated &&
       !quickStartQueued &&
-      !isDownloading &&
+      isDownloading &&
       !isDownloaded
     ) {
       setQuickStartInitiated(false)
     }
   }, [quickStartInitiated, quickStartQueued, isDownloading, isDownloaded])
 
-  useEffect(() => {
-    if (quickStartInitiated && isDownloaded && defaultVariant) {
-      toast.dismiss(`model-validation-started-${defaultVariant.model_id}`)
-      localStorage.setItem(localStorageKey.setupCompleted, 'true')
-
-      navigate({
-        to: route.home,
-        params: {},
-        search: {
-          model: {
-            id: defaultVariant.model_id,
-            provider: 'llamacpp',
-          },
-        },
-      })
-    }
-  }, [quickStartInitiated, isDownloaded, defaultVariant, navigate])
 
   return (
-    <div className="flex h-full flex-col justify-center">
-      <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center ">
-        <div className="w-full mx-auto">
-          <div className="mb-4 text-center">
-            <h1 className="font-studio font-medium text-2xl mb-1">
-              {isDownloading ?  'Sit tight, Jan is getting ready...' : 'Welcome to Jan!'}
-            </h1>
-            <p className='text-muted-foreground w-full md:w-1/2 mx-auto mt-1'>{isDownloading ? 'Jan is getting ready to work on your device. This may take a few minutes.' : 'To get started, Jan needs to download a model to your device. This only takes a few minutes.'}</p>
-          </div>
-          <div className="flex gap-4 flex-col mt-6">
-            {/* Quick Start Button - Highlighted */}
-            <div
-              onClick={handleQuickStart}
-              className="w-full text-left lg:w-2/3 mx-auto"
-            >
-              <div className={cn("bg-background p-3 rounded-lg border transition-all hover:shadow-lg disabled:opacity-60 flex justify-between items-start")}>
-                <div className="flex items-start gap-4">
-                  <div className="shrink-0 size-12 bg-secondary/40 rounded-xl flex items-center justify-center">
-                    <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
-                  </div>
-                  <div className="flex-1">
-                    <h1 className="font-semibold text-sm mb-1">
-                      <span>Jan v3</span>&nbsp;<span className='text-xs text-muted-foreground'>· {defaultVariant?.file_size}</span>
-                    </h1>
-                    <div className="text-muted-foreground text-sm mt-1.5">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full mr-1">
-                        <IconSquareCheck size={12} />
-                        General
-                      </span>
-                      {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full">
-                        <IconEye size={12} />
-                        Vision
-                      </span>}
+    <div className="relative flex flex-col h-svh w-full overflow-hidden">
+      {/* Content overlay */}
+        <div className="flex flex-col h-svh w-full">
+        <HeaderPage />
+        
+        <div className="flex h-[calc(100%-60px)] items-center">
+          <div className="shrink-0 px-10 w-[480px] mx-auto overflow-auto pb-10 pointer-events-auto -mt-20">
+            <div className="mb-4">
+              <h1 className="font-studio font-medium text-2xl mb-1">
+                {isDownloading ?  'Sit tight, Jan is getting ready...' : 'Hey, welcome to Jan!'}
+              </h1>
+              <p className='text-muted-foreground leading-normal w-full mt-1'>{isDownloading ? 'This may take a few minutes.' : 'Jan needs a model to begin. Let’s set it up.'}</p>
+            </div>
+            <div className="flex gap-4 flex-col mt-6 relative z-50">
+              <div
+                className="w-full text-left"
+              >
+                <span className='mb-2 block text-sm font-medium'>Recommended model</span>
+                <div className={cn("bg-secondary/50 p-3 rounded-lg border transition-all hover:shadow disabled:opacity-60 flex justify-between items-start")}>
+                  <div className="flex w-full items-start gap-4">
+                    <div className="shrink-0 size-12 bg-background rounded-xl flex items-center justify-center">
+                      <img src="/images/jan-logo.png" alt="Jan Logo" className='size-6' />
+                    </div>
+                    <div className="flex flex-col w-full h-full justify-center">
+                      <div className="flex flex-1 items-center justify-between">
+                        <h1 className="font-semibold text-sm mb-1">
+                          <span>Jan v3</span>&nbsp;<span className='text-xs text-muted-foreground'>· {defaultVariant?.file_size}</span>
+                        </h1>
+                        {(isDownloading) && (
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <svg
+                              className="size-3 animate-spin"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                            >
+                              <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                              />
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                              />
+                            </svg>
+                            <span>{formatBytes(downloadedSize.current)} / {formatBytes(downloadedSize.total)}GB</span>
+                          </div>
+                        )}
+
+                      </div>
+                      <div className="text-muted-foreground text-sm mt-1.5 ">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full mr-1">
+                          <IconSquareCheck size={12} />
+                          General
+                        </span>
+                        {(janNewModel?.mmproj_models?.length ?? 0) > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary text-xs rounded-full">
+                          <IconEye size={12} />
+                          Vision
+                        </span>}
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-2">
-                  <Button size="sm" disabled={quickStartInitiated || isDownloading}>
-                    {quickStartInitiated || isDownloading ? 'Downloading' : 'Download'}
+                <div className="flex flex-col relative z-50 items-start gap-2 mt-4">
+                  <Button size="sm" disabled={isDownloading}  onClick={handleQuickStart} className='flex items-center gap-2 w-full'>
+                    {isDownloading ? 'Downloading' : 'Download'}
                   </Button>
-                  {(quickStartInitiated || isDownloading) && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <svg
-                        className="size-3 animate-spin"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        />
-                      </svg>
-                      <span>{formatBytes(downloadedSize.current)} / {formatBytes(downloadedSize.total)}GB</span>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
           </div>
+
         </div>
       </div>
     </div>

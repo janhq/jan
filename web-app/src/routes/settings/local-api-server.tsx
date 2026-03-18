@@ -15,12 +15,37 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useAppState } from '@/hooks/useAppState'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { IconLogs } from '@tabler/icons-react'
+import { IconSettings2 } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { getModelToStart } from '@/utils/getModelToStart'
+import { LogViewer } from '@/components/LogViewer'
+import { ensureModelForServer } from '@/utils/ensureModelForServer'
+
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from '@/components/ui/popover'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from '@/components/ui/collapsible'
+import {
+  IconChevronDown,
+  IconChevronUp,
+  IconExternalLink,
+  IconLoader2,
+} from '@tabler/icons-react'
+import { ChevronsUpDown } from 'lucide-react'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -44,34 +69,43 @@ function LocalAPIServerContent() {
     apiKey,
     trustedHosts,
     proxyTimeout,
+    setLastServerModels,
+    defaultModelLocalApiServer,
+    setDefaultModelLocalApiServer,
   } = useLocalApiServer()
 
-  const { serverStatus, setServerStatus } = useAppState()
-  const { selectedModel, selectedProvider, getProviderByName } =
-    useModelProvider()
-  const [showApiKeyError, setShowApiKeyError] = useState(false)
-  const [isApiKeyEmpty, setIsApiKeyEmpty] = useState(
-    !apiKey || apiKey.toString().trim().length === 0
+  const providers = useModelProvider((state) => state.providers)
+  const localModelIds = useMemo(
+    () =>
+      providers
+        .filter((p) => p.provider === 'llamacpp')
+        .flatMap((p) => p.models.map((m) => m.id)),
+    [providers]
   )
+
+  const { serverStatus, setServerStatus } = useAppState()
+  const [showApiKeyError, setShowApiKeyError] = useState(false)
   const setActiveModels = useAppState((state) => state.setActiveModels)
 
   useEffect(() => {
     const checkServerStatus = async () => {
-      serviceHub
-        .app()
-        .getServerStatus()
-        .then((running) => {
-          if (running) {
-            setServerStatus('running')
-          }
-        })
+      try {
+        const running = await serviceHub.app().getServerStatus()
+        console.log('Server status check:', running)
+        if (running) {
+          setServerStatus('running')
+        }
+      } catch (error) {
+        console.error('Failed to check server status:', error)
+      }
     }
     checkServerStatus()
-  }, [serviceHub, setServerStatus])
 
-  const handleApiKeyValidation = (isValid: boolean) => {
-    setIsApiKeyEmpty(!isValid)
-  }
+    // Also check when window gains focus (e.g., server started from another page)
+    const handleFocus = () => checkServerStatus()
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [serviceHub, setServerStatus])
 
   const [isModelLoading, setIsModelLoading] = useState(false)
 
@@ -83,57 +117,42 @@ function LocalAPIServerContent() {
         description: `Attempting to start server on port ${serverPort}`,
       })
 
-      if (!apiKey || apiKey.toString().trim().length === 0) {
-        setShowApiKeyError(true)
-        return
-      }
+      // if (!apiKey || apiKey.toString().trim().length === 0) {
+      //   setShowApiKeyError(true)
+      //   return
+      // }
+
       setShowApiKeyError(false)
 
       setServerStatus('pending')
 
-      // Check if there's already a loaded model
-      serviceHub
-        .models()
-        .getActiveModels()
-        .then((loadedModels) => {
-          if (loadedModels && loadedModels.length > 0) {
-            console.log(`Using already loaded model: ${loadedModels[0]}`)
-            // Model already loaded, just start the server
-            return Promise.resolve()
-          } else {
-            // No loaded model, start one first
-            const modelToStart = getModelToStart({
-              selectedModel,
-              selectedProvider,
-              getProviderByName,
-            })
-
-            // Only start server if we have a model to load
-            if (!modelToStart) {
-              console.warn(
-                'Cannot start Local API Server: No model available to load'
-              )
-              throw new Error('No model available to load')
-            }
-
-            setIsModelLoading(true) // Start loading state
-
-            // Start the model first
-            return serviceHub
-              .models()
-              .startModel(modelToStart.provider, modelToStart.model)
-              .then(() => {
-                console.log(`Model ${modelToStart.model} started successfully`)
-                setIsModelLoading(false) // Model loaded, stop loading state
-                // Refresh active models after starting
-                serviceHub
-                  .models()
-                  .getActiveModels()
-                  .then((models) => setActiveModels(models || []))
-                // Add a small delay for the backend to update state
-                return new Promise((resolve) => setTimeout(resolve, 500))
-              })
+      ensureModelForServer({
+        modelsService: serviceHub.models(),
+        modelOverride: defaultModelLocalApiServer,
+        onLoadStart: () => setIsModelLoading(true),
+        onLoadEnd: () => setIsModelLoading(false),
+      })
+        .then(async (result) => {
+          if (result.status === 'no_model_available') {
+            throw new Error('No model available to load')
           }
+
+          // Remember loaded models for next startup
+          const activeModels = await serviceHub.models().getActiveModels()
+          if (activeModels && activeModels.length > 0) {
+            const allProviders = useModelProvider.getState().providers
+            const serverModels = activeModels.flatMap((id: string) => {
+              const p = allProviders.find((p) =>
+                p?.models?.some((m: { id: string }) => m.id === id)
+              )
+              return p ? [{ model: id, provider: p.provider }] : []
+            })
+            if (serverModels.length > 0) setLastServerModels(serverModels)
+          }
+
+          // Refresh active models in app state
+          const models = await serviceHub.models().getActiveModels()
+          setActiveModels(models || [])
         })
         .then(() => {
           // Then start the server
@@ -204,12 +223,16 @@ function LocalAPIServerContent() {
     }
   }
 
-  const getButtonText = () => {
-    if (isModelLoading) {
-      return t('settings:localApiServer.loadingModel') // TODO: Update this translation
-    }
-    if (serverStatus === 'pending' && !isModelLoading) {
-      return t('settings:localApiServer.startingServer') // TODO: Update this translation
+  const getButtonContent = () => {
+    if (isModelLoading || serverStatus === 'pending') {
+      return (
+        <>
+          <IconLoader2 size={14} className="animate-spin" />
+          {isModelLoading
+            ? t('settings:localApiServer.loadingModel')
+            : t('settings:localApiServer.startingServer')}
+        </>
+      )
     }
     return isServerRunning
       ? t('settings:localApiServer.stopServer')
@@ -229,177 +252,306 @@ function LocalAPIServerContent() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div className="flex items-center gap-2 w-full">
-          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+        <div
+          className={cn(
+            'flex items-center justify-between w-full mr-2 pr-3',
+            !IS_MACOS && 'pr-30'
+          )}
+        >
+          <span className="font-medium text-base font-studio">
+            {t('common:settings')}
+          </span>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button size="sm" variant="outline" className="relative z-50">
+                <IconSettings2 size={16} />
+                Configuration
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="w-[480px] max-h-[70vh] overflow-y-auto"
+            >
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <h2 className="font-semibold text-sm">
+                    {t('settings:localApiServer.serverConfiguration')}
+                  </h2>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium">
+                        {t('settings:localApiServer.serverHost')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('settings:localApiServer.serverHostDesc')}
+                      </p>
+                    </div>
+                    <div>
+                      <ServerHostSwitcher isServerRunning={isServerRunning} />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium">
+                        {t('settings:localApiServer.serverPort')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('settings:localApiServer.serverPortDesc')}
+                      </p>
+                    </div>
+                    <PortInput isServerRunning={isServerRunning} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium">
+                        {t('settings:localApiServer.apiPrefix')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('settings:localApiServer.apiPrefixDesc')}
+                      </p>
+                    </div>
+                    <ApiPrefixInput isServerRunning={isServerRunning} />
+                  </div>
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium">
+                      {t('settings:localApiServer.apiKey')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('settings:localApiServer.apiKeyDesc')}
+                    </p>
+                    <div className="pt-1">
+                      <ApiKeyInput
+                        isServerRunning={isServerRunning}
+                        showError={showApiKeyError}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium">
+                      {t('settings:localApiServer.trustedHosts')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('settings:localApiServer.trustedHostsDesc')}
+                    </p>
+                    <div className="pt-1">
+                      <TrustedHostsInput isServerRunning={isServerRunning} />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium">
+                        {t('settings:localApiServer.proxyTimeout')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('settings:localApiServer.proxyTimeoutDesc')}
+                      </p>
+                    </div>
+                    <ProxyTimeoutInput isServerRunning={isServerRunning} />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between border-t border-border pt-4 mt-4">
+                  <h2 className="font-semibold text-sm">
+                    {t('settings:localApiServer.advancedSettings')}
+                  </h2>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium">
+                        {t('settings:localApiServer.cors')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('settings:localApiServer.corsDesc')}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={corsEnabled}
+                      onCheckedChange={setCorsEnabled}
+                      disabled={isServerRunning}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium">
+                        {t('settings:localApiServer.verboseLogs')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('settings:localApiServer.verboseLogsDesc')}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={verboseLogs}
+                      onCheckedChange={setVerboseLogs}
+                      disabled={isServerRunning}
+                    />
+                  </div>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">
         <SettingsMenu />
-        <div className="p-4 pt-0 w-full overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            {/* General Settings */}
-            <Card
-              header={
-                <div className="mb-3 flex w-full items-center border-b pb-2">
-                  <div className="w-full space-y-2">
-                    <h1 className="text-base font-medium text-foreground font-studio">
-                      {t('settings:localApiServer.title')}
-                    </h1>
-                    <p className="text-muted-foreground mb-2">
-                      {t('settings:localApiServer.description')}
-                    </p>
+        <div className="flex-1 flex flex-col min-h-0 pl-0">
+          <div className="flex-1 overflow-y-auto p-4 pt-0">
+            <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
+              {/* General Settings */}
+              <Card
+                header={
+                  <div className="mb-3 flex w-full items-center border-b pb-2">
+                    <div className="w-full space-y-2">
+                      <h1 className="text-base font-medium text-foreground font-studio">
+                        {t('settings:localApiServer.title')}
+                      </h1>
+                      <p className="text-muted-foreground mb-2">
+                        {t('settings:localApiServer.description')}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={toggleAPIServer}
+                        variant={isServerRunning ? 'destructive' : 'default'}
+                        size="sm"
+                        disabled={serverStatus === 'pending' || isModelLoading}
+                      >
+                        {getButtonContent()}
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      onClick={toggleAPIServer}
-                      variant={isServerRunning ? 'destructive' : 'default'}
-                      size="sm"
-                      disabled={serverStatus === 'pending'} // Disable during any loading state
-                    >
-                      {getButtonText()}
-                    </Button>
-                  </div>
-                </div>
-              }
-            >
-              <CardItem
-                title={t('settings:localApiServer.runOnStartup')}
-                description={t('settings:localApiServer.runOnStartupDesc')}
-                actions={
-                  <Switch
-                    checked={enableOnStartup}
-                    onCheckedChange={(checked) => {
-                      if (!apiKey || apiKey.toString().trim().length === 0) {
-                        setShowApiKeyError(true)
-                        return
-                      }
-                      setEnableOnStartup(checked)
-                    }}
-                  />
                 }
-              />
-              <CardItem
-                title={t('settings:localApiServer.serverLogs')}
-                description={t('settings:localApiServer.serverLogsDesc')}
-                actions={
+              >
+                <CardItem
+                  title={t('settings:localApiServer.runOnStartup')}
+                  description={t('settings:localApiServer.runOnStartupDesc')}
+                  actions={
+                    <Switch
+                      checked={enableOnStartup}
+                      onCheckedChange={(checked) => {
+                        setEnableOnStartup(checked)
+                      }}
+                    />
+                  }
+                />
+                <CardItem
+                  title={t('settings:localApiServer.defaultModel')}
+                  description={t('settings:localApiServer.defaultModelDesc')}
+                  actions={
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-40 justify-between"
+                        >
+                          <span className="truncate">
+                            {defaultModelLocalApiServer?.model ??
+                              t(
+                                'settings:localApiServer.defaultModelPlaceholder'
+                              )}
+                          </span>
+                          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-64 max-h-60 overflow-y-auto">
+                        {localModelIds.map((modelId) => (
+                          <DropdownMenuItem
+                            key={modelId}
+                            className={cn(
+                              'cursor-pointer my-0.5',
+                              defaultModelLocalApiServer?.model === modelId &&
+                                'bg-secondary-foreground/8'
+                            )}
+                            onClick={() =>
+                              setDefaultModelLocalApiServer({
+                                model: modelId,
+                                provider: 'llamacpp',
+                              })
+                            }
+                          >
+                            <span className="truncate">{modelId}</span>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  }
+                />
+              </Card>
+
+              <Card>
+                <CardItem
+                  title="Server Status"
+                  description={
+                    isServerRunning ? (
+                      <div className="space-y-1">
+                        <div>The server is currently running.</div>
+                        <div className="text-xs font-mono">
+                          http://{serverHost}:{serverPort}
+                          {apiPrefix}
+                        </div>
+                      </div>
+                    ) : (
+                      'The server is stopped.'
+                    )
+                  }
+                />
+
+                <CardItem
+                  title={t('settings:localApiServer.swaggerDocs')}
+                  description={t('settings:localApiServer.swaggerDocsDesc')}
+                  actions={
+                    <a
+                      href={`http://${serverHost}:${serverPort}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={cn(
+                        isServerRunning ? '' : 'pointer-events-none'
+                      )}
+                    >
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!isServerRunning}
+                        title={t('settings:localApiServer.swaggerDocs')}
+                      >
+                        <span>{t('settings:localApiServer.openDocs')}</span>
+                      </Button>
+                    </a>
+                  }
+                />
+              </Card>
+            </div>
+          </div>
+          <div className="p-4 shrink-0">
+            <Card>
+              <Collapsible defaultOpen={false}>
+                <div className="flex items-center justify-between">
+                  <CollapsibleTrigger className="flex items-center gap-2 hover:no-underline data-[state=open]:[&>svg.chevron-down]:hidden data-[state=closed]:[&>svg.chevron-up]:hidden">
+                    <IconChevronDown size={16} className="chevron-down" />
+                    <IconChevronUp size={16} className="chevron-up" />
+                    <span className="font-medium text-sm">Server Log</span>
+                  </CollapsibleTrigger>
                   <Button
-                    variant="secondary"
+                    variant="outline"
                     size="sm"
-                    className="p-0"
                     onClick={handleOpenLogs}
-                    title={t('settings:localApiServer.serverLogs')}
+                    className="text-muted-foreground hover:text-foreground"
                   >
-                    <IconLogs size={18} className="text-muted-foreground" />
-                    <span>{t('settings:localApiServer.openLogs')}</span>
+                    <IconExternalLink size={14} className="mr-1" />
+                    Open in New Window
                   </Button>
-                }
-              />
-
-              <CardItem
-                title={t('settings:localApiServer.swaggerDocs')}
-                description={t('settings:localApiServer.swaggerDocsDesc')}
-                actions={
-                  <a
-                    href={`http://${serverHost}:${serverPort}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      disabled={!isServerRunning}
-                      title={t('settings:localApiServer.swaggerDocs')}
-                    >
-                      <span>{t('settings:localApiServer.openDocs')}</span>
-                    </Button>
-                  </a>
-                }
-              />
-            </Card>
-
-            {/* Server Configuration */}
-            <Card title={t('settings:localApiServer.serverConfiguration')}>
-              <CardItem
-                title={t('settings:localApiServer.serverHost')}
-                description={t('settings:localApiServer.serverHostDesc')}
-                actions={
-                  <ServerHostSwitcher isServerRunning={isServerRunning} />
-                }
-              />
-              <CardItem
-                title={t('settings:localApiServer.serverPort')}
-                description={t('settings:localApiServer.serverPortDesc')}
-                actions={<PortInput isServerRunning={isServerRunning} />}
-              />
-              <CardItem
-                title={t('settings:localApiServer.apiPrefix')}
-                description={t('settings:localApiServer.apiPrefixDesc')}
-                actions={<ApiPrefixInput isServerRunning={isServerRunning} />}
-              />
-              <CardItem
-                title={t('settings:localApiServer.apiKey')}
-                description={t('settings:localApiServer.apiKeyDesc')}
-                className={cn(
-                  'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2',
-                  isApiKeyEmpty && showApiKeyError && 'pb-6'
-                )}
-                classNameWrapperAction="w-full sm:w-auto"
-                actions={
-                  <ApiKeyInput
-                    isServerRunning={isServerRunning}
-                    showError={showApiKeyError}
-                    onValidationChange={handleApiKeyValidation}
-                  />
-                }
-              />
-              <CardItem
-                title={t('settings:localApiServer.trustedHosts')}
-                description={t('settings:localApiServer.trustedHostsDesc')}
-                className={cn(
-                  'flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2'
-                )}
-                classNameWrapperAction="w-full sm:w-auto"
-                actions={
-                  <TrustedHostsInput isServerRunning={isServerRunning} />
-                }
-              />
-              <CardItem
-                title={t('settings:localApiServer.proxyTimeout')}
-                description={t('settings:localApiServer.proxyTimeoutDesc')}
-                actions={
-                  <ProxyTimeoutInput isServerRunning={isServerRunning} />
-                }
-              />
-            </Card>
-
-            {/* Advanced Settings */}
-            <Card title={t('settings:localApiServer.advancedSettings')}>
-              <CardItem
-                title={t('settings:localApiServer.cors')}
-                description={t('settings:localApiServer.corsDesc')}
-                className={cn(
-                  isServerRunning && 'opacity-50 pointer-events-none'
-                )}
-                actions={
-                  <Switch
-                    checked={corsEnabled}
-                    onCheckedChange={setCorsEnabled}
-                  />
-                }
-              />
-              <CardItem
-                title={t('settings:localApiServer.verboseLogs')}
-                description={t('settings:localApiServer.verboseLogsDesc')}
-                className={cn(
-                  isServerRunning && 'opacity-50 pointer-events-none'
-                )}
-                actions={
-                  <Switch
-                    checked={verboseLogs}
-                    onCheckedChange={setVerboseLogs}
-                  />
-                }
-              />
+                </div>
+                <CollapsibleContent>
+                  <div className="pt-3">
+                    <div className="h-[200px]">
+                      <LogViewer />
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
             </Card>
           </div>
         </div>
