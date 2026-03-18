@@ -164,6 +164,9 @@ export class ModelFactory {
       case 'mlx':
         return this.createMlxModel(modelId, provider, parameters)
 
+      case 'foundation-models':
+        return this.createFoundationModelsModel(modelId, provider, parameters)
+
       case 'anthropic':
         return this.createAnthropicModel(modelId, provider)
 
@@ -337,6 +340,88 @@ export class ModelFactory {
 
     return wrapLanguageModel({
       model: model,
+      middleware: extractReasoningMiddleware({
+        tagName: 'think',
+        separator: '\n',
+      }),
+    })
+  }
+
+  /**
+   * Create a Foundation Models model (Apple on-device) by starting the local
+   * Swift server via the Tauri plugin and connecting over localhost.
+   */
+  private static async createFoundationModelsModel(
+    modelId: string,
+    provider?: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): Promise<LanguageModel> {
+    const availability = await invoke<string>(
+      'plugin:foundation-models|check_foundation_models_availability',
+      {}
+    )
+
+    if (availability !== 'available') {
+      const messages: Record<string, string> = {
+        notEligible:
+          'Apple Intelligence is not supported on this device. An Apple Silicon Mac (M1 or later) with macOS 26+ is required.',
+        appleIntelligenceNotEnabled:
+          'Apple Intelligence is not enabled. Please enable it in System Settings > Apple Intelligence & Siri.',
+        modelNotReady:
+          'The Apple on-device model is still preparing. Please wait and try again shortly.',
+        binaryNotFound:
+          'The Foundation Models server binary is missing. Please reinstall Jan.',
+        unavailable:
+          'Apple Foundation Models are currently unavailable on this device.',
+      }
+      throw new Error(messages[availability] ?? messages.unavailable)
+    }
+
+    if (provider) {
+      try {
+        const { useServiceStore } = await import('@/hooks/useServiceHub')
+        const serviceHub = useServiceStore.getState().serviceHub
+
+        if (serviceHub) {
+          await serviceHub.models().startModel(provider, modelId)
+        }
+      } catch (error) {
+        console.error('Failed to start Foundation Models:', error)
+        throw new Error(
+          `Failed to start model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+        )
+      }
+    }
+
+    const sessionInfo = await invoke<SessionInfo | null>(
+      'plugin:foundation-models|find_foundation_models_session',
+      {}
+    )
+
+    if (!sessionInfo) {
+      throw new Error(
+        'No running Foundation Models session. The server may have failed to start — please check the logs.'
+      )
+    }
+
+    const baseUrl = `http://localhost:${sessionInfo.port}`
+    const authHeaders = {
+      Authorization: `Bearer ${sessionInfo.api_key}`,
+      Origin: 'tauri://localhost',
+    }
+
+    const customFetch = createCustomFetch(httpFetch, parameters)
+
+    const model = new OpenAICompatibleChatLanguageModel(modelId, {
+      provider: 'foundation-models',
+      headers: () => authHeaders,
+      url: ({ path }) => new URL(`${baseUrl}/v1${path}`).toString(),
+      fetch: customFetch,
+      metadataExtractor: providerMetadataExtractor,
+    })
+
+    return wrapLanguageModel({
+      model,
       middleware: extractReasoningMiddleware({
         tagName: 'think',
         separator: '\n',
