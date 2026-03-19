@@ -3,6 +3,7 @@
 
 #[cfg(feature = "openclaw")]
 use app_lib::openclaw_cli::{get_openclaw_cli_args, OpenClawCli, OpenClawCommands};
+#[cfg(feature = "openclaw")]
 use std::process::exit;
 
 fn main() {

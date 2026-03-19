@@ -169,8 +169,10 @@ pub fn run() {
         core::openclaw::commands::openclaw_get_config_dir,
         core::openclaw::commands::openclaw_ensure_jan_origin,
         core::openclaw::commands::openclaw_setup_for_channels,
+        // Sandbox commands
         core::openclaw::commands::sandbox_get_logs,
         core::openclaw::commands::sandbox_restart,
+        // Telegram commands
         core::openclaw::commands::telegram_validate_token,
         core::openclaw::commands::telegram_configure,
         core::openclaw::commands::telegram_get_config,
@@ -179,6 +181,7 @@ pub fn run() {
         core::openclaw::commands::telegram_get_pending_pairing_codes,
         core::openclaw::commands::telegram_approve_pairing,
         core::openclaw::commands::telegram_disconnect,
+        // WhatsApp commands
         core::openclaw::commands::whatsapp_validate_connection,
         core::openclaw::commands::whatsapp_start_auth,
         core::openclaw::commands::whatsapp_get_qr_code,
@@ -186,6 +189,7 @@ pub fn run() {
         core::openclaw::commands::whatsapp_get_config,
         core::openclaw::commands::whatsapp_get_contacts,
         core::openclaw::commands::whatsapp_disconnect,
+        // Tailscale commands
         core::openclaw::commands::tailscale_detect,
         core::openclaw::commands::tailscale_get_status,
         core::openclaw::commands::tailscale_configure_serve,
@@ -193,6 +197,7 @@ pub fn run() {
         core::openclaw::commands::tailscale_enable_funnel,
         core::openclaw::commands::tailscale_disable_funnel,
         core::openclaw::commands::tailscale_get_url,
+        // Security commands
         core::openclaw::commands::security_get_status,
         core::openclaw::commands::security_set_auth_mode,
         core::openclaw::commands::security_generate_token,
@@ -205,6 +210,7 @@ pub fn run() {
         core::openclaw::commands::security_get_logs,
         core::openclaw::commands::security_clear_logs,
         core::openclaw::commands::security_generate_pairing_code,
+        // Tunnel commands
         core::openclaw::commands::tunnel_get_providers,
         core::openclaw::commands::tunnel_detect_all,
         core::openclaw::commands::tunnel_set_provider,
@@ -220,7 +226,8 @@ pub fn run() {
         core::openclaw::commands::tunnel_stop_cloudflared,
     ]);
 
-    // Desktop without OpenClaw: same commands minus all openclaw entries
+    // Desktop without OpenClaw: same non-openclaw commands as the block above.
+    // IMPORTANT: keep this list in sync with the non-openclaw portion of the openclaw branch above.
     #[cfg(all(not(any(target_os = "android", target_os = "ios")), not(feature = "openclaw")))]
     let app_builder = app_builder.invoke_handler(tauri::generate_handler![
         // FS commands
