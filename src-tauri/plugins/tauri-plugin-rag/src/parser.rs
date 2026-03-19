@@ -57,7 +57,32 @@ pub fn parse_text(file_path: &str) -> Result<String, RagError> {
 pub fn parse_document(file_path: &str, file_type: &str) -> Result<String, RagError> {
     match file_type.to_lowercase().as_str() {
         "pdf" | "application/pdf" => parse_pdf(file_path),
-        "txt" | "text/plain" | "md" | "text/markdown" => parse_text(file_path),
+        "txt" | "text/plain" | "md" | "text/markdown"
+        // JavaScript / TypeScript
+        | "js" | "mjs" | "cjs" | "ts" | "mts" | "cts" | "jsx" | "tsx"
+        // Python
+        | "py" | "pyw" | "pyi"
+        // C / C++
+        | "c" | "h" | "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx"
+        // Systems languages
+        | "rs" | "go" | "swift" | "zig"
+        // JVM languages
+        | "java" | "kt" | "kts" | "scala" | "groovy"
+        // Scripting languages
+        | "rb" | "php" | "lua" | "pl" | "pm" | "r" | "jl"
+        // .NET
+        | "cs" | "fs" | "vb"
+        // Shell
+        | "sh" | "bash" | "zsh" | "fish" | "ps1" | "psm1"
+        // Web
+        | "css" | "scss" | "sass" | "less" | "vue" | "svelte" | "astro"
+        // Data / config formats
+        | "json" | "jsonc" | "yaml" | "yml" | "toml" | "xml" | "ini"
+        | "cfg" | "conf" | "config" | "env" | "properties"
+        // Query / markup
+        | "sql" | "graphql" | "gql" | "tex" | "rst" | "adoc"
+        // Misc text
+        | "log" | "diff" | "patch" | "gitignore" | "dockerfile" | "makefile" => parse_text(file_path),
         "csv" | "text/csv" => parse_csv(file_path),
         // Excel family via calamine
         "xlsx"
@@ -77,11 +102,20 @@ pub fn parse_document(file_path: &str, file_type: &str) -> Result<String, RagErr
         }
         other => {
             // Try MIME sniffing when extension or MIME is unknown
-            if let Ok(Some(k)) = infer::get_from_path(file_path) {
-                let mime = k.mime_type();
-                return parse_document(file_path, mime);
+            match infer::get_from_path(file_path) {
+                Ok(Some(k)) => {
+                    let mime = k.mime_type();
+                    // Guard against infinite recursion if mime matches the unknown extension
+                    if mime != other {
+                        return parse_document(file_path, mime);
+                    }
+                    Err(RagError::UnsupportedFileType(other.to_string()))
+                }
+                _ => {
+                    // infer returned None → no binary magic bytes detected, treat as plain text
+                    parse_text(file_path)
+                }
             }
-            Err(RagError::UnsupportedFileType(other.to_string()))
         }
     }
 }

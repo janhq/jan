@@ -126,6 +126,17 @@ export function ModelSetting({
 
         <div className="px-4 space-y-8 pb-4">
           {Object.entries(model.settings || {})
+          .reduce<[string, unknown][]>((acc, entry) => {
+            if (entry[0] === 'auto_increase_ctx_len') return acc
+            if (entry[0] === 'ctx_len') {
+              const autoIncrease = Object.entries(model.settings || {}).find(
+                ([k]) => k === 'auto_increase_ctx_len'
+              )
+              if (autoIncrease) acc.push(autoIncrease)
+            }
+            acc.push(entry)
+            return acc
+          }, [])
           .filter(([key]) => {
             // MLX models only support context size setting
             if (provider.provider === 'mlx') {
