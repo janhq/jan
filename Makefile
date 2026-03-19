@@ -22,8 +22,9 @@ endif
 	yarn build:core
 	yarn build:extensions
 
-# Install required Rust targets for macOS universal builds
+# Install required Rust targets for WASM tools + macOS universal builds
 install-rust-targets:
+	rustup target add wasm32-wasip1
 ifeq ($(shell uname -s),Darwin)
 	@echo "Detected macOS, installing universal build targets..."
 	rustup target add x86_64-apple-darwin
