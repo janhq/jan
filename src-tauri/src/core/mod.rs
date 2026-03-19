@@ -5,6 +5,7 @@ pub mod downloads;
 pub mod extensions;
 pub mod filesystem;
 pub mod mcp;
+#[cfg(feature = "openclaw")]
 pub mod openclaw;
 pub mod server;
 pub mod setup;
