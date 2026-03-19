@@ -34,12 +34,13 @@ default = [
 hardware = ["dep:tauri-plugin-hardware"]
 deep-link = ["dep:tauri-plugin-deep-link"]
 mlx = ["dep:tauri-plugin-mlx"]
+openclaw = ["docker"]
 docker = ["dep:bollard"]
 desktop = [
     "deep-link",
     "hardware",
     "mlx",
-    "docker"
+    "openclaw"
 ]
 mobile = [
     "tauri/protocol-asset",
