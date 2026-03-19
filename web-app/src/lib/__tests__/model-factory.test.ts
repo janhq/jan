@@ -139,6 +139,21 @@ describe('ModelFactory', () => {
       expect(model.type).toBe('openai-compatible')
     })
 
+    it('should create an OpenAI-compatible model for minimax provider', async () => {
+      const provider: ProviderObject = {
+        provider: 'minimax',
+        api_key: 'test-api-key',
+        base_url: 'https://api.minimax.io/v1',
+        models: [],
+        settings: [],
+        active: true,
+      }
+
+      const model = await ModelFactory.createModel('MiniMax-M2.7', provider)
+      expect(model).toBeDefined()
+      expect(model.type).toBe('openai-compatible')
+    })
+
     it('should handle custom headers for OpenAI-compatible providers', async () => {
       const provider: ProviderObject = {
         provider: 'custom',
