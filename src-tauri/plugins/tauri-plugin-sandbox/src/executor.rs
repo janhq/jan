@@ -526,7 +526,10 @@ fn register_host_imports(linker: &mut Linker<HostState>) -> Result<()> {
             let json = match result {
                 Ok(v)  => serde_json::to_string(&v)
                               .unwrap_or_else(|_| r#"{"error":"serialize failed"}"#.into()),
-                Err(e) => format!(r#"{{"error":"{}"}}"#, e.replace('"', "'")),
+                Err(e) => {
+                    let err_msg: String = e.replace('"', "'");
+                    format!(r#"{{"error":"{}"}}"#, err_msg)
+                }
             };
 
             let bytes  = json.as_bytes();
