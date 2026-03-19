@@ -281,15 +281,25 @@ export class DefaultModelsService implements ModelsService {
     }
 
     // Call the original pullModel with the fetched metadata
-    return this.pullModel(
-      id,
-      modelPath,
-      modelSha256,
-      modelSize,
-      mmprojPath,
-      mmprojSha256,
-      mmprojSize
-    )
+    try {
+      return await this.pullModel(
+        id,
+        modelPath,
+        modelSha256,
+        modelSize,
+        mmprojPath,
+        mmprojSha256,
+        mmprojSize
+      )
+    } catch (error) {
+      // Emit download error event so the UI can clean up the stale downloading state
+      events.emit(DownloadEvent.onFileDownloadError, {
+        modelId: id,
+        downloadType: 'Model',
+        error: error instanceof Error ? error.message : String(error),
+      })
+      throw error
+    }
   }
 
   async abortDownload(id: string): Promise<void> {

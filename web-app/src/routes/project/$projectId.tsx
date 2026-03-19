@@ -89,7 +89,7 @@ function ProjectPageContent() {
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
         <div className="flex items-center justify-between w-full">
-          <DropdownModelProvider projectId={projectId} />
+          <DropdownModelProvider />
         </div>
       </HeaderPage>
 

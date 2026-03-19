@@ -183,13 +183,11 @@ export class ModelFactory {
       case 'cohere':
       case 'perplexity':
       case 'moonshot':
+      case 'minimax':
         return this.createOpenAICompatibleModel(modelId, provider)
 
       case 'xai':
         return this.createXaiModel(modelId, provider)
-
-      case 'openclaw':
-        return this.createOpenAICompatibleModel(modelId, provider)
 
       default:
         return this.createOpenAICompatibleModel(modelId, provider, parameters)

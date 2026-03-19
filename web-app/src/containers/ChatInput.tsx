@@ -88,7 +88,6 @@ import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionD
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
-import { isOpenClawRunning } from '@/utils/openclaw'
 
 type ChatInputProps = {
   className?: string
@@ -144,20 +143,15 @@ const ChatInput = memo(function ChatInput({
   const assistants = useAssistant((state) => state.assistants)
   const defaultAssistantId = useAssistant((state) => state.defaultAssistantId)
 
-  // Agent mode (OpenClaw)
+  // Agent mode
   // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
   const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
-  const [openClawAvailable, setOpenClawAvailable] = useState(false)
   const isAgentMode = useAgentMode((state) =>
     state.agentThreads[agentModeKey] === true
   )
   // When projectId is present, treat as normal chat (disable agent mode UI)
   const effectiveAgentMode = isAgentMode && !projectId
   const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
-
-  useEffect(() => {
-    isOpenClawRunning().then(setOpenClawAvailable)
-  }, [currentThreadId])
 
   const handleAgentToggle = useCallback(() => {
     toggleAgentMode(agentModeKey)
@@ -745,8 +739,9 @@ const ChatInput = memo(function ChatInput({
         multiple: true,
         filters: [
           {
-            name: 'Documents',
+            name: 'Documents & Code',
             extensions: [
+              // Documents
               'pdf',
               'docx',
               'txt',
@@ -758,7 +753,89 @@ const ChatInput = memo(function ChatInput({
               'pptx',
               'html',
               'htm',
+              // JavaScript / TypeScript
+              'js',
+              'mjs',
+              'cjs',
+              'ts',
+              'mts',
+              'cts',
+              'jsx',
+              'tsx',
+              // Python
+              'py',
+              'pyw',
+              'pyi',
+              // C / C++
+              'c',
+              'h',
+              'cpp',
+              'cc',
+              'cxx',
+              'hpp',
+              'hh',
+              // Systems languages
+              'rs',
+              'go',
+              'swift',
+              'zig',
+              // JVM languages
+              'java',
+              'kt',
+              'kts',
+              'scala',
+              'groovy',
+              // Scripting languages
+              'rb',
+              'php',
+              'lua',
+              'pl',
+              'r',
+              'jl',
+              // .NET
+              'cs',
+              'fs',
+              'vb',
+              // Shell
+              'sh',
+              'bash',
+              'zsh',
+              'fish',
+              'ps1',
+              // Web
+              'css',
+              'scss',
+              'sass',
+              'less',
+              'vue',
+              'svelte',
+              'astro',
+              // Data / config formats
+              'json',
+              'jsonc',
+              'yaml',
+              'yml',
+              'toml',
+              'xml',
+              'ini',
+              'cfg',
+              'conf',
+              'env',
+              // Query / markup
+              'sql',
+              'graphql',
+              'gql',
+              'tex',
+              'rst',
+              // Misc text
+              'log',
+              'diff',
+              'patch',
             ],
+          },
+          {
+            name: 'All Files',
+            extensions: ['*'],
           },
         ],
       })
@@ -1817,7 +1894,8 @@ const ChatInput = memo(function ChatInput({
                     </Tooltip>
                   ))}
 
-                {openClawAvailable && !projectId && isAgentMode && (
+                {/* Agent mode toggle hidden — kept as dead code for future use */}
+                {false && !projectId && isAgentMode && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
