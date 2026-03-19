@@ -56,7 +56,7 @@ impl ToolDispatcher for Dispatcher {
         log::info!("[dispatcher] '{tool_id}' → WASM {}", path.display());
 
         let result = tokio::task::spawn_blocking(move || {
-            tauri_plugin_sandbox::executor::execute(&path, &args, mounts)
+            crate::executor::execute(&path, &args, mounts)
         })
         .await
         .map_err(|e| format!("spawn_blocking: {e}"))
@@ -94,7 +94,7 @@ fn scan_tools_dir(tools_dir: &std::path::Path) -> Vec<WasmTool> {
             .to_string_lossy()
             .replace(std::path::MAIN_SEPARATOR, ".");
 
-        match tauri_plugin_sandbox::executor::get_tool_info(&path) {
+        match crate::executor::get_tool_info(&path) {
             Ok(info) => {
                 log::info!("[dispatcher] loaded '{id}' from {}", path.display());
                 tools.push(WasmTool {

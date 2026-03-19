@@ -605,7 +605,7 @@ pub fn create_agent(
 /// Search order:
 /// 1. `$JAN_TOOLS_DIR` — explicit override via environment variable.
 /// 2. `<exe_dir>/tools/` — production install (bundle tools/ next to jan-cli).
-/// 3. `<exe_dir>/../../plugins/tauri-plugin-sandbox/wasm/tools/` — dev build.
+/// 3. `<exe_dir>/../../plugins/tauri-plugin-agent/wasm/tools/` — dev build.
 fn discover_tools_dir() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("JAN_TOOLS_DIR") {
         let p = PathBuf::from(dir);
@@ -626,7 +626,7 @@ fn discover_tools_dir() -> Option<PathBuf> {
     let dev_path = exe_dir
         .parent()
         .and_then(|p| p.parent())
-        .map(|p| p.join("plugins/tauri-plugin-sandbox/wasm/tools"));
+        .map(|p| p.join("plugins/tauri-plugin-agent/wasm/tools"));
     if let Some(p) = dev_path {
         if p.is_dir() {
             return Some(p);

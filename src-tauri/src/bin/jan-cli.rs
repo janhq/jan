@@ -346,7 +346,7 @@ async fn main() {
     }
 
     // Stop any workspace VMs that are still running.
-    tauri_plugin_sandbox::microvm::shutdown_workspaces().await;
+    tauri_plugin_agent::microvm::shutdown_workspaces().await;
 }
 
 

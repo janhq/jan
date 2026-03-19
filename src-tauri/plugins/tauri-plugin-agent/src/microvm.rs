@@ -581,15 +581,23 @@ pub async fn workspace_exec(
 }
 
 /// Synchronous bridge for use inside Wasmtime `func_wrap` callbacks.
-#[cfg(unix)]
 pub fn workspace_exec_blocking(
     workspace_id: &str,
     language: &str,
     code: &str,
 ) -> Result<Value, String> {
-    let handle = tokio::runtime::Handle::try_current()
-        .map_err(|_| "workspace_exec requires a Tokio runtime".to_string())?;
-    handle.block_on(workspace_exec(workspace_id, language, code))
+    #[cfg(unix)]
+    {
+        let handle = tokio::runtime::Handle::try_current()
+            .map_err(|_| "workspace_exec requires a Tokio runtime".to_string())?;
+        handle.block_on(workspace_exec(workspace_id, language, code))
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = (workspace_id, language, code);
+        Err("microsandbox workspaces are not yet supported on Windows.".into())
+    }
 }
 
 /// Stop all running workspace VMs.  Call this before the process exits to
