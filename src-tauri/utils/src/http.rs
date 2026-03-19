@@ -1,3 +1,14 @@
+/// Extracts the host (with port if present) from an Origin header value.
+pub fn extract_host_from_origin(origin: &str) -> String {
+    // Origin format: scheme "://" host [ ":" port ]
+    if let Some(after_scheme) = origin.split("://").nth(1) {
+        // Take everything up to the first '/' (path), if any
+        after_scheme.split('/').next().unwrap_or(after_scheme).to_string()
+    } else {
+        origin.to_string()
+    }
+}
+
 /// Checks if header name is a CORS-related header
 pub fn is_cors_header(header_name: &str) -> bool {
     let header_lower = header_name.to_lowercase();

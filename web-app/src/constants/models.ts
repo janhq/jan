@@ -127,6 +127,15 @@ export const providerModels = {
     supportsToolCalls: true,
     supportsN: true,
   },
+  nvidia: {
+    models: ['moonshotai/kimi-k2.5', 'minimaxai/minimax-m2.5', 'z-ai/glm5'],
+    supportsCompletion: true,
+    supportsStreaming: true,
+    supportsJSON: true,
+    supportsImages: true,
+    supportsToolCalls: true,
+    supportsN: true,
+  },
   'openai-compatible': {
     models: true,
     supportsCompletion: true,
