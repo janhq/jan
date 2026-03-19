@@ -18,7 +18,7 @@ struct ChatCompletionRequest {
     temperature: Option<f64>,
     #[allow(dead_code)]
     top_p: Option<f64>,
-    max_tokens: Option<usize>,
+    max_tokens: Option<u32>,
     stream: Option<bool>,
     #[allow(dead_code)]
     stop: Option<Vec<String>>,
@@ -241,7 +241,8 @@ pub async fn is_foundation_models_loaded<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
 ) -> Result<bool, String> {
     let state: State<FoundationModelsState> = app_handle.state();
-    Ok(*state.loaded.lock().await)
+    let loaded = *state.loaded.lock().await;
+    Ok(loaded)
 }
 
 #[tauri::command]
@@ -396,7 +397,7 @@ pub async fn foundation_models_chat_completion_stream<R: Runtime>(
             let model_id_ref = model_id.clone();
 
             let stream_result =
-                session.stream_response(&last_message, &opts, move |chunk_text: String| {
+                session.stream_response(&last_message, &opts, move |chunk_text: &str| {
                     if cancelled_ref.load(Ordering::Relaxed) {
                         return;
                     }
