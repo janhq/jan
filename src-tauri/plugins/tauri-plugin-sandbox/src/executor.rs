@@ -495,8 +495,21 @@ fn register_host_imports(linker: &mut Linker<HostState>) -> Result<()> {
 
             let result = if let Some(ref ws_id) = workspace_id {
                 // ── Persistent workspace VM ───────────────────────────────────
-                crate::microvm::workspace_exec_blocking(ws_id, &language, &code)
-                    .map_err(|e| format!("workspace exec failed: {e}"))
+                match crate::microvm::workspace_exec_blocking(ws_id, &language, &code) {
+                    Ok(v) => Ok(v),
+                    Err(msb_err) => {
+                        log::info!(
+                            "[sandbox] exec_code: workspace '{}' unavailable — falling back to WASM runtime\n  reason: {msb_err}",
+                            ws_id
+                        );
+                        wasm_exec_code(&language, &code, &mounts).map_err(|wasm_err| {
+                            format!(
+                                "{msb_err}\n\
+                                 WASM fallback also unavailable: {wasm_err}"
+                            )
+                        })
+                    }
+                }
             } else {
                 // ── Ephemeral VM (existing path) ──────────────────────────────
                 match crate::microvm::run_in_microvm_blocking(&language, &code) {
