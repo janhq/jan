@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(feature = "openclaw")]
 use app_lib::openclaw_cli::{get_openclaw_cli_args, OpenClawCli, OpenClawCommands};
 use std::process::exit;
 
@@ -8,6 +9,7 @@ fn main() {
     let _ = fix_path_env::fix();
 
     // Check if we're in CLI mode with openclaw subcommand
+    #[cfg(feature = "openclaw")]
     if let Some(cli) = get_openclaw_cli_args() {
         // Run CLI command and exit
         run_openclaw_cli(cli);
@@ -19,6 +21,7 @@ fn main() {
 }
 
 /// Execute OpenClaw CLI commands
+#[cfg(feature = "openclaw")]
 fn run_openclaw_cli(cli: OpenClawCli) {
     use tokio::runtime::Runtime;
 
