@@ -1,11 +1,8 @@
 pub mod agent;
 pub mod commands;
 pub mod dispatcher;
-pub mod executor;
 pub mod manifest;
-pub mod microvm;
 pub mod utils;
-pub mod wasm_runtime;
 
 pub use agent::{AgentConfig, AgentEvent, AgentLoop, AgentResponse, ChatMessage, FinishReason};
 pub use manifest::{Manifest, RiskLevel, ToolDef};

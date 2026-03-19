@@ -9,7 +9,25 @@ rust-version = "1.77.2"
 links = "tauri-plugin-sandbox"
 
 [dependencies]
-tauri = { version = "2.5.0", default-features = false }
+anyhow       = "1"
+log          = "0.4"
+serde        = { version = "1.0", features = ["derive"] }
+serde_json   = "1.0"
+tauri        = { version = "2.5.0", default-features = false }
+thiserror    = "2.0"
+tokio        = { version = "1", features = ["full"] }
+wasmtime      = { version = "28", features = ["component-model"] }
+wasmtime-wasi = "28"
+which         = "7"
+
+[target.'cfg(unix)'.dependencies]
+microsandbox = "0.1.2"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+reqwest = { version = "0.11", features = ["blocking", "json", "native-tls"] }
+
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+reqwest = { version = "0.11", features = ["blocking", "json", "rustls-tls"], default-features = false }
 
 [build-dependencies]
 tauri-plugin = { version = "2.3.1", features = ["build"] }

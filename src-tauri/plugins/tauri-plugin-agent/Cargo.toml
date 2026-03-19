@@ -2,7 +2,7 @@
 name = "tauri-plugin-agent"
 version = "0.0.0"
 authors = ["Jan <service@jan.ai>"]
-description = "ReAct agent loop, WASM skill dispatcher, skill manifest, and content sanitizer"
+description = "ReAct agent loop with pluggable tool dispatcher"
 license = "MIT"
 edition = "2021"
 rust-version = "1.77.2"
@@ -12,27 +12,18 @@ links = "tauri-plugin-agent"
 name = "tauri_plugin_agent"
 
 [dependencies]
-anyhow               = "1"
-async-trait          = "0.1"
-log                  = "0.4"
-regex                = "1"
-serde                = { version = "1.0", features = ["derive"] }
-serde_json           = "1.0"
+async-trait  = "0.1"
+log          = "0.4"
+regex        = "1"
+serde        = { version = "1.0", features = ["derive"] }
+serde_json   = "1.0"
 tauri                = { version = "2.5.0", default-features = false }
+tauri-plugin-sandbox = { path = "../tauri-plugin-sandbox" }
 thiserror            = "2.0"
 tokio                = { version = "1", features = ["full"] }
-wasmtime             = { version = "28", features = ["component-model"] }
-wasmtime-wasi        = "28"
-which                = "7"
-
-[target.'cfg(unix)'.dependencies]
-microsandbox = "0.1.2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-reqwest = { version = "0.11", features = ["blocking", "json", "native-tls"] }
-
-[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
-reqwest = { version = "0.11", features = ["blocking", "json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.11", features = ["json"] }
 
 [build-dependencies]
 tauri-plugin = { version = "2.3.1", features = ["build"] }

@@ -8,6 +8,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 
 use crate::{DispatchResult, ToolDispatcher, ToolMeta};
+use tauri_plugin_sandbox::executor;
 
 struct WasmTool {
     id:   String,
@@ -56,7 +57,7 @@ impl ToolDispatcher for Dispatcher {
         log::info!("[dispatcher] '{tool_id}' → WASM {}", path.display());
 
         let result = tokio::task::spawn_blocking(move || {
-            crate::executor::execute(&path, &args, mounts)
+            executor::execute(&path, &args, mounts)
         })
         .await
         .map_err(|e| format!("spawn_blocking: {e}"))
@@ -94,7 +95,7 @@ fn scan_tools_dir(tools_dir: &std::path::Path) -> Vec<WasmTool> {
             .to_string_lossy()
             .replace(std::path::MAIN_SEPARATOR, ".");
 
-        match crate::executor::get_tool_info(&path) {
+        match executor::get_tool_info(&path) {
             Ok(info) => {
                 log::info!("[dispatcher] loaded '{id}' from {}", path.display());
                 tools.push(WasmTool {
