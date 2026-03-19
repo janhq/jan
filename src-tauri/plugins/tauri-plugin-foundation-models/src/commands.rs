@@ -418,7 +418,7 @@ pub async fn foundation_models_chat_completion_stream<R: Runtime>(
                             index: 0,
                             delta: DeltaContent {
                                 role: None,
-                                content: Some(chunk_text),
+                                content: Some(chunk_text.to_string()),
                             },
                             finish_reason: None,
                         }],
