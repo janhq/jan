@@ -619,6 +619,18 @@
           "markdownDescription": "Denies the remove_old_backend_versions command without any pre-configured scope."
         },
         {
+          "description": "Enables the score_hub_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-score-hub-model",
+          "markdownDescription": "Enables the score_hub_model command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the score_hub_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-score-hub-model",
+          "markdownDescription": "Denies the score_hub_model command without any pre-configured scope."
+        },
+        {
           "description": "Enables the should_migrate_backend command without any pre-configured scope.",
           "type": "string",
           "const": "allow-should-migrate-backend",

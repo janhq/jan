@@ -91,3 +91,43 @@ pub enum ModelSupportStatus {
     #[serde(rename = "GREEN")]
     Green,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HubModelScoreRequest {
+    pub model_name: String,
+    pub developer: Option<String>,
+    pub default_quant_model_id: String,
+    pub model_path: String,
+    pub ctx_size: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModelScoreBreakdown {
+    pub quality: f32,
+    pub speed: f32,
+    pub fit: f32,
+    pub context: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ModelScoreStatus {
+    #[serde(rename = "ready")]
+    Ready,
+    #[serde(rename = "unavailable")]
+    Unavailable,
+    #[serde(rename = "error")]
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HubModelScoreResult {
+    pub status: ModelScoreStatus,
+    pub overall: Option<f32>,
+    pub breakdown: Option<ModelScoreBreakdown>,
+    pub scored_quant_model_id: String,
+    pub hardware_fingerprint: String,
+    pub cache_key: String,
+    pub updated_at: u64,
+    pub used_builtin_fallback: bool,
+    pub reason: Option<String>,
+}

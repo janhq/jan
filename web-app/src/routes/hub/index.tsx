@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel } from '@/services/models/types'
+import type { ModelScore } from '@/services/models/types'
 import HeaderPage from '@/containers/HeaderPage'
 import { ChevronsUpDown, Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -52,6 +53,7 @@ import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { Button } from '@/components/ui/button'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
+import { ModelScoreBadge } from '@/components/ModelScoreSummary'
 
 type SearchParams = {
   repo: string
@@ -112,6 +114,7 @@ function HubContent() {
   const [modelSupportStatus, setModelSupportStatus] = useState<
     Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING'>
   >({})
+  const [modelScores, setModelScores] = useState<Record<string, ModelScore>>({})
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -239,6 +242,7 @@ function HubContent() {
         }
       : { count: 0, getScrollElement: () => null, estimateSize: () => 0 }
   )
+  const virtualItems = rowVirtualizer.getVirtualItems()
 
   useEffect(() => {
     // Use startTransition to keep UI responsive during data fetch
@@ -255,6 +259,49 @@ function HubContent() {
     const timer = setTimeout(() => setIsInitialLoad(false), 150)
     return () => clearTimeout(timer)
   }, [isInitialLoad, filteredModels.length])
+
+  useEffect(() => {
+    virtualItems.forEach((virtualItem) => {
+      const model = filteredModels[virtualItem.index]
+      if (!model || modelScores[model.model_name] || model.is_mlx) return
+
+      const cachedScore = serviceHub.models().getCachedHubModelScore(model)
+      if (cachedScore) {
+        setModelScores((prev) => ({
+          ...prev,
+          [model.model_name]: cachedScore,
+        }))
+        return
+      }
+
+      setModelScores((prev) => ({
+        ...prev,
+        [model.model_name]: {
+          status: 'loading',
+        },
+      }))
+
+      serviceHub
+        .models()
+        .prefetchHubModelScore(model)
+        .then((score) => {
+          setModelScores((prev) => ({
+            ...prev,
+            [model.model_name]: score,
+          }))
+        })
+        .catch((error) => {
+          setModelScores((prev) => ({
+            ...prev,
+            [model.model_name]: {
+              status: 'error',
+              reason:
+                error instanceof Error ? error.message : 'Failed to score model.',
+            },
+          }))
+        })
+    })
+  }, [filteredModels, modelScores, serviceHub, virtualItems])
 
   const fetchHuggingFaceModel = async (searchValue: string) => {
     if (
@@ -567,6 +614,15 @@ function HubContent() {
                                         .quants?.[0]
                                     )?.file_size}
                               </span>
+                              <ModelScoreBadge
+                                compact
+                                disabled={filteredModels[virtualItem.index].is_mlx}
+                                score={
+                                  modelScores[
+                                    filteredModels[virtualItem.index].model_name
+                                  ]
+                                }
+                              />
                               <ModelInfoHoverCard
                                 model={filteredModels[virtualItem.index]}
                                 defaultModelQuantizations={

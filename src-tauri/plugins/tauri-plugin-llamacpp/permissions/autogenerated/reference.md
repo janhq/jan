@@ -749,6 +749,32 @@ Denies the remove_old_backend_versions command without any pre-configured scope.
 <tr>
 <td>
 
+`llamacpp:allow-score-hub-model`
+
+</td>
+<td>
+
+Enables the score_hub_model command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-score-hub-model`
+
+</td>
+<td>
+
+Denies the score_hub_model command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `llamacpp:allow-should-migrate-backend`
 
 </td>

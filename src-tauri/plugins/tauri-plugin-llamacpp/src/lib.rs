@@ -40,6 +40,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             gguf::commands::estimate_kv_cache_size,
             gguf::commands::get_model_size,
             gguf::commands::is_model_supported,
+            gguf::commands::score_hub_model,
             // Backend management
             backend::map_old_backend_to_new,
             backend::get_local_installed_backends,

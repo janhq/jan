@@ -3,6 +3,7 @@
  */
 
 import { sanitizeModelId } from '@/lib/utils'
+import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import {
   AIEngine,
   EngineManager,
@@ -22,14 +23,42 @@ import type {
   HuggingFaceRepo,
   CatalogModel,
   ModelValidationResult,
+  ModelQuant,
+  ModelScore,
 } from './types'
 
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
 
 export class DefaultModelsService implements ModelsService {
+  private hubScoreCache = new Map<string, ModelScore>()
+  private hubScoreRequests = new Map<string, Promise<ModelScore>>()
+
   private getEngine(provider: string = defaultProvider) {
     return EngineManager.instance().get(provider) as AIEngine | undefined
+  }
+
+  private getDefaultScoreVariant(model: CatalogModel): ModelQuant | undefined {
+    return (
+      model.quants?.find((variant) =>
+        DEFAULT_MODEL_QUANTIZATIONS.some((quant) =>
+          variant.model_id.toLowerCase().includes(quant)
+        )
+      ) ?? model.quants?.[0]
+    )
+  }
+
+  private getScoreVariant(model: CatalogModel, variant?: ModelQuant): ModelQuant | undefined {
+    return variant ?? this.getDefaultScoreVariant(model)
+  }
+
+  private getHubScoreCacheKey(model: CatalogModel, variant?: ModelQuant): string {
+    const scoreVariant = this.getScoreVariant(model, variant)
+    return [
+      model.model_name,
+      scoreVariant?.model_id ?? 'no-variant',
+      scoreVariant?.path ?? 'no-path',
+    ].join('::')
   }
 
   async getModel(modelId: string): Promise<modelInfo | undefined> {
@@ -538,6 +567,108 @@ export class DefaultModelsService implements ModelsService {
       console.error(`Error checking model support for ${modelPath}:`, error)
       return 'GREY' // Error state, assume not supported
     }
+  }
+
+  getCachedHubModelScore(
+    model: CatalogModel,
+    variant?: ModelQuant
+  ): ModelScore | undefined {
+    return this.hubScoreCache.get(this.getHubScoreCacheKey(model, variant))
+  }
+
+  async prefetchHubModelScore(
+    model: CatalogModel,
+    variant?: ModelQuant
+  ): Promise<ModelScore> {
+    return this.getHubModelScore(model, variant)
+  }
+
+  async getHubModelScore(
+    model: CatalogModel,
+    variant?: ModelQuant
+  ): Promise<ModelScore> {
+    const scoreVariant = this.getScoreVariant(model, variant)
+    const cacheKey = this.getHubScoreCacheKey(model, variant)
+
+    if (model.is_mlx) {
+      const unavailable: ModelScore = {
+        status: 'unavailable',
+        reason: 'llmfit scoring is currently only available for GGUF models.',
+      }
+      this.hubScoreCache.set(cacheKey, unavailable)
+      return unavailable
+    }
+
+    if (!scoreVariant) {
+      const unavailable: ModelScore = {
+        status: 'unavailable',
+        reason: 'No GGUF variant available for scoring.',
+      }
+      this.hubScoreCache.set(cacheKey, unavailable)
+      return unavailable
+    }
+
+    const cached = this.hubScoreCache.get(cacheKey)
+    if (cached && cached.status !== 'loading') {
+      return cached
+    }
+
+    const inFlight = this.hubScoreRequests.get(cacheKey)
+    if (inFlight) {
+      return inFlight
+    }
+
+    const loadingState: ModelScore = {
+      status: 'loading',
+      scored_quant_model_id: scoreVariant.model_id,
+    }
+    this.hubScoreCache.set(cacheKey, loadingState)
+
+    const request = (async () => {
+      try {
+        const engine = this.getEngine('llamacpp') as AIEngine & {
+          getHubModelScore?: (request: {
+            model_name: string
+            developer?: string
+            default_quant_model_id: string
+            model_path: string
+            ctx_size?: number
+          }) => Promise<ModelScore>
+        }
+
+        if (!engine || typeof engine.getHubModelScore !== 'function') {
+          const unavailable: ModelScore = {
+            status: 'unavailable',
+            reason: 'Hub scoring is not available on this platform.',
+          }
+          this.hubScoreCache.set(cacheKey, unavailable)
+          return unavailable
+        }
+
+        const result = await engine.getHubModelScore({
+          model_name: model.model_name,
+          developer: model.developer,
+          default_quant_model_id: scoreVariant.model_id,
+          model_path: scoreVariant.path,
+          ctx_size: 8192,
+        })
+
+        this.hubScoreCache.set(cacheKey, result)
+        return result
+      } catch (error) {
+        const failed: ModelScore = {
+          status: 'error',
+          reason: error instanceof Error ? error.message : 'Failed to score model.',
+        }
+        this.hubScoreCache.set(cacheKey, failed)
+        return failed
+      } finally {
+        this.hubScoreRequests.delete(cacheKey)
+      }
+    })()
+
+    this.hubScoreRequests.set(cacheKey, request)
+    return request
   }
 
   async validateGgufFile(filePath: string): Promise<ModelValidationResult> {

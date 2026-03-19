@@ -25,6 +25,27 @@ export interface SafetensorsFile {
   sha256?: string
 }
 
+export type ModelScoreStatus = 'loading' | 'ready' | 'unavailable' | 'error'
+
+export interface ModelScoreBreakdown {
+  quality: number
+  speed: number
+  fit: number
+  context: number
+}
+
+export interface ModelScore {
+  status: ModelScoreStatus
+  overall?: number
+  breakdown?: ModelScoreBreakdown
+  scored_quant_model_id?: string
+  hardware_fingerprint?: string
+  cache_key?: string
+  updated_at?: number
+  used_builtin_fallback?: boolean
+  reason?: string
+}
+
 export interface CatalogModel {
   model_name: string
   description: string
@@ -41,6 +62,7 @@ export interface CatalogModel {
   readme?: string
   tools?: boolean
   is_mlx?: boolean
+  score?: ModelScore
 }
 
 export type ModelCatalog = CatalogModel[]
@@ -151,6 +173,9 @@ export interface ModelsService {
     modelPath: string,
     ctxSize?: number
   ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
+  getHubModelScore(model: CatalogModel, variant?: ModelQuant): Promise<ModelScore>
+  prefetchHubModelScore(model: CatalogModel, variant?: ModelQuant): Promise<ModelScore>
+  getCachedHubModelScore(model: CatalogModel, variant?: ModelQuant): ModelScore | undefined
   validateGgufFile(filePath: string): Promise<ModelValidationResult>
   getTokensCount(modelId: string, messages: ThreadMessage[]): Promise<number>
 }

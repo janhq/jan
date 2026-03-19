@@ -26,6 +26,35 @@ export interface GgufMetadata {
   metadata: Record<string, string>
 }
 
+export type ModelScoreStatus = 'ready' | 'unavailable' | 'error'
+
+export interface ModelScoreBreakdown {
+  quality: number
+  speed: number
+  fit: number
+  context: number
+}
+
+export interface HubModelScoreRequest {
+  model_name: string
+  developer?: string
+  default_quant_model_id: string
+  model_path: string
+  ctx_size?: number
+}
+
+export interface HubModelScoreResult {
+  status: ModelScoreStatus
+  overall?: number
+  breakdown?: ModelScoreBreakdown
+  scored_quant_model_id: string
+  hardware_fingerprint: string
+  cache_key: string
+  updated_at: number
+  used_builtin_fallback: boolean
+  reason?: string
+}
+
 // llama.cpp settings
 export type LlamacppConfig = {
   version_backend: string

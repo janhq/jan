@@ -20,6 +20,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
+import type { ModelScore } from '@/services/models/types'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -27,6 +28,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { useTranslation } from '@/i18n'
+import { ModelScorePanel } from '@/components/ModelScoreSummary'
 
 type SearchParams = {
   repo: string
@@ -53,6 +55,7 @@ function HubModelDetailContent() {
     useDownloadStore()
   const serviceHub = useServiceHub()
   const [repoData, setRepoData] = useState<CatalogModel | undefined>()
+  const [modelScore, setModelScore] = useState<ModelScore>()
 
   // State for README content
   const [readmeContent, setReadmeContent] = useState<string>('')
@@ -196,6 +199,42 @@ function HubModelDetailContent() {
     })
   }, [modelData])
 
+  useEffect(() => {
+    if (!modelData) return
+
+    const cachedScore = serviceHub.models().getCachedHubModelScore(modelData)
+    if (cachedScore) {
+      setModelScore(cachedScore)
+      if (cachedScore.status !== 'loading') return
+    } else {
+      setModelScore(
+        modelData.is_mlx
+          ? {
+              status: 'unavailable',
+              reason:
+                'llmfit scoring is currently only available for GGUF models.',
+            }
+          : {
+              status: 'loading',
+            }
+      )
+    }
+
+    if (modelData.is_mlx) return
+
+    serviceHub
+      .models()
+      .getHubModelScore(modelData)
+      .then(setModelScore)
+      .catch((error) => {
+        setModelScore({
+          status: 'error',
+          reason:
+            error instanceof Error ? error.message : 'Failed to score model.',
+        })
+      })
+  }, [modelData, serviceHub])
+
   // Fetch README content when modelData.readme is available
   useEffect(() => {
     if (modelData?.readme) {
@@ -334,6 +373,13 @@ function HubModelDetailContent() {
                   ))}
                 </div>
               )}
+            </div>
+
+            <div className="mb-8">
+              <ModelScorePanel
+                score={modelScore}
+                disabled={modelData.is_mlx}
+              />
             </div>
 
             {/* Variants Section */}

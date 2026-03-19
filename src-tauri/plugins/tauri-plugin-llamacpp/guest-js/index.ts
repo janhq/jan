@@ -4,6 +4,8 @@ import {
   DeviceInfo,
   UnloadResult,
   GgufMetadata,
+  HubModelScoreRequest,
+  HubModelScoreResult,
   LlamacppConfig,
   BackendVersion,
   BackendFeatures,
@@ -189,6 +191,12 @@ export async function isModelSupported(
     path,
     ctxSize,
   })
+}
+
+export async function scoreHubModel(
+  request: HubModelScoreRequest
+): Promise<HubModelScoreResult> {
+  return await invoke('plugin:llamacpp|score_hub_model', { request })
 }
 
 // Cleanup commands

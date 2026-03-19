@@ -47,6 +47,7 @@ describe('DefaultModelsService', () => {
     isModelSupported: vi.fn(),
     isToolSupported: vi.fn(),
     checkMmprojExists: vi.fn(),
+    getHubModelScore: vi.fn(),
   }
 
   const mockEngineManager = {
@@ -1010,6 +1011,55 @@ describe('DefaultModelsService', () => {
       const result = await modelsService.isModelSupported('/path/to/model.gguf')
 
       expect(result).toBe('GREY')
+    })
+  })
+
+  describe('getHubModelScore', () => {
+    const mockCatalogModel = {
+      model_name: 'qwen/test-model',
+      description: 'Test model',
+      developer: 'qwen',
+      downloads: 100,
+      quants: [
+        {
+          model_id: 'qwen/test-model-q4_k_m',
+          path: 'https://huggingface.co/qwen/test-model-q4_k_m.gguf',
+          file_size: '4 GB',
+        },
+      ],
+    } as CatalogModel
+
+    it('returns unavailable for MLX models', async () => {
+      const result = await modelsService.getHubModelScore({
+        ...mockCatalogModel,
+        is_mlx: true,
+      })
+
+      expect(result.status).toBe('unavailable')
+    })
+
+    it('delegates scoring to the llamacpp engine', async () => {
+      const expectedScore = {
+        status: 'ready',
+        overall: 82.4,
+        scored_quant_model_id: 'qwen/test-model-q4_k_m',
+      }
+      const mockEngineWithScore = {
+        ...mockEngine,
+        getHubModelScore: vi.fn().mockResolvedValue(expectedScore),
+      }
+      mockEngineManager.get.mockReturnValue(mockEngineWithScore)
+
+      const result = await modelsService.getHubModelScore(mockCatalogModel)
+
+      expect(mockEngineWithScore.getHubModelScore).toHaveBeenCalledWith({
+        model_name: 'qwen/test-model',
+        developer: 'qwen',
+        default_quant_model_id: 'qwen/test-model-q4_k_m',
+        model_path: 'https://huggingface.co/qwen/test-model-q4_k_m.gguf',
+        ctx_size: 8192,
+      })
+      expect(result).toEqual(expectedScore)
     })
   })
 })
