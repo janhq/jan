@@ -53,7 +53,6 @@ install-ios-rust-targets:
 dev: install-and-build
 	yarn download:bin
 	make build-mlx-server-if-exists
-	make build-foundation-models-server-if-exists
 	make build-cli-dev
 	yarn dev
 
@@ -117,7 +116,6 @@ endif
 	yarn copy:assets:tauri
 	yarn build:icon
 	yarn build:mlx-server
-	make build-foundation-models-server-if-exists
 	make build-cli
 	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
 	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
