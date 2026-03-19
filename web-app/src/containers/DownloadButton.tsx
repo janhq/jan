@@ -96,7 +96,7 @@ export function DownloadButtonPlaceholder({
     return (
       <div className="flex items-center gap-2">
         <a
-          href={`https://huggingface.co/${model.model_name}`}
+          href={`https://huggingface.co/${model.developer ? `${model.developer}/` : ''}${model.model_name}`}
           target="_blank"
           rel="noopener noreferrer"
         >
