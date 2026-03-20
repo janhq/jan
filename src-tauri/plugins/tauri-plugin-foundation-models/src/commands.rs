@@ -19,6 +19,7 @@ struct ChatCompletionRequest {
     #[allow(dead_code)]
     top_p: Option<f64>,
     max_tokens: Option<u32>,
+    #[allow(dead_code)]
     stream: Option<bool>,
     #[allow(dead_code)]
     stop: Option<Vec<String>>,

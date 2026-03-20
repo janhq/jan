@@ -54,7 +54,10 @@ test-tauri = [
     "tauri/macos-private-api",
     "tauri/tray-icon",
     "tauri/test",
-    "desktop",
+    "deep-link",
+    "hardware",
+    "mlx",
+    # Note: foundation-models excluded from tests - framework not available in CI
 ]
 cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console"]
 
