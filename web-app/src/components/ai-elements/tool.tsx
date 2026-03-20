@@ -108,7 +108,7 @@ export const ToolHeader = memo(
     return (
       <CollapsibleTrigger
         className={cn(
-          'flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors capitalize',
+          'cursor-pointer flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors capitalize', !isOpen && 'hover:bg-secondary',
           className
         )}
       >
