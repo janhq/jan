@@ -567,6 +567,21 @@ pub use tauri_plugin_agent::{
     FinishReason, Manifest, RiskLevel, ToolDef,
 };
 
+/// Create dispatcher in a blocking context (for use with spawn_blocking).
+/// Must be called from a synchronous context, not inside an async function.
+pub fn create_dispatcher(tools_dir: Option<PathBuf>, mounts: Vec<PathBuf>) -> Dispatcher {
+    match tools_dir {
+        Some(dir) => {
+            log::info!("[agent] tools dir: {}", dir.display());
+            Dispatcher::with_tools_dir(dir).with_mounts(mounts)
+        }
+        None => {
+            log::warn!("[agent] no tools dir found; set JAN_TOOLS_DIR or place tools/ next to the binary");
+            Dispatcher::new().with_mounts(mounts)
+        }
+    }
+}
+
 /// Create a headless [`AgentLoop`] pointed at `base_url` (e.g. `http://localhost:1337`).
 ///
 /// `mounts`     — host directories the code sandbox may read (empty = fully isolated).
@@ -587,16 +602,7 @@ pub fn create_agent(
         std::env::var("MICROSANDBOX_URL").unwrap_or_else(|_| "http://127.0.0.1:5555".into())
     );
 
-    let dispatcher = match discover_tools_dir() {
-        Some(dir) => {
-            log::info!("[agent] tools dir: {}", dir.display());
-            Dispatcher::with_tools_dir(dir).with_mounts(mounts)
-        }
-        None => {
-            log::warn!("[agent] no tools dir found; set JAN_TOOLS_DIR or place tools/ next to the binary");
-            Dispatcher::new().with_mounts(mounts)
-        }
-    };
+    let dispatcher = create_dispatcher(discover_tools_dir(), mounts);
     AgentLoop::new_with_key(base_url, model_id, api_key, dispatcher)
 }
 
@@ -606,7 +612,7 @@ pub fn create_agent(
 /// 1. `$JAN_TOOLS_DIR` — explicit override via environment variable.
 /// 2. `<exe_dir>/tools/` — production install (bundle tools/ next to jan-cli).
 /// 3. `<exe_dir>/../../plugins/tauri-plugin-agent/wasm/tools/` — dev build.
-fn discover_tools_dir() -> Option<PathBuf> {
+pub fn discover_tools_dir() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("JAN_TOOLS_DIR") {
         let p = PathBuf::from(dir);
         if p.is_dir() {

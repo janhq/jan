@@ -14,7 +14,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::{
     cli_delete_thread, cli_get_config, cli_get_data_folder, cli_get_thread,
-    cli_list_messages, cli_list_threads, create_agent, discover_llamacpp_binary,
+    cli_list_messages, cli_list_threads, create_agent, create_dispatcher,
+    discover_llamacpp_binary, discover_tools_dir,
     discover_mlx_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
     init_mlx_state, list_models,
     load_llama_model_impl, load_mlx_model_impl, looks_like_hf_repo, resolve_model_by_id,
@@ -1622,7 +1623,17 @@ async fn handle_agent(cmd: AgentCommands) {
             };
             eprintln!("{}", dim.apply_to(format!("Agent running against {url} (model: {model_id})…")));
 
-            let agent = create_agent(url, model_id, mount, api_key, &agent);
+            // Create dispatcher in spawn_blocking to avoid blocking the async runtime
+            let dispatcher = match tokio::task::spawn_blocking(move || {
+                create_dispatcher(discover_tools_dir(), mount)
+            }).await {
+                Ok(d) => d,
+                Err(e) => { eprintln!("{} spawn: {e}", red.apply_to("error:")); std::process::exit(1); }
+            };
+
+            use app_lib::core::cli::AgentLoop;
+            let agent = AgentLoop::new_with_key(url, model_id, api_key, dispatcher);
+
             eprintln!();
             let pb     = make_spinner("step 1 · thinking…");
             let result = agent.run(&[], &prompt, &mut make_agent_handler(pb.clone())).await;
