@@ -71,8 +71,10 @@ export class DefaultModelsService implements ModelsService {
         return null
       }
 
-      const model: CatalogModel = await response.json()
-      return model
+      const data = await response.json()
+
+      const model: CatalogModel = Array.isArray(data) ? data[0] : data
+      return model ?? null
     } catch (error) {
       console.error('Error fetching latest Jan model:', error)
       return null

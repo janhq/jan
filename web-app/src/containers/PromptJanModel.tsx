@@ -3,9 +3,9 @@ import { useJanModelPromptDismissed } from '@/hooks/useJanModelPrompt'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
-import type { CatalogModel } from '@/services/models/types'
+import { useMemo } from 'react'
 import { SETUP_SCREEN_QUANTIZATIONS } from '@/constants/models'
+import { useLatestJanModel } from '@/hooks/useLatestJanModel'
 
 export function PromptJanModel() {
 
@@ -15,30 +15,7 @@ export function PromptJanModel() {
     useDownloadStore()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
 
-  const [janNewModel, setJanNewModel] = useState<CatalogModel | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const fetchAttempted = useRef(false)
-
-  const fetchJanModel = useCallback(async () => {
-    if (fetchAttempted.current) return
-    fetchAttempted.current = true
-
-    try {
-      const model = await serviceHub.models().fetchLatestJanModel()
-
-      if (model) {
-        setJanNewModel(model)
-      }
-    } catch (error) {
-      console.error('Error fetching latest Jan model:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [serviceHub])
-
-  useEffect(() => {
-    fetchJanModel()
-  }, [fetchJanModel])
+  const { model: janNewModel, loading: isLoading } = useLatestJanModel()
 
   const defaultVariant = useMemo(() => {
     if (!janNewModel) return null
@@ -83,7 +60,7 @@ export function PromptJanModel() {
     setDismissed(true)
   }
 
-  if (isLoading) return null
+  if (isLoading || !janNewModel) return null
 
   return (
     <div className="fixed bottom-4 right-4 z-50 p-4 shadow-lg bg-background w-4/5 md:w-100 border rounded-lg">

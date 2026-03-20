@@ -7,8 +7,8 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
 import { AppEvent, events } from '@janhq/core'
-import type { CatalogModel } from '@/services/models/types'
 import { SETUP_SCREEN_QUANTIZATIONS } from '@/constants/models'
+import { useLatestJanModel } from '@/hooks/useLatestJanModel'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { IconEye, IconSquareCheck } from '@tabler/icons-react'
@@ -89,31 +89,18 @@ function SetupScreen() {
   const llamaProvider = getProviderByName('llamacpp')
   const [quickStartInitiated, setQuickStartInitiated] = useState(false)
   const [quickStartQueued, setQuickStartQueued] = useState(false)
-  const [janNewModel, setJanNewModel] = useState<CatalogModel | null>(null)
+  const {
+    model: janNewModel,
+    error: metadataFetchFailed,
+    fetchLatestJanModel,
+  } = useLatestJanModel()
   const [supportedVariants, setSupportedVariants] = useState<
     Map<string, 'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
   >(new Map())
-  const [metadataFetchFailed, setMetadataFetchFailed] = useState(false)
   const supportCheckInProgress = useRef(false)
   const checkedModelId = useRef<string | null>(null)
   const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
-
-  const fetchJanModel = useCallback(async () => {
-    setMetadataFetchFailed(false)
-    try {
-      const model = await serviceHub.models().fetchLatestJanModel()
-
-      if (model) {
-        setJanNewModel(model)
-      } else {
-        setMetadataFetchFailed(true)
-      }
-    } catch (error) {
-      console.error('Error fetching latest Jan model:', error)
-      setMetadataFetchFailed(true)
-    }
-  }, [serviceHub])
 
   // Check model support for variants when janNewModel is available
   useEffect(() => {
@@ -180,8 +167,8 @@ function SetupScreen() {
   }, [janNewModel, serviceHub])
 
   useEffect(() => {
-    fetchJanModel()
-  }, [fetchJanModel])
+    fetchLatestJanModel(true)
+  }, [fetchLatestJanModel])
 
   const defaultVariant = useMemo(() => {
     if (!janNewModel) return null
