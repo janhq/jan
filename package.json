@@ -21,6 +21,7 @@
     "test:prepare": "yarn build:icon && yarn copy:assets:tauri && yarn build --no-bundle ",
     "dev:web": "yarn workspace @janhq/web-app dev",
     "dev:tauri": "yarn build:icon && yarn copy:assets:tauri && cross-env IS_CLEAN=true tauri dev",
+    "dev:no-openclaw": "yarn build:icon && yarn copy:assets:tauri && cross-env IS_CLEAN=true tauri dev -- --no-default-features --features tauri/wry,tauri/common-controls-v6,tauri/x11,tauri/protocol-asset,tauri/macos-private-api,tauri/tray-icon,tauri/test,deep-link,hardware,mlx",
     "dev:ios": "yarn copy:assets:mobile && RUSTC_WRAPPER= cross-env IS_IOS=true yarn tauri ios dev --features mobile",
     "dev:android": "yarn copy:assets:mobile && cross-env IS_ANDROID=true yarn tauri android dev --features mobile",
     "build:android": "yarn build:icon && yarn copy:assets:mobile && cross-env IS_CLEAN=true yarn tauri android build -- --no-default-features --features mobile",
