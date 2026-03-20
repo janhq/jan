@@ -13,7 +13,7 @@ fn main() {
             for file in &files {
                 let file_path = capabilities_dir.join(file);
                 if let Ok(content) = fs::read_to_string(&file_path) {
-                    if let Ok(mut json: serde_json::Value) = serde_json::from_str(&content) {
+                    if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
                         if let Some(permissions) = json.get_mut("permissions").and_then(|p| p.as_array_mut()) {
                             // Check if foundation-models permission already exists
                             let has_foundation_models = permissions.iter().any(|p| {
