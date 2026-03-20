@@ -20,6 +20,7 @@ declare global {
   declare const POSTHOG_KEY: string
   declare const POSTHOG_HOST: string
   declare const MODEL_CATALOG_URL: string
+  declare const LATEST_JAN_MODEL_URL: string
   declare const AUTO_UPDATER_DISABLED: boolean
   declare const UPDATE_CHECK_INTERVAL_MS: number
   declare const GA_MEASUREMENT_ID: string

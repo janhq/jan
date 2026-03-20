@@ -5,10 +5,7 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import type { CatalogModel } from '@/services/models/types'
-import {
-  NEW_JAN_MODEL_HF_REPO,
-  SETUP_SCREEN_QUANTIZATIONS,
-} from '@/constants/models'
+import { SETUP_SCREEN_QUANTIZATIONS } from '@/constants/models'
 
 export function PromptJanModel() {
 
@@ -27,22 +24,17 @@ export function PromptJanModel() {
     fetchAttempted.current = true
 
     try {
-      const repo = await serviceHub
-        .models()
-        .fetchHuggingFaceRepo(NEW_JAN_MODEL_HF_REPO, huggingfaceToken)
+      const model = await serviceHub.models().fetchLatestJanModel()
 
-      if (repo) {
-        const catalogModel = serviceHub
-          .models()
-          .convertHfRepoToCatalogModel(repo)
-        setJanNewModel(catalogModel)
+      if (model) {
+        setJanNewModel(model)
       }
     } catch (error) {
-      console.error('Error fetching Jan Model:', error)
+      console.error('Error fetching latest Jan model:', error)
     } finally {
       setIsLoading(false)
     }
-  }, [serviceHub, huggingfaceToken])
+  }, [serviceHub])
 
   useEffect(() => {
     fetchJanModel()
@@ -98,7 +90,7 @@ export function PromptJanModel() {
       <div className="flex items-center gap-2">
         <img src="/images/jan-logo.png" alt="Jan" className="size-5" />
         <h2 className="font-medium">
-          Jan v3 Model
+          {janNewModel?.display_name ?? janNewModel?.model_name ?? 'Jan Model'}
           {defaultVariant && (
           <span className="text-muted-foreground">
             {' '}
@@ -108,7 +100,7 @@ export function PromptJanModel() {
         </h2>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
-        Get started with Jan v3, our recommended local AI model optimized for your device.
+        Get started with {janNewModel?.display_name ?? 'Jan'}, our recommended local AI model optimized for your device.
       </p>
       <div className="mt-4 flex justify-end space-x-2">
         <Button
