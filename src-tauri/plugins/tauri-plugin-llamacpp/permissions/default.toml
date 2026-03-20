@@ -22,6 +22,7 @@ permissions = [
     "allow-get-model-size",
     "allow-is-model-supported",
     "allow-plan-model-load",
+    "allow-score-hub-model",
 
     # Backend management commands
     "allow-map-old-backend-to-new",

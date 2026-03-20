@@ -41,6 +41,12 @@ export interface HubModelScoreRequest {
   default_quant_model_id: string
   model_path: string
   ctx_size?: number
+  use_case?: string
+  capabilities?: string[]
+  release_date?: string
+  tools?: boolean
+  num_mmproj?: number
+  pinned?: boolean
 }
 
 export interface HubModelScoreResult {

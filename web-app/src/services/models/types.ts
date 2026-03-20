@@ -59,9 +59,13 @@ export interface CatalogModel {
   safetensors_files?: SafetensorsFile[]
   num_safetensors?: number
   created_at?: string
+  createdAt?: string
   readme?: string
   tools?: boolean
   is_mlx?: boolean
+  use_case?: string
+  capabilities?: string[]
+  pinned?: boolean
   score?: ModelScore
 }
 

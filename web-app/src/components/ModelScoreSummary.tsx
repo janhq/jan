@@ -37,16 +37,17 @@ export function ModelScoreBadge({
         className
       )}
     >
-      {(!score || score.status === 'loading') && !disabled ? (
-        <Loader className="size-3 animate-spin text-muted-foreground" />
-      ) : null}
       <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
         Score
       </span>
       <span className={cn('text-sm font-semibold', scoreTone(score))}>
         {score?.status === 'ready' && typeof score.overall === 'number'
           ? score.overall.toFixed(1)
-          : 'N/A'}
+          : (!score || score.status === 'loading') && !disabled ? (
+        <Loader className="size-3 animate-spin text-muted-foreground" />
+      ) : (
+        'N/A'
+      )}
       </span>
     </div>
   )

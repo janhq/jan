@@ -651,6 +651,12 @@ export class DefaultModelsService implements ModelsService {
           default_quant_model_id: scoreVariant.model_id,
           model_path: scoreVariant.path,
           ctx_size: 8192,
+          use_case: model.use_case,
+          capabilities: model.capabilities,
+          release_date: model.created_at ?? model.createdAt,
+          tools: model.tools,
+          num_mmproj: model.num_mmproj,
+          pinned: model.pinned,
         })
 
         this.hubScoreCache.set(cacheKey, result)

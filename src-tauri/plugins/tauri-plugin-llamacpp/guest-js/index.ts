@@ -196,6 +196,7 @@ export async function isModelSupported(
 export async function scoreHubModel(
   request: HubModelScoreRequest
 ): Promise<HubModelScoreResult> {
+  console.info('Scoring model with request:', request)
   return await invoke('plugin:llamacpp|score_hub_model', { request })
 }
 

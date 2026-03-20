@@ -99,6 +99,12 @@ pub struct HubModelScoreRequest {
     pub default_quant_model_id: String,
     pub model_path: String,
     pub ctx_size: Option<u32>,
+    pub use_case: Option<String>,
+    pub capabilities: Option<Vec<String>>,
+    pub release_date: Option<String>,
+    pub tools: Option<bool>,
+    pub num_mmproj: Option<u32>,
+    pub pinned: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

@@ -1020,6 +1020,12 @@ describe('DefaultModelsService', () => {
       description: 'Test model',
       developer: 'qwen',
       downloads: 100,
+      use_case: 'Instruction following',
+      capabilities: ['tool_use'],
+      created_at: '2026-03-20T00:00:00.000Z',
+      tools: true,
+      num_mmproj: 0,
+      pinned: true,
       quants: [
         {
           model_id: 'qwen/test-model-q4_k_m',
@@ -1058,6 +1064,12 @@ describe('DefaultModelsService', () => {
         default_quant_model_id: 'qwen/test-model-q4_k_m',
         model_path: 'https://huggingface.co/qwen/test-model-q4_k_m.gguf',
         ctx_size: 8192,
+        use_case: 'Instruction following',
+        capabilities: ['tool_use'],
+        release_date: '2026-03-20T00:00:00.000Z',
+        tools: true,
+        num_mmproj: 0,
+        pinned: true,
       })
       expect(result).toEqual(expectedScore)
     })

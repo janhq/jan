@@ -20,6 +20,7 @@ Default permissions for the llamacpp plugin
 - `allow-get-model-size`
 - `allow-is-model-supported`
 - `allow-plan-model-load`
+- `allow-score-hub-model`
 - `allow-map-old-backend-to-new`
 - `allow-get-local-installed-backends`
 - `allow-list-supported-backends`

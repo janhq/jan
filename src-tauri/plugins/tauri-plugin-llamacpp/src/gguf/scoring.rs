@@ -1,9 +1,12 @@
 use super::types::{
     GgufMetadata, HubModelScoreRequest, HubModelScoreResult, ModelScoreBreakdown, ModelScoreStatus,
-    ModelSupportStatus,
 };
-use super::utils::{estimate_kv_cache_internal, read_gguf_metadata_internal};
+use super::utils::read_gguf_metadata_internal;
 use crate::gguf::commands::get_model_size;
+use llmfit_core::fit::InferenceRuntime;
+use llmfit_core::hardware::{GpuBackend, GpuInfo as LlmfitGpuInfo, SystemSpecs as LlmfitSystemSpecs};
+use llmfit_core::models::{quant_bytes_per_param, Capability, LlmModel, ModelFormat};
+use llmfit_core::ModelFit;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -11,11 +14,12 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Manager, Runtime};
-use tauri_plugin_hardware::{get_system_info, SystemInfo};
+use tauri_plugin_hardware::{get_system_info, SystemInfo, Vendor};
 
-const SCORE_CACHE_SCHEMA_VERSION: &str = "v1";
+const SCORE_CACHE_SCHEMA_VERSION: &str = "v2";
 const SCORE_CACHE_FILE: &str = "llmfit_hub_scores.json";
 const DEFAULT_CTX_SIZE: u32 = 8192;
+const RESERVE_BYTES: u64 = 2_288_490_189;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CachedScoreEntry {
@@ -25,11 +29,18 @@ struct CachedScoreEntry {
 type ScoreCache = HashMap<String, CachedScoreEntry>;
 
 #[derive(Debug, Clone)]
-struct ExplicitModelDefinition {
-    architecture: String,
-    context_length: u64,
-    parameter_billions: Option<f32>,
-    quant_tier: f32,
+struct DerivedModelSpec {
+    parameter_count: String,
+    parameters_raw: u64,
+    quantization: String,
+    context_length: u32,
+    use_case: String,
+    capabilities: Vec<Capability>,
+    is_moe: bool,
+    num_experts: Option<u32>,
+    active_experts: Option<u32>,
+    active_parameters: Option<u64>,
+    release_date: Option<String>,
 }
 
 pub async fn score_hub_model_internal<R: Runtime>(
@@ -47,7 +58,7 @@ pub async fn score_hub_model_internal<R: Runtime>(
     let updated_at = current_unix_timestamp();
 
     let score_result = match compute_score_result(&request, &system_info).await {
-        Ok((overall, breakdown, used_builtin_fallback)) => HubModelScoreResult {
+        Ok((overall, breakdown)) => HubModelScoreResult {
             status: ModelScoreStatus::Ready,
             overall: Some(overall),
             breakdown: Some(breakdown),
@@ -55,7 +66,7 @@ pub async fn score_hub_model_internal<R: Runtime>(
             hardware_fingerprint,
             cache_key: cache_key.clone(),
             updated_at,
-            used_builtin_fallback,
+            used_builtin_fallback: false,
             reason: None,
         },
         Err(reason) => HubModelScoreResult {
@@ -78,49 +89,202 @@ pub async fn score_hub_model_internal<R: Runtime>(
 async fn compute_score_result(
     request: &HubModelScoreRequest,
     system_info: &SystemInfo,
-) -> Result<(f32, ModelScoreBreakdown, bool), String> {
+) -> Result<(f32, ModelScoreBreakdown), String> {
     let gguf = read_gguf_metadata_internal(request.model_path.clone()).await?;
     let model_size = get_model_size(request.model_path.clone()).await?;
-    let support = estimate_support_status(&gguf, model_size, request.ctx_size, system_info).await?;
+    let derived = derive_model_spec(request, &gguf, model_size)?;
+    let llmfit_model = build_llmfit_model(request, &derived);
+    let llmfit_system = build_llmfit_system_specs(system_info);
 
-    if let Some(definition) = build_explicit_definition(request, &gguf) {
-        let breakdown = score_from_definition(&definition, &support);
-        let overall = compute_overall_score(&breakdown);
-        return Ok((overall, breakdown, false));
-    }
+    let analysis = ModelFit::analyze_with_forced_runtime(
+        &llmfit_model,
+        &llmfit_system,
+        Some(request.ctx_size.unwrap_or(DEFAULT_CTX_SIZE)),
+        Some(InferenceRuntime::LlamaCpp),
+    );
 
-    if let Some(breakdown) = score_from_builtin_catalog(request, &gguf, &support) {
-        let overall = compute_overall_score(&breakdown);
-        return Ok((overall, breakdown, true));
-    }
-
-    Err("No conservative score mapping available for this model".to_string())
+    Ok((
+        clamp_score(analysis.score as f32),
+        ModelScoreBreakdown {
+            quality: clamp_score(analysis.score_components.quality as f32),
+            speed: clamp_score(analysis.score_components.speed as f32),
+            fit: clamp_score(analysis.score_components.fit as f32),
+            context: clamp_score(analysis.score_components.context as f32),
+        },
+    ))
 }
 
-fn build_explicit_definition(
+fn derive_model_spec(
     request: &HubModelScoreRequest,
     gguf: &GgufMetadata,
-) -> Option<ExplicitModelDefinition> {
-    let architecture = gguf.metadata.get("general.architecture")?.to_string();
-    let context_length = gguf
-        .metadata
-        .get(&format!("{}.context_length", architecture))
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)?;
+    model_size: u64,
+) -> Result<DerivedModelSpec, String> {
+    let quantization = normalize_quantization(&request.default_quant_model_id)
+        .ok_or_else(|| "Unsupported or unrecognized GGUF quantization".to_string())?;
+    let context_length = infer_context_length(gguf, request.ctx_size)
+        .ok_or_else(|| "Unable to determine GGUF context length".to_string())?;
 
-    Some(ExplicitModelDefinition {
-        architecture,
+    let parameters_raw = infer_parameter_count_raw(request, gguf, model_size, &quantization)
+        .ok_or_else(|| "Unable to determine model parameter count for llmfit".to_string())?;
+
+    let inferred_use_case = request
+        .use_case
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| infer_use_case(request, gguf));
+    let capabilities = request
+        .capabilities
+        .clone()
+        .map(|capabilities| {
+            capabilities
+                .into_iter()
+                .filter_map(|capability| normalize_capability(capability.as_str()))
+                .collect::<Vec<_>>()
+        })
+        .filter(|capabilities| !capabilities.is_empty())
+        .unwrap_or_else(|| infer_capabilities(request, gguf, &inferred_use_case));
+
+    let num_experts = infer_metadata_u32(gguf, &["*.expert_count", "*.n_expert"]);
+    let active_experts =
+        infer_metadata_u32(gguf, &["*.expert_used_count", "*.expert_used_count", "*.n_expert_used"]);
+    let is_moe = num_experts.unwrap_or(0) > 0;
+    let active_parameters = if is_moe {
+        match (num_experts, active_experts) {
+            (Some(total), Some(active)) if total > 0 && active > 0 => {
+                Some(((parameters_raw as u128 * active as u128) / total as u128) as u64)
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    Ok(DerivedModelSpec {
+        parameter_count: human_parameter_count(parameters_raw),
+        parameters_raw,
+        quantization,
         context_length,
-        parameter_billions: infer_parameter_billions(request, gguf),
-        quant_tier: infer_quant_tier(&request.default_quant_model_id),
+        use_case: inferred_use_case,
+        capabilities,
+        is_moe,
+        num_experts,
+        active_experts,
+        active_parameters,
+        release_date: request.release_date.clone(),
     })
 }
 
-fn infer_parameter_billions(
+fn build_llmfit_model(request: &HubModelScoreRequest, spec: &DerivedModelSpec) -> LlmModel {
+    let mut model = LlmModel {
+        name: request.model_name.clone(),
+        provider: request.developer.clone().unwrap_or_else(|| infer_provider(request)),
+        parameter_count: spec.parameter_count.clone(),
+        parameters_raw: Some(spec.parameters_raw),
+        min_ram_gb: 0.0,
+        recommended_ram_gb: 0.0,
+        min_vram_gb: None,
+        quantization: spec.quantization.clone(),
+        context_length: spec.context_length,
+        use_case: spec.use_case.clone(),
+        is_moe: spec.is_moe,
+        num_experts: spec.num_experts,
+        active_experts: spec.active_experts,
+        active_parameters: spec.active_parameters,
+        release_date: spec.release_date.clone(),
+        gguf_sources: vec![],
+        capabilities: spec.capabilities.clone(),
+        format: ModelFormat::Gguf,
+    };
+
+    let baseline_memory = model.estimate_memory_gb(model.quantization.as_str(), model.context_length);
+    model.min_ram_gb = round_gb(baseline_memory);
+    model.recommended_ram_gb = round_gb((baseline_memory * 1.2).max(baseline_memory + 1.0));
+    model.min_vram_gb = Some(round_gb(baseline_memory.max(0.5)));
+
+    model
+}
+
+fn build_llmfit_system_specs(system_info: &SystemInfo) -> LlmfitSystemSpecs {
+    let total_ram_gb = mib_to_gb(system_info.total_memory);
+    let available_ram_gb = mib_to_gb(system_info.total_memory.saturating_sub(bytes_to_mib(RESERVE_BYTES)));
+
+    let mut grouped_gpu_counts: HashMap<(String, &'static str, bool), (f64, u32)> = HashMap::new();
+    for gpu in &system_info.gpus {
+        let backend = infer_gpu_backend(system_info, gpu);
+        let unified = is_unified_memory_gpu(system_info, gpu, backend);
+        let key = (gpu.name.clone(), backend_label(backend), unified);
+        let entry = grouped_gpu_counts.entry(key).or_insert((mib_to_gb(gpu.total_memory), 0));
+        entry.0 = entry.0.max(mib_to_gb(gpu.total_memory));
+        entry.1 += 1;
+    }
+
+    let mut gpus: Vec<LlmfitGpuInfo> = grouped_gpu_counts
+        .into_iter()
+        .map(|((name, backend_name, unified_memory), (vram_gb, count))| LlmfitGpuInfo {
+            name,
+            vram_gb: Some(vram_gb),
+            backend: match backend_name {
+                "cuda" => GpuBackend::Cuda,
+                "metal" => GpuBackend::Metal,
+                "rocm" => GpuBackend::Rocm,
+                "sycl" => GpuBackend::Sycl,
+                _ => GpuBackend::Vulkan,
+            },
+            count,
+            unified_memory,
+        })
+        .collect();
+
+    if gpus.is_empty() && is_apple_silicon(system_info) {
+        gpus.push(LlmfitGpuInfo {
+            name: system_info.cpu.name.clone(),
+            vram_gb: Some(total_ram_gb),
+            backend: GpuBackend::Metal,
+            count: 1,
+            unified_memory: true,
+        });
+    }
+
+    gpus.sort_by(|left, right| {
+        right
+            .vram_gb
+            .unwrap_or_default()
+            .partial_cmp(&left.vram_gb.unwrap_or_default())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let primary = gpus.first().cloned();
+    let cpu_backend = if system_info.cpu.arch.contains("arm") || is_apple_silicon(system_info) {
+        GpuBackend::CpuArm
+    } else {
+        GpuBackend::CpuX86
+    };
+
+    LlmfitSystemSpecs {
+        total_ram_gb,
+        available_ram_gb: available_ram_gb.max(0.5),
+        total_cpu_cores: system_info.cpu.core_count,
+        cpu_name: system_info.cpu.name.clone(),
+        has_gpu: primary.is_some(),
+        gpu_vram_gb: primary.as_ref().and_then(|gpu| gpu.vram_gb),
+        total_gpu_vram_gb: primary
+            .as_ref()
+            .and_then(|gpu| gpu.vram_gb.map(|vram| vram * gpu.count as f64)),
+        gpu_name: primary.as_ref().map(|gpu| gpu.name.clone()),
+        gpu_count: primary.as_ref().map(|gpu| gpu.count).unwrap_or(0),
+        unified_memory: primary.as_ref().map(|gpu| gpu.unified_memory).unwrap_or(false),
+        backend: primary.as_ref().map(|gpu| gpu.backend).unwrap_or(cpu_backend),
+        gpus,
+    }
+}
+
+fn infer_parameter_count_raw(
     request: &HubModelScoreRequest,
     gguf: &GgufMetadata,
-) -> Option<f32> {
-    let candidates = [
+    model_size: u64,
+    quantization: &str,
+) -> Option<u64> {
+    let text_candidates = [
         request.default_quant_model_id.as_str(),
         request.model_name.as_str(),
         gguf.metadata
@@ -129,21 +293,26 @@ fn infer_parameter_billions(
             .unwrap_or_default(),
     ];
 
-    for candidate in candidates {
-        if let Some(value) = parse_billions_from_text(candidate) {
+    for candidate in text_candidates {
+        if let Some(value) = parse_parameter_count_from_text(candidate) {
             return Some(value);
         }
     }
 
-    None
+    let bytes_per_param = quant_bytes_per_param(quantization);
+    if bytes_per_param <= 0.0 || model_size == 0 {
+        return None;
+    }
+
+    Some(((model_size as f64 / bytes_per_param).round()) as u64)
 }
 
-fn parse_billions_from_text(input: &str) -> Option<f32> {
-    let lower = input.to_lowercase();
+fn parse_parameter_count_from_text(input: &str) -> Option<u64> {
+    let lower = input.to_ascii_lowercase();
     let bytes = lower.as_bytes();
 
     for index in 0..bytes.len() {
-        if !(bytes[index].is_ascii_digit()) {
+        if !bytes[index].is_ascii_digit() {
             continue;
         }
 
@@ -156,211 +325,229 @@ fn parse_billions_from_text(input: &str) -> Option<f32> {
             continue;
         }
 
-        if bytes[end] == b'b' {
-            if let Ok(value) = lower[index..end].parse::<f32>() {
-                return Some(value);
-            }
+        let multiplier = match bytes[end] {
+            b'b' => 1_000_000_000.0,
+            b'm' => 1_000_000.0,
+            _ => continue,
+        };
+
+        if let Ok(value) = lower[index..end].parse::<f64>() {
+            return Some((value * multiplier).round() as u64);
         }
     }
 
     None
 }
 
-fn infer_quant_tier(model_id: &str) -> f32 {
-    let lower = model_id.to_lowercase();
-    if lower.contains("q8") {
-        1.0
-    } else if lower.contains("q6") {
-        0.92
-    } else if lower.contains("q5") {
-        0.86
-    } else if lower.contains("q4") || lower.contains("iq4") {
-        0.76
-    } else if lower.contains("q3") || lower.contains("iq3") {
-        0.64
-    } else if lower.contains("q2") || lower.contains("iq2") {
-        0.5
+fn infer_context_length(gguf: &GgufMetadata, requested_ctx: Option<u32>) -> Option<u32> {
+    let architecture = gguf.metadata.get("general.architecture")?;
+    let context = gguf
+        .metadata
+        .get(&format!("{architecture}.context_length"))
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| *value > 0)?;
+
+    Some(requested_ctx.map(|ctx| ctx.max(context)).unwrap_or(context))
+}
+
+fn infer_use_case(request: &HubModelScoreRequest, gguf: &GgufMetadata) -> String {
+    let combined = format!(
+        "{} {} {}",
+        request.model_name,
+        request.default_quant_model_id,
+        gguf.metadata
+            .get("general.name")
+            .map(String::as_str)
+            .unwrap_or_default()
+    )
+    .to_ascii_lowercase();
+
+    if combined.contains("embed") || combined.contains("embedding") || combined.contains("bge") {
+        "Embedding".to_string()
+    } else if combined.contains("coder") || combined.contains("code") {
+        "Code generation and completion".to_string()
+    } else if request.num_mmproj.unwrap_or(0) > 0
+        || combined.contains("vision")
+        || combined.contains("-vl")
+        || combined.contains("llava")
+        || combined.contains("pixtral")
+    {
+        "Multimodal instruction following".to_string()
+    } else if combined.contains("reason") || combined.contains("r1") {
+        "Reasoning".to_string()
+    } else if combined.contains("instruct") || combined.contains("chat") {
+        "Instruction following".to_string()
     } else {
-        0.7
+        "General purpose text generation".to_string()
     }
 }
 
-fn score_from_definition(
-    definition: &ExplicitModelDefinition,
-    support: &ModelSupportStatus,
-) -> ModelScoreBreakdown {
-    let parameter_score = definition
-        .parameter_billions
-        .map(score_parameters)
-        .unwrap_or(58.0);
-    let quality = clamp_score(parameter_score * definition.quant_tier);
-    let speed = clamp_score(score_speed(definition.parameter_billions, support));
-    let fit = clamp_score(score_fit(support));
-    let context = clamp_score(score_context(definition.context_length));
-
-    ModelScoreBreakdown {
-        quality,
-        speed,
-        fit,
-        context,
-    }
-}
-
-fn score_from_builtin_catalog(
+fn infer_capabilities(
     request: &HubModelScoreRequest,
     gguf: &GgufMetadata,
-    support: &ModelSupportStatus,
-) -> Option<ModelScoreBreakdown> {
-    let normalized = format!(
-        "{}/{}",
-        request.developer.clone().unwrap_or_default().to_lowercase(),
-        request.model_name.to_lowercase()
-    );
+    use_case: &str,
+) -> Vec<Capability> {
+    let mut capabilities = Vec::new();
+    let combined = format!(
+        "{} {} {}",
+        request.model_name,
+        request.default_quant_model_id,
+        gguf.metadata
+            .get("general.name")
+            .map(String::as_str)
+            .unwrap_or_default()
+    )
+    .to_ascii_lowercase();
 
-    let family_quality = if normalized.contains("janhq/jan") || normalized.contains("jan-v") {
-        Some(74.0)
-    } else if normalized.contains("qwen") {
-        Some(82.0)
-    } else if normalized.contains("llama") {
-        Some(80.0)
-    } else if normalized.contains("gemma") {
-        Some(76.0)
-    } else if normalized.contains("mistral") {
-        Some(78.0)
-    } else if normalized.contains("phi") {
-        Some(70.0)
-    } else if normalized.contains("deepseek") {
-        Some(81.0)
+    if use_case.to_ascii_lowercase().contains("multimodal")
+        || request.num_mmproj.unwrap_or(0) > 0
+        || combined.contains("vision")
+        || combined.contains("-vl")
+        || combined.contains("llava")
+        || combined.contains("pixtral")
+    {
+        capabilities.push(Capability::Vision);
+    }
+
+    let chat_template = gguf
+        .metadata
+        .get("tokenizer.chat_template")
+        .map(String::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if request.tools.unwrap_or(false)
+        || combined.contains("instruct")
+        || combined.contains("qwen")
+        || combined.contains("tool")
+        || chat_template.contains("tools")
+        || chat_template.contains("tool_call")
+        || chat_template.contains("function")
+    {
+        capabilities.push(Capability::ToolUse);
+    }
+
+    capabilities
+}
+
+fn normalize_capability(capability: &str) -> Option<Capability> {
+    match capability.trim().to_ascii_lowercase().as_str() {
+        "vision" => Some(Capability::Vision),
+        "tool_use" | "tool-use" | "tool use" | "tools" => Some(Capability::ToolUse),
+        _ => None,
+    }
+}
+
+fn normalize_quantization(input: &str) -> Option<String> {
+    let lower = input.to_ascii_lowercase();
+    if lower.contains("bf16") {
+        Some("BF16".to_string())
+    } else if lower.contains("f16") {
+        Some("F16".to_string())
+    } else if lower.contains("q8") {
+        Some("Q8_0".to_string())
+    } else if lower.contains("q6") {
+        Some("Q6_K".to_string())
+    } else if lower.contains("q5") {
+        Some("Q5_K_M".to_string())
+    } else if lower.contains("q4") || lower.contains("iq4") {
+        Some("Q4_K_M".to_string())
+    } else if lower.contains("q3") || lower.contains("iq3") {
+        Some("Q3_K_M".to_string())
+    } else if lower.contains("q2") || lower.contains("iq2") {
+        Some("Q2_K".to_string())
     } else {
         None
-    }?;
-
-    let quant_tier = infer_quant_tier(&request.default_quant_model_id);
-    let context_length = gguf
-        .metadata
-        .get("general.architecture")
-        .and_then(|arch| gguf.metadata.get(&format!("{}.context_length", arch)))
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(8192);
-
-    Some(ModelScoreBreakdown {
-        quality: clamp_score(family_quality * quant_tier),
-        speed: clamp_score(score_speed(
-            infer_parameter_billions(request, gguf),
-            support,
-        )),
-        fit: clamp_score(score_fit(support)),
-        context: clamp_score(score_context(context_length)),
-    })
-}
-
-fn score_parameters(parameters: f32) -> f32 {
-    match parameters {
-        p if p >= 70.0 => 96.0,
-        p if p >= 32.0 => 90.0,
-        p if p >= 14.0 => 84.0,
-        p if p >= 8.0 => 78.0,
-        p if p >= 4.0 => 70.0,
-        p if p >= 2.0 => 60.0,
-        _ => 52.0,
     }
 }
 
-fn score_speed(parameters: Option<f32>, support: &ModelSupportStatus) -> f32 {
-    let base = match parameters {
-        Some(p) if p >= 32.0 => 42.0,
-        Some(p) if p >= 14.0 => 50.0,
-        Some(p) if p >= 8.0 => 60.0,
-        Some(p) if p >= 4.0 => 72.0,
-        Some(p) if p >= 2.0 => 82.0,
-        Some(_) => 88.0,
-        None => 66.0,
-    };
+fn infer_metadata_u32(gguf: &GgufMetadata, patterns: &[&str]) -> Option<u32> {
+    let architecture = gguf.metadata.get("general.architecture")?;
+    for pattern in patterns {
+        let key = pattern.replace('*', architecture);
+        if let Some(value) = gguf.metadata.get(&key).and_then(|value| value.parse::<u32>().ok()) {
+            return Some(value);
+        }
+    }
+    None
+}
 
-    match support {
-        ModelSupportStatus::Green => base + 8.0,
-        ModelSupportStatus::Yellow => base,
-        ModelSupportStatus::Red => 20.0,
+fn infer_provider(request: &HubModelScoreRequest) -> String {
+    request
+        .model_name
+        .split('/')
+        .next()
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+fn infer_gpu_backend(system_info: &SystemInfo, gpu: &tauri_plugin_hardware::GpuInfo) -> GpuBackend {
+    match gpu.vendor {
+        Vendor::NVIDIA => GpuBackend::Cuda,
+        Vendor::AMD => {
+            if system_info.os_type.to_ascii_lowercase().contains("linux") {
+                GpuBackend::Rocm
+            } else {
+                GpuBackend::Vulkan
+            }
+        }
+        Vendor::Intel => GpuBackend::Sycl,
+        Vendor::Unknown(_) => {
+            if is_apple_silicon(system_info) {
+                GpuBackend::Metal
+            } else {
+                GpuBackend::Vulkan
+            }
+        }
     }
 }
 
-fn score_fit(support: &ModelSupportStatus) -> f32 {
-    match support {
-        ModelSupportStatus::Green => 96.0,
-        ModelSupportStatus::Yellow => 72.0,
-        ModelSupportStatus::Red => 15.0,
+fn is_unified_memory_gpu(
+    system_info: &SystemInfo,
+    gpu: &tauri_plugin_hardware::GpuInfo,
+    backend: GpuBackend,
+) -> bool {
+    matches!(backend, GpuBackend::Metal)
+        || (matches!(gpu.vendor, Vendor::AMD) && system_info.cpu.name.to_ascii_lowercase().contains("ryzen ai"))
+}
+
+fn is_apple_silicon(system_info: &SystemInfo) -> bool {
+    let os = system_info.os_type.to_ascii_lowercase();
+    let cpu = system_info.cpu.name.to_ascii_lowercase();
+    os.contains("mac") && cpu.contains("apple")
+}
+
+fn backend_label(backend: GpuBackend) -> &'static str {
+    match backend {
+        GpuBackend::Cuda => "cuda",
+        GpuBackend::Metal => "metal",
+        GpuBackend::Rocm => "rocm",
+        GpuBackend::Sycl => "sycl",
+        _ => "vulkan",
     }
 }
 
-fn score_context(context_length: u64) -> f32 {
-    match context_length {
-        c if c >= 128_000 => 98.0,
-        c if c >= 64_000 => 92.0,
-        c if c >= 32_000 => 84.0,
-        c if c >= 16_000 => 76.0,
-        c if c >= 8_000 => 66.0,
-        _ => 54.0,
+fn human_parameter_count(parameters_raw: u64) -> String {
+    if parameters_raw >= 1_000_000_000 {
+        format!("{:.1}B", parameters_raw as f64 / 1_000_000_000.0)
+    } else {
+        format!("{:.0}M", parameters_raw as f64 / 1_000_000.0)
     }
 }
 
-fn compute_overall_score(breakdown: &ModelScoreBreakdown) -> f32 {
-    clamp_score(
-        (breakdown.quality * 0.4)
-            + (breakdown.speed * 0.2)
-            + (breakdown.fit * 0.25)
-            + (breakdown.context * 0.15),
-    )
+fn round_gb(value: f64) -> f64 {
+    (value * 10.0).round() / 10.0
+}
+
+fn mib_to_gb(value_mib: u64) -> f64 {
+    value_mib as f64 / 1024.0
+}
+
+fn bytes_to_mib(value_bytes: u64) -> u64 {
+    value_bytes / (1024 * 1024)
 }
 
 fn clamp_score(value: f32) -> f32 {
     (value.clamp(0.0, 100.0) * 10.0).round() / 10.0
-}
-
-async fn estimate_support_status(
-    gguf: &GgufMetadata,
-    model_size: u64,
-    ctx_size: Option<u32>,
-    system_info: &SystemInfo,
-) -> Result<ModelSupportStatus, String> {
-    let kv_cache_size = estimate_kv_cache_internal(
-        gguf.metadata.clone(),
-        Some(ctx_size.unwrap_or(DEFAULT_CTX_SIZE) as u64),
-    )
-    .await
-    .map_err(|error| error.to_string())?
-    .size;
-
-    let total_required = model_size + kv_cache_size;
-    const RESERVE_BYTES: u64 = 2_288_490_189;
-
-    let total_system_memory: u64 = if system_info.gpus.is_empty() {
-        0
-    } else {
-        system_info.total_memory * 1024 * 1024
-    };
-
-    let total_vram: u64 = if system_info.gpus.is_empty() {
-        system_info.total_memory * 1024 * 1024
-    } else {
-        system_info
-            .gpus
-            .iter()
-            .map(|gpu| gpu.total_memory * 1024 * 1024)
-            .sum()
-    };
-
-    let usable_vram = total_vram.saturating_sub(RESERVE_BYTES);
-    let usable_total_memory = usable_vram + total_system_memory.saturating_sub(RESERVE_BYTES);
-
-    if total_required > usable_total_memory {
-        return Ok(ModelSupportStatus::Red);
-    }
-
-    if total_required <= usable_vram {
-        return Ok(ModelSupportStatus::Green);
-    }
-
-    Ok(ModelSupportStatus::Yellow)
 }
 
 fn build_hardware_fingerprint(system_info: &SystemInfo) -> String {
@@ -440,8 +627,8 @@ fn write_cache<R: Runtime>(
             .map_err(|error| format!("Failed to create cache directory: {error}"))?;
     }
 
-    let content =
-        serde_json::to_string_pretty(cache).map_err(|error| format!("Failed to serialize cache: {error}"))?;
+    let content = serde_json::to_string_pretty(cache)
+        .map_err(|error| format!("Failed to serialize cache: {error}"))?;
     fs::write(cache_path, content).map_err(|error| format!("Failed to write cache: {error}"))
 }
 
@@ -492,40 +679,89 @@ mod tests {
         }
     }
 
-    #[test]
-    fn parses_parameter_billions_from_name() {
-        assert_eq!(parse_billions_from_text("qwen2.5-7b-instruct"), Some(7.0));
-        assert_eq!(parse_billions_from_text("jan-v2-4.5b"), Some(4.5));
-        assert_eq!(parse_billions_from_text("model-without-size"), None);
+    fn mock_request() -> HubModelScoreRequest {
+        HubModelScoreRequest {
+            model_name: "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF".to_string(),
+            developer: Some("Qwen".to_string()),
+            default_quant_model_id: "Qwen/Qwen2.5-Coder-7B-Instruct-Q4_K_M".to_string(),
+            model_path: "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/model-q4_k_m.gguf".to_string(),
+            ctx_size: Some(8192),
+            use_case: Some("Code generation and completion".to_string()),
+            capabilities: Some(vec!["tool_use".to_string()]),
+            release_date: Some("2024-09-19T00:00:00.000Z".to_string()),
+            tools: Some(true),
+            num_mmproj: Some(0),
+            pinned: Some(false),
+        }
+    }
+
+    fn mock_gguf() -> GgufMetadata {
+        GgufMetadata {
+            version: 3,
+            tensor_count: 1,
+            metadata: HashMap::from([
+                ("general.architecture".to_string(), "llama".to_string()),
+                ("llama.context_length".to_string(), "32768".to_string()),
+                ("general.name".to_string(), "Qwen2.5-Coder-7B-Instruct".to_string()),
+                ("tokenizer.chat_template".to_string(), "{{ tools }}".to_string()),
+            ]),
+        }
     }
 
     #[test]
-    fn quant_tier_is_ranked_conservatively() {
-        assert!(infer_quant_tier("model-q8_0.gguf") > infer_quant_tier("model-q4_k_m.gguf"));
-        assert!(infer_quant_tier("model-q4_k_m.gguf") > infer_quant_tier("model-q2_k.gguf"));
+    fn parses_parameter_count_from_name() {
+        assert_eq!(
+            parse_parameter_count_from_text("qwen2.5-7b-instruct"),
+            Some(7_000_000_000)
+        );
+        assert_eq!(
+            parse_parameter_count_from_text("jan-v2-4.5b"),
+            Some(4_500_000_000)
+        );
+        assert_eq!(parse_parameter_count_from_text("model-without-size"), None);
     }
 
     #[test]
-    fn hardware_fingerprint_changes_with_system_details() {
+    fn normalizes_gguf_quantization_for_llmfit() {
+        assert_eq!(
+            normalize_quantization("model-q8_0.gguf").as_deref(),
+            Some("Q8_0")
+        );
+        assert_eq!(
+            normalize_quantization("model-q4_k_m.gguf").as_deref(),
+            Some("Q4_K_M")
+        );
+        assert_eq!(
+            normalize_quantization("model-iq2_xs.gguf").as_deref(),
+            Some("Q2_K")
+        );
+    }
+
+    #[test]
+    fn derives_model_spec_from_request_and_metadata() {
+        let spec = derive_model_spec(&mock_request(), &mock_gguf(), 4_200_000_000)
+            .expect("expected derived model spec");
+
+        assert_eq!(spec.quantization, "Q4_K_M");
+        assert_eq!(spec.context_length, 32768);
+        assert_eq!(spec.parameters_raw, 7_000_000_000);
+        assert_eq!(spec.use_case, "Code generation and completion");
+        assert!(spec.capabilities.contains(&Capability::ToolUse));
+    }
+
+    #[test]
+    fn builds_hardware_fingerprint_from_system_details() {
         let one = build_hardware_fingerprint(&mock_system_info());
-        let mut other_info = mock_system_info();
-        other_info.total_memory = 65536;
-        let two = build_hardware_fingerprint(&other_info);
+        let mut other = mock_system_info();
+        other.total_memory = 65536;
+        let two = build_hardware_fingerprint(&other);
         assert_ne!(one, two);
     }
 
     #[test]
     fn cache_key_depends_on_hardware_fingerprint() {
-        let request = HubModelScoreRequest {
-            model_name: "test/model".to_string(),
-            developer: Some("test".to_string()),
-            default_quant_model_id: "test/model-q4".to_string(),
-            model_path: "https://huggingface.co/test/model-q4.gguf".to_string(),
-            ctx_size: Some(8192),
-        };
-
-        let one = build_cache_key(&request, "hardware-a");
-        let two = build_cache_key(&request, "hardware-b");
+        let one = build_cache_key(&mock_request(), "hardware-a");
+        let two = build_cache_key(&mock_request(), "hardware-b");
         assert_ne!(one, two);
     }
 }
