@@ -88,11 +88,18 @@ export function ModelScorePanel({
             ['Speed', breakdown.speed],
             ['Fit', breakdown.fit],
             ['Context', breakdown.context],
+            ['TPS', score.estimated_tps],
+            ['Best Quant', breakdown.best_quant],
+            ['Fit Level', breakdown.fit_level],
+            ['Run Mode', breakdown.run_mode],
+            ['Mem Required (GB)', breakdown.memory_required_gb],
+            ['Utilization (%)', breakdown.utilization_pct],
+            ['Use Case', breakdown.use_case]
           ].map(([label, value]) => (
             <div key={label} className="rounded-md bg-secondary/40 px-3 py-2">
               <div className="text-xs text-muted-foreground">{label}</div>
               <div className="mt-1 text-lg font-medium text-foreground">
-                {(value as number).toFixed(1)}
+                {typeof value === 'number' ? value.toFixed(1) : value}
               </div>
             </div>
           ))}

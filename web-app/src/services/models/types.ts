@@ -32,12 +32,19 @@ export interface ModelScoreBreakdown {
   speed: number
   fit: number
   context: number
+  best_quant: string
+  fit_level: string
+  run_mode: string
+  memory_required_gb: number
+  utilization_pct: number
+  use_case: string
 }
 
 export interface ModelScore {
   status: ModelScoreStatus
   overall?: number
   breakdown?: ModelScoreBreakdown
+  estimated_tps: number
   scored_quant_model_id?: string
   hardware_fingerprint?: string
   cache_key?: string

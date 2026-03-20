@@ -107,12 +107,18 @@ pub struct HubModelScoreRequest {
     pub pinned: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelScoreBreakdown {
     pub quality: f32,
     pub speed: f32,
     pub fit: f32,
     pub context: f32,
+    pub best_quant: String,
+    pub fit_level: String,
+    pub run_mode: String,
+    pub memory_required_gb: f64,
+    pub utilization_pct: f64,
+    pub use_case: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -129,6 +135,7 @@ pub enum ModelScoreStatus {
 pub struct HubModelScoreResult {
     pub status: ModelScoreStatus,
     pub overall: Option<f32>,
+    pub estimated_tps: Option<f32>,
     pub breakdown: Option<ModelScoreBreakdown>,
     pub scored_quant_model_id: String,
     pub hardware_fingerprint: String,

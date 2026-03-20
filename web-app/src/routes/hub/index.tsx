@@ -24,6 +24,7 @@ import {
   IconEye,
   IconSearch,
   IconTool,
+  IconBrandSpeedtest,
 } from '@tabler/icons-react'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -703,6 +704,23 @@ function HubContent() {
                                 <span className="text-foreground">
                                   {filteredModels[virtualItem.index].quants
                                     ?.length || 0}
+                                </span>
+                              </div>
+                            )}
+                            {modelScores[
+                                    filteredModels[virtualItem.index].model_name
+                            ]?.status === 'ready' && typeof modelScores[
+                                    filteredModels[virtualItem.index].model_name]?.estimated_tps === 'number' && (
+                              <div className="flex items-center gap-1">
+                                <IconBrandSpeedtest
+                                  size={20}
+                                  className="text-muted-foreground"
+                                  title={t('hub:token-sec')}
+                                />
+                                <span className="text-foreground">
+                                  {modelScores[
+                                    filteredModels[virtualItem.index].model_name
+                                  ]?.estimated_tps.toFixed(1)} tok/sec
                                 </span>
                               </div>
                             )}

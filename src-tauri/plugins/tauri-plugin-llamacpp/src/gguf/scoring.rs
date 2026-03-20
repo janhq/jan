@@ -3,7 +3,7 @@ use super::types::{
 };
 use super::utils::read_gguf_metadata_internal;
 use crate::gguf::commands::get_model_size;
-use llmfit_core::fit::InferenceRuntime;
+use llmfit_core::fit::{FitLevel, InferenceRuntime, RunMode};
 use llmfit_core::hardware::{GpuBackend, GpuInfo as LlmfitGpuInfo, SystemSpecs as LlmfitSystemSpecs};
 use llmfit_core::models::{quant_bytes_per_param, Capability, LlmModel, ModelFormat};
 use llmfit_core::ModelFit;
@@ -58,9 +58,10 @@ pub async fn score_hub_model_internal<R: Runtime>(
     let updated_at = current_unix_timestamp();
 
     let score_result = match compute_score_result(&request, &system_info).await {
-        Ok((overall, breakdown)) => HubModelScoreResult {
+        Ok((overall, estimated_tps, breakdown)) => HubModelScoreResult {
             status: ModelScoreStatus::Ready,
             overall: Some(overall),
+            estimated_tps: Some(estimated_tps),
             breakdown: Some(breakdown),
             scored_quant_model_id: request.default_quant_model_id.clone(),
             hardware_fingerprint,
@@ -73,6 +74,7 @@ pub async fn score_hub_model_internal<R: Runtime>(
             status: ModelScoreStatus::Unavailable,
             overall: None,
             breakdown: None,
+            estimated_tps: None,
             scored_quant_model_id: request.default_quant_model_id.clone(),
             hardware_fingerprint,
             cache_key: cache_key.clone(),
@@ -89,7 +91,7 @@ pub async fn score_hub_model_internal<R: Runtime>(
 async fn compute_score_result(
     request: &HubModelScoreRequest,
     system_info: &SystemInfo,
-) -> Result<(f32, ModelScoreBreakdown), String> {
+) -> Result<(f32, f32, ModelScoreBreakdown), String> {
     let gguf = read_gguf_metadata_internal(request.model_path.clone()).await?;
     let model_size = get_model_size(request.model_path.clone()).await?;
     let derived = derive_model_spec(request, &gguf, model_size)?;
@@ -105,11 +107,28 @@ async fn compute_score_result(
 
     Ok((
         clamp_score(analysis.score as f32),
+        analysis.estimated_tps as f32,
         ModelScoreBreakdown {
             quality: clamp_score(analysis.score_components.quality as f32),
             speed: clamp_score(analysis.score_components.speed as f32),
             fit: clamp_score(analysis.score_components.fit as f32),
             context: clamp_score(analysis.score_components.context as f32),
+            best_quant: analysis.best_quant,
+            fit_level: match analysis.fit_level {
+                FitLevel::Perfect => "Perfect".to_string(),
+                FitLevel::Good => "Good".to_string(),
+                FitLevel::Marginal => "Marginal".to_string(),
+                FitLevel::TooTight => "Too Tight".to_string(),
+            },
+            run_mode: match analysis.run_mode {
+                RunMode::Gpu => "GPU".to_string(),
+                RunMode::CpuOffload => "CPU Offload".to_string(),
+                RunMode::CpuOnly => "CPU Only".to_string(),
+                RunMode::MoeOffload => "MoE Offload".to_string(),
+            },
+            memory_required_gb: analysis.memory_required_gb,
+            utilization_pct: analysis.utilization_pct,
+            use_case: format!("{:?}", analysis.use_case),
         },
     ))
 }
@@ -614,7 +633,14 @@ fn read_cache<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> Result<ScoreCache
 
     let content =
         fs::read_to_string(&cache_path).map_err(|error| format!("Failed to read cache: {error}"))?;
-    serde_json::from_str(&content).map_err(|error| format!("Failed to parse cache: {error}"))
+    match serde_json::from_str(&content) {
+        Ok(cache) => Ok(cache),
+        Err(_) => {
+            // Invalidate cache file if parsing fails
+            let _ = fs::remove_file(&cache_path);
+            Ok(HashMap::new())
+        }
+    }
 }
 
 fn write_cache<R: Runtime>(

@@ -33,6 +33,12 @@ export interface ModelScoreBreakdown {
   speed: number
   fit: number
   context: number
+  best_quant: string
+  fit_level: string
+  run_mode: string
+  memory_required_gb: number
+  utilization_pct: number
+  use_case: string
 }
 
 export interface HubModelScoreRequest {
@@ -52,6 +58,7 @@ export interface HubModelScoreRequest {
 export interface HubModelScoreResult {
   status: ModelScoreStatus
   overall?: number
+  estimated_tps: number
   breakdown?: ModelScoreBreakdown
   scored_quant_model_id: string
   hardware_fingerprint: string
