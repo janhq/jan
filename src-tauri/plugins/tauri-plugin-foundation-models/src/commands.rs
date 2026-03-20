@@ -149,7 +149,7 @@ fn extract_last_user_message(messages: &[ChatMessage]) -> String {
 pub async fn check_foundation_models_availability<R: Runtime>(
     _app_handle: tauri::AppHandle<R>,
 ) -> Result<String, String> {
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     {
         let result = tokio::task::spawn_blocking(|| {
             let model = match fm_rs::SystemLanguageModel::new() {
@@ -182,7 +182,7 @@ pub async fn check_foundation_models_availability<R: Runtime>(
         Ok(result)
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
     {
         Ok("unavailable".to_string())
     }
@@ -193,7 +193,7 @@ pub async fn load_foundation_models<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     _model_id: String,
 ) -> Result<(), FoundationModelsError> {
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     {
         tokio::task::spawn_blocking(|| {
             let model = fm_rs::SystemLanguageModel::new()
@@ -212,11 +212,11 @@ pub async fn load_foundation_models<R: Runtime>(
         Ok(())
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
     {
         let _ = app_handle;
         Err(FoundationModelsError::unavailable(
-            "Foundation Models are only available on macOS 26+".into(),
+            "Foundation Models are only available on macOS 26+ with Apple Silicon".into(),
         ))
     }
 }
@@ -257,7 +257,7 @@ pub async fn foundation_models_chat_completion<R: Runtime>(
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     {
         let result = tokio::task::spawn_blocking(move || {
             let request: ChatCompletionRequest = serde_json::from_str(&body)
@@ -314,10 +314,10 @@ pub async fn foundation_models_chat_completion<R: Runtime>(
         Ok(result)
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
     {
         Err(FoundationModelsError::unavailable(
-            "Foundation Models are only available on macOS 26+".into(),
+            "Foundation Models are only available on macOS 26+ with Apple Silicon".into(),
         ))
     }
 }
@@ -335,7 +335,7 @@ pub async fn foundation_models_chat_completion_stream<R: Runtime>(
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     {
         let state: State<FoundationModelsState> = app_handle.state();
         let cancel_tokens = state.cancel_tokens.clone();
@@ -465,11 +465,11 @@ pub async fn foundation_models_chat_completion_stream<R: Runtime>(
         Ok(())
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
     {
         let _ = (body, request_id);
         Err(FoundationModelsError::unavailable(
-            "Foundation Models are only available on macOS 26+".into(),
+            "Foundation Models are only available on macOS 26+ with Apple Silicon".into(),
         ))
     }
 }

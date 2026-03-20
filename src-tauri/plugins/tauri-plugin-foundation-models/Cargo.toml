@@ -19,7 +19,7 @@ thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
 fm-rs = "0.1"
 
 [build-dependencies]
