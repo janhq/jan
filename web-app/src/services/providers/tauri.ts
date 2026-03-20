@@ -96,6 +96,7 @@ export class TauriProvidersService extends DefaultProvidersService {
                 id: model.id,
                 model: model.id,
                 name: model.name,
+                displayName: model.name,
                 description: model.description,
                 capabilities,
                 embedding: model.embedding, // Preserve embedding flag for filtering in UI
