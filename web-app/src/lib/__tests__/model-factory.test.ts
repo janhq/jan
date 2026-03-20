@@ -246,6 +246,19 @@ describe('ModelFactory', () => {
       ).rejects.toThrow(
         'No running Foundation Models session. The model may have failed to load — please check the logs.'
       )
+
+      expect(mockStartModel).toHaveBeenCalledWith(
+        foundationModelsProvider,
+        'apple/on-device'
+      )
+      expect(mockedInvoke).toHaveBeenCalledWith(
+        'plugin:foundation-models|check_foundation_models_availability',
+        {}
+      )
+      expect(mockedInvoke).toHaveBeenCalledWith(
+        'plugin:foundation-models|is_foundation_models_loaded',
+        {}
+      )
     })
 
     it('should create a model when available and model is loaded', async () => {
@@ -259,6 +272,10 @@ describe('ModelFactory', () => {
       )
 
       expect(model).toBeDefined()
+      expect(mockStartModel).toHaveBeenCalledWith(
+        foundationModelsProvider,
+        'apple/on-device'
+      )
       expect(mockedInvoke).toHaveBeenCalledWith(
         'plugin:foundation-models|check_foundation_models_availability',
         {}
