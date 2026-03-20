@@ -41,7 +41,7 @@ import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useAppState } from '@/hooks/useAppState'
-import { isOpenClawRunning } from '@/utils/openclaw'
+import { isOpenClawFeatureAvailable, isOpenClawRunning } from '@/utils/openclaw'
 
 type AnimatedIconHandle =
   | SearchIconHandle
@@ -178,10 +178,12 @@ export function NavMain() {
     useProjectDialog()
   const openClawAvailable = useAppState((state) => state.openClawRunning)
   const setOpenClawRunning = useAppState((state) => state.setOpenClawRunning)
+  const setOpenClawAvailable = useAppState((state) => state.setOpenClawAvailable)
 
   useEffect(() => {
+    isOpenClawFeatureAvailable().then(setOpenClawAvailable)
     isOpenClawRunning().then(setOpenClawRunning)
-  }, [setOpenClawRunning])
+  }, [setOpenClawRunning, setOpenClawAvailable])
 
   const navMainItems = getNavMainItems(
     () => setProjectDialogOpen(true),

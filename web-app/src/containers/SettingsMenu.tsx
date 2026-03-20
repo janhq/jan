@@ -10,6 +10,7 @@ import {
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 
+import { useAppState } from '@/hooks/useAppState'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
@@ -22,6 +23,7 @@ import { Button } from '@/components/ui/button'
 const SettingsMenu = () => {
   const { t } = useTranslation()
   const [expandedProviders, setExpandedProviders] = useState(true)
+  const openClawAvailable = useAppState((state) => state.openClawAvailable)
 
   const matches = useMatches()
   const navigate = useNavigate()
@@ -259,12 +261,14 @@ const SettingsMenu = () => {
               >
                 <span>{t('common:claude_code')}</span>
               </Link>
-              <Link
-                to={route.settings.remote_access}
-                className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
-              >
-                <span>{t('common:openclaw')}</span>
-              </Link>
+              {openClawAvailable && (
+                <Link
+                  to={route.settings.remote_access}
+                  className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
+                >
+                  <span>{t('common:openclaw')}</span>
+                </Link>
+              )}
             </div>
           </div>
 

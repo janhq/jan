@@ -9,6 +9,15 @@ let openClawRunningCache: boolean | null = null
 let lastCheckTime = 0
 const CACHE_TTL_MS = 30_000
 
+/** Check if the openclaw feature was compiled into this binary. */
+export async function isOpenClawFeatureAvailable(): Promise<boolean> {
+  try {
+    return await invoke<boolean>('openclaw_is_available')
+  } catch {
+    return false
+  }
+}
+
 /** Check if OpenClaw is running, with a 30s cache to avoid excessive IPC calls. */
 export async function isOpenClawRunning(forceRefresh = false): Promise<boolean> {
   const now = Date.now()

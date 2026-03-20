@@ -23,6 +23,7 @@ type AppState = {
   mcpToolNames: Set<string>
   serverStatus: 'running' | 'stopped' | 'pending'
   openClawRunning: boolean
+  openClawAvailable: boolean
   abortControllers: Record<string, AbortController>
   tokenSpeed?: TokenSpeed
   showOutOfContextDialog?: boolean
@@ -32,6 +33,7 @@ type AppState = {
   cancelToolCall?: () => void
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   setOpenClawRunning: (running: boolean) => void
+  setOpenClawAvailable: (available: boolean) => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
   updateLoadingModel: (loading: boolean) => void
   updateTools: (tools: MCPTool[]) => void
@@ -61,6 +63,7 @@ export const useAppState = create<AppState>()((set) => ({
   mcpToolNames: new Set<string>(),
   serverStatus: 'stopped',
   openClawRunning: false,
+  openClawAvailable: true,
   abortControllers: {},
   tokenSpeed: undefined,
   currentToolCall: undefined,
@@ -91,6 +94,7 @@ export const useAppState = create<AppState>()((set) => ({
   },
   setServerStatus: (value) => set({ serverStatus: value }),
   setOpenClawRunning: (running) => set({ openClawRunning: running }),
+  setOpenClawAvailable: (available) => set({ openClawAvailable: available }),
   setAbortController: (threadId, controller) => {
     set((state) => ({
       abortControllers: {

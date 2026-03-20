@@ -99,9 +99,9 @@ function RemoteAccess() {
         await invoke('openclaw_ensure_jan_origin').catch(() => { })
       }
     } catch {
-      toast.error(t('settings:remoteAccess.startError'))
+      // openclaw feature not compiled in or not yet running
     }
-  }, [t])
+  }, [])
 
   const fetchTelegramConfig = useCallback(async () => {
     try {

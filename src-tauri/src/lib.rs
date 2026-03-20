@@ -4,6 +4,11 @@ pub mod openclaw_cli;
 #[cfg(feature = "openclaw")]
 pub use core::openclaw::OpenClawState;
 
+#[tauri::command]
+fn openclaw_is_available() -> bool {
+    cfg!(feature = "openclaw")
+}
+
 
 #[cfg(not(feature = "cli"))]
 use core::{
@@ -224,6 +229,8 @@ pub fn run() {
         core::openclaw::commands::tunnel_stop_ngrok,
         core::openclaw::commands::tunnel_start_cloudflared,
         core::openclaw::commands::tunnel_stop_cloudflared,
+        // Feature availability
+        openclaw_is_available,
     ]);
 
     // Desktop without OpenClaw: same non-openclaw commands as the block above.
@@ -310,6 +317,8 @@ pub fn run() {
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
+        // Feature availability
+        openclaw_is_available,
     ]);
 
     // Mobile: no updater commands
