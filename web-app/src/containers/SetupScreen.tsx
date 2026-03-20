@@ -7,11 +7,8 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
 import { AppEvent, events } from '@janhq/core'
-import type { CatalogModel } from '@/services/models/types'
-import {
-  NEW_JAN_MODEL_HF_REPO,
-  SETUP_SCREEN_QUANTIZATIONS,
-} from '@/constants/models'
+import { SETUP_SCREEN_QUANTIZATIONS } from '@/constants/models'
+import { useLatestJanModel } from '@/hooks/useLatestJanModel'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { IconEye, IconSquareCheck } from '@tabler/icons-react'
@@ -92,36 +89,18 @@ function SetupScreen() {
   const llamaProvider = getProviderByName('llamacpp')
   const [quickStartInitiated, setQuickStartInitiated] = useState(false)
   const [quickStartQueued, setQuickStartQueued] = useState(false)
-  const [janNewModel, setJanNewModel] = useState<CatalogModel | null>(null)
+  const {
+    model: janNewModel,
+    error: metadataFetchFailed,
+    fetchLatestJanModel,
+  } = useLatestJanModel()
   const [supportedVariants, setSupportedVariants] = useState<
     Map<string, 'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
   >(new Map())
-  const [metadataFetchFailed, setMetadataFetchFailed] = useState(false)
   const supportCheckInProgress = useRef(false)
   const checkedModelId = useRef<string | null>(null)
   const [isSupportCheckComplete, setIsSupportCheckComplete] = useState(false)
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
-
-  const fetchJanModel = useCallback(async () => {
-    setMetadataFetchFailed(false)
-    try {
-      const repo = await serviceHub
-        .models()
-        .fetchHuggingFaceRepo(NEW_JAN_MODEL_HF_REPO, huggingfaceToken)
-
-      if (repo) {
-        const catalogModel = serviceHub
-          .models()
-          .convertHfRepoToCatalogModel(repo)
-        setJanNewModel(catalogModel)
-      } else {
-        setMetadataFetchFailed(true)
-      }
-    } catch (error) {
-      console.error('Error fetching Jan Model V2:', error)
-      setMetadataFetchFailed(true)
-    }
-  }, [serviceHub, huggingfaceToken])
 
   // Check model support for variants when janNewModel is available
   useEffect(() => {
@@ -188,8 +167,8 @@ function SetupScreen() {
   }, [janNewModel, serviceHub])
 
   useEffect(() => {
-    fetchJanModel()
-  }, [fetchJanModel])
+    fetchLatestJanModel(true)
+  }, [fetchLatestJanModel])
 
   const defaultVariant = useMemo(() => {
     if (!janNewModel) return null
@@ -459,7 +438,7 @@ function SetupScreen() {
                     <div className="flex flex-col w-full h-full justify-center">
                       <div className="flex flex-1 items-center justify-between">
                         <h1 className="font-semibold text-sm mb-1">
-                          <span>Jan v3</span>&nbsp;<span className='text-xs text-muted-foreground'>· {defaultVariant?.file_size}</span>
+                          <span>{janNewModel?.display_name ?? janNewModel?.model_name ?? 'Jan Model'}</span>&nbsp;<span className='text-xs text-muted-foreground'>· {defaultVariant?.file_size}</span>
                         </h1>
                         {(isDownloading) && (
                           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
