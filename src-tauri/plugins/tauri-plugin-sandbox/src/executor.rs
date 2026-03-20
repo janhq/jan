@@ -495,8 +495,18 @@ fn register_host_imports(linker: &mut Linker<HostState>) -> Result<()> {
 
             let result = if let Some(ref ws_id) = workspace_id {
                 // ── Persistent workspace VM ───────────────────────────────────
-                crate::microvm::workspace_exec_blocking(ws_id, &language, &code)
-                    .map_err(|e| format!("workspace exec failed: {e}"))
+                // workspace_exec_blocking is Unix-only (microsandbox not supported on Windows).
+                // On Windows fall through to the ephemeral / WASM path below.
+                #[cfg(unix)]
+                {
+                    crate::microvm::workspace_exec_blocking(ws_id, &language, &code)
+                        .map_err(|e| format!("workspace exec failed: {e}"))
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = ws_id;
+                    Err("persistent workspaces are not supported on Windows; use an ephemeral call (omit workspace)".to_string())
+                }
             } else {
                 // ── Ephemeral VM (existing path) ──────────────────────────────
                 match crate::microvm::run_in_microvm_blocking(&language, &code) {

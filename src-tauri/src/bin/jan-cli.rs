@@ -13,7 +13,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::{
-    cli_delete_thread, cli_get_config, cli_get_data_folder, cli_get_thread,
+    cli_delete_thread, cli_get_data_folder, cli_get_thread,
     cli_list_messages, cli_list_threads, create_agent, create_dispatcher,
     discover_llamacpp_binary, discover_tools_dir,
     discover_mlx_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
@@ -899,7 +899,7 @@ async fn handle_serve(args: ServeArgs) {
             }
             Err(_) if looks_like_hf_repo(&model_id) => {
                 // Looks like a HuggingFace repo ID — download then resolve.
-                auto_download_hf_model(&model_id, args.select).await;
+                auto_download_hf_model(&model_id, select).await;
                 match resolve_model_engine(&model_id) {
                     Ok((eng, mp, mmp)) => (
                         eng,
@@ -1426,7 +1426,7 @@ fn make_agent_handler(pb: ProgressBar) -> impl FnMut(AgentEvent) {
 /// Spin up a local model using the same engine-detection + loading logic as
 /// `handle_serve`, but return `(base_url, model_id, pid)` instead of blocking.
 async fn start_model_for_agent(
-    mut args: ServeArgs,
+    args: ServeArgs,
 ) -> Result<(String, String, i32), String> {
     // ── 1. Resolve model_id ────────────────────────────────────────────────
     let model_id = match args.model_id.as_deref() {
@@ -1514,15 +1514,14 @@ fn stop_model(pid: i32) {
 }
 
 async fn handle_agent(cmd: AgentCommands) {
-    let dim   = Style::new().dim();
-    let bold  = Style::new().bold();
-    let green = Style::new().green().bold();
-    let cyan  = Style::new().cyan();
-    let red   = Style::new().red();
+    let dim  = Style::new().dim();
+    let bold = Style::new().bold();
+    let cyan = Style::new().cyan();
+    let red  = Style::new().red();
 
     match cmd {
         // ── jan agent chat ─────────────────────────────────────────────────
-        AgentCommands::Chat { serve, mount, api_url, agent } => {
+        AgentCommands::Chat { serve, mount, api_url, agent: agent_impl } => {
             use std::io::{self, BufRead, Write};
 
             // When --api-url is given, skip local model startup entirely.
@@ -1544,7 +1543,15 @@ async fn handle_agent(cmd: AgentCommands) {
             println!("{}", dim.apply_to("  skills       : http.fetch · web.search · code.exec (baked)"));
             println!();
 
-            let agent   = create_agent(url, model_id, mount, api_key, &agent);
+            // create_agent scans WASM tools (spawns blocking I/O + reqwest::blocking::Client).
+            // Must run in spawn_blocking so the blocking client is created and dropped
+            // on a blocking thread, not inside the async runtime.
+            let agent = match tokio::task::spawn_blocking(move || {
+                create_agent(url, model_id, mount, api_key, &agent_impl)
+            }).await {
+                Ok(a) => a,
+                Err(e) => { eprintln!("{} spawn: {e}", red.apply_to("error:")); std::process::exit(1); }
+            };
             let mut history = vec![];
 
             let stdin = io::stdin();
@@ -1610,7 +1617,7 @@ async fn handle_agent(cmd: AgentCommands) {
         }
 
         // ── jan agent run ──────────────────────────────────────────────────
-        AgentCommands::Run { prompt, serve, mount, api_url, agent } => {
+        AgentCommands::Run { prompt, serve, mount, api_url, agent: _ } => {
             let (url, model_id, pid, api_key) = if let Some(ext_url) = api_url {
                 let model = serve.model_id.unwrap_or_else(|| "default".to_string());
                 let key   = if serve.api_key.is_empty() { None } else { Some(serve.api_key) };
