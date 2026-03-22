@@ -18,7 +18,11 @@ import { useAssistant } from '@/hooks/useAssistant'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
+import {
+  ExtensionTypeEnum,
+  VectorDBExtension,
+  type MCPTool,
+} from '@janhq/core'
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 
 export type TokenUsageCallback = (
@@ -43,14 +47,10 @@ export type ServiceHub = {
     >
   }
   mcp(): {
-    getTools(): Promise<
-      Array<{ name: string; description: string; inputSchema: unknown; server?: string }>
-    >
-    /** Optional — present in TauriMCPService, absent in DefaultMCPService. */
-    getToolsForServers?(serverNames: string[]): Promise<
-      Array<{ name: string; description: string; inputSchema: unknown; server?: string }>
-    >
-    /** Optional — present in TauriMCPService, absent in DefaultMCPService. */
+    getTools(): Promise<MCPTool[]>
+    /** TauriMCPService only */
+    getToolsForServers?(serverNames: string[]): Promise<MCPTool[]>
+    /** TauriMCPService only */
     getServerSummaries?(): Promise<
       Array<{ name: string; capabilities: string[]; description: string }>
     >
@@ -234,20 +234,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // Load MCP tools — route through the orchestrator when available so only
       // relevant servers are queried instead of all of them.
       try {
-        const mcpService = this.serviceHub.mcp() as {
-          getTools(): Promise<Array<{ name: string; description: string; inputSchema: unknown; server?: string }>>
-          getToolsForServers?(serverNames: string[]): Promise<Array<{ name: string; description: string; inputSchema: unknown; server?: string }>>
-          getServerSummaries?(): Promise<Array<{ name: string; capabilities: string[]; description: string }>>
-        }
-
-        let mcpTools: Array<{ name: string; description: string; inputSchema: unknown; server?: string }>
+        const mcpService = this.serviceHub.mcp()
+        let mcpTools: MCPTool[]
 
         if (mcpService.getToolsForServers && mcpService.getServerSummaries) {
           mcpTools = await mcpOrchestrator.getRelevantTools(
             this.lastUserMessage,
             {
               getTools: () => mcpService.getTools(),
-              getToolsForServers: (names) => mcpService.getToolsForServers!(names),
+              getToolsForServers: (names) =>
+                mcpService.getToolsForServers!(names),
               getServerSummaries: () => mcpService.getServerSummaries!(),
             },
             disabledToolKeys
