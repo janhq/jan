@@ -328,6 +328,69 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://api.minimax.io/v1',
+    explore_models_url: 'https://platform.minimax.io/docs/api-reference/text-openai-api',
+    provider: 'minimax',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The MiniMax API uses API keys for authentication. Visit your [API Keys](https://platform.minimax.io/user-center/basic-information/interface-key) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. Use `https://api.minimax.io/v1` for global access or `https://api.minimaxi.com/v1` for users in China. See the [MiniMax API documentation](https://platform.minimax.io/docs/api-reference/text-openai-api) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.minimax.io/v1',
+          value: 'https://api.minimax.io/v1',
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'MiniMax-M2.7',
+        name: 'MiniMax-M2.7',
+        version: '1.0',
+        description: 'Latest flagship model with enhanced reasoning and coding.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'MiniMax-M2.7-highspeed',
+        name: 'MiniMax-M2.7-highspeed',
+        version: '1.0',
+        description: 'High-speed version of M2.7 for low-latency scenarios.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'MiniMax-M2.5',
+        name: 'MiniMax-M2.5',
+        version: '1.0',
+        description: 'Peak Performance. Ultimate Value. Master the Complex. 204K context window.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'MiniMax-M2.5-highspeed',
+        name: 'MiniMax-M2.5-highspeed',
+        version: '1.0',
+        description: 'Same performance, faster and more agile. 204K context window.',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://router.huggingface.co/v1',
     explore_models_url:
       'https://huggingface.co/models?pipeline_tag=text-generation&inference_provider=all',
@@ -384,5 +447,39 @@ export const predefinedProviders = [
         capabilities: ['completion', 'tools'],
       },
     ],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://integrate.api.nvidia.com/v1',
+    explore_models_url: 'https://build.nvidia.com/models',
+    provider: 'nvidia',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The NVIDIA NIM API uses API keys for authentication. Visit [NVIDIA NGC API Keys](https://org.ngc.nvidia.com/setup/api-keys) to create an API key for your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The NVIDIA NIM OpenAI-compatible endpoint to use. See the [NVIDIA NIM API documentation](https://docs.api.nvidia.com/nim/reference/llm-apis) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://integrate.api.nvidia.com/v1',
+          value: 'https://integrate.api.nvidia.com/v1',
+        },
+      },
+    ],
+    models: [],
   },
 ]

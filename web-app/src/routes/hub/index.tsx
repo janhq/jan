@@ -17,6 +17,8 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
 import { extractModelName, extractDescription } from '@/lib/models'
 import {
+  IconChevronDown,
+  IconChevronUp,
   IconDownload,
   IconFileCode,
   IconEye,
@@ -550,19 +552,20 @@ function HubContent() {
                             </div>
                             <div className="shrink-0 space-x-3 flex items-center">
                               <span className="text-muted-foreground font-medium text-xs">
-                                {
-                                  (
-                                    filteredModels[
-                                      virtualItem.index
-                                    ].quants?.find((m) =>
-                                      DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                        m.model_id.toLowerCase().includes(e)
-                                      )
-                                    ) ??
-                                    filteredModels[virtualItem.index]
-                                      .quants?.[0]
-                                  )?.file_size
-                                }
+                                {filteredModels[virtualItem.index].is_mlx
+                                  ? filteredModels[virtualItem.index]
+                                      .safetensors_files?.[0]?.file_size
+                                  : (
+                                      filteredModels[
+                                        virtualItem.index
+                                      ].quants?.find((m) =>
+                                        DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
+                                          m.model_id.toLowerCase().includes(e)
+                                        )
+                                      ) ??
+                                      filteredModels[virtualItem.index]
+                                        .quants?.[0]
+                                    )?.file_size}
                               </span>
                               <ModelInfoHoverCard
                                 model={filteredModels[virtualItem.index]}
@@ -634,17 +637,31 @@ function HubContent() {
                                   .downloads || 0}
                               </span>
                             </div>
-                            <div className="flex items-center gap-1">
-                              <IconFileCode
-                                size={20}
-                                className="text-muted-foreground"
-                                title={t('hub:variants')}
-                              />
-                              <span className="text-foreground">
-                                {filteredModels[virtualItem.index].quants
-                                  ?.length || 0}
-                              </span>
-                            </div>
+                            {!filteredModels[virtualItem.index].is_mlx && (
+                              <div className="flex items-center gap-1">
+                                <IconFileCode
+                                  size={20}
+                                  className="text-muted-foreground"
+                                  title={t('hub:variants')}
+                                />
+                                <span className="text-foreground">
+                                  {filteredModels[virtualItem.index].quants
+                                    ?.length || 0}
+                                </span>
+                              </div>
+                            )}
+                            {filteredModels[virtualItem.index].is_mlx && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">
+                                    MLX
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Requires MLX engine (Apple Silicon only)</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
                             <div className="flex gap-1.5 items-center">
                               {(filteredModels[virtualItem.index].num_mmproj ?? 0) >
                                 0 && (
@@ -682,29 +699,36 @@ function HubContent() {
                                 </div>
                               )}
                             </div>
-                            {(filteredModels[virtualItem.index].quants?.length ?? 0) >
-                              1 && (
-                              <div className="flex items-center gap-2 hub-show-variants-step">
-                                <Switch
-                                  checked={
-                                    !!expandedModels[
-                                      filteredModels[virtualItem.index]
-                                        .model_name
-                                    ]
-                                  }
-                                  onCheckedChange={() =>
-                                    toggleModelExpansion(
-                                      filteredModels[virtualItem.index]
-                                        .model_name
-                                    )
-                                  }
-                                />
-                                <p className="text-muted-foreground">
-                                  {t('hub:showVariants')}
-                                </p>
-                              </div>
-                            )}
                           </div>
+                          {(filteredModels[virtualItem.index].quants?.length ?? 0) >
+                            1 && (
+                            <button
+                              className="flex items-center gap-1 hub-show-variants-step ml-auto"
+                              onClick={() =>
+                                toggleModelExpansion(
+                                  filteredModels[virtualItem.index]
+                                    .model_name
+                                )
+                              }
+                            >
+                              <span className="text-foreground">
+                                {t('hub:showVariants')}
+                              </span>
+                              {expandedModels[
+                                filteredModels[virtualItem.index].model_name
+                              ] ? (
+                                <IconChevronUp
+                                  size={18}
+                                  className="text-muted-foreground"
+                                />
+                              ) : (
+                                <IconChevronDown
+                                  size={18}
+                                  className="text-muted-foreground"
+                                />
+                              )}
+                            </button>
+                          )}
                         </div>
                         {expandedModels[
                           filteredModels[virtualItem.index].model_name

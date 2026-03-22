@@ -1820,6 +1820,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fm-rs"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76ba96ac90cf1955a708bc53f2a2730a042609fe0836c5989b1d4424f471e868"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6505,15 +6515,15 @@ dependencies = [
 name = "tauri-plugin-foundation-models"
 version = "0.6.599"
 dependencies = [
- "jan-utils",
+ "fm-rs",
  "log",
- "nix",
  "serde",
- "sysinfo",
+ "serde_json",
  "tauri",
  "tauri-plugin",
  "thiserror 2.0.17",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

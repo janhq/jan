@@ -1,0 +1,19 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+<stop stop-color="#C42B5C"/>
+<stop offset="1" stop-color="#E8734A"/>
+</linearGradient>
+</defs>
+<rect width="512" height="512" fill="url(#bg)"/>
+<g fill="none" stroke="white" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+<!-- Swoosh: goes up then curls left -->
+<path d="M148 380 L148 235 C148 205 130 190 110 190 C88 190 78 208 78 225"/>
+<!-- Short bar -->
+<path d="M202 380 L202 210"/>
+<!-- Medium bar -->
+<path d="M256 380 L256 175"/>
+<!-- Tall pair connected at top: up, curve right, down shorter -->
+<path d="M310 380 L310 120 C310 90 335 75 360 75 C385 75 410 90 410 120 L410 295"/>
+</g>
+</svg>

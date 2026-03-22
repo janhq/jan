@@ -9,56 +9,11 @@ pub async fn cleanup_processes<R: Runtime>(app_handle: &tauri::AppHandle<R>) {
         }
     };
 
-    let mut map = app_state.sessions.lock().await;
-    let pids: Vec<i32> = map.keys().cloned().collect();
-
-    for pid in pids {
-        if let Some(session) = map.remove(&pid) {
-            let mut child = session.child;
-
-            #[cfg(unix)]
-            {
-                use nix::sys::signal::{kill, Signal};
-                use nix::unistd::Pid;
-                use tokio::time::{timeout, Duration};
-
-                if let Some(raw_pid) = child.id() {
-                    let raw_pid = raw_pid as i32;
-                    log::info!(
-                        "Sending SIGTERM to Foundation Models PID {} during shutdown",
-                        raw_pid
-                    );
-                    let _ = kill(Pid::from_raw(raw_pid), Signal::SIGTERM);
-
-                    match timeout(Duration::from_secs(2), child.wait()).await {
-                        Ok(Ok(status)) => log::info!(
-                            "Foundation Models process {} exited gracefully: {}",
-                            raw_pid,
-                            status
-                        ),
-                        Ok(Err(e)) => log::error!(
-                            "Error waiting after SIGTERM for Foundation Models PID {}: {}",
-                            raw_pid,
-                            e
-                        ),
-                        Err(_) => {
-                            log::warn!(
-                                "SIGTERM timed out for Foundation Models PID {}; sending SIGKILL",
-                                raw_pid
-                            );
-                            let _ = kill(Pid::from_raw(raw_pid), Signal::SIGKILL);
-                            let _ = child.wait().await;
-                        }
-                    }
-                }
-            }
-
-            #[cfg(not(unix))]
-            {
-                let _ = child.kill().await;
-            }
-        }
+    *app_state.loaded.lock().await = false;
+    if let Ok(mut tokens) = app_state.cancel_tokens.lock() {
+        tokens.clear();
     }
+    log::info!("Foundation Models state cleaned up");
 }
 
 #[tauri::command]
