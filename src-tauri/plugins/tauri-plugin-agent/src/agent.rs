@@ -30,7 +30,7 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             max_steps:             50,
-            token_budget:          200_000,
+            token_budget:          32_000,
             budget_warn_pct:       0.80,
             max_retries:           3,
             compaction_keep:       6,
@@ -155,7 +155,6 @@ impl AgentLoop {
             name:         None,
         });
 
-        let tools = self.build_tools_array();
         let mut cumulative_tokens: u32 = 0;
         let mut steps = 0;
 
@@ -171,6 +170,9 @@ impl AgentLoop {
             }
 
             on_event(AgentEvent::Thinking { step: steps });
+
+            // Rebuild tools array each step so hot-loaded tools are visible
+            let tools = self.build_tools_array();
 
             let warn_threshold =
                 (self.config.token_budget as f32 * self.config.budget_warn_pct) as u32;
@@ -435,21 +437,10 @@ fn build_compact_note(dropped: &[ChatMessage]) -> String {
 }
 
 fn build_system_prompt() -> String {
-    r#"You are a local AI agent. You run code on the user's device using the code.exec tool.
+    format!(
+        r#"You are a helpful assistant with access to tools. Use code.exec to run JavaScript when you need to fetch data, compute, or read/write files. Output results with console.log().
 
-## code.exec — the only tool you need for building things
-
-Parameters:
-- `language`: "javascript", "bash", or "python"
-- `code`: the code to run
-- `workspace`: a string ID (e.g. "blog") — **required for multi-step tasks**; the filesystem and processes survive between calls with the same workspace ID
-
-## Rules
-
-1. Call a tool immediately — never ask clarifying questions before acting.
-2. Use the same workspace ID for every step of one task.
-3. `exit_code: 0` means success. Move on to the next step. Do NOT repeat a command that already succeeded.
-4. If exit_code is non-zero, fix the error and retry once.
-5. After the dev server starts with exit_code 0, tell the user the project is ready and summarize the files created.
-"#.to_string()
+JS globals: httpGet(url), JSON.parse(), JSON.stringify(), readFile(path), writeFile(path,content), formatDate(ms?), console.log().
+Do NOT use fetch(), require(), import, async/await, or Promise."#
+    )
 }

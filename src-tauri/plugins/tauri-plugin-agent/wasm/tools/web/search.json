@@ -1,0 +1,19 @@
+{
+  "description": "Search the web. Tries Brave Search API first (set BRAVE_API_KEY env var), then DuckDuckGo HTML, then DuckDuckGo Instant Answer as fallback. Returns numbered result snippets with titles and URLs.",
+  "parameters": {
+    "additionalProperties": false,
+    "properties": {
+      "max_results": {
+        "default": 5,
+        "description": "Maximum number of results to return (default: 5)",
+        "type": "integer"
+      },
+      "query": {
+        "description": "Search query",
+        "type": "string"
+      }
+    },
+    "required": ["query"],
+    "type": "object"
+  }
+}

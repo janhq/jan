@@ -3,6 +3,16 @@
 //! Shares all core logic with the Jan desktop app.
 //! Build with: cargo build --features cli --bin jan
 
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+/// Force jemalloc to return freed pages to the OS immediately.
+#[cfg(not(target_env = "msvc"))]
+#[allow(non_upper_case_globals)]
+#[unsafe(export_name = "malloc_conf")]
+pub static malloc_conf: &[u8] = b"dirty_decay_ms:0,muzzy_decay_ms:0\0";
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -1540,7 +1550,9 @@ async fn handle_agent(cmd: AgentCommands) {
             println!("{}", bold.apply_to("Agent chat — type your message, Ctrl-C or /quit to exit"));
             println!("{}", dim.apply_to(format!("  model        : {model_id}")));
             println!("{}", dim.apply_to(format!("  endpoint     : {url}")));
-            println!("{}", dim.apply_to("  skills       : http.fetch · web.search · code.exec (baked)"));
+            println!("{}", dim.apply_to(format!(
+                "  skills       : http.fetch · web.search · code.exec + JS tools from ~/.jan/tools/"
+            )));
             println!();
 
             // create_agent scans WASM tools (spawns blocking I/O + reqwest::blocking::Client).

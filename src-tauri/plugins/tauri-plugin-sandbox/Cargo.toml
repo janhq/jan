@@ -8,6 +8,15 @@ edition = "2021"
 rust-version = "1.77.2"
 links = "tauri-plugin-sandbox"
 
+[[bin]]
+name = "jan-wasm-worker"
+path = "src/bin/jan-wasm-worker.rs"
+required-features = ["wasmtime-runtime"]
+
+[features]
+default = []
+wasmtime-runtime = ["dep:wasmtime", "dep:wasmtime-wasi"]
+
 [dependencies]
 anyhow       = "1"
 log          = "0.4"
@@ -16,8 +25,8 @@ serde_json   = "1.0"
 tauri        = { version = "2.5.0", default-features = false }
 thiserror    = "2.0"
 tokio        = { version = "1", features = ["full"] }
-wasmtime      = { version = "28", features = ["component-model"] }
-wasmtime-wasi = "28"
+wasmtime      = { version = "28", features = ["component-model"], optional = true }
+wasmtime-wasi = { version = "28", optional = true }
 which         = "7"
 
 [target.'cfg(unix)'.dependencies]

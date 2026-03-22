@@ -10,7 +10,12 @@
 ///   console.log(...)  → println!  → host stdout
 ///   console.error(..) → eprintln! → host stderr
 ///   console.warn(..)  → eprintln! → host stderr
+///   Date.now()        → ms since Unix epoch
+///   performance.now() → ms since Unix epoch (high-res f64)
+///   formatDate(ms?)   → ISO 8601 UTC string (defaults to now)
+///   httpGet(url)      → HTTP GET, returns body as string
 ///   readFile(path)    → std::fs::read_to_string  (WASI-governed)
+///   writeFile(p, c)   → std::fs::write           (WASI-governed)
 ///   listDir(path)     → std::fs::read_dir        (WASI-governed)
 ///   getenv(name)      → std::env::var
 ///   homeDir()         → $HOME / $USERPROFILE / "/"
@@ -22,6 +27,19 @@ use boa_engine::{
     property::Attribute,
     Context, JsError, JsNativeError, JsValue, Source,
 };
+
+// ── Host imports (provided by wasm_runtime.rs linker) ──────────────────────
+
+#[link(wasm_import_module = "host")]
+extern "C" {
+    fn http_get(url_ptr: i32, url_len: i32, buf_ptr: i32, buf_max: i32) -> i32;
+    fn write_file(path_ptr: i32, path_len: i32, data_ptr: i32, data_len: i32) -> i32;
+    fn read_file(path_ptr: i32, path_len: i32, buf_ptr: i32, buf_max: i32) -> i32;
+}
+
+static mut FILE_BUF: [u8; 256 * 1024] = [0u8; 256 * 1024]; // 256 KB for file reads
+
+static mut HTTP_BUF: [u8; 256 * 1024] = [0u8; 256 * 1024]; // 256 KB
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -37,6 +55,10 @@ fn main() {
 
     if let Err(e) = register_console(&mut ctx) {
         eprintln!("console setup: {e}");
+        std::process::exit(1);
+    }
+    if let Err(e) = register_timing(&mut ctx) {
+        eprintln!("timing setup: {e}");
         std::process::exit(1);
     }
     if let Err(e) = register_host_fns(&mut ctx) {
@@ -79,15 +101,118 @@ fn register_console(ctx: &mut Context) -> Result<(), String> {
         .map_err(|e| format!("console: {e}"))
 }
 
+// ── timing (Date.now / performance.now / formatDate) ────────────────────────
+
+fn register_timing(ctx: &mut Context) -> Result<(), String> {
+    let perf_now = NativeFunction::from_fn_ptr(|_this, _args, _ctx| {
+        let ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64() * 1000.0)
+            .unwrap_or(0.0);
+        Ok(JsValue::from(ms))
+    });
+    let performance = ObjectInitializer::new(ctx)
+        .function(perf_now, js_string!("now"), 0)
+        .build();
+    ctx.register_global_property(js_string!("performance"), performance, Attribute::all())
+        .map_err(|e| format!("performance: {e}"))?;
+
+    let date_now = NativeFunction::from_fn_ptr(|_this, _args, _ctx| {
+        let ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as f64)
+            .unwrap_or(0.0);
+        Ok(JsValue::from(ms))
+    });
+    let date = ObjectInitializer::new(ctx)
+        .function(date_now, js_string!("now"), 0)
+        .build();
+    ctx.register_global_property(js_string!("Date"), date, Attribute::all())
+        .map_err(|e| format!("Date: {e}"))?;
+
+    // formatDate(ms?) → "2026-03-21T17:30:45Z"
+    // If no argument, uses current time.
+    let format_date = NativeFunction::from_fn_ptr(|_this, args, _ctx| {
+        let epoch_ms = if let Some(n) = args.first().and_then(|v| v.as_number()) {
+            n as u64
+        } else {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0)
+        };
+
+        let secs = (epoch_ms / 1000) as i64;
+        // Manual UTC breakdown (no chrono dependency)
+        let days_since_epoch = secs / 86400;
+        let time_of_day = secs % 86400;
+        let hour = time_of_day / 3600;
+        let minute = (time_of_day % 3600) / 60;
+        let second = time_of_day % 60;
+
+        // Civil date from days since 1970-01-01 (Algorithm from Howard Hinnant)
+        let z = days_since_epoch + 719468;
+        let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
+        let doe = z - era * 146097;
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        let y = yoe + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let y = if m <= 2 { y + 1 } else { y };
+
+        let formatted = format!(
+            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+            y, m, d, hour, minute, second
+        );
+        Ok(JsValue::from(boa_engine::JsString::from(formatted.as_str())))
+    });
+    ctx.register_global_callable(js_string!("formatDate"), 0, format_date)
+        .map_err(|e| format!("formatDate: {e}"))?;
+
+    Ok(())
+}
+
 // ── host functions ──────────────────────────────────────────────────────────
 
 fn register_host_fns(ctx: &mut Context) -> Result<(), String> {
-    // readFile(path) → string
-    let read_file = NativeFunction::from_fn_ptr(|_this, args, ctx| {
+    // httpGet(url) → string (response body)
+    let http_get_fn = NativeFunction::from_fn_ptr(|_this, args, ctx| {
+        let url = require_str_arg(args, 0, "httpGet", ctx)?;
+        let url_bytes = url.as_bytes();
+        let n = unsafe {
+            http_get(
+                url_bytes.as_ptr() as i32,
+                url_bytes.len() as i32,
+                HTTP_BUF.as_mut_ptr() as i32,
+                HTTP_BUF.len() as i32,
+            )
+        };
+        if n < 0 {
+            return Err(js_err(format!("httpGet '{url}': request failed")));
+        }
+        let body = unsafe { std::str::from_utf8(&HTTP_BUF[..n as usize]).unwrap_or("") };
+        Ok(JsValue::from(boa_engine::JsString::from(body)))
+    });
+
+    // readFile(path) → string (uses host import to bypass WASI read-only mounts)
+    let read_file_fn = NativeFunction::from_fn_ptr(|_this, args, ctx| {
         let path = require_str_arg(args, 0, "readFile", ctx)?;
-        std::fs::read_to_string(&path)
-            .map(|s| JsValue::from(boa_engine::JsString::from(s.as_str())))
-            .map_err(|e| js_err(format!("readFile '{path}': {e}")))
+        let path_bytes = path.as_bytes();
+        let n = unsafe {
+            read_file(
+                path_bytes.as_ptr() as i32,
+                path_bytes.len() as i32,
+                FILE_BUF.as_mut_ptr() as i32,
+                FILE_BUF.len() as i32,
+            )
+        };
+        if n < 0 {
+            return Err(js_err(format!("readFile '{path}': read failed")));
+        }
+        let content = unsafe { std::str::from_utf8(&FILE_BUF[..n as usize]).unwrap_or("") };
+        Ok(JsValue::from(boa_engine::JsString::from(content)))
     });
 
     // listDir(path) → string (newline-separated, sorted)
@@ -100,6 +225,26 @@ fn register_host_fns(ctx: &mut Context) -> Result<(), String> {
             .collect();
         names.sort();
         Ok(JsValue::from(boa_engine::JsString::from(names.join("\n").as_str())))
+    });
+
+    // writeFile(path, content) → true (uses host import to bypass WASI read-only mounts)
+    let write_file_fn = NativeFunction::from_fn_ptr(|_this, args, ctx| {
+        let path = require_str_arg(args, 0, "writeFile", ctx)?;
+        let content = require_str_arg(args, 1, "writeFile", ctx)?;
+        let path_bytes = path.as_bytes();
+        let content_bytes = content.as_bytes();
+        let n = unsafe {
+            write_file(
+                path_bytes.as_ptr() as i32,
+                path_bytes.len() as i32,
+                content_bytes.as_ptr() as i32,
+                content_bytes.len() as i32,
+            )
+        };
+        if n < 0 {
+            return Err(js_err(format!("writeFile '{path}': write failed")));
+        }
+        Ok(JsValue::from(true))
     });
 
     // getenv(name) → string | undefined
@@ -119,8 +264,12 @@ fn register_host_fns(ctx: &mut Context) -> Result<(), String> {
         Ok(JsValue::from(boa_engine::JsString::from(home.as_str())))
     });
 
-    ctx.register_global_callable(js_string!("readFile"), 1, read_file)
+    ctx.register_global_callable(js_string!("httpGet"), 1, http_get_fn)
+        .map_err(|e| format!("httpGet: {e}"))?;
+    ctx.register_global_callable(js_string!("readFile"), 1, read_file_fn)
         .map_err(|e| format!("readFile: {e}"))?;
+    ctx.register_global_callable(js_string!("writeFile"), 2, write_file_fn)
+        .map_err(|e| format!("writeFile: {e}"))?;
     ctx.register_global_callable(js_string!("listDir"), 1, list_dir)
         .map_err(|e| format!("listDir: {e}"))?;
     ctx.register_global_callable(js_string!("getenv"), 1, getenv)

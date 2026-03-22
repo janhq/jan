@@ -570,7 +570,7 @@ pub use tauri_plugin_agent::{
 /// Create dispatcher in a blocking context (for use with spawn_blocking).
 /// Must be called from a synchronous context, not inside an async function.
 pub fn create_dispatcher(tools_dir: Option<PathBuf>, mounts: Vec<PathBuf>) -> Dispatcher {
-    match tools_dir {
+    let mut dispatcher = match tools_dir {
         Some(dir) => {
             log::info!("[agent] tools dir: {}", dir.display());
             Dispatcher::with_tools_dir(dir).with_mounts(mounts)
@@ -579,7 +579,13 @@ pub fn create_dispatcher(tools_dir: Option<PathBuf>, mounts: Vec<PathBuf>) -> Di
             log::warn!("[agent] no tools dir found; set JAN_TOOLS_DIR or place tools/ next to the binary");
             Dispatcher::new().with_mounts(mounts)
         }
-    }
+    };
+
+    // Load user-created JS tools from ~/.jan/tools/
+    let user_tools_dir = discover_user_tools_dir();
+    dispatcher = dispatcher.with_user_tools_dir(user_tools_dir);
+
+    dispatcher
 }
 
 /// Create a headless [`AgentLoop`] pointed at `base_url` (e.g. `http://localhost:1337`).
@@ -604,6 +610,26 @@ pub fn create_agent(
 
     let dispatcher = create_dispatcher(discover_tools_dir(), mounts);
     AgentLoop::new_with_key(base_url, model_id, api_key, dispatcher)
+}
+
+/// Locate or create the user tools directory at `~/.jan/tools/`.
+///
+/// User-created JS tools are placed here and auto-loaded on startup.
+pub fn discover_user_tools_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("JAN_USER_TOOLS_DIR") {
+        return PathBuf::from(dir);
+    }
+
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".into());
+    let dir = PathBuf::from(home).join(".jan").join("tools");
+
+    if !dir.exists() {
+        let _ = std::fs::create_dir_all(&dir);
+    }
+
+    dir
 }
 
 /// Locate the compiled WASM tools directory.

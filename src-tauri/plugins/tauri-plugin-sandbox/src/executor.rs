@@ -40,7 +40,7 @@
 use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
+use std::sync::{mpsc, OnceLock};
 use std::time::Duration;
 use wasmtime::{Caller, Config, Engine, Extern, Linker, Module, Store, Trap};
 use wasmtime_wasi::preview1::{self, WasiP1Ctx};
@@ -101,13 +101,12 @@ pub enum SandboxError {
 /// the std library links against them.  We satisfy both the standard WASI
 /// imports (via `WasiP1Ctx`) and the custom `host::*` imports.
 struct HostState {
-    wasi:        WasiP1Ctx,
-    logs:        Vec<String>,
-    http_client: reqwest::blocking::Client,
+    wasi:    WasiP1Ctx,
+    logs:    Vec<String>,
     /// Filesystem paths the `host::exec_code` sandbox may read.
     /// Populated from `Dispatcher::mounts` via `execute(..., mounts)`.
     /// Empty for metadata-only queries.
-    mounts:      Vec<PathBuf>,
+    mounts:  Vec<PathBuf>,
 }
 
 impl HostState {
@@ -117,12 +116,7 @@ impl HostState {
 
     fn with_mounts(mounts: Vec<PathBuf>) -> Self {
         let wasi = WasiCtxBuilder::new().build_p1();
-        let http_client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(10))
-            .user_agent("jan-agent/0.1")
-            .build()
-            .unwrap_or_else(|_| reqwest::blocking::Client::new());
-        Self { wasi, logs: Vec::new(), http_client, mounts }
+        Self { wasi, logs: Vec::new(), mounts }
     }
 }
 
@@ -135,17 +129,31 @@ pub struct ToolInfo {
     pub schema:      Value,
 }
 
-// ── Engine factory ────────────────────────────────────────────────────────────
+// ── Cached engine + HTTP client ────────────────────────────────────────────────────────────
 
 /// Build a Wasmtime engine with **both** metering mechanisms enabled.
 ///
 /// - `consume_fuel = true`   — deterministic instruction counter
 /// - `epoch_interruption = true` — wall-clock watchdog via `increment_epoch()`
-fn build_engine() -> Result<Engine> {
-    let mut cfg = Config::new();
-    cfg.consume_fuel(true);
-    cfg.epoch_interruption(true);
-    Ok(Engine::new(&cfg)?)
+fn shared_engine() -> &'static Engine {
+    static ENGINE: OnceLock<Engine> = OnceLock::new();
+    ENGINE.get_or_init(|| {
+        let mut cfg = Config::new();
+        cfg.consume_fuel(true);
+        cfg.epoch_interruption(true);
+        Engine::new(&cfg).expect("wasmtime engine")
+    })
+}
+
+fn shared_http_client() -> &'static reqwest::blocking::Client {
+    static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .user_agent("jan-agent/0.1")
+            .build()
+            .unwrap_or_else(|_| reqwest::blocking::Client::new())
+    })
 }
 
 // ── Watchdog ──────────────────────────────────────────────────────────────────
@@ -209,14 +217,14 @@ fn classify_trap(err: anyhow::Error, timeout_secs: u64) -> SandboxError {
 /// Uses a small fuel budget and a 5-second watchdog.  No HTTP host imports
 /// are called during metadata reads.
 pub fn get_tool_info(wasm_path: &Path) -> Result<ToolInfo> {
-    let engine = build_engine()?;
-    let module = Module::from_file(&engine, wasm_path)
+    let engine = shared_engine();
+    let module = Module::from_file(engine, wasm_path)
         .with_context(|| format!("loading wasm: {}", wasm_path.display()))?;
 
-    let mut linker: Linker<HostState> = Linker::new(&engine);
+    let mut linker: Linker<HostState> = Linker::new(engine);
     register_host_imports(&mut linker)?;
 
-    let mut store = Store::new(&engine, HostState::new());
+    let mut store = Store::new(engine, HostState::new());
     store.set_fuel(FUEL_LIMIT_METADATA)?;
     store.set_epoch_deadline(1);
 
@@ -257,14 +265,14 @@ pub fn execute(
     input:     &Value,
     mounts:    Vec<PathBuf>,
 ) -> Result<(Value, Vec<String>)> {
-    let engine = build_engine()?;
-    let module = Module::from_file(&engine, wasm_path)
+    let engine = shared_engine();
+    let module = Module::from_file(engine, wasm_path)
         .with_context(|| format!("loading wasm: {}", wasm_path.display()))?;
 
-    let mut linker: Linker<HostState> = Linker::new(&engine);
+    let mut linker: Linker<HostState> = Linker::new(engine);
     register_host_imports(&mut linker)?;
 
-    let mut store = Store::new(&engine, HostState::with_mounts(mounts));
+    let mut store = Store::new(engine, HostState::with_mounts(mounts));
     store.set_fuel(FUEL_LIMIT)?;
     store.set_epoch_deadline(1);
 
@@ -328,14 +336,14 @@ pub fn execute(
 /// Used when the microsandbox server is not reachable.
 fn wasm_exec_code(language: &str, code: &str, mounts: &[PathBuf]) -> Result<serde_json::Value, String> {
     let wasm_bin = match language {
-        "javascript" | "js"      => "js-runner.wasm (QuickJS)",
+        "javascript" | "js"      => "js-runner.wasm (Boa)",
         "python"     | "python3" => "micropython.wasm",
         other => return Err(format!("unsupported language '{other}' (supported: javascript, python)")),
     };
     log::info!("[sandbox] wasm fallback: running {language} via {wasm_bin}");
     match language {
-        "javascript" | "js"      => crate::wasm_runtime::run_js_blocking(code, mounts),
-        "python"     | "python3" => crate::wasm_runtime::run_python_blocking(code, mounts),
+        "javascript" | "js"      => crate::wasm_runtime::worker::run_js_inprocess(code, mounts),
+        "python"     | "python3" => Err("Python WASM execution not available".into()),
         _                        => unreachable!(),
     }
 }
@@ -413,7 +421,7 @@ fn register_host_imports(linker: &mut Linker<HostState>) -> Result<()> {
             // Per-domain request tuning (capabilities.json pattern):
             // - Inject API keys from env vars so WASM tools never see secrets.
             // - Use a browser-like User-Agent for sites that bot-detect CLI agents.
-            let mut req = caller.data().http_client.get(&url);
+            let mut req = shared_http_client().get(&url);
             if url.contains("api.search.brave.com") {
                 if let Ok(key) = std::env::var("BRAVE_API_KEY") {
                     req = req.header("X-Subscription-Token", key);
@@ -493,10 +501,8 @@ fn register_host_imports(linker: &mut Linker<HostState>) -> Result<()> {
                 code.len(), workspace_id
             );
 
-            let result = if let Some(ref ws_id) = workspace_id {
-                // ── Persistent workspace VM ───────────────────────────────────
-                // workspace_exec_blocking is Unix-only (microsandbox not supported on Windows).
-                // On Windows fall through to the ephemeral / WASM path below.
+            // Try microsandbox first (workspace or ephemeral), fall back to WASM.
+            let msb_result: Result<serde_json::Value, String> = if let Some(ref ws_id) = workspace_id {
                 #[cfg(unix)]
                 {
                     crate::microvm::workspace_exec_blocking(ws_id, &language, &code)
@@ -505,26 +511,24 @@ fn register_host_imports(linker: &mut Linker<HostState>) -> Result<()> {
                 #[cfg(not(unix))]
                 {
                     let _ = ws_id;
-                    Err("persistent workspaces are not supported on Windows; use an ephemeral call (omit workspace)".to_string())
+                    Err("persistent workspaces require microsandbox (not available on Windows)".to_string())
                 }
             } else {
-                // ── Ephemeral VM (existing path) ──────────────────────────────
-                match crate::microvm::run_in_microvm_blocking(&language, &code) {
-                    Ok(v) => {
-                        log::debug!("[sandbox] exec_code: ran in ephemeral microsandbox microVM");
-                        Ok(v)
-                    }
-                    Err(msb_err) => {
-                        log::info!(
-                            "[sandbox] exec_code: microsandbox unavailable — falling back to WASM runtime\n  reason: {msb_err}"
-                        );
-                        wasm_exec_code(&language, &code, &mounts).map_err(|wasm_err| {
-                            format!(
-                                "{msb_err}\n\
-                                 WASM fallback also unavailable: {wasm_err}"
-                            )
-                        })
-                    }
+                crate::microvm::run_in_microvm_blocking(&language, &code)
+                    .map_err(|e| format!("microsandbox unavailable: {e}"))
+            };
+
+            let result = match msb_result {
+                Ok(v) => Ok(v),
+                Err(msb_err) => {
+                    log::info!(
+                        "[sandbox] exec_code: microsandbox unavailable — falling back to WASM runtime\n  reason: {msb_err}"
+                    );
+                    wasm_exec_code(&language, &code, &mounts).map_err(|wasm_err| {
+                        format!(
+                            "{msb_err}\nWASM fallback also failed: {wasm_err}"
+                        )
+                    })
                 }
             };
 
@@ -537,8 +541,8 @@ fn register_host_imports(linker: &mut Linker<HostState>) -> Result<()> {
                 Ok(v)  => serde_json::to_string(&v)
                               .unwrap_or_else(|_| r#"{"error":"serialize failed"}"#.into()),
                 Err(e) => {
-                    let err_msg: String = e.replace('"', "'");
-                    format!(r#"{{"error":"{}"}}"#, err_msg)
+                    serde_json::to_string(&serde_json::json!({"error": e}))
+                        .unwrap_or_else(|_| r#"{"error":"serialize failed"}"#.into())
                 }
             };
 
@@ -739,9 +743,10 @@ mod tests {
     // ── Engine config ─────────────────────────────────────────────────────────
 
     #[test]
-    fn build_engine_enables_both_meters() {
-        // build_engine() must succeed (both flags valid together).
-        let engine = build_engine().expect("engine with fuel + epoch");
-        drop(engine);
+    fn shared_engine_enables_both_meters() {
+        // shared_engine() must succeed and return the same instance.
+        let e1 = shared_engine();
+        let e2 = shared_engine();
+        assert!(std::ptr::eq(e1, e2));
     }
 }

@@ -1,3 +1,4 @@
+#[cfg(feature = "wasmtime-runtime")]
 pub mod executor;
 pub mod microvm;
 pub mod wasm_runtime;

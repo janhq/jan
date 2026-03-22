@@ -439,7 +439,15 @@ fn wrap_for_node(language: &str, code: &str) -> Result<String, String> {
         // Wrap in an IIFE so `const`/`let` declarations don't leak into the
         // persistent Node.js REPL context across multiple exec calls, which
         // would cause "Identifier already declared" SyntaxErrors on re-use.
-        "javascript" | "js" => Ok(format!("(function(){{\n{code}\n}})();")),
+        //
+        // Polyfills: httpGet(url) bridges Node.js fetch → sync HTTP GET,
+        // matching the WASM fallback's httpGet so the same code works in both.
+        "javascript" | "js" => Ok(format!(
+            r#"(function(){{
+if(typeof globalThis.httpGet==='undefined'){{globalThis.httpGet=function(u){{const r=require('child_process').execSync('node -e "fetch(\"'+u.replace(/"/g,'\\"')+'\").then(r=>r.text()).then(t=>process.stdout.write(t))"',{{encoding:'utf8',timeout:15000}});return r;}};}}
+{code}
+}})();"#
+        )),
 
         "bash" | "shell" | "sh" => {
             let cmd_json = serde_json::Value::String(code.to_string()).to_string();

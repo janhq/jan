@@ -56,7 +56,7 @@ test-tauri = [
     "tauri/test",
     "desktop",
 ]
-cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console"]
+cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console", "dep:tikv-jemallocator"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [] }
@@ -99,7 +99,7 @@ tauri-plugin-foundation-models = { path = "./plugins/tauri-plugin-foundation-mod
 tauri-plugin-vector-db = { path = "./plugins/tauri-plugin-vector-db" }
 tauri-plugin-rag     = { path = "./plugins/tauri-plugin-rag" }
 tauri-plugin-agent   = { path = "./plugins/tauri-plugin-agent" }
-tauri-plugin-sandbox = { path = "./plugins/tauri-plugin-sandbox" }
+tauri-plugin-sandbox = { path = "./plugins/tauri-plugin-sandbox", default-features = false }
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 tauri-plugin-log = "2.0.0-rc"
 tauri-plugin-opener = "2.2.7"
@@ -128,6 +128,7 @@ dialoguer = { version = "0.11", optional = true }
 env_logger = { version = "0.11", optional = true }
 indicatif = { version = "0.17", optional = true }
 console = { version = "0.15", optional = true }
+tikv-jemallocator = { version = "0.6", optional = true }
 
 [dependencies.tauri]
 version = "2.8.5"

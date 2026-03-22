@@ -18,7 +18,7 @@ regex        = "1"
 serde        = { version = "1.0", features = ["derive"] }
 serde_json   = "1.0"
 tauri                = { version = "2.5.0", default-features = false }
-tauri-plugin-sandbox = { path = "../tauri-plugin-sandbox" }
+tauri-plugin-sandbox = { path = "../tauri-plugin-sandbox", default-features = false }
 thiserror            = "2.0"
 tokio                = { version = "1", features = ["full"] }
 
