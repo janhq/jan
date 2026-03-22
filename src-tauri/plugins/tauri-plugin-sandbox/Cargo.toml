@@ -8,11 +8,6 @@ edition = "2021"
 rust-version = "1.77.2"
 links = "tauri-plugin-sandbox"
 
-[[bin]]
-name = "jan-wasm-worker"
-path = "src/bin/jan-wasm-worker.rs"
-required-features = ["wasmtime-runtime"]
-
 [features]
 default = []
 wasmtime-runtime = ["dep:wasmtime", "dep:wasmtime-wasi"]

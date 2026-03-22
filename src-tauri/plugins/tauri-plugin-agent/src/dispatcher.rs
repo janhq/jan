@@ -87,17 +87,23 @@ fn fs_write_meta() -> ToolMeta {
 fn code_exec_meta() -> ToolMeta {
     ToolMeta {
         id:          "code.exec".into(),
-        description: "Execute JavaScript code in a sandboxed WASM runtime. \
-                      Globals: httpGet(url), JSON.parse/stringify, readFile(path), writeFile(path,content), \
-                      formatDate(ms?), console.log(). Do NOT use fetch(), require(), import, or async/await. \
-                      Print results with console.log()."
+        description: "Execute JavaScript code in a sandboxed environment. \
+                      Print output with console.log(). \
+                      Available APIs: \
+                      httpGet(url) → string (synchronous HTTP GET), \
+                      readFile(path) → string, \
+                      writeFile(path, content), \
+                      getenv(name) → string, \
+                      formatDate(ms?) → ISO 8601 string, \
+                      JSON.parse(), JSON.stringify(), Math, Date. \
+                      Do NOT use fetch(), require(), import, or async/await — they are not available."
             .into(),
         parameters:  serde_json::json!({
             "type": "object",
             "properties": {
                 "code": {
                     "type": "string",
-                    "description": "JavaScript code to execute"
+                    "description": "JavaScript code to execute. Use console.log() to output results."
                 }
             },
             "required": ["code"]

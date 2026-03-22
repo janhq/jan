@@ -437,10 +437,7 @@ fn build_compact_note(dropped: &[ChatMessage]) -> String {
 }
 
 fn build_system_prompt() -> String {
-    format!(
-        r#"You are a helpful assistant with access to tools. Use code.exec to run JavaScript when you need to fetch data, compute, or read/write files. Output results with console.log().
-
-JS globals: httpGet(url), JSON.parse(), JSON.stringify(), readFile(path), writeFile(path,content), formatDate(ms?), console.log().
-Do NOT use fetch(), require(), import, async/await, or Promise."#
-    )
+    "You are a helpful assistant with access to tools. \
+     Use the tools provided to answer questions, fetch data, compute results, and read/write files."
+        .to_string()
 }

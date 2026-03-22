@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const COMMANDS: &[&str] = &[];
 
-const TARGET: &str = "wasm32-wasip1";
+const WASM_TARGET: &str = "wasm32-wasip1";
 
 fn main() {
     tauri_plugin::Builder::new(COMMANDS).build();
@@ -12,8 +12,7 @@ fn main() {
     let wasm_out     = manifest_dir.join("wasm");
 
     println!("cargo:rerun-if-changed=runner/src");
-    println!("cargo:rerun-if-changed=src/bin/jan-wasm-worker.rs");
-    println!("cargo:rerun-if-changed=src/wasm_runtime.rs");
+    println!("cargo:rerun-if-changed=wasm-worker/src");
 
     std::fs::create_dir_all(&wasm_out).expect("failed to create wasm/ output directory");
 
@@ -21,9 +20,10 @@ fn main() {
     build_wasm_worker(&manifest_dir);
 }
 
-fn build_runner(manifest_dir: &PathBuf, wasm_out: &PathBuf) {
+/// Build js-runner.wasm (the QuickJS engine compiled to WASI).
+fn build_runner(manifest_dir: &Path, wasm_out: &Path) {
     let status = Command::new("cargo")
-        .args(["build", "--release", "--target", TARGET])
+        .args(["build", "--release", "--target", WASM_TARGET])
         .current_dir(manifest_dir.join("runner"))
         .status()
         .expect("cargo build runner failed");
@@ -32,54 +32,54 @@ fn build_runner(manifest_dir: &PathBuf, wasm_out: &PathBuf) {
 
     let src = manifest_dir
         .join("runner/target")
-        .join(TARGET)
+        .join(WASM_TARGET)
         .join("release/js-runner.wasm");
 
     std::fs::copy(&src, wasm_out.join("js-runner.wasm"))
         .unwrap_or_else(|e| panic!("copy js-runner.wasm: {e}"));
 }
 
-/// Build the jan-wasm-worker binary (with wasmtime-runtime feature) and copy
-/// it next to the main crate's output so `find_wasm_worker()` can find it.
-fn build_wasm_worker(manifest_dir: &PathBuf) {
+/// Build jan-wasm-worker (standalone native binary with wasmtime).
+///
+/// Like `runner/`, this is a fully independent crate with its own Cargo.toml
+/// and target directory — no workspace lock conflicts.
+fn build_wasm_worker(manifest_dir: &Path) {
+    let worker_dir = manifest_dir.join("wasm-worker");
+
     let profile = if std::env::var("PROFILE").as_deref() == Ok("release") {
         "release"
     } else {
         "dev"
     };
 
-    // Build the worker binary from this crate with wasmtime-runtime enabled.
-    // We use --manifest-path and a separate target dir to avoid deadlocking
-    // with the outer cargo build that is compiling this crate as a library.
-    let worker_target = manifest_dir.join("target-worker");
+    let mut args = vec!["build".to_string()];
+    if profile == "release" {
+        args.push("--release".to_string());
+    }
 
-    let mut cmd = Command::new("cargo");
-    cmd.args([
-        "build",
-        "--manifest-path",
-        manifest_dir.join("Cargo.toml").to_str().unwrap(),
-        "--features", "wasmtime-runtime",
-        "--bin", "jan-wasm-worker",
-        "--profile", profile,
-        "--target-dir",
-        worker_target.to_str().unwrap(),
-    ]);
+    let status = Command::new("cargo")
+        .args(&args)
+        .current_dir(&worker_dir)
+        .status()
+        .expect("cargo build wasm-worker failed");
 
-    let status = cmd.status().expect("cargo build jan-wasm-worker failed");
     assert!(status.success(), "jan-wasm-worker build failed");
 
-    // Copy the worker binary next to the main crate's output directory.
+    // Copy the worker binary next to the main crate's output.
+    // OUT_DIR is like: <workspace-target>/<profile>/build/<pkg>-<hash>/out
+    // Walk up 3 levels to reach <workspace-target>/<profile>/
     let profile_dir = if profile == "release" { "release" } else { "debug" };
-    let worker_bin = worker_target.join(profile_dir).join("jan-wasm-worker");
+    let worker_bin = worker_dir
+        .join("target")
+        .join(profile_dir)
+        .join("jan-wasm-worker");
 
-    // OUT_DIR is something like .../target/debug/build/<pkg>-<hash>/out
-    // Walk up to the target profile dir to place the binary alongside other bins.
     if let Ok(out_dir) = std::env::var("OUT_DIR") {
         let out_path = PathBuf::from(&out_dir);
-        // out_dir: <target>/<profile>/build/<pkg>/out → go up 3 levels to <target>/<profile>
-        if let Some(target_profile) = out_path.parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
+        if let Some(target_profile) = out_path
+            .parent()                // <pkg>-<hash>
+            .and_then(|p| p.parent()) // build
+            .and_then(|p| p.parent()) // <profile>
         {
             let dest = target_profile.join("jan-wasm-worker");
             if let Err(e) = std::fs::copy(&worker_bin, &dest) {
