@@ -3,14 +3,12 @@
 //! ## JS tools (user-created, runtime-extensible)
 //! Plain `.js` files in `user_tools_dir` (default: `~/.jan/tools/`).
 //! Metadata parsed from `// @tool`, `// @description`, `// @schema` comments.
-//! Executed inside js-runner.wasm (Boa) via subprocess with `httpGet`, `readFile`, etc.
+//! Executed inside js-runner.wasm (Boa) via subprocess with `httpGet` only (no filesystem access).
 //!
 //! ## Builtins
 //! - `code.exec` — run arbitrary JS in a subprocess WASM sandbox (one-off execution)
-//! - `fs.write` — write a file to disk (used by agent to create new tools)
 //!
-//! When the agent writes a `.js` file to the user tools dir, it is automatically
-//! hot-loaded and becomes callable in the same session.
+//! Security: The agent has NO direct access to the host filesystem or environment.
 
 use serde_json::Value;
 use std::path::PathBuf;
@@ -59,44 +57,19 @@ impl Dispatcher {
     }
 }
 
-/// Schema for the built-in `fs.write` tool.
-fn fs_write_meta() -> ToolMeta {
-    ToolMeta {
-        id:          "fs.write".into(),
-        description: "Write content to a file on disk. Use this to create reusable JS tools in ~/.jan/tools/. \
-                      The file is written atomically and available immediately."
-            .into(),
-        parameters:  serde_json::json!({
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Absolute file path to write (e.g. ~/.jan/tools/my_tool.js)"
-                },
-                "content": {
-                    "type": "string",
-                    "description": "The file content to write"
-                }
-            },
-            "required": ["path", "content"]
-        }),
-    }
-}
-
 /// Schema for the built-in `code.exec` tool.
 fn code_exec_meta() -> ToolMeta {
     ToolMeta {
         id:          "code.exec".into(),
-        description: "Execute JavaScript code in a sandboxed environment. \
+        description: "Execute JavaScript code in a sandboxed environment with NO filesystem or environment access. \
                       Print output with console.log(). \
                       Available APIs: \
-                      httpGet(url) → string (synchronous HTTP GET), \
-                      readFile(path) → string, \
-                      writeFile(path, content), \
-                      getenv(name) → string, \
+                      fetch(url) → { ok, status, text(), json() } (synchronous HTTP GET), \
+                      httpGet(url) → string (simple HTTP GET), \
                       formatDate(ms?) → ISO 8601 string, \
-                      JSON.parse(), JSON.stringify(), Math, Date. \
-                      Do NOT use fetch(), require(), import, or async/await — they are not available."
+                      Date.now() → ms since epoch, \
+                      JSON.parse(), JSON.stringify(), Math. \
+                      Do NOT use require(), import, readFile, writeFile, or getenv — they are not available."
             .into(),
         parameters:  serde_json::json!({
             "type": "object",
@@ -119,7 +92,6 @@ impl ToolDispatcher for Dispatcher {
             schemas.extend(js.iter().map(|jt| jt.meta.clone()));
         }
         schemas.push(code_exec_meta());
-        schemas.push(fs_write_meta());
         schemas
     }
 
@@ -129,11 +101,6 @@ impl ToolDispatcher for Dispatcher {
         // Built-in: code.exec
         if tool_id == "code.exec" {
             return self.handle_code_exec(args).await;
-        }
-
-        // Built-in: fs.write
-        if tool_id == "fs.write" {
-            return self.handle_fs_write(args).await;
         }
 
         // Try JS tools — clone data out of the lock to avoid holding it across await
@@ -204,71 +171,6 @@ impl Dispatcher {
             }
             Err(e) => Err(format!("code.exec failed: {e}")),
         }
-    }
-}
-
-// ── Built-in: fs.write ───────────────────────────────────────────────────────
-
-impl Dispatcher {
-    async fn handle_fs_write(&self, args: Value) -> Result<DispatchResult, String> {
-        let raw_path = args["path"].as_str().ok_or("fs.write: missing 'path'")?;
-        let content = args["content"].as_str().ok_or("fs.write: missing 'content'")?;
-
-        // Expand ~ to home dir
-        let path = if raw_path.starts_with("~/") {
-            let home = std::env::var("HOME")
-                .or_else(|_| std::env::var("USERPROFILE"))
-                .unwrap_or_else(|_| "~".into());
-            PathBuf::from(home).join(&raw_path[2..])
-        } else {
-            PathBuf::from(raw_path)
-        };
-
-        // Create parent dirs if needed
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("fs.write: mkdir {}: {e}", parent.display()))?;
-        }
-
-        std::fs::write(&path, content)
-            .map_err(|e| format!("fs.write: {}: {e}", path.display()))?;
-
-        log::info!("[dispatcher] fs.write → {} ({} bytes)", path.display(), content.len());
-
-        // Hot-load: if the file is a .js in the user tools dir, register it immediately
-        if path.extension().and_then(|e| e.to_str()) == Some("js") {
-            if let Some(ref tools_dir) = self.user_tools_dir {
-                if path.starts_with(tools_dir) {
-                    if let Some((id, description, schema)) = parse_js_tool_meta(content, &path) {
-                        let new_tool = JsTool {
-                            meta: ToolMeta { id: id.clone(), description, parameters: schema },
-                            id: id.clone(),
-                            source_path: path.clone(),
-                            source: content.to_string(),
-                        };
-                        if let Ok(mut js) = self.js_tools.write() {
-                            // Replace existing tool with same id, or add new
-                            if let Some(existing) = js.iter_mut().find(|t| t.id == id) {
-                                *existing = new_tool;
-                                log::info!("[dispatcher] hot-reloaded JS tool '{id}'");
-                            } else {
-                                log::info!("[dispatcher] hot-loaded new JS tool '{id}'");
-                                js.push(new_tool);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(DispatchResult {
-            output: serde_json::json!({
-                "ok": true,
-                "path": path.display().to_string(),
-                "bytes": content.len(),
-            }),
-            wasm_logs: vec![],
-        })
     }
 }
 

@@ -14,11 +14,9 @@
 ///   performance.now() → ms since Unix epoch (high-res f64)
 ///   formatDate(ms?)   → ISO 8601 UTC string (defaults to now)
 ///   httpGet(url)      → HTTP GET, returns body as string
-///   readFile(path)    → std::fs::read_to_string  (WASI-governed)
-///   writeFile(p, c)   → std::fs::write           (WASI-governed)
-///   listDir(path)     → std::fs::read_dir        (WASI-governed)
-///   getenv(name)      → std::env::var
-///   homeDir()         → $HOME / $USERPROFILE / "/"
+///   fetch(url)        → HTTP GET, returns { ok, status, text(), json() }
+///
+/// Security: No filesystem, environment, or home directory access.
 
 use boa_engine::{
     js_string,
@@ -33,11 +31,7 @@ use boa_engine::{
 #[link(wasm_import_module = "host")]
 extern "C" {
     fn http_get(url_ptr: i32, url_len: i32, buf_ptr: i32, buf_max: i32) -> i32;
-    fn write_file(path_ptr: i32, path_len: i32, data_ptr: i32, data_len: i32) -> i32;
-    fn read_file(path_ptr: i32, path_len: i32, buf_ptr: i32, buf_max: i32) -> i32;
 }
-
-static mut FILE_BUF: [u8; 256 * 1024] = [0u8; 256 * 1024]; // 256 KB for file reads
 
 static mut HTTP_BUF: [u8; 256 * 1024] = [0u8; 256 * 1024]; // 256 KB
 
@@ -177,7 +171,7 @@ fn register_timing(ctx: &mut Context) -> Result<(), String> {
 // ── host functions ──────────────────────────────────────────────────────────
 
 fn register_host_fns(ctx: &mut Context) -> Result<(), String> {
-    // httpGet(url) → string (response body)
+    // httpGet(url) → string (response body) — simple API
     let http_get_fn = NativeFunction::from_fn_ptr(|_this, args, ctx| {
         let url = require_str_arg(args, 0, "httpGet", ctx)?;
         let url_bytes = url.as_bytes();
@@ -196,86 +190,27 @@ fn register_host_fns(ctx: &mut Context) -> Result<(), String> {
         Ok(JsValue::from(boa_engine::JsString::from(body)))
     });
 
-    // readFile(path) → string (uses host import to bypass WASI read-only mounts)
-    let read_file_fn = NativeFunction::from_fn_ptr(|_this, args, ctx| {
-        let path = require_str_arg(args, 0, "readFile", ctx)?;
-        let path_bytes = path.as_bytes();
-        let n = unsafe {
-            read_file(
-                path_bytes.as_ptr() as i32,
-                path_bytes.len() as i32,
-                FILE_BUF.as_mut_ptr() as i32,
-                FILE_BUF.len() as i32,
-            )
-        };
-        if n < 0 {
-            return Err(js_err(format!("readFile '{path}': read failed")));
-        }
-        let content = unsafe { std::str::from_utf8(&FILE_BUF[..n as usize]).unwrap_or("") };
-        Ok(JsValue::from(boa_engine::JsString::from(content)))
-    });
-
-    // listDir(path) → string (newline-separated, sorted)
-    let list_dir = NativeFunction::from_fn_ptr(|_this, args, ctx| {
-        let path = require_str_arg(args, 0, "listDir", ctx)?;
-        let mut names: Vec<String> = std::fs::read_dir(&path)
-            .map_err(|e| js_err(format!("listDir '{path}': {e}")))?
-            .filter_map(|e| e.ok())
-            .map(|e| e.file_name().to_string_lossy().into_owned())
-            .collect();
-        names.sort();
-        Ok(JsValue::from(boa_engine::JsString::from(names.join("\n").as_str())))
-    });
-
-    // writeFile(path, content) → true (uses host import to bypass WASI read-only mounts)
-    let write_file_fn = NativeFunction::from_fn_ptr(|_this, args, ctx| {
-        let path = require_str_arg(args, 0, "writeFile", ctx)?;
-        let content = require_str_arg(args, 1, "writeFile", ctx)?;
-        let path_bytes = path.as_bytes();
-        let content_bytes = content.as_bytes();
-        let n = unsafe {
-            write_file(
-                path_bytes.as_ptr() as i32,
-                path_bytes.len() as i32,
-                content_bytes.as_ptr() as i32,
-                content_bytes.len() as i32,
-            )
-        };
-        if n < 0 {
-            return Err(js_err(format!("writeFile '{path}': write failed")));
-        }
-        Ok(JsValue::from(true))
-    });
-
-    // getenv(name) → string | undefined
-    let getenv = NativeFunction::from_fn_ptr(|_this, args, ctx| {
-        let name = require_str_arg(args, 0, "getenv", ctx)?;
-        match std::env::var(&name) {
-            Ok(val) => Ok(JsValue::from(boa_engine::JsString::from(val.as_str()))),
-            Err(_)  => Ok(JsValue::undefined()),
-        }
-    });
-
-    // homeDir() → string
-    let home_dir = NativeFunction::from_fn_ptr(|_this, _args, _ctx| {
-        let home = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-            .unwrap_or_else(|_| "/".into());
-        Ok(JsValue::from(boa_engine::JsString::from(home.as_str())))
-    });
-
     ctx.register_global_callable(js_string!("httpGet"), 1, http_get_fn)
         .map_err(|e| format!("httpGet: {e}"))?;
-    ctx.register_global_callable(js_string!("readFile"), 1, read_file_fn)
-        .map_err(|e| format!("readFile: {e}"))?;
-    ctx.register_global_callable(js_string!("writeFile"), 2, write_file_fn)
-        .map_err(|e| format!("writeFile: {e}"))?;
-    ctx.register_global_callable(js_string!("listDir"), 1, list_dir)
-        .map_err(|e| format!("listDir: {e}"))?;
-    ctx.register_global_callable(js_string!("getenv"), 1, getenv)
-        .map_err(|e| format!("getenv: {e}"))?;
-    ctx.register_global_callable(js_string!("homeDir"), 0, home_dir)
-        .map_err(|e| format!("homeDir: {e}"))?;
+
+    // fetch(url) → Response-like object { ok, status, text(), json() }
+    //
+    // Models trained on web/Node.js code naturally reach for fetch().
+    // This synchronous shim wraps httpGet so `fetch(url).json()` and
+    // `fetch(url).text()` work without async/await.
+    // `await fetch(url)` also works — awaiting a non-Promise is a no-op.
+    ctx.eval(Source::from_bytes(
+        br#"function fetch(url) {
+    var _body = httpGet(url);
+    return {
+        ok: true,
+        status: 200,
+        text: function() { return _body; },
+        json: function() { return JSON.parse(_body); }
+    };
+}"#,
+    ))
+    .map_err(|e| format!("fetch shim: {e}"))?;
 
     Ok(())
 }

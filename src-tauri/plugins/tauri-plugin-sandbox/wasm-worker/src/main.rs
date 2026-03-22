@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use wasmtime::{Caller, Config, Engine, Extern, Linker, Module, Store};
 use wasmtime_wasi::preview1::{self, WasiP1Ctx};
-use wasmtime_wasi::{pipe::MemoryOutputPipe, DirPerms, FilePerms, WasiCtxBuilder};
+use wasmtime_wasi::{pipe::MemoryOutputPipe, WasiCtxBuilder};
 
 const JS_RUNNER_WASM: &[u8] = include_bytes!("../../wasm/js-runner.wasm");
 const MAX_OUTPUT: usize = 1024 * 1024;
@@ -27,14 +27,7 @@ fn main() {
         buf
     };
 
-    let mounts: Vec<PathBuf> = std::env::var("JAN_WASM_MOUNTS")
-        .unwrap_or_default()
-        .split(':')
-        .filter(|s| !s.is_empty())
-        .map(PathBuf::from)
-        .collect();
-
-    match run_js(&code, &mounts) {
+    match run_js(&code) {
         Ok(val) => {
             println!("{}", serde_json::to_string(&val).unwrap_or_default());
         }
@@ -111,14 +104,14 @@ fn load_js_module(engine: &Engine) -> Result<Module, String> {
     Ok(module)
 }
 
-fn run_js(code: &str, mounts: &[PathBuf]) -> Result<Value, String> {
+fn run_js(code: &str) -> Result<Value, String> {
     let engine = shared_engine();
     let module = load_js_module(engine)?;
     let mut linker: Linker<WasiP1Ctx> = Linker::new(engine);
     preview1::add_to_linker_sync(&mut linker, |ctx| ctx)
         .map_err(|e| format!("wasi linker: {e}"))?;
     register_host_imports(&mut linker)?;
-    run_module(engine, &module, &linker, &["js-runner".into(), code.into()], mounts)
+    run_module(engine, &module, &linker, &["js-runner".into(), code.into()])
 }
 
 fn register_host_imports(linker: &mut Linker<WasiP1Ctx>) -> Result<(), String> {
@@ -159,92 +152,19 @@ fn register_host_imports(linker: &mut Linker<WasiP1Ctx>) -> Result<(), String> {
         )
         .map_err(|e| format!("host::http_get: {e}"))?;
 
+    // Stub out read_file and write_file — the WASM module declares these imports
+    // but they are no longer functional (always return -1 = error).
     linker
-        .func_wrap(
-            "host",
-            "read_file",
-            |mut caller: Caller<'_, WasiP1Ctx>,
-             path_ptr: i32, path_len: i32, buf_ptr: i32, buf_max: i32| -> i32 {
-                let mem = match caller.get_export("memory") {
-                    Some(Extern::Memory(m)) => m,
-                    _ => return -1,
-                };
-                let path = {
-                    let data = mem.data(&caller);
-                    let start = path_ptr as usize;
-                    let end = start + path_len as usize;
-                    if end > data.len() { return -1; }
-                    match std::str::from_utf8(&data[start..end]) {
-                        Ok(s) => s.to_string(),
-                        Err(_) => return -1,
-                    }
-                };
-                let path = if path.starts_with("~/") {
-                    let home = std::env::var("HOME")
-                        .or_else(|_| std::env::var("USERPROFILE"))
-                        .unwrap_or_else(|_| "/".into());
-                    PathBuf::from(home).join(&path[2..])
-                } else {
-                    PathBuf::from(&path)
-                };
-                match std::fs::read(&path) {
-                    Ok(content) => {
-                        let write_len = content.len().min(buf_max as usize);
-                        let data = mem.data_mut(&mut caller);
-                        let buf_start = buf_ptr as usize;
-                        if buf_start + write_len > data.len() { return -1; }
-                        data[buf_start..buf_start + write_len]
-                            .copy_from_slice(&content[..write_len]);
-                        write_len as i32
-                    }
-                    Err(_) => -1,
-                }
-            },
-        )
-        .map_err(|e| format!("host::read_file: {e}"))?;
+        .func_wrap("host", "read_file",
+            |_caller: Caller<'_, WasiP1Ctx>,
+             _: i32, _: i32, _: i32, _: i32| -> i32 { -1 })
+        .map_err(|e| format!("host::read_file stub: {e}"))?;
 
     linker
-        .func_wrap(
-            "host",
-            "write_file",
-            |mut caller: Caller<'_, WasiP1Ctx>,
-             path_ptr: i32, path_len: i32, data_ptr: i32, data_len: i32| -> i32 {
-                let mem = match caller.get_export("memory") {
-                    Some(Extern::Memory(m)) => m,
-                    _ => return -1,
-                };
-                let (path, content) = {
-                    let data = mem.data(&caller);
-                    let path_start = path_ptr as usize;
-                    let path_end = path_start + path_len as usize;
-                    let data_start = data_ptr as usize;
-                    let data_end = data_start + data_len as usize;
-                    if path_end > data.len() || data_end > data.len() { return -1; }
-                    let path = match std::str::from_utf8(&data[path_start..path_end]) {
-                        Ok(s) => s.to_string(),
-                        Err(_) => return -1,
-                    };
-                    let content = data[data_start..data_end].to_vec();
-                    (path, content)
-                };
-                let path = if path.starts_with("~/") {
-                    let home = std::env::var("HOME")
-                        .or_else(|_| std::env::var("USERPROFILE"))
-                        .unwrap_or_else(|_| "/".into());
-                    PathBuf::from(home).join(&path[2..])
-                } else {
-                    PathBuf::from(&path)
-                };
-                if let Some(parent) = path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                match std::fs::write(&path, &content) {
-                    Ok(_) => content.len() as i32,
-                    Err(_) => -1,
-                }
-            },
-        )
-        .map_err(|e| format!("host::write_file: {e}"))?;
+        .func_wrap("host", "write_file",
+            |_caller: Caller<'_, WasiP1Ctx>,
+             _: i32, _: i32, _: i32, _: i32| -> i32 { -1 })
+        .map_err(|e| format!("host::write_file stub: {e}"))?;
 
     Ok(())
 }
@@ -254,20 +174,13 @@ fn run_module(
     module: &Module,
     linker: &Linker<WasiP1Ctx>,
     args: &[String],
-    mounts: &[PathBuf],
 ) -> Result<Value, String> {
     let stdout = MemoryOutputPipe::new(MAX_OUTPUT);
     let stderr = MemoryOutputPipe::new(MAX_OUTPUT);
 
     let mut ctx = WasiCtxBuilder::new();
-    ctx.stdout(stdout.clone()).stderr(stderr.clone()).args(args).inherit_env();
-
-    for raw in mounts {
-        if let Ok(canonical) = std::fs::canonicalize(raw) {
-            let guest = canonical.to_string_lossy().into_owned();
-            let _ = ctx.preopened_dir(&canonical, &guest, DirPerms::READ, FilePerms::READ);
-        }
-    }
+    ctx.stdout(stdout.clone()).stderr(stderr.clone()).args(args);
+    // No inherit_env(), no preopened dirs — fully isolated sandbox.
 
     let mut store = Store::new(engine, ctx.build_p1());
     store.set_fuel(FUEL_BUDGET).map_err(|e| format!("set_fuel: {e}"))?;
