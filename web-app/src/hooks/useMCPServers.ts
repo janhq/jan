@@ -12,6 +12,10 @@ export type MCPServerConfig = {
   headers?: Record<string, string>
   timeout?: number
   official?: boolean
+  // Capability tags used by the orchestrator to route requests (e.g. ["web", "filesystem"])
+  capabilities?: string[]
+  // Short description of what the server provides, used by the intent classifier
+  description?: string
 }
 
 // Define the structure of all MCP servers
