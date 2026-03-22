@@ -1740,9 +1740,7 @@ const ChatInput = memo(function ChatInput({
                           <AvatarEmoji
                             avatar={avatar}
                             imageClassName="w-4 h-4 object-contain"
-                            textClassName="text-xs relative inline-block 
-                          after:absolute after:inset-0 
-                          after:bg-white after:mix-blend-saturation after:opacity-50"
+                            textClassName="text-xs relative inline-block"
                           />
                         )}
                         {selectedAssistantId === '' && (
