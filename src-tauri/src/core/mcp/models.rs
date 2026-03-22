@@ -72,3 +72,11 @@ pub struct ToolWithServer {
     pub input_schema: serde_json::Value,
     pub server: String,
 }
+
+/// Lightweight server metadata used by the frontend orchestrator for tool routing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerSummary {
+    pub name: String,
+    pub capabilities: Vec<String>,
+    pub description: String,
+}

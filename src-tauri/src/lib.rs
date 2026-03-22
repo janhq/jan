@@ -119,6 +119,8 @@ pub fn run() {
         core::server::remote_provider_commands::list_provider_configs,
         // MCP commands
         core::mcp::commands::get_tools,
+        core::mcp::commands::get_tools_for_servers,
+        core::mcp::commands::get_server_summaries,
         core::mcp::commands::call_tool,
         core::mcp::commands::cancel_tool_call,
         core::mcp::commands::restart_mcp_servers,
@@ -203,6 +205,8 @@ pub fn run() {
         core::server::remote_provider_commands::abort_remote_stream,
         // MCP commands
         core::mcp::commands::get_tools,
+        core::mcp::commands::get_tools_for_servers,
+        core::mcp::commands::get_server_summaries,
         core::mcp::commands::call_tool,
         core::mcp::commands::cancel_tool_call,
         core::mcp::commands::restart_mcp_servers,

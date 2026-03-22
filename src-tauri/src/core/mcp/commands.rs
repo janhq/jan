@@ -9,7 +9,9 @@ use super::{
     helpers::{restart_active_mcp_servers, start_mcp_server},
 };
 use crate::core::{
-    app::commands::get_jan_data_folder_path, mcp::models::McpSettings, state::AppState,
+    app::commands::get_jan_data_folder_path,
+    mcp::models::{McpSettings, ServerSummary},
+    state::AppState,
 };
 use crate::core::{
     mcp::models::ToolWithServer,
@@ -196,6 +198,93 @@ pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<ToolWithServer>
     }
 
     Ok(all_tools)
+}
+
+/// Retrieves tools from a specific subset of MCP servers by name
+#[tauri::command]
+pub async fn get_tools_for_servers(
+    state: State<'_, AppState>,
+    server_names: Vec<String>,
+) -> Result<Vec<ToolWithServer>, String> {
+    let timeout_duration = tool_call_timeout(&state).await;
+    let servers = state.mcp_servers.lock().await;
+    let mut all_tools: Vec<ToolWithServer> = Vec::new();
+
+    for (server_name, service) in servers.iter() {
+        if !server_names.contains(server_name) {
+            continue;
+        }
+
+        let tools_future = service.list_all_tools();
+        let tools = match timeout(timeout_duration, tools_future).await {
+            Ok(Ok(tools)) => tools,
+            Ok(Err(e)) => {
+                log::warn!("MCP server {} failed to list tools: {}", server_name, e);
+                continue;
+            }
+            Err(_) => {
+                log::warn!(
+                    "Listing tools for {} timed out after {} seconds",
+                    server_name,
+                    timeout_duration.as_secs()
+                );
+                continue;
+            }
+        };
+
+        for tool in tools {
+            all_tools.push(ToolWithServer {
+                name: tool.name.to_string(),
+                description: tool.description.as_ref().map(|d| d.to_string()),
+                input_schema: serde_json::Value::Object((*tool.input_schema).clone()),
+                server: server_name.clone(),
+            });
+        }
+    }
+
+    Ok(all_tools)
+}
+
+/// Returns name, capability tags, and description for all connected MCP servers
+#[tauri::command]
+pub async fn get_server_summaries(
+    state: State<'_, AppState>,
+) -> Result<Vec<ServerSummary>, String> {
+    let connected_servers: Vec<String> = {
+        let servers = state.mcp_servers.lock().await;
+        servers.keys().cloned().collect()
+    };
+
+    let active_servers = state.mcp_active_servers.lock().await;
+    let mut summaries = Vec::new();
+
+    for name in &connected_servers {
+        let config = active_servers.get(name);
+
+        let capabilities: Vec<String> = config
+            .and_then(|c| c.get("capabilities"))
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let description: String = config
+            .and_then(|c| c.get("description"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        summaries.push(ServerSummary {
+            name: name.clone(),
+            capabilities,
+            description,
+        });
+    }
+
+    Ok(summaries)
 }
 
 /// Calls a tool on an MCP server by name with optional arguments
