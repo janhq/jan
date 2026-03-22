@@ -19,6 +19,7 @@ import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
+import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -43,7 +44,15 @@ export type ServiceHub = {
   }
   mcp(): {
     getTools(): Promise<
-      Array<{ name: string; description: string; inputSchema: unknown }>
+      Array<{ name: string; description: string; inputSchema: unknown; server?: string }>
+    >
+    /** Optional — present in TauriMCPService, absent in DefaultMCPService. */
+    getToolsForServers?(serverNames: string[]): Promise<
+      Array<{ name: string; description: string; inputSchema: unknown; server?: string }>
+    >
+    /** Optional — present in TauriMCPService, absent in DefaultMCPService. */
+    getServerSummaries?(): Promise<
+      Array<{ name: string; capabilities: string[]; description: string }>
     >
   }
 }
@@ -95,12 +104,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private serviceHub: ServiceHub | null
   private threadId?: string
   private continueFromContent: string | null = null
+  /** Latest user message text — used by the MCP orchestrator for tool routing. */
+  private lastUserMessage = ''
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
     this.threadId = threadId
     this.serviceHub = useServiceStore.getState().serviceHub
     // Tools will be loaded when updateRagToolsAvailability is called with model capabilities
+  }
+
+  setLastUserMessage(message: string): void {
+    this.lastUserMessage = message
   }
 
   updateSystemMessage(systemMessage: string | undefined) {
@@ -216,15 +231,35 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         }
       }
 
-      // Load MCP tools (they don't depend on documents)
+      // Load MCP tools — route through the orchestrator when available so only
+      // relevant servers are queried instead of all of them.
       try {
-        const mcpTools = await this.serviceHub.mcp().getTools()
+        const mcpService = this.serviceHub.mcp() as {
+          getTools(): Promise<Array<{ name: string; description: string; inputSchema: unknown; server?: string }>>
+          getToolsForServers?(serverNames: string[]): Promise<Array<{ name: string; description: string; inputSchema: unknown; server?: string }>>
+          getServerSummaries?(): Promise<Array<{ name: string; capabilities: string[]; description: string }>>
+        }
+
+        let mcpTools: Array<{ name: string; description: string; inputSchema: unknown; server?: string }>
+
+        if (mcpService.getToolsForServers && mcpService.getServerSummaries) {
+          mcpTools = await mcpOrchestrator.getRelevantTools(
+            this.lastUserMessage,
+            {
+              getTools: () => mcpService.getTools(),
+              getToolsForServers: (names) => mcpService.getToolsForServers!(names),
+              getServerSummaries: () => mcpService.getServerSummaries!(),
+            },
+            disabledToolKeys
+          )
+        } else {
+          mcpTools = await mcpService.getTools()
+        }
+
         if (Array.isArray(mcpTools) && mcpTools.length > 0) {
-          // Convert MCP tools to AI SDK format, filtering out disabled tools
-          // MCP tools added after RAG tools, so they take precedence in case of name conflicts
+          // MCP tools added after RAG tools, so they take precedence on name conflicts
           mcpTools.forEach((tool) => {
-            // MCP tools use MCPTool interface with server field
-            const serverName = (tool as { server?: string }).server || 'unknown'
+            const serverName = tool.server || 'unknown'
             if (!isToolDisabled(serverName, tool.name)) {
               toolsRecord[tool.name] = {
                 description: tool.description,
