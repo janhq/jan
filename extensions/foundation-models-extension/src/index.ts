@@ -6,13 +6,10 @@
  * connection or external API key is required.
  *
  * Architecture:
- *   Jan extension (TypeScript) → Tauri plugin (Rust) → foundation-models-server (Swift)
- *                                                         ↓
- *                                             Apple FoundationModels.framework
+ *   Jan extension (TypeScript) → Tauri plugin (Rust / fm-rs) → FoundationModels.framework
  *
- * The extension spawns a lightweight OpenAI-compatible HTTP server (`foundation-models-server`)
- * that wraps the system Foundation Models API. Chat requests are proxied through that
- * local server, keeping the same pattern used by the MLX and llama.cpp engines.
+ * The Tauri plugin calls Apple's FoundationModels framework directly via Rust
+ * FFI bindings (fm-rs), eliminating the need for a separate HTTP server process.
  */
 
 import {
@@ -28,29 +25,21 @@ import {
 } from '@janhq/core'
 
 import { info, warn, error as logError } from '@tauri-apps/plugin-log'
-import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import {
-  loadFoundationModelsServer,
-  unloadFoundationModelsServer,
-  isFoundationModelsProcessRunning,
-  getFoundationModelsRandomPort,
-  findFoundationModelsSession,
+  loadFoundationModels,
+  unloadFoundationModels,
+  isFoundationModelsLoaded,
+  foundationModelsChatCompletion,
+  foundationModelsChatCompletionStream,
+  abortFoundationModelsStream,
   checkFoundationModelsAvailability,
 } from '@janhq/tauri-plugin-foundation-models-api'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-/** The stable model ID used throughout Jan for the Apple on-device model. */
 const APPLE_MODEL_ID = 'apple/on-device'
-
-/** Display name shown in the Jan UI. */
 const APPLE_MODEL_NAME = 'Apple On-Device Model'
-
-/** Shared API secret used to authorise requests to the local server. */
-const API_SECRET = 'JanFoundationModels'
-
-/** Seconds to wait for the server binary to become ready. */
-const SERVER_STARTUP_TIMEOUT = 60
 
 // ─── Logger ──────────────────────────────────────────────────────────────────
 
@@ -75,16 +64,13 @@ export default class FoundationModelsExtension extends AIEngine {
   readonly provider: string = 'foundation-models'
   readonly providerId: string = 'foundation-models'
 
-  /** Seconds before a streaming request is considered timed out. */
   timeout: number = 300
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   override async onLoad(): Promise<void> {
-    super.onLoad() // registers into EngineManager
+    super.onLoad()
 
-    // Check device eligibility and silently remove ourselves if not supported.
-    // This prevents the provider from appearing in the UI on ineligible devices.
     try {
       const availability = await checkFoundationModelsAvailability()
       if (availability !== 'available') {
@@ -101,7 +87,7 @@ export default class FoundationModelsExtension extends AIEngine {
   }
 
   override async onUnload(): Promise<void> {
-    // Clean-up is handled by the Tauri plugin on app exit.
+    // Cleanup handled by the Tauri plugin on app exit.
   }
 
   // ── Model catalogue ────────────────────────────────────────────────────────
@@ -141,50 +127,31 @@ export default class FoundationModelsExtension extends AIEngine {
       )
     }
 
-    // Return existing session if already running
-    const existing = await findFoundationModelsSession()
-    if (existing) {
-      logger.info('Foundation Models server already running on port', existing.port)
-      return this.toSessionInfo(existing)
+    const alreadyLoaded = await isFoundationModelsLoaded()
+    if (alreadyLoaded) {
+      logger.info('Foundation Models already loaded')
+      return this.toSessionInfo(modelId)
     }
 
-    const port = await getFoundationModelsRandomPort()
-    const apiKey = await this.generateApiKey(port)
-
-    logger.info('Starting Foundation Models server on port', port)
+    logger.info('Loading Foundation Models...')
 
     try {
-      const session = await loadFoundationModelsServer(
-        APPLE_MODEL_ID,
-        port,
-        apiKey,
-        SERVER_STARTUP_TIMEOUT
-      )
-      logger.info('Foundation Models server started, PID', session.pid)
-      return this.toSessionInfo(session)
+      await loadFoundationModels(modelId)
+      logger.info('Foundation Models loaded successfully')
+      return this.toSessionInfo(modelId)
     } catch (err) {
-      logger.error('Failed to start Foundation Models server:', err)
+      logger.error('Failed to load Foundation Models:', err)
       throw err
     }
   }
 
-  override async unload(modelId: string): Promise<UnloadResult> {
-    const session = await findFoundationModelsSession()
-    if (!session) {
-      logger.warn('No active Foundation Models session to unload')
-      return { success: false, error: 'No active session found' }
-    }
-
+  override async unload(_modelId: string): Promise<UnloadResult> {
     try {
-      const result = await unloadFoundationModelsServer(session.pid)
-      if (result.success) {
-        logger.info('Foundation Models server unloaded successfully')
-      } else {
-        logger.warn('Failed to unload Foundation Models server:', result.error)
-      }
-      return result
+      await unloadFoundationModels()
+      logger.info('Foundation Models unloaded successfully')
+      return { success: true }
     } catch (err) {
-      logger.error('Error unloading Foundation Models server:', err)
+      logger.error('Error unloading Foundation Models:', err)
       return { success: false, error: String(err) }
     }
   }
@@ -195,138 +162,100 @@ export default class FoundationModelsExtension extends AIEngine {
     opts: chatCompletionRequest,
     abortController?: AbortController
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
-    const session = await findFoundationModelsSession()
-    if (!session) {
+    const loaded = await isFoundationModelsLoaded()
+    if (!loaded) {
       throw new Error(
         'Apple Foundation Model is not loaded. Please load the model first.'
       )
     }
 
-    // Verify the server process is still alive
-    const alive = await isFoundationModelsProcessRunning(session.pid)
-    if (!alive) {
-      throw new Error(
-        'Apple Foundation Model server has crashed. Please reload the model.'
-      )
-    }
-
-    // Health check
-    try {
-      await fetch(`http://localhost:${session.port}/health`)
-    } catch {
-      throw new Error(
-        'Apple Foundation Model server is not responding. Please reload the model.'
-      )
-    }
-
-    const url = `http://localhost:${session.port}/v1/chat/completions`
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.api_key}`,
-    }
     const body = JSON.stringify(opts)
 
     if (opts.stream) {
-      return this.handleStreamingResponse(url, headers, body, abortController)
+      return this.handleStreamingChat(body, abortController)
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body,
-      signal: abortController?.signal,
-    })
-
-    if (!response.ok) {
-      const errData = await response.json().catch(() => null)
-      throw new Error(
-        `Foundation Models API request failed (${response.status}): ${JSON.stringify(errData)}`
-      )
-    }
-
-    return (await response.json()) as chatCompletion
+    const result = await foundationModelsChatCompletion(body)
+    return JSON.parse(result) as chatCompletion
   }
 
-  private async *handleStreamingResponse(
-    url: string,
-    headers: HeadersInit,
+  private async *handleStreamingChat(
     body: string,
     abortController?: AbortController
   ): AsyncIterable<chatCompletionChunk> {
-    const combinedController = new AbortController()
-    const timeoutId = setTimeout(
-      () => combinedController.abort(new Error('Request timed out')),
-      this.timeout * 1000
-    )
+    const requestId = crypto.randomUUID()
+    const chunks: chatCompletionChunk[] = []
+    let done = false
+    let streamError: Error | null = null
+    let resolver: (() => void) | null = null
 
-    if (abortController?.signal) {
-      if (abortController.signal.aborted) {
-        combinedController.abort(abortController.signal.reason)
-      } else {
-        abortController.signal.addEventListener(
-          'abort',
-          () => combinedController.abort(abortController.signal.reason),
-          { once: true }
-        )
-      }
-    }
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body,
-      signal: combinedController.signal,
-    }).finally(() => clearTimeout(timeoutId))
-
-    if (!response.ok) {
-      const errData = await response.json().catch(() => null)
-      throw new Error(
-        `Foundation Models streaming request failed (${response.status}): ${JSON.stringify(errData)}`
-      )
-    }
-
-    if (!response.body) {
-      throw new Error('Response body is null')
-    }
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8')
-    let buffer = ''
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed || trimmed === 'data: [DONE]') continue
-
-          if (trimmed.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(trimmed.slice(6)) as chatCompletionChunk
-              yield data
-            } catch (e) {
-              logger.error('Error parsing Foundation Models stream JSON:', e)
-              throw e
-            }
-          } else if (trimmed.startsWith('error: ')) {
-            const errObj = JSON.parse(trimmed.slice(7))
-            throw new Error(errObj.message ?? 'Unknown streaming error')
+    const unlisten: UnlistenFn = await listen(
+      `foundation-models-stream-${requestId}`,
+      (event) => {
+        const payload = event.payload as {
+          data?: string
+          done?: boolean
+          error?: string
+        }
+        if (payload.done) {
+          done = true
+          resolver?.()
+        } else if (payload.error) {
+          streamError = new Error(payload.error)
+          resolver?.()
+        } else if (payload.data) {
+          try {
+            chunks.push(JSON.parse(payload.data) as chatCompletionChunk)
+          } catch (e) {
+            logger.error('Error parsing Foundation Models stream JSON:', e)
           }
+          resolver?.()
         }
       }
+    )
+
+    foundationModelsChatCompletionStream(body, requestId).catch((err) => {
+      streamError =
+        err instanceof Error ? err : new Error(String(err))
+      resolver?.()
+    })
+
+    if (abortController?.signal) {
+      const onAbort = () => {
+        abortFoundationModelsStream(requestId).catch(() => {})
+      }
+      if (abortController.signal.aborted) {
+        onAbort()
+      } else {
+        abortController.signal.addEventListener('abort', onAbort, { once: true })
+      }
+    }
+
+    try {
+      while (!done) {
+        if (streamError) throw streamError
+
+        while (chunks.length > 0) {
+          yield chunks.shift()!
+        }
+
+        if (done) break
+        if (streamError) throw streamError
+
+        await new Promise<void>((r) => {
+          resolver = r
+        })
+      }
+
+      while (chunks.length > 0) {
+        yield chunks.shift()!
+      }
     } finally {
-      reader.releaseLock()
+      unlisten()
     }
   }
 
   // ── Unsupported operations ─────────────────────────────────────────────────
-  // Foundation Models are built into the OS — there are no files to manage.
 
   override async delete(_modelId: string): Promise<void> {
     throw new Error(
@@ -351,45 +280,24 @@ export default class FoundationModelsExtension extends AIEngine {
   }
 
   override async getLoadedModels(): Promise<string[]> {
-    const session = await findFoundationModelsSession()
-    return session ? [APPLE_MODEL_ID] : []
+    const loaded = await isFoundationModelsLoaded()
+    return loaded ? [APPLE_MODEL_ID] : []
   }
 
   override async isToolSupported(_modelId: string): Promise<boolean> {
-    // The Foundation Models framework supports function calling.
     return true
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  /**
-   * Derive a per-session API key from the shared secret and port number.
-   * Uses the same HMAC-SHA256 approach as the llamacpp extension so the
-   * Tauri `generate_api_key` command can be reused.
-   */
-  private async generateApiKey(port: number): Promise<string> {
-    return invoke<string>('plugin:llamacpp|generate_api_key', {
-      modelId: APPLE_MODEL_ID + port,
-      apiSecret: API_SECRET,
-    })
-  }
-
-  /**
-   * Map the plugin SessionInfo shape to the core SessionInfo shape.
-   */
-  private toSessionInfo(session: {
-    pid: number
-    port: number
-    model_id: string
-    api_key: string
-  }): SessionInfo {
+  private toSessionInfo(modelId: string): SessionInfo {
     return {
-      pid: session.pid,
-      port: session.port,
-      model_id: session.model_id,
+      pid: 0,
+      port: 0,
+      model_id: modelId,
       model_path: '',
       is_embedding: false,
-      api_key: session.api_key,
+      api_key: '',
     }
   }
 }

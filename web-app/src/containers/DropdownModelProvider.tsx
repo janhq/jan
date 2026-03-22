@@ -261,6 +261,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
     providers.forEach((provider) => {
       if (!provider.active) return
+      if (provider.provider === 'foundation-models') return
 
       provider.models.forEach((modelItem) => {
         // Skip embedding models - they can't be used for chat
@@ -342,7 +343,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       // When not searching, show all active providers (even without models)
       // Sort: local first, then providers with API keys or custom with models, then others, alphabetically
       const activeProviders = providers
-        .filter((p) => p.active)
+        .filter((p) => p.active && p.provider !== 'foundation-models')
         .sort((a, b) => {
           const aIsLocal = a.provider === 'llamacpp' || a.provider === 'mlx'
           const bIsLocal = b.provider === 'llamacpp' || b.provider === 'mlx'

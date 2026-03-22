@@ -47,6 +47,7 @@ mobile = [
     "tauri/wry",
     "dep:sqlx",
 ]
+# foundation-models excluded from test-tauri - framework not available in CI
 test-tauri = [
     "tauri/wry",
     "tauri/x11",
@@ -54,12 +55,15 @@ test-tauri = [
     "tauri/macos-private-api",
     "tauri/tray-icon",
     "tauri/test",
-    "desktop",
+    "deep-link",
+    "hardware",
+    "mlx",
 ]
 cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [] }
+serde_json = "1.0"
 
 [dependencies]
 dirs = "6.0.0"

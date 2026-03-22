@@ -387,7 +387,7 @@ pub fn run() {
                     {
                         use tauri_plugin_foundation_models::cleanup_processes;
                         cleanup_processes(&app_handle).await;
-                        log::info!("Foundation Models processes cleaned up successfully");
+                        log::info!("Foundation Models state cleaned up successfully");
                     }
 
                     log::info!("App cleanup completed");
