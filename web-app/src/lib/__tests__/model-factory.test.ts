@@ -222,7 +222,7 @@ describe('ModelFactory', () => {
       await expect(
         ModelFactory.createModel('apple/on-device', foundationModelsProvider)
       ).rejects.toThrow(
-        'The Foundation Models server binary is missing. Please reinstall Jan.'
+        'Apple Foundation Models are currently unavailable on this device.'
       )
     })
 
@@ -236,27 +236,35 @@ describe('ModelFactory', () => {
       )
     })
 
-    it('should throw when available but no session is found after start', async () => {
+    it('should throw when available but model is not loaded after start', async () => {
       mockedInvoke
         .mockResolvedValueOnce('available') // check_foundation_models_availability
-        .mockResolvedValueOnce(null)        // find_foundation_models_session
+        .mockResolvedValueOnce(false)       // is_foundation_models_loaded
 
       await expect(
         ModelFactory.createModel('apple/on-device', foundationModelsProvider)
       ).rejects.toThrow(
-        'No running Foundation Models session. The server may have failed to start'
+        'No running Foundation Models session. The model may have failed to load — please check the logs.'
+      )
+
+      expect(mockStartModel).toHaveBeenCalledWith(
+        foundationModelsProvider,
+        'apple/on-device'
+      )
+      expect(mockedInvoke).toHaveBeenCalledWith(
+        'plugin:foundation-models|check_foundation_models_availability',
+        {}
+      )
+      expect(mockedInvoke).toHaveBeenCalledWith(
+        'plugin:foundation-models|is_foundation_models_loaded',
+        {}
       )
     })
 
-    it('should create a model when available and session exists', async () => {
+    it('should create a model when available and model is loaded', async () => {
       mockedInvoke
         .mockResolvedValueOnce('available') // check_foundation_models_availability
-        .mockResolvedValueOnce({            // find_foundation_models_session
-          pid: 12345,
-          port: 9876,
-          model_id: 'apple/on-device',
-          api_key: 'test-session-key',
-        })
+        .mockResolvedValueOnce(true)        // is_foundation_models_loaded
 
       const model = await ModelFactory.createModel(
         'apple/on-device',
@@ -264,12 +272,16 @@ describe('ModelFactory', () => {
       )
 
       expect(model).toBeDefined()
+      expect(mockStartModel).toHaveBeenCalledWith(
+        foundationModelsProvider,
+        'apple/on-device'
+      )
       expect(mockedInvoke).toHaveBeenCalledWith(
         'plugin:foundation-models|check_foundation_models_availability',
         {}
       )
       expect(mockedInvoke).toHaveBeenCalledWith(
-        'plugin:foundation-models|find_foundation_models_session',
+        'plugin:foundation-models|is_foundation_models_loaded',
         {}
       )
     })

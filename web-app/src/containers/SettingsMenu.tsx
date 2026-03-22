@@ -58,12 +58,14 @@ const SettingsMenu = () => {
   const activeProviders = providers.filter((provider) => {
     if (!provider.active) return false
     if (!IS_MACOS && provider.provider === 'mlx') return false
+    if (provider.provider === 'foundation-models') return false
     return true
   })
 
   const hiddenProviders = providers.filter((provider) => {
     if (provider.active) return false
     if (!IS_MACOS && provider.provider === 'mlx') return false
+    if (provider.provider === 'foundation-models') return false
     return true
   })
 

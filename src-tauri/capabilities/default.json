@@ -30,7 +30,6 @@
     "deep-link:default",
     "llamacpp:default",
     "mlx:default",
-    "foundation-models:default",
     "updater:default",
     "updater:allow-check",
     {
