@@ -24,7 +24,8 @@ export class DefaultMCPService implements MCPService {
     return []
   }
 
-  async getToolsForServers(_serverNames: string[]): Promise<MCPTool[]> {
+  async getToolsForServers(serverNames: string[]): Promise<MCPTool[]> {
+    void serverNames
     return []
   }
 
