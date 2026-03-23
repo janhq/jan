@@ -10,16 +10,12 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn, getModelDisplayName } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
-
-/** Providers that run locally and already expose their own ctx_len in model.settings */
-const LOCAL_PROVIDERS = new Set(['llamacpp', 'mlx'])
 
 type ModelSettingProps = {
   provider: ProviderObject
@@ -116,8 +112,6 @@ export function ModelSetting({
     }
   }
 
-  const isRemoteProvider = !LOCAL_PROVIDERS.has(provider.provider)
-
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -139,76 +133,7 @@ export function ModelSetting({
 
         <div className="px-4 space-y-8 pb-4">
 
-          {/* ── Token limits — shown for ALL providers ──────────────────── */}
-          <div className="space-y-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Token Limits
-            </p>
-
-            {/* Max Context Tokens — remote only; local models use the
-                predefined "Context Size" field in their model.settings */}
-            {isRemoteProvider && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-sm font-medium">Max Context Tokens</span>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={512}
-                    placeholder="e.g. 8192"
-                    className="w-28 text-right"
-                    value={(model.settings?.ctx_len?.controller_props?.value as string | number) ?? ''}
-                    onChange={(e) =>
-                      handleSettingChange(
-                        'ctx_len',
-                        e.target.value === '' ? '' : Number(e.target.value)
-                      )
-                    }
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground leading-normal">
-                  Total context window (input + output). Older messages are
-                  automatically trimmed to keep the conversation within this
-                  limit.
-                </p>
-              </div>
-            )}
-
-            {/* Max Output Tokens — shown for ALL providers */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-sm font-medium">Max Output Tokens</span>
-                <Input
-                  type="number"
-                  min={0}
-                  step={256}
-                  placeholder="e.g. 4096"
-                  className="w-28 text-right"
-                  value={
-                    (model.settings?.max_output_tokens?.controller_props
-                      ?.value as string | number) ?? ''
-                  }
-                  onChange={(e) =>
-                    handleSettingChange(
-                      'max_output_tokens',
-                      e.target.value === '' ? '' : Number(e.target.value)
-                    )
-                  }
-                />
-              </div>
-              <p className="text-xs text-muted-foreground leading-normal">
-                Maximum tokens the model may generate per reply. Sent as{' '}
-                <code className="text-xs">max_tokens</code> in API requests.
-                Leave blank to use the provider default.
-              </p>
-            </div>
-
-            {Object.keys(model.settings || {}).length > 0 && (
-              <div className="border-t pt-2" />
-            )}
-          </div>
-
-          {/* ── Existing model.settings entries (local & remote) ─────────── */}
+          {/* ── Provider-specific model settings (local & remote) ────────── */}
           {Object.entries(model.settings || {})
           .reduce<[string, unknown][]>((acc, entry) => {
             if (entry[0] === 'auto_increase_ctx_len') return acc
@@ -222,11 +147,6 @@ export function ModelSetting({
             return acc
           }, [])
           .filter(([key]) => {
-            // max_output_tokens is always rendered in the "Token Limits"
-            // section above, so never render it again in the dynamic list.
-            if (key === 'max_output_tokens') return false
-            // ctx_len for remote providers is also in the Token Limits section.
-            if (isRemoteProvider && key === 'ctx_len') return false
             // MLX models only support context size setting
             if (provider.provider === 'mlx') {
               return key === 'ctx_len'

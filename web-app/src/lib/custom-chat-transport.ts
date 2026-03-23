@@ -383,26 +383,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         const currentAssistant = useAssistant.getState().currentAssistant
         const inferenceParams = currentAssistant?.parameters
 
-        // Merge model-level limits (gear-icon settings) as baseline so that
-        // values set via the model settings sheet are included in API requests.
-        // Always re-read fresh from providers to avoid stale selectedModel snapshot.
-        // Assistant-level parameters always take priority.
-        const { selectedModel: _snapF, selectedProvider: _spF, providers: _pvF } = useModelProvider.getState()
-        const selectedModelForFactory =
-          _pvF.find((p) => p.provider === _spF)?.models.find((m) => m.id === _snapF?.id)
-          ?? _snapF
-        const modelSettingParams: Record<string, unknown> = {}
-        const msCtxLen = selectedModelForFactory?.settings?.ctx_len?.controller_props?.value
-        if (msCtxLen !== undefined && msCtxLen !== '') modelSettingParams.ctx_len = msCtxLen
-        const msMaxOut = selectedModelForFactory?.settings?.max_output_tokens?.controller_props?.value
-        if (msMaxOut !== undefined && msMaxOut !== '') modelSettingParams.max_output_tokens = msMaxOut
-
-        // Create the model using the factory
+        // Create the model using the factory.
+        // Token limits (max_output_tokens, ctx_len) come exclusively from
+        // assistant parameters — set them via Settings → Assistants → ✏️.
         // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
         this.model = await ModelFactory.createModel(
           modelId,
           updatedProvider ?? provider,
-          { ...modelSettingParams, ...(inferenceParams ?? {}) }
+          inferenceParams ?? {}
         )
       } catch (error) {
         console.error('Failed to create model:', error)
@@ -469,21 +457,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // the trimming budget.
     const inferenceParams = useAssistant.getState().currentAssistant?.parameters ?? {}
 
-    // Always re-read the model fresh from the providers array so that settings
-    // changed via the gear icon are picked up even if selectedModel is stale.
-    const { selectedModel: _snap, selectedProvider, providers } = useModelProvider.getState()
-    const selectedModel =
-      providers.find((p) => p.provider === selectedProvider)?.models.find((m) => m.id === _snap?.id)
-      ?? _snap
+    const selectedModel = useModelProvider.getState().selectedModel
 
     const maxOutputTokens: number | undefined = (() => {
-      // Priority 1: assistant parameters
+      // Read from assistant parameters — the canonical place to set token limits
+      // for all providers (use the predefined chips in Settings → Assistants).
       if (typeof inferenceParams.max_output_tokens === 'number') return inferenceParams.max_output_tokens
       if (typeof inferenceParams.max_tokens === 'number') return inferenceParams.max_tokens
-      // Priority 2: model gear-icon settings (remote model limits section)
-      const v = selectedModel?.settings?.max_output_tokens?.controller_props?.value
-      if (typeof v === 'number') return v
-      if (typeof v === 'string') { const p = parseInt(v, 10); return isNaN(p) ? undefined : p }
       return undefined
     })()
     const ctxLen: number | undefined = (() => {
