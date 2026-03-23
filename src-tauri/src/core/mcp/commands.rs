@@ -146,21 +146,6 @@ pub async fn get_connected_servers(
     Ok(servers_map.keys().cloned().collect())
 }
 
-/// Retrieves all available tools from all MCP servers with server information
-///
-/// # Arguments
-/// * `state` - Application state containing MCP server connections
-///
-/// # Returns
-/// * `Result<Vec<Tool>, String>` - A vector of all tools if successful, or an error message if failed
-///
-/// This function:
-/// 1. Locks the MCP servers mutex to access server connections
-/// 2. Iterates through all connected servers
-/// 3. Gets the list of tools from each server
-/// 4. Associates each tool with its parent server name
-/// 5. Combines all tools into a single vector
-/// 6. Returns the combined list of all available tools with server information
 /// Remove an MCP server entry and cancel its running service (used when list-tools fails).
 async fn remove_mcp_server_entry(
     mcp_servers: &SharedMcpServers,
@@ -183,6 +168,21 @@ async fn remove_mcp_server_entry(
     }
 }
 
+/// Retrieves all available tools from all MCP servers with server information
+///
+/// # Arguments
+/// * `state` - Application state containing MCP server connections
+///
+/// # Returns
+/// * `Result<Vec<Tool>, String>` - A vector of all tools if successful, or an error message if failed
+///
+/// This function:
+/// 1. Locks the MCP servers mutex to access server connections
+/// 2. Iterates through all connected servers
+/// 3. Gets the list of tools from each server
+/// 4. Associates each tool with its parent server name
+/// 5. Combines all tools into a single vector
+/// 6. Returns the combined list of all available tools with server information
 #[tauri::command]
 pub async fn get_tools<R: Runtime>(
     app: AppHandle<R>,
@@ -200,10 +200,11 @@ pub async fn get_tools<R: Runtime>(
     for server_name in server_names {
         let list_result = {
             let servers = state.mcp_servers.lock().await;
-            let Some(service) = servers.get(&server_name) else {
+            if let Some(service) = servers.get(&server_name) {
+                timeout(timeout_duration, service.list_all_tools()).await
+            } else {
                 continue;
-            };
-            timeout(timeout_duration, service.list_all_tools()).await
+            }
         };
 
         match list_result {
