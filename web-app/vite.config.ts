@@ -96,6 +96,9 @@ export default defineConfig(({ mode }) => {
       MODEL_CATALOG_URL: JSON.stringify(
         'https://raw.githubusercontent.com/janhq/model-catalog/main/model_catalog_v2.json'
       ),
+      LATEST_JAN_MODEL_URL: JSON.stringify(
+        'https://raw.githubusercontent.com/janhq/model-catalog/main/latest_jan_model.json'
+      ),
       AUTO_UPDATER_DISABLED: JSON.stringify(
         env.AUTO_UPDATER_DISABLED === 'true'
       ),
