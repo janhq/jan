@@ -501,9 +501,28 @@ export const useModelProvider = create<ModelProviderState>()(
             (provider) => provider.provider !== 'cohere'
           )
         }
+
+        if (version <= 10 && state?.providers) {
+          state.providers.forEach((provider) => {
+            if (provider.models && provider.provider === 'llamacpp') {
+              provider.models.forEach((model) => {
+                if (!model.settings) model.settings = {}
+
+                if (!model.settings.auto_increase_ctx_len) {
+                  model.settings.auto_increase_ctx_len = {
+                    ...modelSettings.auto_increase_ctx_len,
+                    controller_props: {
+                      ...modelSettings.auto_increase_ctx_len.controller_props,
+                    },
+                  }
+                }
+              })
+            }
+          })
+        }
         return state
       },
-      version: 10,
+      version: 11,
     }
   )
 )

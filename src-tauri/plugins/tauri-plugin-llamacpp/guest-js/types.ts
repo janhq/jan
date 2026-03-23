@@ -64,6 +64,7 @@ export type LlamacppConfig = {
   rope_freq_base: number
   rope_freq_scale: number
   ctx_shift: boolean
+  parallel: number
 }
 
 export type ModelPlan = {

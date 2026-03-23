@@ -26,10 +26,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useTheme } from '@/hooks/useTheme'
-import { teamEmoji } from '@/utils/teamEmoji'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { cn, isDev } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 interface AddEditAssistantProps {
   open: boolean
@@ -278,7 +277,6 @@ export default function AddEditAssistant({
                   theme={isDark ? ('dark' as Theme) : ('light' as Theme)}
                   className="absolute!s z-40! overflow-y-auto! top-2"
                   height={350}
-                  customEmojis={isDev() ? teamEmoji : []}
                   lazyLoadEmojis
                   previewConfig={{ showPreview: false }}
                   onEmojiClick={(emojiData: EmojiClickData) => {

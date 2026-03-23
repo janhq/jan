@@ -2,7 +2,6 @@
  * Model-related constants
  */
 
-export const NEW_JAN_MODEL_HF_REPO = 'janhq/Jan-v3-4B-base-instruct-GGUF'
 export const JAN_CODE_HF_REPO = 'janhq/Jan-Code-4b-Gguf'
 export const DEFAULT_MODEL_QUANTIZATIONS = ['iq4_xs', 'q4_k_m']
 
@@ -109,8 +108,26 @@ export const providerModels = {
     supportsToolCalls: ['sonar', 'sonar-pro', 'sonar-reasoning-pro'],
     supportsN: true,
   },
+  minimax: {
+    models: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    supportsCompletion: true,
+    supportsStreaming: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    supportsJSON: [],
+    supportsImages: [],
+    supportsToolCalls: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    supportsN: true,
+  },
   openrouter: {
     models: true,
+    supportsCompletion: true,
+    supportsStreaming: true,
+    supportsJSON: true,
+    supportsImages: true,
+    supportsToolCalls: true,
+    supportsN: true,
+  },
+  nvidia: {
+    models: ['moonshotai/kimi-k2.5', 'minimaxai/minimax-m2.5', 'z-ai/glm5'],
     supportsCompletion: true,
     supportsStreaming: true,
     supportsJSON: true,

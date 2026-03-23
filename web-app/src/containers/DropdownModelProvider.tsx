@@ -23,11 +23,7 @@ import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/constants/providers'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
-import { syncModelToOpenClaw } from '@/utils/openclaw'
 import { ChevronsUpDown } from 'lucide-react'
-import { useAgentMode } from '@/hooks/useAgentMode'
-import { BotIcon } from 'lucide-react'
-import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -73,11 +69,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const { t } = useTranslation()
   const { favoriteModels } = useFavoriteModel()
   const serviceHub = useServiceHub()
-  const currentThreadId = useThreads((state) => state.currentThreadId)
-  const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
-  const isAgentMode = useAgentMode((state) =>
-    state.agentThreads[agentModeKey] === true
-  )
 
   // Search state
   const [open, setOpen] = useState(false)
@@ -270,6 +261,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
     providers.forEach((provider) => {
       if (!provider.active) return
+      if (provider.provider === 'foundation-models') return
 
       provider.models.forEach((modelItem) => {
         // Skip embedding models - they can't be used for chat
@@ -351,7 +343,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       // When not searching, show all active providers (even without models)
       // Sort: local first, then providers with API keys or custom with models, then others, alphabetically
       const activeProviders = providers
-        .filter((p) => p.active)
+        .filter((p) => p.active && p.provider !== 'foundation-models')
         .sort((a, b) => {
           const aIsLocal = a.provider === 'llamacpp' || a.provider === 'mlx'
           const bIsLocal = b.provider === 'llamacpp' || b.provider === 'mlx'
@@ -424,18 +416,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         searchableModel.model.id
       )
 
-      // Sync model to OpenClaw (async, don't block UI)
-      syncModelToOpenClaw(
-        searchableModel.model.id,
-        searchableModel.provider.provider,
-        getModelDisplayName(searchableModel.model)
-      ).catch((error) => {
-        console.debug(
-          'Error syncing model to OpenClaw:',
-          searchableModel.model.id,
-          error
-        )
-      })
 
       // Check mmproj existence for llamacpp models (async, don't block UI)
       if (searchableModel.provider.provider === 'llamacpp') {
@@ -484,16 +464,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
   const provider = getProviderByName(selectedProvider)
 
-  if (isAgentMode) {
-    return (
-      <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full text-muted-foreground">
-        <BotIcon className="shrink-0 size-4" />
-        <span className="text-sm font-medium leading-normal">
-          OpenClaw Agent
-        </span>
-      </div>
-    )
-  }
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>

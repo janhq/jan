@@ -210,6 +210,19 @@
     }
   },
   {
+    "key": "parallel",
+    "title": "Parallel Sequences",
+    "description": "Number of parallel sequences to decode (0 = llama.cpp default of 1). Set to 1 to also enable -kvu for optimized single-request serving.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 1,
+      "placeholder": "1",
+      "type": "number",
+      "textAlign": "right",
+      "min": 0
+    }
+  },
+  {
     "key": "cont_batching",
     "title": "Continuous Batching",
     "description": "Enable continuous batching (a.k.a dynamic batching) for concurrent requests.",

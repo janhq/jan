@@ -15,6 +15,7 @@ import { useAnalytic } from '@/hooks/useAnalytic'
 import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
 import { useJanModelPrompt } from '@/hooks/useJanModelPrompt'
 import { PromptJanModel } from '@/containers/PromptJanModel'
+import { useLatestJanModel } from '@/hooks/useLatestJanModel'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
@@ -43,6 +44,13 @@ const AppLayout = () => {
     width: sidebarWidth,
     setLeftPanelWidth,
   } = useLeftPanel()
+  const fetchLatestJanModel = useLatestJanModel(
+    (state) => state.fetchLatestJanModel
+  )
+
+  useEffect(() => {
+    fetchLatestJanModel()
+  }, [fetchLatestJanModel])
 
   return (
     <div className="bg-neutral-50 dark:bg-background size-full relative">

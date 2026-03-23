@@ -1,0 +1,62 @@
+{
+  "refreshModelsError": "El proveedor debe tener una URL base y una clave API configuradas para obtener modelos.",
+  "refreshModelsSuccess": "Se agregaron {{count}} modelo(s) nuevo(s) de {{provider}}.",
+  "noNewModels": "No se encontraron modelos nuevos. Todos los modelos disponibles ya están agregados.",
+  "refreshModelsFailed": "No se pudieron obtener modelos de {{provider}}. Por favor verifica tu clave API y URL base.",
+  "models": "Modelos",
+  "refreshing": "Actualizando...",
+  "refresh": "Actualizar",
+  "import": "Importar",
+  "importModelSuccess": "El modelo {{provider}} se ha importado correctamente.",
+  "importModelError": "Error al importar el modelo:",
+  "stop": "Detener",
+  "start": "Iniciar",
+  "noModelFound": "No se encontró ningún modelo",
+  "noModelFoundDesc": "Los modelos disponibles se mostrarán aquí. Si aún no tienes modelos, visita el Hub para descargar.",
+  "configuration": "Configuración",
+  "apiEndpoint": "Endpoint de API",
+  "testConnection": "Probar conexión",
+  "addModel": {
+    "title": "Agregar nuevo modelo",
+    "description": "Agregar un nuevo modelo al proveedor {{provider}}.",
+    "modelId": "ID del modelo",
+    "enterModelId": "Ingresa el ID del modelo",
+    "exploreModels": "Ver lista de modelos de {{provider}}",
+    "addModel": "Agregar modelo",
+    "modelExists": "El modelo ya existe",
+    "modelExistsDesc": "Por favor elige un ID de modelo diferente."
+  },
+  "deleteModel": {
+    "title": "Eliminar modelo: {{modelId}}",
+    "description": "¿Estás seguro de que deseas eliminar este modelo? Esta acción no se puede deshacer.",
+    "success": "El modelo {{modelId}} ha sido eliminado permanentemente.",
+    "cancel": "Cancelar",
+    "delete": "Eliminar"
+  },
+  "deleteProvider": {
+    "title": "Eliminar proveedor",
+    "description": "Eliminar este proveedor y todos sus modelos. Esta acción no se puede deshacer.",
+    "success": "El proveedor {{provider}} ha sido eliminado permanentemente.",
+    "confirmTitle": "Eliminar proveedor: {{provider}}",
+    "confirmDescription": "¿Estás seguro de que deseas eliminar este proveedor? Esta acción no se puede deshacer.",
+    "cancel": "Cancelar",
+    "delete": "Eliminar"
+  },
+  "editModel": {
+    "title": "Editar modelo: {{modelId}}",
+    "description": "Configura las capacidades del modelo activando las opciones a continuación.",
+    "capabilities": "Capacidades",
+    "tools": "Herramientas",
+    "vision": "Visión",
+    "proactive": "Proactivo (Experimental)",
+    "embeddings": "Embeddings",
+    "notAvailable": "Aún no disponible",
+    "warning": {
+      "title": "Proceder con precaución",
+      "description": "Modificar las capacidades del modelo puede afectar el rendimiento y la funcionalidad. Configuraciones incorrectas podrían causar comportamientos inesperados o errores."
+    }
+  },
+  "addProvider": "Agregar proveedor",
+  "addOpenAIProvider": "Agregar proveedor OpenAI",
+  "enterNameForProvider": "Ingresa un nombre para el proveedor"
+}

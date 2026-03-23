@@ -18,15 +18,22 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { IconSettings2 } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { getModelToStart } from '@/utils/getModelToStart'
 import { LogViewer } from '@/components/LogViewer'
+import { ensureModelForServer } from '@/utils/ensureModelForServer'
+
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
 } from '@/components/ui/popover'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -36,7 +43,9 @@ import {
   IconChevronDown,
   IconChevronUp,
   IconExternalLink,
+  IconLoader2,
 } from '@tabler/icons-react'
+import { ChevronsUpDown } from 'lucide-react'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -60,11 +69,21 @@ function LocalAPIServerContent() {
     apiKey,
     trustedHosts,
     proxyTimeout,
+    setLastServerModels,
+    defaultModelLocalApiServer,
+    setDefaultModelLocalApiServer,
   } = useLocalApiServer()
 
+  const providers = useModelProvider((state) => state.providers)
+  const localModelIds = useMemo(
+    () =>
+      providers
+        .filter((p) => p.provider === 'llamacpp')
+        .flatMap((p) => p.models.map((m) => m.id)),
+    [providers]
+  )
+
   const { serverStatus, setServerStatus } = useAppState()
-  const { selectedModel, selectedProvider, getProviderByName } =
-    useModelProvider()
   const [showApiKeyError, setShowApiKeyError] = useState(false)
   const setActiveModels = useAppState((state) => state.setActiveModels)
 
@@ -107,49 +126,33 @@ function LocalAPIServerContent() {
 
       setServerStatus('pending')
 
-      // Check if there's already a loaded model
-      serviceHub
-        .models()
-        .getActiveModels()
-        .then((loadedModels) => {
-          if (loadedModels && loadedModels.length > 0) {
-            console.log(`Using already loaded model: ${loadedModels[0]}`)
-            // Model already loaded, just start the server
-            return Promise.resolve()
-          } else {
-            // No loaded model, start one first
-            const modelToStart = getModelToStart({
-              selectedModel,
-              selectedProvider,
-              getProviderByName,
-            })
-
-            // Only start server if we have a model to load
-            if (!modelToStart) {
-              console.warn(
-                'Cannot start Local API Server: No model available to load'
-              )
-              throw new Error('No model available to load')
-            }
-
-            setIsModelLoading(true) // Start loading state
-
-            // Start the model first
-            return serviceHub
-              .models()
-              .startModel(modelToStart.provider, modelToStart.model, true)
-              .then(() => {
-                console.log(`Model ${modelToStart.model} started successfully`)
-                setIsModelLoading(false) // Model loaded, stop loading state
-                // Refresh active models after starting
-                serviceHub
-                  .models()
-                  .getActiveModels()
-                  .then((models) => setActiveModels(models || []))
-                // Add a small delay for the backend to update state
-                return new Promise((resolve) => setTimeout(resolve, 500))
-              })
+      ensureModelForServer({
+        modelsService: serviceHub.models(),
+        modelOverride: defaultModelLocalApiServer,
+        onLoadStart: () => setIsModelLoading(true),
+        onLoadEnd: () => setIsModelLoading(false),
+      })
+        .then(async (result) => {
+          if (result.status === 'no_model_available') {
+            throw new Error('No model available to load')
           }
+
+          // Remember loaded models for next startup
+          const activeModels = await serviceHub.models().getActiveModels()
+          if (activeModels && activeModels.length > 0) {
+            const allProviders = useModelProvider.getState().providers
+            const serverModels = activeModels.flatMap((id: string) => {
+              const p = allProviders.find((p) =>
+                p?.models?.some((m: { id: string }) => m.id === id)
+              )
+              return p ? [{ model: id, provider: p.provider }] : []
+            })
+            if (serverModels.length > 0) setLastServerModels(serverModels)
+          }
+
+          // Refresh active models in app state
+          const models = await serviceHub.models().getActiveModels()
+          setActiveModels(models || [])
         })
         .then(() => {
           // Then start the server
@@ -220,12 +223,16 @@ function LocalAPIServerContent() {
     }
   }
 
-  const getButtonText = () => {
-    if (isModelLoading) {
-      return '...loading model'
-    }
-    if (serverStatus === 'pending' && !isModelLoading) {
-      return t('settings:localApiServer.startingServer')
+  const getButtonContent = () => {
+    if (isModelLoading || serverStatus === 'pending') {
+      return (
+        <>
+          <IconLoader2 size={14} className="animate-spin" />
+          {isModelLoading
+            ? t('settings:localApiServer.loadingModel')
+            : t('settings:localApiServer.startingServer')}
+        </>
+      )
     }
     return isServerRunning
       ? t('settings:localApiServer.stopServer')
@@ -245,7 +252,12 @@ function LocalAPIServerContent() {
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
-        <div className={cn("flex items-center justify-between w-full mr-2 pr-3", !IS_MACOS && "pr-30")}>
+        <div
+          className={cn(
+            'flex items-center justify-between w-full mr-2 pr-3',
+            !IS_MACOS && 'pr-30'
+          )}
+        >
           <span className="font-medium text-base font-studio">
             {t('common:settings')}
           </span>
@@ -404,9 +416,9 @@ function LocalAPIServerContent() {
                         onClick={toggleAPIServer}
                         variant={isServerRunning ? 'destructive' : 'default'}
                         size="sm"
-                        disabled={serverStatus === 'pending'} // Disable during any loading state
+                        disabled={serverStatus === 'pending' || isModelLoading}
                       >
-                        {getButtonText()}
+                        {getButtonContent()}
                       </Button>
                     </div>
                   </div>
@@ -422,6 +434,49 @@ function LocalAPIServerContent() {
                         setEnableOnStartup(checked)
                       }}
                     />
+                  }
+                />
+                <CardItem
+                  title={t('settings:localApiServer.defaultModel')}
+                  description={t('settings:localApiServer.defaultModelDesc')}
+                  actions={
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-40 justify-between"
+                        >
+                          <span className="truncate">
+                            {defaultModelLocalApiServer?.model ??
+                              t(
+                                'settings:localApiServer.defaultModelPlaceholder'
+                              )}
+                          </span>
+                          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-64 max-h-60 overflow-y-auto">
+                        {localModelIds.map((modelId) => (
+                          <DropdownMenuItem
+                            key={modelId}
+                            className={cn(
+                              'cursor-pointer my-0.5',
+                              defaultModelLocalApiServer?.model === modelId &&
+                                'bg-secondary-foreground/8'
+                            )}
+                            onClick={() =>
+                              setDefaultModelLocalApiServer({
+                                model: modelId,
+                                provider: 'llamacpp',
+                              })
+                            }
+                          >
+                            <span className="truncate">{modelId}</span>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   }
                 />
               </Card>
@@ -468,7 +523,6 @@ function LocalAPIServerContent() {
                   }
                 />
               </Card>
-
             </div>
           </div>
           <div className="p-4 shrink-0">
@@ -505,4 +559,3 @@ function LocalAPIServerContent() {
     </div>
   )
 }
-

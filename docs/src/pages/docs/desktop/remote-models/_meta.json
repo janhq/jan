@@ -2,9 +2,6 @@
   "anthropic": {
     "title": "Anthropic"
   },
-  "cohere": {
-    "title": "Cohere"
-  },
   "google": {
     "title": "Gemini"
   },
@@ -16,6 +13,9 @@
   },
   "openai": {
     "title": "OpenAI"
+  },
+  "azure": {
+    "title": "Azure OpenAI"
   },
   "openrouter": {
     "title": "OpenRouter"

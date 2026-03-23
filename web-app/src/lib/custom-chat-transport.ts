@@ -15,8 +15,6 @@ import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAssistant } from '@/hooks/useAssistant'
-import { useAgentMode } from '@/hooks/useAgentMode'
-import { getOpenClawAuthToken, ensureOpenClawHttpApi, OPENCLAW_GATEWAY_URL } from '@/utils/openclaw'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionManager } from '@/lib/extension'
@@ -64,16 +62,20 @@ function prependTextDeltaToUIStream(
   let prefixEmitted = false
   return new ReadableStream<UIMessageChunk>({
     async pull(controller) {
-      const { done, value } = await reader.read()
-      if (done) {
-        controller.close()
-        return
-      }
-      controller.enqueue(value)
-      if (!prefixEmitted && (value as { type: string }).type === 'text-start') {
-        prefixEmitted = true
-        const id = (value as { type: 'text-start'; id: string }).id
-        controller.enqueue({ type: 'text-delta', id, delta: prefixText } as UIMessageChunk)
+      try {
+        const { done, value } = await reader.read()
+        if (done) {
+          controller.close()
+          return
+        }
+        controller.enqueue(value)
+        if (!prefixEmitted && (value as { type: string }).type === 'text-start') {
+          prefixEmitted = true
+          const id = (value as { type: 'text-start'; id: string }).id
+          controller.enqueue({ type: 'text-delta', id, delta: prefixText } as UIMessageChunk)
+        }
+      } catch (error) {
+        controller.error(error)
       }
     },
     cancel() {
@@ -269,75 +271,92 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Ensure tools updated before sending messages
     await this.refreshTools()
 
-    // Check if agent mode is active for this thread
-    const isAgentMode = this.threadId
-      ? useAgentMode.getState().isAgentMode(this.threadId)
-      : false
-
-    if (isAgentMode) {
-      // Agent mode: route to OpenClaw gateway
-      await ensureOpenClawHttpApi()
-      const authToken = await getOpenClawAuthToken()
-      if (!authToken) {
-        throw new Error('OpenClaw is not available. Please check that it is running in Settings > Remote Access.')
-      }
-
-      const openclawProvider: ProviderObject = {
-        active: true,
-        provider: 'openclaw',
-        api_key: authToken,
-        base_url: OPENCLAW_GATEWAY_URL,
-        settings: [],
-        models: [],
-        custom_header: this.threadId
-          ? [{ header: 'x-openclaw-session-key', value: this.threadId }]
-          : [],
-      }
-
+    // Capture the effective provider name early so the Anthropic serial
+    // tool-use repair later uses the same value that was used to create the
+    // model, even if the user switches provider mid-request.
+    const modelId = useModelProvider.getState().selectedModel?.id
+    const providerId = useModelProvider.getState().selectedProvider
+    const effectiveProviderName = providerId
+    const provider = useModelProvider.getState().getProviderByName(providerId)
+    if (this.serviceHub && modelId && provider) {
       try {
-        this.model = await ModelFactory.createModel('openclaw', openclawProvider)
+        const updatedProvider = useModelProvider
+          .getState()
+          .getProviderByName(providerId)
+
+        // Get assistant parameters from current assistant
+        const currentAssistant = useAssistant.getState().currentAssistant
+        const inferenceParams = currentAssistant?.parameters
+
+        // Create the model using the factory
+        // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
+        this.model = await ModelFactory.createModel(
+          modelId,
+          updatedProvider ?? provider,
+          inferenceParams ?? {}
+        )
       } catch (error) {
-        console.error('Failed to create OpenClaw model:', error)
+        console.error('Failed to create model:', error)
         throw new Error(
-          `Failed to connect to OpenClaw: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+          `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
         )
       }
     } else {
-      // Normal mode: use selected provider
-      const modelId = useModelProvider.getState().selectedModel?.id
-      const providerId = useModelProvider.getState().selectedProvider
-      const provider = useModelProvider.getState().getProviderByName(providerId)
-      if (this.serviceHub && modelId && provider) {
-        try {
-          const updatedProvider = useModelProvider
-            .getState()
-            .getProviderByName(providerId)
-
-          // Get assistant parameters from current assistant
-          const currentAssistant = useAssistant.getState().currentAssistant
-          const inferenceParams = currentAssistant?.parameters
-
-          // Create the model using the factory
-          // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
-          this.model = await ModelFactory.createModel(
-            modelId,
-            updatedProvider ?? provider,
-            inferenceParams ?? {}
-          )
-        } catch (error) {
-          console.error('Failed to create model:', error)
-          throw new Error(
-            `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
-          )
-        }
-      } else {
-        throw new Error('ServiceHub not initialized or model/provider missing.')
-      }
+      throw new Error('ServiceHub not initialized or model/provider missing.')
     }
+
+    // Fix for Anthropic serial tool-use (error 400): when an assistant message
+    // contains tool parts interleaved with text parts (serial tool calls),
+    // split it into separate messages so convertToModelMessages produces the
+    // tool_use / tool_result pairing that the Claude API requires.
+    // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
+    const messagesToConvert = (() => {
+      if (effectiveProviderName !== 'anthropic') {
+        return options.messages
+      }
+      return options.messages.flatMap((message) => {
+        if (message.role !== 'assistant') return [message]
+
+        const parts = Array.isArray(message.parts) ? message.parts : []
+        if (parts.length === 0) return [message]
+
+        const isToolPart = (p: (typeof parts)[number]) =>
+          p.type.startsWith('tool-')
+
+        const waves: (typeof parts)[] = []
+        let currentWave: typeof parts = []
+        let seenToolParts = false
+
+        for (const part of parts) {
+          if (isToolPart(part)) {
+            seenToolParts = true
+            currentWave.push(part)
+          } else if (!isToolPart(part) && seenToolParts) {
+            // Any non-tool part (text, reasoning, file, etc.) after tool parts
+            // marks the start of a new wave
+            waves.push(currentWave)
+            currentWave = [part]
+            seenToolParts = false
+          } else {
+            currentWave.push(part)
+          }
+        }
+        if (currentWave.length > 0) waves.push(currentWave)
+
+        // No serial tool calls detected — return original message unchanged
+        if (waves.length <= 1) return [message]
+
+        return waves.map((waveParts, i) => ({
+          ...message,
+          id: `${message.id}_w${i}`,
+          parts: waveParts,
+        }))
+      })
+    })()
 
     // Convert UI messages to model messages
     const baseMessages = convertToModelMessages(
-      this.mapUserInlineAttachments(options.messages)
+      this.mapUserInlineAttachments(messagesToConvert)
     )
 
     // If continuing a truncated response, append the partial assistant content as a
@@ -349,11 +368,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       : baseMessages
 
     // Include tools only if we have tools loaded AND model supports them
-    // In agent mode, OpenClaw manages its own tools
     const hasTools = Object.keys(this.tools).length > 0
     const selectedModel = useModelProvider.getState().selectedModel
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
-    const shouldEnableTools = !isAgentMode && hasTools && modelSupportsTools
+    const shouldEnableTools = hasTools && modelSupportsTools
 
     // Track stream timing and token count for token speed calculation
     let streamStartTime: number | undefined
@@ -425,19 +443,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         return undefined
       },
       onError: (error) => {
-        // Note: By default, the AI SDK will return "An error occurred",
-        // which is intentionally vague in case the error contains sensitive information like API keys.
-        // If you want to provide more detailed error messages, keep the code below. Otherwise, remove this whole onError callback.
-        if (error == null) {
-          return 'Unknown error'
-        }
-        if (typeof error === 'string') {
-          return error
-        }
-        if (error instanceof Error) {
-          return error.message
-        }
-        return JSON.stringify(error)
+        const errorMessage = error == null
+          ? 'Unknown error'
+          : typeof error === 'string'
+            ? error
+            : error instanceof Error
+              ? error.message
+              : JSON.stringify(error)
+
+        return errorMessage
       },
       onFinish: ({ responseMessage }) => {
         // Call the token usage callback with usage data when stream completes
@@ -456,9 +470,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // When continuing a truncated response, inject the partial content as the
     // very first text-delta so the new message immediately shows it and the
     // user sees a seamless continuation rather than an empty box.
-    return continueContent
+    const finalStream = continueContent
       ? prependTextDeltaToUIStream(uiStream, continueContent)
       : uiStream
+
+    return finalStream
   }
 
   async reconnectToStream(

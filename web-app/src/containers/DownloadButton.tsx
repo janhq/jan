@@ -47,6 +47,16 @@ export function DownloadButtonPlaceholder({
 
   const modelId = quant?.model_id || model.model_name
 
+  // Get the actual downloaded model ID (with or without developer prefix)
+  const downloadedModelId = useMemo(() => {
+    const foundModel = llamaProvider?.models.find(
+      (m: { id: string }) =>
+        m.id === modelId ||
+        m.id === `${model.developer}/${sanitizeModelId(modelId)}`
+    )
+    return foundModel?.id || modelId
+  }, [llamaProvider, modelId, model.developer])
+
   const downloadProcesses = useMemo(
     () =>
       Object.values(downloads).map((download) => ({
@@ -86,7 +96,7 @@ export function DownloadButtonPlaceholder({
     return (
       <div className="flex items-center gap-2">
         <a
-          href={`https://huggingface.co/${model.model_name}`}
+          href={`https://huggingface.co/${model.developer ? `${model.developer}/` : ''}${model.model_name}`}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -138,7 +148,7 @@ export function DownloadButtonPlaceholder({
         <Button
           variant="default"
           size="sm"
-          onClick={() => handleUseModel(modelId)}
+          onClick={() => handleUseModel(downloadedModelId)}
           data-test-id={`hub-model-${modelId}`}
         >
           {t('hub:newChat')}

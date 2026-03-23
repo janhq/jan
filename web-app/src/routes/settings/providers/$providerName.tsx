@@ -19,6 +19,7 @@ import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import {
   IconFolderPlus,
   IconLoader,
@@ -385,6 +386,10 @@ function ProviderDetail() {
               <h1 className="font-medium text-base">
                 {getProviderTitle(providerName)}
               </h1>
+              <Switch
+                checked={provider?.active ?? false}
+                onCheckedChange={(checked) => provider && updateProvider(providerName, { active: checked })}
+              />
             </div>
 
             <div

@@ -1,0 +1,26 @@
+[package]
+name = "tauri-plugin-foundation-models"
+version = "0.6.599"
+authors = ["Jan <service@jan.ai>"]
+description = "Tauri plugin for Apple Foundation Models inference via fm-rs on macOS 26+"
+license = "MIT"
+repository = "https://github.com/janhq/jan"
+edition = "2021"
+rust-version = "1.77.2"
+exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
+links = "tauri-plugin-foundation-models"
+
+[dependencies]
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "2.5.0", default-features = false, features = [] }
+thiserror = "2.0.12"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+fm-rs = "0.1"
+
+[build-dependencies]
+tauri-plugin = { version = "2.3.1", features = ["build"] }

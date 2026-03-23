@@ -88,7 +88,6 @@ import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionD
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
-import { isOpenClawRunning } from '@/utils/openclaw'
 
 type ChatInputProps = {
   className?: string
@@ -142,19 +141,17 @@ const ChatInput = memo(function ChatInput({
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
   const assistants = useAssistant((state) => state.assistants)
+  const defaultAssistantId = useAssistant((state) => state.defaultAssistantId)
 
-  // Agent mode (OpenClaw)
+  // Agent mode
   // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
   const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
-  const [openClawAvailable, setOpenClawAvailable] = useState(false)
   const isAgentMode = useAgentMode((state) =>
     state.agentThreads[agentModeKey] === true
   )
+  // When projectId is present, treat as normal chat (disable agent mode UI)
+  const effectiveAgentMode = isAgentMode && !projectId
   const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
-
-  useEffect(() => {
-    isOpenClawRunning().then(setOpenClawAvailable)
-  }, [currentThreadId])
 
   const handleAgentToggle = useCallback(() => {
     toggleAgentMode(agentModeKey)
@@ -186,7 +183,9 @@ const ChatInput = memo(function ChatInput({
 
   // Check if selected model is currently loaded/active
   const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
-  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>(assistants[0])
+  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>(
+    () => assistants.find((a) => a.id === defaultAssistantId) ?? assistants[0]
+  )
 
   // No auto-selection: let the user explicitly pick an assistant
 
@@ -740,8 +739,9 @@ const ChatInput = memo(function ChatInput({
         multiple: true,
         filters: [
           {
-            name: 'Documents',
+            name: 'Documents & Code',
             extensions: [
+              // Documents
               'pdf',
               'docx',
               'txt',
@@ -753,7 +753,89 @@ const ChatInput = memo(function ChatInput({
               'pptx',
               'html',
               'htm',
+              // JavaScript / TypeScript
+              'js',
+              'mjs',
+              'cjs',
+              'ts',
+              'mts',
+              'cts',
+              'jsx',
+              'tsx',
+              // Python
+              'py',
+              'pyw',
+              'pyi',
+              // C / C++
+              'c',
+              'h',
+              'cpp',
+              'cc',
+              'cxx',
+              'hpp',
+              'hh',
+              // Systems languages
+              'rs',
+              'go',
+              'swift',
+              'zig',
+              // JVM languages
+              'java',
+              'kt',
+              'kts',
+              'scala',
+              'groovy',
+              // Scripting languages
+              'rb',
+              'php',
+              'lua',
+              'pl',
+              'r',
+              'jl',
+              // .NET
+              'cs',
+              'fs',
+              'vb',
+              // Shell
+              'sh',
+              'bash',
+              'zsh',
+              'fish',
+              'ps1',
+              // Web
+              'css',
+              'scss',
+              'sass',
+              'less',
+              'vue',
+              'svelte',
+              'astro',
+              // Data / config formats
+              'json',
+              'jsonc',
+              'yaml',
+              'yml',
+              'toml',
+              'xml',
+              'ini',
+              'cfg',
+              'conf',
+              'env',
+              // Query / markup
+              'sql',
+              'graphql',
+              'gql',
+              'tex',
+              'rst',
+              // Misc text
+              'log',
+              'diff',
+              'patch',
             ],
+          },
+          {
+            name: 'All Files',
+            extensions: ['*'],
           },
         ],
       })
@@ -1567,7 +1649,7 @@ const ChatInput = memo(function ChatInput({
                 )}
               >
                 {/* Dropdown for attachments — hidden in agent mode */}
-                {!isAgentMode && (
+                {!effectiveAgentMode && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="secondary" size="icon-sm" className='rounded-full mr-2 mb-1'>
@@ -1686,7 +1768,7 @@ const ChatInput = memo(function ChatInput({
                     useLastUsedModel={initialMessage}
                   />
                 )} */}
-                {!isAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
+                {!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1728,7 +1810,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!isAgentMode && selectedModel?.capabilities?.includes('embeddings') && (
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('embeddings') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1747,7 +1829,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!isAgentMode && selectedModel?.capabilities?.includes('tools') &&
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers &&
                   (MCPToolComponent ? (
                     // Use custom MCP component
@@ -1812,7 +1894,8 @@ const ChatInput = memo(function ChatInput({
                     </Tooltip>
                   ))}
 
-                {openClawAvailable && (!!currentThreadId || isAgentMode) && (
+                {/* Agent mode toggle hidden — kept as dead code for future use */}
+                {false && !projectId && isAgentMode && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1842,7 +1925,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!isAgentMode && selectedModel?.capabilities?.includes('web_search') && (
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('web_search') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon-xs">
@@ -1858,7 +1941,7 @@ const ChatInput = memo(function ChatInput({
                   </Tooltip>
                 )}
 
-                {!isAgentMode && selectedModel?.capabilities?.includes('reasoning') && (
+                {!effectiveAgentMode && selectedModel?.capabilities?.includes('reasoning') && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon-xs">
@@ -1879,6 +1962,7 @@ const ChatInput = memo(function ChatInput({
             <div className="flex items-center gap-2">
               {selectedProvider === 'llamacpp' &&
                 tokenCounterCompact &&
+                !effectiveAgentMode &&
                 !initialMessage &&
                 (threadMessages?.length > 0 || prompt.trim().length > 0) && (
                   <div className="flex-1 flex justify-center">
@@ -1946,6 +2030,7 @@ const ChatInput = memo(function ChatInput({
 
       {selectedProvider === 'llamacpp' &&
         isModelActive &&
+        !effectiveAgentMode &&
         !tokenCounterCompact &&
         !initialMessage &&
         (threadMessages?.length > 0 || prompt.trim().length > 0) && (

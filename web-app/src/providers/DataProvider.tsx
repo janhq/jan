@@ -83,7 +83,7 @@ const syncRemoteProviders = () => {
 }
 
 export function DataProvider() {
-  const { setProviders } =
+  const { setProviders, getProviderByName } =
     useModelProvider()
 
   const { checkForUpdate } = useAppUpdater()
@@ -105,6 +105,9 @@ export function DataProvider() {
     corsEnabled,
     verboseLogs,
     proxyTimeout,
+    lastServerModels,
+    setLastServerModels,
+    defaultModelLocalApiServer,
   } = useLocalApiServer()
   const setServerStatus = useAppState((state) => state.setServerStatus)
 
@@ -215,7 +218,7 @@ export function DataProvider() {
       serviceHub
         .app()
         .getServerStatus()
-        .then((isRunning) => {
+        .then(async (isRunning) => {
           if (isRunning) {
             console.log('Local API Server is already running')
             setServerStatus('running')
@@ -224,7 +227,29 @@ export function DataProvider() {
 
           setServerStatus('pending')
 
-          // Start the server directly without checking for model
+          // Start model(s): prefer user-configured default, fall back to last session's models
+          const modelsToStart = (() => {
+            if (defaultModelLocalApiServer) {
+              return [defaultModelLocalApiServer]
+            }
+            return lastServerModels
+          })()
+
+          if (modelsToStart.length > 0) {
+            await Promise.allSettled(
+              modelsToStart.map(async ({ model, provider: providerName }) => {
+                const provider = getProviderByName(providerName)
+                if (!provider) return
+                try {
+                  await serviceHub.models().startModel(provider, model, true)
+                  console.log(`Auto-started server model: ${model}`)
+                } catch (err) {
+                  console.warn(`Failed to auto-start server model ${model}:`, err)
+                }
+              })
+            )
+          }
+
           return window.core?.api
             ?.startServer({
               host: serverHost,
@@ -236,12 +261,22 @@ export function DataProvider() {
               isVerboseEnabled: verboseLogs,
               proxyTimeout: proxyTimeout,
             })
-            .then((actualPort: number) => {
+            .then(async (actualPort: number) => {
               // Store the actual port that was assigned (important for mobile with port 0)
               if (actualPort && actualPort !== serverPort) {
                 setServerPort(actualPort)
               }
               setServerStatus('running')
+              // Persist whichever models are actually running so next startup can restore them
+              const activeModels = await serviceHub.models().getActiveModels().catch(() => [] as string[])
+              if (activeModels.length > 0) {
+                const allProviders = useModelProvider.getState().providers
+                const serverModels = activeModels.flatMap((id) => {
+                  const p = allProviders.find((p) => p?.models?.some((m: { id: string }) => m.id === id))
+                  return p ? [{ model: id, provider: p.provider }] : []
+                })
+                if (serverModels.length > 0) setLastServerModels(serverModels)
+              }
             })
         })
         .catch((error: unknown) => {

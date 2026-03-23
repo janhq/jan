@@ -6,9 +6,34 @@ use tauri_plugin_llamacpp::cleanup_llama_processes;
 use crate::core::app::commands::{
     default_data_folder_path, get_jan_data_folder_path, update_app_configuration,
 };
+use crate::core::app::constants::{JAN_DATA_FILES, JAN_DATA_SUBDIRS};
 use crate::core::app::models::AppConfiguration;
 use crate::core::mcp::helpers::{stop_mcp_servers_with_context, ShutdownContext};
 use crate::core::state::AppState;
+
+fn is_safe_to_delete(path: &std::path::Path) -> bool {
+    let count = path.components().count();
+    count >= 3
+}
+
+fn remove_jan_data_contents(data_folder: &std::path::Path) {
+    for subdir in JAN_DATA_SUBDIRS {
+        let path = data_folder.join(subdir);
+        if path.is_dir() {
+            if let Err(e) = fs::remove_dir_all(&path) {
+                log::warn!("Failed to remove {}: {e}", path.display());
+            }
+        }
+    }
+    for file in JAN_DATA_FILES {
+        let path = data_folder.join(file);
+        if path.is_file() {
+            if let Err(e) = fs::remove_file(&path) {
+                log::warn!("Failed to remove {}: {e}", path.display());
+            }
+        }
+    }
+}
 
 /// Detect the user's default shell and return the appropriate env file path.
 /// Returns (shell_name, env_file_path).
@@ -30,10 +55,7 @@ fn detect_shell_env_file(home_dir: &str, is_macos: bool) -> (&'static str, Strin
 }
 
 // Helper function to write env vars to a shell config file
-fn write_env_to_shell(
-    env_file_path: &str,
-    env_vars: &[(String, String)],
-) -> Result<(), String> {
+fn write_env_to_shell(env_file_path: &str, env_vars: &[(String, String)]) -> Result<(), String> {
     let marker = "# Jan Local API Server - Claude Code Config";
     let new_entries: String = env_vars
         .iter()
@@ -89,14 +111,15 @@ pub fn factory_reset<R: Runtime>(app_handle: tauri::AppHandle<R>, state: State<'
         let _ = cleanup_llama_processes(app_handle.clone()).await;
 
         if data_folder.exists() {
-            if let Err(e) = fs::remove_dir_all(&data_folder) {
-                log::error!("Failed to remove data folder: {e}");
+            if !is_safe_to_delete(&data_folder) {
+                log::error!(
+                    "Refusing factory reset: path is too close to filesystem root: {}",
+                    data_folder.display()
+                );
                 return;
             }
+            remove_jan_data_contents(&data_folder);
         }
-
-        // Recreate the data folder
-        let _ = fs::create_dir_all(&data_folder).map_err(|e| e.to_string());
 
         // Reset the configuration
         let mut default_config = AppConfiguration::default();
@@ -237,7 +260,11 @@ pub fn launch_claude_code_with_config(
     if cfg!(target_os = "macos") {
         let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
         let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, true);
-        log::info!("Detected shell: {}, writing env to: {}", shell_name, env_file_path);
+        log::info!(
+            "Detected shell: {}, writing env to: {}",
+            shell_name,
+            env_file_path
+        );
 
         // Try direct write first
         match std::fs::OpenOptions::new()
@@ -252,8 +279,7 @@ pub fn launch_claude_code_with_config(
             Err(_) => {
                 // Use admin privileges to write
                 let marker = "# Jan Local API Server - Claude Code Config";
-                let existing_content =
-                    std::fs::read_to_string(&env_file_path).unwrap_or_default();
+                let existing_content = std::fs::read_to_string(&env_file_path).unwrap_or_default();
                 let cleaned: Vec<&str> = existing_content
                     .split('\n')
                     .filter(|line| {
@@ -288,14 +314,21 @@ pub fn launch_claude_code_with_config(
                     .output()
                     .map_err(|e| e.to_string())?;
 
-                log::info!("Env vars written to {} with admin privileges", env_file_path);
+                log::info!(
+                    "Env vars written to {} with admin privileges",
+                    env_file_path
+                );
                 return Ok(());
             }
         }
     } else if cfg!(target_os = "linux") {
         let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
         let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, false);
-        log::info!("Detected shell: {}, writing env to: {}", shell_name, env_file_path);
+        log::info!(
+            "Detected shell: {}, writing env to: {}",
+            shell_name,
+            env_file_path
+        );
 
         match std::fs::OpenOptions::new()
             .write(true)
@@ -341,72 +374,134 @@ pub struct CliInstallStatus {
 
 /// Check if the `jan` CLI binary is accessible on PATH.
 #[tauri::command]
-pub fn check_jan_cli_installed() -> CliInstallStatus {
+pub async fn check_jan_cli_installed() -> CliInstallStatus {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    match std::process::Command::new(which_cmd).arg("jan").output() {
-        Ok(out) if out.status.success() => CliInstallStatus {
-            installed: true,
-            path: Some(String::from_utf8_lossy(&out.stdout).trim().to_string()),
+    let mut cmd = std::process::Command::new(which_cmd);
+    cmd.arg("jan");
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    match tokio::task::spawn_blocking(move || cmd.output()).await {
+        Ok(Ok(out)) if out.status.success() => {
+            let raw = String::from_utf8_lossy(&out.stdout);
+            #[cfg(windows)]
+            let path = {
+                // `where` returns one path per line; pick the first that isn't a
+                // dev-build artifact (i.e. skip paths containing \target\)
+                raw.lines()
+                    .map(str::trim)
+                    .filter(|p| !p.is_empty() && !p.to_ascii_lowercase().contains("\\target\\"))
+                    .next()
+                    .map(str::to_string)
+                    // fall back to the raw first line if every path looks like a build dir
+                    .or_else(|| {
+                        raw.lines()
+                            .map(str::trim)
+                            .find(|p| !p.is_empty())
+                            .map(str::to_string)
+                    })
+            };
+            #[cfg(not(windows))]
+            let path = Some(raw.trim().to_string());
+            CliInstallStatus {
+                installed: path.is_some(),
+                path,
+            }
+        }
+        _ => CliInstallStatus {
+            installed: false,
+            path: None,
         },
-        _ => CliInstallStatus { installed: false, path: None },
     }
 }
 
 /// Core install logic — synchronous, no Tauri command overhead.
-///
-/// Copies the bundled `jan` binary to the best writable directory on PATH.
-/// Install order (Unix): `/usr/local/bin` (writable probe), then `~/.local/bin`.
-/// Windows: `%LOCALAPPDATA%\Programs\Jan\`
-pub fn install_jan_cli_sync<R: Runtime>(app_handle: &AppHandle<R>) -> Result<CliInstallStatus, String> {
-    let bin_name = if cfg!(windows) { "jan-cli.exe" } else { "jan-cli" };
+pub fn install_jan_cli_sync<R: Runtime>(
+    app_handle: &AppHandle<R>,
+) -> Result<CliInstallStatus, String> {
+    let bin_name = if cfg!(windows) {
+        "jan-cli.exe"
+    } else {
+        "jan-cli"
+    };
     let dest_bin_name = if cfg!(windows) { "jan.exe" } else { "jan" };
-    let bundled = app_handle
+    let resource_bin_dir = app_handle
         .path()
         .resource_dir()
         .map_err(|e| e.to_string())?
-        .join("resources/bin")
-        .join(bin_name);
+        .join("resources/bin");
+    let bundled = resource_bin_dir.join(bin_name);
+    let dest = resource_bin_dir.join(dest_bin_name);
 
-    if !bundled.exists() {
+    if !bundled.exists() && !dest.exists() {
         return Err("Jan CLI binary not bundled with this version of Jan.".to_string());
     }
 
-    let install_dir = jan_cli_install_dir()?;
-    std::fs::create_dir_all(&install_dir).map_err(|e| e.to_string())?;
-    let dest = install_dir.join(dest_bin_name);
-
-    std::fs::copy(&bundled, &dest)
-        .map_err(|e| format!("Failed to copy jan to {}: {}", dest.display(), e))?;
+    #[cfg(windows)]
+    {
+        if bundled.exists() {
+            if let Err(e) = std::fs::rename(&bundled, &dest) {
+                log::warn!("Could not rename jan-cli.exe to jan.exe: {}", e);
+            }
+        }
+        add_to_path_windows(&resource_bin_dir)?;
+        return Ok(CliInstallStatus {
+            installed: true,
+            path: Some(dest.to_string_lossy().into_owned()),
+        });
+    }
 
     #[cfg(unix)]
     {
+        let install_dir = jan_cli_install_dir()?;
+        std::fs::create_dir_all(&install_dir).map_err(|e| e.to_string())?;
+        let dest = install_dir.join(dest_bin_name);
+
+        std::fs::copy(&bundled, &dest)
+            .map_err(|e| format!("Failed to copy jan to {}: {}", dest.display(), e))?;
+
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
             .map_err(|e| e.to_string())?;
-    }
 
-    Ok(CliInstallStatus {
-        installed: true,
-        path: Some(dest.to_string_lossy().into_owned()),
-    })
+        Ok(CliInstallStatus {
+            installed: true,
+            path: Some(dest.to_string_lossy().into_owned()),
+        })
+    }
 }
 
 /// Copy the bundled `jan` binary to the system PATH (Tauri command wrapper).
 #[tauri::command]
-pub async fn install_jan_cli<R: Runtime>(app_handle: AppHandle<R>) -> Result<CliInstallStatus, String> {
+pub async fn install_jan_cli<R: Runtime>(
+    app_handle: AppHandle<R>,
+) -> Result<CliInstallStatus, String> {
     install_jan_cli_sync(&app_handle)
 }
 
-/// Remove the installed `jan` CLI binary from the install directory.
+/// Remove the installed `jan` CLI binary.
 #[tauri::command]
 pub fn uninstall_jan_cli() -> Result<(), String> {
-    let bin_name = if cfg!(windows) { "jan.exe" } else { "jan" };
-    let dest = jan_cli_install_dir()?.join(bin_name);
-    if dest.exists() {
-        std::fs::remove_file(&dest)
-            .map_err(|e| format!("Failed to remove Jan CLI from {}: {}", dest.display(), e))?;
+    #[cfg(windows)]
+    {
+        let bin_dir = jan_cli_bin_dir_windows()?;
+        remove_from_path_windows(&bin_dir)?;
+        return Ok(());
     }
-    Ok(())
+
+    #[cfg(unix)]
+    {
+        let dest = jan_cli_install_dir()?.join("jan");
+        if dest.exists() {
+            std::fs::remove_file(&dest)
+                .map_err(|e| format!("Failed to remove Jan CLI from {}: {}", dest.display(), e))?;
+        }
+        Ok(())
+    }
 }
 
 /// Build the cleaned shell-file content with all Jan CC env vars stripped out.
@@ -431,7 +526,11 @@ pub fn clear_claude_code_env() -> Result<(), String> {
     if cfg!(target_os = "macos") {
         let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
         let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, true);
-        log::info!("Clearing CC env from shell: {}, file: {}", shell_name, env_file_path);
+        log::info!(
+            "Clearing CC env from shell: {}, file: {}",
+            shell_name,
+            env_file_path
+        );
 
         let cleaned = build_cleaned_env_content(&env_file_path);
 
@@ -460,14 +559,21 @@ pub fn clear_claude_code_env() -> Result<(), String> {
                     .output()
                     .map_err(|e| e.to_string())?;
 
-                log::info!("CC env cleared from {} with admin privileges", env_file_path);
+                log::info!(
+                    "CC env cleared from {} with admin privileges",
+                    env_file_path
+                );
                 return Ok(());
             }
         }
     } else if cfg!(target_os = "linux") {
         let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
         let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, false);
-        log::info!("Clearing CC env from shell: {}, file: {}", shell_name, env_file_path);
+        log::info!(
+            "Clearing CC env from shell: {}, file: {}",
+            shell_name,
+            env_file_path
+        );
 
         let cleaned = build_cleaned_env_content(&env_file_path);
 
@@ -501,77 +607,179 @@ pub fn clear_claude_code_env() -> Result<(), String> {
     }
 }
 
-/// Determine the best writable directory for the Jan CLI install.
+/// Determine the best writable directory for the Jan CLI install (Unix only).
+#[cfg(unix)]
 fn jan_cli_install_dir() -> Result<PathBuf, String> {
-    #[cfg(unix)]
-    {
-        let usr_local_bin = PathBuf::from("/usr/local/bin");
-        if usr_local_bin.exists() {
-            let probe = usr_local_bin.join(".jan_write_probe");
-            if std::fs::write(&probe, b"").is_ok() {
-                let _ = std::fs::remove_file(&probe);
-                return Ok(usr_local_bin);
-            }
+    let usr_local_bin = PathBuf::from("/usr/local/bin");
+    if usr_local_bin.exists() {
+        let probe = usr_local_bin.join(".jan_write_probe");
+        if std::fs::write(&probe, b"").is_ok() {
+            let _ = std::fs::remove_file(&probe);
+            return Ok(usr_local_bin);
         }
-        let home = std::env::var("HOME")
-            .map_err(|_| "Cannot determine home directory".to_string())?;
-        Ok(PathBuf::from(home).join(".local").join("bin"))
     }
-    #[cfg(windows)]
-    {
-        let local_app_data = std::env::var("LOCALAPPDATA")
-            .map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
-        let install_dir = PathBuf::from(local_app_data).join("Programs").join("Jan");
-
-        // Add to PATH if not already present
-        add_to_path_windows(&install_dir)?;
-
-        Ok(install_dir)
-    }
+    let home =
+        std::env::var("HOME").map_err(|_| "Cannot determine home directory".to_string())?;
+    Ok(PathBuf::from(home).join(".local").join("bin"))
 }
 
-/// Add a directory to the Windows PATH for the current user.
+/// Return the directory containing the bundled CLI binary on Windows.
+#[cfg(windows)]
+fn jan_cli_bin_dir_windows() -> Result<PathBuf, String> {
+    let local_app_data = std::env::var("LOCALAPPDATA")
+        .map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
+    Ok(PathBuf::from(local_app_data)
+        .join("Programs")
+        .join("Jan")
+        .join("resources")
+        .join("bin"))
+}
+
+/// Add a directory to the Windows user PATH.
 #[cfg(windows)]
 fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
     use std::process::Command;
 
-    // Get current PATH from registry
-    let output = Command::new("reg")
-        .args([
-            "query",
-            "HKCU\\Environment",
-            "/v",
-            "Path",
-        ])
-        .output()
-        .map_err(|e| e.to_string())?;
-
-    let current_path = if output.status.success() {
-        String::from_utf8_lossy(&output.stdout).to_string()
-    } else {
-        String::new()
-    };
-
-    // Check if our install dir is already in PATH
     let install_dir_str = install_dir.to_string_lossy().to_string();
-    if current_path.contains(&install_dir_str) {
-        return Ok(()); // Already in PATH
+
+    let mut cmd = Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-Command",
+        "[Environment]::GetEnvironmentVariable('Path', 'User')",
+    ]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let read_output = cmd
+        .output()
+        .map_err(|e| format!("Failed to read user PATH: {}", e))?;
+
+    let existing_user_path = String::from_utf8_lossy(&read_output.stdout)
+        .trim()
+        .to_string();
+
+    // Remove stale old-style PATH entry (..\\Programs\\Jan without \\resources\\bin)
+    // left by previous versions that placed jan.exe next to the GUI binary.
+    let old_jan_dir = install_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.to_string_lossy().to_string());
+
+    let parts: Vec<&str> = existing_user_path
+        .split(';')
+        .filter(|p| !p.is_empty())
+        .filter(|p| {
+            if let Some(ref old) = old_jan_dir {
+                !p.eq_ignore_ascii_case(old)
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    if parts.iter().any(|p| p.eq_ignore_ascii_case(&install_dir_str)) {
+        return Ok(());
     }
 
-    // Add to PATH using setx
-    let new_path = format!("{};{}", install_dir_str, "%PATH%");
-    let output = Command::new("setx")
-        .args(["PATH", &new_path])
-        .output()
-        .map_err(|e| format!("Failed to add Jan to PATH: {}", e))?;
+    let mut new_parts = vec![install_dir_str.as_str()];
+    new_parts.extend(parts);
+    let new_path = new_parts.join(";");
 
-    if !output.status.success() {
+    let mut cmd_write = Command::new("powershell");
+    cmd_write.args([
+        "-NoProfile",
+        "-Command",
+        &format!(
+            "[Environment]::SetEnvironmentVariable('Path', '{}', 'User')",
+            new_path.replace('\'', "''")
+        ),
+    ]);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd_write.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let write_output = cmd_write
+        .output()
+        .map_err(|e| format!("Failed to update user PATH: {}", e))?;
+
+    if !write_output.status.success() {
         return Err(format!(
             "Failed to update PATH: {}",
-            String::from_utf8_lossy(&output.stderr)
+            String::from_utf8_lossy(&write_output.stderr)
         ));
     }
 
-    log::info!("Added {} to Windows PATH", install_dir_str);
+    log::info!("Added {} to Windows user PATH", install_dir_str);
+    Ok(())
+}
+
+/// Remove a directory from the Windows user PATH.
+#[cfg(windows)]
+fn remove_from_path_windows(dir: &PathBuf) -> Result<(), String> {
+    use std::process::Command;
+
+    let dir_str = dir.to_string_lossy().to_string();
+
+    let mut cmd = Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-Command",
+        "[Environment]::GetEnvironmentVariable('Path', 'User')",
+    ]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let read_output = cmd
+        .output()
+        .map_err(|e| format!("Failed to read user PATH: {}", e))?;
+
+    let existing_user_path = String::from_utf8_lossy(&read_output.stdout)
+        .trim()
+        .to_string();
+
+    let new_path: String = existing_user_path
+        .split(';')
+        .filter(|p| !p.is_empty() && !p.eq_ignore_ascii_case(&dir_str))
+        .collect::<Vec<_>>()
+        .join(";");
+
+    if new_path.len() != existing_user_path.len() {
+        let mut cmd_write = Command::new("powershell");
+        cmd_write.args([
+            "-NoProfile",
+            "-Command",
+            &format!(
+                "[Environment]::SetEnvironmentVariable('Path', '{}', 'User')",
+                new_path.replace('\'', "''")
+            ),
+        ]);
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd_write.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+
+        let write_output = cmd_write
+            .output()
+            .map_err(|e| format!("Failed to update user PATH: {}", e))?;
+
+        if !write_output.status.success() {
+            return Err(format!(
+                "Failed to update PATH: {}",
+                String::from_utf8_lossy(&write_output.stderr)
+            ));
+        }
+
+        log::info!("Removed {} from Windows user PATH", dir_str);
+    }
     Ok(())
 }

@@ -5,6 +5,7 @@ import type { Code, Paragraph, Parent, Text } from 'mdast'
 import { visit } from 'unist-util-visit'
 import { ExtensionManager } from './extension'
 import path from 'path'
+import type { VFile } from 'vfile'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -27,28 +28,30 @@ export function basenameNoExt(filePath: string): string {
 
 /**
  * Remark plugin that disables indented code block syntax.
- * Converts indented code blocks (without language specifier) to plain text paragraphs,
+ * Converts indented code blocks to plain text paragraphs,
  * while preserving fenced code blocks with backticks.
  */
 export function disableIndentedCodeBlockPlugin() {
-  return (tree: Node) => {
+  return (tree: Node, file: VFile) => {
     visit(tree, 'code', (node: Code, index, parent: Parent | undefined) => {
-      // Convert indented code blocks (nodes without lang or meta property)
-      // to plain text
+      // Convert indented code blocks (nodes without lang / meta property, 
+      // and are not surrounded by backticks) to plain text
       // Check if the parent exists so we can replace the node safely
-      if (!node.lang && !node.meta && parent && typeof index === 'number') {
+      if (node.lang === null && node.meta === null && parent && typeof index === 'number') {
         const nodePosition: Position | undefined = node.position
-        const textNode: Text = {
-          type: 'text',
-          value: node.value,
-          position: nodePosition,
+        if (nodePosition !== undefined && file.value.at(nodePosition.start.offset!) !== '`') {
+          const textNode: Text = {
+            type: 'text',
+            value: node.value,
+            position: nodePosition,
+          }
+          const paragraphNode: Paragraph = {
+            type: 'paragraph',
+            children: [textNode],
+            position: nodePosition,
+          }
+          parent.children[index] = paragraphNode
         }
-        const paragraphNode: Paragraph = {
-          type: 'paragraph',
-          children: [textNode],
-          position: nodePosition,
-        }
-        parent.children[index] = paragraphNode
       }
     })
   }
@@ -69,6 +72,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/llamacpp.svg'
     case 'mlx':
       return '/images/model-provider/mlx.png'
+    case 'foundation-models':
+      return '/images/model-provider/apple-intelligence.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
@@ -89,6 +94,10 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/azure.svg'
     case 'xai':
       return '/images/model-provider/xai.svg'
+    case 'minimax':
+      return '/images/model-provider/minimax.svg'
+    case 'nvidia':
+      return '/images/model-provider/nvidia.svg'
     default:
       return undefined
   }
@@ -102,6 +111,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Llama.cpp'
     case 'mlx':
       return 'MLX'
+    case 'foundation-models':
+      return 'Apple Intelligence'
     case 'openai':
       return 'OpenAI'
     case 'openrouter':
@@ -112,6 +123,10 @@ export const getProviderTitle = (provider: string) => {
       return 'Hugging Face'
     case 'xai':
       return 'xAI'
+    case 'minimax':
+      return 'MiniMax'
+    case 'nvidia':
+      return 'NVIDIA NIM'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }

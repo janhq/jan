@@ -1,0 +1,70 @@
+---
+title: Agents
+description: Autonomous AI agents that run on your own hardware
+keywords:
+  [
+    Jan,
+    Jan AI,
+    agents,
+    OpenClaw,
+    autonomous agent,
+    local AI agent,
+    personal assistant,
+    AI automation,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Agents
+
+<Callout type="info">
+Available since **Jan 0.7.8** (March 2026).
+</Callout>
+
+Jan supports autonomous AI agents that run entirely on your own hardware — no cloud required.
+
+## OpenClaw Agent
+
+OpenClaw is Jan's first default agent. Unlike a chatbot that only answers questions, OpenClaw acts as a personal assistant that can take real actions on your behalf.
+
+**What it can do:**
+- Read and manage local files on your computer
+- Manage your calendar
+- Send and receive messages via WhatsApp, Discord, or Slack
+- Execute commands and automate tasks
+
+**Skills:**
+Extend OpenClaw with skills to add new capabilities and integrations.
+
+<Steps>
+
+### Enable OpenClaw
+
+Go to **Settings > Integrations > OpenClaw** and click **Start** next to **Enable OpenClaw**. Jan will automatically walk you through the required installation steps — just wait for the process to complete.
+
+![OpenClaw Channels](./_assets/openclaw-integration.png)
+
+A **Setting Up Remote Access** dialog will appear, automatically checking Node.js, installing OpenClaw, configuring it, and starting the gateway. Wait until all steps complete before moving on.
+
+![OpenClaw Gateway Setup](./_assets/openclaw-gateway-setup.png)
+
+### Add Channels
+
+Once setup is complete, connect your messaging channels under the **Channels** section. Click the **Settings** icon on the channel you want to add — for example, WhatsApp — and a setup dialog will appear.
+
+![WhatsApp Setup](./_assets/openclaw-whatsapp-setup.png)
+
+Click **Start Setup** and Jan will configure everything automatically, then display a QR code. Scan it with your WhatsApp app to pair your account. Once connected, you can chat with Jan directly from your phone.
+
+### Start Chatting
+
+Click **New Agent Chat** from the left sidebar (or press `⌘M`) to open a new agent session and start interacting with OpenClaw.
+
+![New Agent Chat](./_assets/agents-new-agent-chat.png)
+
+</Steps>
+
+## What's Next
+
+You're all set — start from here and explore what OpenClaw can do for you. We'll be adding a lot of useful real-world use cases and guides to the docs soon.

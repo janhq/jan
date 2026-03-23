@@ -59,6 +59,7 @@ import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
+import { useAgentMode } from '@/hooks/useAgentMode'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -155,7 +156,10 @@ function ThreadDetail() {
   // context-limit hit, so the user sees it instead of a blank gap.
   const [pendingContinueMessage, setPendingContinueMessage] =
     useState<UIMessage | null>(null)
-  const [isAutoIncreasingContext, setIsAutoIncreasingContext] = useState(false)
+  const [autoIncreaseAttempts, setAutoIncreaseAttempts] = useState(0)
+  const MAX_AUTO_INCREASE_ATTEMPTS = 3
+  const isAutoIncreasingContext = autoIncreaseAttempts > 0 && autoIncreaseAttempts < MAX_AUTO_INCREASE_ATTEMPTS
+  const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
 
   // Refs so onFinish (captured in closure) always calls the latest callbacks
   const handleContextSizeIncreaseRef = useRef<(() => void) | null>(null)
@@ -188,16 +192,36 @@ function ThreadDetail() {
       // from where it stopped. The stream wrapper injects it as the first text-delta
       // of the new message, so the user sees the partial text immediately.
       if (!isAbort && finishReason === 'length') {
-        const partialText = message.parts
-          .filter((p) => p.type === 'text')
-          .map((p) => (p as { type: 'text'; text: string }).text)
-          .join('')
-        if (partialText) {
-          setContinueFromContentRef.current?.(partialText)
-          // Keep the partial message visible while the model reloads
-          setPendingContinueMessage(message)
+        const selectedModelState = useModelProvider.getState().selectedModel
+        const usage = msgMeta?.usage as
+          | { inputTokens?: number; outputTokens?: number }
+          | undefined
+        const totalTokens =
+          (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
+        const ctxLen =
+          (selectedModelState?.settings?.ctx_len?.controller_props
+            ?.value as number) ?? 32768
+        const isContextLimit = totalTokens >= ctxLen * 0.9
+
+        if (isContextLimit) {
+          const autoIncrease =
+            selectedModelState?.settings?.auto_increase_ctx_len
+              ?.controller_props?.value ?? true
+          if (autoIncrease) {
+            const partialText = message.parts
+              .filter((p) => p.type === 'text')
+              .map((p) => (p as { type: 'text'; text: string }).text)
+              .join('')
+            if (partialText) {
+              setContinueFromContentRef.current?.(partialText)
+              // Keep the partial message visible while the model reloads
+              setPendingContinueMessage(message)
+            }
+            handleContextSizeIncreaseRef.current?.()
+          } else {
+            setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+          }
         }
-        handleContextSizeIncreaseRef.current?.()
         return
       }
 
@@ -779,13 +803,26 @@ function ThreadDetail() {
 
     const model = provider.models[modelIndex]
 
-    // Increase context length by 50%
+    // Increase context length in steps: <8192 -> 8192 -> 32768 -> x1.5
     const currentCtxLen =
-      (model.settings?.ctx_len?.controller_props?.value as number) ?? 32768
-    const newCtxLen =
-      currentCtxLen < 32768
-        ? 32768
-        : Math.round(Math.max(32768, currentCtxLen) * 1.5)
+      (model.settings?.ctx_len?.controller_props?.value as number) ?? 8192
+    const maxCtxLen =
+      (model.settings?.ctx_len?.controller_props?.max as number) || 131072
+
+    let newCtxLen: number
+    if (currentCtxLen < 8192) {
+      newCtxLen = 8192
+    } else if (currentCtxLen < 32768) {
+      newCtxLen = 32768
+    } else {
+      newCtxLen = Math.round(currentCtxLen * 1.5)
+    }
+
+    newCtxLen = Math.min(newCtxLen, maxCtxLen)
+    if (newCtxLen <= currentCtxLen) {
+      setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+      return
+    }
 
     const updatedModel = {
       ...model,
@@ -825,9 +862,17 @@ function ThreadDetail() {
   handleContextSizeIncreaseRef.current = handleContextSizeIncrease
   setContinueFromContentRef.current = setContinueFromContent
 
-  // Auto-trigger context size increase when the model reports a context limit error
+  // Skip auto-context-increase in agent mode
+  const agentModeActive = useAgentMode(
+    (s) => s.agentThreads[threadId] === true
+  )
   useEffect(() => {
-    if (!error) return
+    if (!error || agentModeActive) return
+    if (autoIncreaseAttempts >= MAX_AUTO_INCREASE_ATTEMPTS) return
+    const autoIncrease =
+      selectedModel?.settings?.auto_increase_ctx_len?.controller_props?.value ??
+      true
+    if (!autoIncrease) return
     const isContextError =
       (error.message?.toLowerCase().includes('context') &&
         (error.message?.toLowerCase().includes('size') ||
@@ -835,15 +880,20 @@ function ThreadDetail() {
           error.message?.toLowerCase().includes('limit'))) ||
       error.message === OUT_OF_CONTEXT_SIZE
     if (isContextError) {
-      setIsAutoIncreasingContext(true)
+      setAutoIncreaseAttempts((prev) => prev + 1)
       handleContextSizeIncrease()
     }
   }, [error]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Clear once the new stream starts
   useEffect(() => {
-    if (isAutoIncreasingContext && status === 'streaming') {
-      setIsAutoIncreasingContext(false)
+    if (status === 'streaming' || status === 'submitted') {
+      setContextLimitError(null)
+    }
+    if (status === 'streaming' && autoIncreaseAttempts > 0) {
+      setAutoIncreaseAttempts(0)
+    }
+    if (status === 'error' && pendingContinueMessage) {
+      setPendingContinueMessage(null)
     }
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -908,7 +958,7 @@ function ThreadDetail() {
                   {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
                 </div>
               )}
-              {error && !isAutoIncreasingContext && (
+              {(error || contextLimitError) && !isAutoIncreasingContext && (
                 <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
                   <div className="flex items-start gap-3">
                     <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
@@ -921,14 +971,14 @@ function ThreadDetail() {
                           className="text-sm text-muted-foreground table-cell align-middle"
                           style={{ wordWrap: 'break-word' }}
                         >
-                          {error.message}
+                          {(error ?? contextLimitError)?.message}
                         </span>
                       </div>
-                      {(error.message?.toLowerCase().includes('context') &&
-                        (error.message?.toLowerCase().includes('size') ||
-                          error.message?.toLowerCase().includes('length') ||
-                          error.message?.toLowerCase().includes('limit'))) ||
-                      error.message === OUT_OF_CONTEXT_SIZE ? (
+                      {((error ?? contextLimitError)?.message?.toLowerCase().includes('context') &&
+                        ((error ?? contextLimitError)?.message?.toLowerCase().includes('size') ||
+                          (error ?? contextLimitError)?.message?.toLowerCase().includes('length') ||
+                          (error ?? contextLimitError)?.message?.toLowerCase().includes('limit'))) ||
+                      (error ?? contextLimitError)?.message === OUT_OF_CONTEXT_SIZE ? (
                         <Button
                           variant="outline"
                           size="sm"

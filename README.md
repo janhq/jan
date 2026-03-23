@@ -84,7 +84,7 @@ Download from [jan.ai](https://jan.ai/) or [GitHub Releases](https://github.com/
 ## Features
 
 - **Local AI Models**: Download and run LLMs (Llama, Gemma, Qwen, GPT-oss etc.) from HuggingFace
-- **Cloud Integration**: Connect to GPT models via OpenAI, Claude models via Anthropic, Mistral, Groq, and others
+- **Cloud Integration**: Connect to GPT models via OpenAI, Claude models via Anthropic, Mistral, Groq, MiniMax, and others
 - **Custom Assistants**: Create specialized AI assistants for your tasks
 - **OpenAI-Compatible API**: Local server at `localhost:1337` for other applications
 - **Model Context Protocol**: MCP integration for agentic capabilities
@@ -97,9 +97,10 @@ For those who enjoy the scenic route:
 ### Prerequisites
 
 - Node.js ≥ 20.0.0
-- Yarn ≥ 1.22.0
+- Yarn ≥ 4.5.3
 - Make ≥ 3.81
 - Rust (for Tauri)
+- (macOS Apple Silicon only) MetalToolchain `xcodebuild -downloadComponent MetalToolchain`
 
 ### Run with Make
 

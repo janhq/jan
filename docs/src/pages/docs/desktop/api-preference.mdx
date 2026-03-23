@@ -1,0 +1,118 @@
+---
+title: API Reference
+description: API endpoints supported by Jan's local API server
+keywords:
+  [
+    Jan,
+    local API,
+    OpenAI,
+    chat completions,
+    API endpoints,
+    v1,
+    local AI,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+import { DocCard, DocCards } from '@/components/DocCard'
+import { Bot, Code2 } from 'lucide-react'
+
+# API Reference
+
+Jan's local API server exposes an OpenAI-compatible REST API at `http://127.0.0.1:1337`. Use it as a drop-in replacement for cloud APIs in any application that supports OpenAI-compatible endpoints.
+
+## Supported Endpoints
+
+### `GET /v1/models`
+
+Returns a list of all models currently loaded or available in Jan.
+
+```bash
+curl http://127.0.0.1:1337/v1/models \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+```json
+{
+  "object": "list",
+  "data": [
+    { "id": "jan-v3-4b-base-instruct", "object": "model" }
+  ]
+}
+```
+
+---
+
+### `POST /v1/chat/completions`
+
+OpenAI-compatible chat completions endpoint. Supports streaming, tool calling, and multi-turn conversations.
+
+```bash
+curl http://127.0.0.1:1337/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "model": "jan-v3-4b-base-instruct",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "stream": false
+  }'
+```
+
+---
+
+### `POST /v1/messages`
+
+Anthropic-compatible messages endpoint. Jan automatically translates requests to the internal format, so you can use Anthropic SDK clients pointed at your local server.
+
+```bash
+curl http://127.0.0.1:1337/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: YOUR_API_KEY" \
+  -d '{
+    "model": "jan-v3-4b-base-instruct",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+---
+
+<Callout type="info">
+**OpenAI Responses API** (`/v1/responses`) support is coming soon.
+</Callout>
+
+## Use With Agents & Integrations
+
+Jan's local API is designed to wire directly into AI agents and coding tools — no cloud account needed.
+
+<DocCards cols={2}>
+  <DocCard title="Claude Code" href="/docs/desktop/integrations/claude-code" icon={<Code2 size={20} />}>Point Claude Code at Jan's local server to run Opus, Sonnet, and Haiku tiers on your own hardware.</DocCard>
+  <DocCard title="OpenClaw" href="/docs/desktop/integrations/openclaw" icon={<Bot size={20} />}>Wire OpenClaw to Jan's local API for a fully private autonomous agent — no cloud, no usage fees.</DocCard>
+</DocCards>
+
+## Using with OpenAI SDK
+
+Point the OpenAI SDK at your local server by setting the base URL and API key:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://127.0.0.1:1337/v1",
+    api_key="YOUR_API_KEY"
+)
+
+response = client.chat.completions.create(
+    model="jan-v3-4b-base-instruct",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+```typescript
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "http://127.0.0.1:1337/v1",
+  apiKey: "YOUR_API_KEY",
+});
+```
