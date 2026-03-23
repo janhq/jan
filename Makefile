@@ -172,7 +172,6 @@ else
 	@echo "Skipping MLX server build (macOS only)"
 endif
 
-
 # Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
 build-cli:
 ifeq ($(shell uname -s),Darwin)
