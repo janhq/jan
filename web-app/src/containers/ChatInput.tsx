@@ -1717,7 +1717,7 @@ const ChatInput = memo(function ChatInput({
                     {!projectId && assistantCount < 2 && (
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger>
-                        <IconUser size={18} className="text-muted-foreground" />
+                          <IconUser size={18} className="text-muted-foreground" />
                           <span>Use Assistant</span>
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
