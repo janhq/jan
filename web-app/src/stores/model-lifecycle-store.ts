@@ -3,6 +3,8 @@
  * Tracks last user activity (message send) so the idle-unload timer can run.
  */
 import { create } from 'zustand'
+import { useAppState } from '@/hooks/useAppState'
+import type { ServiceHub } from '@/services'
 
 export const LOCAL_PROVIDERS = new Set(['llamacpp', 'mlx'])
 
@@ -12,6 +14,37 @@ export function getProviderSetting(
 ): number | boolean | undefined {
   const setting = provider?.settings?.find((s) => s.key === key)
   return (setting?.controller_props as { value?: number | boolean })?.value
+}
+
+/**
+ * Sync the global activeModels UI state with the engine's actual loaded models.
+ * Call after any load/unload operation to keep the UI in sync.
+ */
+export async function syncActiveModels(serviceHub: ServiceHub): Promise<void> {
+  try {
+    const models = await serviceHub.models().getActiveModels()
+    useAppState.getState().setActiveModels(models || [])
+  } catch (err) {
+    console.warn('[ModelLifecycle] syncActiveModels failed:', err)
+  }
+}
+
+/**
+ * Explicitly reload a model and sync UI state.
+ * Use when you need to ensure a model is loaded (e.g. resuming a conversation
+ * after idle unload, or API server restoring a model).
+ */
+export async function reloadModel(
+  serviceHub: ServiceHub,
+  provider: ProviderObject,
+  modelId: string
+): Promise<void> {
+  try {
+    await serviceHub.models().startModel(provider, modelId)
+  } catch (err) {
+    console.warn('[ModelLifecycle] reloadModel failed:', err)
+  }
+  await syncActiveModels(serviceHub)
 }
 
 interface ModelLifecycleState {

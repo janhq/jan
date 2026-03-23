@@ -29,8 +29,8 @@ import {
   useModelLifecycleStore,
   LOCAL_PROVIDERS,
   getProviderSetting,
+  syncActiveModels,
 } from '@/stores/model-lifecycle-store'
-import { useIdleModelUnload } from '@/hooks/useIdleModelUnload'
 import {
   convertThreadMessagesToUIMessages,
   extractContentPartsFromUIMessage,
@@ -138,7 +138,6 @@ function ThreadDetail() {
   const setLastActivity = useModelLifecycleStore((state) => state.setLastActivity)
   const threadRef = useRef(thread)
 
-  useIdleModelUnload()
   const projectId = threadRef.current?.metadata?.project?.id
 
   // Get system message from thread's assistant instructions (if thread has an assigned assistant)
@@ -333,7 +332,9 @@ function ThreadDetail() {
         sessionData.tools = []
         toolCallAbortController.current = null
 
-        // Post-tool-call unload: free VRAM for agentic workflows (e.g. tool model then heavy model)
+        // Post-tool-call unload: free VRAM for agentic workflows (e.g. tool model then heavy model).
+        // The model will be automatically reloaded on the next inference request via
+        // ModelFactory.createModel() → startModel() when the AI SDK agent loop continues.
         const provider = getProviderByName(selectedProvider)
         const unloadAfterToolCall = getProviderSetting(
           provider,
@@ -347,6 +348,7 @@ function ThreadDetail() {
           serviceHub
             .models()
             .stopModel(selectedModel.id, selectedProvider)
+            .then(() => syncActiveModels(serviceHub))
             .catch((err) =>
               console.warn('[PostToolCallUnload] stopModel failed:', err)
             )
