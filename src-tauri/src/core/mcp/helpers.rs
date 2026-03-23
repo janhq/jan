@@ -13,7 +13,7 @@ use tauri_plugin_http::reqwest;
 use tokio::{
     io::AsyncReadExt,
     process::Command,
-    sync::Mutex,
+    sync::{Mutex, Notify},
     time::{sleep, timeout},
 };
 
@@ -166,13 +166,19 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
     name: String,
     config: Value,
     shutdown_flag: Arc<Mutex<bool>>,
+    reconnect_notify: Arc<Notify>,
 ) {
     log::info!("Monitoring MCP server {name} health");
     let mut consecutive_failures: u32 = 0;
 
     loop {
-        // Delay between health checks
-        sleep(Duration::from_secs(5)).await;
+        // Wait for either the periodic health check or an immediate reconnect signal
+        tokio::select! {
+            _ = sleep(Duration::from_secs(2)) => {}
+            _ = reconnect_notify.notified() => {
+                log::info!("MCP server {name} monitor received reconnect signal");
+            }
+        }
 
         {
             let shutdown = shutdown_flag.lock().await;
@@ -197,9 +203,20 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
                     }
                 }
             } else {
-                // Server was removed from HashMap (e.g., by deactivate_mcp_server)
-                log::info!("MCP server {name} no longer in running services, stopping monitor");
-                return;
+                // Entry was removed (e.g., by get_tools cleanup or deactivate).
+                // Only stop monitoring if the server was deliberately deactivated.
+                let still_active = {
+                    let app_state = app.state::<AppState>();
+                    let active_servers = app_state.mcp_active_servers.lock().await;
+                    active_servers.contains_key(&name)
+                };
+                if still_active {
+                    log::info!("MCP server {name} entry missing but still active, will reconnect");
+                    false
+                } else {
+                    log::info!("MCP server {name} removed and deactivated, stopping monitor");
+                    return;
+                }
             }
         };
 
@@ -212,7 +229,7 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
         // Server failed health check — remove the dead entry and try to reconnect
         log::error!("MCP server {name} failed health check, attempting auto-reconnect");
 
-        // Clean up the dead server entry
+        // Clean up the dead server entry (if still present) and its tracked PID
         {
             let mut servers = servers_state.lock().await;
             if let Some(service) = servers.remove(&name) {
@@ -225,6 +242,11 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
                     }
                 }
             }
+        }
+        {
+            let app_state = app.state::<AppState>();
+            let mut pids = app_state.mcp_server_pids.lock().await;
+            pids.remove(&name);
         }
 
         // Emit event so frontend shows accurate disconnected status
@@ -331,6 +353,7 @@ pub async fn start_mcp_server<R: Runtime>(
             let monitor_name = name.clone();
             let monitor_config = config.clone();
             let shutdown_flag = app_state.mcp_shutdown_in_progress.clone();
+            let reconnect_notify = app_state.mcp_reconnect_notify.clone();
 
             let monitor_handle = tauri::async_runtime::spawn(async move {
                 monitor_mcp_server_handle(
@@ -339,6 +362,7 @@ pub async fn start_mcp_server<R: Runtime>(
                     monitor_name,
                     monitor_config,
                     shutdown_flag,
+                    reconnect_notify,
                 )
                 .await;
             });
@@ -603,6 +627,26 @@ async fn schedule_mcp_start_task<R: Runtime>(
 
         match service {
             Ok(server) => {
+                // Keep the stderr pipe alive to prevent the child process from
+                // receiving SIGPIPE and to capture diagnostic output.
+                if let Some(mut stderr_stream) = stderr {
+                    let stderr_name = name.clone();
+                    tokio::spawn(async move {
+                        let mut buf = [0u8; 1024];
+                        while let Ok(n) = stderr_stream.read(&mut buf).await {
+                            if n == 0 {
+                                break;
+                            }
+                            if let Ok(text) = std::str::from_utf8(&buf[..n]) {
+                                for line in text.lines() {
+                                    if !line.trim().is_empty() {
+                                        log::warn!("[mcp-stderr:{}] {}", stderr_name, line);
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
                 log::trace!("Connected to server: {:#?}", server.peer_info());
                 servers
                     .lock()
