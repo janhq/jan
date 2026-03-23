@@ -143,6 +143,95 @@ function createCustomFetch(
 }
 
 /**
+ * Custom fetch for Foundation Models that routes through Tauri IPC
+ * instead of HTTP, emulating an OpenAI-compatible fetch interface.
+ */
+function createFoundationModelsFetch(
+  parameters: Record<string, unknown>
+): typeof globalThis.fetch {
+  return async (
+    _input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> => {
+    const rawBody = init?.body ? JSON.parse(init.body as string) : {}
+    const body = { ...rawBody, ...parameters }
+    const isStreaming = body.stream === true
+
+    if (!isStreaming) {
+      const result = await invoke<string>(
+        'plugin:foundation-models|foundation_models_chat_completion',
+        { body: JSON.stringify(body) }
+      )
+      return new Response(result, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    const requestId = crypto.randomUUID()
+    const { listen } = await import('@tauri-apps/api/event')
+
+    let unlistenFn: (() => void) | null = null
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const encoder = new TextEncoder()
+
+        unlistenFn = await listen(
+          `foundation-models-stream-${requestId}`,
+          (event: { payload: { data?: string; done?: boolean; error?: string } }) => {
+            const payload = event.payload
+            if (payload.done) {
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+              try {
+                controller.close()
+              } catch {
+                /* already closed */
+              }
+              unlistenFn?.()
+            } else if (payload.error) {
+              try {
+                controller.error(new Error(payload.error))
+              } catch {
+                /* already errored */
+              }
+              unlistenFn?.()
+            } else if (payload.data) {
+              controller.enqueue(
+                encoder.encode(`data: ${payload.data}\n\n`)
+              )
+            }
+          }
+        )
+
+        invoke(
+          'plugin:foundation-models|foundation_models_chat_completion_stream',
+          { body: JSON.stringify(body), requestId }
+        ).catch((err) => {
+          try {
+            controller.error(err)
+          } catch {
+            /* already errored */
+          }
+          unlistenFn?.()
+        })
+      },
+      cancel() {
+        unlistenFn?.()
+        invoke(
+          'plugin:foundation-models|abort_foundation_models_stream',
+          { requestId }
+        ).catch(() => {})
+      },
+    })
+
+    return new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })
+  }
+}
+
+/**
  * Factory for creating language models based on provider type.
  * Supports native AI SDK providers (Anthropic, Google) and OpenAI-compatible providers.
  */
@@ -346,8 +435,8 @@ export class ModelFactory {
   }
 
   /**
-   * Create a Foundation Models model (Apple on-device) by starting the local
-   * Swift server via the Tauri plugin and connecting over localhost.
+   * Create a Foundation Models model (Apple on-device) via direct Tauri IPC
+   * to the fm-rs Rust bindings — no HTTP server involved.
    */
   private static async createFoundationModelsModel(
     modelId: string,
@@ -367,8 +456,6 @@ export class ModelFactory {
           'Apple Intelligence is not enabled. Please enable it in System Settings > Apple Intelligence & Siri.',
         modelNotReady:
           'The Apple on-device model is still preparing. Please wait and try again shortly.',
-        binaryNotFound:
-          'The Foundation Models server binary is missing. Please reinstall Jan.',
         unavailable:
           'Apple Foundation Models are currently unavailable on this device.',
       }
@@ -391,30 +478,24 @@ export class ModelFactory {
       }
     }
 
-    const sessionInfo = await invoke<SessionInfo | null>(
-      'plugin:foundation-models|find_foundation_models_session',
+    const loaded = await invoke<boolean>(
+      'plugin:foundation-models|is_foundation_models_loaded',
       {}
     )
 
-    if (!sessionInfo) {
+    if (!loaded) {
       throw new Error(
-        'No running Foundation Models session. The server may have failed to start — please check the logs.'
+        'No running Foundation Models session. The model may have failed to load — please check the logs.'
       )
     }
 
-    const baseUrl = `http://localhost:${sessionInfo.port}`
-    const authHeaders = {
-      Authorization: `Bearer ${sessionInfo.api_key}`,
-      Origin: 'tauri://localhost',
-    }
-
-    const customFetch = createCustomFetch(httpFetch, parameters)
+    const customFetch = createFoundationModelsFetch(parameters)
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'foundation-models',
-      headers: () => authHeaders,
-      url: ({ path }) => new URL(`${baseUrl}/v1${path}`).toString(),
-      fetch: customFetch,
+      headers: () => ({}),
+      url: ({ path }) => `foundation-models://local/v1${path}`,
+      fetch: customFetch as typeof httpFetch,
       metadataExtractor: providerMetadataExtractor,
     })
 
