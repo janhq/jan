@@ -85,6 +85,13 @@ export function ModelSetting({
         models: updatedModels,
       })
 
+      // Keep selectedModel snapshot in sync so that the transport picks up the
+      // new settings immediately without the user having to reselect the model.
+      const currentState = useModelProvider.getState()
+      if (currentState.selectedModel?.id === model.id) {
+        useModelProvider.setState({ selectedModel: updatedModel as Model })
+      }
+
       // Call debounced stopModel only when updating ctx_len, ngl, chat_template, or offload_mmproj
       // and only if the model is currently running
       if (
@@ -132,14 +139,15 @@ export function ModelSetting({
 
         <div className="px-4 space-y-8 pb-4">
 
-          {/* ── Remote model token limits ───────────────────────────────── */}
-          {isRemoteProvider && (
-            <div className="space-y-6">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Token Limits
-              </p>
+          {/* ── Token limits — shown for ALL providers ──────────────────── */}
+          <div className="space-y-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Token Limits
+            </p>
 
-              {/* Max Context Tokens */}
+            {/* Max Context Tokens — remote only; local models use the
+                predefined "Context Size" field in their model.settings */}
+            {isRemoteProvider && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-sm font-medium">Max Context Tokens</span>
@@ -149,7 +157,7 @@ export function ModelSetting({
                     step={512}
                     placeholder="e.g. 8192"
                     className="w-28 text-right"
-                    value={model.settings?.ctx_len?.controller_props?.value ?? ''}
+                    value={(model.settings?.ctx_len?.controller_props?.value as string | number) ?? ''}
                     onChange={(e) =>
                       handleSettingChange(
                         'ctx_len',
@@ -164,41 +172,41 @@ export function ModelSetting({
                   limit.
                 </p>
               </div>
+            )}
 
-              {/* Max Output Tokens */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-sm font-medium">Max Output Tokens</span>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={256}
-                    placeholder="e.g. 4096"
-                    className="w-28 text-right"
-                    value={
-                      model.settings?.max_output_tokens?.controller_props
-                        ?.value ?? ''
-                    }
-                    onChange={(e) =>
-                      handleSettingChange(
-                        'max_output_tokens',
-                        e.target.value === '' ? '' : Number(e.target.value)
-                      )
-                    }
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground leading-normal">
-                  Maximum tokens the model may generate per reply. Sent as{' '}
-                  <code className="text-xs">max_tokens</code> in API requests.
-                  Leave blank to use the provider default.
-                </p>
+            {/* Max Output Tokens — shown for ALL providers */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-sm font-medium">Max Output Tokens</span>
+                <Input
+                  type="number"
+                  min={0}
+                  step={256}
+                  placeholder="e.g. 4096"
+                  className="w-28 text-right"
+                  value={
+                    (model.settings?.max_output_tokens?.controller_props
+                      ?.value as string | number) ?? ''
+                  }
+                  onChange={(e) =>
+                    handleSettingChange(
+                      'max_output_tokens',
+                      e.target.value === '' ? '' : Number(e.target.value)
+                    )
+                  }
+                />
               </div>
-
-              {Object.keys(model.settings || {}).length > 0 && (
-                <div className="border-t pt-2" />
-              )}
+              <p className="text-xs text-muted-foreground leading-normal">
+                Maximum tokens the model may generate per reply. Sent as{' '}
+                <code className="text-xs">max_tokens</code> in API requests.
+                Leave blank to use the provider default.
+              </p>
             </div>
-          )}
+
+            {Object.keys(model.settings || {}).length > 0 && (
+              <div className="border-t pt-2" />
+            )}
+          </div>
 
           {/* ── Existing model.settings entries (local & remote) ─────────── */}
           {Object.entries(model.settings || {})
@@ -214,11 +222,11 @@ export function ModelSetting({
             return acc
           }, [])
           .filter(([key]) => {
-            // Hide the raw gear-icon fields for remote providers — they are
-            // rendered above as the dedicated "Token Limits" inputs.
-            if (isRemoteProvider && (key === 'ctx_len' || key === 'max_output_tokens')) {
-              return false
-            }
+            // max_output_tokens is always rendered in the "Token Limits"
+            // section above, so never render it again in the dynamic list.
+            if (key === 'max_output_tokens') return false
+            // ctx_len for remote providers is also in the Token Limits section.
+            if (isRemoteProvider && key === 'ctx_len') return false
             // MLX models only support context size setting
             if (provider.provider === 'mlx') {
               return key === 'ctx_len'

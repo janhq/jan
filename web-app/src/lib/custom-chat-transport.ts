@@ -385,8 +385,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
         // Merge model-level limits (gear-icon settings) as baseline so that
         // values set via the model settings sheet are included in API requests.
+        // Always re-read fresh from providers to avoid stale selectedModel snapshot.
         // Assistant-level parameters always take priority.
-        const selectedModelForFactory = useModelProvider.getState().selectedModel
+        const { selectedModel: _snapF, selectedProvider: _spF, providers: _pvF } = useModelProvider.getState()
+        const selectedModelForFactory =
+          _pvF.find((p) => p.provider === _spF)?.models.find((m) => m.id === _snapF?.id)
+          ?? _snapF
         const modelSettingParams: Record<string, unknown> = {}
         const msCtxLen = selectedModelForFactory?.settings?.ctx_len?.controller_props?.value
         if (msCtxLen !== undefined && msCtxLen !== '') modelSettingParams.ctx_len = msCtxLen
@@ -464,7 +468,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // createCustomFetch; here we read it to pass to streamText and to compute
     // the trimming budget.
     const inferenceParams = useAssistant.getState().currentAssistant?.parameters ?? {}
-    const selectedModel = useModelProvider.getState().selectedModel
+
+    // Always re-read the model fresh from the providers array so that settings
+    // changed via the gear icon are picked up even if selectedModel is stale.
+    const { selectedModel: _snap, selectedProvider, providers } = useModelProvider.getState()
+    const selectedModel =
+      providers.find((p) => p.provider === selectedProvider)?.models.find((m) => m.id === _snap?.id)
+      ?? _snap
 
     const maxOutputTokens: number | undefined = (() => {
       // Priority 1: assistant parameters
