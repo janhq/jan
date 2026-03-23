@@ -1696,43 +1696,43 @@ const ChatInput = memo(function ChatInput({
                       onClick={handleAttachDocsIngest}
                       disabled={!selectedModel?.capabilities?.includes('tools')}
                     >
-                        {ingestingDocs ? (
-                          <IconLoader2
-                            size={18}
-                            className="text-muted-foreground animate-spin"
-                          />
-                        ) : (
-                          <IconPaperclip
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                        )}
-                        <span>
-                          {ingestingDocs
-                            ? 'Indexing documents…'
-                            : 'Add documents or files'}
-                        </span>
-                      </DropdownMenuItem>
-                      {/* Use Assistant - only show when no projectId */}
-                      {!projectId && assistantCount < 2 && (
-                        <DropdownMenuSub>
-                          <DropdownMenuSubTrigger>
-                          <IconUser size={18} className="text-muted-foreground" />
-                            <span>Use Assistant</span>
-                          </DropdownMenuSubTrigger>
-                          <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
-                            <AssistantsMenu
-                              selectedAssistant={selectedAssistantId}
-                              setSelectedAssistant={setSelectedAssistantId}
-                              currentThread={currentThread}
-                              updateCurrentThreadAssistant={
-                                updateCurrentThreadAssistant
-                              }
-                              assistants={assistants}
-                            />
-                          </DropdownMenuSubContent>
-                        </DropdownMenuSub>
+                      {ingestingDocs ? (
+                        <IconLoader2
+                          size={18}
+                          className="text-muted-foreground animate-spin"
+                        />
+                      ) : (
+                        <IconPaperclip
+                          size={18}
+                          className="text-muted-foreground"
+                        />
                       )}
+                      <span>
+                        {ingestingDocs
+                          ? 'Indexing documents…'
+                          : 'Add documents or files'}
+                      </span>
+                    </DropdownMenuItem>
+                    {/* Use Assistant - only show when no projectId */}
+                    {!projectId && assistantCount < 2 && (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                        <IconUser size={18} className="text-muted-foreground" />
+                          <span>Use Assistant</span>
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                          <AssistantsMenu
+                            selectedAssistant={selectedAssistantId}
+                            setSelectedAssistant={setSelectedAssistantId}
+                            currentThread={currentThread}
+                            updateCurrentThreadAssistant={
+                              updateCurrentThreadAssistant
+                            }
+                            assistants={assistants}
+                          />
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
