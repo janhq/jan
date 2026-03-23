@@ -85,7 +85,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             let api_key  = std::env::var("AGENT_API_KEY").ok()
                 .filter(|k| !k.is_empty());
 
-            let dispatcher = Dispatcher::with_tools_dir(tools_dir);
+            let dispatcher = Dispatcher::new().with_tools_dir(tools_dir);
             let agent      = Arc::new(AgentLoop::new_with_key(
                 base_url,
                 model_id,

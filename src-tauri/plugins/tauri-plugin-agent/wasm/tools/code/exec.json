@@ -1,23 +1,13 @@
 {
-  "description": "Execute code in an isolated sandbox (microVM or WASM fallback).\n\nEPHEMERAL (no workspace): fast, stateless, destroyed after each call.\nWORKSPACE (workspace set): persistent VM — filesystem and processes survive between calls. Use the same workspace ID across calls to build a project. If the code starts a server on port 3000 the response includes a 'url' field with the exposed address.\n\nLanguages: 'javascript' (full Node.js, npm available in workspace), 'python', 'bash'.\nFor servers, listen on port 3000.",
+  "description": "Execute code in an isolated sandbox (microVM or WASM fallback). Languages: 'javascript' (full Node.js), 'python', 'bash'. Use 'workspace' for persistent state across calls.",
   "parameters": {
-    "additionalProperties": false,
+    "type": "object",
     "properties": {
-      "code": {
-        "description": "Code to execute. JS: use console.log(). Servers: listen on port 3000.",
-        "type": "string"
-      },
-      "language": {
-        "description": "Runtime to use. All three are available in a workspace; ephemeral mode supports 'javascript' only.",
-        "enum": ["javascript", "python", "bash"],
-        "type": "string"
-      },
-      "workspace": {
-        "description": "Persistent workspace ID. Omit for ephemeral one-shot execution. Use the same ID across calls to share filesystem state. Destroyed when the session ends.",
-        "type": "string"
-      }
+      "language": { "type": "string", "enum": ["javascript", "python", "bash"], "description": "Runtime to use" },
+      "code": { "type": "string", "description": "Code to execute" },
+      "workspace": { "type": "string", "description": "Persistent workspace ID. Omit for ephemeral one-shot execution." }
     },
     "required": ["language", "code"],
-    "type": "object"
+    "additionalProperties": false
   }
 }

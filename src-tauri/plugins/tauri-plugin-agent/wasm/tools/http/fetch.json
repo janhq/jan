@@ -1,20 +1,12 @@
 {
   "description": "Fetch any URL via HTTP GET and return the response body (truncated to 32 KB). Use for REST APIs, JSON endpoints, or raw web pages.",
   "parameters": {
-    "additionalProperties": false,
+    "type": "object",
     "properties": {
-      "method": {
-        "default": "GET",
-        "description": "HTTP method (GET only in WASM version)",
-        "enum": ["GET"],
-        "type": "string"
-      },
-      "url": {
-        "description": "Full URL to fetch (https://...)",
-        "type": "string"
-      }
+      "url": { "type": "string", "description": "Full URL to fetch (https://...)" },
+      "method": { "type": "string", "enum": ["GET"], "default": "GET", "description": "HTTP method (GET only)" }
     },
     "required": ["url"],
-    "type": "object"
+    "additionalProperties": false
   }
 }

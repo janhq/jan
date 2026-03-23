@@ -197,9 +197,33 @@ impl AgentLoop {
                 "max_tokens":  4096,
             });
 
-            let resp_json = self
+            let resp_json = match self
                 .llm_call_with_retry(&self.client, &body, on_event, steps)
-                .await?;
+                .await
+            {
+                Ok(v) => v,
+                Err(LlmError::ContextLength(detail)) => {
+                    // Context too long — compact aggressively and retry this step
+                    log::warn!("[agent] context length exceeded — compacting");
+                    let removed = compact_context(&mut messages, self.config.compaction_keep);
+                    if removed == 0 {
+                        // Nothing left to compact — try trimming tool results
+                        trim_tool_results(&mut messages, 512);
+                        let removed2 = compact_context(&mut messages, self.config.compaction_keep);
+                        if removed == 0 && removed2 == 0 {
+                            return Err(format!(
+                                "Context too long and cannot compact further. \
+                                 Try a model with a larger context window. ({})",
+                                truncate_str(&detail, 100)
+                            ));
+                        }
+                    }
+                    on_event(AgentEvent::ContextCompacted { turns_removed: removed });
+                    steps -= 1; // retry this step
+                    continue;
+                }
+                Err(LlmError::Other(e)) => return Err(e),
+            };
 
             if let Some(usage) = resp_json.get("usage") {
                 cumulative_tokens += usage["total_tokens"].as_u64().unwrap_or(0) as u32;
@@ -319,7 +343,7 @@ impl AgentLoop {
         body:     &Value,
         on_event: &mut (impl FnMut(AgentEvent) + Send),
         step:     usize,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, LlmError> {
         let url          = format!("{}/v1/chat/completions", self.base_url);
         let max_attempts = self.config.max_retries + 1;
         let mut last_err = String::new();
@@ -338,13 +362,30 @@ impl AgentLoop {
                     let status = resp.status();
                     if status.is_success() {
                         return resp.json::<Value>().await
-                            .map_err(|e| format!("model response parse failed: {e}"));
+                            .map_err(|e| LlmError::Other(format!("model response parse failed: {e}")));
                     }
+
+                    // Read the error body to detect context-length errors
+                    let error_body = resp.text().await.unwrap_or_default();
+                    log::warn!(
+                        "[agent] attempt {attempt}/{max_attempts}: HTTP {} — {}",
+                        status.as_u16(),
+                        truncate_str(&error_body, 200),
+                    );
+
+                    if is_context_length_error(status.as_u16(), &error_body) {
+                        return Err(LlmError::ContextLength(error_body));
+                    }
+
                     if status.as_u16() == 429 || status.is_server_error() {
-                        last_err = format!("model HTTP {}", status.as_u16());
-                        log::warn!("[agent] attempt {attempt}/{max_attempts}: {last_err}");
+                        last_err = format!("model HTTP {}: {}", status.as_u16(),
+                            truncate_str(&error_body, 120));
                     } else {
-                        return Err(format!("model HTTP {}", status.as_u16()));
+                        return Err(LlmError::Other(format!(
+                            "model HTTP {}: {}",
+                            status.as_u16(),
+                            truncate_str(&error_body, 200),
+                        )));
                     }
                 }
             }
@@ -356,7 +397,7 @@ impl AgentLoop {
             }
         }
 
-        Err(last_err)
+        Err(LlmError::Other(last_err))
     }
 
     fn build_tools_array(&self) -> Value {
@@ -377,21 +418,72 @@ impl AgentLoop {
     }
 }
 
+// ── LLM error classification ─────────────────────────────────────────────────
+
+/// Distinguishes context-length errors (recoverable via compaction) from other
+/// LLM failures so the agent loop can react accordingly.
+enum LlmError {
+    /// The model rejected the request because the context is too long.
+    /// The agent loop should compact and retry.
+    ContextLength(String),
+    /// Any other error (network, auth, rate-limit exhausted, etc.).
+    Other(String),
+}
+
+impl std::fmt::Display for LlmError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LlmError::ContextLength(s) => write!(f, "context length exceeded: {}", truncate_str(s, 120)),
+            LlmError::Other(s) => f.write_str(s),
+        }
+    }
+}
+
+/// Detect whether an HTTP error response indicates a context-length overflow.
+///
+/// Different providers use different error formats:
+/// - **llama.cpp**: HTTP 400, body contains `"content length"` or `"context length"`
+fn is_context_length_error(status: u16, body: &str) -> bool {
+    if status != 400 { return false; }
+    let lower = body.to_ascii_lowercase();
+    lower.contains("context_length_exceeded")
+        || lower.contains("content length")
+}
+
 // ── Context compaction ────────────────────────────────────────────────────────
 
 fn compact_context(messages: &mut Vec<ChatMessage>, keep: usize) -> usize {
     if messages.len() <= keep + 1 {
         return 0;
     }
-    let cut_from = messages.len().saturating_sub(keep);
-    let removed  = cut_from - 1;
+    let mut cut_from = messages.len().saturating_sub(keep);
 
+    // Ensure the kept portion contains at least one "user" message.
+    // Many chat templates (llama.cpp Jinja, etc.) require a user message
+    // and will error with "No user query found" if only system/assistant/tool
+    // messages remain.
+    let has_user_in_kept = messages[cut_from..].iter().any(|m| m.role == "user");
+    if !has_user_in_kept {
+        // Walk backwards from cut_from to find the nearest user message
+        if let Some(pos) = messages[..cut_from].iter().rposition(|m| m.role == "user") {
+            // Keep from this user message onward (but always skip system[0])
+            cut_from = pos.max(1);
+        }
+    }
+
+    if cut_from <= 1 {
+        return 0; // nothing to compact (only system + user)
+    }
+
+    let removed = cut_from - 1;
     let system  = messages[0].clone();
     let dropped = &messages[1..cut_from];
     let note    = build_compact_note(dropped);
 
+    // Use "user" role for the compact note so the message sequence is valid
+    // for chat templates that require user→assistant alternation.
     let note_msg = ChatMessage {
-        role:         "system".into(),
+        role:         "user".into(),
         content:      Some(note),
         tool_calls:   None,
         tool_call_id: None,
@@ -401,6 +493,28 @@ fn compact_context(messages: &mut Vec<ChatMessage>, keep: usize) -> usize {
     let recent: Vec<ChatMessage> = messages[cut_from..].to_vec();
     *messages = [system, note_msg].into_iter().chain(recent).collect();
     removed
+}
+
+/// Truncate all tool result messages to at most `max_chars` characters.
+/// This is a second-pass compaction that shrinks large tool outputs
+/// (e.g. full web pages from http.fetch) when dropping turns alone
+/// isn't enough to fit the context window.
+fn trim_tool_results(messages: &mut [ChatMessage], max_chars: usize) {
+    for msg in messages.iter_mut() {
+        if msg.role == "tool" {
+            if let Some(ref content) = msg.content {
+                if content.len() > max_chars {
+                    let trimmed: String = content.chars().take(max_chars).collect();
+                    msg.content = Some(format!(
+                        "{}…[trimmed from {} to {} chars]",
+                        trimmed,
+                        content.len(),
+                        max_chars,
+                    ));
+                }
+            }
+        }
+    }
 }
 
 fn build_compact_note(dropped: &[ChatMessage]) -> String {
@@ -437,7 +551,23 @@ fn build_compact_note(dropped: &[ChatMessage]) -> String {
 }
 
 fn build_system_prompt() -> String {
-    "You are a helpful assistant with access to tools. \
-     Use the tools provided to answer questions, fetch data, compute results, and read/write files."
+    "You are a helpful AI assistant with access to tools. You can search the web, \
+     fetch URLs, and execute JavaScript code in a sandbox.\n\n\
+     ## Tool usage guidelines\n\
+     - **web.search**: Use when you need current information, facts, news, weather, \
+       prices, or anything that might have changed recently. Always search before \
+       saying you don't know something.\n\
+     - **http.fetch**: Use to read specific web pages, API endpoints, or JSON data. \
+       HTML is automatically converted to readable text.\n\
+     - **code.exec**: Use to compute results, parse data, do math, format output, \
+       or process information. The sandbox has httpGet() for HTTP requests and \
+       Date.now() for timestamps. No filesystem or environment access.\n\n\
+     ## Important rules\n\
+     - When asked about current events, weather, prices, or time-sensitive data: \
+       ALWAYS use web.search or http.fetch first.\n\
+     - Show your work: explain what you found and cite sources.\n\
+     - If a tool call fails, try an alternative approach before giving up.\n\
+     - Be concise but thorough. Give direct answers, not just search results.\n\
+     - When doing calculations, use code.exec to ensure accuracy."
         .to_string()
 }

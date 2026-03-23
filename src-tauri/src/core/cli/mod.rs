@@ -570,20 +570,15 @@ pub use tauri_plugin_agent::{
 /// Create dispatcher in a blocking context (for use with spawn_blocking).
 /// Must be called from a synchronous context, not inside an async function.
 pub fn create_dispatcher(tools_dir: Option<PathBuf>, mounts: Vec<PathBuf>) -> Dispatcher {
-    let mut dispatcher = match tools_dir {
-        Some(dir) => {
-            log::info!("[agent] tools dir: {}", dir.display());
-            Dispatcher::with_tools_dir(dir).with_mounts(mounts)
-        }
-        None => {
-            log::warn!("[agent] no tools dir found; set JAN_TOOLS_DIR or place tools/ next to the binary");
-            Dispatcher::new().with_mounts(mounts)
-        }
-    };
+    let mut dispatcher = Dispatcher::new();
 
-    // Load user-created JS tools from ~/.jan/tools/
-    let user_tools_dir = discover_user_tools_dir();
-    dispatcher = dispatcher.with_user_tools_dir(user_tools_dir);
+    if let Some(dir) = tools_dir {
+        log::info!("[agent] tools dir: {}", dir.display());
+        dispatcher = dispatcher.with_tools_dir(dir);
+    }
+
+    dispatcher = dispatcher.with_mounts(mounts)
+         .with_user_tools_dir(discover_user_tools_dir());
 
     dispatcher
 }

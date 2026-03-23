@@ -19,8 +19,8 @@ const MAX_OUTPUT: usize = 1024 * 1024; // 1 MB
 
 // ── Subprocess-based execution (parent process — no wasmtime) ─────────────────
 
-/// Find the jan-wasm-worker binary.
-fn find_wasm_worker() -> Result<PathBuf, String> {
+
+pub fn find_wasm_worker() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
     let dir = exe.parent().unwrap_or(std::path::Path::new("."));
 
