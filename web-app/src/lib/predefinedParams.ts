@@ -5,6 +5,18 @@ export const paramsSettings = {
     title: 'Stream',
     description: `Enables real-time response streaming.`,
   },
+  max_output_tokens: {
+    key: 'max_output_tokens',
+    value: 2048,
+    title: 'Max Output Tokens',
+    description: `Maximum number of tokens the model can generate in a single reply. Sent as max_tokens to OpenAI-compatible APIs.`,
+  },
+  ctx_len: {
+    key: 'ctx_len',
+    value: 8192,
+    title: 'Max Context Tokens',
+    description: `Total context window size (input + output). Older messages are automatically trimmed to fit within this limit.`,
+  },
   temperature: {
     key: 'temperature',
     value: 0.7,

@@ -118,24 +118,35 @@ const providerMetadataExtractor: MetadataExtractor = {
 }
 
 /**
- * Create a custom fetch function that injects additional parameters into the request body
+ * Keys from inference parameters that are client-side only and must not
+ * be forwarded in the HTTP body to remote APIs.
+ */
+const CLIENT_SIDE_PARAM_KEYS: ReadonlySet<string> = new Set(['ctx_len'])
+
+/**
+ * Create a custom fetch function that injects additional parameters into the
+ * request body, normalising key names for OpenAI-compatible APIs:
+ * - `max_output_tokens` is remapped to `max_tokens`
+ * - client-side-only keys (e.g. `ctx_len`) are stripped
  */
 function createCustomFetch(
   baseFetch: typeof httpFetch,
   parameters: Record<string, unknown>
 ): typeof httpFetch {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    // Only transform POST requests with JSON body
     if (init?.method === 'POST' || !init?.method) {
       const body = init?.body ? JSON.parse(init.body as string) : {}
 
-      // Merge parameters into the request body
-      const mergedBody = { ...body, ...parameters }
-
-      init = {
-        ...init,
-        body: JSON.stringify(mergedBody),
+      // Normalise and merge inference parameters
+      const normalised: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(parameters)) {
+        if (CLIENT_SIDE_PARAM_KEYS.has(key)) continue
+        // max_output_tokens → max_tokens (OpenAI-compatible field name)
+        const targetKey = key === 'max_output_tokens' ? 'max_tokens' : key
+        normalised[targetKey] = value
       }
+
+      init = { ...init, body: JSON.stringify({ ...body, ...normalised }) }
     }
 
     return baseFetch(input, init)

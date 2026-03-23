@@ -20,6 +20,101 @@ import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 
+// ─── Context-window trimming ──────────────────────────────────────────────────
+
+/** Approximate characters per token (conservative estimate). */
+const CHARS_PER_TOKEN = 4
+
+/** Fraction of ctx_len reserved as a safety buffer. */
+const CTX_SAFETY_FACTOR = 0.9
+
+/**
+ * Estimate the token count of a UIMessage from its text parts.
+ */
+function estimateMessageTokens(msg: UIMessage): number {
+  const parts = Array.isArray(msg.parts) ? msg.parts : []
+  const chars = parts.reduce<number>((sum, part) => {
+    if (part.type === 'text') return sum + (part.text?.length ?? 0)
+    if (part.type === 'reasoning') return sum + (part.text?.length ?? 0)
+    return sum
+  }, 0)
+  return Math.ceil(chars / CHARS_PER_TOKEN) + 4 // +4 for role overhead
+}
+
+/**
+ * Trim oldest non-system messages so the total estimated token count stays
+ * within `ctx_len - max_output_tokens`. The most recent user message is
+ * always kept so the model has something to respond to.
+ *
+ * Auto-compact: when messages are dropped, a synthetic system message is
+ * injected immediately after the real system messages to inform the model
+ * that earlier context was removed. This mirrors the behaviour of tools
+ * like Claude Code / Codex and prevents the model from being confused by
+ * an abruptly starting conversation.
+ *
+ * When `ctx_len` is undefined the original list is returned unchanged.
+ */
+function trimMessagesToContextWindow(
+  messages: UIMessage[],
+  ctxLen: number | undefined,
+  maxOutputTokens: number | undefined
+): UIMessage[] {
+  if (!ctxLen || messages.length === 0) return messages
+
+  const outputBudget = maxOutputTokens ?? Math.floor(ctxLen * 0.25)
+  const inputBudget = Math.floor(ctxLen * CTX_SAFETY_FACTOR) - outputBudget
+
+  if (inputBudget <= 0) return messages
+
+  // Separate system messages (always kept) from conversational messages.
+  const systemMsgs = messages.filter((m) => m.role === 'system')
+  const convMsgs = messages.filter((m) => m.role !== 'system')
+
+  const systemTokens = systemMsgs.reduce((s, m) => s + estimateMessageTokens(m), 0)
+  let budget = inputBudget - systemTokens
+
+  // Walk conversational messages from newest → oldest, keeping as many as fit.
+  const kept: UIMessage[] = []
+  for (let i = convMsgs.length - 1; i >= 0; i--) {
+    const tokens = estimateMessageTokens(convMsgs[i])
+    if (kept.length === 0 || budget - tokens >= 0) {
+      kept.unshift(convMsgs[i])
+      budget -= tokens
+    }
+    // Always keep at least the most recent message.
+    if (kept.length === 0 && i === convMsgs.length - 1) {
+      kept.unshift(convMsgs[i])
+    }
+  }
+
+  const droppedCount = convMsgs.length - kept.length
+  if (droppedCount === 0) return messages
+
+  console.info(
+    `[context-trim] Auto-compact: dropped ${droppedCount}/${convMsgs.length} older messages ` +
+      `to fit within ctx_len=${ctxLen} (output_budget=${outputBudget}).`
+  )
+
+  // ── Auto-compact notice ──────────────────────────────────────────────────
+  // Inject a synthetic system message so the model knows older context was
+  // removed. This avoids confusion from a suddenly-truncated conversation.
+  const compactText =
+    `[Context compacted: ${droppedCount} earlier message${droppedCount === 1 ? '' : 's'} ` +
+    `removed to fit the context window (ctx_len=${ctxLen}). ` +
+    `The conversation continues from the most recent messages below.]`
+
+  const compactNotice: UIMessage = {
+    id: '__context-compact-notice__',
+    role: 'system',
+    parts: [{ type: 'text', text: compactText }],
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
+  return [...systemMsgs, compactNotice, ...kept]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
   messageId: string
@@ -288,12 +383,22 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         const currentAssistant = useAssistant.getState().currentAssistant
         const inferenceParams = currentAssistant?.parameters
 
+        // Merge model-level limits (gear-icon settings) as baseline so that
+        // values set via the model settings sheet are included in API requests.
+        // Assistant-level parameters always take priority.
+        const selectedModelForFactory = useModelProvider.getState().selectedModel
+        const modelSettingParams: Record<string, unknown> = {}
+        const msCtxLen = selectedModelForFactory?.settings?.ctx_len?.controller_props?.value
+        if (msCtxLen !== undefined && msCtxLen !== '') modelSettingParams.ctx_len = msCtxLen
+        const msMaxOut = selectedModelForFactory?.settings?.max_output_tokens?.controller_props?.value
+        if (msMaxOut !== undefined && msMaxOut !== '') modelSettingParams.max_output_tokens = msMaxOut
+
         // Create the model using the factory
         // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
         this.model = await ModelFactory.createModel(
           modelId,
           updatedProvider ?? provider,
-          inferenceParams ?? {}
+          { ...modelSettingParams, ...(inferenceParams ?? {}) }
         )
       } catch (error) {
         console.error('Failed to create model:', error)
@@ -354,9 +459,52 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       })
     })()
 
+    // Extract output token limit and context window from inference params.
+    // max_output_tokens is normalised to max_tokens in the HTTP body by
+    // createCustomFetch; here we read it to pass to streamText and to compute
+    // the trimming budget.
+    const inferenceParams = useAssistant.getState().currentAssistant?.parameters ?? {}
+    const selectedModel = useModelProvider.getState().selectedModel
+
+    const maxOutputTokens: number | undefined = (() => {
+      // Priority 1: assistant parameters
+      if (typeof inferenceParams.max_output_tokens === 'number') return inferenceParams.max_output_tokens
+      if (typeof inferenceParams.max_tokens === 'number') return inferenceParams.max_tokens
+      // Priority 2: model gear-icon settings (remote model limits section)
+      const v = selectedModel?.settings?.max_output_tokens?.controller_props?.value
+      if (typeof v === 'number') return v
+      if (typeof v === 'string') { const p = parseInt(v, 10); return isNaN(p) ? undefined : p }
+      return undefined
+    })()
+    const ctxLen: number | undefined = (() => {
+      // Priority 1: explicit ctx_len in assistant parameters (works for remote models)
+      const fromParams = inferenceParams.ctx_len
+      if (typeof fromParams === 'number') return fromParams
+      if (typeof fromParams === 'string') {
+        const parsed = parseInt(fromParams, 10)
+        if (!isNaN(parsed)) return parsed
+      }
+      // Priority 2: model settings (works for local models like llama.cpp / MLX)
+      const raw = selectedModel?.settings?.ctx_len?.controller_props?.value
+      if (typeof raw === 'number') return raw
+      if (typeof raw === 'string') {
+        const parsed = parseInt(raw, 10)
+        return isNaN(parsed) ? undefined : parsed
+      }
+      return undefined
+    })()
+
+    // Trim oldest non-system messages so the conversation fits within ctx_len.
+    // We use a ~4-chars-per-token heuristic and reserve space for the output.
+    const trimmedMessages = trimMessagesToContextWindow(
+      messagesToConvert,
+      ctxLen,
+      maxOutputTokens
+    )
+
     // Convert UI messages to model messages
     const baseMessages = convertToModelMessages(
-      this.mapUserInlineAttachments(messagesToConvert)
+      this.mapUserInlineAttachments(trimmedMessages)
     )
 
     // If continuing a truncated response, append the partial assistant content as a
@@ -369,7 +517,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     // Include tools only if we have tools loaded AND model supports them
     const hasTools = Object.keys(this.tools).length > 0
-    const selectedModel = useModelProvider.getState().selectedModel
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools = hasTools && modelSupportsTools
 
@@ -383,6 +530,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       tools: shouldEnableTools ? this.tools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: this.systemMessage,
+      ...(maxOutputTokens !== undefined ? { maxTokens: maxOutputTokens } : {}),
     })
 
     let tokensPerSecond = 0
