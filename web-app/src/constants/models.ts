@@ -2,7 +2,6 @@
  * Model-related constants
  */
 
-export const NEW_JAN_MODEL_HF_REPO = 'janhq/Jan-v3-4B-base-instruct-GGUF'
 export const JAN_CODE_HF_REPO = 'janhq/Jan-Code-4b-Gguf'
 export const DEFAULT_MODEL_QUANTIZATIONS = ['iq4_xs', 'q4_k_m']
 
