@@ -1,9 +1,10 @@
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
+import { IconUser } from '@tabler/icons-react'
 
 type AssistantMenuProps = {
   selectedAssistant: string | undefined
-  setSelectedAssistant: React.Dispatch<React.SetStateAction<string | undefined>>
+  setSelectedAssistant: (assistant: string) => void
   currentThread: Thread | undefined
   updateCurrentThreadAssistant: (assistant: Assistant) => void
   assistants: Assistant[]
@@ -16,14 +17,37 @@ export function AssistantsMenu({
   updateCurrentThreadAssistant,
   assistants,
 }: AssistantMenuProps) {
+  const threadAssistant = currentThread?.assistants?.[0]
+  const deletedAssistant =
+    threadAssistant &&
+    threadAssistant.id !== 'model-only' &&
+    !assistants.some((a) => a.id === threadAssistant.id)
+      ? currentThread?.assistants?.[0]
+      : null
   const noSelectedAssistant = currentThread
-    ? !(
-        !(currentThread?.assistants || 0 > 1) ||
-        assistants.some((a) => a.id === currentThread?.assistants?.[0]?.id)
-      )
+    ? !threadAssistant || threadAssistant.id === 'model-only'
     : !selectedAssistant
   return (
     <>
+      {deletedAssistant && (
+        <DropdownMenuItem className="bg-accent" disabled>
+          <div className="flex items-center gap-2 w-full">
+            {deletedAssistant.avatar ? (
+              <AvatarEmoji
+                avatar={deletedAssistant.avatar}
+                imageClassName="w-4 h-4 object-contain"
+                textClassName="text-sm"
+              />
+            ) : (
+              <IconUser size={18} className="text-muted-foreground" />
+            )}
+            <span>
+              {deletedAssistant.name || 'Unnamed Assistant'} (deleted)
+            </span>
+            <span className="ml-auto text-xs text-muted-foreground">✓</span>
+          </div>
+        </DropdownMenuItem>
+      )}
       <DropdownMenuItem
         className={noSelectedAssistant ? 'bg-accent' : ''}
         onClick={() => {

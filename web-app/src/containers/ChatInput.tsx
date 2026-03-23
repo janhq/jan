@@ -180,11 +180,14 @@ const ChatInput = memo(function ChatInput({
   const updateProvider = useModelProvider((state) => state.updateProvider)
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
-  const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
+  const [tooltipShown, setTooltipShown] = useState<
+    'tools' | 'assistants' | false
+  >(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
+  const wasPointerDown = useRef(false)
 
   // Check if selected model is currently loaded/active
   const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
@@ -197,7 +200,12 @@ const ChatInput = memo(function ChatInput({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
 
-  const avatar = assistants.find((a) => a.id === selectedAssistantId)?.avatar
+  const avatar = currentThread
+    ? assistants.find((a) => a.id === currentThread?.assistants?.[0]?.id)
+        ?.avatar ||
+      currentThread?.assistants?.[0]?.avatar ||
+      ''
+    : assistants.find((a) => a.id === selectedAssistantId)?.avatar || ''
 
   const assistantCount = assistants?.length || 0
 
@@ -513,10 +521,10 @@ const ChatInput = memo(function ChatInput({
   }, [])
 
   useEffect(() => {
-    if (tooltipToolsAvailable && dropdownToolsAvailable) {
-      setTooltipToolsAvailable(false)
+    if (tooltipShown && dropdownToolsAvailable) {
+      setTooltipShown(false)
     }
-  }, [dropdownToolsAvailable, tooltipToolsAvailable])
+  }, [dropdownToolsAvailable, tooltipShown])
 
   // Focus when thread changes
   useEffect(() => {
@@ -1688,72 +1696,97 @@ const ChatInput = memo(function ChatInput({
                       onClick={handleAttachDocsIngest}
                       disabled={!selectedModel?.capabilities?.includes('tools')}
                     >
-                      {ingestingDocs ? (
-                        <IconLoader2
-                          size={18}
-                          className="text-muted-foreground animate-spin"
-                        />
-                      ) : (
-                        <IconPaperclip
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      )}
-                      <span>
-                        {ingestingDocs
-                          ? 'Indexing documents…'
-                          : 'Add documents or files'}
-                      </span>
-                    </DropdownMenuItem>
-                    {/* Use Assistant - only show when no projectId */}
-                    {!projectId && (!initialMessage || assistantCount < 2) && (
-                      <DropdownMenuSub>
-                        <DropdownMenuSubTrigger>
-                          <IconUser size={18} className="text-muted-foreground" />
-                          <span>Use Assistant</span>
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
-                          <AssistantsMenu
-                            selectedAssistant={selectedAssistantId}
-                            setSelectedAssistant={setSelectedAssistantId}
-                            currentThread={currentThread}
-                            updateCurrentThreadAssistant={
-                              updateCurrentThreadAssistant
-                            }
-                            assistants={assistants}
-                          />
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                )}
-                {!projectId && initialMessage && assistantCount >= 2 && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="secondary"
-                        size="icon-sm"
-                        className="rounded-full mr-2 mb-1"
-                      >
-                        {avatar && (
-                          <AvatarEmoji
-                            avatar={avatar}
-                            imageClassName="w-4 h-4 object-contain"
-                            textClassName="text-xs relative inline-block"
-                          />
-                        )}
-                        {selectedAssistantId === '' && (
-                          <IconUser
+                        {ingestingDocs ? (
+                          <IconLoader2
                             size={18}
-                            className="text-muted-foreground
-                          after:absolute after:inset-0 after:bg-white after:mix-blend-saturation
-                          after:opacity-50"
+                            className="text-muted-foreground animate-spin"
+                          />
+                        ) : (
+                          <IconPaperclip
+                            size={18}
+                            className="text-muted-foreground"
                           />
                         )}
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
+                        <span>
+                          {ingestingDocs
+                            ? 'Indexing documents…'
+                            : 'Add documents or files'}
+                        </span>
+                      </DropdownMenuItem>
+                      {/* Use Assistant - only show when no projectId */}
+                      {!projectId && assistantCount < 2 && (
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger>
+                          <IconUser size={18} className="text-muted-foreground" />
+                            <span>Use Assistant</span>
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                            <AssistantsMenu
+                              selectedAssistant={selectedAssistantId}
+                              setSelectedAssistant={setSelectedAssistantId}
+                              currentThread={currentThread}
+                              updateCurrentThreadAssistant={
+                                updateCurrentThreadAssistant
+                              }
+                              assistants={assistants}
+                            />
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                {!projectId && assistantCount >= 2 && (
+                  <DropdownMenu>
+                    <Tooltip
+                      open={tooltipShown === 'assistants'}
+                      onOpenChange={(newValue) =>
+                        setTooltipShown(newValue ? 'assistants' : false)
+                      }
+                    >
+                      <TooltipTrigger asChild>
+                        <DropdownMenuTrigger
+                          asChild
+                          onPointerDown={() => {
+                            wasPointerDown.current = true
+                          }}
+                          onKeyDown={() => {
+                            wasPointerDown.current = false
+                          }}
+                        >
+                          <Button
+                            variant="secondary"
+                            size="icon-sm"
+                            className="rounded-full mr-2 mb-1"
+                          >
+                            {avatar && (
+                              <AvatarEmoji
+                                avatar={avatar}
+                                imageClassName="w-4 h-4 object-contain"
+                                textClassName="text-xs relative inline-block"
+                              />
+                            )}
+                            {!avatar && (
+                              <IconUser
+                                size={18}
+                                className="text-muted-foreground"
+                              />
+                            )}
+                          </Button>
+                        </DropdownMenuTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('assistants')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <DropdownMenuContent
+                      onCloseAutoFocus={(event) => {
+                        if (wasPointerDown.current) {
+                          event.preventDefault()
+                        }
+                      }}
+                      align="start"
+                    >
                       <AssistantsMenu
                         selectedAssistant={selectedAssistantId}
                         setSelectedAssistant={setSelectedAssistantId}
@@ -1774,7 +1807,7 @@ const ChatInput = memo(function ChatInput({
                     useLastUsedModel={initialMessage}
                   />
                 )} */}
-                {!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
+{!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1851,8 +1884,8 @@ const ChatInput = memo(function ChatInput({
                   ) : (
                     // Use default tools dropdown
                     <Tooltip
-                      open={tooltipToolsAvailable}
-                      onOpenChange={setTooltipToolsAvailable}
+                      open={tooltipShown === 'tools'}
+                      onOpenChange={(newValue) => newValue ? setTooltipShown('tools') : setTooltipShown(false)}
                     >
                       <TooltipTrigger
                         asChild
@@ -1871,7 +1904,7 @@ const ChatInput = memo(function ChatInput({
                             onOpenChange={(isOpen) => {
                               setDropdownToolsAvailable(isOpen)
                               if (isOpen) {
-                                setTooltipToolsAvailable(false)
+                                setTooltipShown(false)
                               }
                             }}
                           >
