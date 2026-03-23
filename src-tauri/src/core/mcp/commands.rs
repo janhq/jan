@@ -161,6 +161,28 @@ pub async fn get_connected_servers(
 /// 4. Associates each tool with its parent server name
 /// 5. Combines all tools into a single vector
 /// 6. Returns the combined list of all available tools with server information
+/// Remove an MCP server entry and cancel its running service (used when list-tools fails).
+async fn remove_mcp_server_entry(
+    mcp_servers: &SharedMcpServers,
+    server_name: &str,
+) -> bool {
+    let mut servers = mcp_servers.lock().await;
+    if let Some(service) = servers.remove(server_name) {
+        log::warn!("Removing MCP server {server_name} from connected servers");
+        match service {
+            RunningServiceEnum::NoInit(s) => {
+                let _ = s.cancel().await;
+            }
+            RunningServiceEnum::WithInit(s) => {
+                let _ = s.cancel().await;
+            }
+        }
+        true
+    } else {
+        false
+    }
+}
+
 #[tauri::command]
 pub async fn get_tools<R: Runtime>(
     app: AppHandle<R>,
@@ -168,54 +190,50 @@ pub async fn get_tools<R: Runtime>(
 ) -> Result<Vec<ToolWithServer>, String> {
     let timeout_duration = tool_call_timeout(&state).await;
     let mut all_tools: Vec<ToolWithServer> = Vec::new();
-    let mut dead_servers: Vec<String> = Vec::new();
+    let mut removed_any = false;
 
-    {
+    let server_names: Vec<String> = {
         let servers = state.mcp_servers.lock().await;
-        for (server_name, service) in servers.iter() {
-            let tools_future = service.list_all_tools();
-            let tools = match timeout(timeout_duration, tools_future).await {
-                Ok(Ok(tools)) => tools,
-                Ok(Err(e)) => {
-                    log::warn!("MCP server {} failed to list tools: {}", server_name, e);
-                    dead_servers.push(server_name.clone());
-                    continue;
-                }
-                Err(_) => {
-                    log::warn!(
-                        "Listing tools timed out after {} seconds",
-                        timeout_duration.as_secs()
-                    );
-                    continue;
-                }
-            };
+        servers.keys().cloned().collect()
+    };
 
-            for tool in tools {
-                all_tools.push(ToolWithServer {
-                    name: tool.name.to_string(),
-                    description: tool.description.as_ref().map(|d| d.to_string()),
-                    input_schema: serde_json::Value::Object((*tool.input_schema).clone()),
-                    server: server_name.clone(),
-                });
+    for server_name in server_names {
+        let list_result = {
+            let servers = state.mcp_servers.lock().await;
+            let Some(service) = servers.get(&server_name) else {
+                continue;
+            };
+            timeout(timeout_duration, service.list_all_tools()).await
+        };
+
+        match list_result {
+            Ok(Ok(tools)) => {
+                for tool in tools {
+                    all_tools.push(ToolWithServer {
+                        name: tool.name.to_string(),
+                        description: tool.description.as_ref().map(|d| d.to_string()),
+                        input_schema: serde_json::Value::Object((*tool.input_schema).clone()),
+                        server: server_name.clone(),
+                    });
+                }
+            }
+            Ok(Err(e)) => {
+                log::warn!("MCP server {} failed to list tools: {}", server_name, e);
+                if remove_mcp_server_entry(&state.mcp_servers, &server_name).await {
+                    removed_any = true;
+                }
+            }
+            Err(_) => {
+                log::warn!(
+                    "MCP server {}: listing tools timed out after {} seconds",
+                    server_name,
+                    timeout_duration.as_secs()
+                );
             }
         }
     }
 
-    // Remove dead servers from the HashMap so UI status is accurate
-    if !dead_servers.is_empty() {
-        let mut servers = state.mcp_servers.lock().await;
-        for name in &dead_servers {
-            log::warn!("Removing dead MCP server {name} from connected servers");
-            if let Some(service) = servers.remove(name) {
-                match service {
-                    RunningServiceEnum::NoInit(s) => { let _ = s.cancel().await; }
-                    RunningServiceEnum::WithInit(s) => { let _ = s.cancel().await; }
-                }
-            }
-        }
-        drop(servers);
-
-        // Emit update so frontend refreshes status
+    if removed_any {
         if let Err(e) = app.emit("mcp-update", json!({ "server": "tools-refresh" })) {
             log::error!("Failed to emit mcp-update event: {e}");
         }
