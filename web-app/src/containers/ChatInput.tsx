@@ -1807,7 +1807,7 @@ const ChatInput = memo(function ChatInput({
                     useLastUsedModel={initialMessage}
                   />
                 )} */}
-{!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
+                {!effectiveAgentMode && hasJanBrowserMCPConfig && modelSupportsBrowser && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
