@@ -1,32 +1,19 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
-use tokio::process::Child;
 use tokio::sync::Mutex;
 
-/// Session information for a running Foundation Models server instance
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionInfo {
-    pub pid: i32,
-    pub port: i32,
-    pub model_id: String,
-    pub api_key: String,
-}
-
-pub struct FoundationModelsBackendSession {
-    pub child: Child,
-    pub info: SessionInfo,
-}
-
-/// Plugin state — tracks all active server processes keyed by PID
 pub struct FoundationModelsState {
-    pub sessions: Arc<Mutex<HashMap<i32, FoundationModelsBackendSession>>>,
+    pub loaded: Arc<Mutex<bool>>,
+    /// Request IDs that have been signalled for cancellation.
+    /// Checked by the streaming callback to stop emitting events.
+    pub cancel_tokens: Arc<std::sync::Mutex<HashSet<String>>>,
 }
 
 impl Default for FoundationModelsState {
     fn default() -> Self {
         Self {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
+            loaded: Arc::new(Mutex::new(false)),
+            cancel_tokens: Arc::new(std::sync::Mutex::new(HashSet::new())),
         }
     }
 }
