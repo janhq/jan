@@ -59,7 +59,7 @@ test-tauri = [
     "hardware",
     "mlx",
 ]
-cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console", "dep:mimalloc"]
+cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console", "dep:mimalloc", "dep:ratatui", "dep:crossterm"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [] }
@@ -133,6 +133,8 @@ dialoguer = { version = "0.11", optional = true }
 env_logger = { version = "0.11", optional = true }
 indicatif = { version = "0.17", optional = true }
 console = { version = "0.15", optional = true }
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", optional = true }
 [dependencies.tauri]
 version = "2.8.5"
 default-features = false

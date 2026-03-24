@@ -7,6 +7,8 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+mod agent_tui;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -18,8 +20,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::{
     cli_delete_thread, cli_get_data_folder, cli_get_thread,
-    cli_list_messages, cli_list_threads, create_agent, create_dispatcher,
-    discover_llamacpp_binary, discover_tools_dir,
+    cli_list_messages, cli_list_threads, create_agent,
+    discover_llamacpp_binary,
     discover_mlx_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
     init_mlx_state, list_models,
     load_llama_model_impl, load_mlx_model_impl, looks_like_hf_repo, resolve_model_by_id,
@@ -109,7 +111,7 @@ enum Commands {
         #[command(subcommand)]
         cmd: ModelsCommands,
     },
-    /// Run the skill-augmented agent loop against the local Jan model server
+    /// pi-mono-style minimal agent
     #[command(display_order = 12)]
     Agent {
         #[command(subcommand)]
@@ -121,11 +123,16 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum AgentCommands {
-    /// Spin up a local model and start an interactive skill-augmented agent chat.
+    /// pi-mono-style minimal agent with read, write, edit, bash, and web search.
+    /// Spins up a local model automatically. Pass --message for one-shot mode.
     /// Use --api-url to point at an external OpenAI-compatible endpoint instead.
     Chat {
         #[command(flatten)]
         serve: ServeArgs,
+        /// Run a single prompt non-interactively then exit (one-shot mode).
+        /// Omit for an interactive chat session.
+        #[arg(long, short = 'm', value_name = "PROMPT")]
+        message: Option<String>,
         /// Host directories the agent's code sandbox may read (repeatable).
         /// Example: --mount /home/user/project --mount /tmp/data
         /// Omit for a fully isolated sandbox with no filesystem access.
@@ -138,27 +145,6 @@ enum AgentCommands {
         api_url: Option<String>,
         /// Agent backend to use. Currently only "react" is available.
         /// Future values: "openai-assistant", "claude", etc.
-        #[arg(long, value_name = "IMPL", default_value = "react")]
-        agent: String,
-    },
-    /// Spin up a local model, run one agent prompt, then shut down.
-    /// Use --api-url to point at an external OpenAI-compatible endpoint instead.
-    Run {
-        /// The prompt to run
-        prompt: String,
-        #[command(flatten)]
-        serve: ServeArgs,
-        /// Host directories the agent's code sandbox may read (repeatable).
-        /// Example: --mount /home/user/project --mount /tmp/data
-        /// Omit for a fully isolated sandbox with no filesystem access.
-        #[arg(long, value_name = "DIR")]
-        mount: Vec<PathBuf>,
-        /// Use this API base URL instead of starting a local model
-        /// (e.g. https://api.openai.com/v1). The model name is the first
-        /// positional arg; --api-key is used as the Authorization key.
-        #[arg(long, value_name = "URL")]
-        api_url: Option<String>,
-        /// Agent backend to use. Currently only "react" is available.
         #[arg(long, value_name = "IMPL", default_value = "react")]
         agent: String,
     },
@@ -325,10 +311,7 @@ async fn main() {
     // Pre-scan raw args for --verbose / -v before full parse so we can set
     // the log level before any logging happens.
     let verbose = std::env::args().any(|a| a == "--verbose" || a == "-v");
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or(if verbose { "info" } else { "warn" }),
-    )
-    .init();
+    agent_tui::CapturingLogger::init(verbose);
 
     // Inject the logo at runtime so we can use ANSI styling.
     let logo = make_logo();
@@ -1518,15 +1501,13 @@ fn stop_model(pid: i32) {
 }
 
 async fn handle_agent(cmd: AgentCommands) {
-    let dim  = Style::new().dim();
-    let bold = Style::new().bold();
-    let cyan = Style::new().cyan();
-    let red  = Style::new().red();
+    let dim = Style::new().dim();
+    let red = Style::new().red();
 
     match cmd {
-        // ── jan agent chat ─────────────────────────────────────────────────
-        AgentCommands::Chat { serve, mount, api_url, agent: agent_impl } => {
-            use std::io::{self, BufRead, Write};
+        AgentCommands::Chat { serve, message, mount, api_url, agent: agent_impl } => {
+            // Enable log capture to parse llama.cpp memory info.
+            agent_tui::enable_log_capture();
 
             // When --api-url is given, skip local model startup entirely.
             let (url, model_id, pid, api_key) = if let Some(ext_url) = api_url {
@@ -1540,140 +1521,269 @@ async fn handle_agent(cmd: AgentCommands) {
                 }
             };
 
-            eprintln!();
-            println!("{}", bold.apply_to("Agent chat — type your message, Ctrl-C or /quit to exit"));
-            println!("{}", dim.apply_to(format!("  model        : {model_id}")));
-            println!("{}", dim.apply_to(format!("  endpoint     : {url}")));
-            println!("{}", dim.apply_to(format!(
-                "  skills       : http.fetch · web.search · code.exec"
-            )));
-            println!();
+            // Capture logs from model loading for resource bars
+            let captured_logs = agent_tui::take_captured_logs();
+
+            // Capture display info before moving into spawn_blocking.
+            let display_url      = url.clone();
+            let display_model_id = model_id.clone();
 
             // create_agent scans WASM tools (spawns blocking I/O + reqwest::blocking::Client).
-            // Must run in spawn_blocking so the blocking client is created and dropped
-            // on a blocking thread, not inside the async runtime.
             let agent = match tokio::task::spawn_blocking(move || {
                 create_agent(url, model_id, mount, api_key, &agent_impl)
             }).await {
                 Ok(a) => a,
                 Err(e) => { eprintln!("{} spawn: {e}", red.apply_to("error:")); std::process::exit(1); }
             };
-            let mut history = vec![];
 
-            let stdin = io::stdin();
-            loop {
-                print!("{}", bold.apply_to("You > "));
-                io::stdout().flush().ok();
-
-                let mut line = String::new();
-                match stdin.lock().read_line(&mut line) {
-                    Ok(0) | Err(_) => break, // EOF / Ctrl-D
-                    Ok(_) => {}
-                }
-                let input = line.trim().to_string();
-                if input.is_empty() { continue; }
-                if input == "/quit" || input == "/exit" || input == "exit" { break; }
-
+            if let Some(prompt) = message {
+                // ── one-shot mode (--message) ──────────────────────────────
+                eprintln!("{}", dim.apply_to(format!(
+                    "Agent running against {display_url} (model: {display_model_id})…"
+                )));
                 eprintln!();
-                let pb = make_spinner("step 1 · thinking…");
-                match agent.run(&history, &input, &mut make_agent_handler(pb.clone())).await {
+                let pb     = make_spinner("step 1 · thinking…");
+                let result = agent.run(&[], &prompt, &mut make_agent_handler(pb.clone())).await;
+                pb.finish_and_clear();
+                eprintln!();
+                if pid > 0 { stop_model(pid); }
+
+                match result {
                     Ok(resp) => {
-                        pb.finish_and_clear();
-                        println!();
-                        println!("{} {}", cyan.apply_to("Agent >"), resp.content);
+                        println!("{}", resp.content);
                         let reason_str = match resp.finish_reason {
                             app_lib::core::cli::FinishReason::Stop => "stop",
                             app_lib::core::cli::FinishReason::MaxSteps => "max_steps",
                             app_lib::core::cli::FinishReason::BudgetExhausted => "budget_exhausted",
                         };
-                        println!("{}", dim.apply_to(format!(
-                            "  [{} tokens · {} step{} · {}]",
+                        eprintln!("{}", dim.apply_to(format!(
+                            "[{} tokens · {} step{} · {}]",
                             resp.tokens_used, resp.steps,
                             if resp.steps == 1 { "" } else { "s" },
                             reason_str
                         )));
-                        println!();
-
-                        history.push(app_lib::core::cli::ChatMessage {
-                            role: "user".into(),
-                            content: Some(input),
-                            tool_calls: None,
-                            tool_call_id: None,
-                            name: None,
-                        });
-                        history.push(app_lib::core::cli::ChatMessage {
-                            role: "assistant".into(),
-                            content: Some(resp.content),
-                            tool_calls: None,
-                            tool_call_id: None,
-                            name: None,
-                        });
                     }
                     Err(e) => {
-                        pb.finish_and_clear();
                         eprintln!("{} {}", red.apply_to("error:"), e);
+                        std::process::exit(1);
                     }
                 }
-            }
-
-            if pid > 0 {
-                println!("{}", dim.apply_to("Session ended — stopping model…"));
-                stop_model(pid);
+            } else {
+                // ── interactive TUI mode ───────────────────────────────────
+                run_agent_tui(agent, display_model_id, display_url, pid, captured_logs.clone()).await;
             }
         }
+    }
+}
 
-        // ── jan agent run ──────────────────────────────────────────────────
-        AgentCommands::Run { prompt, serve, mount, api_url, agent: _ } => {
-            let (url, model_id, pid, api_key) = if let Some(ext_url) = api_url {
-                let model = serve.model_id.unwrap_or_else(|| "default".to_string());
-                let key   = if serve.api_key.is_empty() { None } else { Some(serve.api_key) };
-                (ext_url, model, -1i32, key)
-            } else {
-                match start_model_for_agent(serve).await {
-                    Ok((u, m, p)) => (u, m, p, None),
-                    Err(e) => { eprintln!("{} {e}", red.apply_to("error:")); std::process::exit(1); }
+/// Run the full-screen agent TUI (ratatui).
+async fn run_agent_tui(
+    agent: app_lib::core::cli::AgentLoop,
+    model_id: String,
+    api_url: String,
+    pid: i32,
+    log_capture: String,
+) {
+    use agent_tui::*;
+
+    let mut terminal = match setup_terminal() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Failed to initialize TUI: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let mut state = AgentTuiState::new(model_id, api_url);
+
+    // Parse resource usage from llama.cpp startup logs
+    if !log_capture.is_empty() {
+        let mem = LlamacppMemInfo::from_logs(&log_capture);
+        state.set_resources_from_llamacpp(&mem);
+    }
+
+    let mut history: Vec<app_lib::core::cli::ChatMessage> = Vec::new();
+    let agent = Arc::new(agent);
+
+    // Initial draw
+    let _ = terminal.draw(|f| draw(f, &mut state));
+
+    loop {
+        // Poll input
+        handle_input(&mut state);
+
+        if state.should_quit {
+            break;
+        }
+
+        // User submitted input
+        if state.input_ready {
+            let input = state.take_input();
+            if input == "/quit" || input == "/exit" || input == "exit" {
+                break;
+            }
+            if input.is_empty() {
+                let _ = terminal.draw(|f| draw(f, &mut state));
+                continue;
+            }
+
+            state.push_message(ChatItem::User(input.clone()));
+            state.is_thinking = true;
+            state.steps += 1;
+            state.push_message(ChatItem::Thinking { step: state.steps });
+
+            // Draw before starting the async agent call
+            let _ = terminal.draw(|f| draw(f, &mut state));
+
+            // Run agent with TUI updates. Clone history for the borrow-free call.
+            let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<AgentEvent>();
+            let history_snapshot = history.clone();
+            let input_clone = input.clone();
+            let agent_ref = Arc::clone(&agent);
+
+            let agent_handle = tokio::spawn(async move {
+                let mut handler = move |event: AgentEvent| {
+                    let _ = event_tx.send(event);
+                };
+                agent_ref.run(&history_snapshot, &input_clone, &mut handler).await
+            });
+
+            // Poll TUI while the agent task runs
+            loop {
+                // Drain agent events
+                while let Ok(event) = event_rx.try_recv() {
+                    apply_agent_event(&mut state, &event);
                 }
-            };
-            eprintln!("{}", dim.apply_to(format!("Agent running against {url} (model: {model_id})…")));
 
-            // Create dispatcher in spawn_blocking to avoid blocking the async runtime
-            let dispatcher = match tokio::task::spawn_blocking(move || {
-                create_dispatcher(discover_tools_dir(), mount)
-            }).await {
-                Ok(d) => d,
-                Err(e) => { eprintln!("{} spawn: {e}", red.apply_to("error:")); std::process::exit(1); }
-            };
+                // Poll terminal input
+                handle_input(&mut state);
+                if state.should_quit { break; }
 
-            use app_lib::core::cli::AgentLoop;
-            let agent = AgentLoop::new_with_key(url, model_id, api_key, dispatcher);
+                // Check if agent finished
+                if agent_handle.is_finished() { break; }
 
-            eprintln!();
-            let pb     = make_spinner("step 1 · thinking…");
-            let result = agent.run(&[], &prompt, &mut make_agent_handler(pb.clone())).await;
-            pb.finish_and_clear();
-            eprintln!();
-            if pid > 0 { stop_model(pid); }
+                // Redraw
+                let _ = terminal.draw(|f| draw(f, &mut state));
+                tokio::time::sleep(std::time::Duration::from_millis(16)).await;
+            }
 
-            match result {
-                Ok(resp) => {
-                    println!("{}", resp.content);
-                    let reason_str = match resp.finish_reason {
-                        app_lib::core::cli::FinishReason::Stop => "stop",
-                        app_lib::core::cli::FinishReason::MaxSteps => "max_steps",
-                        app_lib::core::cli::FinishReason::BudgetExhausted => "budget_exhausted",
-                    };
-                    eprintln!("{}", dim.apply_to(format!(
-                        "[{} tokens · {} step{} · {}]",
-                        resp.tokens_used, resp.steps,
-                        if resp.steps == 1 { "" } else { "s" },
-                        reason_str
-                    )));
+            // Drain remaining events
+            while let Ok(event) = event_rx.try_recv() {
+                apply_agent_event(&mut state, &event);
+            }
+
+            // Remove the trailing Thinking item
+            state.messages.retain(|m| !matches!(m, ChatItem::Thinking { .. }));
+            state.is_thinking = false;
+
+            // Process the result
+            match agent_handle.await {
+                Ok(Ok(resp)) => {
+                    state.tokens_used = resp.tokens_used;
+                    state.push_message(ChatItem::Agent(resp.content.clone()));
+
+                    history.push(app_lib::core::cli::ChatMessage {
+                        role: "user".into(),
+                        content: Some(input),
+                        tool_calls: None,
+                        tool_call_id: None,
+                        name: None,
+                    });
+                    history.push(app_lib::core::cli::ChatMessage {
+                        role: "assistant".into(),
+                        content: Some(resp.content),
+                        tool_calls: None,
+                        tool_call_id: None,
+                        name: None,
+                    });
+                }
+                Ok(Err(e)) => {
+                    state.push_message(ChatItem::Agent(format!("[error] {e}")));
+                    state.push_tool_log(ToolLogKind::Error, format!("{e}"));
                 }
                 Err(e) => {
-                    eprintln!("{} {}", red.apply_to("error:"), e);
-                    std::process::exit(1);
+                    state.push_message(ChatItem::Agent(format!("[error] task panicked: {e}")));
+                    state.push_tool_log(ToolLogKind::Error, format!("task panicked: {e}"));
                 }
             }
+
+            let _ = terminal.draw(|f| draw(f, &mut state));
+        } else {
+            let _ = terminal.draw(|f| draw(f, &mut state));
+            tokio::time::sleep(std::time::Duration::from_millis(16)).await;
+        }
+    }
+
+    // Cleanup
+    restore_terminal();
+
+    if pid > 0 {
+        eprintln!("Session ended — stopping model…");
+        stop_model(pid);
+    }
+}
+
+/// Translate an AgentEvent into TUI state updates.
+fn apply_agent_event(state: &mut agent_tui::AgentTuiState, event: &AgentEvent) {
+    use agent_tui::*;
+
+    match event {
+        AgentEvent::Thinking { step } => {
+            state.steps = *step;
+            // Update the existing thinking item
+            state.messages.retain(|m| !matches!(m, ChatItem::Thinking { .. }));
+            state.push_message(ChatItem::Thinking { step: *step });
+        }
+        AgentEvent::ToolCall { step: _, tool_id, args } => {
+            state.tool_calls_count += 1;
+            let raw = serde_json::to_string(args).unwrap_or_default();
+            let preview = if raw.len() > 80 { format!("{}…", &raw[..80]) } else { raw };
+            state.push_message(ChatItem::ToolCall {
+                name: tool_id.clone(),
+                args_preview: preview.clone(),
+            });
+            state.push_tool_log(ToolLogKind::Info, format!("{tool_id}"));
+            if !preview.is_empty() && preview != "{}" && preview != "null" {
+                state.push_tool_log_dim(format!("  {preview}"));
+            }
+        }
+        AgentEvent::ToolResult { tool_id, ok, elapsed_ms, summary, .. } => {
+            state.push_message(ChatItem::ToolResult {
+                name: tool_id.clone(),
+                ok: *ok,
+                elapsed_ms: *elapsed_ms,
+                summary: summary.clone(),
+            });
+            let time_str = if *elapsed_ms >= 1000 {
+                format!("{:.1}s", *elapsed_ms as f64 / 1000.0)
+            } else {
+                format!("{elapsed_ms}ms")
+            };
+            let kind = if *ok { ToolLogKind::Ok } else { ToolLogKind::Error };
+            state.push_tool_log(kind, format!("{tool_id} ({time_str})"));
+            if !summary.is_empty() {
+                state.push_tool_log_dim(format!("  {summary}"));
+            }
+        }
+        AgentEvent::ToolLog { tool_id: _, message, .. } => {
+            state.push_tool_log_dim(format!("  {message}"));
+        }
+        AgentEvent::TokenBudget { used, total } => {
+            state.tokens_used = *used;
+            state.tokens_total = *total;
+        }
+        AgentEvent::Retrying { step, attempt, delay_ms } => {
+            let delay_sec = *delay_ms as f64 / 1000.0;
+            state.push_tool_log(
+                ToolLogKind::Warn,
+                format!("step {step} retry {attempt}/3 — waiting {delay_sec:.1}s"),
+            );
+        }
+        AgentEvent::ContextCompacted { turns_removed } => {
+            state.push_tool_log(
+                ToolLogKind::Warn,
+                format!("context compacted ({turns_removed} turns removed)"),
+            );
         }
     }
 }
