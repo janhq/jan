@@ -31,5 +31,11 @@
   "personality": "Personalitat",
   "capabilities": "Capacitats",
   "instructionsDateHint": "Consell: utilitza {{current_date}} per inserir la data d’avui.",
-  "maxToolSteps": "Màxim de passos d’eina"
+  "maxToolSteps": "Màxim de passos de l'eina",
+  "setAsDefault": "Estableix com a assistent per defecte",
+  "isDefault": "Per defecte",
+  "defaultAssistantSection": "Assistent per defecte",
+  "defaultAssistantDesc": "S'utilitza en iniciar un xat nou",
+  "allAssistants": "Tots els assistents",
+  "lastUsed": "Últim ús"
 }
