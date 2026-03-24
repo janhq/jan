@@ -289,10 +289,12 @@ function ThreadDetail() {
           try {
             const toolName = toolCall.toolName
 
-            // Request approval if needed (unless auto-approve is enabled)
-            const approved = await useToolApproval
-              .getState()
-              .showApprovalModal(toolName, threadId, toolCall.input)
+            // Built-in RAG tools are internal and should not require approval.
+            const approved = ragToolNames.has(toolName)
+              ? true
+              : await useToolApproval
+                  .getState()
+                  .showApprovalModal(toolName, threadId, toolCall.input)
 
             if (!approved) {
               // User denied the tool call
@@ -540,6 +542,11 @@ function ThreadDetail() {
 
           // Update thread metadata if documents were embedded
           if (result.hasEmbeddedDocuments) {
+            const toolApproval = useToolApproval.getState()
+            const ragTools = useAppState.getState().ragToolNames
+            for (const toolName of ragTools) {
+              toolApproval.approveToolForThread(threadId, toolName)
+            }
             useThreads.getState().updateThread(threadId, {
               metadata: { hasDocuments: true },
             })
