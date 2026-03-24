@@ -136,9 +136,13 @@ describe('useAssistant', () => {
       },
     ]
 
+    expect(result.current.loading).toBe(true)
+
     act(() => {
       result.current.setAssistants(assistants)
     })
+
+    expect(result.current.loading).toBe(false)
 
     expect(result.current.assistants).toEqual(assistants)
     expect(result.current.assistants).toHaveLength(2)
