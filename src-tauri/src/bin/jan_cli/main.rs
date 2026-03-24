@@ -1705,7 +1705,7 @@ async fn run_agent_tui(
                 }
                 Ok(Err(e)) => {
                     state.push_message(ChatItem::Agent(format!("[error] {e}")));
-                    state.push_tool_log(ToolLogKind::Error, format!("{e}"));
+                    state.push_tool_log(ToolLogKind::Error, e.to_string());
                 }
                 Err(e) => {
                     state.push_message(ChatItem::Agent(format!("[error] task panicked: {e}")));
@@ -1748,7 +1748,7 @@ fn apply_agent_event(state: &mut agent_tui::AgentTuiState, event: &AgentEvent) {
                 name: tool_id.clone(),
                 args_preview: preview.clone(),
             });
-            state.push_tool_log(ToolLogKind::Info, format!("{tool_id}"));
+            state.push_tool_log(ToolLogKind::Info, tool_id.clone());
             if !preview.is_empty() && preview != "{}" && preview != "null" {
                 state.push_tool_log_dim(format!("  {preview}"));
             }

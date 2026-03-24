@@ -52,7 +52,6 @@ pub enum ChatItem {
 
 #[derive(Clone)]
 pub struct ToolLogEntry {
-    pub timestamp: String,
     pub kind: ToolLogKind,
     pub text: String,
 }
@@ -157,23 +156,12 @@ impl AgentTuiState {
     }
 
     pub fn push_tool_log(&mut self, kind: ToolLogKind, text: String) {
-        let elapsed = self.start_time.elapsed().as_secs();
-        let mm = elapsed / 60;
-        let ss = elapsed % 60;
-        self.tool_log.push(ToolLogEntry {
-            timestamp: format!("{mm:02}:{ss:02}"),
-            kind,
-            text,
-        });
+        self.tool_log.push(ToolLogEntry { kind, text });
         self.tool_log_auto_scroll = true;
     }
 
     pub fn push_tool_log_dim(&mut self, text: String) {
-        self.tool_log.push(ToolLogEntry {
-            timestamp: String::new(),
-            kind: ToolLogKind::Dim,
-            text,
-        });
+        self.tool_log.push(ToolLogEntry { kind: ToolLogKind::Dim, text });
         self.tool_log_auto_scroll = true;
     }
 }
@@ -184,7 +172,7 @@ use std::sync::Mutex;
 
 /// A global buffer that captures `[llamacpp]` log lines during model loading.
 /// Enabled by calling `enable_log_capture()` and retrieved with `take_captured_logs()`.
-static LOG_CAPTURE: std::sync::LazyLock<Mutex<String>> = std::sync::LazyLock::new(|| Mutex::new(String::new()));
+static LOG_CAPTURE: Mutex<String> = Mutex::new(String::new());
 static LOG_CAPTURE_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Start capturing `[llamacpp]` log lines.
@@ -200,12 +188,10 @@ pub fn take_captured_logs() -> String {
 
 /// Called by our custom logger for each log record.
 pub fn maybe_capture_log(msg: &str) {
-    if LOG_CAPTURE_ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
-        if msg.contains("[llamacpp]") {
-            if let Ok(mut buf) = LOG_CAPTURE.lock() {
-                buf.push_str(msg);
-                buf.push('\n');
-            }
+    if LOG_CAPTURE_ENABLED.load(std::sync::atomic::Ordering::Relaxed) && msg.contains("[llamacpp]") {
+        if let Ok(mut buf) = LOG_CAPTURE.lock() {
+            buf.push_str(msg);
+            buf.push('\n');
         }
     }
 }
