@@ -62,6 +62,7 @@
     "framer-motion": "12.23.12",
     "fuse.js": "7.1.0",
     "fzf": "0.5.2",
+    "gpt-tokenizer": "^3.4.0",
     "i18next": "25.0.2",
     "katex": "0.16.22",
     "lodash.clonedeep": "4.5.0",
