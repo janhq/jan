@@ -81,13 +81,6 @@ export function ModelSetting({
         models: updatedModels,
       })
 
-      // Keep selectedModel snapshot in sync so that the transport picks up the
-      // new settings immediately without the user having to reselect the model.
-      const currentState = useModelProvider.getState()
-      if (currentState.selectedModel?.id === model.id) {
-        useModelProvider.setState({ selectedModel: updatedModel as Model })
-      }
-
       // Call debounced stopModel only when updating ctx_len, ngl, chat_template, or offload_mmproj
       // and only if the model is currently running
       if (
@@ -132,8 +125,6 @@ export function ModelSetting({
         </SheetHeader>
 
         <div className="px-4 space-y-8 pb-4">
-
-          {/* ── Provider-specific model settings (local & remote) ────────── */}
           {Object.entries(model.settings || {})
           .reduce<[string, unknown][]>((acc, entry) => {
             if (entry[0] === 'auto_increase_ctx_len') return acc

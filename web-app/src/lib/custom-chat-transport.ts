@@ -20,117 +20,6 @@ import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 
-// ─── Context-window trimming ──────────────────────────────────────────────────
-
-/** Fraction of ctx_len reserved as a safety buffer. */
-const CTX_SAFETY_FACTOR = 0.9
-
-/**
- * Count tokens using the cl100k_base tokenizer (GPT-4 / GPT-3.5).
- * Lazy-imported so the tokenizer data is only loaded when actually needed.
- */
-async function countTokens(text: string): Promise<number> {
-  const { encode } = await import('gpt-tokenizer')
-  return encode(text).length
-}
-
-/**
- * Estimate the token count of a UIMessage using the cl100k_base tokenizer.
- * +4 tokens per message accounts for role/formatting overhead
- * (matches OpenAI's token-counting guidance).
- * Falls back to chars/4 if the tokenizer fails to load.
- */
-async function estimateMessageTokens(msg: UIMessage): Promise<number> {
-  const parts = Array.isArray(msg.parts) ? msg.parts : []
-  const text = parts
-    .filter((p) => p.type === 'text' || p.type === 'reasoning')
-    .map((p) => (p as { text?: string }).text ?? '')
-    .join('')
-  try {
-    return (await countTokens(text)) + 4
-  } catch {
-    return Math.ceil(text.length / 4) + 4
-  }
-}
-
-/**
- * Trim oldest non-system messages so the total estimated token count stays
- * within `ctx_len - max_output_tokens`. The most recent user message is
- * always kept so the model has something to respond to.
- *
- * Auto-compact: when messages are dropped, a synthetic system message is
- * injected immediately after the real system messages to inform the model
- * that earlier context was removed. This mirrors the behaviour of tools
- * like Claude Code / Codex and prevents the model from being confused by
- * an abruptly starting conversation.
- *
- * When `ctx_len` is undefined the original list is returned unchanged.
- */
-async function trimMessagesToContextWindow(
-  messages: UIMessage[],
-  ctxLen: number | undefined,
-  maxOutputTokens: number | undefined
-): Promise<UIMessage[]> {
-  if (!ctxLen || messages.length === 0) return messages
-
-  const outputBudget = maxOutputTokens ?? Math.floor(ctxLen * 0.25)
-  const inputBudget = Math.floor(ctxLen * CTX_SAFETY_FACTOR) - outputBudget
-
-  if (inputBudget <= 0) return messages
-
-  // Separate system messages (always kept) from conversational messages.
-  const systemMsgs = messages.filter((m) => m.role === 'system')
-  const convMsgs = messages.filter((m) => m.role !== 'system')
-
-  const systemTokenCounts = await Promise.all(systemMsgs.map(estimateMessageTokens))
-  const systemTokens = systemTokenCounts.reduce((s, n) => s + n, 0)
-  let budget = inputBudget - systemTokens
-
-  // Pre-compute token counts for all conversational messages.
-  const convTokenCounts = await Promise.all(convMsgs.map(estimateMessageTokens))
-
-  // Walk conversational messages from newest → oldest, keeping as many as fit.
-  const kept: UIMessage[] = []
-  for (let i = convMsgs.length - 1; i >= 0; i--) {
-    const tokens = convTokenCounts[i]
-    if (kept.length === 0 || budget - tokens >= 0) {
-      kept.unshift(convMsgs[i])
-      budget -= tokens
-    }
-    // Always keep at least the most recent message.
-    if (kept.length === 0 && i === convMsgs.length - 1) {
-      kept.unshift(convMsgs[i])
-    }
-  }
-
-  const droppedCount = convMsgs.length - kept.length
-  if (droppedCount === 0) return messages
-
-  console.info(
-    `[context-trim] Auto-compact: dropped ${droppedCount}/${convMsgs.length} older messages ` +
-      `to fit within ctx_len=${ctxLen} (output_budget=${outputBudget}).`
-  )
-
-  // ── Auto-compact notice ──────────────────────────────────────────────────
-  // Inject a synthetic system message so the model knows older context was
-  // removed. This avoids confusion from a suddenly-truncated conversation.
-  const compactText =
-    `[Context compacted: ${droppedCount} earlier message${droppedCount === 1 ? '' : 's'} ` +
-    `removed to fit the context window (ctx_len=${ctxLen}). ` +
-    `The conversation continues from the most recent messages below.]`
-
-  const compactNotice: UIMessage = {
-    id: '__context-compact-notice__',
-    role: 'system',
-    parts: [{ type: 'text', text: compactText }],
-  }
-  // ─────────────────────────────────────────────────────────────────────────
-
-  return [...systemMsgs, compactNotice, ...kept]
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
   messageId: string
@@ -465,46 +354,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       })
     })()
 
-    // Extract output token limit and context window from inference params.
-    // max_output_tokens is normalised to max_tokens in the HTTP body by
-    // createCustomFetch; here we read it to pass to streamText and to compute
-    // the trimming budget.
     const inferenceParams = useAssistant.getState().currentAssistant?.parameters ?? {}
 
     const selectedModel = useModelProvider.getState().selectedModel
 
     const maxOutputTokens: number | undefined = (() => {
-      // Read from assistant parameters — the canonical place to set token limits
-      // for all providers (use the predefined chips in Settings → Assistants).
       if (typeof inferenceParams.max_output_tokens === 'number') return inferenceParams.max_output_tokens
       if (typeof inferenceParams.max_tokens === 'number') return inferenceParams.max_tokens
       return undefined
     })()
-    // ctx_len is a local model startup setting (e.g. llamacpp -c flag), not a
-    // runtime inference parameter. Read it only from model.settings so it
-    // reflects the context window the local server was launched with.
-    // For remote models this is undefined — the API enforces its own limits.
-    const ctxLen: number | undefined = (() => {
-      const raw = selectedModel?.settings?.ctx_len?.controller_props?.value
-      if (typeof raw === 'number') return raw
-      if (typeof raw === 'string') {
-        const parsed = parseInt(raw, 10)
-        return isNaN(parsed) ? undefined : parsed
-      }
-      return undefined
-    })()
 
-    // Trim oldest non-system messages so the conversation fits within ctx_len.
-    // Token counts use the cl100k_base tokenizer via gpt-tokenizer.
-    const trimmedMessages = await trimMessagesToContextWindow(
-      messagesToConvert,
-      ctxLen,
-      maxOutputTokens
-    )
-
-    // Convert UI messages to model messages
     const baseMessages = convertToModelMessages(
-      this.mapUserInlineAttachments(trimmedMessages)
+      this.mapUserInlineAttachments(messagesToConvert)
     )
 
     // If continuing a truncated response, append the partial assistant content as a
