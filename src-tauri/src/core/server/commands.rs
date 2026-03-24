@@ -3,6 +3,7 @@ use tauri_plugin_llamacpp::state::LlamacppState;
 use tauri_plugin_mlx::state::MlxState;
 
 use crate::core::server::proxy;
+use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
 
 
@@ -48,6 +49,9 @@ pub async fn start_server<R: Runtime>(
         vec![trusted_hosts],
         proxy_timeout,
         state.provider_configs.clone(),
+        state.mcp_servers.clone(),
+        state.mcp_settings.clone(),
+        get_jan_data_folder_path(app_handle.clone()).to_string_lossy().into_owned(),
     )
     .await
     .map_err(|e| e.to_string())?;
