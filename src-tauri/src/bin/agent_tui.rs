@@ -88,6 +88,10 @@ pub struct AgentTuiState {
     pub tool_log_scroll: u16,
     pub tool_log_auto_scroll: bool,
 
+    /// Which panel has scroll focus: false = chat (left), true = tool output (right).
+    /// Toggle with Tab.
+    pub focus_tool_panel: bool,
+
     pub resources: Vec<ResourceBar>,
 
     pub input: String,
@@ -118,6 +122,7 @@ impl AgentTuiState {
             tool_log: Vec::new(),
             tool_log_scroll: 0,
             tool_log_auto_scroll: true,
+            focus_tool_panel: false,
             resources: vec![
                 ResourceBar { label: "KV cache",      value: 0.0, display: "—".into(), color: BLUE },
                 ResourceBar { label: "model weights",  value: 0.0, display: "—".into(), color: PURPLE },
@@ -459,17 +464,20 @@ fn handle_single_event(state: &mut AgentTuiState, ev: Event) {
                 (KeyCode::End, _) => {
                     state.cursor_pos = state.input.len();
                 }
+                (KeyCode::Tab, _) => {
+                    state.focus_tool_panel = !state.focus_tool_panel;
+                }
                 (KeyCode::Up, _) => {
-                    scroll_messages(state, -1);
+                    scroll_focused(state, -1);
                 }
                 (KeyCode::Down, _) => {
-                    scroll_messages(state, 1);
+                    scroll_focused(state, 1);
                 }
                 (KeyCode::PageUp, _) => {
-                    scroll_messages(state, -20);
+                    scroll_focused(state, -20);
                 }
                 (KeyCode::PageDown, _) => {
-                    scroll_messages(state, 20);
+                    scroll_focused(state, 20);
                 }
                 (KeyCode::Char(c), _) if !state.is_thinking => {
                     state.input.insert(state.cursor_pos, c);
@@ -481,8 +489,8 @@ fn handle_single_event(state: &mut AgentTuiState, ev: Event) {
         Event::Mouse(me) => {
             use crossterm::event::MouseEventKind;
             match me.kind {
-                MouseEventKind::ScrollUp => scroll_messages(state, -1),
-                MouseEventKind::ScrollDown => scroll_messages(state, 1),
+                MouseEventKind::ScrollUp => scroll_focused(state, -1),
+                MouseEventKind::ScrollDown => scroll_focused(state, 1),
                 _ => {}
             }
         }
@@ -490,10 +498,16 @@ fn handle_single_event(state: &mut AgentTuiState, ev: Event) {
     }
 }
 
-fn scroll_messages(state: &mut AgentTuiState, delta: i32) {
-    state.messages_auto_scroll = false;
-    let new_pos = (state.messages_scroll as i32 + delta).max(0) as u16;
-    state.messages_scroll = new_pos;
+fn scroll_focused(state: &mut AgentTuiState, delta: i32) {
+    if state.focus_tool_panel {
+        state.tool_log_auto_scroll = false;
+        let new_pos = (state.tool_log_scroll as i32 + delta).max(0) as u16;
+        state.tool_log_scroll = new_pos;
+    } else {
+        state.messages_auto_scroll = false;
+        let new_pos = (state.messages_scroll as i32 + delta).max(0) as u16;
+        state.messages_scroll = new_pos;
+    }
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
@@ -575,9 +589,10 @@ fn draw_main_panel(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
 }
 
 fn draw_messages(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
+    let border_color = if !state.focus_tool_panel { GREEN } else { BORDER };
     let block = Block::default()
         .borders(Borders::RIGHT)
-        .border_style(Style::default().fg(BORDER))
+        .border_style(Style::default().fg(border_color))
         .style(Style::default().bg(BG));
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -763,10 +778,16 @@ fn draw_right_panel(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
 }
 
 fn draw_tool_output(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
+    let title_color = if state.focus_tool_panel { GREEN } else { MUTED };
     let block = Block::default()
         .title(Line::from(vec![
             Span::styled(" > ", Style::default().fg(AMBER)),
-            Span::styled("tool output ", Style::default().fg(MUTED)),
+            Span::styled("tool output ", Style::default().fg(title_color)),
+            if state.focus_tool_panel {
+                Span::styled("[focused] ", Style::default().fg(GREEN).add_modifier(Modifier::DIM))
+            } else {
+                Span::styled("[tab] ", Style::default().fg(MUTED).add_modifier(Modifier::DIM))
+            },
         ]))
         .borders(Borders::BOTTOM)
         .border_style(Style::default().fg(BORDER))
