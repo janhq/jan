@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ChevronsUpDown } from 'lucide-react'
+import { DropdownMenuSeparator } from '@radix-ui/react-dropdown-menu'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.assistant as any)({
@@ -29,8 +30,14 @@ export const Route = createFileRoute(route.settings.assistant as any)({
 
 function AssistantContent() {
   const { t } = useTranslation()
-  const { assistants, addAssistant, updateAssistant, deleteAssistant, defaultAssistantId, setDefaultAssistant } =
-    useAssistant()
+  const { 
+    assistants,
+    addAssistant,
+    updateAssistant,
+    deleteAssistant,
+    defaultAssistantId,
+    setDefaultAssistant
+  } = useAssistant()
   const [open, setOpen] = useState(false)
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -96,11 +103,25 @@ function AssistantContent() {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm" className="justify-between">
-                        <span className="truncate">{defaultAssistant?.name ?? '—'}</span>
+                        <span className={cn('truncate', !defaultAssistantId && 'italic')}>
+                          {defaultAssistant?.name ?? t('assistants:lastUsed')}
+                        </span>
                         <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-40 max-h-80">
+                      <DropdownMenuItem
+                        key="none"
+                        className={cn(
+                          'cursor-pointer my-0.5',
+                          !defaultAssistantId && 'bg-secondary-foreground/8',
+                          'italic'
+                        )}
+                        onClick={() => setDefaultAssistant('')}
+                      >
+                        {t('assistants:lastUsed')}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       {sortedAssistants.map((a) => (
                         <DropdownMenuItem
                           key={a.id}
