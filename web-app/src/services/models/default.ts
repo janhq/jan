@@ -60,6 +60,27 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
+  async fetchLatestJanModel(): Promise<CatalogModel | null> {
+    try {
+      const response = await fetch(LATEST_JAN_MODEL_URL)
+
+      if (!response.ok) {
+        console.error(
+          `Failed to fetch latest Jan model: ${response.status} ${response.statusText}`
+        )
+        return null
+      }
+
+      const data = await response.json()
+
+      const model: CatalogModel = Array.isArray(data) ? data[0] : data
+      return model ?? null
+    } catch (error) {
+      console.error('Error fetching latest Jan model:', error)
+      return null
+    }
+  }
+
   async fetchHuggingFaceRepo(
     repoId: string,
     hfToken?: string
