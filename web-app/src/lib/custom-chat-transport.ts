@@ -22,23 +22,35 @@ import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 
 // ─── Context-window trimming ──────────────────────────────────────────────────
 
-/** Approximate characters per token (conservative estimate). */
-const CHARS_PER_TOKEN = 4
-
 /** Fraction of ctx_len reserved as a safety buffer. */
 const CTX_SAFETY_FACTOR = 0.9
 
 /**
- * Estimate the token count of a UIMessage from its text parts.
+ * Count tokens using the cl100k_base tokenizer (GPT-4 / GPT-3.5).
+ * Lazy-imported so the tokenizer data is only loaded when actually needed.
  */
-function estimateMessageTokens(msg: UIMessage): number {
+async function countTokens(text: string): Promise<number> {
+  const { encode } = await import('gpt-tokenizer')
+  return encode(text).length
+}
+
+/**
+ * Estimate the token count of a UIMessage using the cl100k_base tokenizer.
+ * +4 tokens per message accounts for role/formatting overhead
+ * (matches OpenAI's token-counting guidance).
+ * Falls back to chars/4 if the tokenizer fails to load.
+ */
+async function estimateMessageTokens(msg: UIMessage): Promise<number> {
   const parts = Array.isArray(msg.parts) ? msg.parts : []
-  const chars = parts.reduce<number>((sum, part) => {
-    if (part.type === 'text') return sum + (part.text?.length ?? 0)
-    if (part.type === 'reasoning') return sum + (part.text?.length ?? 0)
-    return sum
-  }, 0)
-  return Math.ceil(chars / CHARS_PER_TOKEN) + 4 // +4 for role overhead
+  const text = parts
+    .filter((p) => p.type === 'text' || p.type === 'reasoning')
+    .map((p) => (p as { text?: string }).text ?? '')
+    .join('')
+  try {
+    return (await countTokens(text)) + 4
+  } catch {
+    return Math.ceil(text.length / 4) + 4
+  }
 }
 
 /**
@@ -54,11 +66,11 @@ function estimateMessageTokens(msg: UIMessage): number {
  *
  * When `ctx_len` is undefined the original list is returned unchanged.
  */
-function trimMessagesToContextWindow(
+async function trimMessagesToContextWindow(
   messages: UIMessage[],
   ctxLen: number | undefined,
   maxOutputTokens: number | undefined
-): UIMessage[] {
+): Promise<UIMessage[]> {
   if (!ctxLen || messages.length === 0) return messages
 
   const outputBudget = maxOutputTokens ?? Math.floor(ctxLen * 0.25)
@@ -70,13 +82,17 @@ function trimMessagesToContextWindow(
   const systemMsgs = messages.filter((m) => m.role === 'system')
   const convMsgs = messages.filter((m) => m.role !== 'system')
 
-  const systemTokens = systemMsgs.reduce((s, m) => s + estimateMessageTokens(m), 0)
+  const systemTokenCounts = await Promise.all(systemMsgs.map(estimateMessageTokens))
+  const systemTokens = systemTokenCounts.reduce((s, n) => s + n, 0)
   let budget = inputBudget - systemTokens
+
+  // Pre-compute token counts for all conversational messages.
+  const convTokenCounts = await Promise.all(convMsgs.map(estimateMessageTokens))
 
   // Walk conversational messages from newest → oldest, keeping as many as fit.
   const kept: UIMessage[] = []
   for (let i = convMsgs.length - 1; i >= 0; i--) {
-    const tokens = estimateMessageTokens(convMsgs[i])
+    const tokens = convTokenCounts[i]
     if (kept.length === 0 || budget - tokens >= 0) {
       kept.unshift(convMsgs[i])
       budget -= tokens
@@ -384,8 +400,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         const inferenceParams = currentAssistant?.parameters
 
         // Create the model using the factory.
-        // Token limits (max_output_tokens, ctx_len) come exclusively from
-        // assistant parameters — set them via Settings → Assistants → ✏️.
         // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
         this.model = await ModelFactory.createModel(
           modelId,
@@ -466,15 +480,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       if (typeof inferenceParams.max_tokens === 'number') return inferenceParams.max_tokens
       return undefined
     })()
+    // ctx_len is a local model startup setting (e.g. llamacpp -c flag), not a
+    // runtime inference parameter. Read it only from model.settings so it
+    // reflects the context window the local server was launched with.
+    // For remote models this is undefined — the API enforces its own limits.
     const ctxLen: number | undefined = (() => {
-      // Priority 1: explicit ctx_len in assistant parameters (works for remote models)
-      const fromParams = inferenceParams.ctx_len
-      if (typeof fromParams === 'number') return fromParams
-      if (typeof fromParams === 'string') {
-        const parsed = parseInt(fromParams, 10)
-        if (!isNaN(parsed)) return parsed
-      }
-      // Priority 2: model settings (works for local models like llama.cpp / MLX)
       const raw = selectedModel?.settings?.ctx_len?.controller_props?.value
       if (typeof raw === 'number') return raw
       if (typeof raw === 'string') {
@@ -485,8 +495,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     })()
 
     // Trim oldest non-system messages so the conversation fits within ctx_len.
-    // We use a ~4-chars-per-token heuristic and reserve space for the output.
-    const trimmedMessages = trimMessagesToContextWindow(
+    // Token counts use the cl100k_base tokenizer via gpt-tokenizer.
+    const trimmedMessages = await trimMessagesToContextWindow(
       messagesToConvert,
       ctxLen,
       maxOutputTokens
