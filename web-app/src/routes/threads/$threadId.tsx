@@ -10,7 +10,6 @@ import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useAssistant } from '@/hooks/useAssistant'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
@@ -85,8 +84,6 @@ function ThreadDetail() {
   const search = useSearch({ from: Route.id })
   const searchThreadModel = search.threadModel
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
-  const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
-  const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
   const addMessage = useMessages((state) => state.addMessage)
   const updateMessage = useMessages((state) => state.updateMessage)
@@ -277,10 +274,12 @@ function ThreadDetail() {
           try {
             const toolName = toolCall.toolName
 
-            // Request approval if needed (unless auto-approve is enabled)
-            const approved = await useToolApproval
-              .getState()
-              .showApprovalModal(toolName, threadId, toolCall.input)
+            // Built-in RAG tools are internal and should not require approval.
+            const approved = ragToolNames.has(toolName)
+              ? true
+              : await useToolApproval
+                  .getState()
+                  .showApprovalModal(toolName, threadId, toolCall.input)
 
             if (!approved) {
               // User denied the tool call
@@ -423,12 +422,8 @@ function ThreadDetail() {
 
   useEffect(() => {
     setCurrentThreadId(threadId)
-    const assistant = assistants.find(
-      (assistant) => assistant.id === thread?.assistants?.[0]?.id
-    )
-    if (assistant) setCurrentAssistant(assistant)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, assistants])
+  }, [threadId])
 
   // Load messages on first mount
   useEffect(() => {
@@ -532,6 +527,11 @@ function ThreadDetail() {
 
           // Update thread metadata if documents were embedded
           if (result.hasEmbeddedDocuments) {
+            const toolApproval = useToolApproval.getState()
+            const ragTools = useAppState.getState().ragToolNames
+            for (const toolName of ragTools) {
+              toolApproval.approveToolForThread(threadId, toolName)
+            }
             useThreads.getState().updateThread(threadId, {
               metadata: { hasDocuments: true },
             })
@@ -598,7 +598,7 @@ function ThreadDetail() {
 
   // Check for and send initial message from sessionStorage
   const initialMessageSentRef = useRef(false)
-  
+
   useEffect(() => {
     // Prevent duplicate sends
     if (initialMessageSentRef.current) return
@@ -865,7 +865,7 @@ function ThreadDetail() {
     }
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
-   const threadModel = useMemo(
+  const threadModel = useMemo(
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
   )

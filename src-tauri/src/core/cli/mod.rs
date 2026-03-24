@@ -116,6 +116,10 @@ pub async fn cli_start_server(
         vec![vec![]],
         proxy_timeout,
         app_state.provider_configs.clone(),
+        app_state.mcp_servers.clone(),
+        app_state.mcp_settings.clone(),
+        resolve_jan_data_folder().to_string_lossy().into_owned(),
+        false,
     )
     .await
     .map_err(|e| e.to_string())

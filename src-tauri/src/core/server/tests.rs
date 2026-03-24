@@ -68,6 +68,7 @@ mod tests {
             trusted_hosts: vec![vec!["localhost".to_string()]],
             host: "localhost".to_string(),
             port: 1337,
+            enable_server_tool_execution: false,
         };
         assert_eq!(config.prefix, "/v1");
         assert_eq!(config.proxy_api_key, "test-key");
@@ -84,6 +85,7 @@ mod tests {
             trusted_hosts: vec![],
             host: "127.0.0.1".to_string(),
             port: 8080,
+            enable_server_tool_execution: false,
         };
         assert_eq!(config.prefix, "");
         assert_eq!(config.proxy_api_key, "");
