@@ -1609,8 +1609,8 @@ async fn run_agent_tui(
     let _ = terminal.draw(|f| draw(f, &mut state));
 
     loop {
-        // Poll input
-        handle_input(&mut state);
+        // Block up to 500ms waiting for input — near-zero CPU when idle
+        handle_input(&mut state, std::time::Duration::from_millis(500));
 
         if state.should_quit {
             break;
@@ -1651,20 +1651,26 @@ async fn run_agent_tui(
             // Poll TUI while the agent task runs
             loop {
                 // Drain agent events
+                let mut had_events = false;
                 while let Ok(event) = event_rx.try_recv() {
                     apply_agent_event(&mut state, &event);
+                    had_events = true;
                 }
 
-                // Poll terminal input
-                handle_input(&mut state);
+                // Poll terminal input (non-blocking during agent run)
+                let had_input = handle_input(&mut state, std::time::Duration::ZERO);
                 if state.should_quit { break; }
 
                 // Check if agent finished
                 if agent_handle.is_finished() { break; }
 
-                // Redraw
-                let _ = terminal.draw(|f| draw(f, &mut state));
-                tokio::time::sleep(std::time::Duration::from_millis(16)).await;
+                // Only redraw if something changed
+                if had_events || had_input {
+                    let _ = terminal.draw(|f| draw(f, &mut state));
+                }
+
+                // Yield to tokio so agent task can progress
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
 
             // Drain remaining events
@@ -1709,8 +1715,8 @@ async fn run_agent_tui(
 
             let _ = terminal.draw(|f| draw(f, &mut state));
         } else {
+            // Idle — redraw only needed on resize (handle_input returns true)
             let _ = terminal.draw(|f| draw(f, &mut state));
-            tokio::time::sleep(std::time::Duration::from_millis(16)).await;
         }
     }
 

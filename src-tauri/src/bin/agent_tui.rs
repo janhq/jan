@@ -399,9 +399,15 @@ pub fn restore_terminal() {
 
 /// Poll for input events. Returns true if an event was handled.
 /// Non-blocking: returns false immediately if no event is pending.
-pub fn handle_input(state: &mut AgentTuiState) -> bool {
+/// Poll for input events with a timeout. Returns true if any event was handled.
+/// Use `Duration::ZERO` for non-blocking, or a longer duration to block and save CPU.
+pub fn handle_input(state: &mut AgentTuiState, timeout: std::time::Duration) -> bool {
+    // Wait up to `timeout` for the first event
+    if !event::poll(timeout).unwrap_or(false) {
+        return false;
+    }
+    // Drain all pending events
     let mut handled = false;
-    // Drain all pending events to avoid queue buildup (especially mouse scroll).
     while event::poll(std::time::Duration::ZERO).unwrap_or(false) {
         let Ok(ev) = event::read() else { break };
         handle_single_event(state, ev);
