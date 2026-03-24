@@ -74,6 +74,7 @@ import { toast } from 'sonner'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
+import { useToolApproval } from '@/hooks/useToolApproval'
 import {
   NEW_THREAD_ATTACHMENT_KEY,
   useChatAttachments,
@@ -725,6 +726,11 @@ const ChatInput = memo(function ChatInput({
         }
 
         if (hasEmbeddedDocuments) {
+          const toolApproval = useToolApproval.getState()
+          const ragTools = useAppState.getState().ragToolNames
+          for (const toolName of ragTools) {
+            toolApproval.approveToolForThread(currentThreadId, toolName)
+          }
           useThreads.getState().updateThread(currentThreadId, {
             metadata: { hasDocuments: true },
           })
