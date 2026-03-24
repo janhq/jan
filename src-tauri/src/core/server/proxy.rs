@@ -1515,9 +1515,11 @@ async fn proxy_request(
                 &origin_header,
                 &config.trusted_hosts,
             );
-            Ok(error_response.body(Body::from(format!(
+            let payload = format!(
                 "{{\"error\":\"max_turns reached while resolving tool calls\",\"last_response\":{body_str}}}"
-            ))).unwrap())
+            );
+            let response = error_response.body(Body::from(payload)).unwrap();
+            return Ok(response);
         }
         (hyper::Method::POST, "/chat/completions")
         | (hyper::Method::POST, "/completions")
