@@ -285,21 +285,6 @@ function LocalAPIServerContent() {
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <p className="text-sm font-medium">
-                        Execute tools on server
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        When enabled, `/v1/chat/completions` and `/v1/messages` run MCP tool calls on the server side.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={enableServerToolExecution}
-                      onCheckedChange={setEnableServerToolExecution}
-                      disabled={isServerRunning}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <p className="text-sm font-medium">
                         {t('settings:localApiServer.serverHost')}
                       </p>
                       <p className="text-xs text-muted-foreground">
@@ -376,6 +361,21 @@ function LocalAPIServerContent() {
                   </h2>
                 </div>
                 <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium">
+                        Execute tools on server
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Run tools server-side for chat endpoints.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={enableServerToolExecution}
+                      onCheckedChange={setEnableServerToolExecution}
+                      disabled={isServerRunning}
+                    />
+                  </div>
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <p className="text-sm font-medium">
