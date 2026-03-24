@@ -81,6 +81,17 @@ export const APIs = {
               return undefined
             }
 
+            const pickBoolean = (
+              obj: Record<string, unknown>,
+              keys: string[]
+            ): boolean | undefined => {
+              for (const key of keys) {
+                const value = obj[key]
+                if (typeof value === 'boolean') return value
+              }
+              return undefined
+            }
+
             const config = {
               host: pickString(raw, ['host']),
               port: pickNumber(raw, ['port']),
@@ -88,6 +99,10 @@ export const APIs = {
               api_key: pickString(raw, ['api_key', 'apiKey']),
               trusted_hosts: pickStringArray(raw, ['trusted_hosts', 'trustedHosts']),
               proxy_timeout: pickNumber(raw, ['proxy_timeout', 'proxyTimeout']),
+              enable_server_tool_execution: pickBoolean(raw, [
+                'enable_server_tool_execution',
+                'enableServerToolExecution',
+              ]),
             }
             return getServiceHub().core().invoke(command, { config })
           }

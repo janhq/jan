@@ -104,6 +104,11 @@
   </keywords>
 
   <releases>
+    <release version="0.7.9" date="2026-03-23">
+      <description>
+        <p>Smarter context management, fixed CLI on Windows, and safer data location handling</p>
+      </description>
+    </release>
     <release version="0.7.8" date="2026-03-11">
       <description>
         <p>OpenClaw integration, a new Jan CLI, and automatic context management for uninterrupted conversations</p>

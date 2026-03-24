@@ -45,8 +45,11 @@ export class TauriProvidersService extends DefaultProvidersService {
         }
       }).filter(Boolean)
 
+      // TODO: Re-enable foundation-models once migrated to apple-foundation-models crate
+      const hiddenProviders = new Set(['foundation-models'])
       const runtimeProviders: ModelProvider[] = []
       for (const [providerName, value] of EngineManager.instance().engines) {
+        if (hiddenProviders.has(providerName)) continue
         const models = await value.list() ?? [] 
         const provider: ModelProvider = {
           active: false,
