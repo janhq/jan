@@ -29,24 +29,6 @@ export async function syncActiveModels(serviceHub: ServiceHub): Promise<void> {
   }
 }
 
-/**
- * Explicitly reload a model and sync UI state.
- * Use when you need to ensure a model is loaded (e.g. resuming a conversation
- * after idle unload, or API server restoring a model).
- */
-export async function reloadModel(
-  serviceHub: ServiceHub,
-  provider: ProviderObject,
-  modelId: string
-): Promise<void> {
-  try {
-    await serviceHub.models().startModel(provider, modelId)
-  } catch (err) {
-    console.warn('[ModelLifecycle] reloadModel failed:', err)
-  }
-  await syncActiveModels(serviceHub)
-}
-
 interface ModelLifecycleState {
   /** Timestamp (ms) of last user-initiated activity (e.g. sending a message). */
   lastActivityAt: number
