@@ -10,7 +10,6 @@ import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useAssistant } from '@/hooks/useAssistant'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
@@ -85,8 +84,6 @@ function ThreadDetail() {
   const search = useSearch({ from: Route.id })
   const searchThreadModel = search.threadModel
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
-  const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
-  const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
   const addMessage = useMessages((state) => state.addMessage)
   const updateMessage = useMessages((state) => state.updateMessage)
@@ -148,7 +145,9 @@ function ThreadDetail() {
   // context-limit hit, so the user sees it instead of a blank gap.
   const [pendingContinueMessage, setPendingContinueMessage] =
     useState<UIMessage | null>(null)
-  const [isAutoIncreasingContext, setIsAutoIncreasingContext] = useState(false)
+  const [autoIncreaseAttempts, setAutoIncreaseAttempts] = useState(0)
+  const MAX_AUTO_INCREASE_ATTEMPTS = 3
+  const isAutoIncreasingContext = autoIncreaseAttempts > 0 && autoIncreaseAttempts < MAX_AUTO_INCREASE_ATTEMPTS
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
 
   // Refs so onFinish (captured in closure) always calls the latest callbacks
@@ -421,12 +420,8 @@ function ThreadDetail() {
 
   useEffect(() => {
     setCurrentThreadId(threadId)
-    const assistant = assistants.find(
-      (assistant) => assistant.id === thread?.assistants?.[0]?.id
-    )
-    if (assistant) setCurrentAssistant(assistant)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, assistants])
+  }, [threadId])
 
   // Load messages on first mount
   useEffect(() => {
@@ -596,7 +591,7 @@ function ThreadDetail() {
 
   // Check for and send initial message from sessionStorage
   const initialMessageSentRef = useRef(false)
-  
+
   useEffect(() => {
     // Prevent duplicate sends
     if (initialMessageSentRef.current) return
@@ -772,6 +767,9 @@ function ThreadDetail() {
     // Increase context length in steps: <8192 -> 8192 -> 32768 -> x1.5
     const currentCtxLen =
       (model.settings?.ctx_len?.controller_props?.value as number) ?? 8192
+    const maxCtxLen =
+      (model.settings?.ctx_len?.controller_props?.max as number) || 131072
+
     let newCtxLen: number
     if (currentCtxLen < 8192) {
       newCtxLen = 8192
@@ -779,6 +777,12 @@ function ThreadDetail() {
       newCtxLen = 32768
     } else {
       newCtxLen = Math.round(currentCtxLen * 1.5)
+    }
+
+    newCtxLen = Math.min(newCtxLen, maxCtxLen)
+    if (newCtxLen <= currentCtxLen) {
+      setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+      return
     }
 
     const updatedModel = {
@@ -825,6 +829,7 @@ function ThreadDetail() {
   )
   useEffect(() => {
     if (!error || agentModeActive) return
+    if (autoIncreaseAttempts >= MAX_AUTO_INCREASE_ATTEMPTS) return
     const autoIncrease =
       selectedModel?.settings?.auto_increase_ctx_len?.controller_props?.value ??
       true
@@ -836,7 +841,7 @@ function ThreadDetail() {
           error.message?.toLowerCase().includes('limit'))) ||
       error.message === OUT_OF_CONTEXT_SIZE
     if (isContextError) {
-      setIsAutoIncreasingContext(true)
+      setAutoIncreaseAttempts((prev) => prev + 1)
       handleContextSizeIncrease()
     }
   }, [error]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -845,15 +850,15 @@ function ThreadDetail() {
     if (status === 'streaming' || status === 'submitted') {
       setContextLimitError(null)
     }
-    if (isAutoIncreasingContext && (status === 'streaming' || status === 'error')) {
-      setIsAutoIncreasingContext(false)
+    if (status === 'streaming' && autoIncreaseAttempts > 0) {
+      setAutoIncreaseAttempts(0)
     }
     if (status === 'error' && pendingContinueMessage) {
       setPendingContinueMessage(null)
     }
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
-   const threadModel = useMemo(
+  const threadModel = useMemo(
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
   )

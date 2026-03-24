@@ -245,6 +245,7 @@ pub fn run() {
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
+            mcp_reconnect_notify: Arc::new(tokio::sync::Notify::new()),
         })
         .setup(|app| {
             app.handle().plugin(

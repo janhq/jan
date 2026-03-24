@@ -64,7 +64,6 @@ import {
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 // Error message constant - matches web-app/src/utils/error.ts
-const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
 
 /**
  * Override the default app.log function to use Jan's logging system.
@@ -1830,12 +1829,6 @@ export default class llamacpp_extension extends AIEngine {
             const data = JSON.parse(jsonStr)
             const chunk = data as chatCompletionChunk
 
-            // Check for out-of-context error conditions
-            if (chunk.choices?.[0]?.finish_reason === 'length') {
-              // finish_reason 'length' indicates context limit was hit
-              throw new Error(OUT_OF_CONTEXT_SIZE)
-            }
-
             yield chunk
           } catch (e) {
             logger.error('Error parsing JSON from stream or server error:', e)
@@ -1922,12 +1915,6 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     const completionResponse = (await response.json()) as chatCompletion
-
-    // Check for out-of-context error conditions
-    if (completionResponse.choices?.[0]?.finish_reason === 'length') {
-      // finish_reason 'length' indicates context limit was hit
-      throw new Error(OUT_OF_CONTEXT_SIZE)
-    }
 
     return completionResponse
   }

@@ -113,6 +113,53 @@
           }
         }
       }
+    },
+    "/orchestrations": {
+      "post": {
+        "summary": "Run headless assistant orchestration with tool execution",
+        "description": "Optionally loads assistant settings by `assistant_id`, executes server-side MCP tool calls, and continues generation until the model returns a final response.",
+        "operationId": "createOrchestration",
+        "tags": ["Inference"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "assistant_id": { "type": "string", "description": "Optional assistant id to load system prompt/model hint from" },
+                  "project_id": { "type": "string", "nullable": true, "description": "Reserved for future parity; MCP-only execution currently" },
+                  "model": { "type": "string", "description": "Optional model override. If omitted, uses assistant's model hint or the first running local model." },
+                  "messages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": { "type": "string", "enum": ["system", "user", "assistant"] },
+                        "content": { "type": "string" }
+                      },
+                      "required": ["role", "content"]
+                    }
+                  },
+                  "stream": { "type": "boolean", "default": false, "description": "Streaming is not supported for this endpoint." },
+                  "max_turns": { "type": "integer", "default": 8, "description": "Maximum tool-calling turns before giving up." }
+                },
+                "required": ["messages"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completion result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ChatCompletionResponseDto" }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
