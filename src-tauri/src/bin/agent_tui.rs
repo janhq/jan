@@ -501,6 +501,14 @@ fn scroll_messages(state: &mut AgentTuiState, delta: i32) {
 pub fn draw(frame: &mut Frame, state: &mut AgentTuiState) {
     let size = frame.area();
 
+    // Skip drawing if terminal is too small to avoid panics
+    if size.width < 20 || size.height < 5 {
+        let msg = Paragraph::new("Terminal too small")
+            .style(Style::default().fg(MUTED).bg(BG));
+        frame.render_widget(msg, size);
+        return;
+    }
+
     // Overall layout: titlebar (1) | body | statusbar (1)
     let outer = Layout::default()
         .direction(Direction::Vertical)
@@ -609,8 +617,9 @@ fn draw_messages(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
                     String::new()
                 } else {
                     let max = inner.width.saturating_sub(10) as usize;
-                    if args_preview.len() > max {
-                        format!(" {}...", &args_preview[..max.saturating_sub(4)])
+                    if args_preview.chars().count() > max {
+                        let truncated: String = args_preview.chars().take(max.saturating_sub(4)).collect();
+                        format!(" {truncated}...")
                     } else {
                         format!(" {args_preview}")
                     }
@@ -629,8 +638,9 @@ fn draw_messages(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
                 } else {
                     format!("{elapsed_ms}ms")
                 };
-                let summ = if summary.len() > 60 {
-                    format!("{}...", &summary[..57])
+                let summ = if summary.chars().count() > 60 {
+                    let truncated: String = summary.chars().take(57).collect();
+                    format!("{truncated}...")
                 } else {
                     summary.clone()
                 };
@@ -728,10 +738,11 @@ fn draw_input_bar(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
     let paragraph = Paragraph::new(line);
     frame.render_widget(paragraph, inner);
 
-    // Show cursor
-    if !state.is_thinking {
+    // Show cursor (clamped to inner area to avoid panic on small terminals)
+    if !state.is_thinking && inner.width > 3 && inner.height > 0 {
+        let cursor_x = (inner.x + 3 + state.cursor_pos as u16).min(inner.x + inner.width - 1);
         frame.set_cursor_position((
-            inner.x + 3 + state.cursor_pos as u16,
+            cursor_x,
             inner.y,
         ));
     }
@@ -888,16 +899,23 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
     }
     let mut lines = Vec::new();
     for line in text.lines() {
-        if line.len() <= width {
+        // Use char count for display width, not byte length
+        if line.chars().count() <= width {
             lines.push(line.to_string());
         } else {
             let mut remaining = line;
-            while remaining.len() > width {
-                // Try to break at a space
-                let break_at = remaining[..width]
+            while remaining.chars().count() > width {
+                // Find the byte offset of the `width`-th char
+                let byte_end = remaining
+                    .char_indices()
+                    .nth(width)
+                    .map(|(i, _)| i)
+                    .unwrap_or(remaining.len());
+                // Try to break at a space within that range
+                let break_at = remaining[..byte_end]
                     .rfind(' ')
-                    .unwrap_or(width);
-                let break_at = if break_at == 0 { width } else { break_at };
+                    .unwrap_or(byte_end);
+                let break_at = if break_at == 0 { byte_end } else { break_at };
                 lines.push(remaining[..break_at].to_string());
                 remaining = remaining[break_at..].trim_start();
             }
