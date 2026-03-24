@@ -775,29 +775,26 @@ fn draw_tool_output(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
     frame.render_widget(block, area);
 
     let mut lines: Vec<Line> = Vec::new();
+    // " X " prefix = 3 chars
+    let text_width = inner.width.saturating_sub(3) as usize;
+
     for entry in &state.tool_log {
-        let ts_span = if entry.timestamp.is_empty() {
-            Span::styled("      ", Style::default())
-        } else {
-            Span::styled(
-                format!("{} ", entry.timestamp),
-                Style::default().fg(Color::Rgb(0x3a, 0x42, 0x52)),
-            )
-        };
-
         let (text_style, prefix) = match entry.kind {
-            ToolLogKind::Info => (Style::default().fg(BLUE), "-> "),
-            ToolLogKind::Ok   => (Style::default().fg(GREEN), "+ "),
-            ToolLogKind::Warn => (Style::default().fg(AMBER), "! "),
-            ToolLogKind::Error => (Style::default().fg(RED), "x "),
-            ToolLogKind::Dim  => (Style::default().fg(MUTED), "  "),
+            ToolLogKind::Info => (Style::default().fg(BLUE), " > "),
+            ToolLogKind::Ok   => (Style::default().fg(GREEN), " + "),
+            ToolLogKind::Warn => (Style::default().fg(AMBER), " ! "),
+            ToolLogKind::Error => (Style::default().fg(RED), " x "),
+            ToolLogKind::Dim  => (Style::default().fg(MUTED), "   "),
         };
 
-        lines.push(Line::from(vec![
-            ts_span,
-            Span::styled(prefix, text_style),
-            Span::styled(&entry.text, text_style),
-        ]));
+        let wrapped = wrap_text(&entry.text, text_width);
+        for (i, wline) in wrapped.into_iter().enumerate() {
+            let pfx = if i == 0 { prefix } else { "   " };
+            lines.push(Line::from(vec![
+                Span::styled(pfx, text_style),
+                Span::styled(wline, text_style),
+            ]));
+        }
     }
 
     let content_height = lines.len() as u16;
