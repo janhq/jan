@@ -36,5 +36,6 @@
   "isDefault": "Default",
   "defaultAssistantSection": "Default Assistant",
   "defaultAssistantDesc": "Used when starting a new chat",
-  "allAssistants": "All Assistants"
+  "allAssistants": "All Assistants",
+  "lastUsed": "Last used"
 }

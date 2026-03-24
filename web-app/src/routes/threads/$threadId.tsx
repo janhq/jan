@@ -15,7 +15,6 @@ import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useAssistant } from '@/hooks/useAssistant'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
@@ -98,8 +97,6 @@ function ThreadDetail() {
   const searchThreadModel = search.threadModel
   const router = useRouter()
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
-  const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
-  const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
   const addMessage = useMessages((state) => state.addMessage)
   const updateMessage = useMessages((state) => state.updateMessage)
@@ -437,12 +434,8 @@ function ThreadDetail() {
 
   useEffect(() => {
     setCurrentThreadId(threadId)
-    const assistant = assistants.find(
-      (assistant) => assistant.id === thread?.assistants?.[0]?.id
-    )
-    if (assistant) setCurrentAssistant(assistant)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, assistants])
+  }, [threadId])
 
   // Load messages on first mount
   useEffect(() => {
@@ -612,7 +605,7 @@ function ThreadDetail() {
 
   // Check for and send initial message from sessionStorage
   const initialMessageSentRef = useRef(false)
-  
+
   useEffect(() => {
     // Prevent duplicate sends
     if (initialMessageSentRef.current) return
@@ -970,7 +963,7 @@ function ThreadDetail() {
     }
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
-   const threadModel = useMemo(
+  const threadModel = useMemo(
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
   )
