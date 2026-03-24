@@ -1213,22 +1213,12 @@ async fn proxy_request(
                 }
             };
 
-            let assistant_id = match json_body.get("assistant_id").and_then(|v| v.as_str()) {
-                Some(v) if !v.is_empty() => v.to_string(),
-                _ => {
-                    let mut error_response = Response::builder()
-                        .status(StatusCode::BAD_REQUEST);
-                    error_response = add_cors_headers_with_host_and_origin(
-                        error_response,
-                        &host_header,
-                        &origin_header,
-                        &config.trusted_hosts,
-                    );
-                    return Ok(error_response
-                        .body(Body::from("Missing required field 'assistant_id'"))
-                        .unwrap());
-                }
-            };
+            let assistant_id = json_body
+                .get("assistant_id")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(|v| v.to_string());
 
             let stream = json_body.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
             if stream {
@@ -1275,9 +1265,9 @@ async fn proxy_request(
                 }
             };
 
-            // Load assistant config for system prompt + model hint.
-            let (assistant_instructions, assistant_model_hint) =
-                match load_assistant_config(&jan_data_folder, &assistant_id) {
+            // Load assistant config for system prompt + model hint when assistant_id is provided.
+            let (assistant_instructions, assistant_model_hint) = if let Some(assistant_id) = assistant_id.as_deref() {
+                match load_assistant_config(&jan_data_folder, assistant_id) {
                     Ok(v) => v,
                     Err(e) => {
                         let mut error_response =
@@ -1290,7 +1280,10 @@ async fn proxy_request(
                         );
                         return Ok(error_response.body(Body::from(e)).unwrap());
                     }
-                };
+                }
+            } else {
+                (None, None)
+            };
 
             if let Some(sys) = assistant_instructions {
                 set_system_prompt(&mut conversation_messages, &sys);

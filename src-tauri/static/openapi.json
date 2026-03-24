@@ -117,7 +117,7 @@
     "/orchestrations": {
       "post": {
         "summary": "Run headless assistant orchestration with tool execution",
-        "description": "Loads assistant settings by `assistant_id`, executes server-side MCP tool calls, and continues generation until the model returns a final response.",
+        "description": "Optionally loads assistant settings by `assistant_id`, executes server-side MCP tool calls, and continues generation until the model returns a final response.",
         "operationId": "createOrchestration",
         "tags": ["Inference"],
         "requestBody": {
@@ -127,7 +127,7 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "assistant_id": { "type": "string", "description": "Assistant id to load settings from" },
+                  "assistant_id": { "type": "string", "description": "Optional assistant id to load system prompt/model hint from" },
                   "project_id": { "type": "string", "nullable": true, "description": "Reserved for future parity; MCP-only execution currently" },
                   "model": { "type": "string", "description": "Optional model override. If omitted, uses assistant's model hint or the first running local model." },
                   "messages": {
@@ -144,7 +144,7 @@
                   "stream": { "type": "boolean", "default": false, "description": "Streaming is not supported for this endpoint." },
                   "max_turns": { "type": "integer", "default": 8, "description": "Maximum tool-calling turns before giving up." }
                 },
-                "required": ["assistant_id", "messages"]
+                "required": ["messages"]
               }
             }
           }
