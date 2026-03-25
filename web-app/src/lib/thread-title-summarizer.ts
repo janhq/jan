@@ -70,7 +70,7 @@ export async function generateThreadTitle(
       model,
       messages: [{ role: 'user', content: buildSummarizePrompt(firstMessage) }],
       abortSignal,
-      maxTokens: 50,
+      maxOutputTokens: 50,
     })
 
     return cleanTitle(text)
