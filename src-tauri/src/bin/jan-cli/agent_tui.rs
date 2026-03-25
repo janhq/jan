@@ -48,6 +48,8 @@ pub enum ChatItem {
     ToolCall { name: String, args_preview: String },
     ToolResult { name: String, ok: bool, elapsed_ms: u64, summary: String },
     Thinking { step: usize },
+    /// Vision frame was captured and attached to the message.
+    VisionFrame,
 }
 
 #[derive(Clone)]
@@ -98,6 +100,8 @@ pub struct AgentTuiState {
 
     pub is_thinking: bool,
     pub tool_calls_count: u32,
+    /// Whether vision mode is active (camera/directory capture running).
+    pub vision_active: bool,
     pub tokens_used: u32,
     pub tokens_total: u32,
     pub steps: usize,
@@ -133,6 +137,7 @@ impl AgentTuiState {
             cursor_pos: 0,
             is_thinking: false,
             tool_calls_count: 0,
+            vision_active: false,
             tokens_used: 0,
             tokens_total: 0,
             steps: 0,
@@ -528,7 +533,7 @@ fn draw_titlebar(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
     let status_text = if state.is_thinking { "RUNNING" } else { "READY" };
     let status_color = if state.is_thinking { GREEN } else { MUTED };
 
-    let spans = vec![
+    let mut spans = vec![
         Span::styled("agent", Style::default().fg(TEXT2)),
         Span::styled(" — ", Style::default().fg(MUTED)),
         Span::styled(&state.model_id, Style::default().fg(TEXT2)),
@@ -540,6 +545,14 @@ fn draw_titlebar(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
             Style::default().fg(status_color).add_modifier(Modifier::BOLD),
         ),
     ];
+
+    if state.vision_active {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(
+            " VISION ",
+            Style::default().fg(PURPLE).add_modifier(Modifier::BOLD),
+        ));
+    }
 
     let titlebar = Paragraph::new(Line::from(spans))
         .style(Style::default().bg(BG2));
@@ -670,6 +683,13 @@ fn draw_messages(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
                         format!(" step {step} thinking{dots}"),
                         Style::default().fg(MUTED),
                     ),
+                ]));
+            }
+            ChatItem::VisionFrame => {
+                lines.push(Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled("[camera]", Style::default().fg(PURPLE)),
+                    Span::styled(" frame attached", Style::default().fg(MUTED)),
                 ]));
             }
         }
