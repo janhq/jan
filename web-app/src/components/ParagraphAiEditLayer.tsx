@@ -50,6 +50,7 @@ export function ParagraphAiEditLayer({
   } | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [instruction, setInstruction] = useState('')
+  const [previewText, setPreviewText] = useState<string>('')
   const [running, setRunning] = useState(false)
 
   const clearToolbar = useCallback(() => setToolbar(null), [])
@@ -121,12 +122,13 @@ export function ParagraphAiEditLayer({
     editSelectionRef.current = raw
     setSelectionPreview(raw.trim())
     setInstruction('')
+    setPreviewText('')
     setDialogOpen(true)
     clearToolbar()
     window.getSelection()?.removeAllRanges()
   }, [clearToolbar])
 
-  const handleSubmit = useCallback(async () => {
+  const handleGeneratePreview = useCallback(async () => {
     const trimmed = instruction.trim()
     if (!trimmed) return
 
@@ -154,11 +156,7 @@ export function ParagraphAiEditLayer({
         toast.error(t('chat:paragraphEdit.errorEmpty'))
         return
       }
-      const next = applySpanReplacement(sourceMarkdown, span, revised)
-      onApply(next)
-      setDialogOpen(false)
-      editSelectionRef.current = ''
-      selectedTextRef.current = ''
+      setPreviewText(revised)
     } catch (e) {
       const msg =
         e instanceof Error ? e.message : t('chat:paragraphEdit.errorModel')
@@ -166,7 +164,29 @@ export function ParagraphAiEditLayer({
     } finally {
       setRunning(false)
     }
-  }, [instruction, sourceMarkdown, onApply, t])
+  }, [instruction, sourceMarkdown, t])
+
+  const handleApply = useCallback(() => {
+    const selected = editSelectionRef.current
+    const span = findSelectedSpan(sourceMarkdown, selected)
+    if (!span) {
+      toast.error(t('chat:paragraphEdit.errorLocate'))
+      return
+    }
+
+    const revised = previewText.trim()
+    if (!revised) {
+      toast.error(t('chat:paragraphEdit.errorEmpty'))
+      return
+    }
+
+    const next = applySpanReplacement(sourceMarkdown, span, revised)
+    onApply(next)
+    setDialogOpen(false)
+    editSelectionRef.current = ''
+    selectedTextRef.current = ''
+    setPreviewText('')
+  }, [previewText, sourceMarkdown, onApply, t])
 
   return (
     <>
@@ -235,14 +255,31 @@ export function ParagraphAiEditLayer({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && e.ctrlKey) {
                     e.preventDefault()
-                    void handleSubmit()
+                    if (previewText.trim()) {
+                      handleApply()
+                    } else {
+                      void handleGeneratePreview()
+                    }
                   }
                 }}
               />
               <p className="text-[11px] text-muted-foreground mt-1">
-                {t('chat:paragraphEdit.hintCtrlEnter')}
+                {previewText.trim()
+                  ? t('chat:paragraphEdit.hintCtrlEnterApply')
+                  : t('chat:paragraphEdit.hintCtrlEnterPreview')}
               </p>
             </div>
+
+            {previewText.trim() && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">
+                  {t('chat:paragraphEdit.previewLabel')}
+                </p>
+                <div className="max-h-40 overflow-y-auto rounded-md border bg-muted/30 px-2 py-1.5 text-sm whitespace-pre-wrap">
+                  {previewText}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button
@@ -255,12 +292,22 @@ export function ParagraphAiEditLayer({
             </Button>
             <Button
               type="button"
-              onClick={() => void handleSubmit()}
+              variant="secondary"
+              onClick={() => void handleGeneratePreview()}
               disabled={running || !instruction.trim()}
             >
               {running
                 ? t('chat:paragraphEdit.running')
-                : t('chat:paragraphEdit.apply')}
+                : previewText.trim()
+                  ? t('chat:paragraphEdit.regeneratePreview')
+                  : t('chat:paragraphEdit.preview')}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleApply}
+              disabled={running || !previewText.trim()}
+            >
+              {t('chat:paragraphEdit.apply')}
             </Button>
           </DialogFooter>
         </DialogContent>
