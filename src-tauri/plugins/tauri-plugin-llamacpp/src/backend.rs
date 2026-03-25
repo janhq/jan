@@ -179,6 +179,7 @@ pub struct SystemFeatures {
     cuda12: bool,
     cuda13: bool,
     vulkan: bool,
+    hip: bool,
 }
 
 #[derive(Serialize)]
@@ -212,6 +213,9 @@ pub fn determine_supported_backends(
             if features.vulkan {
                 supported_backends.push("win-vulkan-common_cpus-x64".to_string());
             }
+            if features.hip {
+                supported_backends.push("win-hip-x64".to_string());
+            }
         }
         "windows-aarch64" | "windows-arm64" => {
             supported_backends.push("win-arm64".to_string());
@@ -229,6 +233,9 @@ pub fn determine_supported_backends(
             }
             if features.vulkan {
                 supported_backends.push("linux-vulkan-common_cpus-x64".to_string());
+            }
+            if features.hip {
+                supported_backends.push("linux-hip-x64".to_string());
             }
         }
         "linux-aarch64" | "linux-arm64" => {
@@ -291,11 +298,13 @@ pub struct SupportedFeatures {
     cuda12: bool,
     cuda13: bool,
     vulkan: bool,
+    hip: bool,
 }
 
 #[derive(Deserialize)]
 pub struct GpuInfo {
     driver_version: String,
+    vendor: Option<String>,
     nvidia_info: Option<NvidiaInfo>,
     vulkan_info: Option<VulkanInfo>,
 }
@@ -324,20 +333,19 @@ pub fn get_supported_features(
         cuda12: false,
         cuda13: false,
         vulkan: false,
+        hip: false,
     };
 
     // https://docs.nvidia.com/deploy/cuda-compatibility/#cuda-11-and-later-defaults-to-minor-version-compatibility
     let (min_cuda11_driver, min_cuda12_driver, min_cuda13_driver) = match os_type.as_str() {
         "linux" => ("450.80.02", "525.60.13", "580"),
         "windows" => ("452.39", "527.41", "580"),
-        _ => return Ok(features), // Other OS types don't support CUDA
+        _ => return Ok(features),
     };
 
-    // Check GPU features
     for gpu_info in gpus {
         let driver_version = &gpu_info.driver_version;
 
-        // Check CUDA support
         if gpu_info.nvidia_info.is_some() {
             if compare_versions(driver_version, min_cuda11_driver) >= 0 {
                 features.cuda11 = true;
@@ -350,9 +358,14 @@ pub fn get_supported_features(
             }
         }
 
-        // Check Vulkan support
         if gpu_info.vulkan_info.is_some() {
             features.vulkan = true;
+        }
+
+        if let Some(ref vendor) = gpu_info.vendor {
+            if vendor == "AMD" {
+                features.hip = true;
+            }
         }
     }
 
@@ -514,6 +527,7 @@ pub async fn prioritize_backends(
             "cuda-cu13.0",
             "cuda-cu12.0",
             "cuda-cu11.7",
+            "hip",
             "vulkan",
             "common_cpus",
             "avx512",
@@ -535,6 +549,7 @@ pub async fn prioritize_backends(
             "noavx",
             "arm64",
             "x64",
+            "hip",
             "vulkan",
         ]
     };
@@ -586,6 +601,9 @@ fn get_backend_category(backend_string: &str) -> Option<String> {
     }
     if backend_string.contains("cuda-11-common_cpus") || backend_string.contains("cu11.7") {
         return Some("cuda-cu11.7".to_string());
+    }
+    if backend_string.contains("hip") {
+        return Some("hip".to_string());
     }
     if backend_string.contains("vulkan") {
         return Some("vulkan".to_string());
@@ -963,9 +981,9 @@ mod tests {
 
     #[test]
     fn test_get_supported_features_cuda_linux() {
-        // Driver 525.60.13 supports CUDA 12 on Linux
         let gpus = vec![GpuInfo {
             driver_version: "530.00".to_string(),
+            vendor: Some("NVIDIA".to_string()),
             nvidia_info: Some(NvidiaInfo {
                 compute_capability: "8.0".to_string(),
             }),
@@ -974,15 +992,17 @@ mod tests {
 
         let result = get_supported_features("linux".to_string(), vec![], gpus).unwrap();
 
-        assert!(result.cuda11); // 530 > 450
-        assert!(result.cuda12); // 530 > 525
-        assert!(!result.cuda13); // 530 < 580
+        assert!(result.cuda11);
+        assert!(result.cuda12);
+        assert!(!result.cuda13);
+        assert!(!result.hip);
     }
 
     #[test]
     fn test_get_supported_features_vulkan() {
         let gpus = vec![GpuInfo {
             driver_version: "0.0".to_string(),
+            vendor: None,
             nvidia_info: None,
             vulkan_info: Some(VulkanInfo {
                 api_version: "1.3".to_string(),
@@ -993,6 +1013,42 @@ mod tests {
 
         assert!(result.vulkan);
         assert!(!result.cuda11);
+        assert!(!result.hip);
+    }
+
+    #[test]
+    fn test_get_supported_features_amd_hip() {
+        let gpus = vec![GpuInfo {
+            driver_version: "24.3.1".to_string(),
+            vendor: Some("AMD".to_string()),
+            nvidia_info: None,
+            vulkan_info: Some(VulkanInfo {
+                api_version: "1.3".to_string(),
+            }),
+        }];
+
+        let result = get_supported_features("linux".to_string(), vec![], gpus).unwrap();
+
+        assert!(result.vulkan);
+        assert!(result.hip);
+        assert!(!result.cuda11);
+    }
+
+    #[test]
+    fn test_get_supported_features_nvidia_no_hip() {
+        let gpus = vec![GpuInfo {
+            driver_version: "530.00".to_string(),
+            vendor: Some("NVIDIA".to_string()),
+            nvidia_info: Some(NvidiaInfo {
+                compute_capability: "8.0".to_string(),
+            }),
+            vulkan_info: None,
+        }];
+
+        let result = get_supported_features("linux".to_string(), vec![], gpus).unwrap();
+
+        assert!(!result.hip);
+        assert!(result.cuda11);
     }
 
     // --- Tests for determine_supported_backends ---
@@ -1004,6 +1060,7 @@ mod tests {
             cuda12: true,
             cuda13: false,
             vulkan: true,
+            hip: false,
         };
 
         let result =
@@ -1015,6 +1072,7 @@ mod tests {
         assert!(result.contains(&"win-cuda-12-common_cpus-x64".to_string()));
         assert!(result.contains(&"win-vulkan-common_cpus-x64".to_string()));
         assert!(!result.contains(&"win-cuda-13-common_cpus-x64".to_string()));
+        assert!(!result.contains(&"win-hip-x64".to_string()));
     }
 
     #[test]
@@ -1024,6 +1082,7 @@ mod tests {
             cuda12: false,
             cuda13: false,
             vulkan: false,
+            hip: false,
         };
 
         let result =
@@ -1032,6 +1091,45 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], "macos-arm64");
+    }
+
+    #[test]
+    fn test_determine_supported_backends_linux_hip() {
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: true,
+            hip: true,
+        };
+
+        let result =
+            determine_supported_backends("linux".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        assert!(result.contains(&"linux-common_cpus-x64".to_string()));
+        assert!(result.contains(&"linux-vulkan-common_cpus-x64".to_string()));
+        assert!(result.contains(&"linux-hip-x64".to_string()));
+        assert!(!result.contains(&"linux-cuda-11-common_cpus-x64".to_string()));
+    }
+
+    #[test]
+    fn test_determine_supported_backends_windows_hip() {
+        let features = SystemFeatures {
+            cuda11: false,
+            cuda12: false,
+            cuda13: false,
+            vulkan: true,
+            hip: true,
+        };
+
+        let result =
+            determine_supported_backends("windows".to_string(), "x86_64".to_string(), features)
+                .unwrap();
+
+        assert!(result.contains(&"win-common_cpus-x64".to_string()));
+        assert!(result.contains(&"win-vulkan-common_cpus-x64".to_string()));
+        assert!(result.contains(&"win-hip-x64".to_string()));
     }
 
     // --- Tests for list_supported_backends ---
@@ -1319,5 +1417,57 @@ mod tests {
 
         let result = should_migrate_backend(new_backend, available).unwrap();
         assert_eq!(result, None);
+    }
+
+    // --- Tests for HIP backend category ---
+
+    #[test]
+    fn test_get_backend_category_hip() {
+        assert_eq!(
+            get_backend_category("linux-hip-x64"),
+            Some("hip".to_string())
+        );
+        assert_eq!(
+            get_backend_category("win-hip-x64"),
+            Some("hip".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_prioritize_backends_hip_over_vulkan() {
+        let backends = vec![
+            BackendInfo {
+                version: "b8522".into(),
+                backend: "linux-vulkan-common_cpus-x64".into(),
+            },
+            BackendInfo {
+                version: "b8522".into(),
+                backend: "linux-hip-x64".into(),
+            },
+            BackendInfo {
+                version: "b8522".into(),
+                backend: "linux-common_cpus-x64".into(),
+            },
+        ];
+
+        let result = prioritize_backends(backends, true).await.unwrap();
+        assert_eq!(result.backend_type, "linux-hip-x64");
+    }
+
+    #[tokio::test]
+    async fn test_prioritize_backends_cuda_over_hip() {
+        let backends = vec![
+            BackendInfo {
+                version: "b8522".into(),
+                backend: "linux-hip-x64".into(),
+            },
+            BackendInfo {
+                version: "b8522".into(),
+                backend: "linux-cuda-12-common_cpus-x64".into(),
+            },
+        ];
+
+        let result = prioritize_backends(backends, true).await.unwrap();
+        assert_eq!(result.backend_type, "linux-cuda-12-common_cpus-x64");
     }
 }

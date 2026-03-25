@@ -134,6 +134,7 @@ export type BackendFeatures = {
   cuda12: boolean
   cuda13: boolean
   vulkan: boolean
+  hip: boolean
 }
 
 export type SupportedFeatures = {
@@ -144,6 +145,7 @@ export type SupportedFeatures = {
   cuda12: boolean
   cuda13: boolean
   vulkan: boolean
+  hip: boolean
 }
 export type NvidiaInfo = {
   compute_capability: string
