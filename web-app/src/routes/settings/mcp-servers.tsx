@@ -529,21 +529,6 @@ function MCPServersDesktop() {
                                   </a>
                                 </div>
                               )}
-                              {key === 'Lightpanda Browser' && (
-                                <div className="mt-2 text-xs text-muted-foreground pt-2">
-                                  <p className="mb-1">
-                                    Requires Lightpanda binary to be installed.
-                                  </p>
-                                  <a
-                                    href="https://lightpanda.io/docs/open-source/installation"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-blue-500 hover:underline"
-                                  >
-                                    Installation Guide →
-                                  </a>
-                                </div>
-                              )}
                             </>
                           ) : (
                             <>

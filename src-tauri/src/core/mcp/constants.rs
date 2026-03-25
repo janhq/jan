@@ -17,8 +17,8 @@ pub const DEFAULT_MCP_CONFIG: &str = r#"{
       "official": true
     },
     "Lightpanda Browser": {
-      "command": "lightpanda",
-      "args": ["mcp"],
+      "command": "npx",
+      "args": ["-y", "lightpanda-mcp"],
       "env": {},
       "active": false,
       "official": false
