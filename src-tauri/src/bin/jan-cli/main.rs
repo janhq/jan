@@ -1635,6 +1635,19 @@ async fn run_agent_tui(
             if input == "/quit" || input == "/exit" || input == "exit" {
                 break;
             }
+            if input == "/clear" {
+                history.clear();
+                state.messages.clear();
+                state.tool_log.clear();
+                state.pending_messages.clear();
+                state.tokens_used = 0;
+                state.steps = 0;
+                state.tool_calls_count = 0;
+                state.messages_scroll = 0;
+                state.tool_log_scroll = 0;
+                let _ = terminal.draw(|f| draw(f, &mut state));
+                continue;
+            }
             if !input.is_empty() {
                 if state.is_thinking {
                     // Agent is busy — queue the message
