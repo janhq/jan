@@ -1,9 +1,65 @@
 import { invoke } from '@tauri-apps/api/core'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useAppState } from '@/hooks/useAppState'
+import type { JanGatewaySettings } from '@/types/openclaw'
 
-/** OpenClaw gateway base URL for the OpenAI-compatible HTTP API. */
-export const OPENCLAW_GATEWAY_URL = 'http://127.0.0.1:18789/v1'
+/** Default local gateway URL. */
+const LOCAL_GATEWAY_URL = 'http://127.0.0.1:18789/v1'
+
+/** @deprecated Use getOpenClawGatewayUrl() for remote-mode support. */
+export const OPENCLAW_GATEWAY_URL = LOCAL_GATEWAY_URL
+
+let cachedGatewayUrl: string | null = null
+let gatewayUrlFetchTime = 0
+const GATEWAY_URL_CACHE_TTL = 30_000
+
+/**
+ * Resolve the OpenClaw gateway URL, respecting embedded vs remote mode.
+ * Returns `{remote_url}/v1` in remote mode, local URL otherwise.
+ */
+export async function getOpenClawGatewayUrl(): Promise<string> {
+  const now = Date.now()
+  if (cachedGatewayUrl && (now - gatewayUrlFetchTime) < GATEWAY_URL_CACHE_TTL) {
+    return cachedGatewayUrl
+  }
+  try {
+    const settings = await invoke<JanGatewaySettings>('openclaw_get_gateway_settings')
+    if (settings.mode === 'remote' && settings.remote_url) {
+      const base = settings.remote_url.replace(/\/+$/, '')
+      cachedGatewayUrl = `${base}/v1`
+    } else {
+      cachedGatewayUrl = LOCAL_GATEWAY_URL
+    }
+  } catch {
+    cachedGatewayUrl = LOCAL_GATEWAY_URL
+  }
+  gatewayUrlFetchTime = now
+  return cachedGatewayUrl
+}
+
+/** Get / set gateway settings via Tauri IPC. */
+export async function getGatewaySettings(): Promise<JanGatewaySettings> {
+  return invoke<JanGatewaySettings>('openclaw_get_gateway_settings')
+}
+
+export async function setGatewaySettings(settings: JanGatewaySettings): Promise<void> {
+  await invoke('openclaw_set_gateway_settings', { settings })
+  // Invalidate cached URL so the next call picks up the change
+  cachedGatewayUrl = null
+  gatewayUrlFetchTime = 0
+  // Also invalidate running cache — mode changed
+  clearOpenClawCache()
+}
+
+/** Check if we are currently in remote gateway mode. */
+export async function isRemoteMode(): Promise<boolean> {
+  try {
+    const settings = await getGatewaySettings()
+    return settings.mode === 'remote'
+  } catch {
+    return false
+  }
+}
 
 let openClawRunningCache: boolean | null = null
 let lastCheckTime = 0
@@ -149,10 +205,16 @@ let httpApiEnsured = false
 /**
  * Ensure the OpenClaw HTTP chat completions endpoint is enabled.
  * Called once before first agent mode request; no-op after that.
+ * Skips entirely in remote mode — remote gateway manages its own config.
  * If the config was changed, restarts the gateway so it picks up the new setting.
  */
 export async function ensureOpenClawHttpApi(): Promise<void> {
   if (httpApiEnsured) return
+  // In remote mode the gateway is managed externally — skip local config
+  if (await isRemoteMode()) {
+    httpApiEnsured = true
+    return
+  }
   try {
     const changed = await invoke<boolean>('openclaw_ensure_http_api')
     if (changed) {

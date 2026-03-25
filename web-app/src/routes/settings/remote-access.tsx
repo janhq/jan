@@ -19,7 +19,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { isLocalProvider } from '@/lib/utils'
 import { toast } from 'sonner'
-import { setOpenClawRunningState } from '@/utils/openclaw'
+import { setOpenClawRunningState, getGatewaySettings, setGatewaySettings } from '@/utils/openclaw'
 import {
   IconLoader2,
   IconCopy,
@@ -36,6 +36,8 @@ import type {
   TunnelProvider,
   TunnelProvidersStatus,
   SecurityStatus,
+  GatewayMode,
+  JanGatewaySettings,
 } from '@/types/openclaw'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -88,6 +90,40 @@ function RemoteAccess() {
   const [whatsappConfig, setWhatsAppConfig] = useState<WhatsAppConfig | null>(null)
   const [gatewayToken, setGatewayToken] = useState<string>('')
   const [gatewayPort, setGatewayPort] = useState<number>(18789)
+  const [gatewayMode, setGatewayMode] = useState<GatewayMode>('embedded')
+  const [remoteUrl, setRemoteUrl] = useState('')
+  const [remoteToken, setRemoteToken] = useState('')
+  const [isTestingConnection, setIsTestingConnection] = useState(false)
+  const [connectionTestResult, setConnectionTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [isSavingGateway, setIsSavingGateway] = useState(false)
+
+  // Load gateway settings on mount
+  useEffect(() => {
+    getGatewaySettings().then((s: JanGatewaySettings) => {
+      setGatewayMode(s.mode)
+      setRemoteUrl(s.remote_url ?? '')
+      setRemoteToken(s.remote_token ?? '')
+    }).catch(() => { })
+  }, [])
+
+  const handleTestConnection = async () => {
+    setIsTestingConnection(true)
+    setConnectionTestResult(null)
+    try {
+      await invoke<boolean>('openclaw_validate_remote_gateway', {
+        url: remoteUrl,
+        token: remoteToken || null,
+      })
+      setConnectionTestResult({ ok: true, message: t('settings:remoteAccess.gateway.testSuccess') })
+    } catch (e) {
+      setConnectionTestResult({
+        ok: false,
+        message: e instanceof Error ? e.message : String(e),
+      })
+    } finally {
+      setIsTestingConnection(false)
+    }
+  }
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -95,13 +131,33 @@ function RemoteAccess() {
       setStatus(statusData)
 
       // Ensure Jan's origin is configured when OpenClaw was started externally
-      if (statusData.running) {
+      // Skip in remote mode — Jan doesn't manage the remote instance's config
+      if (statusData.running && statusData.sandbox_type !== 'Remote') {
         await invoke('openclaw_ensure_jan_origin').catch(() => { })
       }
     } catch {
       // openclaw feature not compiled in or not yet running
     }
   }, [])
+
+  const handleSaveGatewaySettings = useCallback(async (mode: GatewayMode) => {
+    setIsSavingGateway(true)
+    try {
+      const settings: JanGatewaySettings = {
+        mode,
+        remote_url: mode === 'remote' ? remoteUrl : undefined,
+        remote_token: mode === 'remote' ? (remoteToken || undefined) : undefined,
+      }
+      await setGatewaySettings(settings)
+      setGatewayMode(mode)
+      toast.success(t('settings:remoteAccess.gateway.saved'))
+      fetchStatus()
+    } catch {
+      toast.error(t('settings:remoteAccess.gateway.saveError'))
+    } finally {
+      setIsSavingGateway(false)
+    }
+  }, [remoteUrl, remoteToken, t, fetchStatus])
 
   const fetchTelegramConfig = useCallback(async () => {
     try {
@@ -304,127 +360,237 @@ function RemoteAccess() {
             </Card> */}
 
             <Card title={t('settings:remoteAccess.openclawIntegration')}>
+              {/* Gateway Mode Selector */}
               <CardItem
-                title={
-                  isRunning
-                    ? t('settings:remoteAccess.disableRemoteAccess')
-                    : t('settings:remoteAccess.enableRemoteAccess')
-                }
+                title={t('settings:remoteAccess.gateway.mode')}
+                description={t('settings:remoteAccess.gateway.modeDesc')}
                 actions={
-                  <div className="flex items-center gap-2">
-                    {isRunning ? (
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={handleStop}
-                        disabled={isStopping}
-                      >
-                        {isStopping && <IconLoader2 className="animate-spin size-4" />}
-                        {t('settings:remoteAccess.stop')}
-                      </Button>
-                    ) : (
-                      <Button size="sm" onClick={handleStartEnable} disabled={!hasAnyModel}>
-                        {t('settings:remoteAccess.start')}
-                      </Button>
-                    )}
+                  <div className="flex rounded-md border border-input overflow-hidden">
+                    <button
+                      className={`px-3 py-1.5 text-sm transition-colors ${
+                        gatewayMode === 'embedded'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-background text-foreground hover:bg-accent'
+                      }`}
+                      onClick={() => handleSaveGatewaySettings('embedded')}
+                      disabled={isSavingGateway}
+                    >
+                      {t('settings:remoteAccess.gateway.embedded')}
+                    </button>
+                    <button
+                      className={`px-3 py-1.5 text-sm transition-colors border-l border-input ${
+                        gatewayMode === 'remote'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-background text-foreground hover:bg-accent'
+                      }`}
+                      onClick={() => {
+                        if (gatewayMode !== 'remote') {
+                          setGatewayMode('remote')
+                          // Don't save yet — let user fill in URL first
+                        }
+                      }}
+                      disabled={isSavingGateway}
+                    >
+                      {t('settings:remoteAccess.gateway.remote')}
+                    </button>
                   </div>
                 }
-                description={!isRunning && !hasAnyModel ? t('settings:remoteAccess.noModelAvailable') : undefined}
               />
 
-              {!isRunning && (
-                <p className="text-sm text-muted-foreground px-1">
-                  {t('settings:remoteAccess.nodejsPrerequisite')}
-                </p>
-              )}
-
-              {isRunning && status?.sandbox_type && (
-                <CardItem
-                  title={t('settings:remoteAccess.runtimeMode')}
-                  actions={
-                    <div className="flex items-center gap-2">
-                      <span className="text-foreground text-sm">
-                        {status.isolation_tier === 'full_container'
-                          ? t('settings:remoteAccess.dockerSandbox')
-                          : t('settings:remoteAccess.directProcess')}
-                      </span>
-                      {status.isolation_tier === 'full_container' && (
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => setIsLogsDialogOpen(true)}
-                          title={t('settings:viewLogs')}
-                        >
-                          <IconFileText className="h-4 w-4" />
-                        </Button>
-                      )}
+              {/* ── Remote mode: URL + token + test ── */}
+              {gatewayMode === 'remote' && (
+                <div className="space-y-3 px-1">
+                  <div>
+                    <label className="text-sm font-medium text-foreground block mb-1">
+                      {t('settings:remoteAccess.gateway.remoteUrl')}
+                    </label>
+                    <input
+                      type="url"
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      placeholder={t('settings:remoteAccess.gateway.remoteUrlPlaceholder')}
+                      value={remoteUrl}
+                      onChange={(e) => setRemoteUrl(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-foreground block mb-1">
+                      {t('settings:remoteAccess.gateway.remoteToken')}
+                    </label>
+                    <input
+                      type="password"
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      placeholder={t('settings:remoteAccess.gateway.remoteTokenPlaceholder')}
+                      value={remoteToken}
+                      onChange={(e) => setRemoteToken(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleTestConnection}
+                      disabled={!remoteUrl || isTestingConnection}
+                    >
+                      {isTestingConnection && <IconLoader2 className="animate-spin size-4 mr-1" />}
+                      {t('settings:remoteAccess.gateway.testConnection')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => handleSaveGatewaySettings('remote')}
+                      disabled={!remoteUrl || isSavingGateway}
+                    >
+                      {isSavingGateway && <IconLoader2 className="animate-spin size-4 mr-1" />}
+                      {t('settings:remoteAccess.gateway.save')}
+                    </Button>
+                  </div>
+                  {connectionTestResult && (
+                    <p className={`text-sm ${connectionTestResult.ok ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {connectionTestResult.message}
+                    </p>
+                  )}
+                  {/* Connection status indicator for remote mode */}
+                  {isRunning && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <div className="size-2 rounded-full bg-green-500" />
+                      <span className="text-muted-foreground">{t('settings:remoteAccess.gateway.connectedToRemote')}</span>
                     </div>
-                  }
-                />
-              )}
-
-              {/* Security Advisory - show when no sandbox (Tier 0) */}
-              {isRunning && (!status?.isolation_tier || status.isolation_tier === 'none') && (
-                <div className="flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3">
-                  <IconAlertTriangle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
-                  <p className="text-sm text-yellow-600 dark:text-yellow-400">
-                    {t('settings:remoteAccess.securityAdvisory')}
-                  </p>
+                  )}
+                  {!isRunning && remoteUrl && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <div className="size-2 rounded-full bg-red-500" />
+                      <span className="text-muted-foreground">{t('settings:remoteAccess.gateway.remoteUnreachable')}</span>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {isRunning && (<CardItem
-                title={t('settings:remoteAccess.openclawFolder')}
-                description={t('settings:remoteAccess.openclawFolderDesc')}
-                actions={
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={async () => {
-                      const dir = await invoke<string>('openclaw_get_config_dir')
-                      await invoke('open_file_explorer', { path: dir })
-                    }}
-                    title={t('settings:remoteAccess.openclawFolder')}
-                  >
-                    <IconFolder className="h-4 w-4" />
-                  </Button>
-                }
-              />
-              )}
+              {/* ── Embedded mode: original start/stop UI ── */}
+              {gatewayMode === 'embedded' && (
+                <>
+                  <CardItem
+                    title={
+                      isRunning
+                        ? t('settings:remoteAccess.disableRemoteAccess')
+                        : t('settings:remoteAccess.enableRemoteAccess')
+                    }
+                    actions={
+                      <div className="flex items-center gap-2">
+                        {isRunning ? (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={handleStop}
+                            disabled={isStopping}
+                          >
+                            {isStopping && <IconLoader2 className="animate-spin size-4" />}
+                            {t('settings:remoteAccess.stop')}
+                          </Button>
+                        ) : (
+                          <Button size="sm" onClick={handleStartEnable} disabled={!hasAnyModel}>
+                            {t('settings:remoteAccess.start')}
+                          </Button>
+                        )}
+                      </div>
+                    }
+                    description={!isRunning && !hasAnyModel ? t('settings:remoteAccess.noModelAvailable') : undefined}
+                  />
 
-              {isRunning && (
-                <CardItem
-                  title={t('settings:remoteAccess.gatewayUrl')}
-                  description={t('settings:remoteAccess.gatewayUrlDesc')}
-                  actions={
-                    <div className="flex items-center gap-2">
-                      <code className="text-sm font-mono text-foreground bg-secondary px-2 py-1 rounded">
-                        {gatewayToken
-                          ? `http://localhost:${gatewayPort}?token=****`
-                          : `http://localhost:${gatewayPort}`}
-                      </code>
+                  {!isRunning && (
+                    <p className="text-sm text-muted-foreground px-1">
+                      {t('settings:remoteAccess.nodejsPrerequisite')}
+                    </p>
+                  )}
+
+                  {isRunning && status?.sandbox_type && (
+                    <CardItem
+                      title={t('settings:remoteAccess.runtimeMode')}
+                      actions={
+                        <div className="flex items-center gap-2">
+                          <span className="text-foreground text-sm">
+                            {status.isolation_tier === 'full_container'
+                              ? t('settings:remoteAccess.dockerSandbox')
+                              : t('settings:remoteAccess.directProcess')}
+                          </span>
+                          {status.isolation_tier === 'full_container' && (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => setIsLogsDialogOpen(true)}
+                              title={t('settings:viewLogs')}
+                            >
+                              <IconFileText className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      }
+                    />
+                  )}
+
+                  {/* Security Advisory - show when no sandbox (Tier 0) */}
+                  {isRunning && (!status?.isolation_tier || status.isolation_tier === 'none') && (
+                    <div className="flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3">
+                      <IconAlertTriangle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
+                      <p className="text-sm text-yellow-600 dark:text-yellow-400">
+                        {t('settings:remoteAccess.securityAdvisory')}
+                      </p>
+                    </div>
+                  )}
+
+                  {isRunning && (<CardItem
+                    title={t('settings:remoteAccess.openclawFolder')}
+                    description={t('settings:remoteAccess.openclawFolderDesc')}
+                    actions={
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => handleCopyUrl(gatewayToken ? `http://localhost:${gatewayPort}?token=${gatewayToken}` : `http://localhost:${gatewayPort}`)}
-                        title={t('settings:remoteAccess.copyUrl')}
+                        onClick={async () => {
+                          const dir = await invoke<string>('openclaw_get_config_dir')
+                          await invoke('open_file_explorer', { path: dir })
+                        }}
+                        title={t('settings:remoteAccess.openclawFolder')}
                       >
-                        <IconCopy className="h-4 w-4" />
+                        <IconFolder className="h-4 w-4" />
                       </Button>
-                      <a
-                        href={gatewayToken ? `http://localhost:${gatewayPort}?token=${gatewayToken}` : `http://localhost:${gatewayPort}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={t('settings:remoteAccess.openUrl')}
-                        className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent transition-colors"
-                      >
-                        <IconExternalLink className="h-4 w-4" />
-                      </a>
-                    </div>
-                  }
-                />
+                    }
+                  />
+                  )}
+
+                  {isRunning && (
+                    <CardItem
+                      title={t('settings:remoteAccess.gatewayUrl')}
+                      description={t('settings:remoteAccess.gatewayUrlDesc')}
+                      actions={
+                        <div className="flex items-center gap-2">
+                          <code className="text-sm font-mono text-foreground bg-secondary px-2 py-1 rounded">
+                            {gatewayToken
+                              ? `http://localhost:${gatewayPort}?token=****`
+                              : `http://localhost:${gatewayPort}`}
+                          </code>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => handleCopyUrl(gatewayToken ? `http://localhost:${gatewayPort}?token=${gatewayToken}` : `http://localhost:${gatewayPort}`)}
+                            title={t('settings:remoteAccess.copyUrl')}
+                          >
+                            <IconCopy className="h-4 w-4" />
+                          </Button>
+                          <a
+                            href={gatewayToken ? `http://localhost:${gatewayPort}?token=${gatewayToken}` : `http://localhost:${gatewayPort}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={t('settings:remoteAccess.openUrl')}
+                            className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent transition-colors"
+                          >
+                            <IconExternalLink className="h-4 w-4" />
+                          </a>
+                        </div>
+                      }
+                    />
+                  )}
+                </>
               )}
 
+              {/* Channels — work through gateway API regardless of mode */}
               <div className="space-y-3 mt-4">
                 <p className='text-foreground font-medium mb-2'>{t('settings:remoteAccess.channels')}</p>
                 <ChannelCard

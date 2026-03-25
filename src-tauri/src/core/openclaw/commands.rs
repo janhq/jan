@@ -13,6 +13,7 @@ use crate::core::openclaw::{
     models::*,
     sandbox::Sandbox,
     get_openclaw_config_path, get_openclaw_config_dir, set_docker_mode, OpenClawState, OPENCLAW_PORT,
+    is_remote_mode, get_remote_url, get_remote_token,
 };
 
 /// On Windows, prevent console window popups for background commands.
@@ -187,8 +188,14 @@ async fn get_gateway_auth_token() -> Result<String, String> {
 }
 
 /// Expose the gateway auth token to the frontend for direct HTTP API access.
+/// In remote mode, returns the user-provided remote token.
 #[tauri::command]
-pub async fn openclaw_get_auth_token() -> Result<String, String> {
+pub async fn openclaw_get_auth_token(
+    state: State<'_, OpenClawState>,
+) -> Result<String, String> {
+    if let Some(token) = get_remote_token(&state).await {
+        return Ok(token);
+    }
     get_gateway_auth_token().await
 }
 
@@ -229,6 +236,106 @@ pub async fn openclaw_ensure_http_api() -> Result<bool, String> {
     write_openclaw_config(&config)?;
     log::info!("Enabled OpenClaw HTTP chat completions endpoint");
     Ok(true) // config was changed
+}
+
+// ============================================
+// Gateway Settings Commands (Tauri Store)
+// ============================================
+
+const GATEWAY_STORE_NAME: &str = "openclaw-gateway.json";
+const GATEWAY_SETTINGS_KEY: &str = "gateway_settings";
+
+/// Read gateway settings from Tauri Store. Returns defaults if not set.
+#[tauri::command]
+pub async fn openclaw_get_gateway_settings(
+    app: tauri::AppHandle,
+) -> Result<JanGatewaySettings, String> {
+    use tauri_plugin_store::StoreExt;
+    match app.store(GATEWAY_STORE_NAME) {
+        Ok(store) => {
+            if let Some(val) = store.get(GATEWAY_SETTINGS_KEY) {
+                serde_json::from_value(val.clone())
+                    .map_err(|e| format!("Failed to parse gateway settings: {}", e))
+            } else {
+                Ok(JanGatewaySettings::default())
+            }
+        }
+        Err(_) => Ok(JanGatewaySettings::default()),
+    }
+}
+
+/// Write gateway settings to Tauri Store and update the in-memory cache.
+#[tauri::command]
+pub async fn openclaw_set_gateway_settings(
+    app: tauri::AppHandle,
+    settings: JanGatewaySettings,
+    state: State<'_, OpenClawState>,
+) -> Result<(), String> {
+    use tauri_plugin_store::StoreExt;
+    let store = app
+        .store(GATEWAY_STORE_NAME)
+        .map_err(|e| format!("Failed to open store: {}", e))?;
+    let val = serde_json::to_value(&settings)
+        .map_err(|e| format!("Failed to serialize settings: {}", e))?;
+    store.set(GATEWAY_SETTINGS_KEY, val);
+
+    // Update in-memory state
+    *state.gateway_settings.lock().await = settings;
+    Ok(())
+}
+
+/// Validate connectivity to a remote OpenClaw gateway.
+/// Performs a TCP connect followed by an HTTP health probe.
+#[tauri::command]
+pub async fn openclaw_validate_remote_gateway(
+    url: String,
+    token: Option<String>,
+) -> Result<bool, String> {
+    // Parse the URL to extract host:port for TCP check
+    let parsed = url::Url::parse(&url)
+        .map_err(|e| format!("Invalid URL: {}", e))?;
+    let host = parsed.host_str().ok_or("Missing host in URL")?;
+    let port = parsed.port_or_known_default().ok_or("Cannot determine port from URL")?;
+
+    // 1. TCP connectivity check
+    let addr = format!("{}:{}", host, port);
+    let tcp_result = tokio::time::timeout(
+        tokio::time::Duration::from_secs(5),
+        tokio::net::TcpStream::connect(&addr),
+    )
+    .await;
+    match tcp_result {
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => return Err(format!("TCP connection failed: {}", e)),
+        Err(_) => return Err("Connection timed out".to_string()),
+    }
+
+    // 2. HTTP health probe — try GET {url}/v1/models as a lightweight check
+    let health_url = format!(
+        "{}/v1/models",
+        url.trim_end_matches('/')
+    );
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let mut req = client.get(&health_url);
+    if let Some(ref t) = token {
+        req = req.header("Authorization", format!("Bearer {}", t));
+    }
+
+    match req.send().await {
+        Ok(resp) => {
+            if resp.status().is_success() || resp.status().as_u16() == 401 {
+                // 401 means the gateway is alive but token may be wrong — still "reachable"
+                Ok(true)
+            } else {
+                Err(format!("Gateway returned HTTP {}", resp.status()))
+            }
+        }
+        Err(e) => Err(format!("HTTP request failed: {}", e)),
+    }
 }
 
 /// Connect to the OpenClaw Gateway WebSocket with required Origin header.
@@ -2457,8 +2564,14 @@ pub async fn openclaw_enable(
 }
 
 /// Start the OpenClaw gateway via the sandbox abstraction.
+/// No-op in remote mode — Jan doesn't manage the remote instance.
 #[tauri::command]
 pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), String> {
+    if is_remote_mode(&state).await {
+        log::info!("Remote gateway mode — skipping local start");
+        return Ok(());
+    }
+
     log::info!("Starting OpenClaw gateway");
 
     let is_docker = {
@@ -2542,8 +2655,14 @@ pub async fn openclaw_start(state: State<'_, OpenClawState>) -> Result<(), Strin
 }
 
 /// Stop the OpenClaw gateway via the sandbox abstraction.
+/// No-op in remote mode — Jan doesn't manage the remote instance.
 #[tauri::command]
 pub async fn openclaw_stop(state: State<'_, OpenClawState>) -> Result<(), String> {
+    if is_remote_mode(&state).await {
+        log::info!("Remote gateway mode — skipping local stop");
+        return Ok(());
+    }
+
     log::info!("Stopping OpenClaw gateway");
 
     let sandbox_guard = state.sandbox.lock().await;
@@ -2565,15 +2684,42 @@ pub async fn openclaw_stop(state: State<'_, OpenClawState>) -> Result<(), String
 
 /// Lightweight gateway reachability check (TCP only, no HTTP).
 /// Used by the frontend before sending agent-mode chat requests.
+/// In remote mode, probes the remote URL instead of localhost.
 #[tauri::command]
-pub async fn openclaw_check_gateway() -> bool {
-    check_gateway_responding().await
+pub async fn openclaw_check_gateway(
+    state: State<'_, OpenClawState>,
+) -> Result<bool, String> {
+    if let Some(remote_url) = get_remote_url(&state).await {
+        let token = get_remote_token(&state).await;
+        Ok(openclaw_validate_remote_gateway(remote_url, token).await.unwrap_or(false))
+    } else {
+        Ok(check_gateway_responding().await)
+    }
 }
 
 /// Get the current OpenClaw status, including sandbox information.
+/// In remote mode, "running" reflects remote gateway reachability.
 #[tauri::command]
 pub async fn openclaw_status(state: State<'_, OpenClawState>) -> Result<OpenClawStatus, String> {
     log::debug!("Getting OpenClaw status");
+
+    // In remote mode, probe the remote URL instead of local checks
+    if let Some(remote_url) = get_remote_url(&state).await {
+        let token = get_remote_token(&state).await;
+        let running = openclaw_validate_remote_gateway(remote_url.clone(), token)
+            .await
+            .unwrap_or(false);
+        return Ok(OpenClawStatus {
+            installed: true, // remote is always "installed"
+            running,
+            runtime_version: None,
+            openclaw_version: None,
+            port_available: true,
+            error: None,
+            sandbox_type: Some("Remote".to_string()),
+            isolation_tier: None,
+        });
+    }
 
     let running = check_gateway_responding().await;
 

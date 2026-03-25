@@ -5,6 +5,7 @@ use tauri::Emitter;
 use tokio::sync::Mutex;
 
 use super::lifecycle::is_port_in_use;
+use super::models::JanGatewayMode;
 use super::sandbox::{Sandbox, SandboxMode};
 use super::OpenClawState;
 
@@ -13,6 +14,9 @@ const MAX_RESTART_ATTEMPTS: u32 = 3;
 
 /// Spawn a background task that monitors the sandbox health.
 /// Returns a JoinHandle that can be used to cancel the monitor.
+///
+/// In remote mode, still monitors connectivity but skips auto-restart
+/// (Jan doesn't manage the remote instance).
 pub fn spawn_health_monitor(
     sandbox: Arc<Mutex<Option<Box<dyn Sandbox>>>>,
     state: Arc<OpenClawState>,
@@ -24,6 +28,34 @@ pub fn spawn_health_monitor(
 
         loop {
             tokio::time::sleep(HEALTH_CHECK_INTERVAL).await;
+
+            // Check if we're in remote mode
+            let is_remote = {
+                let settings = state.gateway_settings.lock().await;
+                settings.mode == JanGatewayMode::Remote
+            };
+
+            if is_remote {
+                // In remote mode: monitor connectivity only, no auto-restart
+                let is_healthy = if let Some(url) = super::get_remote_url(&state).await {
+                    let token = super::get_remote_token(&state).await;
+                    super::commands::openclaw_validate_remote_gateway(url, token)
+                        .await
+                        .unwrap_or(false)
+                } else {
+                    false
+                };
+
+                if is_healthy && !was_healthy {
+                    log::info!("Remote OpenClaw gateway connectivity restored");
+                    let _ = app_handle.emit("openclaw-health-changed", "healthy");
+                } else if !is_healthy && was_healthy {
+                    log::warn!("Remote OpenClaw gateway not reachable");
+                    let _ = app_handle.emit("openclaw-health-changed", "unhealthy");
+                }
+                was_healthy = is_healthy;
+                continue;
+            }
 
             let mode = state.sandbox_mode.lock().await;
             let is_active = matches!(*mode, SandboxMode::Active { .. });

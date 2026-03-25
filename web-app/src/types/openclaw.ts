@@ -53,6 +53,14 @@ export interface TunnelProvidersStatus {
   active_tunnel: TunnelInfo | null
 }
 
+export type GatewayMode = 'embedded' | 'remote'
+
+export interface JanGatewaySettings {
+  mode: GatewayMode
+  remote_url?: string
+  remote_token?: string
+}
+
 export interface SecurityStatus {
   auth_mode: 'token' | 'password' | 'none'
   has_token: boolean

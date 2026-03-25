@@ -21,6 +21,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
+use models::{JanGatewayMode, JanGatewaySettings};
 use sandbox::{Sandbox, SandboxMode};
 use tunnels::TunnelState;
 
@@ -145,6 +146,9 @@ pub struct OpenClawState {
     pub sandbox_mode: Arc<Mutex<SandboxMode>>,
     /// Detected sandbox implementation (set once on first use via detect_sandbox())
     pub sandbox: Arc<Mutex<Option<Box<dyn Sandbox>>>>,
+    /// Jan-side gateway settings (embedded vs remote).
+    /// Loaded from Tauri Store on startup, updated via commands.
+    pub gateway_settings: Arc<Mutex<JanGatewaySettings>>,
 }
 
 impl Default for OpenClawState {
@@ -153,6 +157,32 @@ impl Default for OpenClawState {
             tunnel_state: TunnelState::default(),
             sandbox_mode: Arc::new(Mutex::new(SandboxMode::Inactive)),
             sandbox: Arc::new(Mutex::new(None)),
+            gateway_settings: Arc::new(Mutex::new(JanGatewaySettings::default())),
         }
+    }
+}
+
+/// Check whether the current gateway settings are in remote mode.
+pub async fn is_remote_mode(state: &OpenClawState) -> bool {
+    state.gateway_settings.lock().await.mode == JanGatewayMode::Remote
+}
+
+/// Return the remote gateway URL (without trailing path) if in remote mode.
+pub async fn get_remote_url(state: &OpenClawState) -> Option<String> {
+    let settings = state.gateway_settings.lock().await;
+    if settings.mode == JanGatewayMode::Remote {
+        settings.remote_url.clone()
+    } else {
+        None
+    }
+}
+
+/// Return the remote gateway auth token if in remote mode.
+pub async fn get_remote_token(state: &OpenClawState) -> Option<String> {
+    let settings = state.gateway_settings.lock().await;
+    if settings.mode == JanGatewayMode::Remote {
+        settings.remote_token.clone()
+    } else {
+        None
     }
 }

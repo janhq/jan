@@ -174,6 +174,10 @@ pub fn run() {
         core::openclaw::commands::openclaw_get_config_dir,
         core::openclaw::commands::openclaw_ensure_jan_origin,
         core::openclaw::commands::openclaw_setup_for_channels,
+        // Gateway settings commands
+        core::openclaw::commands::openclaw_get_gateway_settings,
+        core::openclaw::commands::openclaw_set_gateway_settings,
+        core::openclaw::commands::openclaw_validate_remote_gateway,
         // Sandbox commands
         core::openclaw::commands::sandbox_get_logs,
         core::openclaw::commands::sandbox_restart,
@@ -493,6 +497,23 @@ pub fn run() {
             #[cfg(desktop)]
             setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
+
+            // Load gateway settings from Tauri Store into OpenClawState
+            #[cfg(feature = "openclaw")]
+            {
+                let oc_state = app.handle().state::<OpenClawState>();
+                if let Ok(gw_store) = app.handle().store("openclaw-gateway.json") {
+                    if let Some(val) = gw_store.get("gateway_settings") {
+                        if let Ok(settings) = serde_json::from_value::<crate::core::openclaw::models::JanGatewaySettings>(val.clone()) {
+                            let gs = oc_state.gateway_settings.clone();
+                            tauri::async_runtime::spawn(async move {
+                                *gs.lock().await = settings;
+                            });
+                        }
+                    }
+                }
+            }
+
             Ok(())
         })
         .build(tauri::generate_context!())

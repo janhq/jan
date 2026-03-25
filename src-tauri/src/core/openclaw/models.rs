@@ -2,6 +2,44 @@ use serde::{Deserialize, Serialize};
 
 use super::constants;
 
+// ============================================
+// Jan Gateway Settings (persisted in Tauri Store)
+// ============================================
+
+/// How Jan connects to the OpenClaw gateway.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum JanGatewayMode {
+    /// Run the bundled OpenClaw instance locally (default).
+    #[default]
+    Embedded,
+    /// Connect to a user-provided remote OpenClaw gateway.
+    Remote,
+}
+
+/// Jan-side settings for gateway connectivity.
+/// Persisted in the Tauri Store, NOT in ~/.openclaw/openclaw.json.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JanGatewaySettings {
+    pub mode: JanGatewayMode,
+    /// URL of the remote gateway (e.g. "https://my-openclaw.example.com").
+    /// Only used when mode == Remote.
+    pub remote_url: Option<String>,
+    /// Auth token for the remote gateway.
+    /// Only used when mode == Remote.
+    pub remote_token: Option<String>,
+}
+
+impl Default for JanGatewaySettings {
+    fn default() -> Self {
+        Self {
+            mode: JanGatewayMode::Embedded,
+            remote_url: None,
+            remote_token: None,
+        }
+    }
+}
+
 /// OpenClaw configuration structure
 /// Only includes keys that OpenClaw actually recognizes.
 /// Unknown keys (like agents.defaults.systemPrompt) cause OpenClaw to reject the config.
