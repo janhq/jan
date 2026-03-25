@@ -8,6 +8,7 @@
 //!   └─────────────────────────────────────────────────────────┘
 
 use std::io;
+use std::sync::Arc;
 use std::time::Instant;
 
 use crossterm::{
@@ -93,6 +94,13 @@ pub struct AgentTuiState {
 
     pub resources: Vec<ResourceBar>,
 
+    /// Robot/vision server URL (if connected).
+    pub robot_server_url: Option<String>,
+    /// Latest JPEG frame from the robot camera (shared with background poller).
+    pub robot_frame: Arc<std::sync::Mutex<Option<Vec<u8>>>>,
+    /// Whether the robot server is reachable.
+    pub robot_connected: Arc<std::sync::atomic::AtomicBool>,
+
     pub input: String,
     pub cursor_pos: usize,
 
@@ -129,6 +137,9 @@ impl AgentTuiState {
                 ResourceBar { label: "Total",         value: 0.0, display: "—".into(), color: GREEN },
                 ResourceBar { label: "CPU util",       value: 0.0, display: "—".into(), color: RED },
             ],
+            robot_server_url: None,
+            robot_frame: Arc::new(std::sync::Mutex::new(None)),
+            robot_connected: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             input: String::new(),
             cursor_pos: 0,
             is_thinking: false,
@@ -750,17 +761,131 @@ fn draw_input_bar(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
 }
 
 fn draw_right_panel(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
-    // Split: tool output header + log | resources section
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(6),      // tool output
-            Constraint::Length(9),    // resources (5 bars + header + padding)
-        ])
-        .split(area);
+    if state.robot_server_url.is_some() {
+        // Robot mode: tool output (top) + camera frame (bottom, replaces resources)
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(6),        // tool output
+                Constraint::Percentage(50), // camera frame
+            ])
+            .split(area);
 
-    draw_tool_output(frame, rows[0], state);
-    draw_resources(frame, rows[1], state);
+        draw_tool_output(frame, rows[0], state);
+        draw_camera_frame(frame, rows[1], state);
+    } else {
+        // Default: tool output + resources
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(6),      // tool output
+                Constraint::Length(9),    // resources (5 bars + header + padding)
+            ])
+            .split(area);
+
+        draw_tool_output(frame, rows[0], state);
+        draw_resources(frame, rows[1], state);
+    }
+}
+
+fn draw_camera_frame(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
+    let connected = state.robot_connected.load(std::sync::atomic::Ordering::Relaxed);
+    let status_color = if connected { GREEN } else { RED };
+    let status_label = if connected { "LIVE" } else { "OFFLINE" };
+
+    let block = Block::default()
+        .title(Line::from(vec![
+            Span::styled(" * ", Style::default().fg(AMBER)),
+            Span::styled("camera ", Style::default().fg(MUTED)),
+            Span::styled(
+                format!("[{status_label}] "),
+                Style::default().fg(status_color).add_modifier(Modifier::BOLD),
+            ),
+        ]))
+        .borders(Borders::BOTTOM)
+        .border_style(Style::default().fg(BORDER))
+        .style(Style::default().bg(BG));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if inner.width < 4 || inner.height < 2 {
+        return;
+    }
+
+    // Try to decode the latest JPEG frame into half-block terminal art
+    let jpeg_data = state.robot_frame.lock().ok().and_then(|g| g.clone());
+
+    if let Some(data) = jpeg_data {
+        if let Some(lines) = jpeg_to_halfblocks(&data, inner.width as usize, inner.height as usize) {
+            let paragraph = Paragraph::new(lines).style(Style::default().bg(BG));
+            frame.render_widget(paragraph, inner);
+            return;
+        }
+    }
+
+    // Fallback: no frame or decode failed
+    let msg = if connected { "Waiting for frame..." } else { "Robot server not connected" };
+    let url_hint = state.robot_server_url.as_deref().unwrap_or("—");
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(msg, Style::default().fg(MUTED))),
+        Line::from(Span::styled(format!("  {url_hint}/frame"), Style::default().fg(MUTED))),
+    ];
+    let paragraph = Paragraph::new(lines)
+        .style(Style::default().bg(BG))
+        .alignment(ratatui::layout::Alignment::Center);
+    frame.render_widget(paragraph, inner);
+}
+
+/// Decode JPEG bytes and render as Unicode half-block characters.
+///
+/// Each terminal cell shows two vertical pixels using the `▀` character:
+/// foreground = top pixel color, background = bottom pixel color.
+#[cfg(feature = "cli")]
+fn jpeg_to_halfblocks(jpeg_bytes: &[u8], term_w: usize, term_h: usize) -> Option<Vec<Line<'static>>> {
+    use std::io::Cursor;
+
+    let img = image::ImageReader::new(Cursor::new(jpeg_bytes))
+        .with_guessed_format()
+        .ok()?
+        .decode()
+        .ok()?;
+    let rgb = img.to_rgb8();
+    let (iw, ih) = (rgb.width() as usize, rgb.height() as usize);
+
+    // Each terminal row represents 2 pixel rows (half-block)
+    let pixel_rows = term_h * 2;
+    let pixel_cols = term_w;
+
+    let mut lines: Vec<Line<'static>> = Vec::with_capacity(term_h);
+
+    for ty in 0..term_h {
+        let mut spans: Vec<Span<'static>> = Vec::with_capacity(pixel_cols);
+        for tx in 0..pixel_cols {
+            // Map terminal coords to image coords
+            let src_x = (tx * iw / pixel_cols).min(iw - 1);
+            let src_y_top = (ty * 2 * ih / pixel_rows).min(ih - 1);
+            let src_y_bot = ((ty * 2 + 1) * ih / pixel_rows).min(ih - 1);
+
+            let top = rgb.get_pixel(src_x as u32, src_y_top as u32);
+            let bot = rgb.get_pixel(src_x as u32, src_y_bot as u32);
+
+            spans.push(Span::styled(
+                "▀",
+                Style::default()
+                    .fg(Color::Rgb(top[0], top[1], top[2]))
+                    .bg(Color::Rgb(bot[0], bot[1], bot[2])),
+            ));
+        }
+        lines.push(Line::from(spans));
+    }
+
+    Some(lines)
+}
+
+#[cfg(not(feature = "cli"))]
+fn jpeg_to_halfblocks(_: &[u8], _: usize, _: usize) -> Option<Vec<Line<'static>>> {
+    None
 }
 
 fn draw_tool_output(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
@@ -863,32 +988,43 @@ fn draw_statusbar(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
     let status_text = if state.is_thinking { "agent active" } else { "agent idle" };
     let status_color = if state.is_thinking { GREEN } else { MUTED };
 
-    let ctx_text = if state.tokens_total > 0 {
-        format!(
-            "ctx: {} / {}k tokens",
-            format_number(state.tokens_used),
-            state.tokens_total / 1000,
-        )
-    } else {
-        "ctx: —".into()
-    };
-
-    let spans = vec![
+    let mut spans = vec![
         Span::styled(" ", Style::default()),
-        Span::styled(status_dot, Style::default().fg(status_color)),
-        Span::styled(status_text, Style::default().fg(MUTED)),
-        Span::styled("   ", Style::default()),
-        Span::styled(&ctx_text, Style::default().fg(GREEN)),
-        Span::styled("   ", Style::default()),
-        Span::styled(
-            format!("tools: {} calls", state.tool_calls_count),
-            Style::default().fg(MUTED),
-        ),
-        Span::styled("   ", Style::default()),
-        Span::styled(&state.model_id, Style::default().fg(MUTED)),
-        Span::styled(" · ", Style::default().fg(MUTED)),
+        // Span::styled(status_dot, Style::default().fg(status_color)),
+        // Span::styled(status_text, Style::default().fg(MUTED)),
+        // Span::styled("   ", Style::default()),
+        // Span::styled(&ctx_text, Style::default().fg(GREEN)),
+        // Span::styled("   ", Style::default()),
+        // Span::styled(
+        //     format!("tools: {} calls", state.tool_calls_count),
+        //     Style::default().fg(MUTED),
+        // ),
+        // Span::styled("   ", Style::default()),
+        // Span::styled(&state.model_id, Style::default().fg(MUTED)),
+        // Span::styled(" · ", Style::default().fg(MUTED)),
         Span::styled(&state.api_url, Style::default().fg(MUTED)),
     ];
+
+    // Show robot server + resources info in statusbar
+    if let Some(ref rurl) = state.robot_server_url {
+        spans.push(Span::styled("   ", Style::default()));
+        let connected = state.robot_connected.load(std::sync::atomic::Ordering::Relaxed);
+        let dot = if connected { "*" } else { "x" };
+        let dot_color = if connected { GREEN } else { RED };
+        spans.push(Span::styled(dot, Style::default().fg(dot_color)));
+        spans.push(Span::styled(" robot: ", Style::default().fg(MUTED)));
+        spans.push(Span::styled(rurl.as_str(), Style::default().fg(MUTED)));
+
+        // Compact resource info
+        for res in &state.resources {
+            if res.display != "—" {
+                spans.push(Span::styled("  ", Style::default()));
+                spans.push(Span::styled(res.label, Style::default().fg(MUTED)));
+                spans.push(Span::styled(": ", Style::default().fg(MUTED)));
+                spans.push(Span::styled(&res.display, Style::default().fg(res.color)));
+            }
+        }
+    }
 
     let statusbar = Paragraph::new(Line::from(spans))
         .style(Style::default().bg(STATUSBAR_BG));

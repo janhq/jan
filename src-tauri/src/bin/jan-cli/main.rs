@@ -147,6 +147,11 @@ enum AgentCommands {
         /// Future values: "openai-assistant", "claude", etc.
         #[arg(long, value_name = "IMPL", default_value = "react")]
         agent: String,
+        /// Connect to a ProcTHOR / robot HTTP server for vision + navigation.
+        /// The agent receives camera frames and gains WASD movement tools.
+        /// Example: --robot-url http://localhost:8765
+        #[arg(long, value_name = "URL")]
+        robot_url: Option<String>,
     },
 }
 
@@ -1505,7 +1510,7 @@ async fn handle_agent(cmd: AgentCommands) {
     let red = Style::new().red();
 
     match cmd {
-        AgentCommands::Chat { serve, message, mount, api_url, agent: agent_impl } => {
+        AgentCommands::Chat { serve, message, mount, api_url, agent: agent_impl, robot_url } => {
             // Enable log capture to parse llama.cpp memory info.
             agent_tui::enable_log_capture();
 
@@ -1527,10 +1532,22 @@ async fn handle_agent(cmd: AgentCommands) {
             // Capture display info before moving into spawn_blocking.
             let display_url      = url.clone();
             let display_model_id = model_id.clone();
+            let robot_url_clone  = robot_url.clone();
 
             // create_agent scans WASM tools (spawns blocking I/O + reqwest::blocking::Client).
             let agent = match tokio::task::spawn_blocking(move || {
-                create_agent(url, model_id, mount, api_key, &agent_impl)
+                if let Some(ref rurl) = robot_url_clone {
+                    // Vision + robot agent
+                    let frame_url = format!("{rurl}/frame");
+                    let vision = Box::new(app_lib::core::cli::UrlCapture::start(
+                        frame_url, std::time::Duration::from_millis(500),
+                    ));
+                    app_lib::core::cli::create_vision_agent(
+                        url, model_id, mount, api_key, &agent_impl, vision, Some(rurl.clone()),
+                    )
+                } else {
+                    create_agent(url, model_id, mount, api_key, &agent_impl)
+                }
             }).await {
                 Ok(a) => a,
                 Err(e) => { eprintln!("{} spawn: {e}", red.apply_to("error:")); std::process::exit(1); }
@@ -1570,7 +1587,7 @@ async fn handle_agent(cmd: AgentCommands) {
                 }
             } else {
                 // ── interactive TUI mode ───────────────────────────────────
-                run_agent_tui(agent, display_model_id, display_url, pid, captured_logs.clone()).await;
+                run_agent_tui(agent, display_model_id, display_url, pid, captured_logs.clone(), robot_url).await;
             }
         }
     }
@@ -1583,6 +1600,7 @@ async fn run_agent_tui(
     api_url: String,
     pid: i32,
     log_capture: String,
+    robot_url: Option<String>,
 ) {
     use agent_tui::*;
 
@@ -1595,6 +1613,37 @@ async fn run_agent_tui(
     };
 
     let mut state = AgentTuiState::new(model_id, api_url);
+
+    // If robot server is connected, set up frame polling
+    if let Some(ref rurl) = robot_url {
+        state.robot_server_url = Some(rurl.clone());
+        // Start polling camera frames in the background
+        let frame_url = format!("{rurl}/frame");
+        let frame_data = state.robot_frame.clone();
+        let connected  = state.robot_connected.clone();
+        tokio::spawn(async move {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(3))
+                .build()
+                .unwrap_or_default();
+            loop {
+                match client.get(&frame_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        if let Ok(bytes) = resp.bytes().await {
+                            if let Ok(mut guard) = frame_data.lock() {
+                                *guard = Some(bytes.to_vec());
+                            }
+                            connected.store(true, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                    _ => {
+                        connected.store(false, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+        });
+    }
 
     // Parse resource usage from llama.cpp startup logs
     if !log_capture.is_empty() {
@@ -1694,6 +1743,7 @@ async fn run_agent_tui(
                         tool_calls: None,
                         tool_call_id: None,
                         name: None,
+                        vision_content: None,
                     });
                     history.push(app_lib::core::cli::ChatMessage {
                         role: "assistant".into(),
@@ -1701,6 +1751,7 @@ async fn run_agent_tui(
                         tool_calls: None,
                         tool_call_id: None,
                         name: None,
+                        vision_content: None,
                     });
                 }
                 Ok(Err(e)) => {

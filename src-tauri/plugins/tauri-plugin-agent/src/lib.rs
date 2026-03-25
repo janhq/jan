@@ -3,10 +3,12 @@ pub mod commands;
 pub mod dispatcher;
 pub mod manifest;
 pub mod utils;
+pub mod vision;
 
 pub use agent::{AgentConfig, AgentEvent, AgentLoop, AgentResponse, ChatMessage, FinishReason};
 pub use manifest::{Manifest, RiskLevel, ToolDef};
-pub use dispatcher::Dispatcher;
+pub use dispatcher::{Dispatcher, http_robot_handler};
+pub use vision::{CameraCapture, DirectoryCapture, Frame, UrlCapture, VisionProvider};
 
 use serde_json::Value;
 use std::sync::Arc;
@@ -52,9 +54,11 @@ pub trait ToolDispatcher: Send + Sync {
 // ── Plugin state + init ───────────────────────────────────────────────────────
 
 pub struct AgentState {
-    pub agent:    Arc<AgentLoop>,
-    pub history:  Arc<Mutex<Vec<ChatMessage>>>,
-    pub manifest: Arc<Manifest>,
+    pub agent:            Arc<AgentLoop>,
+    pub history:          Arc<Mutex<Vec<ChatMessage>>>,
+    pub manifest:         Arc<Manifest>,
+    pub vision_provider:  Option<Box<dyn VisionProvider>>,
+    pub robot_server_url: Option<String>,
 }
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
@@ -63,6 +67,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::agent_run,
             commands::agent_reset,
             commands::get_tool_manifest,
+            commands::get_agent_frame,
+            commands::get_robot_server_url,
         ])
         .setup(|app, _api| {
             let resource_dir = app
@@ -85,18 +91,46 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             let api_key  = std::env::var("AGENT_API_KEY").ok()
                 .filter(|k| !k.is_empty());
 
-            let dispatcher = Dispatcher::new().with_tools_dir(tools_dir);
-            let agent      = Arc::new(AgentLoop::new_with_key(
+            // Check for robot/vision server (e.g. ProcTHOR)
+            let robot_server_url = std::env::var("ROBOT_SERVER_URL").ok()
+                .filter(|u| !u.is_empty());
+
+            let mut dispatcher = Dispatcher::new().with_tools_dir(tools_dir);
+
+            // Wire up robot tools + vision if ROBOT_SERVER_URL is set
+            let vision_provider: Option<Box<dyn VisionProvider>> = if let Some(ref url) = robot_server_url {
+                log::info!("[agent] robot server: {url}");
+                dispatcher = dispatcher.with_robot_http(url.clone());
+
+                let frame_url = format!("{url}/frame");
+                let capture = UrlCapture::start(frame_url, std::time::Duration::from_millis(500));
+                Some(Box::new(capture))
+            } else {
+                None
+            };
+
+            let mut agent_loop = AgentLoop::new_with_key(
                 base_url,
                 model_id,
                 api_key,
                 dispatcher,
-            ));
+            );
+
+            if let Some(ref vp_url) = robot_server_url {
+                // Create a second UrlCapture for the agent loop's own vision context
+                let frame_url = format!("{vp_url}/frame");
+                let vp = UrlCapture::start(frame_url, std::time::Duration::from_millis(500));
+                agent_loop = agent_loop.with_vision(Box::new(vp));
+            }
+
+            let agent = Arc::new(agent_loop);
 
             let state = Arc::new(AgentState {
                 agent,
-                history:  Arc::new(Mutex::new(vec![])),
+                history:          Arc::new(Mutex::new(vec![])),
                 manifest,
+                vision_provider,
+                robot_server_url,
             });
             app.manage(state);
             Ok(())

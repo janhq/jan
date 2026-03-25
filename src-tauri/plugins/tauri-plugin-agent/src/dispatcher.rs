@@ -33,15 +33,28 @@ struct JsTool {
 
 // ── Dispatcher ───────────────────────────────────────────────────────────────
 
+/// Optional callback for robot movement commands.
+/// Receives the direction and distance; returns Ok(description) or Err.
+pub type RobotCommandHandler = Box<dyn Fn(&str, f64) -> Result<String, String> + Send + Sync>;
+
 pub struct Dispatcher {
-    pub(crate) mounts: Vec<PathBuf>,
-    wasm_tools:        Vec<WasmTool>,
-    js_tools:          RwLock<Vec<JsTool>>,
+    pub(crate) mounts:  Vec<PathBuf>,
+    wasm_tools:         Vec<WasmTool>,
+    js_tools:           RwLock<Vec<JsTool>>,
+    /// When set, robot.* tools are registered and dispatched.
+    robot_handler:      Option<RobotCommandHandler>,
+    /// When set, robot commands are dispatched via async HTTP instead of
+    /// the sync handler (avoids blocking the tokio runtime).
+    robot_http_url:     Option<String>,
+    robot_http_client:  Option<reqwest::Client>,
 }
 
 impl Dispatcher {
     pub fn new() -> Self {
-        Self { mounts: vec![], wasm_tools: vec![], js_tools: RwLock::new(vec![]) }
+        Self {
+            mounts: vec![], wasm_tools: vec![], js_tools: RwLock::new(vec![]),
+            robot_handler: None, robot_http_url: None, robot_http_client: None,
+        }
     }
 
     /// Load WASM skill tools from `tools_dir`.
@@ -72,6 +85,35 @@ impl Dispatcher {
         }
         self
     }
+
+    /// Enable robot control tools (WASD movement).
+    ///
+    /// The handler receives `(direction, distance)` and should return a status message.
+    /// If no handler is given, a default logging handler is used.
+    pub fn with_robot_tools(mut self, handler: Option<RobotCommandHandler>) -> Self {
+        self.robot_handler = Some(handler.unwrap_or_else(|| {
+            Box::new(|direction, distance| {
+                log::info!("[robot] {direction} {distance:.2}m");
+                Ok(format!("Moved {direction} {distance:.2}m"))
+            })
+        }));
+        self
+    }
+
+    /// Enable robot control tools via an async HTTP backend (e.g. ProcTHOR server).
+    ///
+    /// This is preferred over `with_robot_tools` + `http_robot_handler` because
+    /// it performs HTTP calls asynchronously inside the `dispatch` method,
+    /// avoiding any blocking of the tokio runtime.
+    pub fn with_robot_http(mut self, base_url: String) -> Self {
+        self.robot_http_url = Some(base_url);
+        self.robot_http_client = Some(reqwest::Client::new());
+        // Also register a dummy sync handler so tool_schemas includes robot tools
+        self.robot_handler = Some(Box::new(|d, dist| {
+            Ok(format!("{d} {dist:.2}m (http)"))
+        }));
+        self
+    }
 }
 
 #[async_trait::async_trait]
@@ -85,6 +127,9 @@ impl ToolDispatcher for Dispatcher {
         if let Ok(js) = self.js_tools.read() {
             schemas.extend(js.iter().map(|jt| jt.meta.clone()));
         }
+        if self.robot_handler.is_some() {
+            schemas.extend(robot_tool_metas());
+        }
         schemas
     }
 
@@ -93,6 +138,18 @@ impl ToolDispatcher for Dispatcher {
 
         if tool_id == "code.exec" {
             return dispatch_code_exec(args, &self.mounts).await;
+        }
+
+        // Robot control tools
+        if tool_id.starts_with("robot.") {
+            // Prefer async HTTP dispatch when configured
+            if let (Some(ref base_url), Some(ref client)) = (&self.robot_http_url, &self.robot_http_client) {
+                return dispatch_robot_http(tool_id, args, base_url, client).await;
+            }
+            if let Some(ref handler) = self.robot_handler {
+                return dispatch_robot_tool(tool_id, args, handler);
+            }
+            return Err("robot tools not enabled".into());
         }
 
         if let Some(wt) = self.wasm_tools.iter().find(|w| w.id == tool_id) {
@@ -406,4 +463,210 @@ fn parse_js_tool_meta(source: &str, path: &Path) -> Option<(String, String, Valu
     let schema: Value = schema_str.and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}}));
     Some((id, desc, schema))
+}
+
+// ── Robot control tools ─────────────────────────────────────────────────────
+
+fn move_tool_schema() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "distance": {
+                "type": "number",
+                "description": "Distance in meters (default: 0.5)"
+            }
+        }
+    })
+}
+
+fn robot_tool_metas() -> Vec<ToolMeta> {
+    vec![
+        ToolMeta {
+            id:          "robot.move_forward".into(),
+            description: "Move the robot forward (W key). Specify distance in meters.".into(),
+            parameters:  move_tool_schema(),
+        },
+        ToolMeta {
+            id:          "robot.move_backward".into(),
+            description: "Move the robot backward (S key). Specify distance in meters.".into(),
+            parameters:  move_tool_schema(),
+        },
+        ToolMeta {
+            id:          "robot.move_left".into(),
+            description: "Turn/strafe the robot left (A key). Specify distance in meters.".into(),
+            parameters:  move_tool_schema(),
+        },
+        ToolMeta {
+            id:          "robot.move_right".into(),
+            description: "Turn/strafe the robot right (D key). Specify distance in meters.".into(),
+            parameters:  move_tool_schema(),
+        },
+        ToolMeta {
+            id:          "robot.stop".into(),
+            description: "Emergency stop — immediately halt all robot motion.".into(),
+            parameters:  serde_json::json!({"type": "object", "properties": {}}),
+        },
+        ToolMeta {
+            id:          "robot.look".into(),
+            description: "Describe what you currently see from the camera. No movement, just observation.".into(),
+            parameters:  serde_json::json!({"type": "object", "properties": {}}),
+        },
+    ]
+}
+
+async fn dispatch_robot_http(
+    tool_id: &str,
+    args: Value,
+    base_url: &str,
+    client: &reqwest::Client,
+) -> Result<DispatchResult, String> {
+    let distance = args["distance"].as_f64().unwrap_or(0.5);
+
+    let (direction, endpoint, dist) = match tool_id {
+        "robot.move_forward"  => ("forward",  "move_forward",  distance),
+        "robot.move_backward" => ("backward", "move_backward", distance),
+        "robot.move_left"     => ("left",     "move_left",     distance),
+        "robot.move_right"    => ("right",    "move_right",    distance),
+        "robot.stop"          => ("stop",     "stop",          0.0),
+        "robot.look"          => {
+            let resp = client
+                .get(&format!("{base_url}/look"))
+                .send()
+                .await
+                .map_err(|e| format!("HTTP: {e}"))?;
+            let text = resp.text().await.map_err(|e| format!("read: {e}"))?;
+            let json: Value = serde_json::from_str(&text).unwrap_or(serde_json::json!({"status": text}));
+            return Ok(DispatchResult {
+                output: json,
+                wasm_logs: vec!["[robot] look".into()],
+            });
+        }
+        _ => return Err(format!("unknown robot tool: {tool_id}")),
+    };
+
+    let url = format!("{base_url}/{endpoint}");
+    let body = serde_json::json!({ "distance": dist });
+
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {e}"))?;
+
+    let status = resp.status();
+    let text = resp.text().await.map_err(|e| format!("read response: {e}"))?;
+
+    if !status.is_success() {
+        return Err(format!("HTTP {status}: {text}"));
+    }
+
+    let result_json: Value = serde_json::from_str(&text)
+        .unwrap_or(serde_json::json!({"status": text}));
+
+    Ok(DispatchResult {
+        output: serde_json::json!({
+            "action": direction,
+            "distance": dist,
+            "status": result_json
+        }),
+        wasm_logs: vec![format!("[robot] {direction} {dist:.2}m")],
+    })
+}
+
+fn dispatch_robot_tool(
+    tool_id: &str,
+    args: Value,
+    handler: &RobotCommandHandler,
+) -> Result<DispatchResult, String> {
+    let distance = args["distance"].as_f64().unwrap_or(0.5);
+
+    let (direction, dist) = match tool_id {
+        "robot.move_forward"  => ("forward",  distance),
+        "robot.move_backward" => ("backward", distance),
+        "robot.move_left"     => ("left",     distance),
+        "robot.move_right"    => ("right",    distance),
+        "robot.stop"          => ("stop",     0.0),
+        "robot.look"          => {
+            return Ok(DispatchResult {
+                output: serde_json::json!({
+                    "action": "look",
+                    "status": "Observation requested. Check the camera feed in the next message."
+                }),
+                wasm_logs: vec![],
+            });
+        }
+        _ => return Err(format!("unknown robot tool: {tool_id}")),
+    };
+
+    let result = handler(direction, dist)?;
+    Ok(DispatchResult {
+        output: serde_json::json!({
+            "action": direction,
+            "distance": dist,
+            "status": result
+        }),
+        wasm_logs: vec![format!("[robot] {direction} {dist:.2}m")],
+    })
+}
+
+// ── HTTP robot handler factory ──────────────────────────────────────────────
+
+/// Create a [`RobotCommandHandler`] that forwards commands to a ProcTHOR-style HTTP server.
+///
+/// Maps directions to endpoints:
+/// - `"forward"`  → `POST {base_url}/move_forward`
+/// - `"backward"` → `POST {base_url}/move_backward`
+/// - `"left"`     → `POST {base_url}/move_left`
+/// - `"right"`    → `POST {base_url}/move_right`
+/// - `"stop"`     → `POST {base_url}/stop`
+///
+/// The distance is sent as `{"distance": <value>}`.
+pub fn http_robot_handler(base_url: String) -> RobotCommandHandler {
+    let client = reqwest::Client::new();
+    Box::new(move |direction: &str, distance: f64| {
+        let endpoint = match direction {
+            "forward"  => "move_forward",
+            "backward" => "move_backward",
+            "left"     => "move_left",
+            "right"    => "move_right",
+            "stop"     => "stop",
+            other      => return Err(format!("unknown direction: {other}")),
+        };
+
+        let url = format!("{}/{endpoint}", base_url);
+        let body = serde_json::json!({ "distance": distance });
+        let client = client.clone();
+
+        // We're inside a sync Fn called from an async context — spawn the
+        // request on the existing runtime and wait via a oneshot channel so
+        // we never call block_on (which panics inside tokio).
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = async {
+                let resp = client
+                    .post(&url)
+                    .json(&body)
+                    .send()
+                    .await
+                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+
+                let status = resp.status();
+                let text = resp
+                    .text()
+                    .await
+                    .map_err(|e| format!("read response: {e}"))?;
+
+                if status.is_success() {
+                    Ok(text)
+                } else {
+                    Err(format!("HTTP {status}: {text}"))
+                }
+            }
+            .await;
+            let _ = tx.send(result);
+        });
+
+        rx.recv().map_err(|e| format!("channel recv: {e}"))?
+    })
 }

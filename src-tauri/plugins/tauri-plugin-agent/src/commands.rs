@@ -5,6 +5,7 @@ use crate::{
     agent::{AgentEvent, AgentResponse, ChatMessage},
     manifest::Manifest,
     AgentState,
+    vision,
 };
 
 #[tauri::command]
@@ -25,6 +26,7 @@ pub async fn agent_run<R: Runtime>(
         tool_calls:   None,
         tool_call_id: None,
         name:         None,
+        vision_content: None,
     });
     h.push(ChatMessage {
         role:         "assistant".into(),
@@ -32,6 +34,7 @@ pub async fn agent_run<R: Runtime>(
         tool_calls:   None,
         tool_call_id: None,
         name:         None,
+        vision_content: None,
     });
 
     Ok(resp)
@@ -52,4 +55,28 @@ pub async fn get_tool_manifest<R: Runtime>(
     state: State<'_, Arc<AgentState>>,
 ) -> Result<Manifest, String> {
     Ok((*state.manifest).clone())
+}
+
+/// Return the latest vision frame as a base64-encoded JPEG data URI.
+/// Returns `null` if no vision provider is configured or no frame is available.
+#[tauri::command]
+pub async fn get_agent_frame<R: Runtime>(
+    _app:  tauri::AppHandle<R>,
+    state: State<'_, Arc<AgentState>>,
+) -> Result<Option<String>, String> {
+    if let Some(ref vp) = state.vision_provider {
+        if let Some(frame) = vp.latest_frame() {
+            return Ok(Some(vision::frame_to_data_uri(&frame)));
+        }
+    }
+    Ok(None)
+}
+
+/// Return the robot server base URL if configured.
+#[tauri::command]
+pub async fn get_robot_server_url<R: Runtime>(
+    _app:  tauri::AppHandle<R>,
+    state: State<'_, Arc<AgentState>>,
+) -> Result<Option<String>, String> {
+    Ok(state.robot_server_url.clone())
 }

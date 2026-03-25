@@ -566,8 +566,9 @@ pub fn cli_get_config() -> Result<serde_json::Value, String> {
 // ── Agent (headless) ──────────────────────────────────────────────────────
 
 pub use tauri_plugin_agent::{
-    AgentEvent, AgentLoop, AgentResponse, ChatMessage, Dispatcher,
-    FinishReason, Manifest, RiskLevel, ToolDef,
+    AgentEvent, AgentLoop, AgentResponse, CameraCapture, ChatMessage,
+    DirectoryCapture, Dispatcher, FinishReason, Manifest, RiskLevel,
+    ToolDef, UrlCapture, VisionProvider,
 };
 
 /// Create dispatcher in a blocking context (for use with spawn_blocking).
@@ -608,6 +609,40 @@ pub fn create_agent(
 
     let dispatcher = create_dispatcher(discover_tools_dir(), mounts);
     AgentLoop::new_with_key(base_url, model_id, api_key, dispatcher)
+}
+
+/// Create a vision-enabled agent with robot control tools.
+///
+/// The dispatcher includes WASD movement tools and the agent loop is
+/// configured with a VLM-oriented system prompt.
+pub fn create_vision_agent(
+    base_url:       String,
+    model_id:       String,
+    mounts:         Vec<PathBuf>,
+    api_key:        Option<String>,
+    agent_impl:     &str,
+    vision:         Box<dyn VisionProvider>,
+    robot_http_url: Option<String>,
+) -> AgentLoop {
+    if agent_impl != "react" {
+        eprintln!("warning: unknown --agent '{}'; falling back to 'react'", agent_impl);
+    }
+
+    let dispatcher = {
+        let mut d = Dispatcher::new();
+        if let Some(dir) = discover_tools_dir() {
+            d = d.with_tools_dir(dir);
+        }
+        d = d.with_mounts(mounts)
+             .with_user_tools_dir(discover_user_tools_dir());
+        if let Some(url) = robot_http_url {
+            d = d.with_robot_http(url);
+        }
+        d
+    };
+
+    AgentLoop::new_with_key(base_url, model_id, api_key, dispatcher)
+        .with_vision(vision)
 }
 
 /// Locate or create the user tools directory at `~/.jan/tools/`.

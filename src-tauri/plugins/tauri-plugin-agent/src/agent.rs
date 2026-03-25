@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 
 use crate::ToolDispatcher;
 use crate::utils::{compress_tool_result, summarize_result, truncate_str};
+use crate::vision::{self, VisionProvider};
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -68,6 +69,8 @@ pub enum FinishReason {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role:         String,
+    /// Text content — when `vision_content` is set, this is ignored during
+    /// API serialization and the multimodal array is used instead.
     pub content:      Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls:   Option<Vec<Value>>,
@@ -75,6 +78,35 @@ pub struct ChatMessage {
     pub tool_call_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name:         Option<String>,
+    /// Multimodal content array (text + image_url parts).
+    /// When present, replaces `content` in the API request body.
+    #[serde(skip)]
+    pub vision_content: Option<Value>,
+}
+
+impl ChatMessage {
+    /// Convert to the JSON value sent to the OpenAI-compatible API.
+    /// If `vision_content` is set, uses that instead of the plain text `content`.
+    pub fn to_api_value(&self) -> Value {
+        let mut obj = json!({ "role": self.role });
+        if let Some(ref vc) = self.vision_content {
+            obj["content"] = vc.clone();
+        } else if let Some(ref c) = self.content {
+            obj["content"] = Value::String(c.clone());
+        } else {
+            obj["content"] = Value::Null;
+        }
+        if let Some(ref tc) = self.tool_calls {
+            obj["tool_calls"] = json!(tc);
+        }
+        if let Some(ref id) = self.tool_call_id {
+            obj["tool_call_id"] = Value::String(id.clone());
+        }
+        if let Some(ref n) = self.name {
+            obj["name"] = Value::String(n.clone());
+        }
+        obj
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -95,6 +127,9 @@ pub struct AgentLoop {
     system_prompt: String,
     config:        AgentConfig,
     client:        reqwest::Client,
+    /// Optional vision provider for VLM-powered agent loops.
+    /// When set, the latest camera frame is injected into every user message.
+    vision:        Option<Box<dyn VisionProvider>>,
 }
 
 impl AgentLoop {
@@ -130,7 +165,17 @@ impl AgentLoop {
             system_prompt: build_system_prompt(),
             config,
             client:        reqwest::Client::new(),
+            vision:        None,
         }
+    }
+
+    /// Attach a vision provider for VLM-powered agent loops.
+    /// When set, the latest frame is injected into every user message as a
+    /// multimodal image, and the system prompt switches to robot-control mode.
+    pub fn with_vision(mut self, provider: Box<dyn VisionProvider>) -> Self {
+        self.vision = Some(provider);
+        self.system_prompt = build_vision_system_prompt();
+        self
     }
 
     pub async fn run(
@@ -145,15 +190,27 @@ impl AgentLoop {
             tool_calls:   None,
             tool_call_id: None,
             name:         None,
+            vision_content: None,
         }];
         messages.extend_from_slice(history);
-        messages.push(ChatMessage {
+
+        // Build user message — inject latest vision frame if available
+        let mut user_msg = ChatMessage {
             role:         "user".into(),
             content:      Some(user_message.to_string()),
             tool_calls:   None,
             tool_call_id: None,
             name:         None,
-        });
+            vision_content: None,
+        };
+        if let Some(ref vp) = self.vision {
+            if let Some(frame) = vp.latest_frame() {
+                user_msg.vision_content = Some(
+                    vision::build_vision_content(user_message, &frame)
+                );
+            }
+        }
+        messages.push(user_msg);
 
         let mut cumulative_tokens: u32 = 0;
         let mut steps = 0;
@@ -189,9 +246,10 @@ impl AgentLoop {
                 }
             }
 
+            let api_messages: Vec<Value> = messages.iter().map(|m| m.to_api_value()).collect();
             let body = json!({
                 "model":       self.model_id,
-                "messages":    messages,
+                "messages":    api_messages,
                 "tools":       tools,
                 "tool_choice": "auto",
                 "max_tokens":  4096,
@@ -264,6 +322,7 @@ impl AgentLoop {
                     tool_calls:   Some(tool_calls.clone()),
                     tool_call_id: None,
                     name:         None,
+                    vision_content: None,
                 });
 
                 for tc in tool_calls {
@@ -324,6 +383,7 @@ impl AgentLoop {
                         tool_calls:   None,
                         tool_call_id: Some(call_id),
                         name:         Some(tool_id),
+                        vision_content: None,
                     });
                 }
             } else {
@@ -488,6 +548,7 @@ fn compact_context(messages: &mut Vec<ChatMessage>, keep: usize) -> usize {
         tool_calls:   None,
         tool_call_id: None,
         name:         None,
+        vision_content: None,
     };
 
     let recent: Vec<ChatMessage> = messages[cut_from..].to_vec();
@@ -569,5 +630,36 @@ fn build_system_prompt() -> String {
      - If a tool call fails, try an alternative approach before giving up.\n\
      - Be concise but thorough. Give direct answers, not just search results.\n\
      - When doing calculations, use code.exec to ensure accuracy."
+        .to_string()
+}
+
+fn build_vision_system_prompt() -> String {
+    "You are an embodied AI agent controlling a robot through a camera feed. \
+     Each message includes a real-time image from your camera. \
+     Analyze what you see and use the movement tools to navigate.\n\n\
+     ## Movement tools\n\
+     - **robot.move_forward** (W): Move forward by `distance` meters (default 0.5)\n\
+     - **robot.move_backward** (S): Move backward by `distance` meters (default 0.5)\n\
+     - **robot.move_left** (A): Strafe/turn left by `distance` meters (default 0.5)\n\
+     - **robot.move_right** (D): Strafe/turn right by `distance` meters (default 0.5)\n\
+     - **robot.stop**: Emergency stop — halt all motion immediately\n\
+     - **robot.look**: Describe what you currently see in detail (no movement)\n\n\
+     ## Perception guidelines\n\
+     - You receive a camera frame with each user message. Describe what you see \
+       before deciding on actions.\n\
+     - Pay attention to obstacles, walls, doors, objects, and people.\n\
+     - Estimate distances when relevant.\n\
+     - If the path ahead is blocked, suggest turning or alternative routes.\n\n\
+     ## Navigation rules\n\
+     - Always explain your reasoning before moving.\n\
+     - Take small steps (0.3-0.5m) in uncertain environments.\n\
+     - Stop if you detect a potential collision.\n\
+     - When given a goal (e.g. \"go to the kitchen\"), plan a sequence of moves \
+       and execute them step by step, re-evaluating after each move.\n\
+     - You can chain multiple movement commands in one response.\n\n\
+     ## Safety\n\
+     - Never move if you cannot see clearly (dark/blurry image).\n\
+     - Call robot.stop immediately if something unexpected appears.\n\
+     - Prioritize avoiding collisions over reaching the goal quickly."
         .to_string()
 }
