@@ -156,6 +156,8 @@ make dev
 - **Ensure the bug was not already reported** by searching on GitHub under [Issues](https://github.com/janhq/jan/issues)
 - If you're unable to find an open issue addressing the problem, [open a new one](https://github.com/janhq/jan/issues/new)
 - Include your system specs and error logs - it helps a ton
+- Provide clear steps to reproduce the issue so we can quickly identify the root cause
+- Attach screenshots or screen recordings whenever possible - a visual is worth a thousand words when debugging
 
 ### Suggesting Enhancements
 
@@ -220,6 +222,11 @@ feat: add support for Qwen models
 fix: resolve memory leak in model loading
 docs: update installation instructions
 ```
+
+### Pull Request Requirements
+- Include a screenshot or screen recording in your PR description showing the change in action
+- For bug fixes: show both the **before** (broken behavior) and **after** (fixed behavior)
+- For new features or enhancements: demonstrate the feature working as expected
 
 ## Troubleshooting
 
