@@ -16,7 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
 name = "jan-cli"
-path = "src/bin/jan_cli/main.rs"
+path = "src/bin/jan-cli/main.rs"
 required-features = ["cli"]
 
 [features]
