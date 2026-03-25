@@ -10,6 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokio_util::sync::CancellationToken;
 
 use crate::ToolDispatcher;
 use crate::utils::{compress_tool_result, summarize_result, truncate_str};
@@ -62,6 +63,7 @@ pub enum FinishReason {
     Stop,
     MaxSteps,
     BudgetExhausted,
+    Cancelled,
 }
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -184,6 +186,16 @@ impl AgentLoop {
         user_message: &str,
         on_event:     &mut (impl FnMut(AgentEvent) + Send),
     ) -> Result<AgentResponse, String> {
+        self.run_cancellable(history, user_message, on_event, CancellationToken::new()).await
+    }
+
+    pub async fn run_cancellable(
+        &self,
+        history:      &[ChatMessage],
+        user_message: &str,
+        on_event:     &mut (impl FnMut(AgentEvent) + Send),
+        cancel:       CancellationToken,
+    ) -> Result<AgentResponse, String> {
         let mut messages: Vec<ChatMessage> = vec![ChatMessage {
             role:         "system".into(),
             content:      Some(self.system_prompt.clone()),
@@ -216,6 +228,16 @@ impl AgentLoop {
         let mut steps = 0;
 
         loop {
+            // ── Cancellation check (top of loop) ─────────────────────────
+            if cancel.is_cancelled() {
+                return Ok(AgentResponse {
+                    content:       String::new(),
+                    tokens_used:   cumulative_tokens,
+                    steps,
+                    finish_reason: FinishReason::Cancelled,
+                });
+            }
+
             steps += 1;
             if steps > self.config.max_steps {
                 return Ok(AgentResponse {
@@ -256,7 +278,7 @@ impl AgentLoop {
             });
 
             let resp_json = match self
-                .llm_call_with_retry(&self.client, &body, on_event, steps)
+                .llm_call_with_retry(&self.client, &body, on_event, steps, &cancel)
                 .await
             {
                 Ok(v) => v,
@@ -281,6 +303,14 @@ impl AgentLoop {
                     continue;
                 }
                 Err(LlmError::Other(e)) => return Err(e),
+                Err(LlmError::Cancelled) => {
+                    return Ok(AgentResponse {
+                        content:       String::new(),
+                        tokens_used:   cumulative_tokens,
+                        steps,
+                        finish_reason: FinishReason::Cancelled,
+                    });
+                }
             };
 
             if let Some(usage) = resp_json.get("usage") {
@@ -345,6 +375,16 @@ impl AgentLoop {
                 });
 
                 for tc in tool_calls {
+                    // ── Cancellation check (before each tool) ────────────
+                    if cancel.is_cancelled() {
+                        return Ok(AgentResponse {
+                            content:       String::new(),
+                            tokens_used:   cumulative_tokens,
+                            steps,
+                            finish_reason: FinishReason::Cancelled,
+                        });
+                    }
+
                     let call_id = tc["id"].as_str().unwrap_or("").to_string();
                     let tool_id = tc["function"]["name"].as_str().unwrap_or("").to_string();
                     let args_str = tc["function"]["arguments"].as_str().unwrap_or("{}");
@@ -358,8 +398,19 @@ impl AgentLoop {
                         args: args.clone(),
                     });
 
-                    let t0         = std::time::Instant::now();
-                    let result     = self.dispatcher.dispatch(&tool_id, args).await;
+                    let t0 = std::time::Instant::now();
+                    // Race tool dispatch against cancellation
+                    let result = tokio::select! {
+                        r = self.dispatcher.dispatch(&tool_id, args) => r,
+                        _ = cancel.cancelled() => {
+                            return Ok(AgentResponse {
+                                content:       String::new(),
+                                tokens_used:   cumulative_tokens,
+                                steps,
+                                finish_reason: FinishReason::Cancelled,
+                            });
+                        }
+                    };
                     let elapsed_ms = t0.elapsed().as_millis() as u64;
 
                     let result_str = match result {
@@ -422,17 +473,31 @@ impl AgentLoop {
         body:     &Value,
         on_event: &mut (impl FnMut(AgentEvent) + Send),
         step:     usize,
+        cancel:   &CancellationToken,
     ) -> Result<Value, LlmError> {
         let url          = format!("{}/v1/chat/completions", self.base_url);
         let max_attempts = self.config.max_retries + 1;
         let mut last_err = String::new();
 
         for attempt in 1..=max_attempts {
+            if cancel.is_cancelled() {
+                return Err(LlmError::Cancelled);
+            }
+
             let mut req = client.post(&url).json(body);
             if let Some(key) = &self.api_key {
                 req = req.header("Authorization", format!("Bearer {key}"));
             }
-            match req.send().await {
+
+            // Race the HTTP request against cancellation
+            let send_result = tokio::select! {
+                r = req.send() => r,
+                _ = cancel.cancelled() => {
+                    return Err(LlmError::Cancelled);
+                }
+            };
+
+            match send_result {
                 Err(e) => {
                     last_err = format!("model request failed: {e}");
                     log::info!("[agent] attempt {attempt}/{max_attempts}: {last_err}");
@@ -440,7 +505,14 @@ impl AgentLoop {
                 Ok(resp) => {
                     let status = resp.status();
                     if status.is_success() {
-                        return resp.json::<Value>().await
+                        // Race body read against cancellation
+                        let body_result = tokio::select! {
+                            r = resp.json::<Value>() => r,
+                            _ = cancel.cancelled() => {
+                                return Err(LlmError::Cancelled);
+                            }
+                        };
+                        return body_result
                             .map_err(|e| LlmError::Other(format!("model response parse failed: {e}")));
                     }
 
@@ -472,7 +544,13 @@ impl AgentLoop {
             if attempt < max_attempts {
                 let delay_ms = 1_000u64 << (attempt - 1);
                 on_event(AgentEvent::Retrying { step, attempt, delay_ms });
-                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                // Race retry sleep against cancellation
+                tokio::select! {
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(delay_ms)) => {}
+                    _ = cancel.cancelled() => {
+                        return Err(LlmError::Cancelled);
+                    }
+                }
             }
         }
 
@@ -507,6 +585,8 @@ enum LlmError {
     ContextLength(String),
     /// Any other error (network, auth, rate-limit exhausted, etc.).
     Other(String),
+    /// The operation was cancelled by the user.
+    Cancelled,
 }
 
 impl std::fmt::Display for LlmError {
@@ -514,6 +594,7 @@ impl std::fmt::Display for LlmError {
         match self {
             LlmError::ContextLength(s) => write!(f, "context length exceeded: {}", truncate_str(s, 120)),
             LlmError::Other(s) => f.write_str(s),
+            LlmError::Cancelled => write!(f, "cancelled"),
         }
     }
 }

@@ -6,6 +6,7 @@ pub mod utils;
 pub mod vision;
 
 pub use agent::{AgentConfig, AgentEvent, AgentLoop, AgentResponse, ChatMessage, FinishReason};
+pub use tokio_util::sync::CancellationToken;
 pub use manifest::{Manifest, RiskLevel, ToolDef};
 pub use dispatcher::{Dispatcher, http_robot_handler};
 pub use vision::{CameraCapture, DirectoryCapture, Frame, UrlCapture, VisionProvider};

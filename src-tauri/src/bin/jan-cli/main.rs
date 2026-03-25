@@ -1572,6 +1572,7 @@ async fn handle_agent(cmd: AgentCommands) {
                             app_lib::core::cli::FinishReason::Stop => "stop",
                             app_lib::core::cli::FinishReason::MaxSteps => "max_steps",
                             app_lib::core::cli::FinishReason::BudgetExhausted => "budget_exhausted",
+                            app_lib::core::cli::FinishReason::Cancelled => "cancelled",
                         };
                         eprintln!("{}", dim.apply_to(format!(
                             "[{} tokens · {} step{} · {}]",
@@ -1654,85 +1655,93 @@ async fn run_agent_tui(
     let mut history: Vec<app_lib::core::cli::ChatMessage> = Vec::new();
     let agent = Arc::new(agent);
 
+    // Active agent task state (None when idle)
+    let mut active_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AgentEvent>> = None;
+    let mut active_handle: Option<tokio::task::JoinHandle<Result<app_lib::core::cli::AgentResponse, String>>> = None;
+    let mut active_input: Option<String> = None; // the input that started the current agent run
+    let mut active_cancel: Option<app_lib::core::cli::CancellationToken> = None;
+
     // Initial draw
     let _ = terminal.draw(|f| draw(f, &mut state));
 
     loop {
-        // Block up to 500ms waiting for input — near-zero CPU when idle
-        handle_input(&mut state, std::time::Duration::from_millis(500));
+        // Choose poll timeout: non-blocking when agent is running, blocking when idle
+        let timeout = if active_handle.is_some() {
+            std::time::Duration::ZERO
+        } else {
+            std::time::Duration::from_millis(500)
+        };
+
+        let had_input = handle_input(&mut state, timeout);
 
         if state.should_quit {
             break;
         }
 
-        // User submitted input
+        // ── Handle user submit ───────────────────────────────────────────
         if state.input_ready {
             let input = state.take_input();
             if input == "/quit" || input == "/exit" || input == "exit" {
                 break;
             }
-            if input.is_empty() {
-                let _ = terminal.draw(|f| draw(f, &mut state));
-                continue;
-            }
-
-            state.push_message(ChatItem::User(input.clone()));
-            state.is_thinking = true;
-            state.steps += 1;
-            state.push_message(ChatItem::Thinking { step: state.steps });
-
-            // Draw before starting the async agent call
-            let _ = terminal.draw(|f| draw(f, &mut state));
-
-            // Run agent with TUI updates. Clone history for the borrow-free call.
-            let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<AgentEvent>();
-            let history_snapshot = history.clone();
-            let input_clone = input.clone();
-            let agent_ref = Arc::clone(&agent);
-
-            let agent_handle = tokio::spawn(async move {
-                let mut handler = move |event: AgentEvent| {
-                    let _ = event_tx.send(event);
-                };
-                agent_ref.run(&history_snapshot, &input_clone, &mut handler).await
-            });
-
-            // Poll TUI while the agent task runs
-            loop {
-                // Drain agent events
-                let mut had_events = false;
-                while let Ok(event) = event_rx.try_recv() {
-                    apply_agent_event(&mut state, &event);
-                    had_events = true;
+            if !input.is_empty() {
+                if state.is_thinking {
+                    // Agent is busy — queue the message
+                    state.push_message(ChatItem::Queued(input.clone()));
+                    state.pending_messages.push_back(input);
+                } else {
+                    // Agent is idle — start immediately
+                    start_agent_run(
+                        &mut state, &mut history, &agent,
+                        &mut active_event_rx, &mut active_handle, &mut active_input,
+                        &mut active_cancel, input,
+                    );
                 }
-
-                // Poll terminal input (non-blocking during agent run)
-                let had_input = handle_input(&mut state, std::time::Duration::ZERO);
-                if state.should_quit { break; }
-
-                // Check if agent finished
-                if agent_handle.is_finished() { break; }
-
-                // Only redraw if something changed
-                if had_events || had_input {
-                    let _ = terminal.draw(|f| draw(f, &mut state));
-                }
-
-                // Yield to tokio so agent task can progress
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
+        }
 
-            // Drain remaining events
-            while let Ok(event) = event_rx.try_recv() {
+        // ── Handle cancellation (Escape) ─────────────────────────────────
+        if state.cancel_requested {
+            state.cancel_requested = false;
+            if let Some(ref token) = active_cancel {
+                token.cancel();
+            }
+            // Clear pending queue and their chat items
+            state.pending_messages.clear();
+            state.messages.retain(|m| !matches!(m, ChatItem::Queued(_)));
+        }
+
+        // ── Drain agent events ───────────────────────────────────────────
+        let mut had_events = false;
+        if let Some(ref mut rx) = active_event_rx {
+            while let Ok(event) = rx.try_recv() {
                 apply_agent_event(&mut state, &event);
+                had_events = true;
+            }
+        }
+
+        // ── Check if agent finished ──────────────────────────────────────
+        let agent_just_finished = active_handle.as_ref().map_or(false, |h| h.is_finished());
+        if agent_just_finished {
+            // Drain any remaining events
+            if let Some(ref mut rx) = active_event_rx {
+                while let Ok(event) = rx.try_recv() {
+                    apply_agent_event(&mut state, &event);
+                }
             }
 
-            // Remove the trailing Thinking item
+            // Remove thinking indicator
             state.messages.retain(|m| !matches!(m, ChatItem::Thinking { .. }));
             state.is_thinking = false;
 
+            let handle = active_handle.take().unwrap();
+            let input = active_input.take().unwrap_or_default();
+            active_event_rx = None;
+            active_cancel = None;
+
             // Process the result
-            match agent_handle.await {
+            let was_cancelled;
+            match handle.await {
                 Ok(Ok(resp)) => {
                     state.push_debug(format!(
                         "agent done: finish={:?} steps={} tokens={} content_len={}",
@@ -1741,40 +1750,76 @@ async fn run_agent_tui(
                     if resp.content.is_empty() {
                         state.push_debug("WARNING: agent returned empty content".into());
                     }
+                    was_cancelled = matches!(resp.finish_reason, app_lib::core::cli::FinishReason::Cancelled);
                     state.tokens_used = resp.tokens_used;
-                    state.push_message(ChatItem::Agent(resp.content.clone()));
 
-                    history.push(app_lib::core::cli::ChatMessage {
-                        role: "user".into(),
-                        content: Some(input),
-                        tool_calls: None,
-                        tool_call_id: None,
-                        name: None,
-                        vision_content: None,
-                    });
-                    history.push(app_lib::core::cli::ChatMessage {
-                        role: "assistant".into(),
-                        content: Some(resp.content),
-                        tool_calls: None,
-                        tool_call_id: None,
-                        name: None,
-                        vision_content: None,
-                    });
+                    if was_cancelled {
+                        state.push_message(ChatItem::Agent("[cancelled]".into()));
+                        state.push_tool_log(ToolLogKind::Warn, "agent cancelled by user".into());
+                    } else {
+                        state.push_message(ChatItem::Agent(resp.content.clone()));
+
+                        history.push(app_lib::core::cli::ChatMessage {
+                            role: "user".into(),
+                            content: Some(input),
+                            tool_calls: None,
+                            tool_call_id: None,
+                            name: None,
+                            vision_content: None,
+                        });
+                        history.push(app_lib::core::cli::ChatMessage {
+                            role: "assistant".into(),
+                            content: Some(resp.content),
+                            tool_calls: None,
+                            tool_call_id: None,
+                            name: None,
+                            vision_content: None,
+                        });
+                    }
                 }
                 Ok(Err(e)) => {
+                    was_cancelled = false;
                     state.push_message(ChatItem::Agent(format!("[error] {e}")));
                     state.push_tool_log(ToolLogKind::Error, e.to_string());
                 }
                 Err(e) => {
-                    state.push_message(ChatItem::Agent(format!("[error] task panicked: {e}")));
-                    state.push_tool_log(ToolLogKind::Error, format!("task panicked: {e}"));
+                    // JoinError — task was aborted or panicked
+                    was_cancelled = e.is_cancelled();
+                    if was_cancelled {
+                        state.push_message(ChatItem::Agent("[cancelled]".into()));
+                        state.push_tool_log(ToolLogKind::Warn, "agent cancelled by user".into());
+                    } else {
+                        state.push_message(ChatItem::Agent(format!("[error] task panicked: {e}")));
+                        state.push_tool_log(ToolLogKind::Error, format!("task panicked: {e}"));
+                    }
                 }
             }
 
+            // ── Dequeue next message if any (skip if cancelled) ──────────
+            if !was_cancelled {
+                if let Some(next) = state.pending_messages.pop_front() {
+                    // Remove the Queued chat item for this message
+                    state.messages.retain(|m| !matches!(m, ChatItem::Queued(t) if t == &next));
+                    start_agent_run(
+                        &mut state, &mut history, &agent,
+                        &mut active_event_rx, &mut active_handle, &mut active_input,
+                        &mut active_cancel, next,
+                    );
+                }
+            }
+        }
+
+        // ── Redraw ───────────────────────────────────────────────────────
+        if had_events || had_input || agent_just_finished {
             let _ = terminal.draw(|f| draw(f, &mut state));
-        } else {
-            // Idle — redraw only needed on resize (handle_input returns true)
+        } else if active_handle.is_none() {
+            // Idle — still redraw for resize events
             let _ = terminal.draw(|f| draw(f, &mut state));
+        }
+
+        // Yield to tokio when agent is running
+        if active_handle.is_some() {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     }
 
@@ -1785,6 +1830,42 @@ async fn run_agent_tui(
         eprintln!("Session ended — stopping model…");
         stop_model(pid);
     }
+}
+
+/// Start a new agent run: push user message, set thinking state, spawn task.
+fn start_agent_run(
+    state: &mut agent_tui::AgentTuiState,
+    history: &mut Vec<app_lib::core::cli::ChatMessage>,
+    agent: &Arc<app_lib::core::cli::AgentLoop>,
+    event_rx: &mut Option<tokio::sync::mpsc::UnboundedReceiver<AgentEvent>>,
+    handle: &mut Option<tokio::task::JoinHandle<Result<app_lib::core::cli::AgentResponse, String>>>,
+    active_input: &mut Option<String>,
+    active_cancel: &mut Option<app_lib::core::cli::CancellationToken>,
+    input: String,
+) {
+    use agent_tui::ChatItem;
+
+    state.push_message(ChatItem::User(input.clone()));
+    state.is_thinking = true;
+    state.steps += 1;
+    state.push_message(ChatItem::Thinking { step: state.steps });
+
+    let (tx, rx_new) = tokio::sync::mpsc::unbounded_channel::<AgentEvent>();
+    let history_snapshot = history.clone();
+    let input_clone = input.clone();
+    let agent_ref = Arc::clone(agent);
+    let cancel_token = app_lib::core::cli::CancellationToken::new();
+    let cancel_clone = cancel_token.clone();
+
+    *handle = Some(tokio::spawn(async move {
+        let mut handler = move |event: AgentEvent| {
+            let _ = tx.send(event);
+        };
+        agent_ref.run_cancellable(&history_snapshot, &input_clone, &mut handler, cancel_clone).await
+    }));
+    *event_rx = Some(rx_new);
+    *active_input = Some(input);
+    *active_cancel = Some(cancel_token);
 }
 
 /// Translate an AgentEvent into TUI state updates.
