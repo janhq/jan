@@ -7,6 +7,7 @@
 //!   ├─ statusbar ─────────────────────────────────────────────┤
 //!   └─────────────────────────────────────────────────────────┘
 
+use std::collections::VecDeque;
 use std::io;
 use std::time::Instant;
 
@@ -48,6 +49,8 @@ pub enum ChatItem {
     ToolCall { name: String, args_preview: String },
     ToolResult { name: String, ok: bool, elapsed_ms: u64, summary: String },
     Thinking { step: usize },
+    /// A queued user message waiting to be sent to the agent.
+    Queued(String),
 }
 
 #[derive(Clone)]
@@ -104,7 +107,15 @@ pub struct AgentTuiState {
 
     pub start_time: Instant,
     pub should_quit: bool,
+
     pub input_ready: bool, // true when user pressed Enter
+    pub cancel_requested: bool,   // true when user pressed Escape to cancel
+    pub pending_messages: VecDeque<String>,
+
+    /// Debug log lines (toggle visibility with `L`).
+    pub debug_log: Vec<String>,
+    pub debug_log_scroll: u16,
+    pub show_debug_log: bool,
 }
 
 impl AgentTuiState {
@@ -139,6 +150,8 @@ impl AgentTuiState {
             start_time: Instant::now(),
             should_quit: false,
             input_ready: false,
+            cancel_requested: false,
+            pending_messages: VecDeque::new(),
         }
     }
 
@@ -418,18 +431,23 @@ fn handle_single_event(state: &mut AgentTuiState, ev: Event) {
                 (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
                     state.should_quit = true;
                 }
-                (KeyCode::Enter, _) if !state.is_thinking => {
+                (KeyCode::Esc, _) => {
+                    if state.is_thinking {
+                        state.cancel_requested = true;
+                    }
+                }
+                (KeyCode::Enter, _) => {
                     if !state.input.trim().is_empty() {
                         state.input_ready = true;
                     }
                 }
-                (KeyCode::Backspace, _) if !state.is_thinking => {
+                (KeyCode::Backspace, _) => {
                     if state.cursor_pos > 0 {
                         state.cursor_pos -= 1;
                         state.input.remove(state.cursor_pos);
                     }
                 }
-                (KeyCode::Delete, _) if !state.is_thinking => {
+                (KeyCode::Delete, _) => {
                     if state.cursor_pos < state.input.len() {
                         state.input.remove(state.cursor_pos);
                     }
@@ -465,7 +483,7 @@ fn handle_single_event(state: &mut AgentTuiState, ev: Event) {
                 (KeyCode::PageDown, _) => {
                     scroll_focused(state, 20);
                 }
-                (KeyCode::Char(c), _) if !state.is_thinking => {
+                (KeyCode::Char(c), _) => {
                     state.input.insert(state.cursor_pos, c);
                     state.cursor_pos += 1;
                 }
@@ -672,6 +690,20 @@ fn draw_messages(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
                     ),
                 ]));
             }
+            ChatItem::Queued(text) => {
+                lines.push(Line::from(vec![
+                    Span::styled("  > ", Style::default().fg(MUTED)),
+                    Span::styled("you", Style::default().fg(MUTED).add_modifier(Modifier::ITALIC)),
+                    Span::styled(" (queued)", Style::default().fg(MUTED).add_modifier(Modifier::ITALIC)),
+                ]));
+                for l in wrap_text(text, inner.width.saturating_sub(6) as usize) {
+                    lines.push(Line::from(vec![
+                        Span::styled("  | ", Style::default().fg(BORDER)),
+                        Span::styled(l, Style::default().fg(MUTED).add_modifier(Modifier::ITALIC)),
+                    ]));
+                }
+                lines.push(Line::from(""));
+            }
         }
     }
 
@@ -714,18 +746,24 @@ fn draw_input_bar(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
     frame.render_widget(block, area);
 
     let prompt_style = if state.is_thinking {
-        Style::default().fg(MUTED)
+        Style::default().fg(AMBER)
     } else {
         Style::default().fg(GREEN)
     };
 
-    let display_input = if state.is_thinking {
-        "waiting for agent..."
+    let queue_hint = if state.is_thinking && state.input.is_empty() {
+        Some("type to queue next message…")
+    } else {
+        None
+    };
+
+    let display_input: &str = if let Some(hint) = queue_hint {
+        hint
     } else {
         &state.input
     };
 
-    let input_style = if state.is_thinking {
+    let input_style = if queue_hint.is_some() {
         Style::default().fg(MUTED).add_modifier(Modifier::ITALIC)
     } else {
         Style::default().fg(TEXT)
@@ -740,7 +778,7 @@ fn draw_input_bar(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
     frame.render_widget(paragraph, inner);
 
     // Show cursor (clamped to inner area to avoid panic on small terminals)
-    if !state.is_thinking && inner.width > 3 && inner.height > 0 {
+    if inner.width > 3 && inner.height > 0 {
         let cursor_x = (inner.x + 3 + state.cursor_pos as u16).min(inner.x + inner.width - 1);
         frame.set_cursor_position((
             cursor_x,
