@@ -1,11 +1,19 @@
+import type { LanguageModel } from 'ai'
 import type { MCPTool } from '@/types/completion'
 import type { ServerSummary } from '@/services/mcp/types'
 import { classifyIntent, ROUTING_THRESHOLD } from './intent-classifier'
+import { selectServersWithLlm } from './mcp-router-llm'
 
 export interface MCPServiceLike {
   getTools(): Promise<MCPTool[]>
   getToolsForServers(serverNames: string[]): Promise<MCPTool[]>
   getServerSummaries(): Promise<ServerSummary[]>
+}
+
+export interface GetRelevantToolsOptions {
+  /** When set (e.g. chat model), used for structured server selection above the routing threshold. */
+  routerModel?: LanguageModel | null
+  abortSignal?: AbortSignal
 }
 
 interface CacheEntry {
@@ -25,7 +33,8 @@ export class MCPOrchestrator {
   async getRelevantTools(
     userMessage: string,
     service: MCPServiceLike,
-    disabledKeys: string[]
+    disabledKeys: string[],
+    options?: GetRelevantToolsOptions
   ): Promise<MCPTool[]> {
     const summaries = await this.fetchSummaries(service)
 
@@ -34,7 +43,22 @@ export class MCPOrchestrator {
       return this.filterDisabled(tools, disabledKeys)
     }
 
-    const selectedNames = classifyIntent(userMessage, summaries)
+    const keywordNames = classifyIntent(userMessage, summaries)
+    let selectedNames = keywordNames
+
+    const routerModel = options?.routerModel
+    if (routerModel && userMessage.trim()) {
+      const llmNames = await selectServersWithLlm(
+        userMessage,
+        summaries,
+        routerModel,
+        options.abortSignal
+      )
+      if (llmNames.length > 0) {
+        selectedNames = llmNames
+      }
+    }
+
     const tools = await this.fetchToolsForServers(selectedNames, service)
     return this.filterDisabled(tools, disabledKeys)
   }

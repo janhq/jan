@@ -57,6 +57,24 @@ export type ServiceHub = {
   }
 }
 
+/** Text from the most recent user message (for MCP server routing). */
+function extractLatestUserText(messages: UIMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.role !== 'user') continue
+    const parts = Array.isArray(m.parts) ? m.parts : []
+    const chunks: string[] = []
+    for (const p of parts) {
+      if (p.type === 'text' && typeof (p as { text?: string }).text === 'string') {
+        const t = (p as { text: string }).text.trim()
+        if (t) chunks.push(t)
+      }
+    }
+    if (chunks.length > 0) return chunks.join('\n')
+  }
+  return ''
+}
+
 /**
  * Wraps a UIMessageChunk stream so that when the first `text-start` chunk
  * arrives, a `text-delta` carrying `prefixText` is immediately injected into
@@ -151,7 +169,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * Filters out disabled tools based on thread settings
    * @private
    */
-  async refreshTools() {
+  async refreshTools(abortSignal?: AbortSignal) {
     if (!this.serviceHub) {
       this.tools = {}
       return
@@ -246,7 +264,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
                 mcpService.getToolsForServers!(names),
               getServerSummaries: () => mcpService.getServerSummaries!(),
             },
-            disabledToolKeys
+            disabledToolKeys,
+            {
+              routerModel: this.model,
+              abortSignal,
+            }
           )
         } else {
           mcpTools = await mcpService.getTools()
@@ -299,9 +321,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
-    // Ensure tools updated before sending messages
-    await this.refreshTools()
-
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
     // model, even if the user switches provider mid-request.
@@ -309,32 +328,35 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const providerId = useModelProvider.getState().selectedProvider
     const effectiveProviderName = providerId
     const provider = useModelProvider.getState().getProviderByName(providerId)
-    if (this.serviceHub && modelId && provider) {
-      try {
-        const updatedProvider = useModelProvider
-          .getState()
-          .getProviderByName(providerId)
-
-        // Get assistant parameters from current assistant
-        const currentAssistant = useAssistant.getState().currentAssistant
-        const inferenceParams = currentAssistant?.parameters
-
-        // Create the model using the factory
-        // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
-        this.model = await ModelFactory.createModel(
-          modelId,
-          updatedProvider ?? provider,
-          inferenceParams ?? {}
-        )
-      } catch (error) {
-        console.error('Failed to create model:', error)
-        throw new Error(
-          `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
-        )
-      }
-    } else {
+    if (!this.serviceHub || !modelId || !provider) {
       throw new Error('ServiceHub not initialized or model/provider missing.')
     }
+
+    this.lastUserMessage = extractLatestUserText(options.messages)
+
+    try {
+      const updatedProvider = useModelProvider
+        .getState()
+        .getProviderByName(providerId)
+
+      const currentAssistant = useAssistant.getState().currentAssistant
+      const inferenceParams = currentAssistant?.parameters
+
+      // Create the model before refreshing tools so the MCP orchestrator can run
+      // structured LLM routing when many servers are connected.
+      this.model = await ModelFactory.createModel(
+        modelId,
+        updatedProvider ?? provider,
+        inferenceParams ?? {}
+      )
+    } catch (error) {
+      console.error('Failed to create model:', error)
+      throw new Error(
+        `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+      )
+    }
+
+    await this.refreshTools(options.abortSignal)
 
     // Fix for Anthropic serial tool-use (error 400): when an assistant message
     // contains tool parts interleaved with text parts (serial tool calls),
