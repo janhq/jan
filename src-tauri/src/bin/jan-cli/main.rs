@@ -20,13 +20,12 @@ use indicatif::{ProgressBar, ProgressStyle};
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::{
     cli_delete_thread, cli_get_data_folder, cli_get_thread,
-    cli_list_messages, cli_list_threads, create_agent, create_vision_agent,
+    cli_list_messages, cli_list_threads, create_agent,
     discover_llamacpp_binary,
     discover_mlx_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
     init_mlx_state, list_models,
     load_llama_model_impl, load_mlx_model_impl, looks_like_hf_repo, resolve_model_by_id,
-    resolve_model_engine, AgentEvent, CameraCapture, DirectoryCapture, HfFileInfo,
-    LlamacppConfig, MlxConfig,
+    resolve_model_engine, AgentEvent, HfFileInfo, LlamacppConfig, MlxConfig,
 };
 use std::path::PathBuf;
 
@@ -148,14 +147,6 @@ enum AgentCommands {
         /// Future values: "openai-assistant", "claude", etc.
         #[arg(long, value_name = "IMPL", default_value = "react")]
         agent: String,
-        /// Watch a directory for images instead of using a camera.
-        /// Drop .jpg/.png files into this directory to feed them to the agent.
-        /// Useful for testing vision mode without a physical camera.
-        #[arg(long, value_name = "DIR")]
-        vision_dir: Option<PathBuf>,
-        /// Interval in seconds between vision frame captures (default: 2).
-        #[arg(long, default_value_t = 2)]
-        vision_interval: u64,
     },
 }
 
@@ -1421,10 +1412,9 @@ fn make_agent_handler(pb: ProgressBar) -> impl FnMut(AgentEvent) {
 
 /// Spin up a local model using the same engine-detection + loading logic as
 /// `handle_serve`, but return `(base_url, model_id, pid)` instead of blocking.
-/// Returns `(url, model_id, pid, is_vlm)`.
 async fn start_model_for_agent(
     args: ServeArgs,
-) -> Result<(String, String, i32, bool), String> {
+) -> Result<(String, String, i32), String> {
     // ── 1. Resolve model_id ────────────────────────────────────────────────
     let model_id = match args.model_id.as_deref() {
         Some(id) if !id.is_empty() => id.to_string(),
@@ -1470,8 +1460,6 @@ async fn start_model_for_agent(
             Err(e) => return Err(e),
         };
 
-    let is_vlm = resolved_mmproj.is_some();
-
     let pb = start_progress(args.verbose, format!("Loading {} ({engine})…", model_id));
 
     // ── 3. Load model ──────────────────────────────────────────────────────
@@ -1492,7 +1480,7 @@ async fn start_model_for_agent(
         }
     };
 
-    Ok((format!("http://127.0.0.1:{actual_port}"), model_id, pid, is_vlm))
+    Ok((format!("http://127.0.0.1:{actual_port}"), model_id, pid))
 }
 
 /// Kill the model server process spawned by start_model_for_agent.
@@ -1517,20 +1505,18 @@ async fn handle_agent(cmd: AgentCommands) {
     let red = Style::new().red();
 
     match cmd {
-        AgentCommands::Chat { serve, message, mount, api_url, agent: agent_impl, vision_dir, vision_interval } => {
+        AgentCommands::Chat { serve, message, mount, api_url, agent: agent_impl } => {
             // Enable log capture to parse llama.cpp memory info.
             agent_tui::enable_log_capture();
 
             // When --api-url is given, skip local model startup entirely.
-            // is_vlm is auto-detected from the model's mmproj_path.
-            let (url, model_id, pid, api_key, is_vlm) = if let Some(ext_url) = api_url {
+            let (url, model_id, pid, api_key) = if let Some(ext_url) = api_url {
                 let model = serve.model_id.unwrap_or_else(|| "default".to_string());
                 let key   = if serve.api_key.is_empty() { None } else { Some(serve.api_key) };
-                // For external APIs, auto-detect VLM from --vision-dir presence
-                (ext_url, model, -1i32, key, vision_dir.is_some())
+                (ext_url, model, -1i32, key)
             } else {
                 match start_model_for_agent(serve).await {
-                    Ok((u, m, p, vlm)) => (u, m, p, None, vlm),
+                    Ok((u, m, p)) => (u, m, p, None),
                     Err(e) => { eprintln!("{} {e}", red.apply_to("error:")); std::process::exit(1); }
                 }
             };
@@ -1542,40 +1528,12 @@ async fn handle_agent(cmd: AgentCommands) {
             let display_url      = url.clone();
             let display_model_id = model_id.clone();
 
-            let interval = std::time::Duration::from_secs(vision_interval);
-
-            // Auto-detect vision mode: enable when model is a VLM or --vision-dir is set.
-            let vision_provider: Option<Box<dyn app_lib::core::cli::VisionProvider>> = if let Some(dir) = vision_dir {
-                if !dir.is_dir() {
-                    eprintln!("{} --vision-dir '{}' is not a directory", red.apply_to("error:"), dir.display());
-                    std::process::exit(1);
-                }
-                eprintln!("{}", dim.apply_to(format!("Vision: watching {} for images ({}s interval)", dir.display(), vision_interval)));
-                Some(Box::new(DirectoryCapture::start(dir, interval)))
-            } else if is_vlm {
-                eprintln!("{}", dim.apply_to(format!("Vision: VLM detected, camera capture ({}s interval)", vision_interval)));
-                Some(Box::new(CameraCapture::start(interval)))
-            } else {
-                None
-            };
-
-            let vision_enabled = vision_provider.is_some();
-
             // create_agent scans WASM tools (spawns blocking I/O + reqwest::blocking::Client).
-            let agent = if let Some(vp) = vision_provider {
-                match tokio::task::spawn_blocking(move || {
-                    create_vision_agent(url, model_id, mount, api_key, &agent_impl, vp, None)
-                }).await {
-                    Ok(a) => a,
-                    Err(e) => { eprintln!("{} spawn: {e}", red.apply_to("error:")); std::process::exit(1); }
-                }
-            } else {
-                match tokio::task::spawn_blocking(move || {
-                    create_agent(url, model_id, mount, api_key, &agent_impl)
-                }).await {
-                    Ok(a) => a,
-                    Err(e) => { eprintln!("{} spawn: {e}", red.apply_to("error:")); std::process::exit(1); }
-                }
+            let agent = match tokio::task::spawn_blocking(move || {
+                create_agent(url, model_id, mount, api_key, &agent_impl)
+            }).await {
+                Ok(a) => a,
+                Err(e) => { eprintln!("{} spawn: {e}", red.apply_to("error:")); std::process::exit(1); }
             };
 
             if let Some(prompt) = message {
@@ -1612,7 +1570,7 @@ async fn handle_agent(cmd: AgentCommands) {
                 }
             } else {
                 // ── interactive TUI mode ───────────────────────────────────
-                run_agent_tui(agent, display_model_id, display_url, pid, captured_logs.clone(), vision_enabled).await;
+                run_agent_tui(agent, display_model_id, display_url, pid, captured_logs.clone()).await;
             }
         }
     }
@@ -1625,7 +1583,6 @@ async fn run_agent_tui(
     api_url: String,
     pid: i32,
     log_capture: String,
-    vision_enabled: bool,
 ) {
     use agent_tui::*;
 
@@ -1638,7 +1595,6 @@ async fn run_agent_tui(
     };
 
     let mut state = AgentTuiState::new(model_id, api_url);
-    state.vision_active = vision_enabled;
 
     // Parse resource usage from llama.cpp startup logs
     if !log_capture.is_empty() {
@@ -1738,7 +1694,6 @@ async fn run_agent_tui(
                         tool_calls: None,
                         tool_call_id: None,
                         name: None,
-                        vision_content: None,
                     });
                     history.push(app_lib::core::cli::ChatMessage {
                         role: "assistant".into(),
@@ -1746,7 +1701,6 @@ async fn run_agent_tui(
                         tool_calls: None,
                         tool_call_id: None,
                         name: None,
-                        vision_content: None,
                     });
                 }
                 Ok(Err(e)) => {
