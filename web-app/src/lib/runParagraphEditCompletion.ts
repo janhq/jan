@@ -7,6 +7,7 @@ import { useServiceStore } from '@/hooks/useServiceHub'
 export async function runParagraphEditCompletion(params: {
   system: string
   user: string
+  abortSignal?: AbortSignal
 }): Promise<string> {
   const serviceHub = useServiceStore.getState().serviceHub
   const modelId = useModelProvider.getState().selectedModel?.id
