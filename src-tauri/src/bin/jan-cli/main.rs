@@ -2126,6 +2126,8 @@ fn start_agent_run(
 fn apply_agent_event(state: &mut agent_tui::AgentTuiState, event: &AgentEvent) {
     use agent_tui::*;
 
+    state.push_debug(format!("{event:?}"));
+
     match event {
         AgentEvent::Thinking { step } => {
             state.steps = *step;

@@ -44,7 +44,7 @@ impl Manifest {
             if let Ok(m) = serde_json::from_str(&raw) {
                 return m;
             }
-            log::warn!("[agent] manifest.json parse error — using default");
+            log::info!("[agent] manifest.json parse error — using default");
         } else {
             log::info!("[agent] no manifest.json at {} — using default", path.display());
         }

@@ -226,7 +226,7 @@ impl AgentLoop {
                 Ok(v) => v,
                 Err(LlmError::ContextLength(detail)) => {
                     // Context too long — compact aggressively and retry this step
-                    log::warn!("[agent] context length exceeded — compacting");
+                    log::info!("[agent] context length exceeded — compacting");
                     let removed = compact_context(&mut messages, self.config.compaction_keep);
                     if removed == 0 {
                         // Nothing left to compact — try trimming tool results
@@ -262,30 +262,47 @@ impl AgentLoop {
             let choice  = &resp_json["choices"][0];
             let message = &choice["message"];
 
-            if let Some(content) = message["content"].as_str() {
-                let no_tool_calls = message
-                    .get("tool_calls")
-                    .map_or(true, |tc| tc.is_null()
-                        || tc.as_array().map_or(true, |a| a.is_empty()));
+            let content_text = message["content"].as_str().unwrap_or("");
+            let has_tool_calls = message
+                .get("tool_calls")
+                .map_or(false, |tc| {
+                    !tc.is_null() && tc.as_array().map_or(false, |a| !a.is_empty())
+                });
 
-                if !content.is_empty() && no_tool_calls {
-                    return Ok(AgentResponse {
-                        content:       content.to_string(),
-                        tokens_used:   cumulative_tokens,
-                        steps,
-                        finish_reason: FinishReason::Stop,
-                    });
-                }
+            // Model returned a final text answer with no tool calls → done
+            if !content_text.is_empty() && !has_tool_calls {
+                return Ok(AgentResponse {
+                    content:       content_text.to_string(),
+                    tokens_used:   cumulative_tokens,
+                    steps,
+                    finish_reason: FinishReason::Stop,
+                });
+            }
+
+            // Empty content and no tool calls → nudge the model to continue
+            if content_text.is_empty() && !has_tool_calls {
+                log::info!("[agent] step {steps}: empty response with no tool calls — nudging to continue");
+                messages.push(ChatMessage {
+                    role:         "assistant".into(),
+                    content:      Some(String::new()),
+                    tool_calls:   None,
+                    tool_call_id: None,
+                    name:         None,
+                });
+                messages.push(ChatMessage {
+                    role:         "user".into(),
+                    content:      Some("Continue with the task. Use your tools or provide a final answer.".into()),
+                    tool_calls:   None,
+                    tool_call_id: None,
+                    name:         None,
+                });
+                continue;
             }
 
             if let Some(tool_calls) = message["tool_calls"].as_array() {
                 if tool_calls.is_empty() {
-                    return Ok(AgentResponse {
-                        content:       message["content"].as_str().unwrap_or("").to_string(),
-                        tokens_used:   cumulative_tokens,
-                        steps,
-                        finish_reason: FinishReason::Stop,
-                    });
+                    // Shouldn't reach here after the checks above, but handle gracefully
+                    continue;
                 }
 
                 messages.push(ChatMessage {
@@ -421,7 +438,7 @@ impl AgentLoop {
             match send_result {
                 Err(e) => {
                     last_err = format!("model request failed: {e}");
-                    log::warn!("[agent] attempt {attempt}/{max_attempts}: {last_err}");
+                    log::info!("[agent] attempt {attempt}/{max_attempts}: {last_err}");
                 }
                 Ok(resp) => {
                     let status = resp.status();
@@ -439,7 +456,7 @@ impl AgentLoop {
 
                     // Read the error body to detect context-length errors
                     let error_body = resp.text().await.unwrap_or_default();
-                    log::warn!(
+                    log::info!(
                         "[agent] attempt {attempt}/{max_attempts}: HTTP {} — {}",
                         status.as_u16(),
                         truncate_str(&error_body, 200),
