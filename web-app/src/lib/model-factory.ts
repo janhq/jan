@@ -55,6 +55,7 @@ import { createXai } from '@ai-sdk/xai'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { isPlatformTauri } from '@/lib/platform/utils'
 
 /**
  * Llama.cpp timings structure from the response
@@ -130,9 +131,9 @@ const CLIENT_SIDE_PARAM_KEYS: ReadonlySet<string> = new Set(['ctx_len'])
  * - client-side-only keys (e.g. `ctx_len`) are stripped
  */
 function createCustomFetch(
-  baseFetch: typeof httpFetch,
+  baseFetch: typeof globalThis.fetch,
   parameters: Record<string, unknown>
-): typeof httpFetch {
+): typeof globalThis.fetch {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     if (init?.method === 'POST' || !init?.method) {
       const body = init?.body ? JSON.parse(init.body as string) : {}
@@ -151,6 +152,20 @@ function createCustomFetch(
 
     return baseFetch(input, init)
   }
+}
+
+function getRuntimeFetch(): typeof globalThis.fetch {
+  const maybeWindow = globalThis as typeof globalThis & {
+    __TAURI__?: unknown
+    __TAURI_INTERNALS__?: unknown
+  }
+  const hasTauriRuntime =
+    typeof maybeWindow.__TAURI__ !== 'undefined' ||
+    typeof maybeWindow.__TAURI_INTERNALS__ !== 'undefined'
+
+  return isPlatformTauri() && hasTauriRuntime
+    ? (httpFetch as typeof globalThis.fetch)
+    : globalThis.fetch
 }
 
 /**
@@ -540,7 +555,7 @@ export class ModelFactory {
       apiKey: provider.api_key,
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(httpFetch, parameters),
+      fetch: createCustomFetch(getRuntimeFetch(), parameters),
     })
 
     return anthropic(modelId)
@@ -567,7 +582,7 @@ export class ModelFactory {
       apiKey: provider.api_key,
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(httpFetch, parameters),
+      fetch: createCustomFetch(getRuntimeFetch(), parameters),
     })
 
     return openai(modelId)
@@ -594,7 +609,7 @@ export class ModelFactory {
       apiKey: provider.api_key,
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(httpFetch, parameters),
+      fetch: createCustomFetch(getRuntimeFetch(), parameters),
     })
 
     return xai(modelId)
@@ -627,7 +642,7 @@ export class ModelFactory {
       baseURL: provider.base_url || 'https://api.openai.com/v1',
       headers,
       includeUsage: true,
-      fetch: createCustomFetch(httpFetch, parameters),
+      fetch: createCustomFetch(getRuntimeFetch(), parameters),
     })
 
     return openAICompatible.languageModel(modelId)
