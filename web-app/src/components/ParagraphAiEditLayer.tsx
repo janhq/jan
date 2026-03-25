@@ -40,6 +40,7 @@ export function ParagraphAiEditLayer({
 }: ParagraphAiEditLayerProps) {
   const { t } = useTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
+  const toolbarRef = useRef<HTMLDivElement>(null)
   const selectedTextRef = useRef<string>('')
   const editSelectionRef = useRef<string>('')
   const [selectionPreview, setSelectionPreview] = useState('')
@@ -62,8 +63,10 @@ export function ParagraphAiEditLayer({
   useEffect(() => {
     const onMouseDown = (e: MouseEvent) => {
       const el = containerRef.current
+      const tb = toolbarRef.current
       if (!el || !toolbar) return
       const target = e.target as Node
+      if (tb?.contains(target)) return
       if (el.contains(target)) return
       clearToolbar()
     }
@@ -177,6 +180,7 @@ export function ParagraphAiEditLayer({
 
       {toolbar && !disabled && (
         <div
+          ref={toolbarRef}
           className="fixed z-50 pointer-events-auto"
           style={{
             left: toolbar.left,
