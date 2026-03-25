@@ -16,6 +16,13 @@ pub const DEFAULT_MCP_CONFIG: &str = r#"{
       "active": false,
       "official": true
     },
+    "Lightpanda Browser": {
+      "command": "lightpanda",
+      "args": ["mcp"],
+      "env": {},
+      "active": false,
+      "official": false
+    },
     "exa": {
       "type": "http",
       "url": "https://mcp.exa.ai/mcp",
