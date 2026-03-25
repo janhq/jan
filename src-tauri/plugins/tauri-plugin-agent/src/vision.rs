@@ -103,7 +103,7 @@ impl CameraCapture {
                         count2.fetch_add(1, Ordering::Relaxed);
                     }
                     Err(e) => {
-                        log::warn!("[vision] camera capture failed: {e}");
+                        log::info!("[vision] camera capture failed: {e}");
                     }
                 }
 
@@ -286,10 +286,10 @@ impl UrlCapture {
                         }
                     }
                     Ok(resp) => {
-                        log::warn!("[vision] url capture: HTTP {}", resp.status());
+                        log::info!("[vision] url capture: HTTP {}", resp.status());
                     }
                     Err(e) => {
-                        log::warn!("[vision] url capture failed: {e}");
+                        log::info!("[vision] url capture failed: {e}");
                     }
                 }
 

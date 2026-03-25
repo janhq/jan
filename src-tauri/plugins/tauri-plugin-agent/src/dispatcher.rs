@@ -269,7 +269,7 @@ fn scan_wasm_dir(base: &Path, dir: &Path, out: &mut Vec<WasmTool>) {
             log::info!("[dispatcher] loaded WASM tool '{id}' from {}", path.display());
             out.push(WasmTool { id, path, meta });
         } else {
-            log::warn!("[dispatcher] skipping '{}': no sidecar .json metadata", path.display());
+            log::info!("[dispatcher] skipping '{}': no sidecar .json metadata", path.display());
         }
     }
 }
@@ -424,14 +424,14 @@ fn scan_js_tools_dir(dir: &Path) -> Vec<JsTool> {
     let mut tools = Vec::new();
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
-        Err(e) => { log::warn!("[dispatcher] JS tools dir scan failed: {e}"); return tools; }
+        Err(e) => { log::info!("[dispatcher] JS tools dir scan failed: {e}"); return tools; }
     };
     for entry in entries.filter_map(|e| e.ok()) {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("js") { continue; }
         let source = match std::fs::read_to_string(&path) {
             Ok(s) => s,
-            Err(e) => { log::warn!("[dispatcher] skipping '{}': {e}", path.display()); continue; }
+            Err(e) => { log::info!("[dispatcher] skipping '{}': {e}", path.display()); continue; }
         };
         if let Some((id, desc, schema)) = parse_js_tool_meta(&source, &path) {
             log::info!("[dispatcher] loaded JS tool '{id}' from {}", path.display());

@@ -1734,6 +1734,13 @@ async fn run_agent_tui(
             // Process the result
             match agent_handle.await {
                 Ok(Ok(resp)) => {
+                    state.push_debug(format!(
+                        "agent done: finish={:?} steps={} tokens={} content_len={}",
+                        resp.finish_reason, resp.steps, resp.tokens_used, resp.content.len()
+                    ));
+                    if resp.content.is_empty() {
+                        state.push_debug("WARNING: agent returned empty content".into());
+                    }
                     state.tokens_used = resp.tokens_used;
                     state.push_message(ChatItem::Agent(resp.content.clone()));
 
@@ -1783,6 +1790,8 @@ async fn run_agent_tui(
 /// Translate an AgentEvent into TUI state updates.
 fn apply_agent_event(state: &mut agent_tui::AgentTuiState, event: &AgentEvent) {
     use agent_tui::*;
+
+    state.push_debug(format!("{event:?}"));
 
     match event {
         AgentEvent::Thinking { step } => {

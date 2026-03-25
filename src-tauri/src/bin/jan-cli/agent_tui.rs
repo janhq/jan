@@ -113,6 +113,11 @@ pub struct AgentTuiState {
     pub start_time: Instant,
     pub should_quit: bool,
     pub input_ready: bool, // true when user pressed Enter
+
+    /// Debug log lines (toggle visibility with `L`).
+    pub debug_log: Vec<String>,
+    pub debug_log_scroll: u16,
+    pub show_debug_log: bool,
 }
 
 impl AgentTuiState {
@@ -141,6 +146,9 @@ impl AgentTuiState {
             robot_frame: Arc::new(std::sync::Mutex::new(None)),
             robot_connected: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             input: String::new(),
+            debug_log: Vec::new(),
+            debug_log_scroll: 0,
+            show_debug_log: false,
             cursor_pos: 0,
             is_thinking: false,
             tool_calls_count: 0,
@@ -174,6 +182,11 @@ impl AgentTuiState {
     pub fn push_tool_log_dim(&mut self, text: String) {
         self.tool_log.push(ToolLogEntry { kind: ToolLogKind::Dim, text });
         self.tool_log_auto_scroll = true;
+    }
+
+    pub fn push_debug(&mut self, text: String) {
+        let ts = self.start_time.elapsed().as_secs_f64();
+        self.debug_log.push(format!("[{ts:8.2}s] {text}"));
     }
 }
 
@@ -464,6 +477,9 @@ fn handle_single_event(state: &mut AgentTuiState, ev: Event) {
                 (KeyCode::Tab, _) => {
                     state.focus_tool_panel = !state.focus_tool_panel;
                 }
+                (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
+                    state.show_debug_log = !state.show_debug_log;
+                }
                 (KeyCode::Up, _) => {
                     scroll_focused(state, -1);
                 }
@@ -539,7 +555,7 @@ fn draw_titlebar(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
     let status_text = if state.is_thinking { "RUNNING" } else { "READY" };
     let status_color = if state.is_thinking { GREEN } else { MUTED };
 
-    let spans = vec![
+    let mut spans = vec![
         Span::styled("agent", Style::default().fg(TEXT2)),
         Span::styled(" — ", Style::default().fg(MUTED)),
         Span::styled(&state.model_id, Style::default().fg(TEXT2)),
@@ -552,23 +568,41 @@ fn draw_titlebar(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
         ),
     ];
 
+    if state.show_debug_log {
+        spans.push(Span::styled("  [debug on]", Style::default().fg(RED)));
+    }
+
     let titlebar = Paragraph::new(Line::from(spans))
         .style(Style::default().bg(BG2));
     frame.render_widget(titlebar, area);
 }
 
 fn draw_body(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
-    // Split: main panel (left) | right panel
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(65),
-            Constraint::Percentage(35),
-        ])
-        .split(area);
-
-    draw_main_panel(frame, cols[0], state);
-    draw_right_panel(frame, cols[1], state);
+    if state.show_debug_log {
+        // Three columns: chat | right panel | debug log
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(45),
+                Constraint::Percentage(25),
+                Constraint::Percentage(30),
+            ])
+            .split(area);
+        draw_main_panel(frame, cols[0], state);
+        draw_right_panel(frame, cols[1], state);
+        draw_debug_log(frame, cols[2], state);
+    } else {
+        // Two columns: chat | right panel
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(65),
+                Constraint::Percentage(35),
+            ])
+            .split(area);
+        draw_main_panel(frame, cols[0], state);
+        draw_right_panel(frame, cols[1], state);
+    }
 }
 
 fn draw_main_panel(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
@@ -980,6 +1014,39 @@ fn draw_resources(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
     }
 
     let paragraph = Paragraph::new(lines).style(Style::default().bg(BG2));
+    frame.render_widget(paragraph, inner);
+}
+
+fn draw_debug_log(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
+    let block = Block::default()
+        .title(Line::from(vec![
+            Span::styled(" > ", Style::default().fg(RED)),
+            Span::styled("debug log ", Style::default().fg(MUTED)),
+            Span::styled("[ctrl-l] ", Style::default().fg(MUTED).add_modifier(Modifier::DIM)),
+        ]))
+        .borders(Borders::LEFT)
+        .border_style(Style::default().fg(BORDER))
+        .style(Style::default().bg(TERMINAL_BG));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let text_width = inner.width.saturating_sub(1) as usize;
+    let mut lines: Vec<Line> = Vec::new();
+    for entry in &state.debug_log {
+        for wline in wrap_text(entry, text_width) {
+            lines.push(Line::from(Span::styled(wline, Style::default().fg(MUTED))));
+        }
+    }
+
+    let content_height = lines.len() as u16;
+    let visible_height = inner.height;
+    let max_scroll = content_height.saturating_sub(visible_height);
+    // Always auto-scroll debug log
+    state.debug_log_scroll = max_scroll;
+
+    let paragraph = Paragraph::new(lines)
+        .style(Style::default().bg(TERMINAL_BG))
+        .scroll((state.debug_log_scroll, 0));
     frame.render_widget(paragraph, inner);
 }
 
