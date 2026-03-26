@@ -97,6 +97,7 @@ pub struct AgentLoop {
     system_prompt: String,
     config:        AgentConfig,
     client:        reqwest::Client,
+    workspace:     Option<Box<dyn crate::workspace::Workspace>>,
 }
 
 impl AgentLoop {
@@ -132,6 +133,29 @@ impl AgentLoop {
             system_prompt: build_system_prompt(),
             config,
             client:        reqwest::Client::new(),
+            workspace:     None,
+        }
+    }
+
+    /// Attach a workspace to this agent loop.
+    ///
+    /// When set, `workspace.system_context()` is appended to the system prompt
+    /// at the start of each `run` call.
+    pub fn with_workspace(mut self, ws: Box<dyn crate::workspace::Workspace>) -> Self {
+        self.workspace = Some(ws);
+        self
+    }
+
+    /// Build the effective system prompt, including workspace context if set.
+    fn effective_system_prompt(&self) -> String {
+        match &self.workspace {
+            Some(ws) => match ws.system_context() {
+                Some(ctx) if !ctx.is_empty() => {
+                    format!("{}\n\n## Workspace context\n{}", self.system_prompt, ctx)
+                }
+                _ => self.system_prompt.clone(),
+            },
+            None => self.system_prompt.clone(),
         }
     }
 
@@ -153,7 +177,7 @@ impl AgentLoop {
     ) -> Result<AgentResponse, String> {
         let mut messages: Vec<ChatMessage> = vec![ChatMessage {
             role:         "system".into(),
-            content:      Some(self.system_prompt.clone()),
+            content:      Some(self.effective_system_prompt()),
             tool_calls:   None,
             tool_call_id: None,
             name:         None,

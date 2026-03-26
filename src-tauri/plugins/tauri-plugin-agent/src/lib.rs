@@ -3,11 +3,16 @@ pub mod commands;
 pub mod dispatcher;
 pub mod manifest;
 pub mod utils;
+pub mod workspace;
 
 pub use agent::{AgentConfig, AgentEvent, AgentLoop, AgentResponse, ChatMessage, FinishReason};
 pub use tokio_util::sync::CancellationToken;
 pub use manifest::{Manifest, RiskLevel, ToolDef};
 pub use dispatcher::Dispatcher;
+pub use workspace::{
+    Workspace, WorkspaceConfig, WorkspaceManager, WorkspaceMeta,
+    FsWorkspace, FsWorkspaceManager,
+};
 
 use serde_json::Value;
 use std::sync::Arc;
