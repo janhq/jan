@@ -339,6 +339,284 @@ pub fn add_cuda_paths_linux(command: &mut tokio::process::Command) -> bool {
     modified
 }
 
+// ─── HIP / ROCm ──────────────────────────────────────────────────────────────
+
+/// Returns true if the HIP/ROCm runtime is present on the system.
+///
+/// On Linux this checks for the core `libamdhip64.so` shared library in the
+/// standard ROCm installation paths. On Windows it looks for `amdhip64.dll`
+/// in the ROCm installation tree and the system library directories.
+/// Returns false on all other platforms (macOS etc.).
+pub fn is_hip_runtime_available() -> bool {
+    #[cfg(target_os = "linux")]
+    return is_hip_runtime_available_linux();
+
+    #[cfg(target_os = "windows")]
+    return is_hip_runtime_available_windows();
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    false
+}
+
+#[cfg(target_os = "linux")]
+fn is_hip_runtime_available_linux() -> bool {
+    use std::path::Path;
+
+    // Standard ROCm library locations
+    let candidates = [
+        "/opt/rocm/lib/libamdhip64.so",
+        "/usr/lib/libamdhip64.so",
+        "/usr/lib/x86_64-linux-gnu/libamdhip64.so",
+        "/usr/local/lib/libamdhip64.so",
+    ];
+
+    if candidates.iter().any(|p| Path::new(p).exists()) {
+        return true;
+    }
+
+    // Also accept versioned symlinks: libamdhip64.so.6, libamdhip64.so.5, etc.
+    let versioned_dirs = [
+        "/opt/rocm/lib",
+        "/usr/lib",
+        "/usr/lib/x86_64-linux-gnu",
+    ];
+    for dir in &versioned_dirs {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with("libamdhip64.so") {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Check HIP_PATH env var (set by some ROCm installers)
+    if let Ok(hip_path) = std::env::var("HIP_PATH") {
+        let hip_lib = Path::new(&hip_path).join("lib").join("libamdhip64.so");
+        if hip_lib.exists() {
+            return true;
+        }
+    }
+
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn is_hip_runtime_available_windows() -> bool {
+    use std::path::Path;
+
+    // ROCm for Windows installs under C:\Program Files\AMD\ROCm
+    let program_files =
+        std::env::var("ProgramFiles").unwrap_or_else(|_| r"C:\Program Files".to_string());
+    let rocm_base = Path::new(&program_files).join("AMD").join("ROCm");
+
+    if rocm_base.exists() {
+        // Walk one level (versioned sub-dirs like 5.7, 6.0 …)
+        if let Ok(entries) = std::fs::read_dir(&rocm_base) {
+            for entry in entries.flatten() {
+                let dll = entry.path().join("bin").join("amdhip64.dll");
+                if dll.exists() {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // HIP_PATH env var (set by ROCm installer on Windows)
+    if let Ok(hip_path) = std::env::var("HIP_PATH") {
+        let dll = Path::new(&hip_path).join("bin").join("amdhip64.dll");
+        if dll.exists() {
+            return true;
+        }
+    }
+
+    // System-wide fallback (e.g. copied into System32)
+    let system32 = Path::new(r"C:\Windows\System32\amdhip64.dll");
+    system32.exists()
+}
+
+/// Adds ROCm/HIP library and binary paths to the command's environment so that
+/// a HIP-linked llama-server can find `libamdhip64` at launch time.
+///
+/// Returns `true` if any ROCm paths were discovered and injected.
+pub fn add_hip_paths(_command: &mut tokio::process::Command) -> bool {
+    #[cfg(target_os = "linux")]
+    return add_hip_paths_linux(_command);
+
+    #[cfg(target_os = "windows")]
+    return add_hip_paths_windows(_command);
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        let _ = _command;
+        false
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn add_hip_paths_linux(command: &mut tokio::process::Command) -> bool {
+    use std::collections::HashSet;
+    use std::path::Path;
+
+    let mut lib_paths: HashSet<String> = HashSet::new();
+
+    // Collect candidate ROCm library directories
+    let static_dirs = [
+        "/opt/rocm/lib",
+        "/opt/rocm/lib64",
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/lib",
+        "/usr/local/lib",
+    ];
+    for dir in &static_dirs {
+        if Path::new(dir).exists() {
+            lib_paths.insert(dir.to_string());
+        }
+    }
+
+    // HIP_PATH / ROCM_PATH env vars
+    for var in &["HIP_PATH", "ROCM_PATH"] {
+        if let Ok(val) = std::env::var(var) {
+            for sub in &["lib", "lib64"] {
+                let p = Path::new(&val).join(sub);
+                if p.exists() {
+                    lib_paths.insert(p.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    // Walk /opt/rocm-* versioned installs
+    if let Ok(entries) = std::fs::read_dir("/opt") {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with("rocm") {
+                for sub in &["lib", "lib64"] {
+                    let p = entry.path().join(sub);
+                    if p.exists() {
+                        lib_paths.insert(p.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    if lib_paths.is_empty() {
+        #[cfg(feature = "logging")]
+        log::debug!("ROCm/HIP not found on Linux system");
+        return false;
+    }
+
+    let mut libs: Vec<_> = lib_paths.into_iter().collect();
+    libs.sort();
+
+    let current = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+    let current = current.trim_end_matches(':');
+    let new_val = if current.is_empty() {
+        libs.join(":")
+    } else {
+        format!("{}:{}", libs.join(":"), current)
+    };
+    command.env("LD_LIBRARY_PATH", new_val);
+
+    #[cfg(feature = "logging")]
+    log::info!("Added ROCm paths to LD_LIBRARY_PATH: {}", libs.join(", "));
+
+    true
+}
+
+#[cfg(target_os = "windows")]
+fn add_hip_paths_windows(command: &mut tokio::process::Command) -> bool {
+    use std::collections::HashSet;
+    use std::path::Path;
+
+    let mut bin_paths: HashSet<String> = HashSet::new();
+
+    // C:\Program Files\AMD\ROCm\<version>\bin
+    let program_files =
+        std::env::var("ProgramFiles").unwrap_or_else(|_| r"C:\Program Files".to_string());
+    let rocm_base = Path::new(&program_files).join("AMD").join("ROCm");
+    if let Ok(entries) = std::fs::read_dir(&rocm_base) {
+        for entry in entries.flatten() {
+            let bin = entry.path().join("bin");
+            if bin.exists() {
+                bin_paths.insert(bin.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // HIP_PATH env var
+    if let Ok(hip_path) = std::env::var("HIP_PATH") {
+        let bin = Path::new(&hip_path).join("bin");
+        if bin.exists() {
+            bin_paths.insert(bin.to_string_lossy().to_string());
+        }
+    }
+
+    if bin_paths.is_empty() {
+        #[cfg(feature = "logging")]
+        log::debug!("ROCm/HIP not found on Windows system");
+        return false;
+    }
+
+    let mut bins: Vec<_> = bin_paths.into_iter().collect();
+    bins.sort();
+
+    let current = std::env::var("PATH").unwrap_or_default();
+    let current = current.trim_end_matches(';');
+    let new_val = format!("{};{}", bins.join(";"), current);
+    command.env("PATH", new_val);
+
+    #[cfg(feature = "logging")]
+    log::info!("Added ROCm paths to PATH: {}", bins.join(", "));
+
+    true
+}
+
+/// Returns true if the binary at `bin_path` is linked against HIP/ROCm libraries.
+///
+/// On Linux uses `ldd`; on Windows scans the PE import table for `amdhip64`.
+pub fn binary_requires_hip(_bin_path: &Path) -> bool {
+    #[cfg(target_os = "windows")]
+    return binary_requires_hip_windows(_bin_path);
+
+    #[cfg(target_os = "linux")]
+    return binary_requires_hip_linux(_bin_path);
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    false
+}
+
+#[cfg(target_os = "linux")]
+fn binary_requires_hip_linux(bin_path: &Path) -> bool {
+    if let Ok(output) = std::process::Command::new("ldd").arg(bin_path).output() {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            return stdout.contains("libamdhip64") || stdout.contains("librocblas");
+        }
+    }
+    // Fallback: byte-search the ELF string table
+    if let Ok(contents) = std::fs::read(bin_path) {
+        let s = String::from_utf8_lossy(&contents);
+        return s.contains("libamdhip64") || s.contains("librocblas");
+    }
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn binary_requires_hip_windows(bin_path: &Path) -> bool {
+    if let Ok(contents) = std::fs::read(bin_path) {
+        let s = String::from_utf8_lossy(&contents);
+        return s.contains("amdhip64") || s.contains("rocblas");
+    }
+    false
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 /// Setup Windows-specific process creation flags
 pub fn setup_windows_process_flags(command: &mut tokio::process::Command) {
     #[cfg(all(windows, target_arch = "x86_64"))]
