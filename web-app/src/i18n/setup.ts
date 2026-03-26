@@ -1,4 +1,4 @@
-import { localStorageKey } from '@/constants/localStorage'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 
 // Types for our i18n implementation
 export interface TranslationResources {
@@ -51,12 +51,13 @@ Object.entries(localeFiles).forEach(([path, module]) => {
   }
 })
 
-// Get stored language preference
+// Get stored language preference from the zustand store.
+// During initial load the store may not have hydrated yet from file storage,
+// so we fall back to 'en'. The language updates once hydration completes
+// (see useGeneralSetting subscription at the bottom of this file).
 const getStoredLanguage = (): string => {
   try {
-    const stored = localStorage.getItem(localStorageKey.settingGeneral)
-    const parsed = stored ? JSON.parse(stored) : {}
-    return parsed?.state?.currentLanguage || 'en'
+    return useGeneralSetting.getState().currentLanguage || 'en'
   } catch {
     return 'en'
   }
@@ -113,16 +114,8 @@ const translate = (key: string, options: Record<string, unknown> = {}): string =
 const changeLanguage = (lng: string): void => {
   if (i18nInstance && resources[lng]) {
     i18nInstance.language = lng
-    
-    // Update localStorage
-    try {
-      const stored = localStorage.getItem(localStorageKey.settingGeneral)
-      const parsed = stored ? JSON.parse(stored) : { state: {} }
-      parsed.state.currentLanguage = lng
-      localStorage.setItem(localStorageKey.settingGeneral, JSON.stringify(parsed))
-    } catch (error) {
-      console.error('Failed to save language preference:', error)
-    }
+    // Persist via the zustand store — this writes through to file storage
+    useGeneralSetting.getState().setCurrentLanguage(lng)
   }
 }
 
@@ -152,5 +145,15 @@ export const loadTranslations = (): void => {
 
 // Initialize and export the i18n instance
 const i18n = initI18n()
+
+// When the general settings store finishes hydrating from file storage,
+// update the i18n language in case it differs from the initial default.
+useGeneralSetting.subscribe((state) => {
+  if (state.currentLanguage && state.currentLanguage !== i18nInstance.language) {
+    if (resources[state.currentLanguage]) {
+      i18nInstance.language = state.currentLanguage
+    }
+  }
+})
 
 export default i18n

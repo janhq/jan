@@ -1,4 +1,5 @@
 import { localStorageKey } from '@/constants/localStorage'
+import { fileStorage } from '@/lib/fileStorage'
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { useModelProvider } from './useModelProvider'
@@ -21,7 +22,7 @@ export const useJanModelPromptDismissed =
       }),
       {
         name: localStorageKey.janModelPromptDismissed,
-        storage: createJSONStorage(() => localStorage),
+        storage: createJSONStorage(() => fileStorage),
         version: 1,
         migrate: (persistedState: unknown) => {
           const state = persistedState as Record<string, unknown>

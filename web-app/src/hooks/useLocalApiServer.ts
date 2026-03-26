@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { fileStorage } from '@/lib/fileStorage'
 
 type LocalApiServerState = {
   // Run local API server once app opens
@@ -85,7 +86,7 @@ export const useLocalApiServer = create<LocalApiServerState>()(
     }),
     {
       name: localStorageKey.settingLocalApiServer,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => fileStorage),
       version: 3,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Partial<LocalApiServerState>
