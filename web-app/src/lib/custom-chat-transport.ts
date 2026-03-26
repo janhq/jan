@@ -17,6 +17,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
+import { useMCPServers } from '@/hooks/useMCPServers'
 import { ExtensionManager } from '@/lib/extension'
 import {
   ExtensionTypeEnum,
@@ -254,8 +255,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       try {
         const mcpService = this.serviceHub.mcp()
         let mcpTools: MCPTool[]
+        const routingEnabled =
+          useMCPServers.getState().settings.enableSmartToolRouting
 
-        if (mcpService.getToolsForServers && mcpService.getServerSummaries) {
+        if (
+          routingEnabled &&
+          mcpService.getToolsForServers &&
+          mcpService.getServerSummaries
+        ) {
           mcpTools = await mcpOrchestrator.getRelevantTools(
             this.lastUserMessage,
             {

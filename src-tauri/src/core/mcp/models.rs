@@ -31,6 +31,10 @@ fn default_backoff_multiplier() -> f64 {
     super::constants::DEFAULT_MCP_BACKOFF_MULTIPLIER
 }
 
+fn default_enable_smart_tool_routing() -> bool {
+    true
+}
+
 /// Runtime MCP settings that can be adjusted via UI
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,6 +47,8 @@ pub struct McpSettings {
     pub max_restart_delay_ms: u64,
     #[serde(default = "default_backoff_multiplier")]
     pub backoff_multiplier: f64,
+    #[serde(default = "default_enable_smart_tool_routing")]
+    pub enable_smart_tool_routing: bool,
 }
 
 impl Default for McpSettings {
@@ -52,6 +58,7 @@ impl Default for McpSettings {
             base_restart_delay_ms: super::constants::DEFAULT_MCP_BASE_RESTART_DELAY_MS,
             max_restart_delay_ms: super::constants::DEFAULT_MCP_MAX_RESTART_DELAY_MS,
             backoff_multiplier: super::constants::DEFAULT_MCP_BACKOFF_MULTIPLIER,
+            enable_smart_tool_routing: true,
         }
     }
 }

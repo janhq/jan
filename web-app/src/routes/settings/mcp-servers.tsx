@@ -450,6 +450,23 @@ function MCPServersDesktop() {
                     />
                   }
                 />
+                <CardItem
+                  title={t('mcp-servers:runtimeSettings.smartToolRouting')}
+                  description={t(
+                    'mcp-servers:runtimeSettings.smartToolRoutingDesc'
+                  )}
+                  actions={
+                    <div className="shrink-0 ml-4">
+                      <Switch
+                        checked={settings.enableSmartToolRouting}
+                        onCheckedChange={(checked) => {
+                          updateSettings({ enableSmartToolRouting: checked })
+                          void syncServers()
+                        }}
+                      />
+                    </div>
+                  }
+                />
               </Card>
 
               {Object.keys(mcpServers).length === 0 ? (
