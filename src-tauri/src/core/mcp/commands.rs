@@ -17,10 +17,98 @@ use crate::core::{
     mcp::models::ToolWithServer,
     state::{RunningServiceEnum, SharedMcpServers},
 };
-use std::{fs, time::Duration};
+use std::{collections::HashSet, fs, time::Duration};
 
-async fn tool_call_timeout(state: &State<'_, AppState>) -> Duration {
+async fn tool_call_timeout(state: &AppState) -> Duration {
     state.mcp_settings.lock().await.tool_call_timeout_duration()
+}
+
+/// Shared implementation for listing MCP tools.
+///
+/// - `server_filter: None` — every connected server (same behavior as `get_tools`).
+/// - `server_filter: Some(names)` — only connected servers in that set; unknown or
+///   disconnected names are skipped (logged). Transport / list failures use the same
+///   cleanup as `get_tools` (remove stale entry, emit `mcp-update` when needed).
+async fn collect_mcp_tools<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    server_filter: Option<HashSet<String>>,
+) -> Result<Vec<ToolWithServer>, String> {
+    let timeout_duration = tool_call_timeout(state).await;
+    let mut all_tools: Vec<ToolWithServer> = Vec::new();
+    let mut removed_any = false;
+
+    let server_names: Vec<String> = {
+        let servers = state.mcp_servers.lock().await;
+        match &server_filter {
+            None => servers.keys().cloned().collect(),
+            Some(filter) => {
+                for name in filter {
+                    if !servers.contains_key(name) {
+                        log::debug!(
+                            "collect_mcp_tools: requested server {name:?} is not connected (removed or never started); skipping"
+                        );
+                    }
+                }
+                filter
+                    .iter()
+                    .filter(|n| servers.contains_key(*n))
+                    .cloned()
+                    .collect()
+            }
+        }
+    };
+
+    for server_name in server_names {
+        let list_result = {
+            let servers = state.mcp_servers.lock().await;
+            if let Some(service) = servers.get(&server_name) {
+                timeout(timeout_duration, service.list_all_tools()).await
+            } else {
+                log::debug!(
+                    "collect_mcp_tools: server {server_name:?} disappeared before list_tools; skipping"
+                );
+                continue;
+            }
+        };
+
+        match list_result {
+            Ok(Ok(tools)) => {
+                for tool in tools {
+                    all_tools.push(ToolWithServer {
+                        name: tool.name.to_string(),
+                        description: tool.description.as_ref().map(|d| d.to_string()),
+                        input_schema: serde_json::Value::Object((*tool.input_schema).clone()),
+                        server: server_name.clone(),
+                    });
+                }
+            }
+            Ok(Err(e)) => {
+                let err_str = e.to_string();
+                log::warn!("MCP server {server_name} failed to list tools: {err_str}");
+                if is_transport_error(&err_str) {
+                    state.mcp_reconnect_notify.notify_waiters();
+                }
+                if remove_mcp_server_entry(&state.mcp_servers, &server_name).await {
+                    removed_any = true;
+                }
+            }
+            Err(_) => {
+                log::warn!(
+                    "MCP server {server_name}: listing tools timed out after {} seconds",
+                    timeout_duration.as_secs()
+                );
+            }
+        }
+    }
+
+    if removed_any {
+        if let Err(e) = app.emit("mcp-update", json!({ "server": "tools-refresh" })) {
+            log::error!("Failed to emit mcp-update event: {e}");
+        }
+    }
+
+    Ok(all_tools)
 }
 
 fn is_transport_error(error: &str) -> bool {
@@ -209,108 +297,29 @@ pub async fn get_tools<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
 ) -> Result<Vec<ToolWithServer>, String> {
-    let timeout_duration = tool_call_timeout(&state).await;
-    let mut all_tools: Vec<ToolWithServer> = Vec::new();
-    let mut removed_any = false;
-
-    let server_names: Vec<String> = {
-        let servers = state.mcp_servers.lock().await;
-        servers.keys().cloned().collect()
-    };
-
-    for server_name in server_names {
-        let list_result = {
-            let servers = state.mcp_servers.lock().await;
-            if let Some(service) = servers.get(&server_name) {
-                timeout(timeout_duration, service.list_all_tools()).await
-            } else {
-                continue;
-            }
-        };
-
-        match list_result {
-            Ok(Ok(tools)) => {
-                for tool in tools {
-                    all_tools.push(ToolWithServer {
-                        name: tool.name.to_string(),
-                        description: tool.description.as_ref().map(|d| d.to_string()),
-                        input_schema: serde_json::Value::Object((*tool.input_schema).clone()),
-                        server: server_name.clone(),
-                    });
-                }
-            }
-            Ok(Err(e)) => {
-                let err_str = e.to_string();
-                log::warn!("MCP server {} failed to list tools: {}", server_name, err_str);
-                if is_transport_error(&err_str) {
-                    state.mcp_reconnect_notify.notify_waiters();
-                }
-                if remove_mcp_server_entry(&state.mcp_servers, &server_name).await {
-                    removed_any = true;
-                }
-            }
-            Err(_) => {
-                log::warn!(
-                    "MCP server {}: listing tools timed out after {} seconds",
-                    server_name,
-                    timeout_duration.as_secs()
-                );
-            }
-        }
-    }
-
-    if removed_any {
-        if let Err(e) = app.emit("mcp-update", json!({ "server": "tools-refresh" })) {
-            log::error!("Failed to emit mcp-update event: {e}");
-        }
-    }
-
-    Ok(all_tools)
+    collect_mcp_tools(&app, &*state, None).await
 }
 
-/// Retrieves tools from a specific subset of MCP servers by name
+/// Retrieves tools from a specific subset of MCP servers by name.
+/// Unknown or disconnected names are ignored; transport failures match `get_tools` cleanup.
 #[tauri::command]
-pub async fn get_tools_for_servers(
+pub async fn get_tools_for_servers<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     server_names: Vec<String>,
 ) -> Result<Vec<ToolWithServer>, String> {
-    let timeout_duration = tool_call_timeout(&state).await;
-    let servers = state.mcp_servers.lock().await;
-    let mut all_tools: Vec<ToolWithServer> = Vec::new();
-
-    for (server_name, service) in servers.iter() {
-        if !server_names.contains(server_name) {
-            continue;
-        }
-
-        let tools_future = service.list_all_tools();
-        let tools = match timeout(timeout_duration, tools_future).await {
-            Ok(Ok(tools)) => tools,
-            Ok(Err(e)) => {
-                log::warn!("MCP server {} failed to list tools: {}", server_name, e);
-                continue;
-            }
-            Err(_) => {
-                log::warn!(
-                    "Listing tools for {} timed out after {} seconds",
-                    server_name,
-                    timeout_duration.as_secs()
-                );
-                continue;
-            }
-        };
-
-        for tool in tools {
-            all_tools.push(ToolWithServer {
-                name: tool.name.to_string(),
-                description: tool.description.as_ref().map(|d| d.to_string()),
-                input_schema: serde_json::Value::Object((*tool.input_schema).clone()),
-                server: server_name.clone(),
-            });
+    let mut seen = HashSet::new();
+    let mut unique: Vec<String> = Vec::new();
+    for n in server_names {
+        if seen.insert(n.clone()) {
+            unique.push(n);
         }
     }
-
-    Ok(all_tools)
+    let filter: HashSet<String> = unique.into_iter().collect();
+    if filter.is_empty() {
+        return Ok(Vec::new());
+    }
+    collect_mcp_tools(&app, &state, Some(filter)).await
 }
 
 /// Returns name, capability tags, and description for all connected MCP servers
@@ -382,7 +391,7 @@ pub async fn call_tool(
     arguments: Option<Map<String, Value>>,
     cancellation_token: Option<String>,
 ) -> Result<CallToolResult, String> {
-    let timeout_duration = tool_call_timeout(&state).await;
+    let timeout_duration = tool_call_timeout(&*state).await;
     // Set up cancellation if token is provided
     let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
 
