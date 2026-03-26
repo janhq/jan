@@ -19,6 +19,13 @@ import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
+import {
+  trimMessages,
+  compactMessages,
+  estimateTokens,
+  estimateMessageTokens,
+  type ContextManagerConfig,
+} from './context-manager'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -359,13 +366,83 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const selectedModel = useModelProvider.getState().selectedModel
 
     const maxOutputTokens: number | undefined = (() => {
-      if (typeof inferenceParams.max_output_tokens === 'number') return inferenceParams.max_output_tokens
-      if (typeof inferenceParams.max_tokens === 'number') return inferenceParams.max_tokens
-      return undefined
+      const raw = inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
+      if (raw === undefined || raw === null) return undefined
+      const n = typeof raw === 'number' ? raw : Number(raw)
+      return isNaN(n) ? undefined : n
     })()
 
+    // Parse context management params (handle both number and string from persistence)
+    const rawCtx = inferenceParams.max_context_tokens
+    const maxContextTokens =
+      typeof rawCtx === 'number' ? rawCtx : (Number(rawCtx) || 0)
+    const autoCompact =
+      inferenceParams.auto_compact === true ||
+      inferenceParams.auto_compact === 'true'
+
+    // Auto-trim or auto-compact conversation history when max_context_tokens is configured
+    let effectiveMessages = messagesToConvert
+    if (maxContextTokens > 0) {
+      const contextConfig: ContextManagerConfig = {
+        maxContextTokens,
+        maxOutputTokens: maxOutputTokens ?? 2048,
+        autoCompact: !!autoCompact,
+      }
+
+      const systemPromptTokens = this.systemMessage
+        ? estimateTokens(this.systemMessage) + 4
+        : 0
+
+      const msgCount = messagesToConvert.length
+      const estimatedInputTokens = messagesToConvert.reduce(
+        (sum, msg) => sum + estimateMessageTokens(msg), 0
+      )
+
+      console.log(
+        `[context-manager] Budget: ${maxContextTokens} ctx, ${maxOutputTokens ?? 2048} out, ` +
+        `${maxContextTokens - (maxOutputTokens ?? 2048) - systemPromptTokens} input budget | ` +
+        `Messages: ${msgCount}, ~${estimatedInputTokens} tokens | ` +
+        `Auto-compact: ${autoCompact}`
+      )
+
+      if (autoCompact && this.model) {
+        const compactResult = await compactMessages(
+          messagesToConvert,
+          contextConfig,
+          this.model,
+          systemPromptTokens
+        )
+        effectiveMessages = compactResult.messages
+        if (compactResult.trimmedCount > 0) {
+          console.log(
+            `[context-manager] Compacted ${compactResult.trimmedCount} messages` +
+              (compactResult.compactedSummary ? ' with summary' : ' (trim fallback)') +
+              ` → ${effectiveMessages.length} messages remaining`
+          )
+        }
+      } else {
+        const trimResult = trimMessages(
+          messagesToConvert,
+          contextConfig,
+          systemPromptTokens
+        )
+        effectiveMessages = trimResult.messages
+        if (trimResult.trimmedCount > 0) {
+          console.log(
+            `[context-manager] Trimmed ${trimResult.trimmedCount} oldest messages to fit context budget` +
+            ` → ${effectiveMessages.length} messages remaining`
+          )
+        }
+      }
+    } else if (rawCtx !== undefined && rawCtx !== null) {
+      console.warn(
+        `[context-manager] max_context_tokens is set but resolved to 0. ` +
+        `Raw value: ${JSON.stringify(rawCtx)} (type: ${typeof rawCtx}). Trimming disabled.`
+      )
+    }
+
     const baseMessages = convertToModelMessages(
-      this.mapUserInlineAttachments(messagesToConvert)
+      this.mapUserInlineAttachments(effectiveMessages)
     )
 
     // If continuing a truncated response, append the partial assistant content as a

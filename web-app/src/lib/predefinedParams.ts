@@ -5,11 +5,23 @@ export const paramsSettings = {
     title: 'Stream',
     description: `Enables real-time response streaming.`,
   },
+  max_context_tokens: {
+    key: 'max_context_tokens',
+    value: 0,
+    title: 'Max Context Tokens',
+    description: `Total token budget (input + output) for the model. When set (> 0), older messages are automatically trimmed or compacted to stay within this limit. Set to 0 to disable (no trimming). Common values: 4096, 8192, 16384, 32768, 128000.`,
+  },
   max_output_tokens: {
     key: 'max_output_tokens',
     value: 2048,
     title: 'Max Output Tokens',
     description: `Maximum number of tokens the model can generate in a single reply. Sent as max_tokens to OpenAI-compatible APIs.`,
+  },
+  auto_compact: {
+    key: 'auto_compact',
+    value: false,
+    title: 'Auto Compact',
+    description: `When enabled and context limit is reached, automatically summarize older messages instead of dropping them. Preserves conversation meaning while reducing token usage. Requires max_context_tokens to be set.`,
   },
   temperature: {
     key: 'temperature',

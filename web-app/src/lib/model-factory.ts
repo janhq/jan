@@ -34,6 +34,8 @@ export interface ModelParameters {
   top_p?: number
   repeat_penalty?: number
   max_output_tokens?: number
+  max_context_tokens?: number
+  auto_compact?: boolean
   presence_penalty?: number
   frequency_penalty?: number
   stop_sequences?: string[]
@@ -122,7 +124,11 @@ const providerMetadataExtractor: MetadataExtractor = {
  * Keys from inference parameters that are client-side only and must not
  * be forwarded in the HTTP body to remote APIs.
  */
-const CLIENT_SIDE_PARAM_KEYS: ReadonlySet<string> = new Set(['ctx_len'])
+const CLIENT_SIDE_PARAM_KEYS: ReadonlySet<string> = new Set([
+  'ctx_len',
+  'max_context_tokens',
+  'auto_compact',
+])
 
 /**
  * Create a custom fetch function that injects additional parameters into the
