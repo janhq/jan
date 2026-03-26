@@ -566,8 +566,9 @@ pub fn cli_get_config() -> Result<serde_json::Value, String> {
 // ── Agent (headless) ──────────────────────────────────────────────────────
 
 pub use tauri_plugin_agent::{
-    AgentEvent, AgentLoop, AgentResponse, ChatMessage, Dispatcher,
-    FinishReason, Manifest, RiskLevel, ToolDef,
+    AgentEvent, AgentLoop, AgentResponse, CancellationToken,
+    ChatMessage, Dispatcher, FinishReason, Manifest,
+    RiskLevel, ToolDef,
 };
 
 /// Create dispatcher in a blocking context (for use with spawn_blocking).

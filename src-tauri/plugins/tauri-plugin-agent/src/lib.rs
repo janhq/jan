@@ -5,6 +5,7 @@ pub mod manifest;
 pub mod utils;
 
 pub use agent::{AgentConfig, AgentEvent, AgentLoop, AgentResponse, ChatMessage, FinishReason};
+pub use tokio_util::sync::CancellationToken;
 pub use manifest::{Manifest, RiskLevel, ToolDef};
 pub use dispatcher::Dispatcher;
 

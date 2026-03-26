@@ -15,6 +15,7 @@ use std::sync::Arc;
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use console::Style;
 use indicatif::{ProgressBar, ProgressStyle};
+use serde::{Deserialize, Serialize};
 
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
@@ -271,6 +272,275 @@ enum ModelsCommands {
     },
 }
 
+// ── Agent config file ──────────────────────────────────────────────────
+
+/// Model entry inside a provider.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AgentConfigModel {
+    id: String,
+    #[serde(default)]
+    name: Option<String>,
+}
+
+/// A single model provider (e.g. "jan", "openai").
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentConfigProvider {
+    #[serde(default)]
+    base_url: Option<String>,
+    #[serde(default)]
+    models: Vec<AgentConfigModel>,
+}
+
+/// Default provider + model selection.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct AgentConfigDefaults {
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+}
+
+/// The `models` section: providers map + defaults.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct AgentConfigModels {
+    #[serde(default)]
+    providers: HashMap<String, AgentConfigProvider>,
+    #[serde(default)]
+    defaults: AgentConfigDefaults,
+}
+
+/// Agent-specific settings (impl, mounts, robot).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentConfigAgent {
+    #[serde(default, rename = "impl")]
+    agent_impl: Option<String>,
+    #[serde(default)]
+    mounts: Option<Vec<String>>,
+    #[serde(default)]
+    robot_url: Option<String>,
+}
+
+/// Model server / serve settings.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentConfigServe {
+    #[serde(default)]
+    port: Option<u16>,
+    #[serde(default)]
+    n_gpu_layers: Option<i32>,
+    #[serde(default)]
+    ctx_size: Option<i32>,
+    #[serde(default)]
+    threads: Option<i32>,
+    #[serde(default)]
+    timeout: Option<u64>,
+    #[serde(default)]
+    fit: Option<bool>,
+    #[serde(default)]
+    embedding: Option<bool>,
+    #[serde(default)]
+    verbose: Option<bool>,
+    #[serde(default, rename = "select")]
+    select_quant: Option<bool>,
+    #[serde(default)]
+    model_path: Option<String>,
+    #[serde(default)]
+    bin: Option<String>,
+    #[serde(default)]
+    mmproj: Option<String>,
+}
+
+/// Top-level agent-config.json.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct AgentConfig {
+    #[serde(default)]
+    models: AgentConfigModels,
+    #[serde(default)]
+    agent: AgentConfigAgent,
+    #[serde(default)]
+    serve: AgentConfigServe,
+}
+
+impl AgentConfig {
+    /// Path to the config file: same directory as the running executable.
+    fn config_path() -> Option<PathBuf> {
+        std::env::current_exe().ok().and_then(|exe| {
+            exe.parent().map(|dir| dir.join("agent-config.json"))
+        })
+    }
+
+    /// Load from disk. Returns default if file doesn't exist or is invalid.
+    fn load() -> Self {
+        let Some(path) = Self::config_path() else { return Self::default() };
+        match std::fs::read_to_string(&path) {
+            Ok(contents) => serde_json::from_str(&contents).unwrap_or_else(|e| {
+                eprintln!("  warning: invalid agent-config.json, using defaults ({e})");
+                Self::default()
+            }),
+            Err(_) => Self::default(),
+        }
+    }
+
+    /// Save to disk.
+    fn save(&self) {
+        let Some(path) = Self::config_path() else { return };
+        if let Ok(json) = serde_json::to_string_pretty(self) {
+            if let Err(e) = std::fs::write(&path, json) {
+                eprintln!("  warning: could not save agent-config.json: {e}");
+            }
+        }
+    }
+}
+
+/// Check whether a specific arg was explicitly provided on the CLI.
+/// `id` is the clap long-name (e.g. "port", "ctx-size").
+/// Navigates into the `agent chat` subcommand matches.
+fn arg_is_present(matches: &clap::ArgMatches, id: &str) -> bool {
+    // Navigate: top-level → "agent" subcommand → "chat" subcommand
+    matches
+        .subcommand_matches("agent")
+        .and_then(|m| m.subcommand_matches("chat"))
+        .map_or(false, |m| {
+            m.value_source(id) == Some(clap::parser::ValueSource::CommandLine)
+        })
+}
+
+/// Merge config file values into ServeArgs + agent Chat args, respecting
+/// the priority: explicit CLI arg > config file > clap default.
+/// Returns the set of fields that were overridden by the config (for write-back).
+/// Also returns whether any CLI arg was explicitly set (triggers write-back).
+fn merge_agent_config(
+    matches: &clap::ArgMatches,
+    config: &AgentConfig,
+    serve: &mut ServeArgs,
+    api_url: &mut Option<String>,
+    agent_impl: &mut String,
+    mount: &mut Vec<PathBuf>,
+) -> bool {
+    let mut any_cli_override = false;
+
+    // Helper: apply config value if CLI arg was not explicitly set
+    macro_rules! merge_option {
+        ($field:expr, $config_val:expr, $arg_name:expr) => {
+            if arg_is_present(matches, $arg_name) {
+                any_cli_override = true;
+            } else if let Some(v) = $config_val {
+                $field = Some(v);
+            }
+        };
+    }
+    macro_rules! merge_val {
+        ($field:expr, $config_val:expr, $arg_name:expr) => {
+            if arg_is_present(matches, $arg_name) {
+                any_cli_override = true;
+            } else if let Some(v) = $config_val {
+                $field = v;
+            }
+        };
+    }
+
+    // ── Resolve model_id from config defaults ──
+    // If no model_id on CLI, use config defaults.model
+    if serve.model_id.is_none() {
+        if let Some(ref m) = config.models.defaults.model {
+            serve.model_id = Some(m.clone());
+        }
+    } else {
+        any_cli_override = true;
+    }
+
+    // ── Resolve api_url from config provider ──
+    if arg_is_present(matches, "api-url") {
+        any_cli_override = true;
+    } else if api_url.is_none() {
+        // Determine the default provider, then use its baseUrl
+        let provider_name = config.models.defaults.provider.as_deref().unwrap_or("jan");
+        if let Some(provider) = config.models.providers.get(provider_name) {
+            if let Some(ref url) = provider.base_url {
+                *api_url = Some(url.clone());
+            }
+        }
+    }
+
+    // ── Agent settings ──
+    merge_val!(*agent_impl, config.agent.agent_impl.clone(), "agent");
+    if arg_is_present(matches, "mount") {
+        any_cli_override = true;
+    } else if mount.is_empty() {
+        if let Some(ref dirs) = config.agent.mounts {
+            *mount = dirs.iter().map(PathBuf::from).collect();
+        }
+    }
+
+    // ── Serve settings ──
+    merge_val!(serve.port, config.serve.port, "port");
+    merge_val!(serve.n_gpu_layers, config.serve.n_gpu_layers, "n-gpu-layers");
+    merge_val!(serve.ctx_size, config.serve.ctx_size, "ctx-size");
+    merge_val!(serve.threads, config.serve.threads, "threads");
+    merge_val!(serve.timeout, config.serve.timeout, "timeout");
+    merge_val!(serve.fit, config.serve.fit, "fit");
+    merge_val!(serve.embedding, config.serve.embedding, "embedding");
+    merge_val!(serve.verbose, config.serve.verbose, "verbose");
+    merge_val!(serve.select, config.serve.select_quant, "select");
+    merge_option!(serve.model_path, config.serve.model_path.clone(), "model-path");
+    merge_option!(serve.bin, config.serve.bin.clone(), "bin");
+    merge_option!(serve.mmproj, config.serve.mmproj.clone(), "mmproj");
+
+    any_cli_override
+}
+
+/// Update the config struct from the current (merged) values and save.
+fn write_back_agent_config(
+    config: &mut AgentConfig,
+    serve: &ServeArgs,
+    api_url: &Option<String>,
+    agent_impl: &str,
+    mount: &[PathBuf],
+) {
+    // ── Model defaults ──
+    if let Some(ref mid) = serve.model_id {
+        config.models.defaults.model = Some(mid.clone());
+    }
+
+    // ── Provider / api_url ──
+    if let Some(ref url) = api_url {
+        let provider_name = config.models.defaults.provider
+            .clone()
+            .unwrap_or_else(|| "jan".to_string());
+        let provider = config.models.providers
+            .entry(provider_name.clone())
+            .or_insert_with(|| AgentConfigProvider {
+                base_url: None,
+                models: vec![],
+            });
+        provider.base_url = Some(url.clone());
+        config.models.defaults.provider = Some(provider_name);
+    }
+
+    // ── Agent settings ──
+    config.agent.agent_impl = Some(agent_impl.to_string());
+    if !mount.is_empty() {
+        config.agent.mounts = Some(mount.iter().map(|p| p.to_string_lossy().into_owned()).collect());
+    }
+    // ── Serve settings ──
+    config.serve.port = Some(serve.port);
+    config.serve.n_gpu_layers = Some(serve.n_gpu_layers);
+    config.serve.ctx_size = Some(serve.ctx_size);
+    config.serve.threads = Some(serve.threads);
+    config.serve.timeout = Some(serve.timeout);
+    config.serve.fit = Some(serve.fit);
+    config.serve.embedding = Some(serve.embedding);
+    config.serve.verbose = Some(serve.verbose);
+    config.serve.select_quant = Some(serve.select);
+    config.serve.model_path = serve.model_path.clone();
+    config.serve.bin = serve.bin.clone();
+    config.serve.mmproj = serve.mmproj.clone();
+
+    config.save();
+}
+
 // ── ASCII logo ─────────────────────────────────────────────────────────────
 
 /// Build a left-aligned, bright-yellow ASCII logo for the help header.
@@ -330,7 +600,7 @@ async fn main() {
             let ctx_size_val = ctx_size.unwrap_or(32768);
             handle_launch(program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size_val, fit, ctx_size.is_none(), verbose, select).await
         }
-        Commands::Agent { cmd } => handle_agent(cmd).await,
+        Commands::Agent { cmd } => handle_agent(cmd, &matches).await,
     }
 
     // Stop any workspace VMs that are still running.
@@ -1500,12 +1770,34 @@ fn stop_model(pid: i32) {
     }
 }
 
-async fn handle_agent(cmd: AgentCommands) {
+async fn handle_agent(cmd: AgentCommands, matches: &clap::ArgMatches) {
     let dim = Style::new().dim();
     let red = Style::new().red();
 
     match cmd {
         AgentCommands::Chat { serve, message, mount, api_url, agent: agent_impl } => {
+            // ── Load and merge agent config ──────────────────────────────
+            let mut config = AgentConfig::load();
+            let mut serve = serve;
+            let mut api_url = api_url;
+            let mut agent_impl = agent_impl;
+            let mut mount = mount;
+
+            let any_cli_override = merge_agent_config(
+                matches, &config,
+                &mut serve, &mut api_url, &mut agent_impl, &mut mount,
+            );
+
+            // Write back: always save current merged state so next run picks it up.
+            // This also persists any explicit CLI overrides.
+            write_back_agent_config(
+                &mut config, &serve, &api_url, &agent_impl, &mount,
+            );
+
+            if any_cli_override {
+                eprintln!("{}", dim.apply_to("  config: CLI overrides saved to agent-config.json"));
+            }
+
             // Enable log capture to parse llama.cpp memory info.
             agent_tui::enable_log_capture();
 
@@ -1555,6 +1847,7 @@ async fn handle_agent(cmd: AgentCommands) {
                             app_lib::core::cli::FinishReason::Stop => "stop",
                             app_lib::core::cli::FinishReason::MaxSteps => "max_steps",
                             app_lib::core::cli::FinishReason::BudgetExhausted => "budget_exhausted",
+                            app_lib::core::cli::FinishReason::Cancelled => "cancelled",
                         };
                         eprintln!("{}", dim.apply_to(format!(
                             "[{} tokens · {} step{} · {}]",
@@ -1605,118 +1898,182 @@ async fn run_agent_tui(
     let mut history: Vec<app_lib::core::cli::ChatMessage> = Vec::new();
     let agent = Arc::new(agent);
 
+    // Active agent task state (None when idle)
+    let mut active_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AgentEvent>> = None;
+    let mut active_handle: Option<tokio::task::JoinHandle<Result<app_lib::core::cli::AgentResponse, String>>> = None;
+    let mut active_input: Option<String> = None; // the input that started the current agent run
+    let mut active_cancel: Option<app_lib::core::cli::CancellationToken> = None;
+
     // Initial draw
     let _ = terminal.draw(|f| draw(f, &mut state));
 
     loop {
-        // Block up to 500ms waiting for input — near-zero CPU when idle
-        handle_input(&mut state, std::time::Duration::from_millis(500));
+        // Choose poll timeout: non-blocking when agent is running, blocking when idle
+        let timeout = if active_handle.is_some() {
+            std::time::Duration::ZERO
+        } else {
+            std::time::Duration::from_millis(500)
+        };
+
+        let had_input = handle_input(&mut state, timeout);
 
         if state.should_quit {
             break;
         }
 
-        // User submitted input
+        // ── Handle user submit ───────────────────────────────────────────
         if state.input_ready {
             let input = state.take_input();
             if input == "/quit" || input == "/exit" || input == "exit" {
                 break;
             }
-            if input.is_empty() {
+            if input == "/clear" {
+                history.clear();
+                state.messages.clear();
+                state.tool_log.clear();
+                state.pending_messages.clear();
+                state.tokens_used = 0;
+                state.steps = 0;
+                state.tool_calls_count = 0;
+                state.messages_scroll = 0;
+                state.tool_log_scroll = 0;
                 let _ = terminal.draw(|f| draw(f, &mut state));
                 continue;
             }
-
-            state.push_message(ChatItem::User(input.clone()));
-            state.is_thinking = true;
-            state.steps += 1;
-            state.push_message(ChatItem::Thinking { step: state.steps });
-
-            // Draw before starting the async agent call
-            let _ = terminal.draw(|f| draw(f, &mut state));
-
-            // Run agent with TUI updates. Clone history for the borrow-free call.
-            let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<AgentEvent>();
-            let history_snapshot = history.clone();
-            let input_clone = input.clone();
-            let agent_ref = Arc::clone(&agent);
-
-            let agent_handle = tokio::spawn(async move {
-                let mut handler = move |event: AgentEvent| {
-                    let _ = event_tx.send(event);
-                };
-                agent_ref.run(&history_snapshot, &input_clone, &mut handler).await
-            });
-
-            // Poll TUI while the agent task runs
-            loop {
-                // Drain agent events
-                let mut had_events = false;
-                while let Ok(event) = event_rx.try_recv() {
-                    apply_agent_event(&mut state, &event);
-                    had_events = true;
+            if !input.is_empty() {
+                if state.is_thinking {
+                    // Agent is busy — queue the message
+                    state.push_message(ChatItem::Queued(input.clone()));
+                    state.pending_messages.push_back(input);
+                } else {
+                    // Agent is idle — start immediately
+                    start_agent_run(
+                        &mut state, &mut history, &agent,
+                        &mut active_event_rx, &mut active_handle, &mut active_input,
+                        &mut active_cancel, input,
+                    );
                 }
-
-                // Poll terminal input (non-blocking during agent run)
-                let had_input = handle_input(&mut state, std::time::Duration::ZERO);
-                if state.should_quit { break; }
-
-                // Check if agent finished
-                if agent_handle.is_finished() { break; }
-
-                // Only redraw if something changed
-                if had_events || had_input {
-                    let _ = terminal.draw(|f| draw(f, &mut state));
-                }
-
-                // Yield to tokio so agent task can progress
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
+        }
 
-            // Drain remaining events
-            while let Ok(event) = event_rx.try_recv() {
+        // ── Handle cancellation (Escape) ─────────────────────────────────
+        if state.cancel_requested {
+            state.cancel_requested = false;
+            if let Some(ref token) = active_cancel {
+                token.cancel();
+            }
+            // Clear pending queue and their chat items
+            state.pending_messages.clear();
+            state.messages.retain(|m| !matches!(m, ChatItem::Queued(_)));
+        }
+
+        // ── Drain agent events ───────────────────────────────────────────
+        let mut had_events = false;
+        if let Some(ref mut rx) = active_event_rx {
+            while let Ok(event) = rx.try_recv() {
                 apply_agent_event(&mut state, &event);
+                had_events = true;
+            }
+        }
+
+        // ── Check if agent finished ──────────────────────────────────────
+        let agent_just_finished = active_handle.as_ref().map_or(false, |h| h.is_finished());
+        if agent_just_finished {
+            // Drain any remaining events
+            if let Some(ref mut rx) = active_event_rx {
+                while let Ok(event) = rx.try_recv() {
+                    apply_agent_event(&mut state, &event);
+                }
             }
 
-            // Remove the trailing Thinking item
+            // Remove thinking indicator
             state.messages.retain(|m| !matches!(m, ChatItem::Thinking { .. }));
             state.is_thinking = false;
 
-            // Process the result
-            match agent_handle.await {
-                Ok(Ok(resp)) => {
-                    state.tokens_used = resp.tokens_used;
-                    state.push_message(ChatItem::Agent(resp.content.clone()));
+            let handle = active_handle.take().unwrap();
+            let input = active_input.take().unwrap_or_default();
+            active_event_rx = None;
+            active_cancel = None;
 
-                    history.push(app_lib::core::cli::ChatMessage {
-                        role: "user".into(),
-                        content: Some(input),
-                        tool_calls: None,
-                        tool_call_id: None,
-                        name: None,
-                    });
-                    history.push(app_lib::core::cli::ChatMessage {
-                        role: "assistant".into(),
-                        content: Some(resp.content),
-                        tool_calls: None,
-                        tool_call_id: None,
-                        name: None,
-                    });
+            // Process the result
+            let was_cancelled;
+            match handle.await {
+                Ok(Ok(resp)) => {
+                    state.push_debug(format!(
+                        "agent done: finish={:?} steps={} tokens={} content_len={}",
+                        resp.finish_reason, resp.steps, resp.tokens_used, resp.content.len()
+                    ));
+                    if resp.content.is_empty() {
+                        state.push_debug("WARNING: agent returned empty content".into());
+                    }
+                    was_cancelled = matches!(resp.finish_reason, app_lib::core::cli::FinishReason::Cancelled);
+                    state.tokens_used = resp.tokens_used;
+
+                    if was_cancelled {
+                        state.push_message(ChatItem::Agent("[cancelled]".into()));
+                        state.push_tool_log(ToolLogKind::Warn, "agent cancelled by user".into());
+                    } else {
+                        state.push_message(ChatItem::Agent(resp.content.clone()));
+
+                        history.push(app_lib::core::cli::ChatMessage {
+                            role: "user".into(),
+                            content: Some(input),
+                            tool_calls: None,
+                            tool_call_id: None,
+                            name: None,
+                        });
+                        history.push(app_lib::core::cli::ChatMessage {
+                            role: "assistant".into(),
+                            content: Some(resp.content),
+                            tool_calls: None,
+                            tool_call_id: None,
+                            name: None,
+                        });
+                    }
                 }
                 Ok(Err(e)) => {
+                    was_cancelled = false;
                     state.push_message(ChatItem::Agent(format!("[error] {e}")));
                     state.push_tool_log(ToolLogKind::Error, e.to_string());
                 }
                 Err(e) => {
-                    state.push_message(ChatItem::Agent(format!("[error] task panicked: {e}")));
-                    state.push_tool_log(ToolLogKind::Error, format!("task panicked: {e}"));
+                    // JoinError — task was aborted or panicked
+                    was_cancelled = e.is_cancelled();
+                    if was_cancelled {
+                        state.push_message(ChatItem::Agent("[cancelled]".into()));
+                        state.push_tool_log(ToolLogKind::Warn, "agent cancelled by user".into());
+                    } else {
+                        state.push_message(ChatItem::Agent(format!("[error] task panicked: {e}")));
+                        state.push_tool_log(ToolLogKind::Error, format!("task panicked: {e}"));
+                    }
                 }
             }
 
+            // ── Dequeue next message if any (skip if cancelled) ──────────
+            if !was_cancelled {
+                if let Some(next) = state.pending_messages.pop_front() {
+                    // Remove the Queued chat item for this message
+                    state.messages.retain(|m| !matches!(m, ChatItem::Queued(t) if t == &next));
+                    start_agent_run(
+                        &mut state, &mut history, &agent,
+                        &mut active_event_rx, &mut active_handle, &mut active_input,
+                        &mut active_cancel, next,
+                    );
+                }
+            }
+        }
+
+        // ── Redraw ───────────────────────────────────────────────────────
+        if had_events || had_input || agent_just_finished {
             let _ = terminal.draw(|f| draw(f, &mut state));
-        } else {
-            // Idle — redraw only needed on resize (handle_input returns true)
+        } else if active_handle.is_none() {
+            // Idle — still redraw for resize events
             let _ = terminal.draw(|f| draw(f, &mut state));
+        }
+
+        // Yield to tokio when agent is running
+        if active_handle.is_some() {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     }
 
@@ -1729,9 +2086,47 @@ async fn run_agent_tui(
     }
 }
 
+/// Start a new agent run: push user message, set thinking state, spawn task.
+fn start_agent_run(
+    state: &mut agent_tui::AgentTuiState,
+    history: &mut Vec<app_lib::core::cli::ChatMessage>,
+    agent: &Arc<app_lib::core::cli::AgentLoop>,
+    event_rx: &mut Option<tokio::sync::mpsc::UnboundedReceiver<AgentEvent>>,
+    handle: &mut Option<tokio::task::JoinHandle<Result<app_lib::core::cli::AgentResponse, String>>>,
+    active_input: &mut Option<String>,
+    active_cancel: &mut Option<app_lib::core::cli::CancellationToken>,
+    input: String,
+) {
+    use agent_tui::ChatItem;
+
+    state.push_message(ChatItem::User(input.clone()));
+    state.is_thinking = true;
+    state.steps += 1;
+    state.push_message(ChatItem::Thinking { step: state.steps });
+
+    let (tx, rx_new) = tokio::sync::mpsc::unbounded_channel::<AgentEvent>();
+    let history_snapshot = history.clone();
+    let input_clone = input.clone();
+    let agent_ref = Arc::clone(agent);
+    let cancel_token = app_lib::core::cli::CancellationToken::new();
+    let cancel_clone = cancel_token.clone();
+
+    *handle = Some(tokio::spawn(async move {
+        let mut handler = move |event: AgentEvent| {
+            let _ = tx.send(event);
+        };
+        agent_ref.run_cancellable(&history_snapshot, &input_clone, &mut handler, cancel_clone).await
+    }));
+    *event_rx = Some(rx_new);
+    *active_input = Some(input);
+    *active_cancel = Some(cancel_token);
+}
+
 /// Translate an AgentEvent into TUI state updates.
 fn apply_agent_event(state: &mut agent_tui::AgentTuiState, event: &AgentEvent) {
     use agent_tui::*;
+
+    state.push_debug(format!("{event:?}"));
 
     match event {
         AgentEvent::Thinking { step } => {

@@ -7,6 +7,7 @@
 //!   ├─ statusbar ─────────────────────────────────────────────┤
 //!   └─────────────────────────────────────────────────────────┘
 
+use std::collections::VecDeque;
 use std::io;
 use std::time::Instant;
 
@@ -48,6 +49,8 @@ pub enum ChatItem {
     ToolCall { name: String, args_preview: String },
     ToolResult { name: String, ok: bool, elapsed_ms: u64, summary: String },
     Thinking { step: usize },
+    /// A queued user message waiting to be sent to the agent.
+    Queued(String),
 }
 
 #[derive(Clone)]
@@ -104,7 +107,15 @@ pub struct AgentTuiState {
 
     pub start_time: Instant,
     pub should_quit: bool,
+
     pub input_ready: bool, // true when user pressed Enter
+    pub cancel_requested: bool,   // true when user pressed Escape to cancel
+    pub pending_messages: VecDeque<String>,
+
+    /// Debug log lines (toggle visibility with `L`).
+    pub debug_log: Vec<String>,
+    pub debug_log_scroll: u16,
+    pub show_debug_log: bool,
 }
 
 impl AgentTuiState {
@@ -130,6 +141,9 @@ impl AgentTuiState {
                 ResourceBar { label: "CPU util",       value: 0.0, display: "—".into(), color: RED },
             ],
             input: String::new(),
+            debug_log: Vec::new(),
+            debug_log_scroll: 0,
+            show_debug_log: false,
             cursor_pos: 0,
             is_thinking: false,
             tool_calls_count: 0,
@@ -139,6 +153,8 @@ impl AgentTuiState {
             start_time: Instant::now(),
             should_quit: false,
             input_ready: false,
+            cancel_requested: false,
+            pending_messages: VecDeque::new(),
         }
     }
 
@@ -163,6 +179,11 @@ impl AgentTuiState {
     pub fn push_tool_log_dim(&mut self, text: String) {
         self.tool_log.push(ToolLogEntry { kind: ToolLogKind::Dim, text });
         self.tool_log_auto_scroll = true;
+    }
+
+    pub fn push_debug(&mut self, text: String) {
+        let ts = self.start_time.elapsed().as_secs_f64();
+        self.debug_log.push(format!("[{ts:8.2}s] {text}"));
     }
 }
 
@@ -418,18 +439,23 @@ fn handle_single_event(state: &mut AgentTuiState, ev: Event) {
                 (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
                     state.should_quit = true;
                 }
-                (KeyCode::Enter, _) if !state.is_thinking => {
+                (KeyCode::Esc, _) => {
+                    if state.is_thinking {
+                        state.cancel_requested = true;
+                    }
+                }
+                (KeyCode::Enter, _) => {
                     if !state.input.trim().is_empty() {
                         state.input_ready = true;
                     }
                 }
-                (KeyCode::Backspace, _) if !state.is_thinking => {
+                (KeyCode::Backspace, _) => {
                     if state.cursor_pos > 0 {
                         state.cursor_pos -= 1;
                         state.input.remove(state.cursor_pos);
                     }
                 }
-                (KeyCode::Delete, _) if !state.is_thinking => {
+                (KeyCode::Delete, _) => {
                     if state.cursor_pos < state.input.len() {
                         state.input.remove(state.cursor_pos);
                     }
@@ -453,6 +479,9 @@ fn handle_single_event(state: &mut AgentTuiState, ev: Event) {
                 (KeyCode::Tab, _) => {
                     state.focus_tool_panel = !state.focus_tool_panel;
                 }
+                (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
+                    state.show_debug_log = !state.show_debug_log;
+                }
                 (KeyCode::Up, _) => {
                     scroll_focused(state, -1);
                 }
@@ -465,7 +494,7 @@ fn handle_single_event(state: &mut AgentTuiState, ev: Event) {
                 (KeyCode::PageDown, _) => {
                     scroll_focused(state, 20);
                 }
-                (KeyCode::Char(c), _) if !state.is_thinking => {
+                (KeyCode::Char(c), _) => {
                     state.input.insert(state.cursor_pos, c);
                     state.cursor_pos += 1;
                 }
@@ -528,7 +557,7 @@ fn draw_titlebar(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
     let status_text = if state.is_thinking { "RUNNING" } else { "READY" };
     let status_color = if state.is_thinking { GREEN } else { MUTED };
 
-    let spans = vec![
+    let mut spans = vec![
         Span::styled("agent", Style::default().fg(TEXT2)),
         Span::styled(" — ", Style::default().fg(MUTED)),
         Span::styled(&state.model_id, Style::default().fg(TEXT2)),
@@ -541,23 +570,41 @@ fn draw_titlebar(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
         ),
     ];
 
+    if state.show_debug_log {
+        spans.push(Span::styled("  [debug on]", Style::default().fg(RED)));
+    }
+
     let titlebar = Paragraph::new(Line::from(spans))
         .style(Style::default().bg(BG2));
     frame.render_widget(titlebar, area);
 }
 
 fn draw_body(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
-    // Split: main panel (left) | right panel
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(65),
-            Constraint::Percentage(35),
-        ])
-        .split(area);
-
-    draw_main_panel(frame, cols[0], state);
-    draw_right_panel(frame, cols[1], state);
+    if state.show_debug_log {
+        // Three columns: chat | right panel | debug log
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(45),
+                Constraint::Percentage(25),
+                Constraint::Percentage(30),
+            ])
+            .split(area);
+        draw_main_panel(frame, cols[0], state);
+        draw_right_panel(frame, cols[1], state);
+        draw_debug_log(frame, cols[2], state);
+    } else {
+        // Two columns: chat | right panel
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(65),
+                Constraint::Percentage(35),
+            ])
+            .split(area);
+        draw_main_panel(frame, cols[0], state);
+        draw_right_panel(frame, cols[1], state);
+    }
 }
 
 fn draw_main_panel(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
@@ -672,6 +719,20 @@ fn draw_messages(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
                     ),
                 ]));
             }
+            ChatItem::Queued(text) => {
+                lines.push(Line::from(vec![
+                    Span::styled("  > ", Style::default().fg(MUTED)),
+                    Span::styled("you", Style::default().fg(MUTED).add_modifier(Modifier::ITALIC)),
+                    Span::styled(" (queued)", Style::default().fg(MUTED).add_modifier(Modifier::ITALIC)),
+                ]));
+                for l in wrap_text(text, inner.width.saturating_sub(6) as usize) {
+                    lines.push(Line::from(vec![
+                        Span::styled("  | ", Style::default().fg(BORDER)),
+                        Span::styled(l, Style::default().fg(MUTED).add_modifier(Modifier::ITALIC)),
+                    ]));
+                }
+                lines.push(Line::from(""));
+            }
         }
     }
 
@@ -714,18 +775,24 @@ fn draw_input_bar(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
     frame.render_widget(block, area);
 
     let prompt_style = if state.is_thinking {
-        Style::default().fg(MUTED)
+        Style::default().fg(AMBER)
     } else {
         Style::default().fg(GREEN)
     };
 
-    let display_input = if state.is_thinking {
-        "waiting for agent..."
+    let queue_hint = if state.is_thinking && state.input.is_empty() {
+        Some("type to queue next message…")
+    } else {
+        None
+    };
+
+    let display_input: &str = if let Some(hint) = queue_hint {
+        hint
     } else {
         &state.input
     };
 
-    let input_style = if state.is_thinking {
+    let input_style = if queue_hint.is_some() {
         Style::default().fg(MUTED).add_modifier(Modifier::ITALIC)
     } else {
         Style::default().fg(TEXT)
@@ -740,7 +807,7 @@ fn draw_input_bar(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
     frame.render_widget(paragraph, inner);
 
     // Show cursor (clamped to inner area to avoid panic on small terminals)
-    if !state.is_thinking && inner.width > 3 && inner.height > 0 {
+    if inner.width > 3 && inner.height > 0 {
         let cursor_x = (inner.x + 3 + state.cursor_pos as u16).min(inner.x + inner.width - 1);
         frame.set_cursor_position((
             cursor_x,
@@ -855,6 +922,39 @@ fn draw_resources(frame: &mut Frame, area: Rect, state: &AgentTuiState) {
     }
 
     let paragraph = Paragraph::new(lines).style(Style::default().bg(BG2));
+    frame.render_widget(paragraph, inner);
+}
+
+fn draw_debug_log(frame: &mut Frame, area: Rect, state: &mut AgentTuiState) {
+    let block = Block::default()
+        .title(Line::from(vec![
+            Span::styled(" > ", Style::default().fg(RED)),
+            Span::styled("debug log ", Style::default().fg(MUTED)),
+            Span::styled("[ctrl-l] ", Style::default().fg(MUTED).add_modifier(Modifier::DIM)),
+        ]))
+        .borders(Borders::LEFT)
+        .border_style(Style::default().fg(BORDER))
+        .style(Style::default().bg(TERMINAL_BG));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let text_width = inner.width.saturating_sub(1) as usize;
+    let mut lines: Vec<Line> = Vec::new();
+    for entry in &state.debug_log {
+        for wline in wrap_text(entry, text_width) {
+            lines.push(Line::from(Span::styled(wline, Style::default().fg(MUTED))));
+        }
+    }
+
+    let content_height = lines.len() as u16;
+    let visible_height = inner.height;
+    let max_scroll = content_height.saturating_sub(visible_height);
+    // Always auto-scroll debug log
+    state.debug_log_scroll = max_scroll;
+
+    let paragraph = Paragraph::new(lines)
+        .style(Style::default().bg(TERMINAL_BG))
+        .scroll((state.debug_log_scroll, 0));
     frame.render_widget(paragraph, inner);
 }
 
