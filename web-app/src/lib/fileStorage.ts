@@ -39,7 +39,7 @@ async function ensureStore(): Promise<void> {
   initPromise = (async () => {
     try {
       const { load } = await import('@tauri-apps/plugin-store')
-      store = await load(STORE_FILENAME, { autoSave: false })
+      store = await load(STORE_FILENAME, { autoSave: false, defaults: {} })
     } catch (e) {
       console.warn(
         'File storage unavailable, falling back to localStorage:',

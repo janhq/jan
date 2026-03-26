@@ -115,7 +115,7 @@ const changeLanguage = (lng: string): void => {
   if (i18nInstance && resources[lng]) {
     i18nInstance.language = lng
     // Persist via the zustand store — this writes through to file storage
-    useGeneralSetting.getState().setCurrentLanguage(lng)
+    useGeneralSetting.getState().setCurrentLanguage(lng as Language)
   }
 }
 
