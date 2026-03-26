@@ -59,25 +59,35 @@ export async function generateThreadTitle(
   try {
     const { selectedModel, selectedProvider, getProviderByName } =
       useModelProvider.getState()
-    if (!selectedModel || !selectedProvider) return null
+    if (!selectedModel || !selectedProvider) {
+      console.warn('[ThreadTitle] No model/provider selected')
+      return null
+    }
 
     const provider = getProviderByName(selectedProvider)
-    if (!provider) return null
+    if (!provider) {
+      console.warn('[ThreadTitle] Provider not found:', selectedProvider)
+      return null
+    }
 
+    console.log('[ThreadTitle] Creating model:', selectedModel.id, 'provider:', selectedProvider)
     const model = await ModelFactory.createModel(selectedModel.id, provider, {})
 
+    console.log('[ThreadTitle] Calling generateText...')
     const { text } = await generateText({
       model,
       messages: [{ role: 'user', content: buildSummarizePrompt(firstMessage) }],
       abortSignal,
-      maxOutputTokens: 50,
     })
 
-    return cleanTitle(text)
+    console.log('[ThreadTitle] Raw response:', JSON.stringify(text))
+    const cleaned = cleanTitle(text)
+    console.log('[ThreadTitle] Cleaned title:', cleaned)
+    return cleaned
   } catch (error) {
     // Silently swallow abort errors — this is expected when the user sends a new message
     if ((error as Error).name === 'AbortError') return null
-    console.warn('[ThreadTitle] Failed to generate title:', error)
+    console.error('[ThreadTitle] Failed to generate title:', error)
     return null
   }
 }
