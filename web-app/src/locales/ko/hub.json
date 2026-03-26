@@ -1,0 +1,17 @@
+{
+  "sortNewest": "최신순",
+  "sortMostDownloaded": "다운로드순",
+  "newChat": "새 채팅",
+  "download": "다운로드",
+  "downloaded": "다운로드됨",
+  "loadingModels": "모델 불러오는 중...",
+  "noModels": "모델을 찾을 수 없습니다",
+  "by": "제작:",
+  "downloads": "다운로드 수",
+  "variants": "버전",
+  "showVariants": "버전 보기",
+  "useModel": "이 모델 사용하기",
+  "downloadModel": "모델 다운로드",
+  "tools": "도구",
+  "searchPlaceholder": "Hugging Face에서 모델 검색..."
+}
