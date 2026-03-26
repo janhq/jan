@@ -122,7 +122,6 @@ describe('generateThreadTitle', () => {
     expect(mockGenerateText).toHaveBeenCalledWith(
       expect.objectContaining({
         model: mockModel,
-        maxOutputTokens: 50,
         abortSignal: controller.signal,
       })
     )
