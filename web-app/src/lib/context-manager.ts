@@ -162,10 +162,19 @@ export async function compactMessages(
     return trimResult
   }
 
-  // Truncate if extremely long
+  // The summarization call itself uses context: system prompt + conversation
+  // excerpt + summary output. Cap the excerpt to ~70% of the context budget
+  // (in characters, using the same heuristic) so the call doesn't exceed limits.
+  const summaryOutputTokens = 512
+  const summaryBudgetTokens = Math.max(
+    1024,
+    maxContextTokens - summaryOutputTokens - estimateTokens(COMPACT_SYSTEM_PROMPT)
+  )
+  const maxExcerptChars = Math.floor(summaryBudgetTokens * CHARS_PER_TOKEN)
+
   const truncated =
-    conversationText.length > 30000
-      ? conversationText.slice(-30000)
+    conversationText.length > maxExcerptChars
+      ? conversationText.slice(-maxExcerptChars)
       : conversationText
 
   try {
@@ -173,13 +182,14 @@ export async function compactMessages(
       model,
       system: COMPACT_SYSTEM_PROMPT,
       prompt: `Summarize this conversation excerpt:\n\n${truncated}`,
-      maxOutputTokens: 512,
+      maxOutputTokens: summaryOutputTokens,
     })
 
-    // Create a synthetic user message with the summary
+    // Inject the summary as a system message so models treat it as context
+    // rather than as a user turn (which could confuse turn-taking logic).
     const summaryMessage: UIMessage = {
       id: `compact-summary-${Date.now()}`,
-      role: 'user',
+      role: 'system',
       parts: [
         {
           type: 'text',
@@ -188,9 +198,16 @@ export async function compactMessages(
       ],
     }
 
+    // Re-trim: the summary message itself consumes tokens, so the combined
+    // set (summary + kept messages) may exceed the input budget. Run
+    // trimMessages again on the merged list to guarantee we stay within
+    // the context window.
+    const merged = [summaryMessage, ...trimResult.messages]
+    const refit = trimMessages(merged, config, systemPromptTokens)
+
     return {
-      messages: [summaryMessage, ...trimResult.messages],
-      trimmedCount: trimResult.trimmedCount,
+      messages: refit.messages,
+      trimmedCount: trimResult.trimmedCount + refit.trimmedCount,
       compactedSummary: summary,
     }
   } catch (error) {

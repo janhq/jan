@@ -692,9 +692,7 @@ function ProviderDetail() {
                               provider={provider}
                               modelId={model.id}
                             />
-                            {model.settings &&
-                              (provider.provider === 'llamacpp' ||
-                                provider.provider === 'mlx') && (
+                            {model.settings && (
                               <ModelSetting provider={provider} model={model} />
                             )}
                             {((provider &&
