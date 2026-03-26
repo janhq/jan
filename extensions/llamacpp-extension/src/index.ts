@@ -1135,10 +1135,15 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Include prefix in the backend identifier if present
-    const backendIdentifier = prefix ? `${prefix}${backend}` : backend
+    const rawBackend = prefix ? `${prefix}${backend}` : backend
+
+    // Normalize upstream naming (e.g. "ubuntu-rocm-7.2-x64") to Jan
+    // conventions (e.g. "linux-hip-x64") so the folder name matches what
+    // the backend discovery and dropdown logic expects.
+    const backendIdentifier = await mapOldBackendToNew(rawBackend)
 
     logger.info(
-      `Detected prefix: ${prefix || 'none'}, version: ${version}, backend: ${backendIdentifier}`
+      `Detected prefix: ${prefix || 'none'}, version: ${version}, backend: ${rawBackend} -> ${backendIdentifier}`
     )
 
     const backendDir = await getBackendDir(backendIdentifier, version)

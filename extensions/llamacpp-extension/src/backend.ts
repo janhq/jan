@@ -166,18 +166,21 @@ export async function downloadBackend(
 
   const platformName = IS_WINDOWS ? 'win' : 'linux'
 
-  // Build URLs per source
+  // Windows HIP archives from upstream use .zip; everything else uses .tar.gz
+  const isZipBackend = IS_WINDOWS && (backend.includes('hip') || backend.includes('rocm'))
+  const archiveExt = isZipBackend ? 'zip' : 'tar.gz'
+
   const backendUrl =
     source === 'github'
-      ? `https://github.com/janhq/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`
-      : `https://catalog.jan.ai/llama.cpp/releases/${version}/llama-${version}-bin-${backend}.tar.gz`
+      ? `https://github.com/janhq/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.${archiveExt}`
+      : `https://catalog.jan.ai/llama.cpp/releases/${version}/llama-${version}-bin-${backend}.${archiveExt}`
 
   const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
 
   const downloadItems = [
     {
       url: backendUrl,
-      save_path: await joinPath([backendDir, 'backend.tar.gz']),
+      save_path: await joinPath([backendDir, `backend.${archiveExt}`]),
       proxy: proxyConfig,
       model_id: taskId,
     },

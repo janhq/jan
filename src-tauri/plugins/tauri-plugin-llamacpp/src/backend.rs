@@ -147,9 +147,13 @@ pub async fn get_local_installed_backends(
 
             // Check if backend is actually installed
             if is_backend_installed(&backend_path) {
+                // Normalize upstream naming (e.g. "ubuntu-rocm-7.2-x64") to
+                // Jan conventions (e.g. "linux-hip-x64") so the merge/display
+                // logic can match local installs against supported backend names.
+                let normalized = map_old_backend_to_new(backend_name);
                 local.push(InstalledBackend {
                     version: version_name.clone(),
-                    backend: backend_name,
+                    backend: normalized,
                 });
             }
         }
