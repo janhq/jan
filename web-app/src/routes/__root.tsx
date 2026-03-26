@@ -57,19 +57,21 @@ const AppLayout = () => {
         <KeyboardShortcutsProvider />
         {/* Fake absolute panel top to enable window drag */}
         {IS_WINDOWS && <WindowControls />}
-        <div
-          className="fixed w-full h-12 z-20 top-0 cursor-grab active:cursor-grabbing hover:bg-primary/10 transition-colors duration-150"
-          title="Drag window"
-          aria-label="Window drag area"
-          {...(IS_LINUX
-            ? {
-                onMouseDown: (e: MouseEvent) => {
-                  if (e.button !== 0) return
-                  void getCurrentWebviewWindow().startDragging()
-                },
-              }
-            : { 'data-tauri-drag-region': true as const })}
-        />
+        {IS_TAURI && (
+          <div
+            className="fixed w-full h-12 z-20 top-0 cursor-grab active:cursor-grabbing hover:bg-primary/10 transition-colors duration-150"
+            title="Drag window"
+            aria-label="Window drag area"
+            {...(IS_LINUX
+              ? {
+                  onMouseDown: (e: MouseEvent) => {
+                    if (e.button !== 0) return
+                    void getCurrentWebviewWindow().startDragging()
+                  },
+                }
+              : { 'data-tauri-drag-region': true as const })}
+          />
+        )}
         <DialogAppUpdater />
         <BackendUpdater />
         <LeftSidebar />
