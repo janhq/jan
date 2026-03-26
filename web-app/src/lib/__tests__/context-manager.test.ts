@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import type { UIMessage } from '@ai-sdk/react'
 import {
   estimateTokens,
@@ -17,7 +17,6 @@ function makeMessage(
     id,
     role,
     parts: [{ type: 'text' as const, text }],
-    createdAt: new Date(),
   }
 }
 
@@ -47,11 +46,10 @@ describe('estimateMessageTokens', () => {
   })
 
   it('should include inline file contents in token count', () => {
-    const msg: UIMessage = {
+    const msg = {
       id: '1',
-      role: 'user',
+      role: 'user' as const,
       parts: [{ type: 'text' as const, text: 'Check this file' }],
-      createdAt: new Date(),
       metadata: {
         inline_file_contents: [
           { name: 'readme.md', content: 'This is a long file content string' },
@@ -67,7 +65,6 @@ describe('estimateMessageTokens', () => {
       id: '1',
       role: 'assistant',
       parts: [],
-      createdAt: new Date(),
     }
     const tokens = estimateMessageTokens(msg)
     expect(tokens).toBe(4) // just overhead
@@ -181,10 +178,6 @@ describe('compactMessages', () => {
     provider: 'test',
     specificationVersion: 'v1',
   }
-
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
 
   it('should pass through when no trimming needed', async () => {
     const messages = [

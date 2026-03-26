@@ -20,8 +20,8 @@ function messageToText(message: UIMessage): string {
   for (const part of message.parts) {
     if (part.type === 'text') {
       parts.push(part.text)
-    } else if (part.type === 'tool-invocation') {
-      parts.push(JSON.stringify(part.toolInvocation))
+    } else if (part.type === 'dynamic-tool' || part.type.startsWith('tool-')) {
+      parts.push(JSON.stringify(part))
     }
   }
 
@@ -186,7 +186,6 @@ export async function compactMessages(
           text: `[Previous conversation summary]\n${summary}`,
         },
       ],
-      createdAt: new Date(),
     }
 
     return {

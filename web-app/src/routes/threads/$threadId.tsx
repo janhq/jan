@@ -1,10 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  createFileRoute,
-  useParams,
-  useRouter,
-  useSearch,
-} from '@tanstack/react-router'
+import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 
 import HeaderPage from '@/containers/HeaderPage'
@@ -15,7 +10,6 @@ import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useAssistant } from '@/hooks/useAssistant'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
@@ -27,11 +21,7 @@ import {
   ConversationContent,
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation'
-import {
-  generateId,
-  generateText,
-  lastAssistantMessageIsCompleteWithToolCalls,
-} from 'ai'
+import { generateId, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import {
@@ -54,10 +44,7 @@ import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
-import { OUT_OF_CONTEXT_SIZE, isTokenLimitError } from '@/utils/error'
-import { ModelFactory } from '@/lib/model-factory'
-import { toast } from 'sonner'
-import { route } from '@/constants/routes'
+import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { Button } from '@/components/ui/button'
 import { IconAlertCircle } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
@@ -96,7 +83,6 @@ function ThreadDetail() {
   const { threadId } = useParams({ from: Route.id })
   const search = useSearch({ from: Route.id })
   const searchThreadModel = search.threadModel
-  const router = useRouter()
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
   const setMessages = useMessages((state) => state.setMessages)
   const addMessage = useMessages((state) => state.addMessage)
@@ -163,7 +149,6 @@ function ThreadDetail() {
   const MAX_AUTO_INCREASE_ATTEMPTS = 3
   const isAutoIncreasingContext = autoIncreaseAttempts > 0 && autoIncreaseAttempts < MAX_AUTO_INCREASE_ATTEMPTS
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
-  const [isSummarizing, setIsSummarizing] = useState(false)
 
   // Refs so onFinish (captured in closure) always calls the latest callbacks
   const handleContextSizeIncreaseRef = useRef<(() => void) | null>(null)
@@ -841,102 +826,11 @@ function ThreadDetail() {
     handleRegenerate,
   ])
 
+  // Keep refs in sync so onFinish always calls the latest versions
   handleContextSizeIncreaseRef.current = handleContextSizeIncrease
   setContinueFromContentRef.current = setContinueFromContent
 
-  const handleCompactAndRetry = useCallback(() => {
-    const systemMsgs = chatMessages.filter((m) => m.role === 'system')
-    const convMsgs = chatMessages.filter((m) => m.role !== 'system')
-    if (convMsgs.length <= 2) return
-
-    const keepCount = Math.max(2, Math.ceil(convMsgs.length / 2))
-    const toRemove = convMsgs.slice(0, convMsgs.length - keepCount)
-    const toKeep = convMsgs.slice(-keepCount)
-
-    toRemove.forEach((msg) => deleteMessage(threadId, msg.id))
-    setContextLimitError(null)
-    setChatMessages([...systemMsgs, ...toKeep])
-
-    const lastUserMsg = [...toKeep].reverse().find((m) => m.role === 'user')
-    if (lastUserMsg) {
-      setTimeout(() => regenerate({ messageId: lastUserMsg.id }), 100)
-    }
-  }, [chatMessages, threadId, deleteMessage, setChatMessages, regenerate])
-
-  const handleSummarizeAndNewThread = useCallback(async () => {
-    if (!selectedModel || !selectedProvider) return
-    setIsSummarizing(true)
-    try {
-      const provider = getProviderByName(selectedProvider)
-      if (!provider) throw new Error('Provider not found')
-
-      const params =
-        useAssistant.getState().currentAssistant?.parameters ?? {}
-      const model = await ModelFactory.createModel(
-        selectedModel.id,
-        provider,
-        params
-      )
-
-      const recentMessages = chatMessages
-        .filter((m) => m.role !== 'system')
-        .slice(-20)
-      const conversationText = recentMessages
-        .map((m) => {
-          const text = m.parts
-            .filter(
-              (p): p is { type: 'text'; text: string } => p.type === 'text'
-            )
-            .map((p) => p.text)
-            .join('')
-          return `${m.role}: ${text}`
-        })
-        .join('\n\n')
-
-      const truncated =
-        conversationText.length > 50000
-          ? conversationText.slice(-50000)
-          : conversationText
-
-      const { text: summary } = await generateText({
-        model,
-        system:
-          'Summarize this conversation concisely. Preserve key decisions, context, and important details.',
-        prompt: `Summarize the following conversation:\n\n${truncated}`,
-        maxOutputTokens: 1024,
-      })
-
-      const newThread = await useThreads.getState().createThread(
-        { id: selectedModel.id, provider: selectedProvider },
-        `Continued: ${thread?.title ?? 'Thread'}`
-      )
-
-      sessionStorage.setItem(
-        `${SESSION_STORAGE_PREFIX.INITIAL_MESSAGE}${newThread.id}`,
-        JSON.stringify({
-          text: `Here's a summary of our previous conversation:\n\n${summary}\n\nPlease continue from where we left off.`,
-        })
-      )
-
-      router.navigate({
-        to: route.threadsDetail,
-        params: { threadId: newThread.id },
-      })
-    } catch (err) {
-      console.error('Summarization failed:', err)
-      toast.error('Failed to summarize. Try "Compact & Retry" instead.')
-    } finally {
-      setIsSummarizing(false)
-    }
-  }, [
-    selectedModel,
-    selectedProvider,
-    getProviderByName,
-    chatMessages,
-    thread,
-    router,
-  ])
-
+  // Skip auto-context-increase in agent mode
   const agentModeActive = useAgentMode(
     (s) => s.agentThreads[threadId] === true
   )
@@ -1048,36 +942,21 @@ function ThreadDetail() {
                           {(error ?? contextLimitError)?.message}
                         </span>
                       </div>
-                      {isTokenLimitError((error ?? contextLimitError)?.message) && (
-                        <div className="flex flex-wrap gap-2 mt-3">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleCompactAndRetry}
-                          >
-                            Compact & Retry
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleSummarizeAndNewThread}
-                            disabled={isSummarizing}
-                          >
-                            {isSummarizing
-                              ? 'Summarizing...'
-                              : 'Summarize & New Thread'}
-                          </Button>
-                          {selectedModel?.settings?.ctx_len != null && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={handleContextSizeIncrease}
-                            >
-                              Increase Context Size
-                            </Button>
-                          )}
-                        </div>
-                      )}
+                      {((error ?? contextLimitError)?.message?.toLowerCase().includes('context') &&
+                        ((error ?? contextLimitError)?.message?.toLowerCase().includes('size') ||
+                          (error ?? contextLimitError)?.message?.toLowerCase().includes('length') ||
+                          (error ?? contextLimitError)?.message?.toLowerCase().includes('limit'))) ||
+                      (error ?? contextLimitError)?.message === OUT_OF_CONTEXT_SIZE ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3"
+                          onClick={handleContextSizeIncrease}
+                        >
+                          <IconAlertCircle className="size-4 mr-2" />
+                          Increase Context Size
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 </div>

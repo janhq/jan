@@ -23,7 +23,6 @@ import {
   trimMessages,
   compactMessages,
   estimateTokens,
-  estimateMessageTokens,
   type ContextManagerConfig,
 } from './context-manager'
 
@@ -372,10 +371,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       return isNaN(n) ? undefined : n
     })()
 
-    // Parse context management params (handle both number and string from persistence)
-    const rawCtx = inferenceParams.max_context_tokens
-    const maxContextTokens =
-      typeof rawCtx === 'number' ? rawCtx : (Number(rawCtx) || 0)
+    const maxContextTokens = (() => {
+      const raw = inferenceParams.max_context_tokens
+      return typeof raw === 'number' ? raw : (Number(raw) || 0)
+    })()
     const autoCompact =
       inferenceParams.auto_compact === true ||
       inferenceParams.auto_compact === 'true'
@@ -393,18 +392,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         ? estimateTokens(this.systemMessage) + 4
         : 0
 
-      const msgCount = messagesToConvert.length
-      const estimatedInputTokens = messagesToConvert.reduce(
-        (sum, msg) => sum + estimateMessageTokens(msg), 0
-      )
-
-      console.log(
-        `[context-manager] Budget: ${maxContextTokens} ctx, ${maxOutputTokens ?? 2048} out, ` +
-        `${maxContextTokens - (maxOutputTokens ?? 2048) - systemPromptTokens} input budget | ` +
-        `Messages: ${msgCount}, ~${estimatedInputTokens} tokens | ` +
-        `Auto-compact: ${autoCompact}`
-      )
-
       if (autoCompact && this.model) {
         const compactResult = await compactMessages(
           messagesToConvert,
@@ -414,10 +401,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         )
         effectiveMessages = compactResult.messages
         if (compactResult.trimmedCount > 0) {
-          console.log(
+          console.debug(
             `[context-manager] Compacted ${compactResult.trimmedCount} messages` +
-              (compactResult.compactedSummary ? ' with summary' : ' (trim fallback)') +
-              ` → ${effectiveMessages.length} messages remaining`
+              (compactResult.compactedSummary ? ' with summary' : ' (trim fallback)')
           )
         }
       } else {
@@ -428,17 +414,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         )
         effectiveMessages = trimResult.messages
         if (trimResult.trimmedCount > 0) {
-          console.log(
-            `[context-manager] Trimmed ${trimResult.trimmedCount} oldest messages to fit context budget` +
-            ` → ${effectiveMessages.length} messages remaining`
+          console.debug(
+            `[context-manager] Trimmed ${trimResult.trimmedCount} oldest messages to fit context budget`
           )
         }
       }
-    } else if (rawCtx !== undefined && rawCtx !== null) {
-      console.warn(
-        `[context-manager] max_context_tokens is set but resolved to 0. ` +
-        `Raw value: ${JSON.stringify(rawCtx)} (type: ${typeof rawCtx}). Trimming disabled.`
-      )
     }
 
     const baseMessages = convertToModelMessages(
