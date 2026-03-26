@@ -21,12 +21,13 @@ use serde::{Deserialize, Serialize};
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::{
     cli_delete_thread, cli_get_data_folder, cli_get_thread,
-    cli_list_messages, cli_list_threads, create_agent,
+    cli_list_messages, cli_list_threads, create_agent_with_workspace,
     discover_llamacpp_binary,
     discover_mlx_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
     init_mlx_state, list_models,
     load_llama_model_impl, load_mlx_model_impl, looks_like_hf_repo, resolve_model_by_id,
-    resolve_model_engine, AgentEvent, HfFileInfo, LlamacppConfig, MlxConfig,
+    resolve_model_engine, AgentEvent, FsWorkspaceManager, HfFileInfo, LlamacppConfig,
+    MlxConfig, WorkspaceManager,
 };
 use std::path::PathBuf;
 
@@ -118,6 +119,12 @@ enum Commands {
         #[command(subcommand)]
         cmd: AgentCommands,
     },
+    /// Manage agent workspaces (create, list, delete)
+    #[command(display_order = 13)]
+    Workspace {
+        #[command(subcommand)]
+        cmd: WorkspaceCommands,
+    },
 }
 
 // ── Agent subcommands ──────────────────────────────────────────────────────
@@ -148,6 +155,11 @@ enum AgentCommands {
         /// Future values: "openai-assistant", "claude", etc.
         #[arg(long, value_name = "IMPL", default_value = "react")]
         agent: String,
+        /// Workspace name or ID to scope this agent session.
+        /// The workspace stores threads, memory, and config.
+        /// Omit to use the "default" workspace.
+        #[arg(long, short = 'w', value_name = "NAME")]
+        workspace: Option<String>,
     },
 }
 
@@ -172,6 +184,29 @@ enum ThreadsCommands {
     Messages {
         /// Thread ID
         thread_id: String,
+    },
+}
+
+// ── Workspace subcommands ─────────────────────────────────────────────────
+
+#[derive(Subcommand)]
+enum WorkspaceCommands {
+    /// Create a new workspace
+    New {
+        /// Name for the workspace
+        name: String,
+    },
+    /// List all workspaces
+    List,
+    /// Show workspace details
+    Get {
+        /// Workspace name or ID
+        id: String,
+    },
+    /// Delete a workspace and all its contents
+    Delete {
+        /// Workspace name or ID
+        id: String,
     },
 }
 
@@ -395,7 +430,8 @@ impl AgentConfig {
 }
 
 /// Check whether a specific arg was explicitly provided on the CLI.
-/// `id` is the clap long-name (e.g. "port", "ctx-size").
+/// `id` is the clap arg ID — the Rust **field name** (underscores, not hyphens).
+/// e.g. `"api_url"` for `--api-url`, `"ctx_size"` for `--ctx-size`.
 /// Navigates into the `agent chat` subcommand matches.
 fn arg_is_present(matches: &clap::ArgMatches, id: &str) -> bool {
     // Navigate: top-level → "agent" subcommand → "chat" subcommand
@@ -452,7 +488,7 @@ fn merge_agent_config(
     }
 
     // ── Resolve api_url from config provider ──
-    if arg_is_present(matches, "api-url") {
+    if arg_is_present(matches, "api_url") {
         any_cli_override = true;
     } else if api_url.is_none() {
         // Determine the default provider, then use its baseUrl
@@ -476,15 +512,15 @@ fn merge_agent_config(
 
     // ── Serve settings ──
     merge_val!(serve.port, config.serve.port, "port");
-    merge_val!(serve.n_gpu_layers, config.serve.n_gpu_layers, "n-gpu-layers");
-    merge_val!(serve.ctx_size, config.serve.ctx_size, "ctx-size");
+    merge_val!(serve.n_gpu_layers, config.serve.n_gpu_layers, "n_gpu_layers");
+    merge_val!(serve.ctx_size, config.serve.ctx_size, "ctx_size");
     merge_val!(serve.threads, config.serve.threads, "threads");
     merge_val!(serve.timeout, config.serve.timeout, "timeout");
     merge_val!(serve.fit, config.serve.fit, "fit");
     merge_val!(serve.embedding, config.serve.embedding, "embedding");
     merge_val!(serve.verbose, config.serve.verbose, "verbose");
     merge_val!(serve.select, config.serve.select_quant, "select");
-    merge_option!(serve.model_path, config.serve.model_path.clone(), "model-path");
+    merge_option!(serve.model_path, config.serve.model_path.clone(), "model_path");
     merge_option!(serve.bin, config.serve.bin.clone(), "bin");
     merge_option!(serve.mmproj, config.serve.mmproj.clone(), "mmproj");
 
@@ -601,6 +637,7 @@ async fn main() {
             handle_launch(program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size_val, fit, ctx_size.is_none(), verbose, select).await
         }
         Commands::Agent { cmd } => handle_agent(cmd, &matches).await,
+        Commands::Workspace { cmd } => handle_workspace(cmd),
     }
 
     // Stop any workspace VMs that are still running.
@@ -1775,7 +1812,7 @@ async fn handle_agent(cmd: AgentCommands, matches: &clap::ArgMatches) {
     let red = Style::new().red();
 
     match cmd {
-        AgentCommands::Chat { serve, message, mount, api_url, agent: agent_impl } => {
+        AgentCommands::Chat { serve, message, mount, api_url, agent: agent_impl, workspace: ws_name } => {
             // ── Load and merge agent config ──────────────────────────────
             let mut config = AgentConfig::load();
             let mut serve = serve;
@@ -1820,9 +1857,36 @@ async fn handle_agent(cmd: AgentCommands, matches: &clap::ArgMatches) {
             let display_url      = url.clone();
             let display_model_id = model_id.clone();
 
+            // ── Open or create workspace ─────────────────────────────────
+            let data_folder = cli_get_data_folder();
+            let ws_dir = data_folder.join("workspaces");
+            let ws_mgr = match FsWorkspaceManager::new(ws_dir) {
+                Ok(m) => m,
+                Err(e) => { eprintln!("{} workspace init: {e}", red.apply_to("error:")); std::process::exit(1); }
+            };
+            let workspace: Box<dyn app_lib::core::cli::Workspace> = if let Some(ref name) = ws_name {
+                match ws_mgr.open(name).or_else(|_| ws_mgr.create(name, Default::default())) {
+                    Ok(ws) => {
+                        eprintln!("{}", dim.apply_to(format!("  workspace: {}", name)));
+                        ws
+                    }
+                    Err(e) => { eprintln!("{} workspace '{}': {e}", red.apply_to("error:"), name); std::process::exit(1); }
+                }
+            } else {
+                // CWD-based workspace (Claude Code pattern)
+                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                match ws_mgr.resolve_cwd(&cwd) {
+                    Ok(ws) => {
+                        eprintln!("{}", dim.apply_to(format!("  workspace: {} ({})", ws.name(), cwd.display())));
+                        ws
+                    }
+                    Err(e) => { eprintln!("{} workspace: {e}", red.apply_to("error:")); std::process::exit(1); }
+                }
+            };
+
             // create_agent scans WASM tools (spawns blocking I/O + reqwest::blocking::Client).
             let agent = match tokio::task::spawn_blocking(move || {
-                create_agent(url, model_id, mount, api_key, &agent_impl)
+                create_agent_with_workspace(url, model_id, mount, api_key, &agent_impl, Some(workspace))
             }).await {
                 Ok(a) => a,
                 Err(e) => { eprintln!("{} spawn: {e}", red.apply_to("error:")); std::process::exit(1); }
@@ -1864,6 +1928,79 @@ async fn handle_agent(cmd: AgentCommands, matches: &clap::ArgMatches) {
             } else {
                 // ── interactive TUI mode ───────────────────────────────────
                 run_agent_tui(agent, display_model_id, display_url, pid, captured_logs.clone()).await;
+            }
+        }
+    }
+}
+
+// ── Workspace command handler ─────────────────────────────────────────────
+
+fn handle_workspace(cmd: WorkspaceCommands) {
+    let data_folder = cli_get_data_folder();
+    let ws_dir = data_folder.join("workspaces");
+    let mgr = match FsWorkspaceManager::new(ws_dir) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    match cmd {
+        WorkspaceCommands::New { name } => {
+            match mgr.create(&name, Default::default()) {
+                Ok(ws) => {
+                    println!("Created workspace '{}' (id: {})", ws.name(), ws.id());
+                    println!("  path: {}", ws.root().display());
+                }
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        WorkspaceCommands::List => {
+            match mgr.list() {
+                Ok(workspaces) => {
+                    if workspaces.is_empty() {
+                        println!("No workspaces yet. Run `jan agent chat` from a project directory to auto-create one.");
+                        return;
+                    }
+                    println!("{:<30} {:<20} {}", "NAME", "SOURCE", "CREATED");
+                    for ws in &workspaces {
+                        let source = ws.source_dir.as_deref().unwrap_or("(named)");
+                        println!("{:<30} {:<20} {}", ws.name, source, ws.created_at);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        WorkspaceCommands::Get { id } => {
+            match mgr.open(&id) {
+                Ok(ws) => {
+                    let meta = ws.meta();
+                    println!("{}", serde_json::to_string_pretty(meta).unwrap_or_default());
+                }
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        WorkspaceCommands::Delete { id } => {
+            if id == "default" {
+                eprintln!("error: cannot delete the default workspace");
+                std::process::exit(1);
+            }
+            match mgr.delete(&id) {
+                Ok(()) => println!("Deleted workspace '{id}'"),
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
             }
         }
     }

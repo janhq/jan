@@ -569,6 +569,8 @@ pub use tauri_plugin_agent::{
     AgentEvent, AgentLoop, AgentResponse, CancellationToken,
     ChatMessage, Dispatcher, FinishReason, Manifest,
     RiskLevel, ToolDef,
+    Workspace, WorkspaceConfig, WorkspaceManager, WorkspaceMeta,
+    FsWorkspace, FsWorkspaceManager,
 };
 
 /// Create dispatcher in a blocking context (for use with spawn_blocking).
@@ -591,12 +593,25 @@ pub fn create_dispatcher(tools_dir: Option<PathBuf>, mounts: Vec<PathBuf>) -> Di
 ///
 /// `mounts`     — host directories the code sandbox may read (empty = fully isolated).
 /// `agent_impl` — which agent backend to use; currently only `"react"` is supported.
+/// `workspace`  — optional workspace to scope the agent's context and state.
 pub fn create_agent(
     base_url:   String,
     model_id:   String,
     mounts:     Vec<PathBuf>,
     api_key:    Option<String>,
     agent_impl: &str,
+) -> AgentLoop {
+    create_agent_with_workspace(base_url, model_id, mounts, api_key, agent_impl, None)
+}
+
+/// Like [`create_agent`] but with an optional workspace attached.
+pub fn create_agent_with_workspace(
+    base_url:   String,
+    model_id:   String,
+    mounts:     Vec<PathBuf>,
+    api_key:    Option<String>,
+    agent_impl: &str,
+    workspace:  Option<Box<dyn Workspace>>,
 ) -> AgentLoop {
     if agent_impl != "react" {
         eprintln!("warning: unknown --agent '{}'; falling back to 'react'", agent_impl);
@@ -608,7 +623,14 @@ pub fn create_agent(
     );
 
     let dispatcher = create_dispatcher(discover_tools_dir(), mounts);
-    AgentLoop::new_with_key(base_url, model_id, api_key, dispatcher)
+    let agent = AgentLoop::new_with_key(base_url, model_id, api_key, dispatcher);
+    match workspace {
+        Some(ws) => {
+            log::info!("[agent] workspace: '{}' at {}", ws.name(), ws.root().display());
+            agent.with_workspace(ws)
+        }
+        None => agent,
+    }
 }
 
 /// Locate or create the user tools directory at `~/.jan/tools/`.
