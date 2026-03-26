@@ -10,7 +10,6 @@ import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useAssistant } from '@/hooks/useAssistant'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
@@ -85,8 +84,6 @@ function ThreadDetail() {
   const search = useSearch({ from: Route.id })
   const searchThreadModel = search.threadModel
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
-  const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
-  const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
   const addMessage = useMessages((state) => state.addMessage)
   const updateMessage = useMessages((state) => state.updateMessage)
@@ -148,7 +145,10 @@ function ThreadDetail() {
   // context-limit hit, so the user sees it instead of a blank gap.
   const [pendingContinueMessage, setPendingContinueMessage] =
     useState<UIMessage | null>(null)
-  const [isAutoIncreasingContext, setIsAutoIncreasingContext] = useState(false)
+  const [autoIncreaseAttempts, setAutoIncreaseAttempts] = useState(0)
+  const MAX_AUTO_INCREASE_ATTEMPTS = 3
+  const isAutoIncreasingContext = autoIncreaseAttempts > 0 && autoIncreaseAttempts < MAX_AUTO_INCREASE_ATTEMPTS
+  const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
 
   // Refs so onFinish (captured in closure) always calls the latest callbacks
   const handleContextSizeIncreaseRef = useRef<(() => void) | null>(null)
@@ -181,16 +181,36 @@ function ThreadDetail() {
       // from where it stopped. The stream wrapper injects it as the first text-delta
       // of the new message, so the user sees the partial text immediately.
       if (!isAbort && finishReason === 'length') {
-        const partialText = message.parts
-          .filter((p) => p.type === 'text')
-          .map((p) => (p as { type: 'text'; text: string }).text)
-          .join('')
-        if (partialText) {
-          setContinueFromContentRef.current?.(partialText)
-          // Keep the partial message visible while the model reloads
-          setPendingContinueMessage(message)
+        const selectedModelState = useModelProvider.getState().selectedModel
+        const usage = msgMeta?.usage as
+          | { inputTokens?: number; outputTokens?: number }
+          | undefined
+        const totalTokens =
+          (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
+        const ctxLen =
+          (selectedModelState?.settings?.ctx_len?.controller_props
+            ?.value as number) ?? 32768
+        const isContextLimit = totalTokens >= ctxLen * 0.9
+
+        if (isContextLimit) {
+          const autoIncrease =
+            selectedModelState?.settings?.auto_increase_ctx_len
+              ?.controller_props?.value ?? true
+          if (autoIncrease) {
+            const partialText = message.parts
+              .filter((p) => p.type === 'text')
+              .map((p) => (p as { type: 'text'; text: string }).text)
+              .join('')
+            if (partialText) {
+              setContinueFromContentRef.current?.(partialText)
+              // Keep the partial message visible while the model reloads
+              setPendingContinueMessage(message)
+            }
+            handleContextSizeIncreaseRef.current?.()
+          } else {
+            setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+          }
         }
-        handleContextSizeIncreaseRef.current?.()
         return
       }
 
@@ -254,10 +274,12 @@ function ThreadDetail() {
           try {
             const toolName = toolCall.toolName
 
-            // Request approval if needed (unless auto-approve is enabled)
-            const approved = await useToolApproval
-              .getState()
-              .showApprovalModal(toolName, threadId, toolCall.input)
+            // Built-in RAG tools are internal and should not require approval.
+            const approved = ragToolNames.has(toolName)
+              ? true
+              : await useToolApproval
+                  .getState()
+                  .showApprovalModal(toolName, threadId, toolCall.input)
 
             if (!approved) {
               // User denied the tool call
@@ -400,12 +422,8 @@ function ThreadDetail() {
 
   useEffect(() => {
     setCurrentThreadId(threadId)
-    const assistant = assistants.find(
-      (assistant) => assistant.id === thread?.assistants?.[0]?.id
-    )
-    if (assistant) setCurrentAssistant(assistant)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, assistants])
+  }, [threadId])
 
   // Load messages on first mount
   useEffect(() => {
@@ -509,6 +527,11 @@ function ThreadDetail() {
 
           // Update thread metadata if documents were embedded
           if (result.hasEmbeddedDocuments) {
+            const toolApproval = useToolApproval.getState()
+            const ragTools = useAppState.getState().ragToolNames
+            for (const toolName of ragTools) {
+              toolApproval.approveToolForThread(threadId, toolName)
+            }
             useThreads.getState().updateThread(threadId, {
               metadata: { hasDocuments: true },
             })
@@ -575,7 +598,7 @@ function ThreadDetail() {
 
   // Check for and send initial message from sessionStorage
   const initialMessageSentRef = useRef(false)
-  
+
   useEffect(() => {
     // Prevent duplicate sends
     if (initialMessageSentRef.current) return
@@ -748,13 +771,26 @@ function ThreadDetail() {
 
     const model = provider.models[modelIndex]
 
-    // Increase context length by 50%
+    // Increase context length in steps: <8192 -> 8192 -> 32768 -> x1.5
     const currentCtxLen =
-      (model.settings?.ctx_len?.controller_props?.value as number) ?? 32768
-    const newCtxLen =
-      currentCtxLen < 32768
-        ? 32768
-        : Math.round(Math.max(32768, currentCtxLen) * 1.5)
+      (model.settings?.ctx_len?.controller_props?.value as number) ?? 8192
+    const maxCtxLen =
+      (model.settings?.ctx_len?.controller_props?.max as number) || 131072
+
+    let newCtxLen: number
+    if (currentCtxLen < 8192) {
+      newCtxLen = 8192
+    } else if (currentCtxLen < 32768) {
+      newCtxLen = 32768
+    } else {
+      newCtxLen = Math.round(currentCtxLen * 1.5)
+    }
+
+    newCtxLen = Math.min(newCtxLen, maxCtxLen)
+    if (newCtxLen <= currentCtxLen) {
+      setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+      return
+    }
 
     const updatedModel = {
       ...model,
@@ -800,6 +836,11 @@ function ThreadDetail() {
   )
   useEffect(() => {
     if (!error || agentModeActive) return
+    if (autoIncreaseAttempts >= MAX_AUTO_INCREASE_ATTEMPTS) return
+    const autoIncrease =
+      selectedModel?.settings?.auto_increase_ctx_len?.controller_props?.value ??
+      true
+    if (!autoIncrease) return
     const isContextError =
       (error.message?.toLowerCase().includes('context') &&
         (error.message?.toLowerCase().includes('size') ||
@@ -807,21 +848,24 @@ function ThreadDetail() {
           error.message?.toLowerCase().includes('limit'))) ||
       error.message === OUT_OF_CONTEXT_SIZE
     if (isContextError) {
-      setIsAutoIncreasingContext(true)
+      setAutoIncreaseAttempts((prev) => prev + 1)
       handleContextSizeIncrease()
     }
   }, [error]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (isAutoIncreasingContext && (status === 'streaming' || status === 'error')) {
-      setIsAutoIncreasingContext(false)
+    if (status === 'streaming' || status === 'submitted') {
+      setContextLimitError(null)
+    }
+    if (status === 'streaming' && autoIncreaseAttempts > 0) {
+      setAutoIncreaseAttempts(0)
     }
     if (status === 'error' && pendingContinueMessage) {
       setPendingContinueMessage(null)
     }
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
-   const threadModel = useMemo(
+  const threadModel = useMemo(
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
   )
@@ -882,7 +926,7 @@ function ThreadDetail() {
                   {status === CHAT_STATUS.SUBMITTED && <PromptProgress />}
                 </div>
               )}
-              {error && !isAutoIncreasingContext && (
+              {(error || contextLimitError) && !isAutoIncreasingContext && (
                 <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
                   <div className="flex items-start gap-3">
                     <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
@@ -895,14 +939,14 @@ function ThreadDetail() {
                           className="text-sm text-muted-foreground table-cell align-middle"
                           style={{ wordWrap: 'break-word' }}
                         >
-                          {error.message}
+                          {(error ?? contextLimitError)?.message}
                         </span>
                       </div>
-                      {(error.message?.toLowerCase().includes('context') &&
-                        (error.message?.toLowerCase().includes('size') ||
-                          error.message?.toLowerCase().includes('length') ||
-                          error.message?.toLowerCase().includes('limit'))) ||
-                      error.message === OUT_OF_CONTEXT_SIZE ? (
+                      {((error ?? contextLimitError)?.message?.toLowerCase().includes('context') &&
+                        ((error ?? contextLimitError)?.message?.toLowerCase().includes('size') ||
+                          (error ?? contextLimitError)?.message?.toLowerCase().includes('length') ||
+                          (error ?? contextLimitError)?.message?.toLowerCase().includes('limit'))) ||
+                      (error ?? contextLimitError)?.message === OUT_OF_CONTEXT_SIZE ? (
                         <Button
                           variant="outline"
                           size="sm"

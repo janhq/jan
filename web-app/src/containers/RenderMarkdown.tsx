@@ -1,7 +1,8 @@
- 
+
 import { Components } from 'react-markdown'
 import { memo, useMemo } from 'react'
 import { cn, disableIndentedCodeBlockPlugin } from '@/lib/utils'
+import { ParagraphAiEditLayer } from '@/components/ParagraphAiEditLayer'
 // import 'katex/dist/katex.min.css'
 import { defaultRehypePlugins, Streamdown } from 'streamdown'
 import { cjk } from '@streamdown/cjk'
@@ -22,6 +23,10 @@ interface MarkdownProps {
   isStreaming?: boolean
   messageId?: string
   isAnimating?: boolean
+  /** When set, user can select text and use "Edit with AI" on assistant messages. */
+  onApplyContentEdit?: (newMarkdown: string) => void
+  /** Disable paragraph AI edit (e.g. while streaming). */
+  paragraphEditDisabled?: boolean
 }
 
 // Cache for normalized LaTeX content
@@ -37,38 +42,42 @@ const normalizeLatex = (input: string): string => {
     return latexCache.get(input)!
   }
 
-  const segments = input.split(/(```[\s\S]*?```|`[^`]*`|<[^>]+>)/g)
+  const segments = input.split(/(```[\s\S]*?```|`[^`]*`|<[a-zA-Z/_!][^>]*>)/g)
 
-  const result = segments
-    .map((segment) => {
-      if (!segment) return ''
+  let result = '';
 
-      // Skip code blocks, inline code, html tags
-      if (/^```[\s\S]*```$/.test(segment)) return segment
-      if (/^`[^`]*`$/.test(segment)) return segment
-      if (/^<[^>]+>$/.test(segment)) return segment
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    if (!segment) continue;
 
-      let s = segment
+    // Captured code blocks, inline code, html tags
+    if (i % 2 === 1) {
+      result += segment;
+      continue;
+    }
 
-      // --- Display math: \[...\] surrounded by newlines
+    let s = segment;
+
+    // --- Escape suspicious $<number> to prevent Markdown from treating it as LaTeX
+    // Example: "$1" → "\$1"
+    s = s.replace(/\$(\d+)(?![^\n]*\$([^\d]|$))/g, (_, num) => '\\$' + num)
+
+    // --- Display math: \[...\] surrounded by newlines
+    if (s.includes('\\['))
       s = s.replace(
         /(^|\n)\\\[\s*\n([\s\S]*?)\n\s*\\\](?=\n|$)/g,
         (_, pre, inner) => `${pre}$$\n${inner.trim()}\n$$`
       )
 
-      // --- Inline math: space \( ... \)
+    // --- Inline math: space \( ... \)
+    if (s.includes('\\('))
       s = s.replace(
         /(^|[^$\\])\\\((.+?)\\\)(?=[^$\\]|$)/g,
         (_, pre, inner) => `${pre}$${inner.trim()}$`
       )
 
-      // --- Escape $<number> to prevent Markdown from treating it as LaTeX
-      // Example: "$1" → "\$1"
-      s = s.replace(/\$(\d+)/g, (_, num) => '\\$' + num)
-
-      return s
-    })
-    .join('')
+    result += s;
+  }
 
   // Cache the result (with size limit to prevent memory leaks)
   if (latexCache.size > 100) {
@@ -86,23 +95,16 @@ function RenderMarkdownComponent({
   isUser,
   components,
   messageId,
-  isAnimating
+  isAnimating,
+  onApplyContentEdit,
+  paragraphEditDisabled,
 }: MarkdownProps) {
 
   // Memoize the normalized content to avoid reprocessing on every render
   const normalizedContent = useMemo(() => normalizeLatex(content), [content])
 
-  // Render the markdown content
-  return (
-    <div
-      dir="auto"
-      className={cn(
-        'markdown wrap-break-word select-text',
-        isUser && 'is-user',
-        className
-      )}
-    >
-      <Streamdown
+  const streamdownEl = (
+    <Streamdown
         animate={isAnimating ?? true}
         animationDuration={500}
         linkSafety={{
@@ -140,10 +142,39 @@ function RenderMarkdownComponent({
       >
         {normalizedContent}
       </Streamdown>
+  )
+
+  // Render the markdown content
+  return (
+    <div
+      dir="auto"
+      className={cn(
+        'markdown wrap-break-word select-text',
+        isUser && 'is-user',
+        className
+      )}
+    >
+      {onApplyContentEdit ? (
+        <ParagraphAiEditLayer
+          sourceMarkdown={normalizedContent}
+          disabled={paragraphEditDisabled}
+          onApply={onApplyContentEdit}
+        >
+          {streamdownEl}
+        </ParagraphAiEditLayer>
+      ) : (
+        streamdownEl
+      )}
     </div>
   )
 }
 export const RenderMarkdown = memo(
   RenderMarkdownComponent,
-  (prevProps, nextProps) => prevProps.content === nextProps.content
+  (prevProps, nextProps) =>
+    prevProps.content === nextProps.content &&
+    prevProps.isStreaming === nextProps.isStreaming &&
+    prevProps.isAnimating === nextProps.isAnimating &&
+    prevProps.messageId === nextProps.messageId &&
+    prevProps.onApplyContentEdit === nextProps.onApplyContentEdit &&
+    prevProps.paragraphEditDisabled === nextProps.paragraphEditDisabled
 )

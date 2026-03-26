@@ -18,7 +18,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { IconSettings2 } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { LogViewer } from '@/components/LogViewer'
 import { ensureModelForServer } from '@/utils/ensureModelForServer'
@@ -29,6 +29,12 @@ import {
   PopoverContent,
 } from '@/components/ui/popover'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Collapsible,
   CollapsibleTrigger,
   CollapsibleContent,
@@ -37,7 +43,9 @@ import {
   IconChevronDown,
   IconChevronUp,
   IconExternalLink,
+  IconLoader2,
 } from '@tabler/icons-react'
+import { ChevronsUpDown } from 'lucide-react'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -61,8 +69,21 @@ function LocalAPIServerContent() {
     apiKey,
     trustedHosts,
     proxyTimeout,
+    enableServerToolExecution,
+    setEnableServerToolExecution,
     setLastServerModels,
+    defaultModelLocalApiServer,
+    setDefaultModelLocalApiServer,
   } = useLocalApiServer()
+
+  const providers = useModelProvider((state) => state.providers)
+  const localModelIds = useMemo(
+    () =>
+      providers
+        .filter((p) => p.provider === 'llamacpp')
+        .flatMap((p) => p.models.map((m) => m.id)),
+    [providers]
+  )
 
   const { serverStatus, setServerStatus } = useAppState()
   const [showApiKeyError, setShowApiKeyError] = useState(false)
@@ -109,6 +130,7 @@ function LocalAPIServerContent() {
 
       ensureModelForServer({
         modelsService: serviceHub.models(),
+        modelOverride: defaultModelLocalApiServer,
         onLoadStart: () => setIsModelLoading(true),
         onLoadEnd: () => setIsModelLoading(false),
       })
@@ -145,6 +167,7 @@ function LocalAPIServerContent() {
             isCorsEnabled: corsEnabled,
             isVerboseEnabled: verboseLogs,
             proxyTimeout: proxyTimeout,
+            enableServerToolExecution,
           })
         })
         .then((actualPort: number) => {
@@ -203,12 +226,16 @@ function LocalAPIServerContent() {
     }
   }
 
-  const getButtonText = () => {
-    if (isModelLoading) {
-      return '...loading model'
-    }
-    if (serverStatus === 'pending' && !isModelLoading) {
-      return t('settings:localApiServer.startingServer')
+  const getButtonContent = () => {
+    if (isModelLoading || serverStatus === 'pending') {
+      return (
+        <>
+          <IconLoader2 size={14} className="animate-spin" />
+          {isModelLoading
+            ? t('settings:localApiServer.loadingModel')
+            : t('settings:localApiServer.startingServer')}
+        </>
+      )
     }
     return isServerRunning
       ? t('settings:localApiServer.stopServer')
@@ -337,6 +364,21 @@ function LocalAPIServerContent() {
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
                       <p className="text-sm font-medium">
+                        Execute tools on server
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Run tools server-side for chat endpoints.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={enableServerToolExecution}
+                      onCheckedChange={setEnableServerToolExecution}
+                      disabled={isServerRunning}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium">
                         {t('settings:localApiServer.cors')}
                       </p>
                       <p className="text-xs text-muted-foreground">
@@ -392,9 +434,9 @@ function LocalAPIServerContent() {
                         onClick={toggleAPIServer}
                         variant={isServerRunning ? 'destructive' : 'default'}
                         size="sm"
-                        disabled={serverStatus === 'pending'} // Disable during any loading state
+                        disabled={serverStatus === 'pending' || isModelLoading}
                       >
-                        {getButtonText()}
+                        {getButtonContent()}
                       </Button>
                     </div>
                   </div>
@@ -410,6 +452,49 @@ function LocalAPIServerContent() {
                         setEnableOnStartup(checked)
                       }}
                     />
+                  }
+                />
+                <CardItem
+                  title={t('settings:localApiServer.defaultModel')}
+                  description={t('settings:localApiServer.defaultModelDesc')}
+                  actions={
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-40 justify-between"
+                        >
+                          <span className="truncate">
+                            {defaultModelLocalApiServer?.model ??
+                              t(
+                                'settings:localApiServer.defaultModelPlaceholder'
+                              )}
+                          </span>
+                          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-64 max-h-60 overflow-y-auto">
+                        {localModelIds.map((modelId) => (
+                          <DropdownMenuItem
+                            key={modelId}
+                            className={cn(
+                              'cursor-pointer my-0.5',
+                              defaultModelLocalApiServer?.model === modelId &&
+                                'bg-secondary-foreground/8'
+                            )}
+                            onClick={() =>
+                              setDefaultModelLocalApiServer({
+                                model: modelId,
+                                provider: 'llamacpp',
+                              })
+                            }
+                          >
+                            <span className="truncate">{modelId}</span>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   }
                 />
               </Card>

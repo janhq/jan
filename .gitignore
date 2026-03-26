@@ -14,6 +14,7 @@ core/lib/**
 *.tsbuildinfo
 test_results.html
 pre-install
+.build
 
 # docs
 docs/yarn.lock
@@ -53,6 +54,11 @@ docs/.next/
 **/yarn-debug.log*
 **/yarn-error.log*
 **/pnpm-debug.log*
+
+## Swift Package Manager (Foundation Models server)
+src-tauri/plugins/tauri-plugin-foundation-models/swift-server/.build/
+src-tauri/plugins/tauri-plugin-foundation-models/swift-server/.swiftpm/
+src-tauri/plugins/tauri-plugin-foundation-models/swift-server/Package.resolved
 
 ## cargo
 target

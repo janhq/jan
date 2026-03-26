@@ -74,6 +74,7 @@ import { toast } from 'sonner'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
+import { useToolApproval } from '@/hooks/useToolApproval'
 import {
   NEW_THREAD_ATTACHMENT_KEY,
   useChatAttachments,
@@ -88,7 +89,7 @@ import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionD
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
-import { isOpenClawRunning } from '@/utils/openclaw'
+import { AssistantsMenu } from '@/components/AssistantsMenu'
 
 type ChatInputProps = {
   className?: string
@@ -141,22 +142,22 @@ const ChatInput = memo(function ChatInput({
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
-  const assistants = useAssistant((state) => state.assistants)
+  const { 
+    loading,
+    currentAssistant,
+    setCurrentAssistant,
+    assistants
+  } = useAssistant()
 
-  // Agent mode (OpenClaw)
+  // Agent mode
   // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
   const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
-  const [openClawAvailable, setOpenClawAvailable] = useState(false)
   const isAgentMode = useAgentMode((state) =>
     state.agentThreads[agentModeKey] === true
   )
   // When projectId is present, treat as normal chat (disable agent mode UI)
   const effectiveAgentMode = isAgentMode && !projectId
   const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
-
-  useEffect(() => {
-    isOpenClawRunning().then(setOpenClawAvailable)
-  }, [currentThreadId])
 
   const handleAgentToggle = useCallback(() => {
     toggleAgentMode(agentModeKey)
@@ -180,15 +181,34 @@ const ChatInput = memo(function ChatInput({
   const updateProvider = useModelProvider((state) => state.updateProvider)
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
-  const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
+  const [tooltipShown, setTooltipShown] = useState<
+    'tools' | 'assistants' | false
+  >(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
+  const wasPointerDown = useRef(false)
 
   // Check if selected model is currently loaded/active
   const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
-  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>(assistants[0])
+  const [selectedAssistantId, setSelectedAssistantId] = useState<
+    string | undefined
+  >(loading ? undefined : currentAssistant?.id || '')
+
+  useEffect(() => {
+    setSelectedAssistantId(currentAssistant?.id || '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
+
+  const avatar = currentThread
+    ? assistants.find((a) => a.id === currentThread?.assistants?.[0]?.id)
+        ?.avatar ||
+      currentThread?.assistants?.[0]?.avatar ||
+      ''
+    : assistants.find((a) => a.id === selectedAssistantId)?.avatar || ''
+
+  const assistantCount = assistants?.length || 0
 
   // No auto-selection: let the user explicitly pick an assistant
 
@@ -355,6 +375,8 @@ const ChatInput = memo(function ChatInput({
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
+      const assistant = currentThread?.assistants?.[0]
+      setCurrentAssistant(assistant)
       // Build file parts for AI SDK
       const files = attachments
         .filter((att) => att.type === 'image' && att.dataUrl)
@@ -433,7 +455,9 @@ const ChatInput = memo(function ChatInput({
         // When no projectId, use the selected assistant from dropdown (if any)
         const assistant = projectAssistantId
           ? assistants.find((a) => a.id === projectAssistantId)
-          : selectedAssistant
+          : assistants.find((a) => a.id === selectedAssistantId)
+
+        setCurrentAssistant(assistant)
 
         const newThread = await createThread(
           {
@@ -444,9 +468,6 @@ const ChatInput = memo(function ChatInput({
           assistant,
           projectMetadata
         )
-
-        // Clear selected assistant after creating thread
-        setSelectedAssistant(undefined)
 
         // Transfer agent mode from home screen to the new thread
         if (isAgentMode) {
@@ -501,10 +522,10 @@ const ChatInput = memo(function ChatInput({
   }, [])
 
   useEffect(() => {
-    if (tooltipToolsAvailable && dropdownToolsAvailable) {
-      setTooltipToolsAvailable(false)
+    if (tooltipShown && dropdownToolsAvailable) {
+      setTooltipShown(false)
     }
-  }, [dropdownToolsAvailable, tooltipToolsAvailable])
+  }, [dropdownToolsAvailable, tooltipShown])
 
   // Focus when thread changes
   useEffect(() => {
@@ -705,6 +726,11 @@ const ChatInput = memo(function ChatInput({
         }
 
         if (hasEmbeddedDocuments) {
+          const toolApproval = useToolApproval.getState()
+          const ragTools = useAppState.getState().ragToolNames
+          for (const toolName of ragTools) {
+            toolApproval.approveToolForThread(currentThreadId, toolName)
+          }
           useThreads.getState().updateThread(currentThreadId, {
             metadata: { hasDocuments: true },
           })
@@ -742,8 +768,9 @@ const ChatInput = memo(function ChatInput({
         multiple: true,
         filters: [
           {
-            name: 'Documents',
+            name: 'Documents & Code',
             extensions: [
+              // Documents
               'pdf',
               'docx',
               'txt',
@@ -755,7 +782,89 @@ const ChatInput = memo(function ChatInput({
               'pptx',
               'html',
               'htm',
+              // JavaScript / TypeScript
+              'js',
+              'mjs',
+              'cjs',
+              'ts',
+              'mts',
+              'cts',
+              'jsx',
+              'tsx',
+              // Python
+              'py',
+              'pyw',
+              'pyi',
+              // C / C++
+              'c',
+              'h',
+              'cpp',
+              'cc',
+              'cxx',
+              'hpp',
+              'hh',
+              // Systems languages
+              'rs',
+              'go',
+              'swift',
+              'zig',
+              // JVM languages
+              'java',
+              'kt',
+              'kts',
+              'scala',
+              'groovy',
+              // Scripting languages
+              'rb',
+              'php',
+              'lua',
+              'pl',
+              'r',
+              'jl',
+              // .NET
+              'cs',
+              'fs',
+              'vb',
+              // Shell
+              'sh',
+              'bash',
+              'zsh',
+              'fish',
+              'ps1',
+              // Web
+              'css',
+              'scss',
+              'sass',
+              'less',
+              'vue',
+              'svelte',
+              'astro',
+              // Data / config formats
+              'json',
+              'jsonc',
+              'yaml',
+              'yml',
+              'toml',
+              'xml',
+              'ini',
+              'cfg',
+              'conf',
+              'env',
+              // Query / markup
+              'sql',
+              'graphql',
+              'gql',
+              'tex',
+              'rst',
+              // Misc text
+              'log',
+              'diff',
+              'patch',
             ],
+          },
+          {
+            name: 'All Files',
+            extensions: ['*'],
           },
         ],
       })
@@ -1470,7 +1579,6 @@ const ChatInput = memo(function ChatInput({
                                     )}
                                   </div>
                                 )}
-
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>
@@ -1612,73 +1720,90 @@ const ChatInput = memo(function ChatInput({
                       </span>
                     </DropdownMenuItem>
                     {/* Use Assistant - only show when no projectId */}
-                    {!projectId && (
+                    {!projectId && assistantCount < 2 && (
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger>
                           <IconUser size={18} className="text-muted-foreground" />
                           <span>Use Assistant</span>
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
-                          <DropdownMenuItem
-                            className={!selectedAssistant && !currentThread?.assistants?.length ? 'bg-accent' : ''}
-                            onClick={() => {
-                              setSelectedAssistant(undefined)
-                              if (currentThreadId) {
-                                updateCurrentThreadAssistant(undefined as unknown as Assistant)
-                              }
-                            }}
-                          >
-                            <div className="flex items-center gap-2 w-full">
-                              <span className="text-muted-foreground">—</span>
-                              <span>None</span>
-                              {!selectedAssistant && !currentThread?.assistants?.length && (
-                                <span className="ml-auto text-xs text-muted-foreground">✓</span>
-                              )}
-                            </div>
-                          </DropdownMenuItem>
-                          {assistants.length > 0 ? (
-                            assistants.map((assistant) => {
-                              const isSelected = initialMessage && selectedAssistant?.id === assistant.id ||
-                                (assistant && currentThread?.assistants?.some((a) => a.id === assistant.id))
-                              return (
-                                <DropdownMenuItem
-                                  key={assistant.id}
-                                  className={isSelected ? 'bg-accent' : ''}
-                                  onClick={() => {
-                                    setSelectedAssistant(assistant)
-                                    if (currentThreadId) {
-                                      updateCurrentThreadAssistant(assistant)
-                                    }
-                                  }}
-                                >
-                                  <div className="flex items-center gap-2 w-full">
-                                    <AvatarEmoji
-                                      avatar={assistant.avatar}
-                                      imageClassName="w-4 h-4 object-contain"
-                                      textClassName="text-sm"
-                                    />
-                                    <span>{assistant.name || 'Unnamed Assistant'}</span>
-                                    {isSelected && (
-                                      <span className="ml-auto text-xs text-muted-foreground">
-                                        ✓
-                                      </span>
-                                    )}
-                                  </div>
-                                </DropdownMenuItem>
-                              )
-                            })
-                          ) : (
-                            <DropdownMenuItem disabled>
-                              <span className="text-muted-foreground">
-                                No assistants available
-                              </span>
-                            </DropdownMenuItem>
-                          )}
+                          <AssistantsMenu
+                            selectedAssistant={selectedAssistantId}
+                            setSelectedAssistant={setSelectedAssistantId}
+                            currentThread={currentThread}
+                            updateCurrentThreadAssistant={
+                              updateCurrentThreadAssistant
+                            }
+                            assistants={assistants}
+                          />
                         </DropdownMenuSubContent>
                       </DropdownMenuSub>
                     )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                {!projectId && assistantCount >= 2 && (
+                  <DropdownMenu>
+                    <Tooltip
+                      open={tooltipShown === 'assistants'}
+                      onOpenChange={(newValue) =>
+                        setTooltipShown(newValue ? 'assistants' : false)
+                      }
+                    >
+                      <TooltipTrigger asChild>
+                        <DropdownMenuTrigger
+                          asChild
+                          onPointerDown={() => {
+                            wasPointerDown.current = true
+                          }}
+                          onKeyDown={() => {
+                            wasPointerDown.current = false
+                          }}
+                        >
+                          <Button
+                            variant="secondary"
+                            size="icon-sm"
+                            className="rounded-full mr-2 mb-1"
+                          >
+                            {avatar && (
+                              <AvatarEmoji
+                                avatar={avatar}
+                                imageClassName="w-4 h-4 object-contain"
+                                textClassName="text-xs relative inline-block"
+                              />
+                            )}
+                            {!avatar && (
+                              <IconUser
+                                size={18}
+                                className="text-muted-foreground"
+                              />
+                            )}
+                          </Button>
+                        </DropdownMenuTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('assistants')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <DropdownMenuContent
+                      onCloseAutoFocus={(event) => {
+                        if (wasPointerDown.current) {
+                          event.preventDefault()
+                        }
+                      }}
+                      align="start"
+                    >
+                      <AssistantsMenu
+                        selectedAssistant={selectedAssistantId}
+                        setSelectedAssistant={setSelectedAssistantId}
+                        currentThread={currentThread}
+                        updateCurrentThreadAssistant={
+                          updateCurrentThreadAssistant
+                        }
+                        assistants={assistants}
+                      />
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
                 {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
@@ -1765,8 +1890,8 @@ const ChatInput = memo(function ChatInput({
                   ) : (
                     // Use default tools dropdown
                     <Tooltip
-                      open={tooltipToolsAvailable}
-                      onOpenChange={setTooltipToolsAvailable}
+                      open={tooltipShown === 'tools'}
+                      onOpenChange={(newValue) => newValue ? setTooltipShown('tools') : setTooltipShown(false)}
                     >
                       <TooltipTrigger
                         asChild
@@ -1785,7 +1910,7 @@ const ChatInput = memo(function ChatInput({
                             onOpenChange={(isOpen) => {
                               setDropdownToolsAvailable(isOpen)
                               if (isOpen) {
-                                setTooltipToolsAvailable(false)
+                                setTooltipShown(false)
                               }
                             }}
                           >
@@ -1814,7 +1939,8 @@ const ChatInput = memo(function ChatInput({
                     </Tooltip>
                   ))}
 
-                {openClawAvailable && !projectId && isAgentMode && (
+                {/* Agent mode toggle hidden — kept as dead code for future use */}
+                {false && !projectId && isAgentMode && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button

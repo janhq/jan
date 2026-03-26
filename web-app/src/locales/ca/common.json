@@ -1,0 +1,387 @@
+{
+  "assistants": "Assistents",
+  "hardware": "Maquinari",
+  "mcp-servers": "Servidors MCP",
+  "local_api_server": "Servidor API local",
+  "https_proxy": "Proxy HTTPS",
+  "extensions": "Extensions",
+  "attachments": "Fitxers adjunts",
+  "general": "General",
+  "settings": "Configuració",
+  "modelProviders": "Proveïdors de models",
+  "interface": "Interfície",
+  "privacy": "Privadesa",
+  "keyboardShortcuts": "Dreceres",
+  "newChat": "Xat nou",
+  "favorites": "Preferits",
+  "recents": "Recents",
+  "hub": "Hub",
+  "helpSupport": "Ajuda i suport",
+  "helpUsImproveJan": "Ajuda’ns a millorar Jan",
+  "unstarAll": "Desmarca-ho tot",
+  "unstar": "Desmarca",
+  "deleteAll": "Suprimeix-ho tot",
+  "star": "Afegeix als preferits",
+  "rename": "Canvia el nom",
+  "delete": "Suprimeix",
+  "copied": "Copiat!",
+  "dataFolder": "Carpeta de dades",
+  "others": "Altres",
+  "language": "Idioma",
+  "login": "Inicia la sessió",
+  "loginWith": "Inicia la sessió amb {{provider}}",
+  "loginFailed": "No s’ha pogut iniciar la sessió",
+  "logout": "Tanca la sessió",
+  "loggingOut": "Tancant la sessió...",
+  "loggedOut": "Sessió tancada correctament",
+  "logoutFailed": "No s’ha pogut tancar la sessió",
+  "profile": "Perfil",
+  "reset": "Restableix",
+  "search": "Cerca",
+  "name": "Nom",
+  "cancel": "Cancel·la",
+  "create": "Crea",
+  "save": "Desa",
+  "edit": "Edita",
+  "copy": "Copia",
+  "back": "Enrere",
+  "close": "Tanca",
+  "next": "Següent",
+  "finish": "Finalitza",
+  "skip": "Omet",
+  "allow": "Permet",
+  "deny": "Denega",
+  "start": "Inicia",
+  "stop": "Atura",
+  "preview": "Previsualitza",
+  "compactWidth": "Amplada compacta",
+  "fullWidth": "Amplada completa",
+  "dark": "Fosc",
+  "light": "Clar",
+  "system": "Sistema",
+  "auto": "Automàtic",
+  "english": "Anglès",
+  "medium": "Mitjà",
+  "newThread": "Fil nou",
+  "noResultsFound": "No s’han trobat resultats",
+  "noThreadsYet": "Encara no hi ha cap fil",
+  "noThreadsYetDesc": "Inicia una conversa nova per veure aquí l’historial dels teus fils.",
+  "downloads": "Descàrregues",
+  "downloading": "S’està descarregant",
+  "cancelDownload": "Cancel·la la descàrrega",
+  "downloadCancelled": "Descàrrega cancel·lada",
+  "downloadComplete": "Descàrrega completada",
+  "thinking": "Pensant...",
+  "thought": "Pensament",
+  "callingTool": "S’està cridant l’eina",
+  "completed": "Completat",
+  "image": "Imatge",
+  "vision": "Visió",
+  "embeddings": "Incrustacions",
+  "tools": "Eines",
+  "webSearch": "Cerca web",
+  "reasoning": "Raonament",
+  "proactive": "Proactiu",
+  "selectAModel": "Selecciona un model",
+  "noToolsAvailable": "No hi ha eines disponibles",
+  "noModelsFoundFor": "No s’han trobat models per a \"{{searchValue}}\"",
+  "failedToLoadModels": "No s’han pogut carregar els models",
+  "noModels": "No s’han trobat models",
+  "customAvatar": "Avatar personalitzat",
+  "editAssistant": "Edita l’assistent",
+  "jan": "Jan",
+  "metadata": "Metadades",
+  "regenerate": "Regenera",
+  "threadImage": "Imatge del fil",
+  "editMessage": "Edita el missatge",
+  "deleteMessage": "Suprimeix el missatge",
+  "deleteThread": "Suprimeix el fil",
+  "renameThread": "Canvia el nom del fil",
+  "threadTitle": "Títol del fil",
+  "deleteAllThreads": "Suprimeix tots els fils",
+  "allThreadsUnfavorited": "Tots els fils s’han tret dels preferits",
+  "deleteAllThreadsConfirm": "Segur que vols suprimir tots els fils? Aquesta acció no es pot desfer.",
+  "addProvider": "Afegeix un proveïdor",
+  "addOpenAIProvider": "Afegeix un proveïdor d’OpenAI",
+  "enterNameForProvider": "Introdueix un nom per al teu proveïdor",
+  "providerAlreadyExists": "Ja existeix un proveïdor amb el nom \"{{name}}\". Tria un altre nom.",
+  "adjustFontSize": "Ajusta la mida de la lletra",
+  "changeLanguage": "Canvia l’idioma",
+  "editTheme": "Edita el tema",
+  "editCodeBlockStyle": "Edita l’estil del bloc de codi",
+  "editServerHost": "Edita l’amfitrió del servidor",
+  "pickColorWindowBackground": "Tria el color del fons de la finestra",
+  "pickColorAppMainView": "Tria el color de la vista principal de l’app",
+  "pickColorAppPrimary": "Tria el color principal de l’app",
+  "pickColorAppAccent": "Tria el color d’accent de l’app",
+  "pickColorAppDestructive": "Tria el color d’acció destructiva de l’app",
+  "apiKeyRequired": "Cal una clau API",
+  "enterTrustedHosts": "Introdueix els hosts de confiança",
+  "placeholder": {
+    "chatInput": "Pregunta’m qualsevol cosa..."
+  },
+  "confirm": "Confirma",
+  "continue": "Continua",
+  "loading": "S’està carregant...",
+  "error": "Error",
+  "success": "Correcte",
+  "warning": "Avís",
+  "conversationNotAvailable": "Conversa no disponible",
+  "conversationNotAvailableDescription": "La conversa a la qual vols accedir no està disponible o s’ha suprimit.",
+  "temporaryChat": "Xat temporal",
+  "temporaryChatTooltip": "El xat temporal no apareixerà a l’historial",
+  "noResultsFoundDesc": "No hem trobat cap xat que coincideixi amb la cerca. Prova amb una altra paraula clau.",
+  "searchModels": "Cerca models...",
+  "searchStyles": "Cerca estils...",
+  "createAssistant": "Crea un assistent",
+  "enterApiKey": "Introdueix la clau API",
+  "scrollToBottom": "Desplaça fins a baix",
+  "generateAiResponse": "Genera una resposta d’IA",
+  "continueAiResponse": "Continua amb la resposta d’IA",
+  "addModel": {
+    "title": "Afegeix un model",
+    "modelId": "ID del model",
+    "enterModelId": "Introdueix l’ID del model",
+    "addModel": "Afegeix el model",
+    "description": "Afegeix un model nou al proveïdor",
+    "exploreModels": "Consulta la llista de models del proveïdor"
+  },
+  "mcpServers": {
+    "editServer": "Edita el servidor",
+    "addServer": "Afegeix un servidor",
+    "serverName": "Nom del servidor",
+    "enterServerName": "Introdueix el nom del servidor",
+    "command": "Ordre",
+    "enterCommand": "Introdueix l’ordre",
+    "arguments": "Arguments",
+    "argument": "Argument {{index}}",
+    "envVars": "Variables d’entorn",
+    "key": "Clau",
+    "value": "Valor",
+    "save": "Desa"
+  },
+  "deleteServer": {
+    "title": "Suprimeix el servidor",
+    "delete": "Suprimeix"
+  },
+  "editJson": {
+    "errorParse": "No s’ha pogut analitzar el JSON",
+    "errorPaste": "No s’ha pogut enganxar el JSON",
+    "errorFormat": "Format JSON no vàlid",
+    "titleAll": "Edita la configuració de tots els servidors",
+    "placeholder": "Introdueix la configuració JSON...",
+    "save": "Desa"
+  },
+  "editModel": {
+    "title": "Edita el model: {{modelId}}",
+    "description": "Configura les capacitats del model activant les opcions següents.",
+    "capabilities": "Capacitats",
+    "tools": "Eines",
+    "vision": "Visió",
+    "embeddings": "Incrustacions",
+    "notAvailable": "Encara no disponible"
+  },
+  "outOfContextError": {
+    "truncateInput": "Escurça l’entrada",
+    "title": "Error de context",
+    "description": "Aquest xat s’està acostant al límit de memòria de l’IA, com una pissarra que s’omple. Podem ampliar la finestra de memòria (mida del context) perquè recordi més coses, però pot consumir més memòria del teu ordinador. També podem truncar l’entrada, és a dir, oblidar part de l’historial per fer lloc a missatges nous.",
+    "increaseContextSizeDescription": "Vols augmentar la mida del context?",
+    "increaseContextSize": "Augmenta la mida del context"
+  },
+  "toolApproval": {
+    "title": "Sol·licitud de permís per a l’eina",
+    "description": "L’assistent vol utilitzar <strong>{{toolName}}</strong>",
+    "securityNotice": "Només permet eines de confiança. Poden accedir al teu sistema i a les teves dades.",
+    "deny": "Denega",
+    "allowOnce": "Permet un cop",
+    "alwaysAllow": "Permet sempre"
+  },
+  "deleteModel": {
+    "title": "Suprimeix el model: {{modelId}}",
+    "description": "Segur que vols suprimir aquest model? Aquesta acció no es pot desfer.",
+    "success": "El model {{modelId}} s’ha suprimit definitivament.",
+    "cancel": "Cancel·la",
+    "delete": "Suprimeix"
+  },
+  "deleteProvider": {
+    "title": "Suprimeix el proveïdor",
+    "description": "Suprimeix aquest proveïdor i tots els seus models. Aquesta acció no es pot desfer.",
+    "success": "El proveïdor {{provider}} s’ha suprimit definitivament.",
+    "confirmTitle": "Suprimeix el proveïdor: {{provider}}",
+    "confirmDescription": "Segur que vols suprimir aquest proveïdor? Aquesta acció no es pot desfer.",
+    "cancel": "Cancel·la",
+    "delete": "Suprimeix"
+  },
+  "modelSettings": {
+    "title": "Paràmetres del model - {{modelId}}",
+    "description": "Configura els paràmetres del model per optimitzar el rendiment i el comportament."
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Canvia la ubicació de la carpeta de dades",
+      "description": "Segur que vols canviar la ubicació de la carpeta de dades? Això mourà totes les dades al nou lloc i reiniciarà l’aplicació.",
+      "currentLocation": "Ubicació actual:",
+      "newLocation": "Nova ubicació:",
+      "cancel": "Cancel·la",
+      "changeLocation": "Canvia la ubicació"
+    },
+    "deleteAllThreads": {
+      "title": "Suprimeix tots els fils",
+      "description": "Se suprimiran tots els fils. Aquesta acció no es pot desfer."
+    },
+    "deleteThread": {
+      "description": "Segur que vols suprimir aquest fil? Aquesta acció no es pot desfer."
+    },
+    "editMessage": {
+      "title": "Edita el missatge"
+    },
+    "messageMetadata": {
+      "title": "Metadades del missatge"
+    }
+  },
+  "projects": {
+    "title": "Projectes",
+    "addProject": "Afegeix un projecte",
+    "addToProject": "Afegeix al projecte",
+    "removeFromProject": "Elimina del projecte",
+    "createNewProject": "Crea un projecte nou",
+    "editProject": "Edita el projecte",
+    "deleteProject": "Suprimeix el projecte",
+    "projectName": "Nom del projecte",
+    "enterProjectName": "Introdueix el nom del projecte...",
+    "noProjectsAvailable": "No hi ha projectes disponibles",
+    "noProjectsYet": "Encara no hi ha projectes",
+    "noProjectsYetDesc": "Comença un projecte nou fent clic al botó Afegeix projecte.",
+    "projectNotFound": "Projecte no trobat",
+    "projectNotFoundDesc": "El projecte que busques no existeix o s’ha suprimit.",
+    "deleteProjectDialog": {
+      "title": "Suprimeix el projecte",
+      "permanentDelete": "Això suprimirà definitivament tots els fils.",
+      "permanentDeleteWarning": "Aquesta acció suprimirà TOTS els fils del projecte!",
+      "deleteEmptyProject": "Aquesta acció suprimirà el projecte \"{{projectName}}\".",
+      "saveThreadsAdvice": "Per conservar els fils, mou-los a la llista de fils o a un altre projecte abans de suprimir-lo.",
+      "starredWarning": "Encara tens fils marcats com a preferits al projecte.",
+      "deleteButton": "Suprimeix",
+      "successWithName": "Projecte \"{{projectName}}\" suprimit correctament",
+      "successWithoutName": "Projecte suprimit correctament",
+      "error": "No s’ha pogut suprimir el projecte. Torna-ho a provar.",
+      "ariaLabel": "Suprimeix {{projectName}}"
+    },
+    "addProjectDialog": {
+      "createTitle": "Crea un projecte nou",
+      "editTitle": "Edita el projecte",
+      "nameLabel": "Nom del projecte",
+      "namePlaceholder": "Introdueix el nom del projecte...",
+      "createButton": "Crea",
+      "updateButton": "Actualitza",
+      "alreadyExists": "El projecte \"{{projectName}}\" ja existeix",
+      "createSuccess": "Projecte \"{{projectName}}\" creat correctament",
+      "renameSuccess": "Projecte reanomenat de \"{{oldName}}\" a \"{{newName}}\""
+    },
+    "noConversationsIn": "No hi ha converses a {{projectName}}",
+    "startNewConversation": "Inicia una conversa nova amb {{projectName}} a continuació",
+    "conversationsIn": "Converses a {{projectName}}",
+    "conversationsDescription": "Fes clic a qualsevol conversa per continuar parlant o inicia’n una de nova a continuació.",
+    "thread": "fil",
+    "threads": "fils",
+    "updated": "Actualitzat:",
+    "collapseProject": "Redueix el projecte",
+    "expandProject": "Expandeix el projecte",
+    "update": "Actualitza",
+    "searchProjects": "Cerca projectes...",
+    "noProjectsFound": "No s’han trobat projectes",
+    "tryDifferentSearch": "Prova amb un terme de cerca diferent"
+  },
+  "attachmentsIngestion": {
+    "title": "Tria com ingerir els adjunts",
+    "description": "Decideix si vols incloure aquests fitxers directament al xat o indexar-los com a incrustacions.",
+    "inline": "Injecta al xat",
+    "embeddings": "Utilitza incrustacions"
+  },
+  "attachmentInjectedIndicator": "Injectat al xat",
+  "attachmentEmbeddedIndicator": "Incrustat per a RAG",
+  "viewInjectedContent": "Mostra el contingut injectat",
+  "injectedContentTitle": "Contingut del fitxer injectat",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "S’han desmarcat tots els fils",
+      "description": "Tots els fils s’han eliminat dels preferits."
+    },
+    "deleteAllThreads": {
+      "title": "Suprimeix tots els fils",
+      "description": "Tots els fils s’han suprimit definitivament."
+    },
+    "renameThread": {
+      "title": "Fil reanomenat",
+      "description": "El fil ara es diu \"{{title}}\""
+    },
+    "deleteThread": {
+      "title": "Fil suprimit",
+      "description": "Aquest fil s’ha suprimit definitivament."
+    },
+    "editMessage": {
+      "title": "Missatge editat",
+      "description": "Missatge editat correctament. Espera la resposta del model."
+    },
+    "appUpdateDownloaded": {
+      "title": "Actualització descarregada",
+      "description": "L’actualització de l’app s’ha descarregat correctament."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "Error en descarregar l’actualització",
+      "description": "No s’ha pogut descarregar l’actualització de l’app. Torna-ho a provar."
+    },
+    "downloadComplete": {
+      "title": "Descàrrega completada",
+      "description": "{{item}} s’ha descarregat"
+    },
+    "downloadCancelled": {
+      "title": "Descàrrega cancel·lada",
+      "description": "S’ha cancel·lat el procés de descàrrega"
+    },
+    "downloadFailed": {
+      "title": "Error de descàrrega",
+      "description": "La descàrrega de {{item}} ha fallat"
+    },
+    "modelValidationStarted": {
+      "title": "S’està validant el model",
+      "description": "El model \"{{modelId}}\" s’ha descarregat correctament. Verificant la integritat..."
+    },
+    "modelValidationFailed": {
+      "title": "La validació del model ha fallat",
+      "description": "El model descarregat \"{{modelId}}\" no ha superat la verificació d’integritat i s’ha eliminat. El fitxer pot estar corrupte o manipulat."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "Descàrrega completada",
+      "description": "El model \"{{item}}\" s’ha descarregat i verificat correctament"
+    },
+    "projectCreated": {
+      "title": "Projecte creat",
+      "description": "El projecte \"{{projectName}}\" s’ha creat correctament"
+    },
+    "projectRenamed": {
+      "title": "Projecte reanomenat",
+      "description": "El projecte ha passat de dir-se \"{{oldName}}\" a \"{{newName}}\""
+    },
+    "projectDeleted": {
+      "title": "Projecte suprimit",
+      "description": "El projecte \"{{projectName}}\" s’ha suprimit correctament"
+    },
+    "projectAlreadyExists": {
+      "title": "El projecte ja existeix",
+      "description": "El projecte \"{{projectName}}\" ja existeix"
+    },
+    "projectDeleteFailed": {
+      "title": "Error en suprimir",
+      "description": "No s’ha pogut suprimir el projecte. Torna-ho a provar."
+    },
+    "threadAssignedToProject": {
+      "title": "Fil assignat",
+      "description": "El fil s’ha assignat a \"{{projectName}}\" correctament"
+    },
+    "threadRemovedFromProject": {
+      "title": "Fil eliminat del projecte",
+      "description": "El fil s’ha eliminat de \"{{projectName}}\" correctament"
+    }
+  }
+}

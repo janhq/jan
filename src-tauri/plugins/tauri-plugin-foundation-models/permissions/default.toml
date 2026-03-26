@@ -1,0 +1,12 @@
+[default]
+description = "Default permissions for the Foundation Models plugin"
+permissions = [
+    "allow-cleanup-foundation-models-processes",
+    "allow-check-foundation-models-availability",
+    "allow-load-foundation-models",
+    "allow-unload-foundation-models",
+    "allow-is-foundation-models-loaded",
+    "allow-foundation-models-chat-completion",
+    "allow-foundation-models-chat-completion-stream",
+    "allow-abort-foundation-models-stream",
+]

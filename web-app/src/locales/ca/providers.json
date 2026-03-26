@@ -1,0 +1,62 @@
+{
+  "refreshModelsError": "El proveïdor ha de tenir configurats l’URL base i la clau API per obtenir models.",
+  "refreshModelsSuccess": "S’han afegit {{count}} model(s) nous de {{provider}}.",
+  "noNewModels": "No s’han trobat models nous. Tots els disponibles ja s’han afegit.",
+  "refreshModelsFailed": "No s’han pogut obtenir models de {{provider}}. Comprova la clau API i l’URL base.",
+  "models": "Models",
+  "refreshing": "S’està actualitzant...",
+  "refresh": "Actualitza",
+  "import": "Importa",
+  "importModelSuccess": "El model {{provider}} s’ha importat correctament.",
+  "importModelError": "No s’ha pogut importar el model:",
+  "stop": "Atura",
+  "start": "Inicia",
+  "noModelFound": "No s’ha trobat cap model",
+  "noModelFoundDesc": "Els models disponibles apareixeran aquí. Si encara no en tens cap, visita el Hub per descarregar-ne.",
+  "configuration": "Configuració",
+  "apiEndpoint": "Extrem de l’API",
+  "testConnection": "Prova la connexió",
+  "addModel": {
+    "title": "Afegeix un model nou",
+    "description": "Afegeix un model nou al proveïdor {{provider}}.",
+    "modelId": "ID del model",
+    "enterModelId": "Introdueix l’ID del model",
+    "exploreModels": "Consulta la llista de models de {{provider}}",
+    "addModel": "Afegeix el model",
+    "modelExists": "El model ja existeix",
+    "modelExistsDesc": "Si us plau, tria un altre ID de model."
+  },
+  "deleteModel": {
+    "title": "Suprimeix el model: {{modelId}}",
+    "description": "Segur que vols suprimir aquest model? Aquesta acció no es pot desfer.",
+    "success": "El model {{modelId}} s’ha suprimit definitivament.",
+    "cancel": "Cancel·la",
+    "delete": "Suprimeix"
+  },
+  "deleteProvider": {
+    "title": "Suprimeix el proveïdor",
+    "description": "Suprimeix aquest proveïdor i tots els seus models. Aquesta acció no es pot desfer.",
+    "success": "El proveïdor {{provider}} s’ha suprimit definitivament.",
+    "confirmTitle": "Suprimeix el proveïdor: {{provider}}",
+    "confirmDescription": "Segur que vols suprimir aquest proveïdor? Aquesta acció no es pot desfer.",
+    "cancel": "Cancel·la",
+    "delete": "Suprimeix"
+  },
+  "editModel": {
+    "title": "Edita el model: {{modelId}}",
+    "description": "Configura les capacitats del model activant les opcions següents.",
+    "capabilities": "Capacitats",
+    "tools": "Eines",
+    "vision": "Visió",
+    "proactive": "Proactiu (experimental)",
+    "embeddings": "Incrustacions",
+    "notAvailable": "Encara no disponible",
+    "warning": {
+      "title": "Ves amb compte",
+      "description": "Modificar les capacitats del model pot afectar el rendiment i la funcionalitat. Una configuració incorrecta pot provocar comportaments inesperats o errors."
+    }
+  },
+  "addProvider": "Afegeix un proveïdor",
+  "addOpenAIProvider": "Afegeix un proveïdor d’OpenAI",
+  "enterNameForProvider": "Introdueix el nom del proveïdor"
+}
