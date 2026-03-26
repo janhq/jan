@@ -400,7 +400,7 @@ impl AgentConfig {
 }
 
 /// Check whether a specific arg was explicitly provided on the CLI.
-/// `id` is the clap long-name (e.g. "port", "ctx-size").
+/// `id` is the clap arg ID — the Rust field name (e.g. "port", "ctx_size").
 /// Navigates into the `agent chat` subcommand matches.
 fn arg_is_present(matches: &clap::ArgMatches, id: &str) -> bool {
     // Navigate: top-level → "agent" subcommand → "chat" subcommand
@@ -458,7 +458,7 @@ fn merge_agent_config(
     }
 
     // ── Resolve api_url from config provider ──
-    if arg_is_present(matches, "api-url") {
+    if arg_is_present(matches, "api_url") {
         any_cli_override = true;
     } else if api_url.is_none() {
         // Determine the default provider, then use its baseUrl
@@ -472,7 +472,7 @@ fn merge_agent_config(
 
     // ── Agent settings ──
     merge_val!(*agent_impl, config.agent.agent_impl.clone(), "agent");
-    if arg_is_present(matches, "robot-url") {
+    if arg_is_present(matches, "robot_url") {
         any_cli_override = true;
     } else if robot_url.is_none() {
         *robot_url = config.agent.robot_url.clone();
@@ -487,15 +487,15 @@ fn merge_agent_config(
 
     // ── Serve settings ──
     merge_val!(serve.port, config.serve.port, "port");
-    merge_val!(serve.n_gpu_layers, config.serve.n_gpu_layers, "n-gpu-layers");
-    merge_val!(serve.ctx_size, config.serve.ctx_size, "ctx-size");
+    merge_val!(serve.n_gpu_layers, config.serve.n_gpu_layers, "n_gpu_layers");
+    merge_val!(serve.ctx_size, config.serve.ctx_size, "ctx_size");
     merge_val!(serve.threads, config.serve.threads, "threads");
     merge_val!(serve.timeout, config.serve.timeout, "timeout");
     merge_val!(serve.fit, config.serve.fit, "fit");
     merge_val!(serve.embedding, config.serve.embedding, "embedding");
     merge_val!(serve.verbose, config.serve.verbose, "verbose");
     merge_val!(serve.select, config.serve.select_quant, "select");
-    merge_option!(serve.model_path, config.serve.model_path.clone(), "model-path");
+    merge_option!(serve.model_path, config.serve.model_path.clone(), "model_path");
     merge_option!(serve.bin, config.serve.bin.clone(), "bin");
     merge_option!(serve.mmproj, config.serve.mmproj.clone(), "mmproj");
 
