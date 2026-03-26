@@ -1,0 +1,62 @@
+{
+  "refreshModelsError": "모델을 가져오려면 공급자의 베이스 URL과 API 키가 설정되어 있어야 합니다.",
+  "refreshModelsSuccess": "{{provider}}에서 새 모델 {{count}}개를 추가했습니다.",
+  "noNewModels": "새로운 모델이 없습니다. 사용 가능한 모든 모델이 이미 추가되었습니다.",
+  "refreshModelsFailed": "{{provider}}에서 모델을 가져오지 못했습니다. API 키와 베이스 URL을 확인해 주세요.",
+  "models": "모델",
+  "refreshing": "새로고침 중...",
+  "refresh": "새로고침",
+  "import": "가져오기",
+  "importModelSuccess": "모델 {{provider}}을(를) 성공적으로 가져왔습니다.",
+  "importModelError": "모델 가져오기 실패:",
+  "stop": "중지",
+  "start": "시작",
+  "noModelFound": "모델을 찾을 수 없음",
+  "noModelFoundDesc": "사용 가능한 모델이 여기에 표시됩니다. 아직 모델이 없다면 허브를 방문하여 다운로드하세요.",
+  "configuration": "설정",
+  "apiEndpoint": "API 엔드포인트",
+  "testConnection": "연결 테스트",
+  "addModel": {
+    "title": "새 모델 추가",
+    "description": "{{provider}} 공급자에 새 모델을 추가합니다.",
+    "modelId": "모델 ID",
+    "enterModelId": "모델 ID 입력",
+    "exploreModels": "{{provider}}의 모델 목록 보기",
+    "addModel": "모델 추가",
+    "modelExists": "이미 존재하는 모델입니다",
+    "modelExistsDesc": "다른 모델 ID를 선택해 주세요."
+  },
+  "deleteModel": {
+    "title": "모델 삭제: {{modelId}}",
+    "description": "이 모델을 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.",
+    "success": "모델 {{modelId}}이(가) 영구적으로 삭제되었습니다.",
+    "cancel": "취소",
+    "delete": "삭제"
+  },
+  "deleteProvider": {
+    "title": "공급자 삭제",
+    "description": "이 공급자와 해당 공급자의 모든 모델을 삭제합니다. 이 작업은 취소할 수 없습니다.",
+    "success": "공급자 {{provider}}이(가) 영구적으로 삭제되었습니다.",
+    "confirmTitle": "공급자 삭제: {{provider}}",
+    "confirmDescription": "이 공급자를 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.",
+    "cancel": "취소",
+    "delete": "삭제"
+  },
+  "editModel": {
+    "title": "모델 수정: {{modelId}}",
+    "description": "아래 옵션을 설정하여 모델 기능을 구성하세요.",
+    "capabilities": "기능",
+    "tools": "도구 (Tools)",
+    "vision": "비전 (Vision)",
+    "proactive": "Proactive (실험적 기능)",
+    "embeddings": "임베딩 (Embeddings)",
+    "notAvailable": "아직 사용할 수 없음",
+    "warning": {
+      "title": "주의 사항",
+      "description": "모델 기능을 수정하면 성능과 동작에 영향을 줄 수 있습니다. 잘못된 설정은 예기치 않은 오류를 발생시킬 수 있습니다."
+    }
+  },
+  "addProvider": "공급자 추가",
+  "addOpenAIProvider": "OpenAI 공급자 추가",
+  "enterNameForProvider": "공급자 이름 입력"
+}
