@@ -54,6 +54,7 @@ import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
+import { useAutoScroll } from '@/hooks/useAutoScroll'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -470,16 +471,27 @@ function ThreadDetail() {
     disabledTools, // Re-run when tools are enabled/disabled
   ])
 
-  // Ref for reasoning container auto-scroll
-  const reasoningContainerRef = useRef<HTMLDivElement>(null)
+  // Auto-scroll the reasoning container during streaming, pausing when the user scrolls up
+  const {
+    containerRef: reasoningContainerRef,
+    isAtBottom: isReasoningAtBottom,
+    handleScroll: handleReasoningScroll,
+    scrollToBottom: scrollReasoningToBottom,
+    forceScrollToBottom: forceScrollReasoningToBottom,
+    reset: resetReasoningScroll,
+  } = useAutoScroll()
 
-  // Auto-scroll reasoning container to bottom during streaming
   useEffect(() => {
-    if (status === 'streaming' && reasoningContainerRef.current) {
-      reasoningContainerRef.current.scrollTop =
-        reasoningContainerRef.current.scrollHeight
+    if (status === 'streaming') {
+      resetReasoningScroll()
     }
-  }, [status, chatMessages])
+  }, [status, resetReasoningScroll])
+
+  useEffect(() => {
+    if (status === 'streaming') {
+      scrollReasoningToBottom()
+    }
+  }, [status, chatMessages, scrollReasoningToBottom])
 
   useEffect(() => {
     setCurrentThreadId(threadId)
@@ -966,6 +978,9 @@ function ThreadDetail() {
                     isLastMessage={isLastMessage}
                     status={status}
                     reasoningContainerRef={reasoningContainerRef}
+                    isReasoningAtBottom={isReasoningAtBottom}
+                    onReasoningScroll={handleReasoningScroll}
+                    onReasoningScrollToBottom={forceScrollReasoningToBottom}
                     onRegenerate={handleRegenerate}
                     onEdit={handleEditMessage}
                     onDelete={handleDeleteMessage}
@@ -982,6 +997,9 @@ function ThreadDetail() {
                   isLastMessage={true}
                   status={status}
                   reasoningContainerRef={reasoningContainerRef}
+                  isReasoningAtBottom={isReasoningAtBottom}
+                  onReasoningScroll={handleReasoningScroll}
+                  onReasoningScrollToBottom={forceScrollReasoningToBottom}
                   onRegenerate={handleRegenerate}
                   onEdit={handleEditMessage}
                   onDelete={handleDeleteMessage}
