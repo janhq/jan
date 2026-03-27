@@ -87,9 +87,13 @@ pub async fn is_model_supported(
         kv_cache_size
     );
 
-    // Apple Silicon: macOS with unified memory (no discrete GPUs detected).
-    // Requires a dedicated heuristic — see `check_apple_silicon_compatibility`.
-    if system_info.os_type == "macos" && system_info.gpus.is_empty() {
+    // Apple Silicon: macOS + ARM64 + no discrete GPUs = unified memory.
+    // The cpu.arch check guards against Intel Macs with no discrete GPU
+    // (x86_64) accidentally taking this path.
+    if system_info.os_type == "macos"
+        && system_info.cpu.arch == "aarch64"
+        && system_info.gpus.is_empty()
+    {
         return check_apple_silicon_compatibility(&system_info, total_required);
     }
 
