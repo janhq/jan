@@ -3,6 +3,14 @@ import { TauriMCPService } from '../mcp/tauri'
 import { MCPTool } from '@/types/completion'
 import { DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 
+// Mock @tauri-apps/api/core so TauriMCPService.getToolsForServers and
+// getServerSummaries can be tested without a real Tauri runtime.
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+}))
+import { invoke } from '@tauri-apps/api/core'
+const mockInvoke = invoke as ReturnType<typeof vi.fn>
+
 // Mock the global window.core.api
 const mockCore = {
   api: {
@@ -29,6 +37,7 @@ describe('TauriMCPService', () => {
   beforeEach(() => {
     mcpService = new TauriMCPService()
     vi.clearAllMocks()
+    mockInvoke.mockReset()
   })
 
   describe('updateMCPConfig', () => {
@@ -441,6 +450,81 @@ describe('TauriMCPService', () => {
       expect(availableTools).toEqual(tools)
       expect(connectedServers).toEqual(servers)
       expect(result).toEqual(toolResult)
+    })
+  })
+
+  // ─── getToolsForServers ──────────────────────────────────────────────────
+
+  describe('getToolsForServers', () => {
+    it('invokes get_tools_for_servers with the provided server names', async () => {
+      const mockTools: MCPTool[] = [
+        { name: 'read_file', description: 'Read a file', inputSchema: { type: 'object' }, server: 'filesystem' },
+      ]
+      mockInvoke.mockResolvedValue(mockTools)
+
+      const result = await mcpService.getToolsForServers(['filesystem'])
+
+      expect(mockInvoke).toHaveBeenCalledWith('get_tools_for_servers', { serverNames: ['filesystem'] })
+      expect(result).toEqual(mockTools)
+    })
+
+    it('returns empty array when no servers are specified', async () => {
+      mockInvoke.mockResolvedValue([])
+
+      const result = await mcpService.getToolsForServers([])
+
+      expect(mockInvoke).toHaveBeenCalledWith('get_tools_for_servers', { serverNames: [] })
+      expect(result).toEqual([])
+    })
+
+    it('supports multiple server names', async () => {
+      const mockTools: MCPTool[] = [
+        { name: 'read_file', description: 'Read', inputSchema: {}, server: 'fs' },
+        { name: 'browse', description: 'Browse', inputSchema: {}, server: 'web' },
+      ]
+      mockInvoke.mockResolvedValue(mockTools)
+
+      const result = await mcpService.getToolsForServers(['fs', 'web'])
+
+      expect(mockInvoke).toHaveBeenCalledWith('get_tools_for_servers', { serverNames: ['fs', 'web'] })
+      expect(result).toHaveLength(2)
+    })
+
+    it('propagates errors from invoke', async () => {
+      mockInvoke.mockRejectedValue(new Error('Tauri IPC error'))
+
+      await expect(mcpService.getToolsForServers(['fs'])).rejects.toThrow('Tauri IPC error')
+    })
+  })
+
+  // ─── getServerSummaries ──────────────────────────────────────────────────
+
+  describe('getServerSummaries', () => {
+    it('invokes get_server_summaries and returns the result', async () => {
+      const mockSummaries = [
+        { name: 'filesystem', capabilities: ['files', 'disk'], description: 'Read/write local files' },
+        { name: 'browser', capabilities: ['web', 'search'], description: 'Browse the web' },
+      ]
+      mockInvoke.mockResolvedValue(mockSummaries)
+
+      const result = await mcpService.getServerSummaries()
+
+      expect(mockInvoke).toHaveBeenCalledWith('get_server_summaries')
+      expect(result).toEqual(mockSummaries)
+    })
+
+    it('returns empty array when no servers are connected', async () => {
+      mockInvoke.mockResolvedValue([])
+
+      const result = await mcpService.getServerSummaries()
+
+      expect(result).toEqual([])
+    })
+
+    it('propagates errors from invoke', async () => {
+      mockInvoke.mockRejectedValue(new Error('no servers'))
+
+      await expect(mcpService.getServerSummaries()).rejects.toThrow('no servers')
     })
   })
 })

@@ -122,9 +122,7 @@ This handles everything: installs dependencies, builds core components, and laun
 
 ```bash
 yarn install
-yarn build:tauri:plugin:api
-yarn build:core
-yarn build:extensions
+yarn build
 yarn dev
 ```
 
