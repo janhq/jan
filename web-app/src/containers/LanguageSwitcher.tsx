@@ -22,8 +22,10 @@ const LANGUAGES = [
   { value: 'de-DE', label: 'Deutsch' },
   { value: 'cs', label: 'Čeština' },
   { value: 'pt-BR', label: 'Português (Brasil)' },
+  { value: 'ko', label: '한국어' },
   { value: 'ja', label: '日本語' },
   { value: 'ru', label: 'Русский' },
+  { value: 'ct', label: 'Català' },
 ]
 
 export default function LanguageSwitcher() {
