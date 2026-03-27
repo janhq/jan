@@ -54,11 +54,16 @@ import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useMessageQueue } from '@/stores/message-queue-store'
+import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
   SUBMITTED: 'submitted',
 } as const
+
+// Title summarization constants
+const MAX_TITLE_SUMMARIZATION_ATTEMPTS = 3
+const TITLE_SUMMARIZATION_MIN_LENGTH = 50
 
 type ThreadModel = {
   id: string
@@ -107,6 +112,10 @@ function ThreadDetail() {
   // AbortController for cancelling tool calls
   const toolCallAbortController = useRef<AbortController | null>(null)
 
+  // Title auto-summarization state
+  const titleAbortRef = useRef<AbortController | null>(null)
+  const titleAttemptsRef = useRef(0)
+
   // Check if we should follow up with tool calls (respects abort signal)
   const followUpMessage = useCallback(
     ({ messages }: { messages: UIMessage[] }) => {
@@ -148,7 +157,9 @@ function ThreadDetail() {
     useState<UIMessage | null>(null)
   const [autoIncreaseAttempts, setAutoIncreaseAttempts] = useState(0)
   const MAX_AUTO_INCREASE_ATTEMPTS = 3
-  const isAutoIncreasingContext = autoIncreaseAttempts > 0 && autoIncreaseAttempts < MAX_AUTO_INCREASE_ATTEMPTS
+  const isAutoIncreasingContext =
+    autoIncreaseAttempts > 0 &&
+    autoIncreaseAttempts < MAX_AUTO_INCREASE_ATTEMPTS
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
 
   // Refs so onFinish (captured in closure) always calls the latest callbacks
@@ -355,6 +366,56 @@ function ThreadDetail() {
         sessionData.tools = []
         toolCallAbortController.current = null
       })
+
+      // Auto-summarize thread title after the first assistant response.
+      // The thread title is the user's first message (set in ChatInput on creation),
+      // so we use it directly as the summarization input.
+      // Skipped if already summarized, manually renamed, or max attempts reached.
+      console.log('[ThreadTitle] onFinish fired, isAbort:', isAbort)
+      if (!isAbort) {
+        const currentThread = useThreads.getState().threads[threadId]
+        console.log('[ThreadTitle] thread:', !!currentThread, 'titleSummarized:', currentThread?.metadata?.titleSummarized, 'attempts:', titleAttemptsRef.current)
+        if (
+          currentThread &&
+          !currentThread.metadata?.titleSummarized &&
+          titleAttemptsRef.current < MAX_TITLE_SUMMARIZATION_ATTEMPTS
+        ) {
+          const titleText = currentThread.title
+          console.log('[ThreadTitle] titleText length:', titleText?.length, 'threshold:', TITLE_SUMMARIZATION_MIN_LENGTH)
+
+          if (titleText && titleText.length >= TITLE_SUMMARIZATION_MIN_LENGTH) {
+            // Cancel any previous in-flight summarization
+            titleAbortRef.current?.abort()
+            const controller = new AbortController()
+            titleAbortRef.current = controller
+            titleAttemptsRef.current++
+            const originalTitle = titleText
+
+            console.log('[ThreadTitle] calling generateThreadTitle...')
+            generateThreadTitle(titleText, controller.signal).then((title) => {
+              console.log('[ThreadTitle] result:', title, 'aborted:', controller.signal.aborted)
+              if (!title || controller.signal.aborted) return
+              // Don't overwrite if the user manually renamed while we were generating
+              const thread = useThreads.getState().threads[threadId]
+              if (!thread || thread.title !== originalTitle) return
+
+              useThreads.getState().updateThread(threadId, {
+                title,
+                metadata: { ...thread.metadata, titleSummarized: true },
+              })
+              titleAbortRef.current = null
+            })
+          } else if (titleText) {
+            // Short messages are already good titles — mark as done
+            useThreads.getState().updateThread(threadId, {
+              metadata: {
+                ...currentThread.metadata,
+                titleSummarized: true,
+              },
+            })
+          }
+        }
+      }
     },
     onToolCall: ({ toolCall }) => {
       sessionData.tools.push(toolCall)
@@ -423,6 +484,10 @@ function ThreadDetail() {
 
   useEffect(() => {
     setCurrentThreadId(threadId)
+    // Reset title summarization state for the new thread
+    titleAbortRef.current?.abort()
+    titleAbortRef.current = null
+    titleAttemptsRef.current = 0
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId])
 
@@ -477,7 +542,7 @@ function ThreadDetail() {
 
   useEffect(() => {
     return () => {
-      // Clear the current thread ID when the component unmounts
+      titleAbortRef.current?.abort()
       setCurrentThreadId(undefined)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -489,6 +554,10 @@ function ThreadDetail() {
       text: string,
       files?: Array<{ type: string; mediaType: string; url: string }>
     ) => {
+      // Cancel any in-flight title summarization so it doesn't compete with this request
+      titleAbortRef.current?.abort()
+      titleAbortRef.current = null
+
       // Get all attachments from the store (includes both images and documents)
       const allAttachments = getAttachments(attachmentsKey)
 
@@ -661,6 +730,10 @@ function ThreadDetail() {
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
   // - For assistant messages: finds the closest preceding user message, deletes from there
   const handleRegenerate = (messageId?: string) => {
+    // Cancel any in-flight title summarization before regenerating
+    titleAbortRef.current?.abort()
+    titleAbortRef.current = null
+
     const currentLocalMessages = useMessages.getState().getMessages(threadId)
 
     // If regenerating from a specific message, delete all messages after it
@@ -849,9 +922,7 @@ function ThreadDetail() {
   setContinueFromContentRef.current = setContinueFromContent
 
   // Skip auto-context-increase in agent mode
-  const agentModeActive = useAgentMode(
-    (s) => s.agentThreads[threadId] === true
-  )
+  const agentModeActive = useAgentMode((s) => s.agentThreads[threadId] === true)
   useEffect(() => {
     if (!error || agentModeActive) return
     if (autoIncreaseAttempts >= MAX_AUTO_INCREASE_ATTEMPTS) return
@@ -972,7 +1043,8 @@ function ThreadDetail() {
                   isAnimating={false}
                 />
               )}
-              {(status === CHAT_STATUS.SUBMITTED || isAutoIncreasingContext) && (
+              {(status === CHAT_STATUS.SUBMITTED ||
+                isAutoIncreasingContext) && (
                 <div className="flex flex-row items-center gap-2">
                   {(pendingContinueMessage || isAutoIncreasingContext) && (
                     <Shimmer duration={1}>Growing the Mind...</Shimmer>
@@ -996,11 +1068,20 @@ function ThreadDetail() {
                           {(error ?? contextLimitError)?.message}
                         </span>
                       </div>
-                      {((error ?? contextLimitError)?.message?.toLowerCase().includes('context') &&
-                        ((error ?? contextLimitError)?.message?.toLowerCase().includes('size') ||
-                          (error ?? contextLimitError)?.message?.toLowerCase().includes('length') ||
-                          (error ?? contextLimitError)?.message?.toLowerCase().includes('limit'))) ||
-                      (error ?? contextLimitError)?.message === OUT_OF_CONTEXT_SIZE ? (
+                      {((error ?? contextLimitError)?.message
+                        ?.toLowerCase()
+                        .includes('context') &&
+                        ((error ?? contextLimitError)?.message
+                          ?.toLowerCase()
+                          .includes('size') ||
+                          (error ?? contextLimitError)?.message
+                            ?.toLowerCase()
+                            .includes('length') ||
+                          (error ?? contextLimitError)?.message
+                            ?.toLowerCase()
+                            .includes('limit'))) ||
+                      (error ?? contextLimitError)?.message ===
+                        OUT_OF_CONTEXT_SIZE ? (
                         <Button
                           variant="outline"
                           size="sm"

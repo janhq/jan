@@ -17,8 +17,20 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useThreads } from '@/hooks/useThreads'
 import { useAttachments } from '@/hooks/useAttachments'
+import { useMCPServers } from '@/hooks/useMCPServers'
 import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
+import {
+  ExtensionTypeEnum,
+  VectorDBExtension,
+  type MCPTool,
+} from '@janhq/core'
+import {
+  trimMessages,
+  compactMessages,
+  estimateTokens,
+  type ContextManagerConfig,
+} from './context-manager'
+import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -42,10 +54,32 @@ export type ServiceHub = {
     >
   }
   mcp(): {
-    getTools(): Promise<
-      Array<{ name: string; description: string; inputSchema: unknown }>
+    getTools(): Promise<MCPTool[]>
+    /** TauriMCPService only */
+    getToolsForServers?(serverNames: string[]): Promise<MCPTool[]>
+    /** TauriMCPService only */
+    getServerSummaries?(): Promise<
+      Array<{ name: string; capabilities: string[]; description: string }>
     >
   }
+}
+
+/** Text from the most recent user message (for MCP server routing). */
+function extractLatestUserText(messages: UIMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.role !== 'user') continue
+    const parts = Array.isArray(m.parts) ? m.parts : []
+    const chunks: string[] = []
+    for (const p of parts) {
+      if (p.type === 'text' && typeof (p as { text?: string }).text === 'string') {
+        const t = (p as { text: string }).text.trim()
+        if (t) chunks.push(t)
+      }
+    }
+    if (chunks.length > 0) return chunks.join('\n')
+  }
+  return ''
 }
 
 /**
@@ -95,12 +129,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private serviceHub: ServiceHub | null
   private threadId?: string
   private continueFromContent: string | null = null
+  /** Latest user message text — used by the MCP orchestrator for tool routing. */
+  private lastUserMessage = ''
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
     this.threadId = threadId
     this.serviceHub = useServiceStore.getState().serviceHub
     // Tools will be loaded when updateRagToolsAvailability is called with model capabilities
+  }
+
+  setLastUserMessage(message: string): void {
+    this.lastUserMessage = message
   }
 
   updateSystemMessage(systemMessage: string | undefined) {
@@ -136,7 +176,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * Filters out disabled tools based on thread settings
    * @private
    */
-  async refreshTools() {
+  async refreshTools(abortSignal?: AbortSignal) {
     if (!this.serviceHub) {
       this.tools = {}
       return
@@ -216,15 +256,41 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         }
       }
 
-      // Load MCP tools (they don't depend on documents)
+      // Load MCP tools — route through the orchestrator when available so only
+      // relevant servers are queried instead of all of them.
       try {
-        const mcpTools = await this.serviceHub.mcp().getTools()
+        const mcpService = this.serviceHub.mcp()
+        let mcpTools: MCPTool[]
+        const routingEnabled =
+          useMCPServers.getState().settings.enableSmartToolRouting
+
+        if (
+          routingEnabled &&
+          mcpService.getToolsForServers &&
+          mcpService.getServerSummaries
+        ) {
+          mcpTools = await mcpOrchestrator.getRelevantTools(
+            this.lastUserMessage,
+            {
+              getTools: () => mcpService.getTools(),
+              getToolsForServers: (names) =>
+                mcpService.getToolsForServers!(names),
+              getServerSummaries: () => mcpService.getServerSummaries!(),
+            },
+            disabledToolKeys,
+            {
+              routerModel: this.model,
+              abortSignal,
+            }
+          )
+        } else {
+          mcpTools = await mcpService.getTools()
+        }
+
         if (Array.isArray(mcpTools) && mcpTools.length > 0) {
-          // Convert MCP tools to AI SDK format, filtering out disabled tools
-          // MCP tools added after RAG tools, so they take precedence in case of name conflicts
+          // MCP tools added after RAG tools, so they take precedence on name conflicts
           mcpTools.forEach((tool) => {
-            // MCP tools use MCPTool interface with server field
-            const serverName = (tool as { server?: string }).server || 'unknown'
+            const serverName = tool.server || 'unknown'
             if (!isToolDisabled(serverName, tool.name)) {
               toolsRecord[tool.name] = {
                 description: tool.description,
@@ -268,9 +334,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
-    // Ensure tools updated before sending messages
-    await this.refreshTools()
-
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
     // model, even if the user switches provider mid-request.
@@ -278,32 +341,35 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const providerId = useModelProvider.getState().selectedProvider
     const effectiveProviderName = providerId
     const provider = useModelProvider.getState().getProviderByName(providerId)
-    if (this.serviceHub && modelId && provider) {
-      try {
-        const updatedProvider = useModelProvider
-          .getState()
-          .getProviderByName(providerId)
-
-        // Get assistant parameters from current assistant
-        const currentAssistant = useAssistant.getState().currentAssistant
-        const inferenceParams = currentAssistant?.parameters
-
-        // Create the model using the factory
-        // For llamacpp provider, startModel is called internally in ModelFactory.createLlamaCppModel
-        this.model = await ModelFactory.createModel(
-          modelId,
-          updatedProvider ?? provider,
-          inferenceParams ?? {}
-        )
-      } catch (error) {
-        console.error('Failed to create model:', error)
-        throw new Error(
-          `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
-        )
-      }
-    } else {
+    if (!this.serviceHub || !modelId || !provider) {
       throw new Error('ServiceHub not initialized or model/provider missing.')
     }
+
+    this.lastUserMessage = extractLatestUserText(options.messages)
+
+    try {
+      const updatedProvider = useModelProvider
+        .getState()
+        .getProviderByName(providerId)
+
+      const currentAssistant = useAssistant.getState().currentAssistant
+      const inferenceParams = currentAssistant?.parameters
+
+      // Create the model before refreshing tools so the MCP orchestrator can run
+      // structured LLM routing when many servers are connected.
+      this.model = await ModelFactory.createModel(
+        modelId,
+        updatedProvider ?? provider,
+        inferenceParams ?? {}
+      )
+    } catch (error) {
+      console.error('Failed to create model:', error)
+      throw new Error(
+        `Failed to create model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+      )
+    }
+
+    await this.refreshTools(options.abortSignal)
 
     // Fix for Anthropic serial tool-use (error 400): when an assistant message
     // contains tool parts interleaved with text parts (serial tool calls),
@@ -354,9 +420,69 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       })
     })()
 
-    // Convert UI messages to model messages
+    const inferenceParams = useAssistant.getState().currentAssistant?.parameters ?? {}
+
+    const selectedModel = useModelProvider.getState().selectedModel
+
+    const maxOutputTokens: number | undefined = (() => {
+      const raw = inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
+      if (raw === undefined || raw === null) return undefined
+      const n = typeof raw === 'number' ? raw : Number(raw)
+      return isNaN(n) ? undefined : n
+    })()
+
+    const maxContextTokens = (() => {
+      const raw = inferenceParams.max_context_tokens
+      return typeof raw === 'number' ? raw : (Number(raw) || 0)
+    })()
+    const autoCompact =
+      inferenceParams.auto_compact === true ||
+      inferenceParams.auto_compact === 'true'
+
+    // Auto-trim or auto-compact conversation history when max_context_tokens is configured
+    let effectiveMessages = messagesToConvert
+    if (maxContextTokens > 0) {
+      const contextConfig: ContextManagerConfig = {
+        maxContextTokens,
+        maxOutputTokens: maxOutputTokens ?? 2048,
+        autoCompact: !!autoCompact,
+      }
+
+      const systemPromptTokens = this.systemMessage
+        ? estimateTokens(this.systemMessage) + 4
+        : 0
+
+      if (autoCompact && this.model) {
+        const compactResult = await compactMessages(
+          messagesToConvert,
+          contextConfig,
+          this.model,
+          systemPromptTokens
+        )
+        effectiveMessages = compactResult.messages
+        if (compactResult.trimmedCount > 0) {
+          console.debug(
+            `[context-manager] Compacted ${compactResult.trimmedCount} messages` +
+              (compactResult.compactedSummary ? ' with summary' : ' (trim fallback)')
+          )
+        }
+      } else {
+        const trimResult = trimMessages(
+          messagesToConvert,
+          contextConfig,
+          systemPromptTokens
+        )
+        effectiveMessages = trimResult.messages
+        if (trimResult.trimmedCount > 0) {
+          console.debug(
+            `[context-manager] Trimmed ${trimResult.trimmedCount} oldest messages to fit context budget`
+          )
+        }
+      }
+    }
+
     const baseMessages = convertToModelMessages(
-      this.mapUserInlineAttachments(messagesToConvert)
+      this.mapUserInlineAttachments(effectiveMessages)
     )
 
     // If continuing a truncated response, append the partial assistant content as a
@@ -369,7 +495,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     // Include tools only if we have tools loaded AND model supports them
     const hasTools = Object.keys(this.tools).length > 0
-    const selectedModel = useModelProvider.getState().selectedModel
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools = hasTools && modelSupportsTools
 
@@ -383,6 +508,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       tools: shouldEnableTools ? this.tools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: this.systemMessage,
+      ...(maxOutputTokens !== undefined ? { maxTokens: maxOutputTokens } : {}),
     })
 
     let tokensPerSecond = 0

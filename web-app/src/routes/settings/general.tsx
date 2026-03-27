@@ -355,7 +355,10 @@ function General() {
                       onClick={async () => {
                         if (janDataFolder) {
                           try {
-                            const logsPath = `${janDataFolder}/logs`
+                            const logsPath = await serviceHub.path().join(
+                              janDataFolder,
+                              'logs'
+                            )
                             await serviceHub.opener().revealItemInDir(logsPath)
                           } catch (error) {
                             console.error(
