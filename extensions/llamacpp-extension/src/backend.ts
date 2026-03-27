@@ -165,10 +165,7 @@ export async function downloadBackend(
   const proxyConfig = getProxyConfig()
 
   const platformName = IS_WINDOWS ? 'win' : 'linux'
-
-  // Windows HIP archives from upstream use .zip; everything else uses .tar.gz
-  const isZipBackend = IS_WINDOWS && (backend.includes('hip') || backend.includes('rocm'))
-  const archiveExt = isZipBackend ? 'zip' : 'tar.gz'
+  const archiveExt = 'tar.gz'
 
   const backendUrl =
     source === 'github'
