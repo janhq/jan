@@ -108,10 +108,6 @@ const SettingsMenu = () => {
     { title: 'common:claude_code', route: route.settings.claude_code },
   ]
 
-  const toggleProvidersExpansion = () => {
-    setExpandedProviders(!expandedProviders)
-  }
-
   return (
     <>
       <div className="h-full w-58 shrink-0 px-1.5 flex overflow-auto">
