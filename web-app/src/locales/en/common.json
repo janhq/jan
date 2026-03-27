@@ -437,6 +437,10 @@
       "title": "File Already Exists",
       "description": "File is already attached to this project"
     },
+    "unsupportedFileType": {
+      "title": "Unsupported File Type",
+      "description": "File extension \".{{extension}}\" is not supported for Project reference."
+    },
     "attachmentsDisabledInfo": {
       "title": "Attachments Disabled",
       "description": "Attachments are disabled in Settings"
