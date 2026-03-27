@@ -3,9 +3,17 @@ import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useState, useEffect, useCallback } from 'react'
 import {
+  IconAdjustmentsHorizontal,
+  IconAsterisk,
+  IconCircles,
   IconChevronDown,
   IconChevronRight,
+  IconCode,
+  IconCommand,
+  IconFeather,
+  IconPalette,
   IconPlus,
+  IconTopologyStar3,
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
@@ -94,18 +102,42 @@ const SettingsMenu = () => {
   )
 
   const coreSettings = [
-    { title: 'common:general', route: route.settings.general },
+    {
+      title: 'common:general',
+      route: route.settings.general,
+      icon: IconAdjustmentsHorizontal,
+    },
     // "Appearance" is implemented by the existing Interface settings route.
-    { title: 'common:appearance', route: route.settings.interface },
-    { title: 'common:assistants', route: route.settings.assistant },
-    { title: 'common:local_api_server', route: route.settings.local_api_server },
-    { title: 'common:keyboardShortcuts', route: route.settings.shortcuts },
-    { title: 'common:privacy', route: route.settings.privacy },
+    {
+      title: 'common:appearance',
+      route: route.settings.interface,
+      icon: IconPalette,
+    },
+    { title: 'common:assistants', route: route.settings.assistant, icon: IconFeather },
+    {
+      title: 'common:local_api_server',
+      route: route.settings.local_api_server,
+      icon: IconCircles,
+    },
+    {
+      title: 'common:keyboardShortcuts',
+      route: route.settings.shortcuts,
+      icon: IconCommand,
+    },
+    { title: 'common:privacy', route: route.settings.privacy, icon: IconCode },
   ]
 
   const integrationSettings = [
-    { title: 'common:connectors', route: route.settings.mcp_servers },
-    { title: 'common:claude_code', route: route.settings.claude_code },
+    {
+      title: 'common:connectors',
+      route: route.settings.mcp_servers,
+      icon: IconTopologyStar3,
+    },
+    {
+      title: 'common:claude_code',
+      route: route.settings.claude_code,
+      icon: IconAsterisk,
+    },
   ]
 
   return (
@@ -119,7 +151,8 @@ const SettingsMenu = () => {
                 to={menu.route}
                 className="block px-2 gap-1.5 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary py-1 w-full rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <menu.icon size={18} className="shrink-0 text-muted-foreground" />
                   <span>{t(menu.title)}</span>
                 </div>
               </Link>
@@ -141,6 +174,7 @@ const SettingsMenu = () => {
                   to={menu.route}
                   className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
                 >
+                  <menu.icon size={18} className="shrink-0 text-muted-foreground" />
                   <span>{t(menu.title)}</span>
                 </Link>
               ))}
