@@ -25,6 +25,12 @@ import { generateId, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import {
+  useModelLifecycleStore,
+  LOCAL_PROVIDERS,
+  getProviderSetting,
+  syncActiveModels,
+} from '@/stores/model-lifecycle-store'
+import {
   convertThreadMessagesToUIMessages,
   extractContentPartsFromUIMessage,
 } from '@/lib/messages'
@@ -127,7 +133,9 @@ function ThreadDetail() {
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
+  const setLastActivity = useModelLifecycleStore((state) => state.setLastActivity)
   const threadRef = useRef(thread)
+
   const projectId = threadRef.current?.metadata?.project?.id
 
   // Get system message from thread's assistant instructions (if thread has an assigned assistant)
@@ -346,6 +354,28 @@ function ThreadDetail() {
         // Clear tools after processing all
         sessionData.tools = []
         toolCallAbortController.current = null
+
+        // Post-tool-call unload: free VRAM for agentic workflows (e.g. tool model then heavy model).
+        // The model will be automatically reloaded on the next inference request via
+        // ModelFactory.createModel() → startModel() when the AI SDK agent loop continues.
+        const provider = getProviderByName(selectedProvider)
+        const unloadAfterToolCall = getProviderSetting(
+          provider,
+          'unload_after_tool_call'
+        ) as boolean | undefined
+        if (
+          unloadAfterToolCall &&
+          selectedModel?.id &&
+          LOCAL_PROVIDERS.has(selectedProvider)
+        ) {
+          serviceHub
+            .models()
+            .stopModel(selectedModel.id, selectedProvider)
+            .then(() => syncActiveModels(serviceHub))
+            .catch((err) =>
+              console.warn('[PostToolCallUnload] stopModel failed:', err)
+            )
+        }
       })().catch((error) => {
         // Ignore abort errors
         if (error.name !== 'AbortError') {
@@ -488,6 +518,7 @@ function ThreadDetail() {
       text: string,
       files?: Array<{ type: string; mediaType: string; url: string }>
     ) => {
+      setLastActivity()
       // Get all attachments from the store (includes both images and documents)
       const allAttachments = getAttachments(attachmentsKey)
 
@@ -593,6 +624,7 @@ function ThreadDetail() {
       clearAttachmentsForThread,
       serviceHub,
       selectedProvider,
+      setLastActivity,
     ]
   )
 

@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { events } from '@janhq/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { useIdleModelUnload } from '@/hooks/useIdleModelUnload'
 import { useHardware } from '@/hooks/useHardware'
 import { isPlatformTauri } from '@/lib/platform/utils'
 
@@ -71,6 +72,10 @@ export function GlobalEventHandler() {
       events.off('settingsChanged', handleSettingsChanged)
     }
   }, [setProviders, serviceHub])
+
+  // Idle auto-unload: runs app-wide so it works regardless of which route
+  // the user is on (chat, settings, API server mode, etc.)
+  useIdleModelUnload()
 
   // This component doesn't render anything
   return null
