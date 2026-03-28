@@ -412,6 +412,7 @@ export default function AddEditAssistant({
                       setParamsTypes(newTypes)
                     }
                   }}
+                  title={setting.description}
                   className={cn(
                     'text-xs bg-secondary-foreground/5 py-1 px-2 rounded-sm cursor-pointer',
                     paramsKeys.includes(setting.key) && 'opacity-50'

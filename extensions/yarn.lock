@@ -458,7 +458,6 @@ __metadata:
     "@janhq/core": ../../core/package.tgz
     "@janhq/tauri-plugin-foundation-models-api": "link:../../src-tauri/plugins/tauri-plugin-foundation-models"
     "@tauri-apps/api": "npm:2.8.0"
-    "@tauri-apps/plugin-http": "npm:2.5.0"
     "@tauri-apps/plugin-log": "npm:^2.6.0"
     cpx: "npm:1.5.0"
     rimraf: "npm:3.0.2"

@@ -24,6 +24,12 @@ import {
   VectorDBExtension,
   type MCPTool,
 } from '@janhq/core'
+import {
+  trimMessages,
+  compactMessages,
+  estimateTokens,
+  type ContextManagerConfig,
+} from './context-manager'
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
 
 export type TokenUsageCallback = (
@@ -455,9 +461,69 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       })
     })()
 
-    // Convert UI messages to model messages
+    const inferenceParams = useAssistant.getState().currentAssistant?.parameters ?? {}
+
+    const selectedModel = useModelProvider.getState().selectedModel
+
+    const maxOutputTokens: number | undefined = (() => {
+      const raw = inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
+      if (raw === undefined || raw === null) return undefined
+      const n = typeof raw === 'number' ? raw : Number(raw)
+      return isNaN(n) ? undefined : n
+    })()
+
+    const maxContextTokens = (() => {
+      const raw = inferenceParams.max_context_tokens
+      return typeof raw === 'number' ? raw : (Number(raw) || 0)
+    })()
+    const autoCompact =
+      inferenceParams.auto_compact === true ||
+      inferenceParams.auto_compact === 'true'
+
+    // Auto-trim or auto-compact conversation history when max_context_tokens is configured
+    let effectiveMessages = messagesToConvert
+    if (maxContextTokens > 0) {
+      const contextConfig: ContextManagerConfig = {
+        maxContextTokens,
+        maxOutputTokens: maxOutputTokens ?? 2048,
+        autoCompact: !!autoCompact,
+      }
+
+      const systemPromptTokens = this.systemMessage
+        ? estimateTokens(this.systemMessage) + 4
+        : 0
+
+      if (autoCompact && this.model) {
+        const compactResult = await compactMessages(
+          messagesToConvert,
+          contextConfig,
+          this.model,
+          systemPromptTokens
+        )
+        effectiveMessages = compactResult.messages
+        if (compactResult.trimmedCount > 0) {
+          console.debug(
+            `[context-manager] Compacted ${compactResult.trimmedCount} messages` +
+              (compactResult.compactedSummary ? ' with summary' : ' (trim fallback)')
+          )
+        }
+      } else {
+        const trimResult = trimMessages(
+          messagesToConvert,
+          contextConfig,
+          systemPromptTokens
+        )
+        effectiveMessages = trimResult.messages
+        if (trimResult.trimmedCount > 0) {
+          console.debug(
+            `[context-manager] Trimmed ${trimResult.trimmedCount} oldest messages to fit context budget`
+          )
+        }
+      }
+    }
+
     const baseMessages = convertToModelMessages(
-      this.mapUserInlineAttachments(messagesToConvert)
+      this.mapUserInlineAttachments(effectiveMessages)
     )
 
     // If continuing a truncated response, append the partial assistant content as a
@@ -470,7 +536,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     // Include tools only if we have tools loaded AND model supports them
     const hasTools = Object.keys(this.tools).length > 0
-    const selectedModel = useModelProvider.getState().selectedModel
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
     const shouldEnableTools = hasTools && modelSupportsTools
 
@@ -484,6 +549,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       tools: shouldEnableTools ? this.tools : undefined,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: this.systemMessage,
+      ...(maxOutputTokens !== undefined ? { maxTokens: maxOutputTokens } : {}),
     })
 
     let tokensPerSecond = 0
