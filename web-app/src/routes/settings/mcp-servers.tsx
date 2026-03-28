@@ -150,6 +150,14 @@ function MCPServersDesktop() {
     }
   }
 
+  const updateRouterModelProvider = (rawValue: string) => {
+    updateSettings({ routerModelProvider: rawValue.trim() })
+  }
+
+  const updateRouterModelId = (rawValue: string) => {
+    updateSettings({ routerModelId: rawValue.trim() })
+  }
+
   const handleOpenDialog = (serverKey?: string) => {
     if (serverKey) {
       // Edit mode
@@ -465,6 +473,46 @@ function MCPServersDesktop() {
                         }}
                       />
                     </div>
+                  }
+                />
+                <CardItem
+                  title={t('mcp-servers:runtimeSettings.routerModelProvider')}
+                  description={t(
+                    'mcp-servers:runtimeSettings.routerModelProviderDesc'
+                  )}
+                  actions={
+                    <Input
+                      type="text"
+                      value={settings.routerModelProvider}
+                      onChange={(event) =>
+                        updateRouterModelProvider(event.target.value)
+                      }
+                      onBlur={() => {
+                        void syncServers()
+                      }}
+                      placeholder="openai"
+                      className="w-44"
+                    />
+                  }
+                />
+                <CardItem
+                  title={t('mcp-servers:runtimeSettings.routerModelId')}
+                  description={t(
+                    'mcp-servers:runtimeSettings.routerModelIdDesc'
+                  )}
+                  actions={
+                    <Input
+                      type="text"
+                      value={settings.routerModelId}
+                      onChange={(event) =>
+                        updateRouterModelId(event.target.value)
+                      }
+                      onBlur={() => {
+                        void syncServers()
+                      }}
+                      placeholder="gpt-4o-mini"
+                      className="w-44"
+                    />
                   }
                 />
               </Card>

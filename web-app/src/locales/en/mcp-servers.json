@@ -60,6 +60,10 @@
     "toolCallTimeout": "Tool call timeout (seconds)",
     "toolCallTimeoutDesc": "Maximum time to wait for an MCP tool response before timing out.",
     "smartToolRouting": "Smart MCP tool routing",
-    "smartToolRoutingDesc": "When enabled, Jan selects relevant MCP servers before loading tools. Disable to always load the full MCP tool list."
+    "smartToolRoutingDesc": "When enabled, Jan selects relevant MCP servers before loading tools. Disable to always load the full MCP tool list.",
+    "routerModelProvider": "Router model provider (optional)",
+    "routerModelProviderDesc": "Provider name used only for MCP routing (example: openai, anthropic, llamacpp). Leave empty to use the active chat model.",
+    "routerModelId": "Router model ID (optional)",
+    "routerModelIdDesc": "Model ID used only for MCP routing. Used only when provider is also set."
   }
 }

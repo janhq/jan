@@ -29,6 +29,8 @@ export type MCPSettings = {
   maxRestartDelayMs: number
   backoffMultiplier: number
   enableSmartToolRouting: boolean
+  routerModelProvider: string
+  routerModelId: string
 }
 
 export const DEFAULT_MCP_SETTINGS: MCPSettings = {
@@ -37,6 +39,8 @@ export const DEFAULT_MCP_SETTINGS: MCPSettings = {
   maxRestartDelayMs: 30000,
   backoffMultiplier: 2,
   enableSmartToolRouting: true,
+  routerModelProvider: '',
+  routerModelId: '',
 }
 
 type MCPServerStoreState = {

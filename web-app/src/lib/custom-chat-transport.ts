@@ -114,6 +114,8 @@ function prependTextDeltaToUIStream(
 
 export class CustomChatTransport implements ChatTransport<UIMessage> {
   public model: LanguageModel | null = null
+  private routerModel: LanguageModel | null = null
+  private routerModelKey = ''
   private tools: Record<string, Tool> = {}
   private onTokenUsage?: TokenUsageCallback
   private hasDocuments = false
@@ -255,14 +257,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       try {
         const mcpService = this.serviceHub.mcp()
         let mcpTools: MCPTool[]
-        const routingEnabled =
-          useMCPServers.getState().settings.enableSmartToolRouting
+        const mcpSettings = useMCPServers.getState().settings
+        const routingEnabled = mcpSettings.enableSmartToolRouting
 
         if (
           routingEnabled &&
           mcpService.getToolsForServers &&
           mcpService.getServerSummaries
         ) {
+          const routerModel =
+            (await this.resolveRouterModel(mcpSettings)) ?? this.model
           mcpTools = await mcpOrchestrator.getRelevantTools(
             this.lastUserMessage,
             {
@@ -273,7 +277,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
             },
             disabledToolKeys,
             {
-              routerModel: this.model,
+              routerModel,
               abortSignal,
             }
           )
@@ -301,6 +305,43 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     }
 
     this.tools = toolsRecord
+  }
+
+  private async resolveRouterModel(settings: {
+    routerModelProvider: string
+    routerModelId: string
+  }): Promise<LanguageModel | null> {
+    const providerName = settings.routerModelProvider.trim()
+    const modelId = settings.routerModelId.trim()
+    if (!providerName || !modelId) return null
+
+    const key = `${providerName}::${modelId}`
+    if (this.routerModel && this.routerModelKey === key) {
+      return this.routerModel
+    }
+
+    const provider = useModelProvider.getState().getProviderByName(providerName)
+    if (!provider) {
+      console.warn(
+        `[MCP] Router model provider '${providerName}' not found; using chat model for routing.`
+      )
+      return null
+    }
+
+    try {
+      const model = await ModelFactory.createModel(modelId, provider, {})
+      this.routerModel = model
+      this.routerModelKey = key
+      return model
+    } catch (error) {
+      console.warn(
+        `[MCP] Failed to create router model '${key}'; using chat model for routing.`,
+        error
+      )
+      this.routerModel = null
+      this.routerModelKey = ''
+      return null
+    }
   }
 
   /**
