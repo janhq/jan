@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { FileText, Trash2, UploadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -262,9 +262,10 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     loadProjectFiles()
   }, [loadProjectFiles])
 
+
   const processFilePaths = useCallback(
     async (paths: string[]) => {
-      if (!paths.length) return
+      if (!paths.length || uploading) return
 
       // Get files from paths (recursively for directories)
       const filePaths = await getFilesFromPaths(paths)
@@ -371,14 +372,66 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         setUploading(false)
       }
     },
-    [files, loadProjectFiles, maxFileSizeMB, projectId, serviceHub, t]
+    [files, loadProjectFiles, maxFileSizeMB, projectId, serviceHub, t, uploading]
   )
+
+  const processFilePathsRef = useRef(processFilePaths)
+  const attachmentsEnabledRef = useRef(attachmentsEnabled)
+
+  useEffect(() => {
+    processFilePathsRef.current = processFilePaths
+    attachmentsEnabledRef.current = attachmentsEnabled
+  }, [processFilePaths, attachmentsEnabled])
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    let cleanedUp = false
+
+    const setupListener = async () => {
+      try {
+        const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+        const appWindow = getCurrentWebviewWindow()
+
+        const unbind = await appWindow.onDragDropEvent((event) => {
+          if (!attachmentsEnabledRef.current) return
+
+          if (event.payload.type === 'enter' || event.payload.type === 'over') {
+            setIsDragging(true)
+          } else if (
+            event.payload.type === 'leave' ||
+            event.payload.type === 'cancelled'
+          ) {
+            setIsDragging(false)
+          } else if (event.payload.type === 'drop') {
+            setIsDragging(false)
+            if (event.payload.paths.length > 0) {
+              void processFilePathsRef.current(event.payload.paths)
+            }
+          }
+        })
+
+        if (cleanedUp) {
+          unbind()
+        } else {
+          unlisten = unbind
+        }
+      } catch (error) {
+        console.warn('Failed to setup native drag-drop listener:', error)
+      }
+    }
+
+    setupListener()
+    return () => {
+      cleanedUp = true
+      if (unlisten) unlisten()
+    }
+  }, [])
 
   const handleUpload = async () => {
     if (!attachmentsEnabled) {
       toast.info(
         t('common:toast.attachmentsDisabledInfo.title') ??
-          'Attachments are disabled in Settings'
+        'Attachments are disabled in Settings'
       )
       return
     }
@@ -417,57 +470,17 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setIsDragging(true)
   }
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setIsDragging(false)
   }
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setIsDragging(false)
-
-    if (!attachmentsEnabled) {
-      toast.info(
-        t('common:toast.attachmentsDisabledInfo.title') ??
-          'Attachments are disabled in Settings'
-      )
-      return
-    }
-
-    // Get file paths from the drop event (Tauri provides paths directly)
-    const paths: string[] = []
-    const items = e.dataTransfer.items
-    if (items) {
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i]
-        if (item.kind === 'file') {
-          const file = item.getAsFile()
-          if (file && 'path' in file && typeof file.path === 'string') {
-            paths.push(file.path)
-          }
-        }
-      }
-    }
-
-    if (paths.length === 0) {
-      // Fallback for web: check dataTransfer.files
-      const dtFiles = e.dataTransfer.files
-      for (let i = 0; i < dtFiles.length; i++) {
-        const file = dtFiles[i]
-        if ('path' in file && typeof file.path === 'string') {
-          paths.push(file.path)
-        }
-      }
-    }
-
-    if (paths.length > 0) {
-      await processFilePaths(paths)
-    }
   }
 
   const handleDeleteFile = async (fileId: string) => {
@@ -586,22 +599,22 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           ))}
 
           <div
-          className={cn(
-            'flex mt-2 flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
-            isDragging
-              ? 'bg-primary/10 border-primary'
-              : 'bg-secondary/30 border-border hover:bg-secondary/50'
-          )}
-          onClick={handleUpload}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <FileText className="size-8 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground text-center">
-            {t('common:projects.filesDescription')}
-          </p>
-        </div>
+            className={cn(
+              'flex mt-2 flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
+              isDragging
+                ? 'bg-primary/10 border-primary'
+                : 'bg-secondary/30 border-border hover:bg-secondary/50'
+            )}
+            onClick={handleUpload}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <FileText className="size-8 text-muted-foreground/50 mb-3" />
+            <p className="text-sm text-muted-foreground text-center">
+              {t('common:projects.filesDescription')}
+            </p>
+          </div>
         </div>
       )}
     </div>

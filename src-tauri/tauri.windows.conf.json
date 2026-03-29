@@ -21,17 +21,33 @@
         "decorations": false,
         "titleBarStyle": "Overlay",
         "windowEffects": {
-          "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
+          "effects": [
+            "fullScreenUI",
+            "mica",
+            "tabbed",
+            "blur",
+            "acrylic"
+          ],
           "state": "active"
         },
-        "dragDropEnabled": false
+        "dragDropEnabled": true
       }
     ]
   },
   "bundle": {
-    "targets": ["nsis", "msi"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/jan-cli.exe"],
-    "externalBin": ["resources/bin/bun", "resources/bin/uv"],
+    "targets": [
+      "nsis",
+      "msi"
+    ],
+    "resources": [
+      "resources/pre-install/**/*",
+      "resources/LICENSE",
+      "resources/bin/jan-cli.exe"
+    ],
+    "externalBin": [
+      "resources/bin/bun",
+      "resources/bin/uv"
+    ],
     "windows": {
       "webviewInstallMode": {
         "silent": true,
