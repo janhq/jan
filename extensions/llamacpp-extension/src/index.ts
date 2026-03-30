@@ -116,6 +116,7 @@ function parseBuildNumber(version: string): number | null {
 export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   autoUnload: boolean = true
+  autoRestartOnCrash: boolean = false
   timeout: number = 600
   llamacpp_env: string = ''
   readonly providerId: string = 'llamacpp'
@@ -155,6 +156,7 @@ export default class llamacpp_extension extends AIEngine {
     await this.migrateFitDefault()
 
     this.autoUnload = this.config.auto_unload
+    this.autoRestartOnCrash = this.config.auto_restart_on_crash
     this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env
 
@@ -825,6 +827,8 @@ export default class llamacpp_extension extends AIEngine {
       })()
     } else if (key === 'auto_unload') {
       this.autoUnload = value as boolean
+    } else if (key === 'auto_restart_on_crash') {
+      this.autoRestartOnCrash = value as boolean
     } else if (key === 'llamacpp_env') {
       this.llamacpp_env = value as string
     } else if (key === 'timeout') {
@@ -1857,28 +1861,65 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  private async isSessionHealthy(sessionInfo: SessionInfo): Promise<boolean> {
+    const isRunning = await invoke<boolean>('plugin:llamacpp|is_process_running', {
+      pid: sessionInfo.pid,
+    })
+    if (!isRunning) {
+      return false
+    }
+
+    try {
+      const healthResponse = await fetch(
+        `http://localhost:${sessionInfo.port}/health`
+      )
+      return healthResponse.ok
+    } catch (_error) {
+      return false
+    }
+  }
+
+  private async ensureHealthySession(modelId: string): Promise<SessionInfo> {
+    let sessionInfo = await this.findSessionByModel(modelId)
+    const healthy = await this.isSessionHealthy(sessionInfo)
+    if (healthy) {
+      return sessionInfo
+    }
+
+    if (!this.autoRestartOnCrash) {
+      // Best-effort cleanup for stale session metadata before surfacing the error.
+      try {
+        await this.unload(modelId)
+      } catch (_error) {}
+      throw new Error('Model appears to have crashed! Please reload!')
+    }
+
+    logger.warn(
+      `Detected crashed model "${modelId}". Attempting automatic restart.`
+    )
+
+    try {
+      await this.unload(modelId)
+    } catch (error) {
+      logger.warn(`Failed to unload crashed model "${modelId}":`, error)
+    }
+
+    await this.load(modelId, undefined, sessionInfo.is_embedding)
+    sessionInfo = await this.findSessionByModel(modelId)
+    if (!(await this.isSessionHealthy(sessionInfo))) {
+      throw new Error(
+        'Model crashed and automatic restart failed. Please reload manually.'
+      )
+    }
+
+    return sessionInfo
+  }
+
   override async chat(
     opts: chatCompletionRequest,
     abortController?: AbortController
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
-    const sessionInfo = await this.findSessionByModel(opts.model)
-    if (!sessionInfo) {
-      throw new Error(`No active session found for model: ${opts.model}`)
-    }
-    // check if the process is alive
-    const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
-      pid: sessionInfo.pid,
-    })
-    if (result) {
-      try {
-        await fetch(`http://localhost:${sessionInfo.port}/health`)
-      } catch (e) {
-        this.unload(sessionInfo.model_id)
-        throw new Error('Model appears to have crashed! Please reload!')
-      }
-    } else {
-      throw new Error('Model have crashed! Please reload!')
-    }
+    const sessionInfo = await this.ensureHealthySession(opts.model)
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
     const url = `${baseUrl}/chat/completions`
     const headers = {
@@ -2255,25 +2296,7 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async getTokensCount(opts: chatCompletionRequest): Promise<number> {
-    const sessionInfo = await this.findSessionByModel(opts.model)
-    if (!sessionInfo) {
-      throw new Error(`No active session found for model: ${opts.model}`)
-    }
-
-    // Check if the process is alive
-    const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
-      pid: sessionInfo.pid,
-    })
-    if (result) {
-      try {
-        await fetch(`http://localhost:${sessionInfo.port}/health`)
-      } catch (e) {
-        this.unload(sessionInfo.model_id)
-        throw new Error('Model appears to have crashed! Please reload!')
-      }
-    } else {
-      throw new Error('Model has crashed! Please reload!')
-    }
+    const sessionInfo = await this.ensureHealthySession(opts.model)
 
     const baseUrl = `http://localhost:${sessionInfo.port}`
     const headers = {
