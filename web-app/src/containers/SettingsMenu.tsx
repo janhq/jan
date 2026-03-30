@@ -3,9 +3,17 @@ import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useState, useEffect, useCallback } from 'react'
 import {
+  IconAdjustmentsHorizontal,
+  IconAsterisk,
+  IconCircles,
   IconChevronDown,
   IconChevronRight,
+  IconCode,
+  IconCommand,
+  IconFeather,
+  IconPalette,
   IconPlus,
+  IconTopologyStar3,
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
@@ -93,158 +101,63 @@ const SettingsMenu = () => {
       match.search.step === 'setup_remote_provider'
   )
 
-  const menuSettings = [
+  const coreSettings = [
     {
       title: 'common:general',
       route: route.settings.general,
-      hasSubMenu: false,
-      isEnabled: true,
+      icon: IconAdjustmentsHorizontal,
     },
+    // "Appearance" is implemented by the existing Interface settings route.
     {
-      title: 'common:attachments',
-      route: route.settings.attachments,
-      hasSubMenu: false,
-      isEnabled: true,
-    },
-    {
-      title: 'common:interface',
+      title: 'common:appearance',
       route: route.settings.interface,
-      hasSubMenu: false,
-      isEnabled: true,
+      icon: IconPalette,
     },
+    { title: 'common:assistants', route: route.settings.assistant, icon: IconFeather },
     {
-      title: 'common:privacy',
-      route: route.settings.privacy,
-      hasSubMenu: false,
-      isEnabled: true,
-    },
-    {
-      title: 'common:assistants',
-      route: route.settings.assistant,
-      hasSubMenu: false,
-      isEnabled: true,
+      title: 'common:local_api_server',
+      route: route.settings.local_api_server,
+      icon: IconCircles,
     },
     {
       title: 'common:keyboardShortcuts',
       route: route.settings.shortcuts,
-      hasSubMenu: false,
-      isEnabled: true,
+      icon: IconCommand,
     },
-    {
-      title: 'common:hardware',
-      route: route.settings.hardware,
-      hasSubMenu: false,
-      isEnabled: true,
-    },
-    {
-      title: 'common:mcp-servers',
-      route: route.settings.mcp_servers,
-      hasSubMenu: false,
-      isEnabled: true,
-    },
-    {
-      title: 'common:local_api_server',
-      route: route.settings.local_api_server,
-      hasSubMenu: false,
-      isEnabled: true,
-    },
-    {
-      title: 'common:https_proxy',
-      route: route.settings.https_proxy,
-      hasSubMenu: false,
-      isEnabled: true,
-    },
+    { title: 'common:privacy', route: route.settings.privacy, icon: IconCode },
   ]
 
-  const toggleProvidersExpansion = () => {
-    setExpandedProviders(!expandedProviders)
-  }
+  const integrationSettings = [
+    {
+      title: 'common:connectors',
+      route: route.settings.mcp_servers,
+      icon: IconTopologyStar3,
+    },
+    {
+      title: 'common:claude_code',
+      route: route.settings.claude_code,
+      icon: IconAsterisk,
+    },
+  ]
 
   return (
     <>
       <div className="h-full w-58 shrink-0 px-1.5 flex overflow-auto">
         <div className="flex flex-col gap-1 w-full font-medium">
-          {menuSettings.map((menu) => {
-            if (!menu.isEnabled) {
-              return null
-            }
-            return (
-              <div key={menu.title}>
-                <Link
-                  to={menu.route}
-                  className="block px-2 gap-1.5 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary py-1 w-full rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
-                >
-                  <div className="flex items-center justify-between">
-                    <span>{t(menu.title)}</span>
-                    {menu.hasSubMenu && (
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          toggleProvidersExpansion()
-                        }}
-                        className="text-muted-foreground/60 hover:text-muted-foreground/80"
-                      >
-                        {expandedProviders ? (
-                          <IconChevronDown size={16} />
-                        ) : (
-                          <IconChevronRight size={16} />
-                        )}
-                      </button>
-                    )}
-                  </div>
-                </Link>
-
-                {/* Sub-menu for model providers */}
-                {menu.hasSubMenu && expandedProviders && (
-                  <div className="ml-2 mt-1 space-y-1">
-                    {activeProviders.map((provider) => {
-                      const isActive = matches.some(
-                        (match) =>
-                          match.routeId ===
-                            '/settings/providers/$providerName' &&
-                          'providerName' in match.params &&
-                          match.params.providerName === provider.provider
-                      )
-
-                      return (
-                        <div key={provider.provider}>
-                          <div
-                            className={cn(
-                              'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm [&.active]:bg-secondary/80 text-foreground',
-                              isActive && 'bg-secondary',
-                              // hidden for llama.cpp provider for setup remote provider
-                              provider.provider === 'llama.cpp' &&
-                                stepSetupRemoteProvider &&
-                                'hidden'
-                            )}
-                            onClick={() =>
-                              navigate({
-                                to: route.settings.providers,
-                                params: {
-                                  providerName: provider.provider,
-                                },
-                                ...(stepSetupRemoteProvider
-                                  ? {
-                                      search: { step: 'setup_remote_provider' },
-                                    }
-                                  : {}),
-                              })
-                            }
-                          >
-                            <ProvidersAvatar provider={provider} />
-                            <div className="truncate">
-                              <span>{getProviderTitle(provider.provider)}</span>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            )
-          })}
+          {/* Core settings */}
+          {coreSettings.map((menu) => (
+            <div key={menu.title}>
+              <Link
+                to={menu.route}
+                className="block px-2 gap-1.5 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary py-1 w-full rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
+              >
+                <div className="flex items-center gap-2">
+                  <menu.icon size={18} className="shrink-0 text-muted-foreground" />
+                  <span>{t(menu.title)}</span>
+                </div>
+              </Link>
+            </div>
+          ))}
 
           {/* Integrations section */}
           <div className="mt-4">
@@ -255,12 +168,16 @@ const SettingsMenu = () => {
               </span>
             </span>
             <div className="mt-1 flex flex-col gap-1">
-              <Link
-                to={route.settings.claude_code}
-                className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
-              >
-                <span>{t('common:claude_code')}</span>
-              </Link>
+              {integrationSettings.map((menu) => (
+                <Link
+                  key={menu.title}
+                  to={menu.route}
+                  className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
+                >
+                  <menu.icon size={18} className="shrink-0 text-muted-foreground" />
+                  <span>{t(menu.title)}</span>
+                </Link>
+              ))}
             </div>
           </div>
 
