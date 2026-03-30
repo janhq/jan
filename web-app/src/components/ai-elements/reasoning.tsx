@@ -14,7 +14,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react'
 import { Streamdown } from 'streamdown'
@@ -69,7 +68,6 @@ export const Reasoning = memo(
     })
 
     const [startTime, setStartTime] = useState<number | null>(null)
-    const wasStreamingRef = useRef(isStreaming)
 
     // Track duration when streaming starts and ends
     useEffect(() => {
@@ -82,15 +80,6 @@ export const Reasoning = memo(
         setStartTime(null)
       }
     }, [isStreaming, startTime, setDuration])
-
-    // Auto-close when streaming ends (only when transitioning from streaming to not streaming)
-    useEffect(() => {
-      if (wasStreamingRef.current && !isStreaming) {
-        // Streaming just ended, auto-close
-        setIsOpen(false)
-      }
-      wasStreamingRef.current = isStreaming
-    }, [isStreaming, setIsOpen])
 
     const handleOpenChange = (newOpen: boolean) => {
       setIsOpen(newOpen)
