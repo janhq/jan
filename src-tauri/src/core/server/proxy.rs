@@ -44,15 +44,7 @@ fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::Value) {
                 );
             }
 
-            // Recurse into known container keys.
-            if let Some(props) = map.get_mut("properties") {
-                normalize_openai_tool_parameters_schema(props);
-            }
-            if let Some(items) = map.get_mut("items") {
-                normalize_openai_tool_parameters_schema(items);
-            }
-
-            // Recurse into any other object values (best-effort).
+            // Recurse into nested schema (properties, items, anyOf, etc.) in one pass.
             for v in map.values_mut() {
                 normalize_openai_tool_parameters_schema(v);
             }
