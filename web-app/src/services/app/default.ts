@@ -5,7 +5,8 @@
 import type { AppService, FactoryResetOptions, LogEntry } from './types'
 
 export class DefaultAppService implements AppService {
-  async factoryReset(_options?: FactoryResetOptions): Promise<void> {
+  async factoryReset(options?: FactoryResetOptions): Promise<void> {
+    console.log('factoryReset called with options:', options)
     // No-op
   }
 
