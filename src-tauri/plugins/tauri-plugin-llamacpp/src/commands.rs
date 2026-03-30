@@ -313,6 +313,45 @@ fn can_attempt_restart(session: &mut LLamaBackendSession) -> bool {
     session.restart_attempt_timestamps_ms.len() < AUTO_RESTART_MAX_ATTEMPTS
 }
 
+fn start_session_exit_monitor<R: Runtime>(app_handle: tauri::AppHandle<R>, model_id: String) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+
+            let maybe_exited = {
+                let state: State<LlamacppState> = app_handle.state();
+                let mut map = state.llama_server_process.lock().await;
+
+                let maybe_session = map
+                    .values_mut()
+                    .find(|session| session.info.model_id == model_id);
+
+                let Some(session) = maybe_session else {
+                    // Session no longer exists (unloaded manually or cleaned up); stop watching.
+                    return;
+                };
+
+                match session.child.try_wait() {
+                    Ok(Some(_status)) => true,
+                    Ok(None) => false,
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to inspect process state for model '{}': {}",
+                            model_id,
+                            err
+                        );
+                        false
+                    }
+                }
+            };
+
+            if maybe_exited {
+                let _ = ensure_session_ready(app_handle.clone(), model_id.clone()).await;
+            }
+        }
+    });
+}
+
 /// Load a llama model and start the server
 #[tauri::command]
 pub async fn load_llama_model<R: Runtime>(
@@ -328,7 +367,7 @@ pub async fn load_llama_model<R: Runtime>(
     timeout: u64,
 ) -> ServerResult<SessionInfo> {
     let state: State<LlamacppState> = app_handle.state();
-    load_llama_model_impl(
+    let session_info = load_llama_model_impl(
         state.llama_server_process.clone(),
         backend_path,
         model_id,
@@ -340,7 +379,12 @@ pub async fn load_llama_model<R: Runtime>(
         is_embedding,
         timeout,
     )
-    .await
+    .await?;
+
+    // Observe process exit from plugin side immediately after load.
+    start_session_exit_monitor(app_handle, session_info.model_id.clone());
+
+    Ok(session_info)
 }
 
 /// Unload a llama model by terminating its process
