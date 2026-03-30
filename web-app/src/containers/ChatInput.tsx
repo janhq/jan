@@ -2068,8 +2068,7 @@ const ChatInput = memo(function ChatInput({
                   </div>
                 )}
 
-              {/* Two-stage stop: first click clears the queue, second click stops streaming */}
-              {isStreaming && (
+              {isStreaming ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -2093,17 +2092,18 @@ const ChatInput = memo(function ChatInput({
                     <p>{queueLength > 0 ? `Clear ${queueLength} queued message(s)` : 'Stop generating'}</p>
                   </TooltipContent>
                 </Tooltip>
+              ) : (
+                <Button
+                  variant="default"
+                  size="icon-sm"
+                  disabled={!prompt.trim() || ingestingAny}
+                  data-test-id="send-message-button"
+                  onClick={() => handleSendMessage(prompt)}
+                  className="rounded-full mr-1 mb-1"
+                >
+                  <ArrowRight className="text-primary-fg" />
+                </Button>
               )}
-              <Button
-                variant="default"
-                size="icon-sm"
-                disabled={!prompt.trim() || ingestingAny}
-                data-test-id="send-message-button"
-                onClick={() => handleSendMessage(prompt)}
-                className="rounded-full mr-1 mb-1"
-              >
-                <ArrowRight className="text-primary-fg" />
-              </Button>
             </div>
           </div>
         </div>
