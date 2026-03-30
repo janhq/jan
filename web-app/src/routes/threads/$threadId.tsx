@@ -46,7 +46,7 @@ import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { Button } from '@/components/ui/button'
-import { IconAlertCircle } from '@tabler/icons-react'
+import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
@@ -1037,7 +1037,17 @@ function ThreadDetail() {
                           <IconAlertCircle className="size-4 mr-2" />
                           Increase Context Size
                         </Button>
-                      ) : null}
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3"
+                          onClick={() => handleRegenerate()}
+                        >
+                          <IconRefresh className="size-4 mr-2" />
+                          Regenerate
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
