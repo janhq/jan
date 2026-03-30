@@ -24,6 +24,7 @@ import { predefinedProviders } from '@/constants/providers'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { ChevronsUpDown } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -471,21 +472,26 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full">
             <button
               type="button"
-              className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-50"
+              className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 min-w-0"
             >
               {provider && (
                 <div className="shrink-0">
                   <ProvidersAvatar provider={provider} />
                 </div>
               )}
-              <span
-                className={cn(
-                  'text-foreground truncate leading-normal',
-                  !selectedModel?.id && 'text-muted-foreground'
-                )}
-              >
-                {displayModel}
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className={cn(
+                      'text-foreground truncate leading-normal',
+                      !selectedModel?.id && 'text-muted-foreground'
+                    )}
+                  >
+                    {displayModel}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{displayModel}</TooltipContent>
+              </Tooltip>
               <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
             </button>
           {currentModel?.settings &&
@@ -509,7 +515,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
 
       <PopoverContent
         className={cn(
-          'w-70 p-0 backdrop-blur-2xl bg-background/95 border',
+          // Use auto width to fit long model names; keep a sensible minimum.
+          'w-auto min-w-70 max-w-[90vw] p-0 backdrop-blur-2xl bg-background/95 border',
           searchValue.length === 0 && 'h-80'
         )}
         align="start"
@@ -568,13 +575,13 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                       return (
                         <div
                           key={`fav-${searchableModel.value}`}
-                          title={searchableModel.model.id}
                           onClick={() => handleSelect(searchableModel)}
                           className={cn(
                             'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
                             'hover:bg-secondary/40',
+                            // Selected state needs stronger contrast than the surrounding secondary tint.
                             isSelected &&
-                              'bg-secondary/50'
+                              'bg-primary/15 hover:bg-primary/15 ring-1 ring-primary/40'
                           )}
                         >
                           <div className="flex items-center gap-1 flex-1 min-w-0">
@@ -583,9 +590,16 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                 provider={searchableModel.provider}
                               />
                             </div>
-                            <span className="text-sm truncate">
-                              {getModelDisplayName(searchableModel.model)}
-                            </span>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="text-sm truncate">
+                                  {getModelDisplayName(searchableModel.model)}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {searchableModel.model.id}
+                              </TooltipContent>
+                            </Tooltip>
                             <div className="flex-1"></div>
                             {capabilities.length > 0 && (
                               <div className="shrink-0 -mr-1.5">
@@ -660,22 +674,27 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                           return (
                             <div
                               key={searchableModel.value}
-                              title={searchableModel.model.id}
                               onClick={() => handleSelect(searchableModel)}
                               className={cn(
                                 'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
                                 'hover:bg-secondary/40',
                                 isSelected &&
-                                  'bg-secondary/60 hover:bg-secondary/60'
+                                  'bg-primary/15 hover:bg-primary/15 ring-1 ring-primary/40'
                               )}
                             >
                               <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <span
-                                  className="text-sm truncate"
-                                  title={searchableModel.model.id}
-                                >
-                                  {getModelDisplayName(searchableModel.model)}
-                                </span>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-sm truncate">
+                                      {getModelDisplayName(
+                                        searchableModel.model
+                                      )}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    {searchableModel.model.id}
+                                  </TooltipContent>
+                                </Tooltip>
                                 <div className="flex-1"></div>
                                 {capabilities.length > 0 && (
                                   <div className="shrink-0 -mr-1.5">
