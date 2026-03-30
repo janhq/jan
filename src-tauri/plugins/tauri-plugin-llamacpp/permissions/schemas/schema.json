@@ -331,6 +331,18 @@
           "markdownDescription": "Denies the determine_supported_backends command without any pre-configured scope."
         },
         {
+          "description": "Enables the ensure_session_ready command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-ensure-session-ready",
+          "markdownDescription": "Enables the ensure_session_ready command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the ensure_session_ready command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-ensure-session-ready",
+          "markdownDescription": "Denies the ensure_session_ready command without any pre-configured scope."
+        },
+        {
           "description": "Enables the estimate_kv_cache_size command without any pre-configured scope.",
           "type": "string",
           "const": "allow-estimate-kv-cache-size",

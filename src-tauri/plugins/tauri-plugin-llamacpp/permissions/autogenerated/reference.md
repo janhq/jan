@@ -126,6 +126,32 @@ Denies the determine_supported_backends command without any pre-configured scope
 <tr>
 <td>
 
+`llamacpp:allow-ensure-session-ready`
+
+</td>
+<td>
+
+Enables the ensure_session_ready command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-ensure-session-ready`
+
+</td>
+<td>
+
+Denies the ensure_session_ready command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `llamacpp:allow-estimate-kv-cache-size`
 
 </td>
