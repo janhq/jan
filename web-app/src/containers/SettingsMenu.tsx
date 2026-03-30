@@ -4,16 +4,15 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useState, useEffect, useCallback } from 'react'
 import {
   IconAdjustmentsHorizontal,
-  IconAsterisk,
   IconCircles,
   IconChevronDown,
   IconChevronRight,
-  IconCode,
   IconCommand,
   IconFeather,
   IconPalette,
   IconPlus,
   IconTopologyStar3,
+  IconLock,
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
@@ -124,7 +123,7 @@ const SettingsMenu = () => {
       route: route.settings.shortcuts,
       icon: IconCommand,
     },
-    { title: 'common:privacy', route: route.settings.privacy, icon: IconCode },
+    { title: 'common:privacy', route: route.settings.privacy, icon: IconLock },
   ]
 
   const integrationSettings = [
@@ -136,7 +135,9 @@ const SettingsMenu = () => {
     {
       title: 'common:claude_code',
       route: route.settings.claude_code,
-      icon: IconAsterisk,
+      icon: ({ size, className }: { size?: number; className?: string }) => (
+        <img src="/images/code-claude.svg" width={size} height={size} className={cn(className, 'dark:invert opacity-60')} />
+      ),
     },
   ]
 
