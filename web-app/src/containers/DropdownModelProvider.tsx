@@ -25,7 +25,6 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { ChevronsUpDown } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { IconCheck } from '@tabler/icons-react'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -607,13 +606,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                 <Capabilities capabilities={capabilities} />
                               </div>
                             )}
-                            {isSelected && (
-                              <IconCheck
-                                size={16}
-                                className="text-primary shrink-0 opacity-90"
-                                aria-hidden="true"
-                              />
-                            )}
                           </div>
                         </div>
                       )
@@ -708,13 +700,6 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                                   <div className="shrink-0 -mr-1.5">
                                     <Capabilities capabilities={capabilities} />
                                   </div>
-                                )}
-                                {isSelected && (
-                                  <IconCheck
-                                    size={16}
-                                    className="text-primary shrink-0 opacity-90"
-                                    aria-hidden="true"
-                                  />
                                 )}
                               </div>
                             </div>
