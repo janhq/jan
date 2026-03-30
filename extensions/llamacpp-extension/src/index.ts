@@ -47,7 +47,6 @@ import {
   getModelSize,
   isModelSupported,
   unloadLlamaModel,
-  ensureSessionReady,
   LlamacppConfig,
   DownloadItem,
   ModelConfig,
@@ -1859,7 +1858,9 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   private async ensureHealthySession(modelId: string): Promise<SessionInfo> {
-    return ensureSessionReady(modelId)
+    return invoke<SessionInfo>('plugin:llamacpp|ensure_session_ready', {
+      modelId,
+    })
   }
 
   override async chat(
@@ -2243,7 +2244,29 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async getTokensCount(opts: chatCompletionRequest): Promise<number> {
-    const sessionInfo = await this.ensureHealthySession(opts.model)
+    const sessionInfo = await this.findSessionByModel(opts.model)
+    if (!sessionInfo) {
+      throw new Error(`No active session found for model: ${opts.model}`)
+    }
+
+    // Token counting should be side-effect free (no auto-restart/unload).
+    const isRunning = await invoke<boolean>('plugin:llamacpp|is_process_running', {
+      pid: sessionInfo.pid,
+    })
+    if (!isRunning) {
+      throw new Error('Model has crashed! Please reload!')
+    }
+
+    try {
+      const healthResponse = await fetch(
+        `http://localhost:${sessionInfo.port}/health`
+      )
+      if (!healthResponse.ok) {
+        throw new Error('unhealthy')
+      }
+    } catch (_e) {
+      throw new Error('Model appears to have crashed! Please reload!')
+    }
 
     const baseUrl = `http://localhost:${sessionInfo.port}`
     const headers = {

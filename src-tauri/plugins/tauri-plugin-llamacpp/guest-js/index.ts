@@ -139,10 +139,6 @@ export async function isProcessRunning(pid: number): Promise<boolean> {
   return await invoke('plugin:llamacpp|is_process_running', { pid })
 }
 
-export async function ensureSessionReady(modelId: string): Promise<SessionInfo> {
-  return await invoke('plugin:llamacpp|ensure_session_ready', { modelId })
-}
-
 export async function getRandomPort(): Promise<number> {
   return await invoke('plugin:llamacpp|get_random_port')
 }
