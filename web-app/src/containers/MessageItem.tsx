@@ -18,7 +18,7 @@ import {
 } from '@/components/ai-elements/tool'
 import { CopyButton } from './CopyButton'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { IconRefresh, IconPaperclip } from '@tabler/icons-react'
+import { IconRefresh, IconPaperclip, IconArrowDown } from '@tabler/icons-react'
 import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
@@ -43,6 +43,9 @@ export type MessageItemProps = {
   isLastMessage: boolean
   status: ChatStatus
   reasoningContainerRef?: React.RefObject<HTMLDivElement | null>
+  isReasoningAtBottom?: boolean
+  onReasoningScroll?: () => void
+  onReasoningScrollToBottom?: () => void
   onRegenerate?: (messageId: string) => void
   onEdit?: (messageId: string, newText: string) => void
   onDelete?: (messageId: string) => void
@@ -60,6 +63,9 @@ export const MessageItem = memo(
     isAnimating,
     hideActions,
     reasoningContainerRef,
+    isReasoningAtBottom,
+    onReasoningScroll,
+    onReasoningScrollToBottom,
     onRegenerate,
     onEdit,
     onDelete,
@@ -277,15 +283,27 @@ export const MessageItem = memo(
             )}
             <div
               ref={isStreaming ? reasoningContainerRef : null}
+              onScroll={isStreaming ? onReasoningScroll : undefined}
               className={twMerge(
                 'w-full overflow-auto relative',
                 isStreaming
-                  ? 'max-h-32 opacity-70 mt-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+                  ? 'max-h-64 opacity-70 mt-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
                   : 'h-auto opacity-100'
               )}
             >
               <ReasoningContent>{part.text}</ReasoningContent>
             </div>
+            {isStreaming && !isReasoningAtBottom && (
+              <Button
+                className="absolute bottom-2 left-[50%] translate-x-[-50%] rounded-full size-7 z-10"
+                onClick={onReasoningScrollToBottom}
+                size="icon"
+                type="button"
+                variant="outline"
+              >
+                <IconArrowDown className="size-3" />
+              </Button>
+            )}
           </div>
         </Reasoning>
       )
