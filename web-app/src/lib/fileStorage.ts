@@ -104,6 +104,69 @@ async function doMigrate(name: string): Promise<void> {
 }
 
 /**
+ * Proactively migrate ALL localStorage keys to the file store.
+ *
+ * Should be called once at app startup so that users who update
+ * the app will not lose any data — including keys that are read
+ * directly via localStorage rather than through zustand stores.
+ *
+ * Safe to call multiple times; each key is migrated at most once
+ * per session via the shared `migrationPromises` map.
+ */
+export async function migrateAllLocalStorageKeys(): Promise<void> {
+  if (!IS_TAURI) return
+
+  try {
+    await ensureStore()
+    if (!store) return
+
+    // Snapshot all current localStorage keys
+    const keys: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key) keys.push(key)
+    }
+
+    if (keys.length === 0) return
+
+    // Copy each key into the file store (in-memory only, no disk I/O yet)
+    const migratedKeys: string[] = []
+    for (const key of keys) {
+      // Skip keys already being migrated by a concurrent getItem call
+      if (migrationPromises.has(key)) continue
+
+      const localValue = localStorage.getItem(key)
+      if (localValue === null) continue
+
+      const existing = await store.get(key)
+      if (existing !== undefined && existing !== null) {
+        // Already in file store — just clean up localStorage
+        localStorage.removeItem(key)
+        continue
+      }
+
+      await store.set(key, localValue)
+      migratedKeys.push(key)
+    }
+
+    if (migratedKeys.length === 0) return
+
+    // Single flush to disk for all keys at once
+    await store.save()
+
+    // Only clean up localStorage after confirmed disk write
+    for (const key of migratedKeys) {
+      localStorage.removeItem(key)
+      // Mark as migrated so lazy per-key migration skips these
+      migrationPromises.set(key, Promise.resolve())
+    }
+  } catch (e) {
+    // Keep localStorage intact so we can retry next session
+    console.warn('Bulk migration from localStorage failed:', e)
+  }
+}
+
+/**
  * Storage adapter compatible with zustand's createJSONStorage().
  *
  * Usage:

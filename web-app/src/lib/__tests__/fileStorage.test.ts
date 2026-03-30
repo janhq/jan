@@ -191,6 +191,70 @@ describe('fileStorage', () => {
     })
   })
 
+  describe('migrateAllLocalStorageKeys', () => {
+    let migrateAllLocalStorageKeys: typeof import('../fileStorage').migrateAllLocalStorageKeys
+
+    beforeEach(async () => {
+      ;(window as Record<string, unknown>).__TAURI_INTERNALS__ = {}
+      vi.resetModules()
+      mockStoreData.clear()
+      mockStore.get.mockClear()
+      mockStore.set.mockClear()
+      mockStore.delete.mockClear()
+      mockSave.mockClear()
+      const mod = await import('../fileStorage')
+      fileStorage = mod.fileStorage
+      migrateAllLocalStorageKeys = mod.migrateAllLocalStorageKeys
+    })
+
+    it('migrates all localStorage keys to the file store', async () => {
+      localStorage.setItem('key-a', 'value-a')
+      localStorage.setItem('key-b', 'value-b')
+      localStorage.setItem('key-c', 'value-c')
+
+      await migrateAllLocalStorageKeys()
+
+      expect(mockStore.set).toHaveBeenCalledWith('key-a', 'value-a')
+      expect(mockStore.set).toHaveBeenCalledWith('key-b', 'value-b')
+      expect(mockStore.set).toHaveBeenCalledWith('key-c', 'value-c')
+      // Single flush to disk, not one per key
+      expect(mockSave).toHaveBeenCalledTimes(1)
+      // All localStorage entries cleaned up
+      expect(localStorage.length).toBe(0)
+    })
+
+    it('does not overwrite keys already in the file store', async () => {
+      localStorage.setItem('existing', 'old-value')
+      mockStoreData.set('existing', 'new-value')
+
+      await migrateAllLocalStorageKeys()
+
+      // Should not overwrite
+      expect(mockStore.set).not.toHaveBeenCalledWith('existing', 'old-value')
+      expect(mockStoreData.get('existing')).toBe('new-value')
+      // localStorage still cleaned up
+      expect(localStorage.getItem('existing')).toBeNull()
+    })
+
+    it('is a no-op when localStorage is empty', async () => {
+      await migrateAllLocalStorageKeys()
+      expect(mockStore.set).not.toHaveBeenCalled()
+    })
+
+    it('is a no-op in non-Tauri environment', async () => {
+      delete (window as Record<string, unknown>).__TAURI_INTERNALS__
+      vi.resetModules()
+      const mod = await import('../fileStorage')
+
+      localStorage.setItem('key', 'value')
+      await mod.migrateAllLocalStorageKeys()
+
+      // localStorage untouched
+      expect(localStorage.getItem('key')).toBe('value')
+      expect(mockStore.set).not.toHaveBeenCalled()
+    })
+  })
+
   describe('graceful fallback when Tauri store fails to load', () => {
     beforeEach(async () => {
       ;(window as Record<string, unknown>).__TAURI_INTERNALS__ = {}
