@@ -160,8 +160,15 @@ pub fn open_app_directory<R: Runtime>(app: AppHandle<R>) {
 pub fn open_file_explorer(path: String) {
     let path = PathBuf::from(path);
     if cfg!(target_os = "windows") {
+        // Normalize extended-length paths (\\?\...) for explorer compatibility.
+        let mut path_str = path.to_string_lossy().into_owned();
+        if let Some(stripped) = path_str.strip_prefix(r"\\?\UNC\") {
+            path_str = format!(r"\\{}", stripped);
+        } else if let Some(stripped) = path_str.strip_prefix(r"\\?\") {
+            path_str = stripped.to_string();
+        }
         std::process::Command::new("explorer")
-            .arg(path)
+            .arg(path_str)
             .status()
             .expect("Failed to open file explorer");
     } else if cfg!(target_os = "macos") {
