@@ -117,6 +117,8 @@ export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   autoUnload: boolean = true
   autoRestartOnCrash: boolean = false
+  private readonly maxAutoRestartAttempts: number = 3
+  private readonly autoRestartWindowMs: number = 5 * 60 * 1000
   timeout: number = 600
   llamacpp_env: string = ''
   readonly providerId: string = 'llamacpp'
@@ -128,6 +130,7 @@ export default class llamacpp_extension extends AIEngine {
   private isConfiguringBackends: boolean = false
   private isUpdatingBackend: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
+  private autoRestartHistory = new Map<string, number[]>()
   private unlistenValidationStarted?: () => void
 
   override async onLoad(): Promise<void> {
@@ -1894,6 +1897,12 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error('Model appears to have crashed! Please reload!')
     }
 
+    if (!this.canAttemptAutoRestart(modelId)) {
+      throw new Error(
+        `Model "${modelId}" crashed repeatedly. Auto-restart limit reached (${this.maxAutoRestartAttempts} attempts in ${Math.floor(this.autoRestartWindowMs / 60000)} minutes). Please reload manually.`
+      )
+    }
+
     logger.warn(
       `Detected crashed model "${modelId}". Attempting automatic restart.`
     )
@@ -1904,6 +1913,7 @@ export default class llamacpp_extension extends AIEngine {
       logger.warn(`Failed to unload crashed model "${modelId}":`, error)
     }
 
+    this.recordAutoRestartAttempt(modelId)
     await this.load(modelId, undefined, sessionInfo.is_embedding)
     sessionInfo = await this.findSessionByModel(modelId)
     if (!(await this.isSessionHealthy(sessionInfo))) {
@@ -1913,6 +1923,26 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     return sessionInfo
+  }
+
+  private canAttemptAutoRestart(modelId: string): boolean {
+    const now = Date.now()
+    const cutoff = now - this.autoRestartWindowMs
+    const attempts = (this.autoRestartHistory.get(modelId) ?? []).filter(
+      (ts) => ts >= cutoff
+    )
+    this.autoRestartHistory.set(modelId, attempts)
+    return attempts.length < this.maxAutoRestartAttempts
+  }
+
+  private recordAutoRestartAttempt(modelId: string): void {
+    const now = Date.now()
+    const cutoff = now - this.autoRestartWindowMs
+    const attempts = (this.autoRestartHistory.get(modelId) ?? []).filter(
+      (ts) => ts >= cutoff
+    )
+    attempts.push(now)
+    this.autoRestartHistory.set(modelId, attempts)
   }
 
   override async chat(
