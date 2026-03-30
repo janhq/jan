@@ -16,9 +16,24 @@ pub struct SessionInfo {
     pub mmproj_path: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SessionLaunchConfig {
+    pub backend_path: String,
+    pub model_id: String,
+    pub model_path: String,
+    pub port: u16,
+    pub config: crate::args::LlamacppConfig,
+    pub envs: HashMap<String, String>,
+    pub mmproj_path: Option<String>,
+    pub is_embedding: bool,
+    pub timeout: u64,
+}
+
 pub struct LLamaBackendSession {
     pub child: Child,
     pub info: SessionInfo,
+    pub launch: SessionLaunchConfig,
+    pub restart_attempt_timestamps_ms: Vec<u64>,
 }
 
 /// LlamaCpp plugin state

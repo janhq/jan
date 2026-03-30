@@ -36,6 +36,7 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     version_backend: asString(config.version_backend),
     auto_update_engine: asBool(config.auto_update_engine),
     auto_unload: asBool(config.auto_unload),
+    auto_restart_on_crash: asBool(config.auto_restart_on_crash),
     timeout: asNumber(config.timeout, 600),
 
     llamacpp_env: asString(config.llamacpp_env),
@@ -136,6 +137,10 @@ export async function generateApiKey(
 
 export async function isProcessRunning(pid: number): Promise<boolean> {
   return await invoke('plugin:llamacpp|is_process_running', { pid })
+}
+
+export async function ensureSessionReady(modelId: string): Promise<SessionInfo> {
+  return await invoke('plugin:llamacpp|ensure_session_ready', { modelId })
 }
 
 export async function getRandomPort(): Promise<number> {

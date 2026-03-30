@@ -10,6 +10,7 @@ Default permissions for the llamacpp plugin
 - `allow-get-devices`
 - `allow-generate-api-key`
 - `allow-is-process-running`
+- `allow-ensure-session-ready`
 - `allow-get-random-port`
 - `allow-find-session-by-model`
 - `allow-get-loaded-models`
