@@ -124,6 +124,8 @@ const ChatInput = memo(function ChatInput({
   const setActiveModels = useAppState((state) => state.setActiveModels)
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
+  const addToHistory = usePrompt((state) => state.addToHistory)
+  const navigateHistory = usePrompt((state) => state.navigateHistory)
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const currentThread = useThreads((state) => state.getCurrentThread())
   const updateCurrentThreadAssistant = useThreads(
@@ -372,6 +374,7 @@ const ChatInput = memo(function ChatInput({
     }
 
     setMessage('')
+    addToHistory(prompt)
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
@@ -1649,6 +1652,27 @@ const ChatInput = memo(function ChatInput({
                     handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
+                }
+                // Navigate prompt history with Up/Down arrow keys
+                if (e.key === 'ArrowUp' && !isComposing) {
+                  const textarea = e.currentTarget
+                  const cursorAtStart =
+                    textarea.selectionStart === 0 &&
+                    textarea.selectionEnd === 0
+                  if (cursorAtStart || !prompt) {
+                    e.preventDefault()
+                    navigateHistory('up')
+                  }
+                }
+                if (e.key === 'ArrowDown' && !isComposing) {
+                  const textarea = e.currentTarget
+                  const cursorAtEnd =
+                    textarea.selectionStart === prompt.length &&
+                    textarea.selectionEnd === prompt.length
+                  if (cursorAtEnd) {
+                    e.preventDefault()
+                    navigateHistory('down')
+                  }
                 }
               }}
               onPaste={handlePaste}
