@@ -177,6 +177,25 @@ Apple Silicon Macs automatically use the GPU through Metal - no additional setup
 
 </Tabs>
 
+## Custom Backend Builds (Advanced)
+
+If you want to experiment with a custom `llama.cpp` backend build (for example, an experimental fork or private build), use Jan's manual/custom backend installation flow instead of expecting first-class support in the backend dropdown.
+
+<Callout type="warning">
+Custom backend builds are considered advanced and experimental. Compatibility is not guaranteed across all Jan settings, model features, or future updates.
+</Callout>
+
+### Recommended Approach
+
+1. Install your custom backend archive manually in Jan.
+2. Verify basic model load and generation first.
+3. Use conservative settings (default KV cache types, default memory options) before tuning.
+4. If behavior differs from official releases, switch back to the default Jan backend for stability.
+
+### About Experimental Forks
+
+Some forks may require backend-specific flags or behavior that Jan does not apply automatically. Jan will add first-class support only after those capabilities are available and stable upstream in official `llama.cpp`.
+
 ## Performance Settings
 
 These control how efficiently models run:
