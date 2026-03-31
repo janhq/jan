@@ -15,7 +15,6 @@ import { useAnalytic } from '@/hooks/useAnalytic'
 import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
 import { useJanModelPrompt } from '@/hooks/useJanModelPrompt'
 import { PromptJanModel } from '@/containers/PromptJanModel'
-import { useLatestJanModel } from '@/hooks/useLatestJanModel'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
@@ -45,13 +44,6 @@ const AppLayout = () => {
     width: sidebarWidth,
     setLeftPanelWidth,
   } = useLeftPanel()
-  const fetchLatestJanModel = useLatestJanModel(
-    (state) => state.fetchLatestJanModel
-  )
-
-  useEffect(() => {
-    fetchLatestJanModel()
-  }, [fetchLatestJanModel])
 
   return (
     <div className="bg-neutral-50 dark:bg-background size-full relative">
@@ -67,7 +59,7 @@ const AppLayout = () => {
         {IS_WINDOWS && <WindowControls />}
         {IS_TAURI && (
           <div
-            className="fixed w-full h-12 z-20 top-0 cursor-grab active:cursor-grabbing hover:bg-primary/10 transition-colors duration-150"
+            className="fixed w-full h-12 z-20 top-0 cursor-grab active:cursor-grabbing"
             title="Drag window"
             aria-label="Window drag area"
             {...(IS_LINUX
