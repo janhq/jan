@@ -58,7 +58,7 @@ export function McpRouterModelPicker({
           .map((m) => ({
             model: m,
             providerName: p.provider,
-            isLocal: isLocalProvider(p.provider),
+            isLocal: !!isLocalProvider(p.provider),
             hasApiKey: !!p.api_key?.length,
           }))
       )
