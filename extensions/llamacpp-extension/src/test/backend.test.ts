@@ -4,16 +4,11 @@ import {
   getBackendExePath,
   isBackendInstalled,
   downloadBackend,
-  listSupportedBackends,
 } from '../backend'
 import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 import { fs, getJanDataFolderPath, events } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { dirname } from '@tauri-apps/api/path'
-import {
-  determineSupportedBackends,
-  listSupportedBackendsFromRust,
-} from '@janhq/tauri-plugin-llamacpp-api'
 
 // Mock constants: Hardcode path string directly inside the mock to avoid hoisting issues
 const MOCK_JAN_PATH_STRING = '/path/to/jan'
@@ -36,25 +31,6 @@ vi.mock('@tauri-apps/api/core', () => ({
 }))
 vi.mock('@janhq/tauri-plugin-hardware-api', () => ({
   getSystemInfo: vi.fn(),
-}))
-vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({
-  mapOldBackendToNew: vi.fn(async (backend: string) => backend),
-  getLocalInstalledBackendsInternal: vi.fn(async () => []),
-  normalizeFeatures: vi.fn((f) => f),
-  determineSupportedBackends: vi.fn(async () => ['linux-common_cpus-x64']),
-  listSupportedBackendsFromRust: vi.fn(
-    async (remote: any[], local: any[]) => [...remote, ...local]
-  ),
-  getSupportedFeaturesFromRust: vi.fn(async () => ({
-    avx: true,
-    avx2: true,
-    avx512: false,
-    cuda11: false,
-    cuda12: false,
-    cuda13: false,
-    vulkan: false,
-  })),
-  isCudaInstalledFromRust: vi.fn(async () => true),
 }))
 vi.mock('../util', () => ({
   getProxyConfig: vi.fn().mockReturnValue({}),
@@ -284,64 +260,6 @@ describe('Backend functions', () => {
         path: `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-avx2-x64/backend.tar.gz`,
         outputDir: `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-avx2-x64`,
       })
-    })
-
-    it('should download from TheTom turboquant repo when source is turboquant', async () => {
-      vi.stubGlobal('IS_WINDOWS', false)
-      vi.mocked(getSystemInfo).mockResolvedValue({
-        os_type: 'linux',
-        cpu: { arch: 'x86_64', extensions: [] },
-        gpus: [],
-      } as any)
-
-      await downloadBackend('linux-common_cpus-x64', 'b1234', 'turboquant')
-
-      const downloadItems = vi.mocked(mockDownloadManager.downloadFiles).mock
-        .calls[0][0]
-      expect(downloadItems.length).toBe(1)
-      expect(downloadItems[0].url).toBe(
-        'https://github.com/TheTom/llama-cpp-turboquant/releases/download/b1234/llama-b1234-bin-linux-common_cpus-x64.tar.gz'
-      )
-      expect(downloadItems[0].model_id).toContain('turboquant')
-    })
-  })
-
-  describe('listSupportedBackends', () => {
-    it('should parse turboquant release assets with non-standard prefixes', async () => {
-      vi.mocked(getSystemInfo).mockResolvedValue({
-        os_type: 'linux',
-        cpu: { arch: 'x86_64', extensions: [] },
-        gpus: [],
-      } as any)
-
-      vi.mocked(determineSupportedBackends).mockResolvedValue([
-        'linux-common_cpus-x64',
-      ] as any)
-      vi.mocked(listSupportedBackendsFromRust).mockImplementation(
-        async (remote: any[], local: any[]) => [...remote, ...local]
-      )
-
-      vi.mocked(global.fetch).mockResolvedValue({
-        ok: true,
-        json: async () => [
-          {
-            tag_name: 'b1234',
-            assets: [
-              {
-                name: 'k_llama-main-b1234-bin-linux-common_cpus-x64.tar.gz',
-              },
-            ],
-          },
-        ],
-      } as any)
-
-      const results = await listSupportedBackends('turboquant')
-      expect(results).toEqual([
-        { version: 'b1234', backend: 'linux-common_cpus-x64' },
-      ])
-      expect(global.fetch).toHaveBeenCalledWith(
-        'https://api.github.com/repos/TheTom/llama-cpp-turboquant/releases'
-      )
     })
   })
 })

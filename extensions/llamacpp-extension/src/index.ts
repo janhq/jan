@@ -32,7 +32,6 @@ import {
   isBackendInstalled,
   getBackendExePath,
   getBackendDir,
-  type BackendSource,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 import {
@@ -119,7 +118,6 @@ export default class llamacpp_extension extends AIEngine {
   autoUnload: boolean = true
   timeout: number = 600
   llamacpp_env: string = ''
-  backendSource: BackendSource = 'janhq'
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
@@ -159,9 +157,6 @@ export default class llamacpp_extension extends AIEngine {
     this.autoUnload = this.config.auto_unload
     this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env
-    this.backendSource = this.resolveBackendSource(
-      await this.getSetting('llamacpp_source', 'janhq')
-    )
 
     // This sets the base directory where model files for this provider are stored.
     this.getProviderPath()
@@ -206,10 +201,6 @@ export default class llamacpp_extension extends AIEngine {
     } catch (error) {
       logger.warn('Failed to clear backend type from localStorage:', error)
     }
-  }
-
-  private resolveBackendSource(value: unknown): BackendSource {
-    return value === 'turboquant' ? 'turboquant' : 'janhq'
   }
 
   private async migrateKvCacheDefaults(): Promise<void> {
@@ -278,7 +269,7 @@ export default class llamacpp_extension extends AIEngine {
       let version_backends: { version: string; backend: string }[] = []
 
       try {
-        version_backends = await listSupportedBackends(this.backendSource)
+        version_backends = await listSupportedBackends()
         if (version_backends.length === 0) {
           throw new Error(
             'No supported backend binaries found for this system. Backend selection and auto-update will be unavailable.'
@@ -680,7 +671,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Use Rust checkBackendForUpdates logic implicitly here by using the helpers
-    const version_backends = await listSupportedBackends(this.backendSource)
+    const version_backends = await listSupportedBackends()
     const checkResult = await checkBackendForUpdates(
       this.config.version_backend,
       version_backends
@@ -721,7 +712,7 @@ export default class llamacpp_extension extends AIEngine {
     targetBackend?: string
   }> {
     try {
-      const version_backends = await listSupportedBackends(this.backendSource)
+      const version_backends = await listSupportedBackends()
       const result = await checkBackendForUpdates(
         this.config.version_backend,
         version_backends
@@ -830,15 +821,6 @@ export default class llamacpp_extension extends AIEngine {
           }
         } catch (e) {
           logger.error('Error in onSettingUpdate async block:', e)
-        }
-      })()
-    } else if (key === 'llamacpp_source') {
-      this.backendSource = this.resolveBackendSource(value)
-      ;(async () => {
-        try {
-          await this.configureBackends()
-        } catch (e) {
-          logger.error('Failed to reconfigure backends after source update:', e)
         }
       })()
     } else if (key === 'auto_unload') {
@@ -1756,11 +1738,7 @@ export default class llamacpp_extension extends AIEngine {
 
     // Start new download
     logger.info(`Backend ${backendKey} not installed, downloading...`)
-    const downloadPromise = downloadBackend(
-      backend,
-      version,
-      this.backendSource
-    ).finally(() => {
+    const downloadPromise = downloadBackend(backend, version).finally(() => {
       this.pendingDownloads.delete(backendKey)
     })
 
