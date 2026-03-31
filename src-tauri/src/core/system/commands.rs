@@ -6,6 +6,10 @@ use tauri_plugin_llamacpp::cleanup_llama_processes;
 use crate::core::app::commands::{
     default_data_folder_path, get_jan_data_folder_path, update_app_configuration,
 };
+use crate::core::app::constants::{
+    JAN_DATA_DIRS_COMMON, JAN_DATA_DIRS_CONVERSATIONS, JAN_DATA_DIRS_MODELS,
+    JAN_DATA_FILES_COMMON, JAN_DATA_FILES_CONFIGS,
+};
 use crate::core::app::models::AppConfiguration;
 use crate::core::mcp::helpers::{stop_mcp_servers_with_context, ShutdownContext};
 use crate::core::state::AppState;
@@ -35,31 +39,35 @@ fn remove_file(data_folder: &std::path::Path, name: &str) {
     }
 }
 
-/// Delete chat history: threads and assistant configurations
-fn delete_app_data(data_folder: &std::path::Path) {
-    log::info!("Deleting application data (threads, assistants)");
-    remove_dir(data_folder, "threads");
-    remove_dir(data_folder, "assistants");
+/// Delete conversations and user data (threads, assistants).
+fn delete_conversations(data_folder: &std::path::Path) {
+    log::info!("Deleting conversations (threads, assistants)");
+    for dir in JAN_DATA_DIRS_CONVERSATIONS {
+        remove_dir(data_folder, dir);
+    }
 }
 
-/// Delete downloaded models, engine binaries, and MCP config
+/// Delete downloaded models, engine binaries, and configuration files
+/// (engine settings, MCP config, etc.).
 fn delete_models_and_configs(data_folder: &std::path::Path) {
-    log::info!("Deleting models and configurations");
-    remove_dir(data_folder, "models");
-    remove_dir(data_folder, "llamacpp");
-    remove_dir(data_folder, "mlx");
-    remove_dir(data_folder, "openclaw");
-    remove_file(data_folder, "mcp_config.json");
+    log::info!("Deleting models, engines, and configurations");
+    for dir in JAN_DATA_DIRS_MODELS {
+        remove_dir(data_folder, dir);
+    }
+    for file in JAN_DATA_FILES_CONFIGS {
+        remove_file(data_folder, file);
+    }
 }
 
 /// Delete extensions, logs, caches — always cleaned during any reset
 fn delete_common_data(data_folder: &std::path::Path) {
     log::info!("Deleting common data (extensions, logs, caches)");
-    remove_dir(data_folder, "extensions");
-    remove_dir(data_folder, "logs");
-    remove_dir(data_folder, ".npx");
-    remove_dir(data_folder, ".uvx");
-    remove_file(data_folder, "store.json");
+    for dir in JAN_DATA_DIRS_COMMON {
+        remove_dir(data_folder, dir);
+    }
+    for file in JAN_DATA_FILES_COMMON {
+        remove_file(data_folder, file);
+    }
 }
 
 /// Detect the user's default shell and return the appropriate env file path.
@@ -161,9 +169,9 @@ pub fn factory_reset<R: Runtime>(
             // Always clean common data (extensions, logs, caches)
             delete_common_data(&data_folder);
 
-            // Delete app data (threads, assistants) unless user chose to keep it
+            // Delete conversations (threads, assistants) unless user chose to keep it
             if !keep_app_data {
-                delete_app_data(&data_folder);
+                delete_conversations(&data_folder);
             }
 
             // Delete models and configs unless user chose to keep them
