@@ -13,6 +13,7 @@ import {
   IconPlus,
   IconTopologyStar3,
   IconLock,
+  IconCpu,
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
@@ -122,6 +123,13 @@ const SettingsMenu = () => {
       title: 'common:keyboardShortcuts',
       route: route.settings.shortcuts,
       icon: IconCommand,
+    },
+    {
+      title: 'common:hardware',
+      route: route.settings.hardware,
+      hasSubMenu: false,
+      isEnabled: true,
+      icon: IconCpu,
     },
     { title: 'common:privacy', route: route.settings.privacy, icon: IconLock },
   ]
