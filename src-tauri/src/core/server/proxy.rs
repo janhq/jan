@@ -24,7 +24,7 @@ use crate::core::{
 ///
 /// A strict JSON schema converter inside the upstream server rejects those schemas.
 /// To be robust, we default `type` to `"string"` for description-only leaf schemas.
-fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::Value) {
+pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::Value) {
     match schema {
         serde_json::Value::Object(map) => {
             let has_description = map.contains_key("description");
