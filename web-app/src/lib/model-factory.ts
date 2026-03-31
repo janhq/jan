@@ -305,6 +305,8 @@ export class ModelFactory {
       case 'perplexity':
       case 'moonshot':
       case 'minimax':
+      case 'ollama-local':
+      case 'ollama-cloud':
         return this.createOpenAICompatibleModel(modelId, provider)
 
       case 'xai':

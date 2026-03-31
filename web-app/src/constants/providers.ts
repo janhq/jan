@@ -482,4 +482,59 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: 'ollama',
+    base_url: 'http://localhost:11434/v1',
+    explore_models_url: 'https://ollama.com/library',
+    provider: 'ollama-local',
+    settings: [
+      {
+        key: 'base-url',
+        title: 'Host URL',
+        description:
+          'The Ollama server address. Default is `http://localhost:11434/v1`. Change this if Ollama runs on another machine (e.g. `http://192.168.1.100:11434/v1`).',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'http://localhost:11434/v1',
+          value: 'http://localhost:11434/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://ollama.com/v1',
+    explore_models_url: 'https://ollama.com/library',
+    provider: 'ollama-cloud',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'An API key is required to use Ollama Cloud. Visit your [API Keys](https://ollama.com/settings/keys) page to create one.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The Ollama Cloud API endpoint. See the [Ollama documentation](https://ollama.com) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://ollama.com/v1',
+          value: 'https://ollama.com/v1',
+        },
+      },
+    ],
+    models: [],
+  },
 ]

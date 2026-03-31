@@ -98,6 +98,9 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/minimax.svg'
     case 'nvidia':
       return '/images/model-provider/nvidia.svg'
+    case 'ollama-local':
+    case 'ollama-cloud':
+      return '/images/model-provider/ollama.svg'
     default:
       return undefined
   }
@@ -127,6 +130,10 @@ export const getProviderTitle = (provider: string) => {
       return 'MiniMax'
     case 'nvidia':
       return 'NVIDIA NIM'
+    case 'ollama-local':
+      return 'Ollama Local'
+    case 'ollama-cloud':
+      return 'Ollama Cloud'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }
