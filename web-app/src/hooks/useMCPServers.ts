@@ -29,6 +29,8 @@ export type MCPSettings = {
   maxRestartDelayMs: number
   backoffMultiplier: number
   enableSmartToolRouting: boolean
+  /** When smart routing is on, use a dedicated (e.g. smaller) model for routing instead of the chat model. */
+  useLightweightRouterModel: boolean
   routerModelProvider: string
   routerModelId: string
 }
@@ -39,6 +41,7 @@ export const DEFAULT_MCP_SETTINGS: MCPSettings = {
   maxRestartDelayMs: 30000,
   backoffMultiplier: 2,
   enableSmartToolRouting: true,
+  useLightweightRouterModel: false,
   routerModelProvider: '',
   routerModelId: '',
 }

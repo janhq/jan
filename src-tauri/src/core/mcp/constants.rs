@@ -65,6 +65,7 @@ pub const DEFAULT_MCP_CONFIG: &str = r#"{
     "maxRestartDelayMs": 30000,
     "backoffMultiplier": 2.0,
     "enableSmartToolRouting": true,
+    "useLightweightRouterModel": false,
     "routerModelProvider": "",
     "routerModelId": ""
   }

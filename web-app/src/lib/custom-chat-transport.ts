@@ -272,7 +272,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           mcpService.getServerSummaries
         ) {
           const routerModel =
-            (await this.resolveRouterModel(mcpSettings)) ?? this.model
+            mcpSettings.useLightweightRouterModel &&
+            mcpSettings.routerModelProvider.trim() &&
+            mcpSettings.routerModelId.trim()
+              ? (await this.resolveRouterModel(mcpSettings)) ?? this.model
+              : this.model
           mcpTools = await mcpOrchestrator.getRelevantTools(
             this.lastUserMessage,
             {
@@ -314,9 +318,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   private async resolveRouterModel(settings: {
+    useLightweightRouterModel: boolean
     routerModelProvider: string
     routerModelId: string
   }): Promise<LanguageModel | null> {
+    if (!settings.useLightweightRouterModel) return null
     const providerName = settings.routerModelProvider.trim()
     const modelId = settings.routerModelId.trim()
     if (!providerName || !modelId) return null

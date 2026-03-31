@@ -31,6 +31,9 @@ import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { McpRouterModelPicker } from '@/containers/McpRouterModelPicker'
+import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
 
 
 // Function to mask sensitive URL parameters
@@ -150,13 +153,40 @@ function MCPServersDesktop() {
     }
   }
 
-  const updateRouterModelProvider = (rawValue: string) => {
-    updateSettings({ routerModelProvider: rawValue.trim() })
-  }
+  const modelProviders = useModelProvider((state) => state.providers)
 
-  const updateRouterModelId = (rawValue: string) => {
-    updateSettings({ routerModelId: rawValue.trim() })
-  }
+  const routerPickerDisabled =
+    !settings.enableSmartToolRouting || !settings.useLightweightRouterModel
+
+  useEffect(() => {
+    if (
+      !settings.useLightweightRouterModel ||
+      !settings.routerModelProvider ||
+      !settings.routerModelId
+    ) {
+      return
+    }
+    if (modelProviders.length === 0) return
+
+    const provider = modelProviders.find(
+      (p) => p.provider === settings.routerModelProvider && p.active
+    )
+    const model = provider?.models.find((m) => m.id === settings.routerModelId)
+
+    if (
+      !provider ||
+      !model ||
+      !isRouterModelSelectable(provider, model)
+    ) {
+      updateSettings({ routerModelProvider: '', routerModelId: '' })
+    }
+  }, [
+    settings.useLightweightRouterModel,
+    settings.routerModelProvider,
+    settings.routerModelId,
+    modelProviders,
+    updateSettings,
+  ])
 
   const handleOpenDialog = (serverKey?: string) => {
     if (serverKey) {
@@ -468,7 +498,16 @@ function MCPServersDesktop() {
                       <Switch
                         checked={settings.enableSmartToolRouting}
                         onCheckedChange={(checked) => {
-                          updateSettings({ enableSmartToolRouting: checked })
+                          if (checked) {
+                            updateSettings({ enableSmartToolRouting: true })
+                          } else {
+                            updateSettings({
+                              enableSmartToolRouting: false,
+                              useLightweightRouterModel: false,
+                              routerModelProvider: '',
+                              routerModelId: '',
+                            })
+                          }
                           void syncServers()
                         }}
                       />
@@ -476,42 +515,62 @@ function MCPServersDesktop() {
                   }
                 />
                 <CardItem
-                  title={t('mcp-servers:runtimeSettings.routerModelProvider')}
+                  title={t('mcp-servers:runtimeSettings.useLightweightRouterModel')}
                   description={t(
-                    'mcp-servers:runtimeSettings.routerModelProviderDesc'
+                    'mcp-servers:runtimeSettings.useLightweightRouterModelDesc'
                   )}
                   actions={
-                    <Input
-                      type="text"
-                      value={settings.routerModelProvider}
-                      onChange={(event) =>
-                        updateRouterModelProvider(event.target.value)
-                      }
-                      onBlur={() => {
-                        void syncServers()
-                      }}
-                      placeholder="openai"
-                      className="w-44"
-                    />
+                    <div className="shrink-0 ml-4">
+                      <Switch
+                        checked={settings.useLightweightRouterModel}
+                        disabled={!settings.enableSmartToolRouting}
+                        onCheckedChange={(checked) => {
+                          updateSettings(
+                            checked
+                              ? { useLightweightRouterModel: true }
+                              : {
+                                  useLightweightRouterModel: false,
+                                  routerModelProvider: '',
+                                  routerModelId: '',
+                                }
+                          )
+                          void syncServers()
+                        }}
+                      />
+                    </div>
                   }
                 />
                 <CardItem
-                  title={t('mcp-servers:runtimeSettings.routerModelId')}
-                  description={t(
-                    'mcp-servers:runtimeSettings.routerModelIdDesc'
-                  )}
+                  title={t('mcp-servers:runtimeSettings.routerModel')}
+                  description={t('mcp-servers:runtimeSettings.routerModelDesc')}
                   actions={
-                    <Input
-                      type="text"
-                      value={settings.routerModelId}
-                      onChange={(event) =>
-                        updateRouterModelId(event.target.value)
-                      }
-                      onBlur={() => {
+                    <McpRouterModelPicker
+                      ariaLabel={t('mcp-servers:runtimeSettings.routerModel')}
+                      providers={modelProviders}
+                      selectedProvider={settings.routerModelProvider}
+                      selectedModelId={settings.routerModelId}
+                      disabled={routerPickerDisabled}
+                      onSelect={(providerName, modelId) => {
+                        updateSettings({
+                          routerModelProvider: providerName,
+                          routerModelId: modelId,
+                        })
                         void syncServers()
                       }}
-                      placeholder="gpt-4o-mini"
-                      className="w-44"
+                      placeholder={t(
+                        'mcp-servers:runtimeSettings.selectRouterModelPlaceholder'
+                      )}
+                      searchPlaceholder={t(
+                        'mcp-servers:runtimeSettings.routerModelSearchPlaceholder'
+                      )}
+                      emptyListMessage={t(
+                        'mcp-servers:runtimeSettings.routerModelEmptyList'
+                      )}
+                      formatEmptySearch={(q) =>
+                        t('mcp-servers:runtimeSettings.routerModelEmptySearch', {
+                          query: q,
+                        })
+                      }
                     />
                   }
                 />
