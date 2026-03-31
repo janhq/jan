@@ -30,6 +30,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::get_devices,
             commands::generate_api_key,
             commands::is_process_running,
+            commands::ensure_session_ready,
             commands::get_random_port,
             commands::find_session_by_model,
             commands::get_loaded_models,

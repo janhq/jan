@@ -37,6 +37,13 @@
     "controllerProps": { "value": true }
   },
   {
+    "key": "auto_restart_on_crash",
+    "title": "Auto-Restart Crashed Models",
+    "description": "Automatically reloads a model if its llama-server process crashes.",
+    "controllerType": "checkbox",
+    "controllerProps": { "value": false }
+  },
+  {
     "key": "timeout",
     "title": "Timeout for llamacpp",
     "description": "Llamacpp connection and load timeout in seconds",
