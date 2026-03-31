@@ -1,4 +1,4 @@
-﻿import { createRootRoute, Outlet } from '@tanstack/react-router'
+import { createRootRoute, Outlet } from '@tanstack/react-router'
 // import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
@@ -15,20 +15,20 @@ import { useAnalytic } from '@/hooks/useAnalytic'
 import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
 import { useJanModelPrompt } from '@/hooks/useJanModelPrompt'
 import { PromptJanModel } from '@/containers/PromptJanModel'
-import { useLatestJanModel } from '@/hooks/useLatestJanModel'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
-import { useEffect } from 'react'
+import { useEffect, type MouseEvent } from 'react'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LeftSidebar } from '@/components/left-sidebar'
 import { WindowControls } from '@/components/WindowControls'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -44,13 +44,6 @@ const AppLayout = () => {
     width: sidebarWidth,
     setLeftPanelWidth,
   } = useLeftPanel()
-  const fetchLatestJanModel = useLatestJanModel(
-    (state) => state.fetchLatestJanModel
-  )
-
-  useEffect(() => {
-    fetchLatestJanModel()
-  }, [fetchLatestJanModel])
 
   return (
     <div className="bg-neutral-50 dark:bg-background size-full relative">
@@ -64,7 +57,21 @@ const AppLayout = () => {
         <KeyboardShortcutsProvider />
         {/* Fake absolute panel top to enable window drag */}
         {IS_WINDOWS && <WindowControls />}
-        {!IS_LINUX && <div className="fixed w-full h-12 z-20 top-0" data-tauri-drag-region />}
+        {IS_TAURI && (
+          <div
+            className="fixed w-full h-12 z-20 top-0 cursor-grab active:cursor-grabbing"
+            title="Drag window"
+            aria-label="Window drag area"
+            {...(IS_LINUX
+              ? {
+                  onMouseDown: (e: MouseEvent) => {
+                    if (e.button !== 0) return
+                    void getCurrentWebviewWindow().startDragging()
+                  },
+                }
+              : { 'data-tauri-drag-region': true as const })}
+          />
+        )}
         <DialogAppUpdater />
         <BackendUpdater />
         <LeftSidebar />
