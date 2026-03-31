@@ -23,6 +23,19 @@
     }
   },
   {
+    "key": "llamacpp_source",
+    "title": "llama.cpp Source",
+    "description": "Choose which llama.cpp release source Jan uses for backend downloads.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "janhq",
+      "options": [
+        { "value": "janhq", "name": "JanHQ (official)" },
+        { "value": "turboquant", "name": "TheTom TurboQuant fork" }
+      ]
+    }
+  },
+  {
     "key": "auto_update_engine",
     "title": "Auto update engine",
     "description": "Automatically update llamacpp engine to latest version",
