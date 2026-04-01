@@ -1,5 +1,5 @@
 {
-  "refreshModelsError": "Provider must have base URL and API key configured to fetch models.",
+  "refreshModelsError": "Provider must have base URL and at least one API key configured to fetch models.",
   "refreshModelsSuccess": "Added {{count}} new model(s) from {{provider}}.",
   "noNewModels": "No new models found. All available models are already added.",
   "refreshModelsFailed": "Failed to fetch models from {{provider}}. Please check your API key and base URL.",
@@ -59,9 +59,12 @@
   "addProvider": "Add Provider",
   "addOpenAIProvider": "Add OpenAI Provider",
   "enterNameForProvider": "Enter name for provider",
-  "apiKeyFallbacks": {
-    "title": "Fallback API keys",
-    "description": "Optional extra keys, one per line. If the provider returns 401, 403, or rate limits (429), Jan tries the next key automatically (in order: main API key first, then these lines).",
-    "placeholder": "sk-…\nsk-…"
+  "apiKeys": {
+    "title": "API keys",
+    "description": "One key per line. The first line is the primary key. If the provider returns 401, 403, or 429, Jan automatically tries the next key.",
+    "placeholder": "sk-…\nsk-…",
+    "test": "Test keys",
+    "testing": "Testing...",
+    "testHint": "Checks /models with each key and shows per-key status."
   }
 }

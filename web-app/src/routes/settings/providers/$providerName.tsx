@@ -37,7 +37,10 @@ import { basenameNoExt } from '@/lib/utils'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
-import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
+import {
+  providerHasRemoteApiKeys,
+  providerRemoteApiKeyChain,
+} from '@/lib/provider-api-keys'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -62,7 +65,11 @@ function ProviderDetail() {
   const [isCheckingBackendUpdate, setIsCheckingBackendUpdate] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [importingModel, setImportingModel] = useState<string | null>(null)
-  const [fallbackKeysDraft, setFallbackKeysDraft] = useState('')
+  const [apiKeysDraft, setApiKeysDraft] = useState('')
+  const [isTestingKeys, setIsTestingKeys] = useState(false)
+  const [keyCheckResults, setKeyCheckResults] = useState<
+    { index: number; masked: string; status: string; detail: string }[]
+  >([])
   const { checkForUpdate: checkForBackendUpdate, installBackend } =
     useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
@@ -180,11 +187,151 @@ function ProviderDetail() {
   useEffect(() => {
     if (!provider) return
     if (provider.provider === 'llamacpp' || provider.provider === 'mlx') return
-    setFallbackKeysDraft((provider.api_key_fallbacks ?? []).join('\n'))
-  }, [
-    providerName,
-    JSON.stringify(provider?.api_key_fallbacks ?? []),
-  ])
+    setApiKeysDraft(providerRemoteApiKeyChain(provider).join('\n'))
+  }, [providerName, provider?.api_key, JSON.stringify(provider?.api_key_fallbacks ?? [])])
+
+  const commitApiKeysDraft = useCallback(() => {
+    if (!provider) return
+    const lines = apiKeysDraft
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0)
+    const nextPrimary = lines[0] ?? ''
+    const nextFallbacks = lines.slice(1)
+
+    const prevPrimary = provider.api_key ?? ''
+    const prevFallbacks = provider.api_key_fallbacks ?? []
+    const changed =
+      nextPrimary !== prevPrimary ||
+      JSON.stringify(nextFallbacks) !== JSON.stringify(prevFallbacks)
+    if (!changed) return
+
+    const newSettings = [...provider.settings]
+    const apiKeySettingIndex = newSettings.findIndex((s) => s.key === 'api-key')
+    if (apiKeySettingIndex !== -1) {
+      ;(
+        newSettings[apiKeySettingIndex].controller_props as {
+          value: string | boolean | number
+        }
+      ).value = nextPrimary
+    }
+
+    serviceHub.providers().updateSettings(providerName, newSettings)
+    updateProvider(providerName, {
+      ...provider,
+      settings: newSettings,
+      api_key: nextPrimary,
+      api_key_fallbacks: nextFallbacks,
+    })
+  }, [apiKeysDraft, provider, providerName, serviceHub, updateProvider])
+
+  const maskApiKey = useCallback((value: string) => {
+    if (value.length <= 8) return `${value.slice(0, 2)}***`
+    return `${value.slice(0, 4)}***${value.slice(-4)}`
+  }, [])
+
+  const getStatusLabel = useCallback((status: string) => {
+    switch (status) {
+      case 'ok':
+        return 'OK'
+      case 'unauthorized':
+        return '401 Unauthorized'
+      case 'forbidden':
+        return '403 Forbidden'
+      case 'rate_limited':
+        return '429 Rate limited'
+      case 'network_error':
+        return 'Network error'
+      default:
+        return 'Failed'
+    }
+  }, [])
+
+  const getStatusClass = useCallback((status: string) => {
+    switch (status) {
+      case 'ok':
+        return 'text-green-600'
+      case 'unauthorized':
+      case 'forbidden':
+      case 'rate_limited':
+      case 'http_error':
+      case 'network_error':
+      default:
+        return 'text-destructive'
+    }
+  }, [])
+
+  const handleTestApiKeys = useCallback(async () => {
+    if (!provider?.base_url) {
+      toast.error(t('providers:models'), {
+        description: t('providers:refreshModelsError'),
+      })
+      return
+    }
+
+    const keys = apiKeysDraft
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0)
+    if (keys.length === 0) {
+      toast.error(t('providers:models'), {
+        description: t('providers:refreshModelsError'),
+      })
+      return
+    }
+
+    setIsTestingKeys(true)
+    try {
+      const fetchImpl = serviceHub.providers().fetch()
+      const results: { index: number; masked: string; status: string; detail: string }[] = []
+
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i]
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'x-api-key': key,
+          Authorization: `Bearer ${key}`,
+        }
+        if (
+          provider.base_url.includes('localhost:') ||
+          provider.base_url.includes('127.0.0.1:')
+        ) {
+          headers['Origin'] = 'tauri://localhost'
+        }
+
+        try {
+          const response = await fetchImpl(`${provider.base_url}/models`, {
+            method: 'GET',
+            headers,
+          })
+
+          let status = 'http_error'
+          if (response.ok) status = 'ok'
+          else if (response.status === 401) status = 'unauthorized'
+          else if (response.status === 403) status = 'forbidden'
+          else if (response.status === 429) status = 'rate_limited'
+
+          results.push({
+            index: i + 1,
+            masked: maskApiKey(key),
+            status,
+            detail: `${response.status} ${response.statusText}`,
+          })
+        } catch (err) {
+          results.push({
+            index: i + 1,
+            masked: maskApiKey(key),
+            status: 'network_error',
+            detail: err instanceof Error ? err.message : 'Unknown error',
+          })
+        }
+      }
+
+      setKeyCheckResults(results)
+    } finally {
+      setIsTestingKeys(false)
+    }
+  }, [apiKeysDraft, maskApiKey, provider?.base_url, serviceHub, t])
 
   // Auto-refresh provider settings to get updated backend configuration
   const refreshSettings = useCallback(async () => {
@@ -416,6 +563,14 @@ function ProviderDetail() {
               {/* Settings */}
               <Card>
                 {provider?.settings.map((setting, settingIndex) => {
+                  if (
+                    setting.key === 'api-key' &&
+                    provider?.provider !== 'llamacpp' &&
+                    provider?.provider !== 'mlx'
+                  ) {
+                    return null
+                  }
+
                   // Use the DynamicController component
                   const actionComponent = (
                     <div className="mt-2">
@@ -618,32 +773,58 @@ function ProviderDetail() {
                     <div className="space-y-2">
                       <div className="space-y-1">
                         <h2 className="font-medium text-foreground text-base">
-                          {t('providers:apiKeyFallbacks.title')}
+                          {t('providers:apiKeys.title')}
                         </h2>
                         <p className="text-sm text-muted-foreground leading-normal">
-                          {t('providers:apiKeyFallbacks.description')}
+                          {t('providers:apiKeys.description')}
                         </p>
                       </div>
                       <Textarea
                         className="min-h-[88px] font-mono text-sm"
-                        placeholder={t('providers:apiKeyFallbacks.placeholder')}
-                        value={fallbackKeysDraft}
-                        onChange={(e) => setFallbackKeysDraft(e.target.value)}
-                        onBlur={() => {
-                          const lines = fallbackKeysDraft
-                            .split(/\r?\n/)
-                            .map((l) => l.trim())
-                            .filter((l) => l.length > 0)
-                          const prev = provider.api_key_fallbacks ?? []
-                          if (JSON.stringify(lines) !== JSON.stringify(prev)) {
-                            updateProvider(providerName, {
-                              api_key_fallbacks: lines,
-                            })
-                          }
-                        }}
+                        placeholder={t('providers:apiKeys.placeholder')}
+                        value={apiKeysDraft}
+                        onChange={(e) => setApiKeysDraft(e.target.value)}
+                        onBlur={commitApiKeysDraft}
                         spellCheck={false}
                         autoComplete="off"
                       />
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleTestApiKeys}
+                          disabled={isTestingKeys}
+                        >
+                          {isTestingKeys ? (
+                            <>
+                              <IconLoader size={14} className="animate-spin" />
+                              {t('providers:apiKeys.testing')}
+                            </>
+                          ) : (
+                            t('providers:apiKeys.test')
+                          )}
+                        </Button>
+                        <span className="text-xs text-muted-foreground">
+                          {t('providers:apiKeys.testHint')}
+                        </span>
+                      </div>
+                      {keyCheckResults.length > 0 && (
+                        <div className="space-y-1 rounded-md border border-border/60 p-2">
+                          {keyCheckResults.map((row) => (
+                            <div
+                              key={`${row.index}-${row.masked}`}
+                              className="flex items-center justify-between gap-3 text-xs"
+                            >
+                              <span className="font-mono text-muted-foreground">
+                                #{row.index} {row.masked}
+                              </span>
+                              <span className={cn('font-medium', getStatusClass(row.status))}>
+                                {getStatusLabel(row.status)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </Card>
                 )}
