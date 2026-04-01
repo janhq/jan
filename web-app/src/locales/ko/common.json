@@ -1,0 +1,454 @@
+{
+  "assistants": "어시스턴트",
+  "hardware": "하드웨어",
+  "mcp-servers": "MCP 서버",
+  "local_api_server": "로컬 API 서버",
+  "remote_access": "원격 액세스",
+  "integrations": "연동",
+  "openclaw": "OpenClaw",
+  "experimental": "실험실",
+  "claude_code": "Claude Code",
+  "https_proxy": "HTTPS 프록시",
+  "extensions": "확장 프로그램",
+  "attachments": "첨부 파일",
+  "general": "일반",
+  "settings": "설정",
+  "modelProviders": "모델 제공자",
+  "manageProviders": "제공자 관리",
+  "hiddenProviders": "{{count}}개 비활성화됨",
+  "hideProvider": "제공자 숨기기",
+  "showProvider": "제공자 표시",
+  "interface": "인터페이스",
+  "privacy": "개인정보 보호",
+  "keyboardShortcuts": "단축키",
+  "newChat": "새 채팅",
+  "newAgentChat": "새 에이전트 채팅",
+  "chats": "채팅",
+  "openclawAgent": "OpenClaw 에이전트",
+  "favorites": "즐겨찾기",
+  "recents": "최근 항목",
+  "hub": "허브",
+  "helpSupport": "도움말 및 지원",
+  "helpUsImproveJan": "Jan 개선에 참여하기",
+  "unstarAll": "모든 즐겨찾기 해제",
+  "unstar": "즐겨찾기 해제",
+  "deleteAll": "모두 삭제",
+  "star": "즐겨찾기",
+  "rename": "이름 바꾸기",
+  "delete": "삭제",
+  "copied": "복사되었습니다!",
+  "dataFolder": "데이터 폴더",
+  "others": "기타",
+  "language": "언어",
+  "login": "로그인",
+  "loginWith": "{{provider}}(으)로 로그인",
+  "loginFailed": "로그인 실패",
+  "logout": "로그아웃",
+  "loggingOut": "로그아웃 중...",
+  "loggedOut": "성공적으로 로그아웃되었습니다",
+  "logoutFailed": "로그아웃 실패",
+  "profile": "프로필",
+  "reset": "초기화",
+  "search": "검색",
+  "searchThreads": "스레드 검색...",
+  "toNavigate": "이동",
+  "toSelect": "선택",
+  "toClose": "닫기",
+  "clearRecent": "지우기",
+  "name": "이름",
+  "cancel": "취소",
+  "create": "만들기",
+  "save": "저장",
+  "edit": "수정",
+  "copy": "복사",
+  "back": "뒤로",
+  "close": "닫기",
+  "done": "완료",
+  "next": "다음",
+  "finish": "마침",
+  "skip": "건너뛰기",
+  "allow": "허용",
+  "deny": "거부",
+  "start": "시작",
+  "stop": "중지",
+  "preview": "미리보기",
+  "compactWidth": "콤팩트 너비",
+  "fullWidth": "전체 너비",
+  "dark": "다크",
+  "light": "라이트",
+  "system": "시스템",
+  "auto": "자동",
+  "english": "영어",
+  "medium": "중간",
+  "newThread": "새 스레드",
+  "noResultsFound": "검색 결과가 없습니다",
+  "noThreadsYet": "아직 스레드가 없습니다",
+  "noThreadsYetDesc": "새 대화를 시작하면 여기에 스레드 기록이 표시됩니다.",
+  "downloads": "다운로드",
+  "downloading": "다운로드 중",
+  "cancelDownload": "다운로드 취소",
+  "downloadCancelled": "다운로드 취소됨",
+  "downloadComplete": "다운로드 완료",
+  "thinking": "생각 중...",
+  "thought": "생각",
+  "callingTool": "도구 호출 중",
+  "completed": "완료됨",
+  "image": "이미지",
+  "vision": "비전",
+  "embeddings": "임베딩",
+  "tools": "도구",
+  "webSearch": "웹 검색",
+  "reasoning": "추론",
+  "proactive": "능동적",
+  "selectAModel": "모델 선택",
+  "noToolsAvailable": "사용 가능한 도구 없음",
+  "noModelsFoundFor": "\"{{searchValue}}\"에 대한 모델을 찾을 수 없습니다",
+  "failedToLoadModels": "모델을 불러오지 못했습니다",
+  "noModels": "모델을 찾을 수 없습니다",
+  "customAvatar": "사용자 지정 아바타",
+  "editAssistant": "어시스턴트 수정",
+  "jan": "Jan",
+  "metadata": "메타데이터",
+  "regenerate": "다시 생성",
+  "threadImage": "스레드 이미지",
+  "editMessage": "메시지 수정",
+  "deleteMessage": "메시지 삭제",
+  "deleteThread": "스레드 삭제",
+  "renameThread": "스레드 이름 바꾸기",
+  "threadTitle": "스레드 제목",
+  "deleteAllThreads": "모든 스레드 삭제",
+  "allThreadsUnfavorited": "모든 스레드 즐겨찾기 해제됨",
+  "deleteAllThreadsConfirm": "모든 스레드를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+  "addProvider": "제공자 추가",
+  "addOpenAIProvider": "OpenAI 제공자 추가",
+  "enterNameForProvider": "제공자 이름을 입력하세요",
+  "providerAlreadyExists": "이름이 \"{{name}}\"인 제공자가 이미 존재합니다. 다른 이름을 선택하세요.",
+  "adjustFontSize": "글꼴 크기 조정",
+  "changeLanguage": "언어 변경",
+  "editTheme": "테마 수정",
+  "editCodeBlockStyle": "코드 블록 스타일 수정",
+  "editServerHost": "서버 호스트 수정",
+  "pickColorWindowBackground": "창 배경색 선택",
+  "pickColorAppMainView": "앱 메인 뷰 색상 선택",
+  "pickColorAppPrimary": "앱 기본 색상 선택",
+  "pickColorAppAccent": "앱 강조 색상 선택",
+  "pickColorAppDestructive": "앱 경고 색상 선택",
+  "apiKeyRequired": "API 키가 필요합니다",
+  "enterTrustedHosts": "신뢰할 수 있는 호스트 입력",
+  "placeholder": {
+    "chatInput": "무엇이든 물어보세요..."
+  },
+  "confirm": "확인",
+  "continue": "계속",
+  "loading": "로딩 중...",
+  "error": "오류",
+  "success": "성공",
+  "warning": "경고",
+  "conversationNotAvailable": "대화를 사용할 수 없습니다",
+  "conversationNotAvailableDescription": "액세스하려는 대화를 사용할 수 없거나 삭제되었습니다.",
+  "temporaryChat": "임시 채팅",
+  "temporaryChatTooltip": "임시 채팅은 기록에 남지 않습니다",
+  "noResultsFoundDesc": "검색어와 일치하는 채팅을 찾을 수 없습니다. 다른 키워드를 사용해 보세요.",
+  "searchModels": "모델 검색...",
+  "searchStyles": "스타일 검색...",
+  "createAssistant": "어시스턴트 만들기",
+  "enterApiKey": "API 키 입력",
+  "scrollToBottom": "맨 아래로 스크롤",
+  "generateAiResponse": "AI 응답 생성",
+  "continueAiResponse": "AI 응답 계속하기",
+  "addModel": {
+    "title": "모델 추가",
+    "modelId": "모델 ID",
+    "enterModelId": "모델 ID 입력",
+    "addModel": "모델 추가",
+    "description": "제공자에 새 모델을 추가합니다",
+    "exploreModels": "제공자의 모델 목록 보기"
+  },
+  "mcpServers": {
+    "editServer": "서버 수정",
+    "addServer": "서버 추가",
+    "serverName": "서버 이름",
+    "enterServerName": "서버 이름 입력",
+    "command": "명령어",
+    "enterCommand": "명령어 입력",
+    "arguments": "인수",
+    "argument": "인수 {{index}}",
+    "envVars": "환경 변수",
+    "key": "키",
+    "value": "값",
+    "save": "저장"
+  },
+  "deleteServer": {
+    "title": "서버 삭제",
+    "delete": "삭제"
+  },
+  "editJson": {
+    "errorParse": "JSON 파싱 실패",
+    "errorPaste": "JSON 붙여넣기 실패",
+    "errorFormat": "잘못된 JSON 형식",
+    "titleAll": "모든 서버 구성 수정",
+    "placeholder": "JSON 구성을 입력하세요...",
+    "save": "저장"
+  },
+  "editModel": {
+    "title": "모델 수정: {{modelId}}",
+    "description": "아래 옵션을 토글하여 모델 기능을 구성하세요.",
+    "capabilities": "기능",
+    "tools": "도구",
+    "vision": "비전",
+    "embeddings": "임베딩",
+    "notAvailable": "아직 사용할 수 없음"
+  },
+  "outOfContextError": {
+    "truncateInput": "입력 자르기",
+    "title": "컨텍스트 부족 오류",
+    "description": "이 채팅은 칠판이 꽉 찬 것처럼 AI의 메모리 한도에 도달하고 있습니다. 메모리 창(컨텍스트 크기)을 확장하여 더 많이 기억하게 할 수 있지만, 컴퓨터의 메모리를 더 많이 사용할 수 있습니다. 또는 입력을 잘라내어 새 메시지를 위한 공간을 확보하기 위해 일부 채팅 기록을 잊게 할 수도 있습니다.",
+    "increaseContextSizeDescription": "컨텍스트 크기를 늘리시겠습니까?",
+    "increaseContextSize": "컨텍스트 크기 늘리기"
+  },
+  "toolApproval": {
+    "title": "도구 권한 요청",
+    "description": "어시스턴트가 <strong>{{toolName}}</strong>을(를) 사용하려고 합니다",
+    "securityNotice": "신뢰하는 도구만 허용하세요. 도구는 시스템 및 데이터에 액세스할 수 있습니다.",
+    "deny": "거부",
+    "allowOnce": "한 번 허용",
+    "alwaysAllow": "항상 허용"
+  },
+  "deleteModel": {
+    "title": "모델 삭제: {{modelId}}",
+    "description": "이 모델을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+    "success": "모델 {{modelId}}이(가) 영구적으로 삭제되었습니다.",
+    "cancel": "취소",
+    "delete": "삭제"
+  },
+  "deleteProvider": {
+    "title": "제공자 삭제",
+    "description": "이 제공자와 모든 모델을 삭제합니다. 이 작업은 되돌릴 수 없습니다.",
+    "success": "제공자 {{provider}}이(가) 영구적으로 삭제되었습니다.",
+    "confirmTitle": "제공자 삭제: {{provider}}",
+    "confirmDescription": "이 제공자를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+    "cancel": "취소",
+    "delete": "삭제"
+  },
+  "modelSettings": {
+    "title": "모델 설정 - {{modelId}}",
+    "description": "모델 설정을 구성하여 성능과 동작을 최적화합니다."
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "데이터 폴더 위치 변경",
+      "description": "데이터 폴더 위치를 변경하시겠습니까? 모든 데이터가 새 위치로 이동하고 애플리케이션이 다시 시작됩니다.",
+      "currentLocation": "현재 위치:",
+      "newLocation": "새 위치:",
+      "cancel": "취소",
+      "changeLocation": "위치 변경"
+    },
+    "deleteAllThreads": {
+      "title": "모든 스레드 삭제",
+      "description": "모든 스레드가 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "모든 대화 삭제",
+      "description": "\"{{projectName}}\"의 대화 {{count}}개가 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
+    },
+    "deleteThread": {
+      "description": "이 스레드를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+    },
+    "editMessage": {
+      "title": "메시지 수정"
+    },
+    "messageMetadata": {
+      "title": "메시지 메타데이터"
+    }
+  },
+  "projects": {
+    "title": "프로젝트",
+    "new": "새 프로젝트",
+    "addProject": "프로젝트 추가",
+    "addToProject": "프로젝트에 추가",
+    "removeFromProject": "프로젝트에서 제거",
+    "createNewProject": "새 프로젝트 만들기",
+    "editProject": "프로젝트 수정",
+    "deleteProject": "프로젝트 삭제",
+    "projectName": "프로젝트 이름",
+    "enterProjectName": "프로젝트 이름 입력...",
+    "noProjectsAvailable": "사용 가능한 프로젝트 없음",
+    "noProjectsYet": "아직 프로젝트가 없습니다",
+    "noProjectsYetDesc": "프로젝트 추가 버튼을 클릭하여 새 프로젝트를 시작하세요.",
+    "projectNotFound": "프로젝트를 찾을 수 없음",
+    "projectNotFoundDesc": "찾으시는 프로젝트가 존재하지 않거나 삭제되었습니다.",
+    "selectAssistant": "어시스턴트 선택",
+    "noAssistantAssigned": "이 프로젝트에 할당된 어시스턴트가 없습니다",
+    "files": "파일",
+    "filesDescription": "이 프로젝트에서 참조할 PDF, 문서 또는 기타 텍스트를 추가하세요.",
+    "deleteProjectDialog": {
+      "title": "프로젝트 삭제",
+      "permanentDelete": "모든 스레드가 영구적으로 삭제됩니다.",
+      "permanentDeleteWarning": "이 작업은 프로젝트 내의 모든 스레드를 영구적으로 삭제합니다!",
+      "deleteEmptyProject": "이 작업은 \"{{projectName}}\" 프로젝트를 삭제합니다.",
+      "saveThreadsAdvice": "스레드를 저장하려면 삭제하기 전에 스레드 목록이나 다른 프로젝트로 이동하세요.",
+      "starredWarning": "프로젝트 내에 아직 즐겨찾기한 스레드가 있습니다.",
+      "deleteButton": "삭제",
+      "successWithName": "\"{{projectName}}\" 프로젝트가 성공적으로 삭제되었습니다",
+      "successWithoutName": "프로젝트가 성공적으로 삭제되었습니다",
+      "error": "프로젝트를 삭제하지 못했습니다. 다시 시도해 주세요.",
+      "ariaLabel": "{{projectName}} 삭제"
+    },
+    "addProjectDialog": {
+      "createTitle": "새 프로젝트 만들기",
+      "editTitle": "프로젝트 수정",
+      "nameLabel": "프로젝트 이름",
+      "namePlaceholder": "프로젝트 이름 입력...",
+      "assistant": "어시스턴트",
+      "selectAssistant": "어시스턴트 선택 (선택 사항)",
+      "noAssistant": "어시스턴트 없음",
+      "addAssistant": "어시스턴트 추가",
+      "createButton": "만들기",
+      "updateButton": "업데이트",
+      "alreadyExists": "\"{{projectName}}\" 프로젝트가 이미 존재합니다",
+      "createSuccess": "\"{{projectName}}\" 프로젝트가 성공적으로 생성되었습니다",
+      "updateSuccess": "\"{{projectName}}\" 프로젝트가 성공적으로 업데이트되었습니다"
+    },
+    "noConversationsIn": "{{projectName}}에 대화가 없습니다",
+    "startNewConversation": "아래에서 {{projectName}}와(과) 새 대화를 시작하세요",
+    "conversationsIn": "{{projectName}}의 대화",
+    "conversationsDescription": "대화를 클릭하여 채팅을 계속하거나 아래에서 새 대화를 시작하세요.",
+    "conversation": "대화",
+    "instructions": "지침",
+    "setup": "설정",
+    "instructionsDescription": "응답의 어조와 스타일을 맞춤 설정하세요",
+    "manageInstructions": "지침 관리",
+    "thread": "스레드",
+    "threads": "스레드",
+    "updated": "업데이트됨:",
+    "collapseProject": "프로젝트 접기",
+    "expandProject": "프로젝트 펼치기",
+    "update": "업데이트",
+    "searchProjects": "프로젝트 검색...",
+    "noProjectsFound": "프로젝트를 찾을 수 없습니다",
+    "tryDifferentSearch": "다른 검색어를 시도해 보세요"
+  },
+  "attachmentsIngestion": {
+    "title": "첨부 파일 수집 방식 선택",
+    "description": "이 파일들을 채팅에 직접 삽입할지, 아니면 임베딩으로 인덱싱할지 선택하세요.",
+    "inline": "채팅에 삽입",
+    "embeddings": "임베딩 사용"
+  },
+  "attachmentInjectedIndicator": "채팅에 삽입됨",
+  "attachmentEmbeddedIndicator": "RAG용으로 임베딩됨",
+  "viewInjectedContent": "삽입된 콘텐츠 보기",
+  "injectedContentTitle": "삽입된 파일 콘텐츠",
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "모든 스레드 즐겨찾기 해제됨",
+      "description": "모든 스레드가 즐겨찾기에서 제거되었습니다."
+    },
+    "deleteAllThreads": {
+      "title": "모든 스레드 삭제",
+      "description": "모든 스레드가 영구적으로 삭제되었습니다."
+    },
+    "renameThread": {
+      "title": "스레드 이름 바꾸기",
+      "description": "스레드 제목이 '{{title}}'(으)로 변경되었습니다"
+    },
+    "deleteThread": {
+      "title": "스레드 삭제",
+      "description": "이 스레드는 영구적으로 삭제되었습니다."
+    },
+    "editMessage": {
+      "title": "메시지 수정",
+      "description": "메시지가 성공적으로 수정되었습니다. 모델이 응답할 때까지 기다려 주세요."
+    },
+    "appUpdateDownloaded": {
+      "title": "앱 업데이트 다운로드됨",
+      "description": "앱 업데이트가 성공적으로 다운로드되었습니다."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "앱 업데이트 다운로드 실패",
+      "description": "앱 업데이트를 다운로드하지 못했습니다. 다시 시도해 주세요."
+    },
+    "downloadComplete": {
+      "title": "다운로드 완료",
+      "description": "{{item}} 다운로드됨"
+    },
+    "downloadCancelled": {
+      "title": "다운로드 취소됨",
+      "description": "다운로드 프로세스가 취소되었습니다"
+    },
+    "downloadFailed": {
+      "title": "다운로드 실패",
+      "description": "{{item}} 다운로드를 실패했습니다"
+    },
+    "modelValidationStarted": {
+      "title": "모델 검증 중",
+      "description": "\"{{modelId}}\" 모델을 성공적으로 다운로드했습니다. 무결성을 확인하는 중..."
+    },
+    "modelValidationFailed": {
+      "title": "모델 검증 실패",
+      "description": "다운로드한 \"{{modelId}}\" 모델이 무결성 검증에 실패하여 제거되었습니다. 파일이 손상되었거나 변조되었을 수 있습니다."
+    },
+    "downloadAndVerificationComplete": {
+      "title": "다운로드 완료",
+      "description": "\"{{item}}\" 모델이 성공적으로 다운로드 및 검증되었습니다"
+    },
+    "projectCreated": {
+      "title": "프로젝트 생성됨",
+      "description": "\"{{projectName}}\" 프로젝트가 성공적으로 생성되었습니다"
+    },
+    "projectRenamed": {
+      "title": "프로젝트 이름 변경됨",
+      "description": "프로젝트 이름이 \"{{oldName}}\"에서 \"{{newName}}\"(으)로 변경되었습니다"
+    },
+    "projectDeleted": {
+      "title": "프로젝트 삭제됨",
+      "description": "\"{{projectName}}\" 프로젝트가 성공적으로 삭제되었습니다"
+    },
+    "projectAlreadyExists": {
+      "title": "프로젝트 이미 존재함",
+      "description": "\"{{projectName}}\" 프로젝트가 이미 존재합니다"
+    },
+    "projectDeleteFailed": {
+      "title": "삭제 실패",
+      "description": "프로젝트를 삭제하지 못했습니다. 다시 시도해 주세요."
+    },
+    "threadAssignedToProject": {
+      "title": "스레드 할당됨",
+      "description": "스레드가 \"{{projectName}}\"에 성공적으로 할당되었습니다"
+    },
+    "threadRemovedFromProject": {
+      "title": "스레드 제거됨",
+      "description": "스레드가 \"{{projectName}}\"에서 성공적으로 제거되었습니다"
+    },
+    "fileUploaded": {
+      "title": "파일 업로드됨",
+      "description": "파일이 성공적으로 업로드 및 인덱싱되었습니다"
+    },
+    "uploadFailed": {
+      "title": "업로드 실패",
+      "description": "파일을 업로드하지 못했습니다"
+    },
+    "fileDeleted": {
+      "title": "파일 삭제됨",
+      "description": "파일이 프로젝트에서 제거되었습니다"
+    },
+    "deleteFailed": {
+      "title": "삭제 실패",
+      "description": "파일을 삭제하지 못했습니다"
+    },
+    "fileAlreadyExists": {
+      "title": "파일 이미 존재함",
+      "description": "파일이 이미 이 프로젝트에 첨부되어 있습니다"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "첨부 파일 비활성화됨",
+      "description": "설정에서 첨부 파일이 비활성화되어 있습니다"
+    }
+  },
+  "errors": {
+    "fileTooLarge": "파일이 너무 큽니다",
+    "fileTooLargeDescription": "{{fileName}}이(가) {{maxFileSizeMB}}MB 제한을 초과합니다"
+  },
+  "files": {
+    "chunksCount": "청크 {{count}}개"
+  }
+}

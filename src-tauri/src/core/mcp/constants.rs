@@ -63,6 +63,10 @@ pub const DEFAULT_MCP_CONFIG: &str = r#"{
     "toolCallTimeoutSeconds": 30,
     "baseRestartDelayMs": 1000,
     "maxRestartDelayMs": 30000,
-    "backoffMultiplier": 2.0
+    "backoffMultiplier": 2.0,
+    "enableSmartToolRouting": true,
+    "useLightweightRouterModel": false,
+    "routerModelProvider": "",
+    "routerModelId": ""
   }
 }"#;

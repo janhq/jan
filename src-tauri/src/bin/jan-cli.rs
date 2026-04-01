@@ -1305,6 +1305,7 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         version_backend: "cli/llama-server".to_string(),
         auto_update_engine: false,
         auto_unload: false,
+        auto_restart_on_crash: false,
         timeout,
         llamacpp_env: String::new(),
         fit,
