@@ -209,11 +209,10 @@ function ProviderDetail() {
     const newSettings = [...provider.settings]
     const apiKeySettingIndex = newSettings.findIndex((s) => s.key === 'api-key')
     if (apiKeySettingIndex !== -1) {
-      ;(
-        newSettings[apiKeySettingIndex].controller_props as {
-          value: string | boolean | number
-        }
-      ).value = nextPrimary
+      const apiKeyProps = newSettings[apiKeySettingIndex].controller_props as {
+        value: string | boolean | number
+      }
+      apiKeyProps.value = nextPrimary
     }
 
     serviceHub.providers().updateSettings(providerName, newSettings)
