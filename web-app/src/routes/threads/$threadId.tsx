@@ -658,7 +658,7 @@ function ThreadDetail() {
       sendMessage({
         parts,
         id: messageId,
-        metadata: userMessage.metadata,
+        metadata: { ...userMessage.metadata, createdAt: new Date() },
       })
 
       // Clear attachments after sending
