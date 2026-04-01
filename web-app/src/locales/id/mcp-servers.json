@@ -58,6 +58,16 @@
     "title": "Pengaturan Runtime",
     "description": "Atur bagaimana Jan mengelola dan mencoba ulang server MCP.",
     "toolCallTimeout": "Batas waktu pemanggilan alat (detik)",
-    "toolCallTimeoutDesc": "Waktu maksimum menunggu respons alat MCP sebelum waktu habis."
+    "toolCallTimeoutDesc": "Waktu maksimum menunggu respons alat MCP sebelum waktu habis.",
+    "smartToolRouting": "Perutean alat MCP cerdas",
+    "smartToolRoutingDesc": "Jika diaktifkan, Jan memilih server MCP yang relevan sebelum memuat alat. Nonaktifkan untuk selalu memuat daftar alat MCP lengkap.",
+    "useLightweightRouterModel": "Gunakan model khusus untuk perutean",
+    "useLightweightRouterModelDesc": "Saat perutean cerdas aktif, langkah perutean dijalankan dengan model terpisah (biasanya lebih kecil), bukan model obrolan. Nonaktifkan untuk selalu memakai model obrolan aktif untuk perutean.",
+    "routerModel": "Model perutean",
+    "routerModelDesc": "Pilih penyedia dan model di satu tempat. Hanya model ringan yang ditampilkan agar perutean tetap cepat dan murah.",
+    "selectRouterModelPlaceholder": "Pilih model perutean…",
+    "routerModelSearchPlaceholder": "Cari model…",
+    "routerModelEmptyList": "Tidak ada model ringan. Tambahkan model yang lebih kecil atau atur kunci API di Model.",
+    "routerModelEmptySearch": "Tidak ada yang cocok untuk “{{query}}”."
   }
 }

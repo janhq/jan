@@ -1,5 +1,6 @@
 {
   "claude-code": "Claude Code",
   "openclaw": "OpenClaw",
-  "mcp-servers": "MCP Servers"
+  "mcp-servers": "MCP Servers",
+  "mcp-routing-telemetry": "MCP routing telemetry"
 }

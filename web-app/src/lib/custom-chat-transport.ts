@@ -31,6 +31,7 @@ import {
   type ContextManagerConfig,
 } from './context-manager'
 import { mcpOrchestrator } from '@/lib/mcp-orchestrator'
+import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -336,6 +337,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     if (!provider) {
       console.warn(
         `[MCP] Router model provider '${providerName}' not found; using chat model for routing.`
+      )
+      return null
+    }
+
+    const catalogModel = provider.models.find((m) => m.id === modelId)
+    if (!catalogModel || !isRouterModelSelectable(provider, catalogModel)) {
+      console.warn(
+        `[MCP] Router model '${key}' is not allowed for routing (use a lightweight model with API access); using chat model for routing.`
       )
       return null
     }
