@@ -76,6 +76,15 @@ jobs:
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.ref }}
+      - name: Validate channel input
+        shell: bash
+        run: |
+          CHANNEL="${{ inputs.channel }}"
+          if [[ "$CHANNEL" != "stable" && "$CHANNEL" != "nightly" && "$CHANNEL" != "beta" ]]; then
+            echo "ERROR: Invalid channel '$CHANNEL'. Must be one of: stable, nightly, beta."
+            exit 1
+          fi
+
       - name: Replace Icons for Beta Build
         if: inputs.channel != 'stable'
         shell: bash

@@ -15,6 +15,11 @@ on:
         description: "stable/beta/nightly"
         required: true
         default: "stable"
+        type: choice
+        options:
+          - stable
+          - beta
+          - nightly
 
 jobs:
   build-windows-portable:
