@@ -47,7 +47,7 @@
   "appVersion": "App Version",
   "dataFolder": {
     "appData": "App Data",
-    "appDataDesc": "Default location for messages and other user data.",
+    "appDataDesc": "Location for messages, downloaded models and other data.",
     "appLogs": "App Logs",
     "appLogsDesc": "View detailed logs of the App."
   },
