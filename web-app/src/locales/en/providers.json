@@ -58,5 +58,10 @@
   },
   "addProvider": "Add Provider",
   "addOpenAIProvider": "Add OpenAI Provider",
-  "enterNameForProvider": "Enter name for provider"
+  "enterNameForProvider": "Enter name for provider",
+  "apiKeyFallbacks": {
+    "title": "Fallback API keys",
+    "description": "Optional extra keys, one per line. If the provider returns 401, 403, or rate limits (429), Jan tries the next key automatically (in order: main API key first, then these lines).",
+    "placeholder": "sk-…\nsk-…"
+  }
 }

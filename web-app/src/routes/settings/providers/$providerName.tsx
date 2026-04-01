@@ -20,6 +20,7 @@ import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import {
   IconFolderPlus,
   IconLoader,
@@ -36,6 +37,7 @@ import { basenameNoExt } from '@/lib/utils'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
+import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -60,6 +62,7 @@ function ProviderDetail() {
   const [isCheckingBackendUpdate, setIsCheckingBackendUpdate] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [importingModel, setImportingModel] = useState<string | null>(null)
+  const [fallbackKeysDraft, setFallbackKeysDraft] = useState('')
   const { checkForUpdate: checkForBackendUpdate, installBackend } =
     useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
@@ -174,6 +177,15 @@ function ProviderDetail() {
     }
   }, [importingModel])
 
+  useEffect(() => {
+    if (!provider) return
+    if (provider.provider === 'llamacpp' || provider.provider === 'mlx') return
+    setFallbackKeysDraft((provider.api_key_fallbacks ?? []).join('\n'))
+  }, [
+    providerName,
+    JSON.stringify(provider?.api_key_fallbacks ?? []),
+  ])
+
   // Auto-refresh provider settings to get updated backend configuration
   const refreshSettings = useCallback(async () => {
     if (!provider) return
@@ -200,7 +212,7 @@ function ProviderDetail() {
   // This ensures all screens receive the event intermediately
 
   const handleRefreshModels = async () => {
-    if (!provider || !provider.base_url) {
+    if (!provider || !provider.base_url || !providerHasRemoteApiKeys(provider)) {
       toast.error(t('providers:models'), {
         description: t('providers:refreshModelsError'),
       })
@@ -599,6 +611,43 @@ function ProviderDetail() {
                 <DeleteProvider provider={provider} />
               </Card>
 
+              {provider &&
+                provider.provider !== 'llamacpp' &&
+                provider.provider !== 'mlx' && (
+                  <Card>
+                    <div className="space-y-2">
+                      <div className="space-y-1">
+                        <h2 className="font-medium text-foreground text-base">
+                          {t('providers:apiKeyFallbacks.title')}
+                        </h2>
+                        <p className="text-sm text-muted-foreground leading-normal">
+                          {t('providers:apiKeyFallbacks.description')}
+                        </p>
+                      </div>
+                      <Textarea
+                        className="min-h-[88px] font-mono text-sm"
+                        placeholder={t('providers:apiKeyFallbacks.placeholder')}
+                        value={fallbackKeysDraft}
+                        onChange={(e) => setFallbackKeysDraft(e.target.value)}
+                        onBlur={() => {
+                          const lines = fallbackKeysDraft
+                            .split(/\r?\n/)
+                            .map((l) => l.trim())
+                            .filter((l) => l.length > 0)
+                          const prev = provider.api_key_fallbacks ?? []
+                          if (JSON.stringify(lines) !== JSON.stringify(prev)) {
+                            updateProvider(providerName, {
+                              api_key_fallbacks: lines,
+                            })
+                          }
+                        }}
+                        spellCheck={false}
+                        autoComplete="off"
+                      />
+                    </div>
+                  </Card>
+                )}
+
               {/* Models */}
               <Card
                 header={
@@ -704,7 +753,7 @@ function ProviderDetail() {
                                 predefinedProviders.some(
                                   (p) => p.provider === provider.provider
                                 ) &&
-                                Boolean(provider.api_key?.length))) && (
+                                providerHasRemoteApiKeys(provider))) && (
                               <FavoriteModelAction model={model} />
                             )}
                             <DialogDeleteModel
