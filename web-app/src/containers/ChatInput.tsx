@@ -32,6 +32,9 @@ import {
   IconBrandChrome,
   IconUser,
 } from '@tabler/icons-react'
+import { generateId } from 'ai'
+import { useMessageQueue } from '@/stores/message-queue-store'
+import { QueuedMessageChip } from '@/containers/QueuedMessageBubble'
 import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -271,6 +274,19 @@ const ChatInput = memo(function ChatInput({
   )
   const ingestingAny = attachments.some((a) => a.processing)
 
+  // Queued messages for this thread (shown as chips in the input area)
+  const queuedMessages = useMessageQueue(
+    useShallow((s) => s.getQueue(currentThreadId ?? ''))
+  )
+  const queueLength = queuedMessages.length
+
+  const removeQueuedMessage = useCallback(
+    (id: string) => {
+      useMessageQueue.getState().removeMessage(currentThreadId ?? '', id)
+    },
+    [currentThreadId]
+  )
+
   const lastTransferredThreadId = useRef<string | null>(null)
 
   useEffect(() => {
@@ -375,6 +391,17 @@ const ChatInput = memo(function ChatInput({
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
+      // When the model is still streaming, queue the message for later
+      if (isStreaming && currentThreadId) {
+        useMessageQueue.getState().enqueue(currentThreadId, {
+          id: generateId(),
+          text: prompt,
+          createdAt: Date.now(),
+        })
+        setPrompt('')
+        return
+      }
+
       const assistant = currentThread?.assistants?.[0]
       setCurrentAssistant(assistant)
       // Build file parts for AI SDK
@@ -1513,8 +1540,7 @@ const ChatInput = memo(function ChatInput({
       <div className="relative">
         <div
           className={cn(
-            'relative overflow-hidden p-0.5 rounded-3xl',
-            isStreaming && 'opacity-70'
+            'relative overflow-hidden p-0.5 rounded-3xl'
           )}
         >
           {isStreaming && (
@@ -1621,6 +1647,23 @@ const ChatInput = memo(function ChatInput({
                 </div>
               </div>
             )}
+            {queuedMessages.length > 0 && (
+              <div className="flex flex-col gap-1 px-3 pt-2 pb-0">
+                {queuedMessages.map((msg) => (
+                  <QueuedMessageChip
+                    key={msg.id}
+                    message={msg}
+                    onEdit={(queued) => {
+                      // Put the text back in the input for editing, remove from queue
+                      setPrompt(queued.text)
+                      removeQueuedMessage(queued.id)
+                      textareaRef.current?.focus()
+                    }}
+                    onRemove={removeQueuedMessage}
+                  />
+                ))}
+              </div>
+            )}
             <TextareaAutosize
               dir="auto"
               ref={textareaRef}
@@ -1641,11 +1684,9 @@ const ChatInput = memo(function ChatInput({
                   e.nativeEvent.isComposing || e.keyCode === 229
                 if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
                   e.preventDefault()
-                  // Submit prompt when the following conditions are met:
-                  // - Enter is pressed without Shift
-                  // - The streaming content has finished
-                  // - Prompt is not empty
-                  if (!isStreaming && prompt.trim() && !ingestingAny) {
+                  // Submit prompt when Enter is pressed without Shift and prompt is not empty.
+                  // If streaming, handleSendMessage will queue the message automatically.
+                  if (prompt.trim() && !ingestingAny) {
                     handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
@@ -2028,16 +2069,29 @@ const ChatInput = memo(function ChatInput({
                 )}
 
               {isStreaming ? (
-                <Button
-                  variant="destructive"
-                  size="icon-sm"
-                  className="rounded-full mr-1 mb-1"
-                  onClick={() => {
-                    if (currentThreadId) stopStreaming(currentThreadId)
-                  }}
-                >
-                  <IconPlayerStopFilled />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="destructive"
+                      size="icon-sm"
+                      className="rounded-full mr-1 mb-1"
+                      onClick={() => {
+                        if (!currentThreadId) return
+                        const queue = useMessageQueue.getState().getQueue(currentThreadId)
+                        if (queue.length > 0) {
+                          useMessageQueue.getState().clearQueue(currentThreadId)
+                        } else {
+                          stopStreaming(currentThreadId)
+                        }
+                      }}
+                    >
+                      <IconPlayerStopFilled />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{queueLength > 0 ? `Clear ${queueLength} queued message(s)` : 'Stop generating'}</p>
+                  </TooltipContent>
+                </Tooltip>
               ) : (
                 <Button
                   variant="default"

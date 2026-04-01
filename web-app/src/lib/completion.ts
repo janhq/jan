@@ -76,8 +76,8 @@ export const newUserThreadContent = (
     object: 'thread.message',
     thread_id: threadId,
     status: MessageStatus.Ready,
-    created_at: 0,
-    completed_at: 0,
+    created_at: Date.now(),
+    completed_at: Date.now(),
     metadata:
       inlineDocuments.length > 0
         ? {

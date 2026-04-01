@@ -53,6 +53,7 @@ import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { useMessageQueue } from '@/stores/message-queue-store'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
 
@@ -658,7 +659,7 @@ function ThreadDetail() {
       sendMessage({
         parts,
         id: messageId,
-        metadata: userMessage.metadata,
+        metadata: { ...userMessage.metadata, createdAt: new Date() },
       })
 
       // Clear attachments after sending
@@ -675,6 +676,23 @@ function ThreadDetail() {
       serviceHub,
       selectedProvider,
     ]
+  )
+
+  // Sends a text-only queued message, bypassing attachment processing entirely.
+  // This prevents stale or new attachments from leaking into auto-sent queue items.
+  const sendQueuedMessage = useCallback(
+    async (text: string) => {
+      const messageId = generateId()
+      const userMessage = newUserThreadContent(threadId, text, [], messageId)
+      addMessage(userMessage)
+
+      sendMessage({
+        parts: [{ type: 'text', text }],
+        id: messageId,
+        metadata: userMessage.metadata,
+      })
+    },
+    [sendMessage, threadId, addMessage]
   )
 
   // Check for and send initial message from sessionStorage
@@ -947,6 +965,42 @@ function ThreadDetail() {
       setPendingContinueMessage(null)
     }
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Message queue: auto-send the next queued message when the stream finishes.
+  // No reactive subscription to the queue here — ChatInput owns the UI.
+  // We only read the store imperatively when status transitions to 'ready'.
+  const processingQueueRef = useRef(false)
+
+  useEffect(() => {
+    if (status !== 'ready' || processingQueueRef.current) return
+    if (sessionData.tools.length > 0) return
+
+    const next = useMessageQueue.getState().dequeue(threadId)
+    if (!next) return
+
+    processingQueueRef.current = true
+    sendQueuedMessage(next.text)
+      .catch((err) => {
+        console.error('Failed to send queued message:', err)
+      })
+      .finally(() => {
+        processingQueueRef.current = false
+      })
+  }, [status, threadId, sendQueuedMessage, sessionData.tools.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // If streaming errors out, discard any queued messages so they don't sit there stuck
+  useEffect(() => {
+    if (status === 'error') {
+      useMessageQueue.getState().clearQueue(threadId)
+    }
+  }, [status, threadId])
+
+  // Clear the queue when navigating away from this thread
+  useEffect(() => {
+    return () => {
+      useMessageQueue.getState().clearQueue(threadId)
+    }
+  }, [threadId])
 
   const threadModel = useMemo(
     () => searchThreadModel ?? thread?.model,
