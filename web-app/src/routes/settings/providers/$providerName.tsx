@@ -21,7 +21,6 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 import {
   IconFolderPlus,
   IconLoader,
@@ -233,6 +232,23 @@ function ProviderDetail() {
     setApiKeysDraft([nextPrimary, ...rest].join('\n'))
   }
 
+  const advancedApiKeyLines = apiKeysDraft.split(/\r?\n/).map((l) => l.trim())
+  const setKeyAtIndex = (index: number, nextValue: string) => {
+    const next = [...advancedApiKeyLines]
+    next[index] = nextValue.trim()
+    setApiKeysDraft(next.join('\n'))
+  }
+
+  const addKeyLine = () => {
+    setApiKeysDraft([...advancedApiKeyLines, ''].join('\n'))
+  }
+
+  const removeKeyLine = (index: number) => {
+    if (index === 0) return
+    const next = advancedApiKeyLines.filter((_, i) => i !== index)
+    setApiKeysDraft((next.length > 0 ? next : ['']).join('\n'))
+  }
+
   const maskApiKey = useCallback((value: string) => {
     if (value.length <= 8) return `${value.slice(0, 2)}***`
     return `${value.slice(0, 4)}***${value.slice(-4)}`
@@ -243,11 +259,11 @@ function ProviderDetail() {
       case 'ok':
         return 'OK'
       case 'unauthorized':
-        return '401 Unauthorized'
+        return 'Invalid / revoked key (401)'
       case 'forbidden':
-        return '403 Forbidden'
+        return 'Forbidden (403)'
       case 'rate_limited':
-        return '429 Rate limited'
+        return 'Rate limited / out of credit (429)'
       case 'network_error':
         return 'Network error'
       default:
@@ -261,9 +277,10 @@ function ProviderDetail() {
         return 'text-green-600'
       case 'unauthorized':
       case 'forbidden':
-      case 'rate_limited':
       case 'http_error':
       case 'network_error':
+      case 'rate_limited':
+        return 'text-yellow-600'
       default:
         return 'text-destructive'
     }
@@ -277,11 +294,9 @@ function ProviderDetail() {
       return
     }
 
-    const keys = apiKeysDraft
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0)
-    if (keys.length === 0) {
+    const keyDraftLines = apiKeysDraft.split(/\r?\n/).map((l) => l.trim())
+    const nonEmptyKeyCount = keyDraftLines.filter((l) => l.length > 0).length
+    if (nonEmptyKeyCount === 0) {
       toast.error(t('providers:models'), {
         description: t('providers:refreshModelsError'),
       })
@@ -293,8 +308,10 @@ function ProviderDetail() {
       const fetchImpl = serviceHub.providers().fetch()
       const results: { index: number; masked: string; status: string; detail: string }[] = []
 
-      for (let i = 0; i < keys.length; i++) {
-        const key = keys[i]
+      for (let i = 0; i < keyDraftLines.length; i++) {
+        const key = keyDraftLines[i]
+        const keyIndex = i + 1
+        if (!key) continue
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           'x-api-key': key,
@@ -320,14 +337,14 @@ function ProviderDetail() {
           else if (response.status === 429) status = 'rate_limited'
 
           results.push({
-            index: i + 1,
+            index: keyIndex,
             masked: maskApiKey(key),
             status,
             detail: `${response.status} ${response.statusText}`,
           })
         } catch (err) {
           results.push({
-            index: i + 1,
+            index: keyIndex,
             masked: maskApiKey(key),
             status: 'network_error',
             detail: err instanceof Error ? err.message : 'Unknown error',
@@ -818,76 +835,121 @@ function ProviderDetail() {
                       )}
 
                       {showAdvancedApiKeys && (
-                        <div className="space-y-2">
-                          <Textarea
-                            className="min-h-[88px] font-mono text-sm"
-                            placeholder={t('providers:apiKeys.placeholder')}
-                            value={apiKeysDraft}
-                            onChange={(e) => setApiKeysDraft(e.target.value)}
-                            onBlur={commitApiKeysDraft}
-                            spellCheck={false}
-                            autoComplete="off"
-                          />
-
-                          <div className="flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                commitApiKeysDraft()
-                                setShowAdvancedApiKeys(false)
-                                setKeyCheckResults([])
-                              }}
-                            >
-                              {t('providers:apiKeys.hideAdvanced')}
-                            </Button>
-
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={handleTestApiKeys}
-                              disabled={isTestingKeys}
-                            >
-                              {isTestingKeys ? (
-                                <>
-                                  <IconLoader
-                                    size={14}
-                                    className="animate-spin"
-                                  />
-                                  {t('providers:apiKeys.testing')}
-                                </>
-                              ) : (
-                                t('providers:apiKeys.test')
-                              )}
-                            </Button>
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-xs text-muted-foreground">
+                              {t('providers:apiKeys.testHint')}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  commitApiKeysDraft()
+                                  setShowAdvancedApiKeys(false)
+                                  setKeyCheckResults([])
+                                }}
+                              >
+                                {t('providers:apiKeys.hideAdvanced')}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={handleTestApiKeys}
+                                disabled={isTestingKeys}
+                              >
+                                {isTestingKeys ? (
+                                  <>
+                                    <IconLoader
+                                      size={14}
+                                      className="animate-spin"
+                                    />
+                                    {t('providers:apiKeys.testing')}
+                                  </>
+                                ) : (
+                                  t('providers:apiKeys.test')
+                                )}
+                              </Button>
+                            </div>
                           </div>
 
-                          <span className="text-xs text-muted-foreground">
-                            {t('providers:apiKeys.testHint')}
-                          </span>
+                          <div className="text-xs text-muted-foreground">
+                            Primary key is <span className="font-medium">#1</span>. Jan
+                            retries the next key only on{' '}
+                            <span className="font-medium">401/403/429</span>.
+                          </div>
 
-                          {keyCheckResults.length > 0 && (
-                            <div className="space-y-1 rounded-md border border-border/60 p-2">
-                              {keyCheckResults.map((row) => (
+                          <div className="space-y-2">
+                            {advancedApiKeyLines.map((keyValue, idx) => {
+                              const keyIndex = idx + 1
+                              const rowResult = keyCheckResults.find(
+                                (r) => r.index === keyIndex
+                              )
+
+                              return (
                                 <div
-                                  key={`${row.index}-${row.masked}`}
-                                  className="flex items-center justify-between gap-3 text-xs"
+                                  key={idx}
+                                  className="flex items-center gap-2"
                                 >
-                                  <span className="font-mono text-muted-foreground">
-                                    #{row.index} {row.masked}
-                                  </span>
-                                  <span
-                                    className={cn(
-                                      'font-medium',
-                                      getStatusClass(row.status)
-                                    )}
-                                  >
-                                    {getStatusLabel(row.status)}
-                                  </span>
+                                  <div className="w-10 shrink-0 text-right text-xs font-mono text-muted-foreground">
+                                    #{keyIndex}
+                                  </div>
+
+                                  <Input
+                                    type="password"
+                                    className="font-mono flex-1 min-w-0"
+                                    placeholder={t('providers:apiKeys.keyPlaceholder')}
+                                    value={keyValue}
+                                    onChange={(e) => {
+                                      setKeyAtIndex(idx, e.target.value)
+                                    }}
+                                    onBlur={commitApiKeysDraft}
+                                    spellCheck={false}
+                                    autoComplete="off"
+                                  />
+
+                                  {rowResult && (
+                                    <span
+                                      className={cn(
+                                        'text-xs font-medium shrink-0',
+                                        getStatusClass(rowResult.status)
+                                      )}
+                                      title={rowResult.detail}
+                                    >
+                                      {getStatusLabel(rowResult.status)}
+                                    </span>
+                                  )}
+
+                                  {idx !== 0 && (
+                                    <Button
+                                      size="icon-xs"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setKeyCheckResults([])
+                                        removeKeyLine(idx)
+                                      }}
+                                      title={t('providers:apiKeys.removeKey')}
+                                    >
+                                      -
+                                    </Button>
+                                  )}
                                 </div>
-                              ))}
+                              )
+                            })}
+
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setKeyCheckResults([])
+                                  addKeyLine()
+                                }}
+                              >
+                                + {t('providers:apiKeys.addKey')}
+                              </Button>
                             </div>
-                          )}
+                          </div>
                         </div>
                       )}
                     </div>

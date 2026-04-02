@@ -64,11 +64,15 @@
     "description": "Enter your primary API key. Optionally add fallback keys in Advanced; Jan retries the next key on 401/403/429.",
     "placeholder": "sk-…\nsk-…",
     "primaryPlaceholder": "Enter primary API key",
+    "keyPlaceholder": "Enter API key",
+    "primaryBadge": "Primary",
     "test": "Test keys",
     "testing": "Testing...",
     "testHint": "Checks /models with each key and shows per-key status.",
     "advanced": "Advanced",
     "hideAdvanced": "Hide advanced",
-    "oneKeyHint": "Optional fallback keys are configured in Advanced."
+    "oneKeyHint": "Optional fallback keys are configured in Advanced.",
+    "addKey": "Add key",
+    "removeKey": "Remove key"
   }
 }
