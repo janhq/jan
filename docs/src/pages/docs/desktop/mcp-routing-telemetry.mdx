@@ -16,7 +16,9 @@ import { Callout } from 'nextra/components'
 
 # MCP routing telemetry
 
-This page is for **people changing Jan’s source** or building on the desktop app. End users turn routing on or off under **Settings → MCP Servers**; nothing here appears in the UI.
+This page is under **Reference** for contributors: it describes code hooks, not anything in the Jan UI. For setup and toggles, use **[MCP Servers](./integrations/mcp-servers)** (Integrations).
+
+End users turn routing on or off under **Settings → MCP Servers**.
 
 With **Smart MCP tool routing** enabled, Jan may load tools from only some MCP servers each turn instead of all of them. The orchestrator can report what happened on that path (timings, fallbacks, and token usage when the model provider returns it) through an optional callback on `getRelevantTools`.
 
@@ -81,4 +83,4 @@ Raising the number delays routing until you connect more servers; lowering it ru
 - **Settings → MCP Servers → Smart MCP tool routing** — turns selective loading on or off.
 - **Use a dedicated model for routing** — optional small model for the router step; `llmRouterUsage` refers to that call when present.
 
-See also [MCP Servers](./mcp-servers).
+See also [MCP Servers](./integrations/mcp-servers).

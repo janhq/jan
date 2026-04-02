@@ -33,6 +33,7 @@
   "api-preference": "API Reference",
   "cli": "CLI",
   "mcp": "Model Context Protocol",
+  "mcp-routing-telemetry": "MCP routing (internals)",
   "remote-models": "Cloud Providers",
   "data-folder": "Jan Data Folder",
   "troubleshooting": "Troubleshooting"
