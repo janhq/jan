@@ -93,6 +93,8 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
                 Ok(app_configurations) => app_configurations,
                 Err(err) => {
                     log::error!("Failed to parse app config, returning default config instead. Error: {err}");
+                    // Use the proper default data folder path, not the relative "./data"
+                    app_default_configuration.data_folder = default_data_folder;
                     app_default_configuration
                 }
             }
@@ -101,6 +103,8 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
             log::error!(
                 "Failed to read app config, returning default config instead. Error: {err}"
             );
+            // Use the proper default data folder path, not the relative "./data"
+            app_default_configuration.data_folder = default_data_folder;
             app_default_configuration
         }
     }
@@ -253,7 +257,7 @@ pub fn change_app_data_folder<R: Runtime>(
         copy_dir_recursive(
             &current_data_folder,
             &new_data_folder_path,
-            &[".uvx", ".npx", "openclaw/runtime", "openclaw/bunx"],
+            &[".uvx", ".npx", "openclaw"],
         )
         .map_err(|e| format!("Failed to copy data to new folder: {e}"))?;
     } else {

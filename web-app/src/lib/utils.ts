@@ -72,6 +72,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/llamacpp.svg'
     case 'mlx':
       return '/images/model-provider/mlx.png'
+    case 'foundation-models':
+      return '/images/model-provider/apple-intelligence.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
@@ -92,6 +94,10 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/azure.svg'
     case 'xai':
       return '/images/model-provider/xai.svg'
+    case 'minimax':
+      return '/images/model-provider/minimax.svg'
+    case 'nvidia':
+      return '/images/model-provider/nvidia.svg'
     default:
       return undefined
   }
@@ -105,6 +111,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Llama.cpp'
     case 'mlx':
       return 'MLX'
+    case 'foundation-models':
+      return 'Apple Intelligence'
     case 'openai':
       return 'OpenAI'
     case 'openrouter':
@@ -115,6 +123,10 @@ export const getProviderTitle = (provider: string) => {
       return 'Hugging Face'
     case 'xai':
       return 'xAI'
+    case 'minimax':
+      return 'MiniMax'
+    case 'nvidia':
+      return 'NVIDIA NIM'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }

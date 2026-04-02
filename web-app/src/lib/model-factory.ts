@@ -34,6 +34,8 @@ export interface ModelParameters {
   top_p?: number
   repeat_penalty?: number
   max_output_tokens?: number
+  max_context_tokens?: number
+  auto_compact?: boolean
   presence_penalty?: number
   frequency_penalty?: number
   stop_sequences?: string[]
@@ -55,6 +57,8 @@ import { createXai } from '@ai-sdk/xai'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { isPlatformTauri } from '@/lib/platform/utils'
+import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 
 /**
  * Llama.cpp timings structure from the response
@@ -118,27 +122,181 @@ const providerMetadataExtractor: MetadataExtractor = {
 }
 
 /**
- * Create a custom fetch function that injects additional parameters into the request body
+ * Keys from inference parameters that are client-side only and must not
+ * be forwarded in the HTTP body to remote APIs.
+ */
+const CLIENT_SIDE_PARAM_KEYS: ReadonlySet<string> = new Set([
+  'ctx_len',
+  'max_context_tokens',
+  'auto_compact',
+])
+
+/**
+ * Create a custom fetch function that injects additional parameters into the
+ * request body, normalising key names for OpenAI-compatible APIs:
+ * - `max_output_tokens` is remapped to `max_tokens`
+ * - client-side-only keys (e.g. `ctx_len`) are stripped
  */
 function createCustomFetch(
-  baseFetch: typeof httpFetch,
+  baseFetch: typeof globalThis.fetch,
   parameters: Record<string, unknown>
-): typeof httpFetch {
+): typeof globalThis.fetch {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    // Only transform POST requests with JSON body
     if (init?.method === 'POST' || !init?.method) {
       const body = init?.body ? JSON.parse(init.body as string) : {}
 
-      // Merge parameters into the request body
-      const mergedBody = { ...body, ...parameters }
-
-      init = {
-        ...init,
-        body: JSON.stringify(mergedBody),
+      // Normalise and merge inference parameters
+      const normalised: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(parameters)) {
+        if (CLIENT_SIDE_PARAM_KEYS.has(key)) continue
+        // max_output_tokens → max_tokens (OpenAI-compatible field name)
+        const targetKey = key === 'max_output_tokens' ? 'max_tokens' : key
+        normalised[targetKey] = value
       }
+
+      init = { ...init, body: JSON.stringify({ ...body, ...normalised }) }
     }
 
     return baseFetch(input, init)
+  }
+}
+
+type ApiKeyHeaderMode = 'authorization-bearer' | 'x-api-key'
+
+/** Retries with the next key when the upstream returns 401, 403, or 429. */
+function createApiKeyRotatingFetch(
+  baseFetch: typeof globalThis.fetch,
+  apiKeys: string[],
+  parameters: Record<string, unknown>,
+  headerMode: ApiKeyHeaderMode
+): typeof globalThis.fetch {
+  const inner = createCustomFetch(baseFetch, parameters)
+  if (apiKeys.length <= 1) {
+    return inner
+  }
+  return async (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> => {
+    for (let i = 0; i < apiKeys.length; i++) {
+      const key = apiKeys[i]!
+      const nextHeaders = new Headers(init?.headers as HeadersInit | undefined)
+      if (headerMode === 'authorization-bearer') {
+        nextHeaders.set('Authorization', `Bearer ${key}`)
+      } else {
+        nextHeaders.set('x-api-key', key)
+      }
+      const res = await inner(input, { ...init, headers: nextHeaders })
+      if ([401, 403, 429].includes(res.status) && i < apiKeys.length - 1) {
+        res.body?.cancel().catch(() => {})
+        continue
+      }
+      return res
+    }
+    throw new Error('API key rotation exhausted')
+  }
+}
+
+function getRuntimeFetch(): typeof globalThis.fetch {
+  const maybeWindow = globalThis as typeof globalThis & {
+    __TAURI__?: unknown
+    __TAURI_INTERNALS__?: unknown
+  }
+  const hasTauriRuntime =
+    typeof maybeWindow.__TAURI__ !== 'undefined' ||
+    typeof maybeWindow.__TAURI_INTERNALS__ !== 'undefined'
+
+  return isPlatformTauri() && hasTauriRuntime
+    ? (httpFetch as typeof globalThis.fetch)
+    : globalThis.fetch
+}
+
+/**
+ * Custom fetch for Foundation Models that routes through Tauri IPC
+ * instead of HTTP, emulating an OpenAI-compatible fetch interface.
+ */
+function createFoundationModelsFetch(
+  parameters: Record<string, unknown>
+): typeof globalThis.fetch {
+  return async (
+    _input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> => {
+    const rawBody = init?.body ? JSON.parse(init.body as string) : {}
+    const body = { ...rawBody, ...parameters }
+    const isStreaming = body.stream === true
+
+    if (!isStreaming) {
+      const result = await invoke<string>(
+        'plugin:foundation-models|foundation_models_chat_completion',
+        { body: JSON.stringify(body) }
+      )
+      return new Response(result, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    const requestId = crypto.randomUUID()
+    const { listen } = await import('@tauri-apps/api/event')
+
+    let unlistenFn: (() => void) | null = null
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const encoder = new TextEncoder()
+
+        unlistenFn = await listen(
+          `foundation-models-stream-${requestId}`,
+          (event: { payload: { data?: string; done?: boolean; error?: string } }) => {
+            const payload = event.payload
+            if (payload.done) {
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+              try {
+                controller.close()
+              } catch {
+                /* already closed */
+              }
+              unlistenFn?.()
+            } else if (payload.error) {
+              try {
+                controller.error(new Error(payload.error))
+              } catch {
+                /* already errored */
+              }
+              unlistenFn?.()
+            } else if (payload.data) {
+              controller.enqueue(
+                encoder.encode(`data: ${payload.data}\n\n`)
+              )
+            }
+          }
+        )
+
+        invoke(
+          'plugin:foundation-models|foundation_models_chat_completion_stream',
+          { body: JSON.stringify(body), requestId }
+        ).catch((err) => {
+          try {
+            controller.error(err)
+          } catch {
+            /* already errored */
+          }
+          unlistenFn?.()
+        })
+      },
+      cancel() {
+        unlistenFn?.()
+        invoke(
+          'plugin:foundation-models|abort_foundation_models_stream',
+          { requestId }
+        ).catch(() => {})
+      },
+    })
+
+    return new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })
   }
 }
 
@@ -164,11 +322,14 @@ export class ModelFactory {
       case 'mlx':
         return this.createMlxModel(modelId, provider, parameters)
 
+      case 'foundation-models':
+        return this.createFoundationModelsModel(modelId, provider, parameters)
+
       case 'anthropic':
-        return this.createAnthropicModel(modelId, provider)
+        return this.createAnthropicModel(modelId, provider, parameters)
 
       case 'openai':
-        return this.createOpenAIModel(modelId, provider)
+        return this.createOpenAIModel(modelId, provider, parameters)
       case 'google':
       case 'gemini':
       case 'azure':
@@ -180,13 +341,11 @@ export class ModelFactory {
       case 'cohere':
       case 'perplexity':
       case 'moonshot':
+      case 'minimax':
         return this.createOpenAICompatibleModel(modelId, provider)
 
       case 'xai':
-        return this.createXaiModel(modelId, provider)
-
-      case 'openclaw':
-        return this.createOpenAICompatibleModel(modelId, provider)
+        return this.createXaiModel(modelId, provider, parameters)
 
       default:
         return this.createOpenAICompatibleModel(modelId, provider, parameters)
@@ -345,6 +504,80 @@ export class ModelFactory {
   }
 
   /**
+   * Create a Foundation Models model (Apple on-device) via direct Tauri IPC
+   * to the fm-rs Rust bindings — no HTTP server involved.
+   */
+  private static async createFoundationModelsModel(
+    modelId: string,
+    provider?: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): Promise<LanguageModel> {
+    const availability = await invoke<string>(
+      'plugin:foundation-models|check_foundation_models_availability',
+      {}
+    )
+
+    if (availability !== 'available') {
+      const messages: Record<string, string> = {
+        notEligible:
+          'Apple Intelligence is not supported on this device. An Apple Silicon Mac (M1 or later) with macOS 26+ is required.',
+        appleIntelligenceNotEnabled:
+          'Apple Intelligence is not enabled. Please enable it in System Settings > Apple Intelligence & Siri.',
+        modelNotReady:
+          'The Apple on-device model is still preparing. Please wait and try again shortly.',
+        unavailable:
+          'Apple Foundation Models are currently unavailable on this device.',
+      }
+      throw new Error(messages[availability] ?? messages.unavailable)
+    }
+
+    if (provider) {
+      try {
+        const { useServiceStore } = await import('@/hooks/useServiceHub')
+        const serviceHub = useServiceStore.getState().serviceHub
+
+        if (serviceHub) {
+          await serviceHub.models().startModel(provider, modelId)
+        }
+      } catch (error) {
+        console.error('Failed to start Foundation Models:', error)
+        throw new Error(
+          `Failed to start model: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+        )
+      }
+    }
+
+    const loaded = await invoke<boolean>(
+      'plugin:foundation-models|is_foundation_models_loaded',
+      {}
+    )
+
+    if (!loaded) {
+      throw new Error(
+        'No running Foundation Models session. The model may have failed to load — please check the logs.'
+      )
+    }
+
+    const customFetch = createFoundationModelsFetch(parameters)
+
+    const model = new OpenAICompatibleChatLanguageModel(modelId, {
+      provider: 'foundation-models',
+      headers: () => ({}),
+      url: ({ path }) => `foundation-models://local/v1${path}`,
+      fetch: customFetch as typeof httpFetch,
+      metadataExtractor: providerMetadataExtractor,
+    })
+
+    return wrapLanguageModel({
+      model,
+      middleware: extractReasoningMiddleware({
+        tagName: 'think',
+        separator: '\n',
+      }),
+    })
+  }
+
+  /**
    * Create an Anthropic model using the official AI SDK
    */
   private static createAnthropicModel(
@@ -361,11 +594,22 @@ export class ModelFactory {
       })
     }
 
+    const keyChain = providerRemoteApiKeyChain(provider)
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            parameters,
+            'x-api-key'
+          )
+        : createCustomFetch(getRuntimeFetch(), parameters)
+
     const anthropic = createAnthropic({
-      apiKey: provider.api_key,
+      apiKey: keyChain[0] ?? provider.api_key ?? '',
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(httpFetch, parameters),
+      fetch: fetchImpl,
     })
 
     return anthropic(modelId)
@@ -388,11 +632,22 @@ export class ModelFactory {
       })
     }
 
+    const keyChain = providerRemoteApiKeyChain(provider)
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            parameters,
+            'authorization-bearer'
+          )
+        : createCustomFetch(getRuntimeFetch(), parameters)
+
     const openai = createOpenAI({
-      apiKey: provider.api_key,
+      apiKey: keyChain[0] ?? provider.api_key ?? '',
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(httpFetch, parameters),
+      fetch: fetchImpl,
     })
 
     return openai(modelId)
@@ -415,11 +670,22 @@ export class ModelFactory {
       })
     }
 
+    const keyChain = providerRemoteApiKeyChain(provider)
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            parameters,
+            'authorization-bearer'
+          )
+        : createCustomFetch(getRuntimeFetch(), parameters)
+
     const xai = createXai({
-      apiKey: provider.api_key,
+      apiKey: keyChain[0] ?? provider.api_key ?? '',
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(httpFetch, parameters),
+      fetch: fetchImpl,
     })
 
     return xai(modelId)
@@ -442,17 +708,27 @@ export class ModelFactory {
       })
     }
 
-    // Add authorization header if api_key is present
-    if (provider.api_key) {
-      headers['Authorization'] = `Bearer ${provider.api_key}`
+    const keyChain = providerRemoteApiKeyChain(provider)
+    if (keyChain.length === 1) {
+      headers['Authorization'] = `Bearer ${keyChain[0]}`
     }
+
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            parameters,
+            'authorization-bearer'
+          )
+        : createCustomFetch(getRuntimeFetch(), parameters)
 
     const openAICompatible = createOpenAICompatible({
       name: provider.provider,
       baseURL: provider.base_url || 'https://api.openai.com/v1',
       headers,
       includeUsage: true,
-      fetch: createCustomFetch(httpFetch, parameters),
+      fetch: fetchImpl,
     })
 
     return openAICompatible.languageModel(modelId)

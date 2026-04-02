@@ -33,13 +33,13 @@ OpenAI-compatible API, then wires AI coding agent like Claude Code\n\
 directly to your own hardware — no cloud account, no usage fees, full privacy.\n\n\
 Models downloaded in the Jan desktop app are automatically available here.",
     after_help = "Examples:\n  \
-  jan launch claude                               # pick a model, then run Claude Code against it\n  \
-  jan launch claude --model qwen3.5-35b-a3b       # use a specific model\n  \
-  jan launch openclaw --model qwen3.5-35b-a3b     # wire openclaw to a local model\n  \
-  jan serve qwen3.5-35b-a3b                       # expose a model at localhost:6767/v1\n  \
-  jan serve qwen3.5-35b-a3b --fit                 # auto-fit context to available VRAM\n  \
-  jan serve qwen3.5-35b-a3b --detach              # run in the background\n  \
-  jan models list                                 # show all installed models",
+  jan launch claude                                      # pick a model, then run Claude Code against it\n  \
+  jan launch claude --model janhq/Jan-code-4b-gguf       # use a specific model\n  \
+  jan launch openclaw --model janhq/Jan-code-4b-gguf     # wire openclaw to a local model\n  \
+  jan serve janhq/Jan-code-4b-gguf                       # expose a model at localhost:6767/v1\n  \
+  jan serve janhq/Jan-code-4b-gguf --fit                 # auto-fit context to available VRAM\n  \
+  jan serve janhq/Jan-code-4b-gguf --detach              # run in the background\n  \
+  jan models list                                        # show all installed models",
     version
 )]
 struct Cli {
@@ -1305,6 +1305,7 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         version_backend: "cli/llama-server".to_string(),
         auto_update_engine: false,
         auto_unload: false,
+        auto_restart_on_crash: false,
         timeout,
         llamacpp_env: String::new(),
         fit,
@@ -1330,13 +1331,14 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         no_mmap: false,
         mlock: false,
         no_kv_offload: false,
-        cache_type_k: String::new(),
-        cache_type_v: String::new(),
+        cache_type_k: "q8_0".to_string(),
+        cache_type_v: "q8_0".to_string(),
         defrag_thold: -1.0,
         rope_scaling: String::new(),
         rope_scale: 0.0,
         rope_freq_base: 0.0,
         rope_freq_scale: 0.0,
         ctx_shift: false,
+        parallel: 1
     }
 }

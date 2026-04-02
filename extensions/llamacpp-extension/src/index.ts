@@ -64,7 +64,6 @@ import {
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
 // Error message constant - matches web-app/src/utils/error.ts
-const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
 
 /**
  * Override the default app.log function to use Jan's logging system.
@@ -149,6 +148,12 @@ export default class llamacpp_extension extends AIEngine {
     }
     this.config = loadedConfig as LlamacppConfig
 
+    // Migration v1: upgrade f16 KV cache defaults to q8_0
+    await this.migrateKvCacheDefaults()
+
+    // Migration v2: disable fit by default
+    await this.migrateFitDefault()
+
     this.autoUnload = this.config.auto_unload
     this.timeout = this.config.timeout
     this.llamacpp_env = this.config.llamacpp_env
@@ -196,6 +201,58 @@ export default class llamacpp_extension extends AIEngine {
     } catch (error) {
       logger.warn('Failed to clear backend type from localStorage:', error)
     }
+  }
+
+  private async migrateKvCacheDefaults(): Promise<void> {
+    const MIGRATION_KEY = 'llamacpp_kv_cache_migrated_v1'
+    if (localStorage.getItem(MIGRATION_KEY)) return
+
+    const keysToMigrate = ['cache_type_k', 'cache_type_v'] as const
+    const needsMigration = keysToMigrate.some(
+      (k) => this.config[k] === 'f16'
+    )
+
+    if (needsMigration) {
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (
+            keysToMigrate.includes(item.key as (typeof keysToMigrate)[number]) &&
+            item.controllerProps.value === 'f16'
+          ) {
+            item.controllerProps.value = 'q8_0'
+          }
+          return item
+        })
+      )
+      for (const k of keysToMigrate) {
+        if (this.config[k] === 'f16') this.config[k] = 'q8_0'
+      }
+      logger.info('Migrated KV cache types from f16 to q8_0')
+    }
+
+    localStorage.setItem(MIGRATION_KEY, '1')
+  }
+
+  private async migrateFitDefault(): Promise<void> {
+    const MIGRATION_KEY = 'llamacpp_fit_disabled_v1'
+    if (localStorage.getItem(MIGRATION_KEY)) return
+
+    if (this.config.fit === true) {
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (item.key === 'fit') {
+            item.controllerProps.value = false
+          }
+          return item
+        })
+      )
+      this.config.fit = false
+      logger.info('Migrated fit setting: disabled by default')
+    }
+
+    localStorage.setItem(MIGRATION_KEY, '1')
   }
 
   async configureBackends(): Promise<void> {
@@ -1772,12 +1829,6 @@ export default class llamacpp_extension extends AIEngine {
             const data = JSON.parse(jsonStr)
             const chunk = data as chatCompletionChunk
 
-            // Check for out-of-context error conditions
-            if (chunk.choices?.[0]?.finish_reason === 'length') {
-              // finish_reason 'length' indicates context limit was hit
-              throw new Error(OUT_OF_CONTEXT_SIZE)
-            }
-
             yield chunk
           } catch (e) {
             logger.error('Error parsing JSON from stream or server error:', e)
@@ -1806,28 +1857,17 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  private async ensureHealthySession(modelId: string): Promise<SessionInfo> {
+    return invoke<SessionInfo>('plugin:llamacpp|ensure_session_ready', {
+      modelId,
+    })
+  }
+
   override async chat(
     opts: chatCompletionRequest,
     abortController?: AbortController
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
-    const sessionInfo = await this.findSessionByModel(opts.model)
-    if (!sessionInfo) {
-      throw new Error(`No active session found for model: ${opts.model}`)
-    }
-    // check if the process is alive
-    const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
-      pid: sessionInfo.pid,
-    })
-    if (result) {
-      try {
-        await fetch(`http://localhost:${sessionInfo.port}/health`)
-      } catch (e) {
-        this.unload(sessionInfo.model_id)
-        throw new Error('Model appears to have crashed! Please reload!')
-      }
-    } else {
-      throw new Error('Model have crashed! Please reload!')
-    }
+    const sessionInfo = await this.ensureHealthySession(opts.model)
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
     const url = `${baseUrl}/chat/completions`
     const headers = {
@@ -1864,12 +1904,6 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     const completionResponse = (await response.json()) as chatCompletion
-
-    // Check for out-of-context error conditions
-    if (completionResponse.choices?.[0]?.finish_reason === 'length') {
-      // finish_reason 'length' indicates context limit was hit
-      throw new Error(OUT_OF_CONTEXT_SIZE)
-    }
 
     return completionResponse
   }
@@ -2215,19 +2249,23 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error(`No active session found for model: ${opts.model}`)
     }
 
-    // Check if the process is alive
-    const result = await invoke<boolean>('plugin:llamacpp|is_process_running', {
+    // Token counting should be side-effect free (no auto-restart/unload).
+    const isRunning = await invoke<boolean>('plugin:llamacpp|is_process_running', {
       pid: sessionInfo.pid,
     })
-    if (result) {
-      try {
-        await fetch(`http://localhost:${sessionInfo.port}/health`)
-      } catch (e) {
-        this.unload(sessionInfo.model_id)
-        throw new Error('Model appears to have crashed! Please reload!')
-      }
-    } else {
+    if (!isRunning) {
       throw new Error('Model has crashed! Please reload!')
+    }
+
+    try {
+      const healthResponse = await fetch(
+        `http://localhost:${sessionInfo.port}/health`
+      )
+      if (!healthResponse.ok) {
+        throw new Error('unhealthy')
+      }
+    } catch (_e) {
+      throw new Error('Model appears to have crashed! Please reload!')
     }
 
     const baseUrl = `http://localhost:${sessionInfo.port}`

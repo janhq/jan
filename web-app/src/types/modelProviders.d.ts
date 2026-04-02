@@ -8,6 +8,9 @@ type ControllerProps = {
   options?: Array<{ value: number | string; name: string }>
   input_actions?: string[]
   recommended?: string
+  min?: number
+  max?: number
+  step?: number
 }
 
 /**
@@ -46,6 +49,8 @@ type ProviderObject = {
   provider: string
   explore_models_url?: string
   api_key?: string
+  /** Extra keys used after `api_key` when the API returns 401, 403, or 429. */
+  api_key_fallbacks?: string[]
   base_url?: string
   settings: ProviderSetting[]
   models: Model[]

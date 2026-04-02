@@ -1,0 +1,10 @@
+{
+  "newVersion": "새 버전 {{version}}",
+  "updateAvailable": "업데이트 가능",
+  "nightlyBuild": "나이틀리 빌드",
+  "showReleaseNotes": "릴리스 노트 보기",
+  "hideReleaseNotes": "릴리스 노트 숨기기",
+  "remindMeLater": "나중에 알림",
+  "downloading": "다운로드 중...",
+  "updateNow": "지금 업데이트"
+}

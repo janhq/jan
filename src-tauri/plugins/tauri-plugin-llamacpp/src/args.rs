@@ -1,10 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+fn default_parallel() -> i32 {
+     1
+ }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlamacppConfig {
     pub version_backend: String,
     pub auto_update_engine: bool,
     pub auto_unload: bool,
+    #[serde(default)]
+    pub auto_restart_on_crash: bool,
     pub timeout: i32,
     pub llamacpp_env: String,
     pub fit: bool,
@@ -38,6 +43,8 @@ pub struct LlamacppConfig {
     pub rope_freq_base: f32,
     pub rope_freq_scale: f32,
     pub ctx_shift: bool,
+    #[serde(default = "default_parallel")]
+    pub parallel: i32,
 }
 
 /// Minimum llama.cpp build number that changed --flash-attn from a boolean
@@ -136,6 +143,9 @@ impl ArgumentBuilder {
 
         // Boolean flags
         self.add_boolean_flags();
+
+        // Parallel sequences
+        self.add_parallel_settings();
 
         // Embedding vs text generation specific args
         if self.is_embedding {
@@ -289,6 +299,17 @@ impl ArgumentBuilder {
         }
     }
 
+    fn add_parallel_settings(&mut self) {
+        if self.config.parallel > 0 {
+            self.args.push("--parallel".to_string());
+            self.args.push(self.config.parallel.to_string());
+            if self.config.parallel == 1 {
+                // https://github.com/ggml-org/llama.cpp/issues/17450
+                self.args.push("-kvu".to_string());
+            }
+        }
+    }
+
     fn add_embedding_args(&mut self) {
         self.args.push("--embedding".to_string());
         self.args.push("--pooling".to_string());
@@ -311,8 +332,9 @@ impl ArgumentBuilder {
             self.args.push(self.config.cache_type_k.clone());
         }
 
-        // cache_type_v only if flash_attn is 'on' and value is not f16/f32
-        if self.config.flash_attn == "on"
+        // cache_type_v only if flash_attn is not 'off' and value is not f16/f32
+        // cache_type_v needs divisibility check but since users want to tinker around it, should allow them to do so
+        if self.config.flash_attn != "off"
             && !self.config.cache_type_v.is_empty()
             && self.config.cache_type_v != "f16"
             && self.config.cache_type_v != "f32"
@@ -383,6 +405,7 @@ mod tests {
             version_backend: "v1.0/standard".to_string(),
             auto_update_engine: false,
             auto_unload: false,
+            auto_restart_on_crash: false,
             timeout: 120,
             llamacpp_env: String::new(),
             fit: false,
@@ -416,6 +439,7 @@ mod tests {
             rope_freq_base: 0.0,
             rope_freq_scale: 1.0,
             ctx_shift: false,
+            parallel: 1,
         }
     }
 
@@ -832,6 +856,18 @@ mod tests {
     }
 
     #[test]
+    fn test_cache_type_v_with_auto_flash_attn() {
+        // "auto" != "off", so cache_type_v should be included (changed from requiring "on")
+        let mut config = default_config(); // flash_attn defaults to "auto"
+        config.cache_type_v = "q8_0".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--cache-type-v", "q8_0");
+    }
+
+    #[test]
     fn test_cache_type_v_f16_not_added() {
         let mut config = default_config();
         config.flash_attn = "on".to_string();
@@ -1049,5 +1085,39 @@ mod tests {
         assert_arg_pair(&args, "--rope-scaling", "linear");
         assert_arg_pair(&args, "--rope-scale", "2");
         assert_arg_pair(&args, "--port", "9000");
+    }
+
+    #[test]
+    fn test_parallel_not_added_when_zero() {
+        let mut config = default_config();
+        config.parallel = 0;
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--parallel");
+        assert_no_flag(&args, "-kvu");
+    }
+
+    #[test]
+    fn test_parallel_1_adds_parallel_and_kvu() {
+        let config = default_config(); // default is 1
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--parallel", "1");
+        assert_has_flag(&args, "-kvu");
+    }
+
+    #[test]
+    fn test_parallel_greater_than_1_no_kvu() {
+        let mut config = default_config();
+        config.parallel = 4;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--parallel", "4");
+        assert_no_flag(&args, "-kvu");
     }
 }

@@ -4,8 +4,9 @@ use sha2::Sha256;
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::time::Duration;
-use tauri::{Manager, Runtime, State};
+use tauri::{Emitter, Manager, Runtime, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::{mpsc, Mutex};
@@ -31,6 +32,15 @@ use crate::process::graceful_terminate_process;
 use crate::process::force_terminate_process;
 
 type HmacSha256 = Hmac<Sha256>;
+const AUTO_RESTART_MAX_ATTEMPTS: usize = 3;
+const AUTO_RESTART_WINDOW_MS: u64 = 5 * 60 * 1000;
+
+#[derive(Clone, serde::Serialize)]
+struct SessionLifecycleEvent {
+    model_id: String,
+    pid: Option<i32>,
+    message: String,
+}
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct UnloadResult {
@@ -52,6 +62,17 @@ pub async fn load_llama_model_impl(
     timeout: u64,
 ) -> ServerResult<SessionInfo> {
     let mut process_map = process_map_arc.lock().await;
+    let launch_config = crate::state::SessionLaunchConfig {
+        backend_path: backend_path.to_string(),
+        model_id: model_id.clone(),
+        model_path: model_path.clone(),
+        port,
+        config: config.clone(),
+        envs: envs.clone(),
+        mmproj_path: mmproj_path.clone(),
+        is_embedding,
+        timeout,
+    };
 
     log::info!("Attempting to launch server at path: {:?}", backend_path);
     log::info!("Using configuration: {:?}", config);
@@ -269,10 +290,66 @@ pub async fn load_llama_model_impl(
         LLamaBackendSession {
             child,
             info: session_info.clone(),
+            launch: launch_config,
+            restart_attempt_timestamps_ms: Vec::new(),
         },
     );
 
     Ok(session_info)
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn can_attempt_restart(session: &mut LLamaBackendSession) -> bool {
+    let cutoff = now_ms().saturating_sub(AUTO_RESTART_WINDOW_MS);
+    session
+        .restart_attempt_timestamps_ms
+        .retain(|ts| *ts >= cutoff);
+    session.restart_attempt_timestamps_ms.len() < AUTO_RESTART_MAX_ATTEMPTS
+}
+
+fn start_session_exit_monitor<R: Runtime>(app_handle: tauri::AppHandle<R>, model_id: String) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+
+            let maybe_exited = {
+                let state: State<LlamacppState> = app_handle.state();
+                let mut map = state.llama_server_process.lock().await;
+
+                let maybe_session = map
+                    .values_mut()
+                    .find(|session| session.info.model_id == model_id);
+
+                let Some(session) = maybe_session else {
+                    // Session no longer exists (unloaded manually or cleaned up); stop watching.
+                    return;
+                };
+
+                match session.child.try_wait() {
+                    Ok(Some(_status)) => true,
+                    Ok(None) => false,
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to inspect process state for model '{}': {}",
+                            model_id,
+                            err
+                        );
+                        false
+                    }
+                }
+            };
+
+            if maybe_exited {
+                let _ = ensure_session_ready(app_handle.clone(), model_id.clone()).await;
+            }
+        }
+    });
 }
 
 /// Load a llama model and start the server
@@ -290,7 +367,7 @@ pub async fn load_llama_model<R: Runtime>(
     timeout: u64,
 ) -> ServerResult<SessionInfo> {
     let state: State<LlamacppState> = app_handle.state();
-    load_llama_model_impl(
+    let session_info = load_llama_model_impl(
         state.llama_server_process.clone(),
         backend_path,
         model_id,
@@ -302,7 +379,12 @@ pub async fn load_llama_model<R: Runtime>(
         is_embedding,
         timeout,
     )
-    .await
+    .await?;
+
+    // Observe process exit from plugin side immediately after load.
+    start_session_exit_monitor(app_handle, session_info.model_id.clone());
+
+    Ok(session_info)
 }
 
 /// Unload a llama model by terminating its process
@@ -368,6 +450,128 @@ pub async fn is_process_running<R: Runtime>(
     pid: i32,
 ) -> Result<bool, String> {
     is_process_running_by_pid(app_handle, pid).await
+}
+
+#[tauri::command]
+pub async fn ensure_session_ready<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    model_id: String,
+) -> Result<SessionInfo, String> {
+    let state: State<LlamacppState> = app_handle.state();
+    let process_map_arc = state.llama_server_process.clone();
+
+    // Step 1: resolve session by model_id and check if alive from source-of-truth child handle.
+    let (dead_pid, maybe_restart_launch) = {
+        let mut map = process_map_arc.lock().await;
+        let maybe_entry = map
+            .iter_mut()
+            .find(|(_, session)| session.info.model_id == model_id);
+
+        let Some((pid, session)) = maybe_entry else {
+            return Err(format!("No active session found for model: {}", model_id));
+        };
+
+        match session.child.try_wait() {
+            Ok(None) => {
+                return Ok(session.info.clone());
+            }
+            Ok(Some(status)) => {
+                let _ = app_handle.emit(
+                    "llamacpp://session-exited",
+                    SessionLifecycleEvent {
+                        model_id: model_id.clone(),
+                        pid: Some(*pid),
+                        message: format!("Process exited with status: {}", status),
+                    },
+                );
+                if !session.launch.config.auto_restart_on_crash {
+                    return Err("Model appears to have crashed! Please reload!".to_string());
+                }
+                if !can_attempt_restart(session) {
+                    let _ = app_handle.emit(
+                        "llamacpp://session-restart-failed",
+                        SessionLifecycleEvent {
+                            model_id: model_id.clone(),
+                            pid: Some(*pid),
+                            message: "Auto-restart attempt limit reached".to_string(),
+                        },
+                    );
+                    return Err(format!(
+                        "Model \"{}\" crashed repeatedly. Auto-restart limit reached ({} attempts in {} minutes). Please reload manually.",
+                        model_id,
+                        AUTO_RESTART_MAX_ATTEMPTS,
+                        AUTO_RESTART_WINDOW_MS / 60000
+                    ));
+                }
+
+                log::warn!(
+                    "Model '{}' exited with status {:?}. Attempting automatic restart.",
+                    model_id,
+                    status
+                );
+                let _ = app_handle.emit(
+                    "llamacpp://session-restarting",
+                    SessionLifecycleEvent {
+                        model_id: model_id.clone(),
+                        pid: Some(*pid),
+                        message: "Attempting automatic restart".to_string(),
+                    },
+                );
+
+                session.restart_attempt_timestamps_ms.push(now_ms());
+                (Some(*pid), Some(session.launch.clone()))
+            }
+            Err(err) => {
+                return Err(format!("Failed to inspect session process state: {}", err));
+            }
+        }
+    };
+
+    // Step 2: remove dead session before restart.
+    if let Some(pid) = dead_pid {
+        let mut map = process_map_arc.lock().await;
+        map.remove(&pid);
+    }
+
+    // Step 3: restart using original launch config.
+    let launch = maybe_restart_launch
+        .ok_or_else(|| "Unable to restart model session: launch configuration missing".to_string())?;
+
+    let restarted = load_llama_model_impl(
+        process_map_arc,
+        &launch.backend_path,
+        launch.model_id,
+        launch.model_path,
+        launch.port,
+        launch.config,
+        launch.envs,
+        launch.mmproj_path,
+        launch.is_embedding,
+        launch.timeout,
+    )
+    .await
+    .map_err(|e| {
+        let _ = app_handle.emit(
+            "llamacpp://session-restart-failed",
+            SessionLifecycleEvent {
+                model_id: model_id.clone(),
+                pid: dead_pid,
+                message: format!("Automatic restart failed: {}", e),
+            },
+        );
+        format!("Model crashed and automatic restart failed: {}", e)
+    })?;
+
+    let _ = app_handle.emit(
+        "llamacpp://session-restarted",
+        SessionLifecycleEvent {
+            model_id: model_id.clone(),
+            pid: Some(restarted.pid),
+            message: "Automatic restart successful".to_string(),
+        },
+    );
+
+    Ok(restarted)
 }
 
 /// Get a random available port

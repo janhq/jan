@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type { Chat, UIMessage } from "@ai-sdk/react";
 import type { ChatStatus } from "ai";
 import { CustomChatTransport } from "@/lib/custom-chat-transport";
+import { useMessageQueue } from "@/stores/message-queue-store";
 // import { showChatCompletionToast } from "@/components/toasts/chat-completion-toast";
 
 export type SessionData = {
@@ -197,6 +198,9 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
       return;
     }
 
+    // Clear any pending queued messages for this session
+    useMessageQueue.getState().clearQueue(sessionId);
+
     // Remove from store FIRST - prevents updateStatus from showing toast during cleanup
     set((state) => {
       if (!state.sessions[sessionId]) {
@@ -225,6 +229,12 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
   },
   clearSessions: () => {
     const sessions = get().sessions;
+
+    // Clear all queued messages
+    Object.keys(sessions).forEach((sessionId) => {
+      useMessageQueue.getState().clearQueue(sessionId);
+    });
+
     Object.values(sessions).forEach((session) => {
       session.unsubscribers.forEach((unsubscribe) => {
         try {

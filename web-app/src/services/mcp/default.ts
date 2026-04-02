@@ -4,7 +4,7 @@
 
 import { MCPTool, MCPToolCallResult } from '@janhq/core'
 import type { MCPServerConfig } from '@/hooks/useMCPServers'
-import type { MCPService, MCPConfig, ToolCallWithCancellationResult } from './types'
+import type { MCPService, MCPConfig, ServerSummary, ToolCallWithCancellationResult } from './types'
 
 export class DefaultMCPService implements MCPService {
   async updateMCPConfig(configs: string): Promise<void> {
@@ -21,6 +21,15 @@ export class DefaultMCPService implements MCPService {
   }
 
   async getTools(): Promise<MCPTool[]> {
+    return []
+  }
+
+  async getToolsForServers(serverNames: string[]): Promise<MCPTool[]> {
+    void serverNames
+    return []
+  }
+
+  async getServerSummaries(): Promise<ServerSummary[]> {
     return []
   }
 

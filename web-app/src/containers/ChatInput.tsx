@@ -32,6 +32,9 @@ import {
   IconBrandChrome,
   IconUser,
 } from '@tabler/icons-react'
+import { generateId } from 'ai'
+import { useMessageQueue } from '@/stores/message-queue-store'
+import { QueuedMessageChip } from '@/containers/QueuedMessageBubble'
 import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -74,6 +77,7 @@ import { toast } from 'sonner'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
+import { useToolApproval } from '@/hooks/useToolApproval'
 import {
   NEW_THREAD_ATTACHMENT_KEY,
   useChatAttachments,
@@ -88,7 +92,7 @@ import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionD
 import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
-import { isOpenClawRunning } from '@/utils/openclaw'
+import { AssistantsMenu } from '@/components/AssistantsMenu'
 
 type ChatInputProps = {
   className?: string
@@ -123,6 +127,8 @@ const ChatInput = memo(function ChatInput({
   const setActiveModels = useAppState((state) => state.setActiveModels)
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
+  const addToHistory = usePrompt((state) => state.addToHistory)
+  const navigateHistory = usePrompt((state) => state.navigateHistory)
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const currentThread = useThreads((state) => state.getCurrentThread())
   const updateCurrentThreadAssistant = useThreads(
@@ -141,22 +147,22 @@ const ChatInput = memo(function ChatInput({
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
-  const assistants = useAssistant((state) => state.assistants)
+  const { 
+    loading,
+    currentAssistant,
+    setCurrentAssistant,
+    assistants
+  } = useAssistant()
 
-  // Agent mode (OpenClaw)
+  // Agent mode
   // Use TEMPORARY_CHAT_ID as fallback key on the home screen (same pattern as attachments)
   const agentModeKey = currentThreadId ?? TEMPORARY_CHAT_ID
-  const [openClawAvailable, setOpenClawAvailable] = useState(false)
   const isAgentMode = useAgentMode((state) =>
     state.agentThreads[agentModeKey] === true
   )
   // When projectId is present, treat as normal chat (disable agent mode UI)
   const effectiveAgentMode = isAgentMode && !projectId
   const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
-
-  useEffect(() => {
-    isOpenClawRunning().then(setOpenClawAvailable)
-  }, [currentThreadId])
 
   const handleAgentToggle = useCallback(() => {
     toggleAgentMode(agentModeKey)
@@ -180,15 +186,34 @@ const ChatInput = memo(function ChatInput({
   const updateProvider = useModelProvider((state) => state.updateProvider)
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
-  const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
+  const [tooltipShown, setTooltipShown] = useState<
+    'tools' | 'assistants' | false
+  >(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
+  const wasPointerDown = useRef(false)
 
   // Check if selected model is currently loaded/active
   const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
-  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | undefined>(assistants[0])
+  const [selectedAssistantId, setSelectedAssistantId] = useState<
+    string | undefined
+  >(loading ? undefined : currentAssistant?.id || '')
+
+  useEffect(() => {
+    setSelectedAssistantId(currentAssistant?.id || '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
+
+  const avatar = currentThread
+    ? assistants.find((a) => a.id === currentThread?.assistants?.[0]?.id)
+        ?.avatar ||
+      currentThread?.assistants?.[0]?.avatar ||
+      ''
+    : assistants.find((a) => a.id === selectedAssistantId)?.avatar || ''
+
+  const assistantCount = assistants?.length || 0
 
   // No auto-selection: let the user explicitly pick an assistant
 
@@ -250,6 +275,19 @@ const ChatInput = memo(function ChatInput({
     (a) => a.type === 'document' && a.processing
   )
   const ingestingAny = attachments.some((a) => a.processing)
+
+  // Queued messages for this thread (shown as chips in the input area)
+  const queuedMessages = useMessageQueue(
+    useShallow((s) => s.getQueue(currentThreadId ?? ''))
+  )
+  const queueLength = queuedMessages.length
+
+  const removeQueuedMessage = useCallback(
+    (id: string) => {
+      useMessageQueue.getState().removeMessage(currentThreadId ?? '', id)
+    },
+    [currentThreadId]
+  )
 
   const lastTransferredThreadId = useRef<string | null>(null)
 
@@ -352,9 +390,23 @@ const ChatInput = memo(function ChatInput({
     }
 
     setMessage('')
+    addToHistory(prompt)
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
+      // When the model is still streaming, queue the message for later
+      if (isStreaming && currentThreadId) {
+        useMessageQueue.getState().enqueue(currentThreadId, {
+          id: generateId(),
+          text: prompt,
+          createdAt: Date.now(),
+        })
+        setPrompt('')
+        return
+      }
+
+      const assistant = currentThread?.assistants?.[0]
+      setCurrentAssistant(assistant)
       // Build file parts for AI SDK
       const files = attachments
         .filter((att) => att.type === 'image' && att.dataUrl)
@@ -433,7 +485,9 @@ const ChatInput = memo(function ChatInput({
         // When no projectId, use the selected assistant from dropdown (if any)
         const assistant = projectAssistantId
           ? assistants.find((a) => a.id === projectAssistantId)
-          : selectedAssistant
+          : assistants.find((a) => a.id === selectedAssistantId)
+
+        setCurrentAssistant(assistant)
 
         const newThread = await createThread(
           {
@@ -444,9 +498,6 @@ const ChatInput = memo(function ChatInput({
           assistant,
           projectMetadata
         )
-
-        // Clear selected assistant after creating thread
-        setSelectedAssistant(undefined)
 
         // Transfer agent mode from home screen to the new thread
         if (isAgentMode) {
@@ -501,10 +552,10 @@ const ChatInput = memo(function ChatInput({
   }, [])
 
   useEffect(() => {
-    if (tooltipToolsAvailable && dropdownToolsAvailable) {
-      setTooltipToolsAvailable(false)
+    if (tooltipShown && dropdownToolsAvailable) {
+      setTooltipShown(false)
     }
-  }, [dropdownToolsAvailable, tooltipToolsAvailable])
+  }, [dropdownToolsAvailable, tooltipShown])
 
   // Focus when thread changes
   useEffect(() => {
@@ -705,6 +756,11 @@ const ChatInput = memo(function ChatInput({
         }
 
         if (hasEmbeddedDocuments) {
+          const toolApproval = useToolApproval.getState()
+          const ragTools = useAppState.getState().ragToolNames
+          for (const toolName of ragTools) {
+            toolApproval.approveToolForThread(currentThreadId, toolName)
+          }
           useThreads.getState().updateThread(currentThreadId, {
             metadata: { hasDocuments: true },
           })
@@ -742,8 +798,9 @@ const ChatInput = memo(function ChatInput({
         multiple: true,
         filters: [
           {
-            name: 'Documents',
+            name: 'Documents & Code',
             extensions: [
+              // Documents
               'pdf',
               'docx',
               'txt',
@@ -755,7 +812,89 @@ const ChatInput = memo(function ChatInput({
               'pptx',
               'html',
               'htm',
+              // JavaScript / TypeScript
+              'js',
+              'mjs',
+              'cjs',
+              'ts',
+              'mts',
+              'cts',
+              'jsx',
+              'tsx',
+              // Python
+              'py',
+              'pyw',
+              'pyi',
+              // C / C++
+              'c',
+              'h',
+              'cpp',
+              'cc',
+              'cxx',
+              'hpp',
+              'hh',
+              // Systems languages
+              'rs',
+              'go',
+              'swift',
+              'zig',
+              // JVM languages
+              'java',
+              'kt',
+              'kts',
+              'scala',
+              'groovy',
+              // Scripting languages
+              'rb',
+              'php',
+              'lua',
+              'pl',
+              'r',
+              'jl',
+              // .NET
+              'cs',
+              'fs',
+              'vb',
+              // Shell
+              'sh',
+              'bash',
+              'zsh',
+              'fish',
+              'ps1',
+              // Web
+              'css',
+              'scss',
+              'sass',
+              'less',
+              'vue',
+              'svelte',
+              'astro',
+              // Data / config formats
+              'json',
+              'jsonc',
+              'yaml',
+              'yml',
+              'toml',
+              'xml',
+              'ini',
+              'cfg',
+              'conf',
+              'env',
+              // Query / markup
+              'sql',
+              'graphql',
+              'gql',
+              'tex',
+              'rst',
+              // Misc text
+              'log',
+              'diff',
+              'patch',
             ],
+          },
+          {
+            name: 'All Files',
+            extensions: ['*'],
           },
         ],
       })
@@ -1404,8 +1543,7 @@ const ChatInput = memo(function ChatInput({
       <div className="relative">
         <div
           className={cn(
-            'relative overflow-hidden p-0.5 rounded-3xl',
-            isStreaming && 'opacity-70'
+            'relative overflow-hidden p-0.5 rounded-3xl'
           )}
         >
           {isStreaming && (
@@ -1470,7 +1608,6 @@ const ChatInput = memo(function ChatInput({
                                     )}
                                   </div>
                                 )}
-
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>
@@ -1513,6 +1650,23 @@ const ChatInput = memo(function ChatInput({
                 </div>
               </div>
             )}
+            {queuedMessages.length > 0 && (
+              <div className="flex flex-col gap-1 px-3 pt-2 pb-0">
+                {queuedMessages.map((msg) => (
+                  <QueuedMessageChip
+                    key={msg.id}
+                    message={msg}
+                    onEdit={(queued) => {
+                      // Put the text back in the input for editing, remove from queue
+                      setPrompt(queued.text)
+                      removeQueuedMessage(queued.id)
+                      textareaRef.current?.focus()
+                    }}
+                    onRemove={removeQueuedMessage}
+                  />
+                ))}
+              </div>
+            )}
             <TextareaAutosize
               dir="auto"
               ref={textareaRef}
@@ -1533,14 +1687,33 @@ const ChatInput = memo(function ChatInput({
                   e.nativeEvent.isComposing || e.keyCode === 229
                 if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
                   e.preventDefault()
-                  // Submit prompt when the following conditions are met:
-                  // - Enter is pressed without Shift
-                  // - The streaming content has finished
-                  // - Prompt is not empty
-                  if (!isStreaming && prompt.trim() && !ingestingAny) {
+                  // Submit prompt when Enter is pressed without Shift and prompt is not empty.
+                  // If streaming, handleSendMessage will queue the message automatically.
+                  if (prompt.trim() && !ingestingAny) {
                     handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
+                }
+                // Navigate prompt history with Up/Down arrow keys
+                if (e.key === 'ArrowUp' && !isComposing) {
+                  const textarea = e.currentTarget
+                  const cursorAtStart =
+                    textarea.selectionStart === 0 &&
+                    textarea.selectionEnd === 0
+                  if (cursorAtStart || !prompt) {
+                    e.preventDefault()
+                    navigateHistory('up')
+                  }
+                }
+                if (e.key === 'ArrowDown' && !isComposing) {
+                  const textarea = e.currentTarget
+                  const cursorAtEnd =
+                    textarea.selectionStart === prompt.length &&
+                    textarea.selectionEnd === prompt.length
+                  if (cursorAtEnd) {
+                    e.preventDefault()
+                    navigateHistory('down')
+                  }
                 }
               }}
               onPaste={handlePaste}
@@ -1612,73 +1785,90 @@ const ChatInput = memo(function ChatInput({
                       </span>
                     </DropdownMenuItem>
                     {/* Use Assistant - only show when no projectId */}
-                    {!projectId && (
+                    {!projectId && assistantCount < 2 && (
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger>
                           <IconUser size={18} className="text-muted-foreground" />
                           <span>Use Assistant</span>
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
-                          <DropdownMenuItem
-                            className={!selectedAssistant && !currentThread?.assistants?.length ? 'bg-accent' : ''}
-                            onClick={() => {
-                              setSelectedAssistant(undefined)
-                              if (currentThreadId) {
-                                updateCurrentThreadAssistant(undefined as unknown as Assistant)
-                              }
-                            }}
-                          >
-                            <div className="flex items-center gap-2 w-full">
-                              <span className="text-muted-foreground">—</span>
-                              <span>None</span>
-                              {!selectedAssistant && !currentThread?.assistants?.length && (
-                                <span className="ml-auto text-xs text-muted-foreground">✓</span>
-                              )}
-                            </div>
-                          </DropdownMenuItem>
-                          {assistants.length > 0 ? (
-                            assistants.map((assistant) => {
-                              const isSelected = initialMessage && selectedAssistant?.id === assistant.id ||
-                                (assistant && currentThread?.assistants?.some((a) => a.id === assistant.id))
-                              return (
-                                <DropdownMenuItem
-                                  key={assistant.id}
-                                  className={isSelected ? 'bg-accent' : ''}
-                                  onClick={() => {
-                                    setSelectedAssistant(assistant)
-                                    if (currentThreadId) {
-                                      updateCurrentThreadAssistant(assistant)
-                                    }
-                                  }}
-                                >
-                                  <div className="flex items-center gap-2 w-full">
-                                    <AvatarEmoji
-                                      avatar={assistant.avatar}
-                                      imageClassName="w-4 h-4 object-contain"
-                                      textClassName="text-sm"
-                                    />
-                                    <span>{assistant.name || 'Unnamed Assistant'}</span>
-                                    {isSelected && (
-                                      <span className="ml-auto text-xs text-muted-foreground">
-                                        ✓
-                                      </span>
-                                    )}
-                                  </div>
-                                </DropdownMenuItem>
-                              )
-                            })
-                          ) : (
-                            <DropdownMenuItem disabled>
-                              <span className="text-muted-foreground">
-                                No assistants available
-                              </span>
-                            </DropdownMenuItem>
-                          )}
+                          <AssistantsMenu
+                            selectedAssistant={selectedAssistantId}
+                            setSelectedAssistant={setSelectedAssistantId}
+                            currentThread={currentThread}
+                            updateCurrentThreadAssistant={
+                              updateCurrentThreadAssistant
+                            }
+                            assistants={assistants}
+                          />
                         </DropdownMenuSubContent>
                       </DropdownMenuSub>
                     )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                {!projectId && assistantCount >= 2 && (
+                  <DropdownMenu>
+                    <Tooltip
+                      open={tooltipShown === 'assistants'}
+                      onOpenChange={(newValue) =>
+                        setTooltipShown(newValue ? 'assistants' : false)
+                      }
+                    >
+                      <TooltipTrigger asChild>
+                        <DropdownMenuTrigger
+                          asChild
+                          onPointerDown={() => {
+                            wasPointerDown.current = true
+                          }}
+                          onKeyDown={() => {
+                            wasPointerDown.current = false
+                          }}
+                        >
+                          <Button
+                            variant="secondary"
+                            size="icon-sm"
+                            className="rounded-full mr-2 mb-1"
+                          >
+                            {avatar && (
+                              <AvatarEmoji
+                                avatar={avatar}
+                                imageClassName="w-4 h-4 object-contain"
+                                textClassName="text-xs relative inline-block"
+                              />
+                            )}
+                            {!avatar && (
+                              <IconUser
+                                size={18}
+                                className="text-muted-foreground"
+                              />
+                            )}
+                          </Button>
+                        </DropdownMenuTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('assistants')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <DropdownMenuContent
+                      onCloseAutoFocus={(event) => {
+                        if (wasPointerDown.current) {
+                          event.preventDefault()
+                        }
+                      }}
+                      align="start"
+                    >
+                      <AssistantsMenu
+                        selectedAssistant={selectedAssistantId}
+                        setSelectedAssistant={setSelectedAssistantId}
+                        currentThread={currentThread}
+                        updateCurrentThreadAssistant={
+                          updateCurrentThreadAssistant
+                        }
+                        assistants={assistants}
+                      />
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
                 {/* {model?.provider === 'llamacpp' && loadingModel ? (
                   <ModelLoader />
@@ -1765,8 +1955,8 @@ const ChatInput = memo(function ChatInput({
                   ) : (
                     // Use default tools dropdown
                     <Tooltip
-                      open={tooltipToolsAvailable}
-                      onOpenChange={setTooltipToolsAvailable}
+                      open={tooltipShown === 'tools'}
+                      onOpenChange={(newValue) => newValue ? setTooltipShown('tools') : setTooltipShown(false)}
                     >
                       <TooltipTrigger
                         asChild
@@ -1785,7 +1975,7 @@ const ChatInput = memo(function ChatInput({
                             onOpenChange={(isOpen) => {
                               setDropdownToolsAvailable(isOpen)
                               if (isOpen) {
-                                setTooltipToolsAvailable(false)
+                                setTooltipShown(false)
                               }
                             }}
                           >
@@ -1814,7 +2004,8 @@ const ChatInput = memo(function ChatInput({
                     </Tooltip>
                   ))}
 
-                {openClawAvailable && !projectId && isAgentMode && (
+                {/* Agent mode toggle hidden — kept as dead code for future use */}
+                {false && !projectId && isAgentMode && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1902,16 +2093,29 @@ const ChatInput = memo(function ChatInput({
                 )}
 
               {isStreaming ? (
-                <Button
-                  variant="destructive"
-                  size="icon-sm"
-                  className="rounded-full mr-1 mb-1"
-                  onClick={() => {
-                    if (currentThreadId) stopStreaming(currentThreadId)
-                  }}
-                >
-                  <IconPlayerStopFilled />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="destructive"
+                      size="icon-sm"
+                      className="rounded-full mr-1 mb-1"
+                      onClick={() => {
+                        if (!currentThreadId) return
+                        const queue = useMessageQueue.getState().getQueue(currentThreadId)
+                        if (queue.length > 0) {
+                          useMessageQueue.getState().clearQueue(currentThreadId)
+                        } else {
+                          stopStreaming(currentThreadId)
+                        }
+                      }}
+                    >
+                      <IconPlayerStopFilled />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{queueLength > 0 ? `Clear ${queueLength} queued message(s)` : 'Stop generating'}</p>
+                  </TooltipContent>
+                </Tooltip>
               ) : (
                 <Button
                   variant="default"
