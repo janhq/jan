@@ -61,10 +61,14 @@
   "enterNameForProvider": "Enter name for provider",
   "apiKeys": {
     "title": "API keys",
-    "description": "One key per line. The first line is the primary key. If the provider returns 401, 403, or 429, Jan automatically tries the next key.",
+    "description": "Enter your primary API key. Optionally add fallback keys in Advanced; Jan retries the next key on 401/403/429.",
     "placeholder": "sk-…\nsk-…",
+    "primaryPlaceholder": "Enter primary API key",
     "test": "Test keys",
     "testing": "Testing...",
-    "testHint": "Checks /models with each key and shows per-key status."
+    "testHint": "Checks /models with each key and shows per-key status.",
+    "advanced": "Advanced",
+    "hideAdvanced": "Hide advanced",
+    "oneKeyHint": "Optional fallback keys are configured in Advanced."
   }
 }

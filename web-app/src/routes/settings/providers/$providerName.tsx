@@ -19,6 +19,7 @@ import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -66,6 +67,7 @@ function ProviderDetail() {
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [importingModel, setImportingModel] = useState<string | null>(null)
   const [apiKeysDraft, setApiKeysDraft] = useState('')
+  const [showAdvancedApiKeys, setShowAdvancedApiKeys] = useState(false)
   const [isTestingKeys, setIsTestingKeys] = useState(false)
   const [keyCheckResults, setKeyCheckResults] = useState<
     { index: number; masked: string; status: string; detail: string }[]
@@ -223,6 +225,13 @@ function ProviderDetail() {
       api_key_fallbacks: nextFallbacks,
     })
   }, [apiKeysDraft, provider, providerName, serviceHub, updateProvider])
+
+  const rawApiKeyLines = apiKeysDraft.split(/\r?\n/)
+  const primaryKeyDraft = (rawApiKeyLines[0] ?? '').trim()
+  const setPrimaryKeyDraft = (nextPrimary: string) => {
+    const rest = rawApiKeyLines.slice(1)
+    setApiKeysDraft([nextPrimary, ...rest].join('\n'))
+  }
 
   const maskApiKey = useCallback((value: string) => {
     if (value.length <= 8) return `${value.slice(0, 2)}***`
@@ -778,50 +787,107 @@ function ProviderDetail() {
                           {t('providers:apiKeys.description')}
                         </p>
                       </div>
-                      <Textarea
-                        className="min-h-[88px] font-mono text-sm"
-                        placeholder={t('providers:apiKeys.placeholder')}
-                        value={apiKeysDraft}
-                        onChange={(e) => setApiKeysDraft(e.target.value)}
-                        onBlur={commitApiKeysDraft}
-                        spellCheck={false}
-                        autoComplete="off"
-                      />
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={handleTestApiKeys}
-                          disabled={isTestingKeys}
-                        >
-                          {isTestingKeys ? (
-                            <>
-                              <IconLoader size={14} className="animate-spin" />
-                              {t('providers:apiKeys.testing')}
-                            </>
-                          ) : (
-                            t('providers:apiKeys.test')
-                          )}
-                        </Button>
-                        <span className="text-xs text-muted-foreground">
-                          {t('providers:apiKeys.testHint')}
-                        </span>
-                      </div>
-                      {keyCheckResults.length > 0 && (
-                        <div className="space-y-1 rounded-md border border-border/60 p-2">
-                          {keyCheckResults.map((row) => (
-                            <div
-                              key={`${row.index}-${row.masked}`}
-                              className="flex items-center justify-between gap-3 text-xs"
+                      {!showAdvancedApiKeys && (
+                        <div className="flex flex-col gap-2">
+                          <Input
+                            className="font-mono"
+                            placeholder={t('providers:apiKeys.primaryPlaceholder')}
+                            value={primaryKeyDraft}
+                            onChange={(e) => setPrimaryKeyDraft(e.target.value)}
+                            onBlur={() => commitApiKeysDraft()}
+                            spellCheck={false}
+                            autoComplete="off"
+                          />
+
+                          <div className="flex items-center justify-between gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setShowAdvancedApiKeys(true)
+                                setKeyCheckResults([])
+                              }}
                             >
-                              <span className="font-mono text-muted-foreground">
-                                #{row.index} {row.masked}
-                              </span>
-                              <span className={cn('font-medium', getStatusClass(row.status))}>
-                                {getStatusLabel(row.status)}
-                              </span>
+                              {t('providers:apiKeys.advanced')}
+                            </Button>
+                            <span className="text-xs text-muted-foreground">
+                              {t('providers:apiKeys.oneKeyHint')}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {showAdvancedApiKeys && (
+                        <div className="space-y-2">
+                          <Textarea
+                            className="min-h-[88px] font-mono text-sm"
+                            placeholder={t('providers:apiKeys.placeholder')}
+                            value={apiKeysDraft}
+                            onChange={(e) => setApiKeysDraft(e.target.value)}
+                            onBlur={commitApiKeysDraft}
+                            spellCheck={false}
+                            autoComplete="off"
+                          />
+
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                commitApiKeysDraft()
+                                setShowAdvancedApiKeys(false)
+                                setKeyCheckResults([])
+                              }}
+                            >
+                              {t('providers:apiKeys.hideAdvanced')}
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleTestApiKeys}
+                              disabled={isTestingKeys}
+                            >
+                              {isTestingKeys ? (
+                                <>
+                                  <IconLoader
+                                    size={14}
+                                    className="animate-spin"
+                                  />
+                                  {t('providers:apiKeys.testing')}
+                                </>
+                              ) : (
+                                t('providers:apiKeys.test')
+                              )}
+                            </Button>
+                          </div>
+
+                          <span className="text-xs text-muted-foreground">
+                            {t('providers:apiKeys.testHint')}
+                          </span>
+
+                          {keyCheckResults.length > 0 && (
+                            <div className="space-y-1 rounded-md border border-border/60 p-2">
+                              {keyCheckResults.map((row) => (
+                                <div
+                                  key={`${row.index}-${row.masked}`}
+                                  className="flex items-center justify-between gap-3 text-xs"
+                                >
+                                  <span className="font-mono text-muted-foreground">
+                                    #{row.index} {row.masked}
+                                  </span>
+                                  <span
+                                    className={cn(
+                                      'font-medium',
+                                      getStatusClass(row.status)
+                                    )}
+                                  >
+                                    {getStatusLabel(row.status)}
+                                  </span>
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          )}
                         </div>
                       )}
                     </div>
