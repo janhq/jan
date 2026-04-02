@@ -16,10 +16,23 @@ pub type ServerHandle =
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ProviderConfig {
     pub provider: String,
+    /// First key (mirrors `api_keys[0]` when populated); kept for backward compatibility.
     pub api_key: Option<String>,
+    /// Ordered keys for Bearer auth: proxy tries each on 401/403/429.
+    #[serde(default)]
+    pub api_keys: Vec<String>,
     pub base_url: Option<String>,
     pub custom_headers: Vec<ProviderCustomHeader>,
     pub models: Vec<String>,
+}
+
+impl ProviderConfig {
+    pub fn bearer_key_chain(&self) -> Vec<String> {
+        if !self.api_keys.is_empty() {
+            return self.api_keys.clone();
+        }
+        self.api_key.clone().into_iter().collect()
+    }
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
