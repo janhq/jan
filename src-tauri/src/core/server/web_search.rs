@@ -1,3 +1,17 @@
+// Web search module — DuckDuckGo Lite scraper
+//
+// Privacy / network note:
+//   This module makes outbound HTTP POST requests to `https://lite.duckduckgo.com/lite/`
+//   from the proxy process. The requests are made on behalf of the user whenever an LLM
+//   invokes the `web_search` tool.
+//
+// Fragility warning:
+//   The HTML parser below relies on specific CSS class names (`result-link`,
+//   `result-snippet`) in the DuckDuckGo Lite response. There is no dependency on a
+//   proper HTML parsing library (e.g. `scraper` or `select`); the parsing is entirely
+//   manual string-based. If DuckDuckGo changes the Lite page layout or class names,
+//   `parse_duckduckgo_lite_html` will silently return 0 results instead of failing loudly.
+
 use reqwest::Client;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

@@ -448,4 +448,78 @@ mod tests {
 
         assert_eq!(messages[1]["role"], "user");
     }
+
+    // Tests for SSE re-emission of web search loop results
+
+    #[tokio::test]
+    async fn test_emit_anthropic_response_as_sse() {
+        use hyper::Body;
+
+        let anthropic_response = serde_json::json!({
+            "id": "msg_test123",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Hello from web search!"}
+            ],
+            "model": "test-model",
+            "stop_reason": "end_turn",
+            "stop_sequence": null,
+            "usage": {"input_tokens": 10, "output_tokens": 5}
+        });
+
+        let (sender, body) = Body::channel();
+
+        let response = anthropic_response.clone();
+        tokio::spawn(async move {
+            proxy::emit_anthropic_response_as_sse(&response, sender).await;
+        });
+
+        let body_bytes = hyper::body::to_bytes(body).await.unwrap();
+        let body_str = String::from_utf8_lossy(&body_bytes);
+
+        // Verify SSE event sequence
+        assert!(body_str.contains("event: message_start\n"), "missing message_start");
+        assert!(body_str.contains("event: content_block_start\n"), "missing content_block_start");
+        assert!(body_str.contains("event: content_block_delta\n"), "missing content_block_delta");
+        assert!(body_str.contains("event: content_block_stop\n"), "missing content_block_stop");
+        assert!(body_str.contains("event: message_delta\n"), "missing message_delta");
+        assert!(body_str.contains("event: message_stop\n"), "missing message_stop");
+
+        // Verify content is present
+        assert!(body_str.contains("Hello from web search!"));
+        assert!(body_str.contains("msg_test123"));
+    }
+
+    #[tokio::test]
+    async fn test_emit_anthropic_response_as_sse_empty_content() {
+        use hyper::Body;
+
+        let anthropic_response = serde_json::json!({
+            "id": "msg_empty",
+            "type": "message",
+            "role": "assistant",
+            "content": [],
+            "model": "test-model",
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 0, "output_tokens": 0}
+        });
+
+        let (sender, body) = Body::channel();
+
+        let response = anthropic_response.clone();
+        tokio::spawn(async move {
+            proxy::emit_anthropic_response_as_sse(&response, sender).await;
+        });
+
+        let body_bytes = hyper::body::to_bytes(body).await.unwrap();
+        let body_str = String::from_utf8_lossy(&body_bytes);
+
+        // Should still have message_start, message_delta, message_stop
+        assert!(body_str.contains("event: message_start\n"));
+        assert!(body_str.contains("event: message_delta\n"));
+        assert!(body_str.contains("event: message_stop\n"));
+        // But no content blocks
+        assert!(!body_str.contains("event: content_block_start\n"));
+    }
 }

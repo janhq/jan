@@ -1452,6 +1452,10 @@ async fn proxy_request(
 
                     // If web_search tools are present, use the search loop
                     if needs_web_search {
+                        log::warn!(
+                            "Web search enabled: outbound requests will be sent to \
+                             lite.duckduckgo.com to fulfil web_search tool calls"
+                        );
                         let api_key_ref = fallback_api_key.as_deref();
                         match execute_web_search_loop(
                             &fallback_client,
@@ -1462,12 +1466,38 @@ async fn proxy_request(
                         )
                         .await
                         {
-                            Ok(final_response) => {
+                            Ok((final_response, was_streaming)) => {
                                 // Transform back to Anthropic format
                                 let anthropic_response =
                                     transform_openai_response_to_anthropic(&final_response);
-                                let body_str = anthropic_response.to_string();
 
+                                if was_streaming {
+                                    // Client expects SSE — re-emit the complete
+                                    // response as a stream of Anthropic SSE events.
+                                    let (sender, body) = Body::channel();
+                                    tokio::spawn(async move {
+                                        emit_anthropic_response_as_sse(
+                                            &anthropic_response,
+                                            sender,
+                                        )
+                                        .await;
+                                    });
+
+                                    let mut builder = Response::builder()
+                                        .status(StatusCode::OK)
+                                        .header("Content-Type", "text/event-stream")
+                                        .header("Cache-Control", "no-cache");
+                                    builder = add_cors_headers_with_host_and_origin(
+                                        builder,
+                                        &host_header,
+                                        &origin_header,
+                                        &config.trusted_hosts,
+                                    );
+                                    return Ok(builder.body(body).unwrap());
+                                }
+
+                                // Non-streaming — return JSON directly
+                                let body_str = anthropic_response.to_string();
                                 let mut builder = Response::builder()
                                     .status(StatusCode::OK)
                                     .header("Content-Type", "application/json");
@@ -1863,13 +1893,17 @@ pub fn inject_web_search_function_tool(openai_body: &mut serde_json::Value) {
 /// Execute the web search tool loop for non-Anthropic models.
 /// Sends the request, checks if the model calls web_search, executes the search,
 /// re-submits with results, and returns the final OpenAI-format response.
+///
+/// Returns `(response_json, was_streaming)` where `was_streaming` indicates whether
+/// the original request had `stream: true`. The caller must re-emit the response as
+/// SSE when this flag is set, because the loop forces `stream: false` internally.
 async fn execute_web_search_loop(
     client: &Client,
     chat_url: &str,
     api_key: Option<&str>,
     mut openai_body: serde_json::Value,
     max_iterations: usize,
-) -> Result<serde_json::Value, String> {
+) -> Result<(serde_json::Value, bool), String> {
     // Force non-streaming for the loop
     let was_streaming = openai_body
         .get("stream")
@@ -1930,16 +1964,13 @@ async fn execute_web_search_loop(
             .unwrap_or_default();
 
         if web_search_calls.is_empty() {
-            // No web_search calls - restore streaming flag if needed and return
             if was_streaming {
-                // The caller will need to convert this non-streaming response
-                // to the appropriate format
                 log::info!(
                     "Web search loop complete after {} iterations (was streaming)",
                     iteration + 1
                 );
             }
-            return Ok(response_json);
+            return Ok((response_json, was_streaming));
         }
 
         // Execute web searches and build tool results
@@ -1983,6 +2014,125 @@ async fn execute_web_search_loop(
     }
 
     Err("Web search loop exceeded maximum iterations".to_string())
+}
+
+/// Emit a complete Anthropic `/messages` response as SSE events via a `hyper::body::Sender`.
+///
+/// This is used when `execute_web_search_loop` forced `stream: false` but the
+/// original client request had `stream: true`. We reconstruct the SSE event
+/// sequence that the Anthropic streaming API would have produced:
+///   message_start → (content_block_start, content_block_delta, content_block_stop)* →
+///   message_delta → message_stop
+pub(crate) async fn emit_anthropic_response_as_sse(
+    anthropic_response: &serde_json::Value,
+    mut sender: hyper::body::Sender,
+) {
+    let msg_id = anthropic_response
+        .get("id")
+        .cloned()
+        .unwrap_or(serde_json::json!("msg_ws"));
+    let model = anthropic_response
+        .get("model")
+        .cloned()
+        .unwrap_or(serde_json::json!("unknown"));
+    let usage = anthropic_response
+        .get("usage")
+        .cloned()
+        .unwrap_or(serde_json::json!({"input_tokens": 0, "output_tokens": 0}));
+
+    // message_start
+    let message_start = serde_json::json!({
+        "type": "message_start",
+        "message": {
+            "id": msg_id,
+            "type": "message",
+            "role": "assistant",
+            "content": [],
+            "model": model,
+            "stop_reason": null,
+            "stop_sequence": null,
+            "usage": usage
+        }
+    });
+    if sender.send_data(sse_event(&message_start)).await.is_err() {
+        return;
+    }
+
+    // Emit content blocks
+    let content = anthropic_response
+        .get("content")
+        .and_then(|c| c.as_array());
+    if let Some(blocks) = content {
+        for (idx, block) in blocks.iter().enumerate() {
+            let block_type = block
+                .get("type")
+                .and_then(|t| t.as_str())
+                .unwrap_or("text");
+
+            // content_block_start
+            let start_event = serde_json::json!({
+                "type": "content_block_start",
+                "index": idx,
+                "content_block": block
+            });
+            if sender.send_data(sse_event(&start_event)).await.is_err() {
+                return;
+            }
+
+            // content_block_delta — emit the full content as a single delta
+            let delta = match block_type {
+                "text" => {
+                    let text = block.get("text").and_then(|t| t.as_str()).unwrap_or("");
+                    serde_json::json!({
+                        "type": "content_block_delta",
+                        "index": idx,
+                        "delta": {"type": "text_delta", "text": text}
+                    })
+                }
+                _ => {
+                    // For tool_use or other blocks, emit an empty text delta as placeholder
+                    serde_json::json!({
+                        "type": "content_block_delta",
+                        "index": idx,
+                        "delta": {"type": "text_delta", "text": ""}
+                    })
+                }
+            };
+            if sender.send_data(sse_event(&delta)).await.is_err() {
+                return;
+            }
+
+            // content_block_stop
+            let stop_event = serde_json::json!({
+                "type": "content_block_stop",
+                "index": idx
+            });
+            if sender.send_data(sse_event(&stop_event)).await.is_err() {
+                return;
+            }
+        }
+    }
+
+    // message_delta with stop_reason and usage
+    let stop_reason = anthropic_response
+        .get("stop_reason")
+        .cloned()
+        .unwrap_or(serde_json::json!("end_turn"));
+    let message_delta = serde_json::json!({
+        "type": "message_delta",
+        "delta": {
+            "stop_reason": stop_reason,
+            "stop_sequence": null
+        },
+        "usage": usage
+    });
+    if sender.send_data(sse_event(&message_delta)).await.is_err() {
+        return;
+    }
+
+    // message_stop
+    let message_stop = serde_json::json!({"type": "message_stop"});
+    let _ = sender.send_data(sse_event(&message_stop)).await;
 }
 
 /// Helper to format an Anthropic SSE event with proper event type and delimiters
