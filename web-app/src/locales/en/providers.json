@@ -61,7 +61,7 @@
   "enterNameForProvider": "Enter name for provider",
   "apiKeys": {
     "title": "API keys",
-    "description": "Enter your primary API key. Optionally add fallback keys in Advanced; Jan retries the next key on 401/403/429.",
+    "description": "Enter your API key. You can add extra keys in Advanced, and Jan will try the next one automatically if a key fails.",
     "placeholder": "sk-…\nsk-…",
     "primaryPlaceholder": "Enter primary API key",
     "keyPlaceholder": "Enter API key",
