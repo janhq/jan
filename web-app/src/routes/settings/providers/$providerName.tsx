@@ -889,50 +889,60 @@ function ProviderDetail() {
                               return (
                                 <div
                                   key={idx}
-                                  className="flex items-center gap-2"
+                                  className="grid grid-cols-[2.5rem_1fr_2rem] gap-x-2 gap-y-1 items-center"
                                 >
-                                  <div className="w-10 shrink-0 text-right text-xs font-mono text-muted-foreground">
+                                  <div className="text-right text-xs font-mono text-muted-foreground">
                                     #{keyIndex}
                                   </div>
 
-                                  <Input
-                                    type="password"
-                                    className="font-mono flex-1 min-w-0"
-                                    placeholder={t('providers:apiKeys.keyPlaceholder')}
-                                    value={keyValue}
-                                    onChange={(e) => {
-                                      setKeyAtIndex(idx, e.target.value)
-                                    }}
-                                    onBlur={commitApiKeysDraft}
-                                    spellCheck={false}
-                                    autoComplete="off"
-                                  />
-
-                                  {rowResult && (
-                                    <span
-                                      className={cn(
-                                        'text-xs font-medium shrink-0',
-                                        getStatusClass(rowResult.status)
-                                      )}
-                                      title={rowResult.detail}
-                                    >
-                                      {getStatusLabel(rowResult.status)}
-                                    </span>
-                                  )}
-
-                                  {idx !== 0 && (
-                                    <Button
-                                      size="icon-xs"
-                                      variant="outline"
-                                      onClick={() => {
-                                        setKeyCheckResults([])
-                                        removeKeyLine(idx)
+                                  <div className="min-w-0">
+                                    <Input
+                                      type="password"
+                                      className="font-mono w-full"
+                                      placeholder={t('providers:apiKeys.keyPlaceholder')}
+                                      value={keyValue}
+                                      onChange={(e) => {
+                                        setKeyAtIndex(idx, e.target.value)
                                       }}
-                                      title={t('providers:apiKeys.removeKey')}
-                                    >
-                                      -
-                                    </Button>
-                                  )}
+                                      onBlur={commitApiKeysDraft}
+                                      spellCheck={false}
+                                      autoComplete="off"
+                                    />
+                                  </div>
+
+                                  <div className="flex justify-end">
+                                    {idx !== 0 ? (
+                                      <Button
+                                        size="icon-xs"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setKeyCheckResults([])
+                                          removeKeyLine(idx)
+                                        }}
+                                        title={t('providers:apiKeys.removeKey')}
+                                      >
+                                        -
+                                      </Button>
+                                    ) : (
+                                      <span aria-hidden>&nbsp;</span>
+                                    )}
+                                  </div>
+
+                                  <div aria-hidden />
+                                  <div className="min-w-0">
+                                    {rowResult && (
+                                      <div
+                                        className={cn(
+                                          'text-right text-xs font-medium',
+                                          getStatusClass(rowResult.status)
+                                        )}
+                                        title={rowResult.detail}
+                                      >
+                                        {getStatusLabel(rowResult.status)}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div aria-hidden />
                                 </div>
                               )
                             })}
