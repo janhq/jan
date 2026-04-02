@@ -19,6 +19,13 @@ use crate::core::{
     state::{ProviderConfig, ServerHandle, SharedMcpServers},
 };
 
+fn http_status_indicates_api_key_retry(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
+    )
+}
+
 /// Transform Anthropic /messages API body to OpenAI /chat/completions body
 fn transform_anthropic_to_openai(body: &serde_json::Value) -> Option<serde_json::Value> {
     let model = body.get("model")?.as_str()?;
@@ -542,7 +549,7 @@ async fn resolve_upstream_for_model(
     provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
     sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
     mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
-) -> Result<(String, Option<String>), String> {
+) -> Result<(String, Vec<String>), String> {
     let destination_path = "/chat/completions";
 
     // Prefer remote provider if model is registered there.
@@ -570,7 +577,7 @@ async fn resolve_upstream_for_model(
                 .clone()
                 .ok_or_else(|| format!("Missing base_url for provider '{provider}'"))?;
             let url = format!("{}{}", api_url, destination_path);
-            return Ok((url, provider_cfg.api_key.clone()));
+            return Ok((url, provider_cfg.bearer_key_chain()));
         }
     }
 
@@ -580,7 +587,7 @@ async fn resolve_upstream_for_model(
         let target_port = session.info.port;
         return Ok((
             format!("http://127.0.0.1:{target_port}/v1{destination_path}"),
-            Some(session.info.api_key.clone()),
+            vec![session.info.api_key.clone()],
         ));
     }
     drop(sessions_guard);
@@ -590,7 +597,7 @@ async fn resolve_upstream_for_model(
         let target_port = info.info.port;
         return Ok((
             format!("http://127.0.0.1:{target_port}/v1{destination_path}"),
-            Some(info.info.api_key.clone()),
+            vec![info.info.api_key.clone()],
         ));
     }
 
@@ -737,33 +744,53 @@ async fn execute_mcp_tool_calls(
 async fn call_openai_chat_completions(
     client: &Client,
     upstream_url: &str,
-    api_key: &Option<String>,
+    api_keys: &[String],
     body: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let mut req = client
-        .post(upstream_url)
-        .header("Content-Type", "application/json")
-        .header("Accept-Encoding", "identity");
+    let attempts: Vec<Option<&str>> = if api_keys.is_empty() {
+        vec![None]
+    } else {
+        api_keys.iter().map(|s| Some(s.as_str())).collect()
+    };
 
-    if let Some(key) = api_key {
-        req = req.header("Authorization", format!("Bearer {key}"));
+    let mut last_err = String::new();
+    for (i, key_ref) in attempts.iter().enumerate() {
+        let mut req = client
+            .post(upstream_url)
+            .header("Content-Type", "application/json")
+            .header("Accept-Encoding", "identity");
+
+        if let Some(key) = key_ref {
+            req = req.header("Authorization", format!("Bearer {key}"));
+        }
+
+        let resp = req
+            .body(body.to_string())
+            .send()
+            .await
+            .map_err(|e| format!("Upstream request failed: {e}"))?;
+
+        let status = resp.status();
+        let text = resp.text().await.map_err(|e| e.to_string())?;
+
+        if status.is_success() {
+            return serde_json::from_str::<serde_json::Value>(&text).map_err(|e| {
+                format!("Failed to parse upstream JSON: {e}. Body: {text}")
+            });
+        }
+
+        last_err = format!("Upstream returned HTTP {status}: {text}");
+        if http_status_indicates_api_key_retry(status) && i + 1 < attempts.len() {
+            log::warn!(
+                "OpenAI completion: HTTP {status} with API key index {i}, trying next key"
+            );
+            continue;
+        }
+
+        return Err(last_err);
     }
 
-    let resp = req
-        .body(body.to_string())
-        .send()
-        .await
-        .map_err(|e| format!("Upstream request failed: {e}"))?;
-
-    let status = resp.status();
-    let text = resp.text().await.map_err(|e| e.to_string())?;
-
-    if !status.is_success() {
-        return Err(format!("Upstream returned HTTP {status}: {text}"));
-    }
-
-    serde_json::from_str::<serde_json::Value>(&text)
-        .map_err(|e| format!("Failed to parse upstream JSON: {e}. Body: {text}"))
+    Err(last_err)
 }
 
 async fn run_server_side_openai_orchestration(
@@ -821,7 +848,7 @@ async fn run_server_side_openai_orchestration(
     let (openai_tools, tool_to_server) =
         collect_mcp_openai_tools(&mcp_servers, &mcp_settings).await?;
 
-    let (upstream_url, session_api_key) = resolve_upstream_for_model(
+    let (upstream_url, session_api_keys) = resolve_upstream_for_model(
         &model_id,
         provider_configs.clone(),
         sessions.clone(),
@@ -860,7 +887,7 @@ async fn run_server_side_openai_orchestration(
         let completion = call_openai_chat_completions(
             client,
             &upstream_url,
-            &session_api_key,
+            &session_api_keys,
             &request_value,
         )
         .await?;
@@ -1186,7 +1213,7 @@ async fn proxy_request(
     let destination_path = get_destination_path(original_path, &config.prefix);
 
     // Initialize variables that will be set in the match
-    let mut session_api_key: Option<String> = None;
+    let mut session_api_keys: Vec<String> = Vec::new();
     #[allow(unused_assignments)]
     let mut buffered_body: Option<Bytes> = None;
     let mut target_base_url: Option<String> = None;
@@ -1317,7 +1344,7 @@ async fn proxy_request(
                                 target_base_url = provider_cfg.base_url.clone().map(|url| {
                                     format!("{}{}", url.trim_end_matches('/'), "/messages")
                                 });
-                                session_api_key = provider_cfg.api_key.clone();
+                                session_api_keys = provider_cfg.bearer_key_chain();
                             }
                         } else {
                             // No remote provider, try local sessions
@@ -1336,12 +1363,12 @@ async fn proxy_request(
 
                             if let Some(session) = llama_session {
                                 let target_port = session.info.port;
-                                session_api_key = Some(session.info.api_key.clone());
+                                session_api_keys = vec![session.info.api_key.clone()];
                                 target_base_url =
                                     Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
                             } else if let Some(info) = mlx_session_info {
                                 let target_port = info.port;
-                                session_api_key = Some(info.api_key.clone());
+                                session_api_keys = vec![info.api_key.clone()];
                                 target_base_url =
                                     Some(format!("http://127.0.0.1:{}/v1/messages", target_port));
                             } else {
@@ -1576,7 +1603,7 @@ async fn proxy_request(
                     }
                 };
 
-            let (upstream_url, session_api_key) = match resolve_upstream_for_model(
+            let (upstream_url, session_api_keys) = match resolve_upstream_for_model(
                 &model_id,
                 provider_configs.clone(),
                 sessions.clone(),
@@ -1628,7 +1655,7 @@ async fn proxy_request(
                 let completion = match call_openai_chat_completions(
                     &client,
                     &upstream_url,
-                    &session_api_key,
+                    &session_api_keys,
                     &request_value,
                 )
                 .await
@@ -1854,11 +1881,7 @@ async fn proxy_request(
                                 } else {
                                     target_base_url = None;
                                 }
-                                if let Some(api_key_value) = provider_cfg.api_key.clone() {
-                                    session_api_key = Some(api_key_value);
-                                } else {
-                                    session_api_key = None;
-                                }
+                                session_api_keys = provider_cfg.bearer_key_chain();
                             } else {
                                 log::error!("Provider config not found for '{provider}'");
                             }
@@ -1913,14 +1936,14 @@ async fn proxy_request(
 
                             if let Some(session) = llama_session {
                                 let target_port = session.info.port;
-                                session_api_key = Some(session.info.api_key.clone());
+                                session_api_keys = vec![session.info.api_key.clone()];
                                 log::debug!("Found llama.cpp session for model_id {model_id}");
                                 target_base_url = Some(format!(
                                     "http://127.0.0.1:{target_port}/v1{destination_path}"
                                 ));
                             } else if let Some(info) = mlx_session {
                                 let target_port = info.port;
-                                session_api_key = Some(info.api_key.clone());
+                                session_api_keys = vec![info.api_key.clone()];
                                 log::debug!("Found MLX session for model_id {model_id}");
                                 target_base_url = Some(format!(
                                     "http://127.0.0.1:{target_port}/v1{destination_path}"
@@ -2220,47 +2243,63 @@ async fn proxy_request(
         "Proxying request to model server at base URL {upstream_url}, path: {destination_path}"
     );
 
-    let mut outbound_req = client.request(method.clone(), upstream_url);
-
-    for (name, value) in headers.iter() {
-        if name != hyper::header::HOST && name != hyper::header::AUTHORIZATION {
-            outbound_req = outbound_req.header(name, value);
+    let body_bytes_for_proxy = match buffered_body.clone() {
+        Some(b) => b,
+        None => {
+            log::error!("Internal logic error: Request reached proxy stage without a buffered body.");
+            let mut error_response = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
+            error_response = add_cors_headers_with_host_and_origin(
+                error_response,
+                &host_header,
+                &origin_header,
+                &config.trusted_hosts,
+            );
+            return Ok(error_response
+                .body(Body::from("Internal server error: unhandled request path"))
+                .unwrap());
         }
-    }
+    };
 
-    let session_api_key_for_req = session_api_key.clone();
-    let buffered_body_for_req = buffered_body.clone();
-
-    if let Some(key) = session_api_key_for_req {
-        outbound_req = outbound_req.header("Authorization", format!("Bearer {key}"));
+    let key_attempts: Vec<Option<String>> = if session_api_keys.is_empty() {
+        vec![None]
     } else {
-        log::debug!("No session API key available for this request");
-    }
-
-    let outbound_req_with_body = if let Some(bytes) = buffered_body_for_req {
-        outbound_req.body(bytes)
-    } else {
-        log::error!("Internal logic error: Request reached proxy stage without a buffered body.");
-        let mut error_response = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
-        error_response = add_cors_headers_with_host_and_origin(
-            error_response,
-            &host_header,
-            &origin_header,
-            &config.trusted_hosts,
-        );
-        return Ok(error_response
-            .body(Body::from("Internal server error: unhandled request path"))
-            .unwrap());
+        session_api_keys.iter().cloned().map(Some).collect()
     };
 
     // For Anthropic /messages, we need to track if we should transform the response
     let destination_path = path.clone();
 
-    match outbound_req_with_body.send().await {
+    for (key_idx, key_opt) in key_attempts.iter().enumerate() {
+        let mut outbound_req = client.request(method.clone(), upstream_url.clone());
+
+        for (name, value) in headers.iter() {
+            if name != hyper::header::HOST && name != hyper::header::AUTHORIZATION {
+                outbound_req = outbound_req.header(name, value);
+            }
+        }
+
+        if let Some(key) = key_opt {
+            outbound_req = outbound_req.header("Authorization", format!("Bearer {key}"));
+        } else {
+            log::debug!("No session API key for this attempt");
+        }
+
+        let outbound_req_with_body = outbound_req.body(body_bytes_for_proxy.clone());
+
+        match outbound_req_with_body.send().await {
         Ok(response) => {
             let status = response.status();
 
             let is_error = !status.is_success();
+
+            if is_error
+                && http_status_indicates_api_key_retry(status)
+                && key_idx + 1 < key_attempts.len()
+            {
+                let _ = response.text().await;
+                log::warn!("Upstream {status} for API key index {key_idx}, trying next key");
+                continue;
+            }
 
             // For Anthropic /messages requests with errors, try /chat/completions
             if is_error && is_anthropic_messages {
@@ -2278,8 +2317,8 @@ async fn proxy_request(
                         .trim_end_matches('/')
                         .to_string()
                 });
-                let fallback_api_key = session_api_key.clone();
-                let fallback_body = buffered_body.clone();
+                let fallback_api_key = key_opt.clone();
+                let fallback_body = Some(body_bytes_for_proxy.clone());
 
                 // Transform body to OpenAI format for fallback
                 if let Some((url, openai_body)) = fallback_url.zip(fallback_body).and_then(|(url, body)| {
@@ -2451,7 +2490,7 @@ async fn proxy_request(
                 log::debug!("Streaming complete to client");
             });
 
-            Ok(builder.body(body).unwrap())
+            return Ok(builder.body(body).unwrap());
         }
         Err(e) => {
             let error_msg = format!("Proxy request to model failed: {e}");
@@ -2463,9 +2502,22 @@ async fn proxy_request(
                 &origin_header,
                 &config.trusted_hosts,
             );
-            Ok(error_response.body(Body::from(error_msg)).unwrap())
+            return Ok(error_response.body(Body::from(error_msg)).unwrap());
         }
     }
+    }
+
+    log::error!("Internal error: proxy key loop exited without a response");
+    let mut error_response = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
+    error_response = add_cors_headers_with_host_and_origin(
+        error_response,
+        &host_header,
+        &origin_header,
+        &config.trusted_hosts,
+    );
+    Ok(error_response
+        .body(Body::from("Internal proxy error"))
+        .unwrap())
 }
 
 fn add_cors_headers_with_host_and_origin(
