@@ -8,7 +8,6 @@
   },
   "platforms": ["linux", "macOS", "windows"],
   "permissions": [
-    "core:default",
     "core:webview:allow-set-webview-zoom",
     "core:window:allow-start-dragging",
     "core:window:allow-set-theme",
