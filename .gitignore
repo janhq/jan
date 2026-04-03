@@ -62,7 +62,6 @@ src-tauri/plugins/tauri-plugin-foundation-models/swift-server/Package.resolved
 
 ## cargo
 target
-Cargo.lock
 src-tauri/resources/
 
 ## test
