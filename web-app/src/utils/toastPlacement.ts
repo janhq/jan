@@ -34,8 +34,6 @@ export function getToastOffset(
   position: NotificationPosition
 ): NonNullable<ToasterProps['offset']> {
   const tauriTopSafe = IS_TAURI ? TAURI_DRAG_REGION_PX : 0
-  // Keep right inset minimal. Caption controls are handled by the top drag-safe inset.
-  const winTopRightExtraRight = 0
 
   switch (position) {
     case 'top-left':
@@ -43,7 +41,7 @@ export function getToastOffset(
     case 'top-right':
       return {
         top: BASE_MARGIN + tauriTopSafe,
-        right: BASE_MARGIN + winTopRightExtraRight,
+        right: BASE_MARGIN,
       }
     case 'bottom-left':
       return { bottom: BASE_MARGIN, left: BASE_MARGIN }

@@ -140,12 +140,17 @@ const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
   }
 }
 
-const interfaceStorage = createJSONStorage<InterfaceSettingsState>(() =>
+const interfaceStorage = createJSONStorage<InterfaceSettingsPersistedSlice>(() =>
   localStorage
 )
 
 export const useInterfaceSettings = create<InterfaceSettingsState>()(
-  persist(
+  persist<
+    InterfaceSettingsState,
+    [],
+    [],
+    InterfaceSettingsPersistedSlice
+  >(
     (set) => {
       const defaultState = createDefaultInterfaceValues()
       return {
@@ -195,6 +200,11 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
     {
       name: localStorageKey.settingInterface,
       storage: interfaceStorage,
+      partialize: (state) => ({
+        fontSize: state.fontSize,
+        accentColor: state.accentColor,
+        notificationPosition: state.notificationPosition,
+      }),
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {
         if (state) {
