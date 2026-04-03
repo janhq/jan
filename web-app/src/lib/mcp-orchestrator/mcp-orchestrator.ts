@@ -190,7 +190,7 @@ export class MCPOrchestrator {
     if (llmInvoked && llmUsage !== undefined) {
       routedTelemetry.llmRouterUsage = llmUsage
     }
-    emit?.(routedTelemetry)
+    try { emit?.(routedTelemetry) } catch { /* telemetry must not crash routing */ }
 
     return this.filterDisabled(tools, disabledKeys)
   }
