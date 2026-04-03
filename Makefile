@@ -23,8 +23,8 @@ endif
 all:
 	@echo "Specify a target to run"
 
-# Installs yarn dependencies and s core and extensions
-install-and-:
+# Installs yarn dependencies and builds core and extensions
+install-and-build:
 ifeq ($(DETECTED_OS),Windows)
 	echo "skip"
 else ifeq ($(DETECTED_OS),Linux)
