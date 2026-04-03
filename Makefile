@@ -67,7 +67,12 @@ dev: install-and-build
 	yarn download:bin
 	make build-mlx-server-if-exists
 	make build-cli-dev
+	@test -d web-app/dist || yarn workspace @janhq/web-app build
+ifeq ($(shell uname -s),Darwin)
+	yarn dev:tauri:no-fm
+else
 	yarn dev
+endif
 
 # Web application targets
 install-web-app:
@@ -217,12 +222,16 @@ else
 endif
 
 # Debug build for local dev (faster, native arch only)
+# Darwin: omit foundation-models (Swift FoundationModels needs macOS 26+ / matching Xcode SDK).
 build-cli-dev:
-	$(call MKDIR,'src-tauri/resources/bin')	
+	$(call MKDIR,'src-tauri/resources/bin')
+ifeq ($(shell uname -s),Darwin)
+	cd src-tauri && cargo build --no-default-features --features "cli,test-tauri,tauri/common-controls-v6,tauri/custom-protocol" --bin jan-cli
+else ifeq ($(DETECTED_OS),Windows)
 	cd src-tauri && cargo build --features cli --bin jan-cli
-ifeq ($(DETECTED_OS),Windows)
 	copy src-tauri\target\debug\jan-cli.exe src-tauri\resources\bin\jan-cli.exe
 else
+	cd src-tauri && cargo build --features cli --bin jan-cli
 	install -m755 src-tauri/target/debug/jan-cli src-tauri/resources/bin/jan-cli
 endif
 
