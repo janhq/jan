@@ -21,6 +21,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/constants/providers'
+import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { ChevronsUpDown } from 'lucide-react'
@@ -276,7 +277,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         if (
           provider &&
           provider.provider !== 'llamacpp' &&
-          !provider.api_key?.length &&
+          !providerHasRemoteApiKeys(provider) &&
           (isPredefined || provider.models.length === 0)
         )
           return
@@ -360,10 +361,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             e.provider.includes(b.provider)
           )
           const aHasApiKeyOrCustomModel =
-            (a.api_key?.length ?? 0) > 0 ||
+            providerHasRemoteApiKeys(a) ||
             (!aIsPredefined && a.models.length > 0)
           const bHasApiKeyOrCustomModel =
-            (b.api_key?.length ?? 0) > 0 ||
+            providerHasRemoteApiKeys(b) ||
             (!bIsPredefined && b.models.length > 0)
           // Providers with API keys or custom with models filled second
           if (aHasApiKeyOrCustomModel && !bHasApiKeyOrCustomModel) return -1

@@ -6,6 +6,7 @@ import { useModelProvider } from './useModelProvider'
 import { useDownloadStore } from './useDownloadStore'
 import { useLatestJanModel } from './useLatestJanModel'
 import { predefinedProviders } from '@/constants/providers'
+import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
 
 export type JanModelPromptDismissedState = {
   dismissedModelName: string | null
@@ -58,7 +59,7 @@ export const useJanModelPrompt = () => {
       return provider.models.length > 0
     }
     return (
-      provider.api_key?.length ||
+      providerHasRemoteApiKeys(provider) ||
       (provider.provider === 'llamacpp' && provider.models.length) ||
       (provider.provider === 'jan' && provider.models.length)
     )
