@@ -23,8 +23,8 @@ endif
 all:
 	@echo "Specify a target to run"
 
-# Installs yarn dependencies and builds core and extensions
-install-and-build:
+# Installs yarn dependencies and s core and extensions
+install-and-:
 ifeq ($(DETECTED_OS),Windows)
 	echo "skip"
 else ifeq ($(DETECTED_OS),Linux)
@@ -130,10 +130,10 @@ endif
 	yarn build:icon
 	yarn build:mlx-server
 	make build-cli
-	cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
-	cargo test --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-	cargo test --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
-	cargo test --manifest-path src-tauri/utils/Cargo.toml
+	cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
+	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
+	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
+	cargo test --locked --manifest-path src-tauri/utils/Cargo.toml
 
 # Build MLX server (macOS Apple Silicon only) - always builds
 build-mlx-server:
@@ -185,11 +185,13 @@ else
 	@echo "Skipping MLX server build (macOS only)"
 endif
 
+CARGO_CLI_FLAGS := --locked --release --features cli --bin jan-cli
+
 # Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
 build-cli:
 ifeq ($(DETECTED_OS),Darwin)
-	cd src-tauri && cargo build --release --features cli --bin jan-cli --target aarch64-apple-darwin
-	cd src-tauri && cargo build --release --features cli --bin jan-cli --target x86_64-apple-darwin
+	cd src-tauri && cargo build $(CARGO_CLI_FLAGS) --target aarch64-apple-darwin
+	cd src-tauri && cargo build $(CARGO_CLI_FLAGS) --target x86_64-apple-darwin
 	lipo -create \
 		src-tauri/target/aarch64-apple-darwin/release/jan-cli \
 		src-tauri/target/x86_64-apple-darwin/release/jan-cli \
@@ -209,14 +211,14 @@ ifeq ($(DETECTED_OS),Darwin)
 
 	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
 else ifeq ($(DETECTED_OS),Windows)
-	cd src-tauri && cargo build --release --features cli --bin jan-cli
+	cd src-tauri && cargo build $(CARGO_CLI_FLAGS)
 	cp src-tauri/target/release/jan-cli.exe src-tauri/resources/bin/jan-cli.exe
 else
-	cd src-tauri && cargo build --release --features cli --bin jan-cli
+	cd src-tauri && cargo build $(CARGO_CLI_FLAGS)
 	cp src-tauri/target/release/jan-cli src-tauri/resources/bin/jan-cli
 endif
 
-# Debug build for local dev (faster, native arch only)
+# Debug build for local dev (faster, native arch only, without enforcing lockfile)
 build-cli-dev:
 	$(call MKDIR,'src-tauri/resources/bin')	
 	cd src-tauri && cargo build --features cli --bin jan-cli
