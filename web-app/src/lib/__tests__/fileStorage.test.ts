@@ -16,6 +16,10 @@ const mockStore = {
   save: mockSave,
 }
 
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn().mockResolvedValue('/mock/jan/data'),
+}))
+
 vi.mock('@tauri-apps/plugin-store', () => ({
   load: vi.fn().mockResolvedValue(mockStore),
 }))
@@ -82,6 +86,16 @@ describe('fileStorage', () => {
       mockSave.mockClear()
       const mod = await import('../fileStorage')
       fileStorage = mod.fileStorage
+    })
+
+    it('loads the store from the Jan data folder', async () => {
+      // Trigger store init by calling any method
+      await fileStorage.getItem('any-key')
+      const { load } = await import('@tauri-apps/plugin-store')
+      expect(load).toHaveBeenCalledWith(
+        '/mock/jan/data/settings.json',
+        { autoSave: false, defaults: {} }
+      )
     })
 
     it('setItem writes to the file store', async () => {

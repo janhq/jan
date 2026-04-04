@@ -38,8 +38,11 @@ async function ensureStore(): Promise<void> {
   }
   initPromise = (async () => {
     try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const dataFolder = await invoke<string>('get_jan_data_folder_path')
       const { load } = await import('@tauri-apps/plugin-store')
-      store = await load(STORE_FILENAME, { autoSave: false, defaults: {} })
+      const storePath = `${dataFolder}/${STORE_FILENAME}`
+      store = await load(storePath, { autoSave: false, defaults: {} })
     } catch (e) {
       console.warn(
         'File storage unavailable, falling back to localStorage:',
