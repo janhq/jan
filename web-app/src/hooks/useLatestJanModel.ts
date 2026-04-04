@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
+import { fileStorage } from '@/lib/fileStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel } from '@/services/models/types'
 
@@ -55,7 +56,7 @@ export const useLatestJanModel = create<LatestJanModelState>()(
     }),
     {
       name: localStorageKey.latestJanModel,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => fileStorage),
       partialize: (state) => ({
         model: state.model,
         lastFetchedAt: state.lastFetchedAt,

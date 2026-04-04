@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { fileStorage } from '@/lib/fileStorage'
 
 interface FavoriteModelState {
   favoriteModels: Model[]
@@ -47,7 +48,7 @@ export const useFavoriteModel = create<FavoriteModelState>()(
     }),
     {
       name: localStorageKey.favoriteModels,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => fileStorage),
     }
   )
 )

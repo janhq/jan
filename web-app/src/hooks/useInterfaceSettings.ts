@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { fileStorage } from '@/lib/fileStorage'
 import { useTheme } from './useTheme'
 import {
   getDefaultNotificationPosition,
@@ -141,7 +142,7 @@ const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
 }
 
 const interfaceStorage = createJSONStorage<InterfaceSettingsPersistedSlice>(() =>
-  localStorage
+  fileStorage
 )
 
 export const useInterfaceSettings = create<InterfaceSettingsState>()(
