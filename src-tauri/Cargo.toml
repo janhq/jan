@@ -178,3 +178,4 @@ debug = false       # No debug info
 debug-assertions = false  # No debug assertions
 incremental = false # Disable incremental compilation for release
 rpath = false       # Don't include rpath
+
