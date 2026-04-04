@@ -688,7 +688,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
         // Stdio servers (especially via npx mcp-remote) may need extra time
         // after serve() completes before the transport is ready for JSON-RPC.
         const MAX_TOOL_VERIFY_ATTEMPTS: u32 = 3;
-        const TOOL_VERIFY_TIMEOUT_SECS: u64 = 5;
+        const TOOL_VERIFY_TIMEOUT_SECS: u64 = 2;
         const TOOL_VERIFY_BACKOFF_MS: u64 = 1000;
 
         for attempt in 1..=MAX_TOOL_VERIFY_ATTEMPTS {
