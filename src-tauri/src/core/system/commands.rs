@@ -899,7 +899,7 @@ mod tests {
         assert!(!exists_any(d, JAN_DATA_DIRS_CONVERSATIONS));
         assert!(exists_all(d, JAN_DATA_DIRS_MODELS));
         assert!(exists_all(d, JAN_DATA_DIRS_COMMON));
-        assert!(d.join("store.json").exists());
+        assert!(d.join("settings.json").exists());
         assert!(d.join("mcp_config.json").exists());
     }
 
@@ -915,7 +915,7 @@ mod tests {
         assert!(!exists_any(d, JAN_DATA_FILES_CONFIGS));
         assert!(exists_all(d, JAN_DATA_DIRS_CONVERSATIONS));
         assert!(exists_all(d, JAN_DATA_DIRS_COMMON));
-        assert!(d.join("store.json").exists());
+        assert!(d.join("settings.json").exists());
     }
 
     #[test]
@@ -929,19 +929,19 @@ mod tests {
         assert!(!exists_any(d, JAN_DATA_DIRS_COMMON));
         assert!(exists_all(d, JAN_DATA_DIRS_CONVERSATIONS));
         assert!(exists_all(d, JAN_DATA_DIRS_MODELS));
-        assert!(d.join("store.json").exists());
+        assert!(d.join("settings.json").exists());
         assert!(d.join("mcp_config.json").exists());
     }
 
     #[test]
-    fn test_delete_settings_only_removes_store_json() {
+    fn test_delete_settings_only_removes_settings_json() {
         let tmp = tempdir().unwrap();
         let d = tmp.path();
         create_all_data(d);
 
         delete_settings(d);
 
-        assert!(!d.join("store.json").exists());
+        assert!(!d.join("settings.json").exists());
         assert!(exists_all(d, JAN_DATA_DIRS_CONVERSATIONS));
         assert!(exists_all(d, JAN_DATA_DIRS_MODELS));
         assert!(exists_all(d, JAN_DATA_DIRS_COMMON));
@@ -949,7 +949,7 @@ mod tests {
     }
 
     #[test]
-    fn test_store_json_survives_when_keeping_any_category() {
+    fn test_settings_json_survives_when_keeping_any_category() {
         // Simulate: keep_app_data=true, keep_models_and_configs=false
         let tmp = tempdir().unwrap();
         let d = tmp.path();
@@ -957,8 +957,8 @@ mod tests {
 
         delete_common_data(d);
         delete_models_and_configs(d);
-        // store.json should NOT be deleted because keep_app_data=true
-        assert!(d.join("store.json").exists());
+        // settings.json should NOT be deleted because keep_app_data=true
+        assert!(d.join("settings.json").exists());
 
         // Simulate: keep_app_data=false, keep_models_and_configs=true
         let tmp2 = tempdir().unwrap();
@@ -967,12 +967,12 @@ mod tests {
 
         delete_common_data(d2);
         delete_conversations(d2);
-        // store.json should NOT be deleted because keep_models_and_configs=true
-        assert!(d2.join("store.json").exists());
+        // settings.json should NOT be deleted because keep_models_and_configs=true
+        assert!(d2.join("settings.json").exists());
     }
 
     #[test]
-    fn test_full_wipe_deletes_store_json() {
+    fn test_full_wipe_deletes_settings_json() {
         let tmp = tempdir().unwrap();
         let d = tmp.path();
         create_all_data(d);
@@ -982,7 +982,7 @@ mod tests {
         delete_models_and_configs(d);
         delete_settings(d);
 
-        assert!(!d.join("store.json").exists());
+        assert!(!d.join("settings.json").exists());
         assert!(!exists_any(d, JAN_DATA_SUBDIRS));
         assert!(!exists_any(d, JAN_DATA_FILES));
     }
