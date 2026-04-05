@@ -8,7 +8,7 @@ use crate::core::app::commands::{
 };
 use crate::core::app::constants::{
     JAN_DATA_DIRS_COMMON, JAN_DATA_DIRS_CONVERSATIONS, JAN_DATA_DIRS_MODELS,
-    JAN_DATA_FILES_COMMON, JAN_DATA_FILES_CONFIGS,
+    JAN_DATA_FILES_CONFIGS, JAN_DATA_FILES_SETTINGS,
 };
 use crate::core::app::models::AppConfiguration;
 use crate::core::mcp::helpers::{stop_mcp_servers_with_context, ShutdownContext};
@@ -59,13 +59,19 @@ fn delete_models_and_configs(data_folder: &std::path::Path) {
     }
 }
 
-/// Delete extensions, logs, caches — always cleaned during any reset
+/// Delete extensions, logs, caches — always cleaned during any reset.
 fn delete_common_data(data_folder: &std::path::Path) {
     log::info!("Deleting common data (extensions, logs, caches)");
     for dir in JAN_DATA_DIRS_COMMON {
         remove_dir(data_folder, dir);
     }
-    for file in JAN_DATA_FILES_COMMON {
+}
+
+/// Delete cross-category settings (store.json) — only during a full wipe
+/// when the user is not keeping any data.
+fn delete_settings(data_folder: &std::path::Path) {
+    log::info!("Deleting cross-category settings (store.json)");
+    for file in JAN_DATA_FILES_SETTINGS {
         remove_file(data_folder, file);
     }
 }
@@ -177,6 +183,11 @@ pub fn factory_reset<R: Runtime>(
             // Delete models and configs unless user chose to keep them
             if !keep_models_and_configs {
                 delete_models_and_configs(&data_folder);
+            }
+
+            // store.json spans all categories; only wipe it when nothing is kept
+            if !keep_app_data && !keep_models_and_configs {
+                delete_settings(&data_folder);
             }
         }
 
@@ -850,4 +861,150 @@ fn remove_from_path_windows(dir: &PathBuf) -> Result<(), String> {
         log::info!("Removed {} from Windows user PATH", dir_str);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::app::constants::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    fn create_all_data(dir: &std::path::Path) {
+        for subdir in JAN_DATA_SUBDIRS {
+            fs::create_dir_all(dir.join(subdir)).unwrap();
+            fs::write(dir.join(subdir).join("dummy.txt"), "data").unwrap();
+        }
+        for file in JAN_DATA_FILES {
+            fs::write(dir.join(file), "data").unwrap();
+        }
+    }
+
+    fn exists_any(dir: &std::path::Path, names: &[&str]) -> bool {
+        names.iter().any(|n| dir.join(n).exists())
+    }
+
+    fn exists_all(dir: &std::path::Path, names: &[&str]) -> bool {
+        names.iter().all(|n| dir.join(n).exists())
+    }
+
+    #[test]
+    fn test_delete_conversations_only_removes_conversation_dirs() {
+        let tmp = tempdir().unwrap();
+        let d = tmp.path();
+        create_all_data(d);
+
+        delete_conversations(d);
+
+        assert!(!exists_any(d, JAN_DATA_DIRS_CONVERSATIONS));
+        assert!(exists_all(d, JAN_DATA_DIRS_MODELS));
+        assert!(exists_all(d, JAN_DATA_DIRS_COMMON));
+        assert!(d.join("store.json").exists());
+        assert!(d.join("mcp_config.json").exists());
+    }
+
+    #[test]
+    fn test_delete_models_and_configs_only_removes_model_dirs_and_config_files() {
+        let tmp = tempdir().unwrap();
+        let d = tmp.path();
+        create_all_data(d);
+
+        delete_models_and_configs(d);
+
+        assert!(!exists_any(d, JAN_DATA_DIRS_MODELS));
+        assert!(!exists_any(d, JAN_DATA_FILES_CONFIGS));
+        assert!(exists_all(d, JAN_DATA_DIRS_CONVERSATIONS));
+        assert!(exists_all(d, JAN_DATA_DIRS_COMMON));
+        assert!(d.join("store.json").exists());
+    }
+
+    #[test]
+    fn test_delete_common_data_only_removes_common_dirs() {
+        let tmp = tempdir().unwrap();
+        let d = tmp.path();
+        create_all_data(d);
+
+        delete_common_data(d);
+
+        assert!(!exists_any(d, JAN_DATA_DIRS_COMMON));
+        assert!(exists_all(d, JAN_DATA_DIRS_CONVERSATIONS));
+        assert!(exists_all(d, JAN_DATA_DIRS_MODELS));
+        assert!(d.join("store.json").exists());
+        assert!(d.join("mcp_config.json").exists());
+    }
+
+    #[test]
+    fn test_delete_settings_only_removes_store_json() {
+        let tmp = tempdir().unwrap();
+        let d = tmp.path();
+        create_all_data(d);
+
+        delete_settings(d);
+
+        assert!(!d.join("store.json").exists());
+        assert!(exists_all(d, JAN_DATA_DIRS_CONVERSATIONS));
+        assert!(exists_all(d, JAN_DATA_DIRS_MODELS));
+        assert!(exists_all(d, JAN_DATA_DIRS_COMMON));
+        assert!(d.join("mcp_config.json").exists());
+    }
+
+    #[test]
+    fn test_store_json_survives_when_keeping_any_category() {
+        // Simulate: keep_app_data=true, keep_models_and_configs=false
+        let tmp = tempdir().unwrap();
+        let d = tmp.path();
+        create_all_data(d);
+
+        delete_common_data(d);
+        delete_models_and_configs(d);
+        // store.json should NOT be deleted because keep_app_data=true
+        assert!(d.join("store.json").exists());
+
+        // Simulate: keep_app_data=false, keep_models_and_configs=true
+        let tmp2 = tempdir().unwrap();
+        let d2 = tmp2.path();
+        create_all_data(d2);
+
+        delete_common_data(d2);
+        delete_conversations(d2);
+        // store.json should NOT be deleted because keep_models_and_configs=true
+        assert!(d2.join("store.json").exists());
+    }
+
+    #[test]
+    fn test_full_wipe_deletes_store_json() {
+        let tmp = tempdir().unwrap();
+        let d = tmp.path();
+        create_all_data(d);
+
+        delete_common_data(d);
+        delete_conversations(d);
+        delete_models_and_configs(d);
+        delete_settings(d);
+
+        assert!(!d.join("store.json").exists());
+        assert!(!exists_any(d, JAN_DATA_SUBDIRS));
+        assert!(!exists_any(d, JAN_DATA_FILES));
+    }
+
+    #[test]
+    fn test_delete_on_nonexistent_dirs_does_not_panic() {
+        let tmp = tempdir().unwrap();
+        let d = tmp.path();
+        // Nothing created — should not panic
+        delete_conversations(d);
+        delete_models_and_configs(d);
+        delete_common_data(d);
+        delete_settings(d);
+    }
+
+    #[test]
+    fn test_is_safe_to_delete() {
+        assert!(!is_safe_to_delete(std::path::Path::new("/")));
+        assert!(!is_safe_to_delete(std::path::Path::new("/home")));
+        assert!(is_safe_to_delete(std::path::Path::new("/home/user/jan")));
+        assert!(is_safe_to_delete(std::path::Path::new(
+            "/home/user/.local/share/jan"
+        )));
+    }
 }

@@ -7,31 +7,16 @@ import { AppConfiguration } from '@janhq/core'
 import type { FactoryResetOptions, LogEntry } from './types'
 import { DefaultAppService } from './default'
 
-const APP_DATA_KEYS = [
-  'threads',
-  'messages',
-  'thread-management',
-]
-
-const MODELS_AND_CONFIG_KEYS = [
-  'model-provider',
-  'model-sources',
-  'setting-local-api-server',
-  'setting-proxy-config',
-  'setting-hardware',
-  'setting-vulkan',
-  'favorite-models',
-  'last-used-model',
-  'last-used-assistant',
-  'default-assistant-id',
-  'tool-approval',
-  'tool-availability',
-  'mcp-global-permissions',
-  'agent-mode',
-  'claude-code-helper-models',
-]
-
 export class TauriAppService extends DefaultAppService {
+  /**
+   * Factory reset with optional data preservation.
+   *
+   * User settings are persisted to `settings.json` via @tauri-apps/plugin-store
+   * (see #7821). The Rust `factory_reset` command conditionally deletes
+   * directories, config files, and `settings.json` based on the keep flags.
+   * No frontend snapshot/restore is needed — the file store is preserved or
+   * wiped on disk by the Rust side.
+   */
   async factoryReset(options?: FactoryResetOptions): Promise<void> {
     const { EngineManager } = await import('@janhq/core')
     for (const [, engine] of EngineManager.instance().engines) {
@@ -44,48 +29,10 @@ export class TauriAppService extends DefaultAppService {
     const keepAppData = options?.keepAppData ?? false
     const keepModelsAndConfigs = options?.keepModelsAndConfigs ?? false
 
-    const snapshot = this.snapshotLocalStorage(options)
-    window.localStorage.clear()
-    this.restoreLocalStorage(snapshot)
-
     if (!keepAppData && !keepModelsAndConfigs) {
       await invoke('factory_reset')
     } else {
       await invoke('factory_reset', { keepAppData, keepModelsAndConfigs })
-    }
-  }
-
-  private snapshotLocalStorage(
-    options?: FactoryResetOptions
-  ): [string, string][] {
-    const keepAppData = options?.keepAppData ?? false
-    const keepModelsAndConfigs = options?.keepModelsAndConfigs ?? false
-
-    if (!keepAppData && !keepModelsAndConfigs) {
-      return []
-    }
-
-    const keysToPreserve = new Set<string>()
-    if (keepAppData) {
-      APP_DATA_KEYS.forEach((k) => keysToPreserve.add(k))
-    }
-    if (keepModelsAndConfigs) {
-      MODELS_AND_CONFIG_KEYS.forEach((k) => keysToPreserve.add(k))
-    }
-
-    const snapshot: [string, string][] = []
-    for (const key of keysToPreserve) {
-      const value = window.localStorage.getItem(key)
-      if (value !== null) {
-        snapshot.push([key, value])
-      }
-    }
-    return snapshot
-  }
-
-  private restoreLocalStorage(snapshot: [string, string][]): void {
-    for (const [key, value] of snapshot) {
-      window.localStorage.setItem(key, value)
     }
   }
 

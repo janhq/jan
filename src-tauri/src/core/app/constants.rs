@@ -19,7 +19,12 @@ pub const JAN_DATA_FILES_CONFIGS: &[&str] = &["mcp_config.json"];
 
 /// Extensions, logs, and caches — always cleaned during any reset.
 pub const JAN_DATA_DIRS_COMMON: &[&str] = &["extensions", "logs", ".npx", ".uvx"];
-pub const JAN_DATA_FILES_COMMON: &[&str] = &["store.json"];
+
+/// Cross-category settings file (contains data spanning conversations, models,
+/// and UI preferences). Only deleted during a full wipe — i.e. when the user
+/// keeps neither conversations nor models/configs.
+/// After #7821, zustand stores persist to `settings.json` via @tauri-apps/plugin-store.
+pub const JAN_DATA_FILES_SETTINGS: &[&str] = &["settings.json"];
 
 /// All known data subdirectories (union of every category above).
 pub const JAN_DATA_SUBDIRS: &[&str] = &[
@@ -36,4 +41,8 @@ pub const JAN_DATA_SUBDIRS: &[&str] = &[
 ];
 
 /// All known data files (union of every file category above).
-pub const JAN_DATA_FILES: &[&str] = &["mcp_config.json", "store.json"];
+pub const JAN_DATA_FILES: &[&str] = &["mcp_config.json", "settings.json"];
+
+// NOTE: when adding new entries, place them in the appropriate category above
+// so the factory-reset logic handles them automatically. Then add them to the
+// comprehensive JAN_DATA_SUBDIRS / JAN_DATA_FILES lists as well.
