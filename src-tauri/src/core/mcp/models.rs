@@ -35,6 +35,18 @@ fn default_enable_smart_tool_routing() -> bool {
     true
 }
 
+fn default_use_lightweight_router_model() -> bool {
+    false
+}
+
+fn default_router_model_provider() -> String {
+    String::new()
+}
+
+fn default_router_model_id() -> String {
+    String::new()
+}
+
 /// Runtime MCP settings that can be adjusted via UI
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,6 +61,12 @@ pub struct McpSettings {
     pub backoff_multiplier: f64,
     #[serde(default = "default_enable_smart_tool_routing")]
     pub enable_smart_tool_routing: bool,
+    #[serde(default = "default_use_lightweight_router_model")]
+    pub use_lightweight_router_model: bool,
+    #[serde(default = "default_router_model_provider")]
+    pub router_model_provider: String,
+    #[serde(default = "default_router_model_id")]
+    pub router_model_id: String,
 }
 
 impl Default for McpSettings {
@@ -59,6 +77,9 @@ impl Default for McpSettings {
             max_restart_delay_ms: super::constants::DEFAULT_MCP_MAX_RESTART_DELAY_MS,
             backoff_multiplier: super::constants::DEFAULT_MCP_BACKOFF_MULTIPLIER,
             enable_smart_tool_routing: true,
+            use_lightweight_router_model: false,
+            router_model_provider: String::new(),
+            router_model_id: String::new(),
         }
     }
 }

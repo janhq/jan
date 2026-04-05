@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { fileStorage } from '@/lib/fileStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
 
@@ -100,17 +101,32 @@ export const useModelProvider = create<ModelProviderState>()(
                       .join(getServiceHub().path().sep()) === model.id
                 )?.settings || model.settings
               const existingModel = models.find((m) => m.id === model.id)
-              const mergedCapabilities = [
-                ...(model.capabilities || []),
-                ...(existingModel?.capabilities || []).filter(
-                  (cap) => !(model.capabilities || []).includes(cap)
-                ),
-              ]
+              const userConfiguredCapabilities =
+                (
+                  existingModel as Model & {
+                    _userConfiguredCapabilities?: boolean
+                  }
+                )?._userConfiguredCapabilities === true
+
+              // When the user set tools/vision in Edit Model, honor that list on every
+              // refresh from the engine; otherwise fresh engine data would re-add defaults.
+              const mergedCapabilities = userConfiguredCapabilities
+                ? [...(existingModel?.capabilities || [])]
+                : [
+                    ...(model.capabilities || []),
+                    ...(existingModel?.capabilities || []).filter(
+                      (cap) => !(model.capabilities || []).includes(cap)
+                    ),
+                  ]
               return {
                 ...model,
                 settings: settings,
-                capabilities: mergedCapabilities.length > 0 ? mergedCapabilities : undefined,
+                capabilities:
+                  mergedCapabilities.length > 0 ? mergedCapabilities : undefined,
                 displayName: existingModel?.displayName || model.displayName,
+                ...(userConfiguredCapabilities
+                  ? { _userConfiguredCapabilities: true as const }
+                  : {}),
               }
             })
 
@@ -132,6 +148,9 @@ export const useModelProvider = create<ModelProviderState>()(
                 }
               }),
               api_key: existingProvider?.api_key || provider.api_key,
+              api_key_fallbacks:
+                existingProvider?.api_key_fallbacks ??
+                provider.api_key_fallbacks,
               base_url: existingProvider?.base_url || provider.base_url,
               active: existingProvider ? existingProvider?.active : true,
             }
@@ -221,7 +240,7 @@ export const useModelProvider = create<ModelProviderState>()(
     }),
     {
       name: localStorageKey.modelProvider,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => fileStorage),
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as ModelProviderState & {
           providers: Array<

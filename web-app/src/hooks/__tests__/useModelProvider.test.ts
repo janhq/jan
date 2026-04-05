@@ -129,6 +129,58 @@ describe('useModelProvider - displayName functionality', () => {
     expect(provider?.models[0].displayName).toBe('My Custom Model')
   })
 
+  it('should preserve user-configured capabilities when merging setProviders refresh', () => {
+    const { result } = renderHook(() => useModelProvider())
+
+    act(() => {
+      useModelProvider.setState({
+        providers: [
+          {
+            provider: 'llamacpp',
+            active: true,
+            models: [
+              {
+                id: 'test-model.gguf',
+                capabilities: ['completion'],
+                _userConfiguredCapabilities: true,
+              },
+            ],
+            settings: [],
+          },
+        ] as any,
+        selectedProvider: 'llamacpp',
+        selectedModel: null,
+        deletedModels: [],
+      })
+    })
+
+    const freshProviders = [
+      {
+        provider: 'llamacpp',
+        active: true,
+        persist: true,
+        models: [
+          {
+            id: 'test-model.gguf',
+            capabilities: ['completion', 'vision', 'tools'],
+          },
+        ],
+        settings: [],
+      },
+    ] as any
+
+    act(() => {
+      result.current.setProviders(freshProviders)
+    })
+
+    const provider = result.current.getProviderByName('llamacpp')
+    expect(provider?.models[0].capabilities).toEqual(['completion'])
+    expect(
+      (provider?.models[0] as { _userConfiguredCapabilities?: boolean })
+        ._userConfiguredCapabilities
+    ).toBe(true)
+  })
+
   it('should provide basic functionality without breaking existing behavior', () => {
     const { result } = renderHook(() => useModelProvider())
 

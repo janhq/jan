@@ -58,6 +58,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { isPlatformTauri } from '@/lib/platform/utils'
+import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 
 /**
  * Llama.cpp timings structure from the response
@@ -157,6 +158,42 @@ function createCustomFetch(
     }
 
     return baseFetch(input, init)
+  }
+}
+
+type ApiKeyHeaderMode = 'authorization-bearer' | 'x-api-key'
+
+/** Retries with the next key when the upstream returns 401, 403, or 429. */
+function createApiKeyRotatingFetch(
+  baseFetch: typeof globalThis.fetch,
+  apiKeys: string[],
+  parameters: Record<string, unknown>,
+  headerMode: ApiKeyHeaderMode
+): typeof globalThis.fetch {
+  const inner = createCustomFetch(baseFetch, parameters)
+  if (apiKeys.length <= 1) {
+    return inner
+  }
+  return async (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> => {
+    for (let i = 0; i < apiKeys.length; i++) {
+      const key = apiKeys[i]!
+      const nextHeaders = new Headers(init?.headers as HeadersInit | undefined)
+      if (headerMode === 'authorization-bearer') {
+        nextHeaders.set('Authorization', `Bearer ${key}`)
+      } else {
+        nextHeaders.set('x-api-key', key)
+      }
+      const res = await inner(input, { ...init, headers: nextHeaders })
+      if ([401, 403, 429].includes(res.status) && i < apiKeys.length - 1) {
+        res.body?.cancel().catch(() => {})
+        continue
+      }
+      return res
+    }
+    throw new Error('API key rotation exhausted')
   }
 }
 
@@ -289,10 +326,10 @@ export class ModelFactory {
         return this.createFoundationModelsModel(modelId, provider, parameters)
 
       case 'anthropic':
-        return this.createAnthropicModel(modelId, provider)
+        return this.createAnthropicModel(modelId, provider, parameters)
 
       case 'openai':
-        return this.createOpenAIModel(modelId, provider)
+        return this.createOpenAIModel(modelId, provider, parameters)
       case 'google':
       case 'gemini':
       case 'azure':
@@ -308,7 +345,7 @@ export class ModelFactory {
         return this.createOpenAICompatibleModel(modelId, provider)
 
       case 'xai':
-        return this.createXaiModel(modelId, provider)
+        return this.createXaiModel(modelId, provider, parameters)
 
       default:
         return this.createOpenAICompatibleModel(modelId, provider, parameters)
@@ -557,11 +594,22 @@ export class ModelFactory {
       })
     }
 
+    const keyChain = providerRemoteApiKeyChain(provider)
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            parameters,
+            'x-api-key'
+          )
+        : createCustomFetch(getRuntimeFetch(), parameters)
+
     const anthropic = createAnthropic({
-      apiKey: provider.api_key,
+      apiKey: keyChain[0] ?? provider.api_key ?? '',
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(getRuntimeFetch(), parameters),
+      fetch: fetchImpl,
     })
 
     return anthropic(modelId)
@@ -584,11 +632,22 @@ export class ModelFactory {
       })
     }
 
+    const keyChain = providerRemoteApiKeyChain(provider)
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            parameters,
+            'authorization-bearer'
+          )
+        : createCustomFetch(getRuntimeFetch(), parameters)
+
     const openai = createOpenAI({
-      apiKey: provider.api_key,
+      apiKey: keyChain[0] ?? provider.api_key ?? '',
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(getRuntimeFetch(), parameters),
+      fetch: fetchImpl,
     })
 
     return openai(modelId)
@@ -611,11 +670,22 @@ export class ModelFactory {
       })
     }
 
+    const keyChain = providerRemoteApiKeyChain(provider)
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            parameters,
+            'authorization-bearer'
+          )
+        : createCustomFetch(getRuntimeFetch(), parameters)
+
     const xai = createXai({
-      apiKey: provider.api_key,
+      apiKey: keyChain[0] ?? provider.api_key ?? '',
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      fetch: createCustomFetch(getRuntimeFetch(), parameters),
+      fetch: fetchImpl,
     })
 
     return xai(modelId)
@@ -638,17 +708,27 @@ export class ModelFactory {
       })
     }
 
-    // Add authorization header if api_key is present
-    if (provider.api_key) {
-      headers['Authorization'] = `Bearer ${provider.api_key}`
+    const keyChain = providerRemoteApiKeyChain(provider)
+    if (keyChain.length === 1) {
+      headers['Authorization'] = `Bearer ${keyChain[0]}`
     }
+
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            parameters,
+            'authorization-bearer'
+          )
+        : createCustomFetch(getRuntimeFetch(), parameters)
 
     const openAICompatible = createOpenAICompatible({
       name: provider.provider,
       baseURL: provider.base_url || 'https://api.openai.com/v1',
       headers,
       includeUsage: true,
-      fetch: createCustomFetch(getRuntimeFetch(), parameters),
+      fetch: fetchImpl,
     })
 
     return openAICompatible.languageModel(modelId)
