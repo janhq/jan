@@ -145,7 +145,6 @@ const SUPPORTED_EXTENSIONS = [
   'vue',
   'svelte',
   'astro',
-  'php',
   'asp',
   'aspx',
   'jsp',
