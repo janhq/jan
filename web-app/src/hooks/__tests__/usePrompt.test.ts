@@ -1,101 +1,93 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { usePrompt } from '../usePrompt'
 
 describe('usePrompt', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    act(() => {
+      usePrompt.setState({ prompt: '', promptHistory: [], historyIndex: -1, draftPrompt: '' })
+    })
   })
 
-  it('should initialize with empty prompt', () => {
+  it('should set and clear prompt', () => {
     const { result } = renderHook(() => usePrompt())
-    
-    expect(result.current.prompt).toBe('')
-    expect(typeof result.current.setPrompt).toBe('function')
-  })
 
-  it('should update prompt', () => {
-    const { result } = renderHook(() => usePrompt())
-    
-    act(() => {
-      result.current.setPrompt('Hello, world!')
-    })
-    
-    expect(result.current.prompt).toBe('Hello, world!')
-  })
+    act(() => result.current.setPrompt('Hello'))
+    expect(result.current.prompt).toBe('Hello')
 
-  it('should clear prompt', () => {
-    const { result } = renderHook(() => usePrompt())
-    
-    act(() => {
-      result.current.setPrompt('Some text')
-    })
-    
-    expect(result.current.prompt).toBe('Some text')
-    
-    act(() => {
-      result.current.setPrompt('')
-    })
-    
+    act(() => result.current.resetPrompt())
     expect(result.current.prompt).toBe('')
   })
 
-  it('should handle multiple prompt updates', () => {
-    const { result } = renderHook(() => usePrompt())
-    
-    act(() => {
-      result.current.setPrompt('First')
-    })
-    
-    expect(result.current.prompt).toBe('First')
-    
-    act(() => {
-      result.current.setPrompt('Second')
-    })
-    
-    expect(result.current.prompt).toBe('Second')
-    
-    act(() => {
-      result.current.setPrompt('Third')
-    })
-    
-    expect(result.current.prompt).toBe('Third')
-  })
+  describe('prompt history', () => {
+    it('should add entries, skip empty/duplicates, and cap at 100', () => {
+      const { result } = renderHook(() => usePrompt())
 
-  it('should handle special characters in prompt', () => {
-    const { result } = renderHook(() => usePrompt())
-    
-    const specialText = 'Hello! @#$%^&*()_+{}|:"<>?[]\\;\',./'
-    
-    act(() => {
-      result.current.setPrompt(specialText)
-    })
-    
-    expect(result.current.prompt).toBe(specialText)
-  })
+      act(() => {
+        result.current.addToHistory('')
+        result.current.addToHistory('   ')
+        result.current.addToHistory('first')
+        result.current.addToHistory('first') // duplicate
+        result.current.addToHistory('second')
+      })
 
-  it('should handle multiline prompts', () => {
-    const { result } = renderHook(() => usePrompt())
-    
-    const multilineText = 'Line 1\nLine 2\nLine 3'
-    
-    act(() => {
-      result.current.setPrompt(multilineText)
-    })
-    
-    expect(result.current.prompt).toBe(multilineText)
-  })
+      expect(result.current.promptHistory).toEqual(['second', 'first'])
 
-  it('should handle very long prompts', () => {
-    const { result } = renderHook(() => usePrompt())
-    
-    const longText = 'A'.repeat(10000)
-    
-    act(() => {
-      result.current.setPrompt(longText)
+      act(() => {
+        for (let i = 0; i < 110; i++) result.current.addToHistory(`msg ${i}`)
+      })
+      expect(result.current.promptHistory.length).toBe(100)
     })
-    
-    expect(result.current.prompt).toBe(longText)
-    expect(result.current.prompt.length).toBe(10000)
+
+    it('should navigate up/down and restore draft', () => {
+      const { result } = renderHook(() => usePrompt())
+
+      act(() => {
+        result.current.addToHistory('first')
+        result.current.addToHistory('second')
+        result.current.setPrompt('my draft')
+      })
+
+      // Up through history
+      act(() => result.current.navigateHistory('up'))
+      expect(result.current.prompt).toBe('second')
+
+      act(() => result.current.navigateHistory('up'))
+      expect(result.current.prompt).toBe('first')
+
+      // Can't go past oldest
+      act(() => result.current.navigateHistory('up'))
+      expect(result.current.prompt).toBe('first')
+
+      // Down restores
+      act(() => result.current.navigateHistory('down'))
+      expect(result.current.prompt).toBe('second')
+
+      act(() => result.current.navigateHistory('down'))
+      expect(result.current.prompt).toBe('my draft')
+      expect(result.current.historyIndex).toBe(-1)
+    })
+
+    it('should do nothing on empty history or no active browsing', () => {
+      const { result } = renderHook(() => usePrompt())
+
+      act(() => result.current.setPrompt('text'))
+      act(() => result.current.navigateHistory('up'))
+      expect(result.current.prompt).toBe('text')
+
+      act(() => result.current.navigateHistory('down'))
+      expect(result.current.prompt).toBe('text')
+    })
+
+    it('should reset history index when user types', () => {
+      const { result } = renderHook(() => usePrompt())
+
+      act(() => result.current.addToHistory('old'))
+      act(() => result.current.navigateHistory('up'))
+      expect(result.current.historyIndex).toBe(0)
+
+      act(() => result.current.setPrompt('typing'))
+      expect(result.current.historyIndex).toBe(-1)
+    })
   })
 })

@@ -7,6 +7,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ThemeSwitcher } from '@/containers/ThemeSwitcher'
 import { FontSizeSwitcher } from '@/containers/FontSizeSwitcher'
 import { AccentColorPicker } from '@/containers/AccentColorPicker'
+import { NotificationPositionSwitcher } from '@/containers/NotificationPositionSwitcher'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
@@ -48,6 +49,11 @@ function InterfaceSettings() {
                 description="Customize the accent color of the application."
                 className="flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-y-2"
                 actions={<AccentColorPicker />}
+              />
+              <CardItem
+                title={t('settings:interface.notificationPosition')}
+                description={t('settings:interface.notificationPositionDesc')}
+                actions={<NotificationPositionSwitcher />}
               />
               <CardItem
                 title={t('settings:interface.resetToDefault')}

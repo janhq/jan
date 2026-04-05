@@ -1,10 +1,12 @@
 import { localStorageKey } from '@/constants/localStorage'
+import { fileStorage } from '@/lib/fileStorage'
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { useModelProvider } from './useModelProvider'
 import { useDownloadStore } from './useDownloadStore'
 import { useLatestJanModel } from './useLatestJanModel'
 import { predefinedProviders } from '@/constants/providers'
+import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
 
 export type JanModelPromptDismissedState = {
   dismissedModelName: string | null
@@ -21,7 +23,7 @@ export const useJanModelPromptDismissed =
       }),
       {
         name: localStorageKey.janModelPromptDismissed,
-        storage: createJSONStorage(() => localStorage),
+        storage: createJSONStorage(() => fileStorage),
         version: 1,
         migrate: (persistedState: unknown) => {
           const state = persistedState as Record<string, unknown>
@@ -57,7 +59,7 @@ export const useJanModelPrompt = () => {
       return provider.models.length > 0
     }
     return (
-      provider.api_key?.length ||
+      providerHasRemoteApiKeys(provider) ||
       (provider.provider === 'llamacpp' && provider.models.length) ||
       (provider.provider === 'jan' && provider.models.length)
     )
