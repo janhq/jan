@@ -57,12 +57,24 @@ vi.mock('@/containers/dialogs/ChangeDataFolderLocation', () => ({
   ),
 }))
 
+vi.mock('@/lib/screenCaptureWindows', () => ({
+  restoreOverlayCursorTargeting: vi.fn(),
+}))
+
 vi.mock('@/hooks/useGeneralSetting', () => ({
   useGeneralSetting: () => ({
     spellCheckChatInput: true,
     setSpellCheckChatInput: vi.fn(),
     huggingfaceToken: 'test-token',
     setHuggingfaceToken: vi.fn(),
+    screenCaptureToTextEnabled: false,
+    setScreenCaptureToTextEnabled: vi.fn(),
+    screenCaptureShortcut: 'CommandOrControl+Shift+KeyS',
+    setScreenCaptureShortcut: vi.fn(),
+    screenCaptureInstructionTemplate: '',
+    setScreenCaptureInstructionTemplate: vi.fn(),
+    screenCaptureFloatingToolbarEnabled: false,
+    setScreenCaptureFloatingToolbarEnabled: vi.fn(),
   }),
 }))
 

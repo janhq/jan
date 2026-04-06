@@ -27,6 +27,8 @@ import { toast } from 'sonner'
 import { isDev } from '@/lib/utils'
 import { SystemEvent } from '@/types/events'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { restoreOverlayCursorTargeting } from '@/lib/screenCaptureWindows'
 import { useHardware } from '@/hooks/useHardware'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { isRootDir } from '@/utils/path'
@@ -44,6 +46,14 @@ function General() {
     setSpellCheckChatInput,
     huggingfaceToken,
     setHuggingfaceToken,
+    screenCaptureToTextEnabled,
+    setScreenCaptureToTextEnabled,
+    screenCaptureShortcut,
+    setScreenCaptureShortcut,
+    screenCaptureInstructionTemplate,
+    setScreenCaptureInstructionTemplate,
+    screenCaptureFloatingToolbarEnabled,
+    setScreenCaptureFloatingToolbarEnabled,
   } = useGeneralSetting()
   const serviceHub = useServiceHub()
 
@@ -421,6 +431,80 @@ function General() {
                     )
                   }
                 />
+              )}
+              {IS_TAURI && (
+                <>
+                  <CardItem
+                    title="Screen to text"
+                    description="When enabled, a global shortcut captures your primary display, runs on-device OCR in the app, and opens a preview so you can insert text into chat. macOS may prompt for Screen Recording permission."
+                    actions={
+                      <Switch
+                        checked={screenCaptureToTextEnabled}
+                        onCheckedChange={(v) => setScreenCaptureToTextEnabled(v)}
+                      />
+                    }
+                  />
+                  {screenCaptureToTextEnabled && (
+                    <>
+                      <CardItem
+                        title="Floating toolbar"
+                        description="Opens a small always-on-top window with full-screen, region, and window capture. On Windows and macOS, transparent panels work best; Linux may look opaque depending on your desktop."
+                        actions={
+                          <Switch
+                            checked={screenCaptureFloatingToolbarEnabled}
+                            onCheckedChange={(v) =>
+                              setScreenCaptureFloatingToolbarEnabled(v)
+                            }
+                          />
+                        }
+                      />
+                      <CardItem
+                        title="Restore overlay mouse targeting"
+                        description="If the toolbar is in click-through mode and you cannot click it, use this to accept mouse events again."
+                        actions={
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            type="button"
+                            onClick={() => void restoreOverlayCursorTargeting()}
+                          >
+                            Restore
+                          </Button>
+                        }
+                      />
+                      <CardItem
+                        title="Global shortcut"
+                        description="Tauri format (modifiers + key), e.g. CommandOrControl+Shift+KeyS."
+                        actions={
+                          <Input
+                            className="max-w-md font-mono text-xs"
+                            value={screenCaptureShortcut}
+                            onChange={(e) =>
+                              setScreenCaptureShortcut(e.target.value)
+                            }
+                            spellCheck={false}
+                          />
+                        }
+                      />
+                      <CardItem
+                        title="Instruction template (optional)"
+                        description="If set, this is placed above the OCR text when you insert into the composer."
+                        align="start"
+                        className="items-start flex-row gap-y-2"
+                        actions={
+                          <Textarea
+                            className="max-w-xl min-h-[80px] text-sm"
+                            value={screenCaptureInstructionTemplate}
+                            onChange={(e) =>
+                              setScreenCaptureInstructionTemplate(e.target.value)
+                            }
+                            placeholder="e.g. Summarize the following on-screen text:"
+                          />
+                        }
+                      />
+                    </>
+                  )}
+                </>
               )}
               <CardItem
                 title={t('settings:others.resetFactory', {

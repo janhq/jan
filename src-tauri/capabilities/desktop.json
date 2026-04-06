@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop",
   "description": "enables the default permissions for desktop platforms",
-  "windows": ["main"],
+  "windows": ["main", "jan-screen-capture-overlay", "jan-screen-region-picker"],
   "remote": {
     "urls": ["http://*"]
   },
@@ -30,6 +30,7 @@
     "mlx:default",
     "deep-link:default",
     "hardware:default",
+    "global-shortcut:default",
     {
       "identifier": "http:default",
       "allow": [

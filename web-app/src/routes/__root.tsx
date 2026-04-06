@@ -29,6 +29,7 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LeftSidebar } from '@/components/left-sidebar'
 import { WindowControls } from '@/components/WindowControls'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { ScreenCaptureProvider } from '@/providers/ScreenCaptureProvider'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -111,7 +112,9 @@ function RootLayout() {
     return (
       pathname === route.localApiServerlogs ||
       pathname === route.systemMonitor ||
-      pathname === route.appLogs
+      pathname === route.appLogs ||
+      pathname === route.screenCaptureOverlay ||
+      pathname === route.screenCaptureRegion
     )
   }
 
@@ -150,6 +153,7 @@ function RootLayout() {
           <ExtensionProvider>
             <DataProvider />
             <GlobalEventHandler />
+            <ScreenCaptureProvider />
             {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
           </ExtensionProvider>
           {/* <TanStackRouterDevtools position="bottom-right" /> */}

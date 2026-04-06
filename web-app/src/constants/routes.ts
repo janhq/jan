@@ -27,5 +27,7 @@ export const route = {
   },
   localApiServerlogs: '/local-api-server/logs',
   systemMonitor: '/system-monitor',
+  screenCaptureOverlay: '/screen-capture-overlay',
+  screenCaptureRegion: '/screen-capture-region',
   threadsDetail: '/threads/$threadId',
 }
