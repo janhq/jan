@@ -177,13 +177,13 @@ function ScreenCaptureOverlay() {
         : {}
 
   return (
-    <div className="flex h-full w-full min-h-0 flex-col rounded-xl border border-border/80 bg-background/95 p-2.5 text-foreground shadow-xl backdrop-blur-md">
-      <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+    <div className="box-border flex h-fit max-h-full w-full min-h-0 shrink-0 flex-col rounded-xl border border-border/80 bg-background/95 p-2 text-foreground shadow-xl backdrop-blur-md">
+      <div className="flex w-full min-h-0 flex-col gap-2">
         <div
           className={
             IS_TAURI
-              ? 'flex min-h-7 shrink-0 items-center gap-1.5 rounded-md px-0.5 text-xs font-medium text-muted-foreground select-none touch-none cursor-grab active:cursor-grabbing'
-              : 'flex min-h-7 shrink-0 items-center gap-1.5 rounded-md px-0.5 text-xs font-medium text-muted-foreground select-none touch-none'
+              ? 'flex min-h-6 shrink-0 items-center gap-1 rounded-md px-0.5 text-[11px] font-medium text-muted-foreground select-none touch-none cursor-grab active:cursor-grabbing'
+              : 'flex min-h-6 shrink-0 items-center gap-1 rounded-md px-0.5 text-[11px] font-medium text-muted-foreground select-none touch-none'
           }
           title={IS_TAURI ? 'Drag to move' : undefined}
           aria-label={IS_TAURI ? 'Drag to move window' : undefined}
@@ -197,20 +197,20 @@ function ScreenCaptureOverlay() {
           value={composer}
           onChange={(e) => setComposer(e.target.value)}
           placeholder="Message to send with captured text (optional)…"
-          rows={3}
-          className="field-sizing-fixed min-h-[4.5rem] flex-1 resize-none rounded-lg border-border/80 bg-muted/40 text-sm shadow-inner placeholder:text-muted-foreground/70"
+          rows={2}
+          className="field-sizing-fixed max-h-16 min-h-8 shrink-0 resize-none overflow-y-auto rounded-md border-border/80 bg-muted/40 px-2 py-1.5 text-[10px] leading-tight shadow-inner md:text-[10px] placeholder:text-muted-foreground/70"
           spellCheck
         />
 
-        <p className="text-[10px] leading-snug text-muted-foreground">
+        <p className="text-[9px] leading-tight text-muted-foreground">
           Optional note is placed above OCR text (and your Settings instruction template, if any).
         </p>
 
-        <div className="grid w-full grid-flow-col auto-cols-max gap-1.5 justify-start overflow-x-auto">
+        <div className="grid w-full grid-flow-col auto-cols-max gap-1 justify-start overflow-x-auto">
           <Button
             size="sm"
             variant="secondary"
-            className="h-8 shrink-0 text-xs"
+            className="h-7 shrink-0 px-2.5 text-[11px]"
             onClick={() => void captureFullScreen()}
           >
             Full screen
@@ -218,7 +218,7 @@ function ScreenCaptureOverlay() {
           <Button
             size="sm"
             variant="secondary"
-            className="h-8 shrink-0 text-xs"
+            className="h-7 shrink-0 px-2.5 text-[11px]"
             onClick={() => void openRegion()}
           >
             Region
@@ -226,22 +226,22 @@ function ScreenCaptureOverlay() {
           <Button
             size="sm"
             variant="secondary"
-            className="h-8 shrink-0 text-xs"
+            className="h-7 shrink-0 px-2.5 text-[11px]"
             onClick={() => void openWindowPicker()}
           >
             Window…
           </Button>
         </div>
 
-        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/50 pt-2">
-          <label className="flex cursor-pointer items-center gap-2 text-xs select-none">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/50 pt-1.5">
+          <label className="flex cursor-pointer items-center gap-1.5 text-[11px] select-none">
             <Switch
               checked={passThrough}
               onCheckedChange={(v) => void applyPassThrough(v)}
             />
             <span>Click-through</span>
           </label>
-          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={closeSelf}>
+          <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={closeSelf}>
             Close
           </Button>
         </div>

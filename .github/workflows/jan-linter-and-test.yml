@@ -204,8 +204,10 @@ jobs:
         env:
           NODE_OPTIONS: '--max-old-space-size=2048'
 
+  # ubuntu-22.04: libspa 0.9.2 + bindgen must match system spa/param/video/raw.h; ubuntu-latest (24.04+)
+  # ships newer PipeWire headers where spa_video_info_raw no longer matches the published crate.
   test-on-ubuntu:
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || 'ubuntu-latest' }}
+    runs-on: ubuntu-22.04
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
