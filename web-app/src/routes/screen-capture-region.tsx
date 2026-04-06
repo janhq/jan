@@ -208,7 +208,10 @@ function ScreenCaptureRegion() {
           void cancelRegionNote()
         }}
       >
-        <DialogContent className="sm:max-w-md" showCloseButton>
+        <DialogContent
+          className="sm:max-w-md !max-h-none overflow-y-visible"
+          showCloseButton
+        >
           <DialogHeader>
             <DialogTitle>Optional note</DialogTitle>
           </DialogHeader>
@@ -219,8 +222,8 @@ function ScreenCaptureRegion() {
             value={noteDraft}
             onChange={(e) => setNoteDraft(e.target.value)}
             placeholder="Optional message…"
-            rows={3}
-            className="min-h-[4.5rem] resize-none text-sm"
+            rows={4}
+            className="min-h-[6.5rem] resize-none text-sm"
             spellCheck
           />
           <DialogFooter className="gap-2 sm:gap-2">

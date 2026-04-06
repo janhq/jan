@@ -54,12 +54,16 @@ type CaptureMode = 'screen' | 'window' | 'region'
 /** Large enough for the window list and quick-capture UI. */
 const WINDOW_PICKER_LOGICAL_SIZE = new LogicalSize(560, 680)
 
+/** Optional-note step: grow the webview so the dialog is not trapped in the compact toolbar height. */
+const NOTE_AFTER_CAPTURE_LOGICAL_SIZE = new LogicalSize(440, 380)
+
 function ScreenCaptureOverlay() {
   const [passThrough, setPassThrough] = useState(false)
   const [windowPickerOpen, setWindowPickerOpen] = useState(false)
   const [windows, setWindows] = useState<CaptureWindowItem[]>([])
   const [loadingWindows, setLoadingWindows] = useState(false)
   const sizeBeforeWindowPickerRef = useRef<PhysicalSize | null>(null)
+  const sizeBeforeNoteDialogRef = useRef<PhysicalSize | null>(null)
 
   /** Capture-first: optional note is collected after we have the PNG. */
   const [noteAfterCaptureOpen, setNoteAfterCaptureOpen] = useState(false)
@@ -70,6 +74,33 @@ function ScreenCaptureOverlay() {
   useEffect(() => {
     const win = getCurrentWebviewWindow()
     void win.setAlwaysOnTop(true)
+  }, [])
+
+  useEffect(() => {
+    if (!IS_TAURI || !noteAfterCaptureOpen) return
+    const win = getCurrentWebviewWindow()
+    void (async () => {
+      try {
+        if (sizeBeforeNoteDialogRef.current === null) {
+          sizeBeforeNoteDialogRef.current = await win.innerSize()
+        }
+        await win.setSize(NOTE_AFTER_CAPTURE_LOGICAL_SIZE)
+      } catch (e) {
+        console.error(e)
+      }
+    })()
+  }, [noteAfterCaptureOpen])
+
+  const restoreAfterNoteDialog = useCallback(async () => {
+    if (!IS_TAURI) return
+    const saved = sizeBeforeNoteDialogRef.current
+    if (!saved) return
+    sizeBeforeNoteDialogRef.current = null
+    try {
+      await getCurrentWebviewWindow().setSize(saved)
+    } catch (e) {
+      console.error(e)
+    }
   }, [])
 
   const applyPassThrough = useCallback(async (enabled: boolean) => {
@@ -96,6 +127,7 @@ function ScreenCaptureOverlay() {
   const closeNoteAfterCapture = () => {
     setNoteAfterCaptureOpen(false)
     setPendingB64(null)
+    void restoreAfterNoteDialog()
   }
 
   const publishPendingCapture = async (mode: 'with_note' | 'skip_note') => {
@@ -309,7 +341,13 @@ function ScreenCaptureOverlay() {
               <ChevronDownIcon className="size-3 opacity-80" aria-hidden />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[10rem] text-xs" sideOffset={4}>
+          <DropdownMenuContent
+            align="end"
+            side="bottom"
+            sideOffset={4}
+            collisionPadding={8}
+            className="z-[300] min-w-[10rem] text-xs"
+          >
             <DropdownMenuCheckboxItem
               className="text-xs"
               checked={passThrough}
@@ -346,7 +384,12 @@ function ScreenCaptureOverlay() {
           if (!open) closeNoteAfterCapture()
         }}
       >
-        <DialogContent className="!flex !w-full max-w-md !flex-col gap-3 sm:max-w-md" showCloseButton>
+        <DialogContent
+          className={cn(
+            '!flex !max-h-none !w-full max-w-md !flex-col gap-3 overflow-y-visible sm:max-w-md'
+          )}
+          showCloseButton
+        >
           <DialogHeader className="shrink-0">
             <DialogTitle>Optional note</DialogTitle>
           </DialogHeader>
@@ -357,8 +400,8 @@ function ScreenCaptureOverlay() {
             value={noteDraft}
             onChange={(e) => setNoteDraft(e.target.value)}
             placeholder="Optional message…"
-            rows={3}
-            className="field-sizing-fixed min-h-[4.5rem] resize-none rounded-md border-border/80 bg-muted/40 px-2 py-1.5 text-xs leading-snug shadow-inner placeholder:text-muted-foreground/70"
+            rows={4}
+            className="field-sizing-fixed min-h-[6.5rem] resize-none rounded-md border-border/80 bg-muted/40 px-2 py-1.5 text-xs leading-snug shadow-inner placeholder:text-muted-foreground/70"
             spellCheck
           />
           <DialogFooter className="shrink-0 gap-2 sm:gap-2">

@@ -120,7 +120,7 @@ const BareCaptureLayout = () => {
   }, [])
 
   return (
-    <div className="h-svh w-svw min-h-0 overflow-hidden bg-transparent">
+    <div className="h-svh w-svw min-h-0 overflow-visible bg-transparent">
       <Outlet />
     </div>
   )

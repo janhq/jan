@@ -148,9 +148,15 @@
     background-color: transparent !important;
   }
 
+  /* Let Radix portaled menus escape; global body overflow-hidden was squashing dropdowns in tiny webviews. */
+  html.jan-bare-capture-webview body {
+    overflow: visible !important;
+  }
+
   html.jan-bare-capture-webview #root {
     background-color: transparent !important;
     min-height: 100%;
+    overflow: visible !important;
   }
 
   ::-ms-reveal {
