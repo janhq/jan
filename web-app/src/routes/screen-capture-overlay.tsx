@@ -214,7 +214,8 @@ function ScreenCaptureOverlay() {
     }
   }
 
-  const titleBarDrag =
+  /** Linux: no data-tauri-drag-region on webviews; use a dedicated strip so buttons stay clickable. */
+  const linuxDragStrip =
     IS_TAURI && IS_LINUX
       ? {
           onMouseDown: (e: MouseEvent) => {
@@ -222,9 +223,10 @@ function ScreenCaptureOverlay() {
             void getCurrentWebviewWindow().startDragging()
           },
         }
-      : IS_TAURI
-        ? { 'data-tauri-drag-region': true as const }
-        : {}
+      : {}
+
+  const toolbarDragRegion =
+    IS_TAURI && !IS_LINUX ? { 'data-tauri-drag-region': true as const } : {}
 
   const modeButtonClass = (mode: CaptureMode) =>
     cn(
@@ -236,31 +238,16 @@ function ScreenCaptureOverlay() {
     )
 
   return (
-    <div className="box-border flex h-fit max-h-full w-full min-h-0 shrink-0 flex-col gap-1.5 rounded-xl border border-border/80 bg-background/95 p-2 text-foreground shadow-xl backdrop-blur-md">
-      <div
-        className={
-          IS_TAURI
-            ? 'flex min-h-5 shrink-0 items-center gap-1 px-0.5 text-[10px] font-medium text-muted-foreground select-none touch-none cursor-grab active:cursor-grabbing'
-            : 'flex min-h-5 shrink-0 items-center gap-1 px-0.5 text-[10px] font-medium text-muted-foreground select-none touch-none'
-        }
-        title={IS_TAURI ? 'Drag to move' : undefined}
-        aria-label={IS_TAURI ? 'Drag to move window' : undefined}
-        {...titleBarDrag}
-      >
-        <span className="truncate font-semibold text-foreground">Quick capture</span>
-        <span className="truncate opacity-80">· Jan</span>
-      </div>
-
-      <p className="text-[9px] leading-tight text-muted-foreground">
-        Pick screen, window, or region, then <span className="font-medium text-foreground/90">Capture</span>.
-        Optional note after the image is ready.
-      </p>
-
-      {/* Mode toolbar: modes + Options + primary Capture */}
+    <div className="box-border flex h-fit max-h-full w-full min-h-0 shrink-0 flex-col rounded-xl border border-border/80 bg-background/95 p-1.5 text-foreground shadow-xl backdrop-blur-md">
       <div
         className="flex w-full min-w-0 items-center gap-0 rounded-lg border border-white/12 bg-zinc-900/90 py-1 pl-1 pr-1 shadow-inner backdrop-blur-xl"
         role="toolbar"
-        aria-label="Screen capture"
+        aria-label={
+          IS_TAURI && IS_LINUX
+            ? 'Screen capture. Drag the space between Options and Capture to move the window.'
+            : 'Screen capture. Drag the toolbar to move the window.'
+        }
+        {...toolbarDragRegion}
       >
         <Button
           type="button"
@@ -333,7 +320,15 @@ function ScreenCaptureOverlay() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <div className="min-w-1 flex-1" aria-hidden />
+        <div
+          className={cn(
+            'min-w-6 flex-1',
+            IS_TAURI && IS_LINUX && 'cursor-grab touch-none select-none active:cursor-grabbing'
+          )}
+          title={IS_TAURI && IS_LINUX ? 'Drag to move' : undefined}
+          aria-hidden
+          {...linuxDragStrip}
+        />
 
         <Button
           type="button"
