@@ -282,11 +282,11 @@ impl VideoInfoRaw {
     }
 
     pub fn set_views(&mut self, views: u32) {
-        self.0.views = views;
+        self.0.views = views as _;
     }
 
     pub fn views(self) -> u32 {
-        self.0.views
+        self.0.views as _
     }
 
     pub fn set_interlace_mode(&mut self, interlace_mode: VideoInterlaceMode) {
@@ -306,59 +306,59 @@ impl VideoInfoRaw {
     }
 
     pub fn set_multiview_mode(&mut self, multiview_mode: i32) {
-        self.0.multiview_mode = multiview_mode;
+        self.0.multiview_mode = multiview_mode as _;
     }
 
     pub fn multiview_mode(self) -> i32 {
-        self.0.multiview_mode
+        self.0.multiview_mode as _
     }
 
     pub fn set_multiview_flags(&mut self, multiview_flags: u32) {
-        self.0.multiview_flags = multiview_flags;
+        self.0.multiview_flags = multiview_flags as _;
     }
 
     pub fn multiview_flags(self) -> u32 {
-        self.0.multiview_flags
+        self.0.multiview_flags as _
     }
 
     pub fn set_chroma_site(&mut self, chroma_site: u32) {
-        self.0.chroma_site = chroma_site;
+        self.0.chroma_site = chroma_site as _;
     }
 
     pub fn chroma_site(self) -> u32 {
-        self.0.chroma_site
+        self.0.chroma_site as _
     }
 
     pub fn set_color_range(&mut self, color_range: u32) {
-        self.0.color_range = color_range;
+        self.0.color_range = color_range as _;
     }
 
     pub fn color_range(self) -> u32 {
-        self.0.color_range
+        self.0.color_range as _
     }
 
     pub fn set_color_matrix(&mut self, color_matrix: u32) {
-        self.0.color_matrix = color_matrix;
+        self.0.color_matrix = color_matrix as _;
     }
 
     pub fn color_matrix(self) -> u32 {
-        self.0.color_matrix
+        self.0.color_matrix as _
     }
 
     pub fn set_transfer_function(&mut self, transfer_function: u32) {
-        self.0.transfer_function = transfer_function;
+        self.0.transfer_function = transfer_function as _;
     }
 
     pub fn transfer_function(self) -> u32 {
-        self.0.transfer_function
+        self.0.transfer_function as _
     }
 
     pub fn set_color_primaries(&mut self, color_primaries: u32) {
-        self.0.color_primaries = color_primaries;
+        self.0.color_primaries = color_primaries as _;
     }
 
     pub fn color_primaries(self) -> u32 {
-        self.0.color_primaries
+        self.0.color_primaries as _
     }
 
     /// helper function to parse format properties type

@@ -5,8 +5,21 @@ import { LogicalSize, PhysicalSize } from '@tauri-apps/api/window'
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { route } from '@/constants/routes'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
+import {
+  ChevronDownIcon,
+  MonitorIcon,
+  SquareDashedIcon,
+  AppWindowIcon,
+  XIcon,
+} from 'lucide-react'
 import {
   readScreenCaptureComposerDraft,
   writeScreenCaptureComposerDraft,
@@ -36,6 +49,8 @@ type CaptureWindowItem = {
   height: number
 }
 
+type CaptureMode = 'screen' | 'window' | 'region'
+
 /** Large enough for the window list and quick-capture UI. */
 const WINDOW_PICKER_LOGICAL_SIZE = new LogicalSize(560, 680)
 
@@ -50,6 +65,7 @@ function ScreenCaptureOverlay() {
   const [noteAfterCaptureOpen, setNoteAfterCaptureOpen] = useState(false)
   const [pendingB64, setPendingB64] = useState<string | null>(null)
   const [noteDraft, setNoteDraft] = useState('')
+  const [captureMode, setCaptureMode] = useState<CaptureMode>('screen')
 
   useEffect(() => {
     const win = getCurrentWebviewWindow()
@@ -182,6 +198,22 @@ function ScreenCaptureOverlay() {
     void getCurrentWebviewWindow().close()
   }
 
+  const runCapture = () => {
+    switch (captureMode) {
+      case 'screen':
+        void captureFullScreen()
+        break
+      case 'window':
+        void openWindowPicker()
+        break
+      case 'region':
+        void openRegion()
+        break
+      default:
+        break
+    }
+  }
+
   const titleBarDrag =
     IS_TAURI && IS_LINUX
       ? {
@@ -194,66 +226,123 @@ function ScreenCaptureOverlay() {
         ? { 'data-tauri-drag-region': true as const }
         : {}
 
+  const modeButtonClass = (mode: CaptureMode) =>
+    cn(
+      'flex size-9 shrink-0 items-center justify-center rounded-md border border-transparent text-zinc-100 outline-none transition-colors',
+      'hover:bg-white/12 focus-visible:ring-2 focus-visible:ring-white/35',
+      captureMode === mode
+        ? 'bg-white/18 ring-1 ring-white/25'
+        : 'text-zinc-300/95 hover:text-zinc-50'
+    )
+
   return (
-    <div className="box-border flex h-fit max-h-full w-full min-h-0 shrink-0 flex-col rounded-xl border border-border/80 bg-background/95 p-2 text-foreground shadow-xl backdrop-blur-md">
-      <div className="flex w-full min-h-0 flex-col gap-2">
-        <div
-          className={
-            IS_TAURI
-              ? 'flex min-h-6 shrink-0 items-center gap-1 rounded-md px-0.5 text-[11px] font-medium text-muted-foreground select-none touch-none cursor-grab active:cursor-grabbing'
-              : 'flex min-h-6 shrink-0 items-center gap-1 rounded-md px-0.5 text-[11px] font-medium text-muted-foreground select-none touch-none'
-          }
-          title={IS_TAURI ? 'Drag to move' : undefined}
-          aria-label={IS_TAURI ? 'Drag to move window' : undefined}
-          {...titleBarDrag}
+    <div className="box-border flex h-fit max-h-full w-full min-h-0 shrink-0 flex-col gap-1.5 rounded-xl border border-border/80 bg-background/95 p-2 text-foreground shadow-xl backdrop-blur-md">
+      <div
+        className={
+          IS_TAURI
+            ? 'flex min-h-5 shrink-0 items-center gap-1 px-0.5 text-[10px] font-medium text-muted-foreground select-none touch-none cursor-grab active:cursor-grabbing'
+            : 'flex min-h-5 shrink-0 items-center gap-1 px-0.5 text-[10px] font-medium text-muted-foreground select-none touch-none'
+        }
+        title={IS_TAURI ? 'Drag to move' : undefined}
+        aria-label={IS_TAURI ? 'Drag to move window' : undefined}
+        {...titleBarDrag}
+      >
+        <span className="truncate font-semibold text-foreground">Quick capture</span>
+        <span className="truncate opacity-80">· Jan</span>
+      </div>
+
+      <p className="text-[9px] leading-tight text-muted-foreground">
+        Pick screen, window, or region, then <span className="font-medium text-foreground/90">Capture</span>.
+        Optional note after the image is ready.
+      </p>
+
+      {/* Mode toolbar: modes + Options + primary Capture */}
+      <div
+        className="flex w-full min-w-0 items-center gap-0 rounded-lg border border-white/12 bg-zinc-900/90 py-1 pl-1 pr-1 shadow-inner backdrop-blur-xl"
+        role="toolbar"
+        aria-label="Screen capture"
+      >
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-8 shrink-0 rounded-full border border-white/15 text-zinc-200 hover:bg-white/10 hover:text-white"
+          onClick={closeSelf}
+          aria-label="Close"
         >
-          <span className="truncate font-semibold text-foreground">Quick capture</span>
-          <span className="truncate opacity-80">· Jan</span>
+          <XIcon className="size-3.5" aria-hidden />
+        </Button>
+
+        <div className="mx-1 h-6 w-px shrink-0 bg-white/15" aria-hidden />
+
+        <div className="flex min-w-0 items-center gap-0.5">
+          <button
+            type="button"
+            className={modeButtonClass('screen')}
+            aria-label="Entire screen"
+            aria-pressed={captureMode === 'screen'}
+            title="Entire screen"
+            onClick={() => setCaptureMode('screen')}
+          >
+            <MonitorIcon className="size-[18px]" strokeWidth={1.75} aria-hidden />
+          </button>
+          <button
+            type="button"
+            className={modeButtonClass('window')}
+            aria-label="Selected window"
+            aria-pressed={captureMode === 'window'}
+            title="Window"
+            onClick={() => setCaptureMode('window')}
+          >
+            <AppWindowIcon className="size-[18px]" strokeWidth={1.75} aria-hidden />
+          </button>
+          <button
+            type="button"
+            className={modeButtonClass('region')}
+            aria-label="Selected region"
+            aria-pressed={captureMode === 'region'}
+            title="Portion"
+            onClick={() => setCaptureMode('region')}
+          >
+            <SquareDashedIcon className="size-[18px]" strokeWidth={1.75} aria-hidden />
+          </button>
         </div>
 
-        <p className="text-[9px] leading-tight text-muted-foreground">
-          Choose a capture type first; you can add an optional note on the next step.
-        </p>
+        <div className="mx-1 h-6 w-px shrink-0 bg-white/15" aria-hidden />
 
-        <div className="grid w-full grid-flow-col auto-cols-max gap-1 justify-start overflow-x-auto">
-          <Button
-            size="sm"
-            variant="secondary"
-            className="h-7 shrink-0 px-2.5 text-[11px]"
-            onClick={() => void captureFullScreen()}
-          >
-            Full screen
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="h-7 shrink-0 px-2.5 text-[11px]"
-            onClick={() => void openRegion()}
-          >
-            Region
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="h-7 shrink-0 px-2.5 text-[11px]"
-            onClick={() => void openWindowPicker()}
-          >
-            Window…
-          </Button>
-        </div>
-
-        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/50 pt-1.5">
-          <label className="flex cursor-pointer items-center gap-1.5 text-[11px] select-none">
-            <Switch
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 shrink-0 gap-0.5 px-2 text-[11px] font-medium text-zinc-200 hover:bg-white/10 hover:text-white"
+            >
+              Options
+              <ChevronDownIcon className="size-3 opacity-80" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[10rem] text-xs" sideOffset={4}>
+            <DropdownMenuCheckboxItem
+              className="text-xs"
               checked={passThrough}
-              onCheckedChange={(v) => void applyPassThrough(v)}
-            />
-            <span>Click-through</span>
-          </label>
-          <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={closeSelf}>
-            Close
-          </Button>
-        </div>
+              onCheckedChange={(v) => void applyPassThrough(!!v)}
+            >
+              Click-through
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div className="min-w-1 flex-1" aria-hidden />
+
+        <Button
+          type="button"
+          size="sm"
+          className="h-8 shrink-0 rounded-md bg-zinc-700 px-3 text-[11px] font-semibold text-white shadow-sm hover:bg-zinc-600"
+          onClick={() => void runCapture()}
+        >
+          Capture
+        </Button>
       </div>
 
       <Dialog
