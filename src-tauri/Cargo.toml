@@ -169,8 +169,7 @@ tauri-plugin-os = { version = "2.2.1", default-features = false }
 tauri-plugin-shell = { version = "2.2.0", default-features = false }
 tauri-plugin-store = { version = "2", default-features = false }
 
-# libspa 0.9.2 (crates.io) assumes an older `spa_video_info_raw` than bindgen emits on newer PipeWire
-# (no `flags` field, `modifier` as i64). Patch until pipewire-rs publishes a matching release.
+# Patched libspa for PipeWire/bindgen drift (xcap on Linux); remove when crates.io matches system headers.
 [patch.crates-io]
 libspa = { path = "patches/libspa" }
 
