@@ -647,24 +647,17 @@ async fn download_single_file(
         File::create(&tmp_save_path).await.map_err(err_to_string)?
     };
     let mut writer = tokio::io::BufWriter::new(file);
-    let mut total_transferred = initial_progress;
+    let mut stream = initial_resp.bytes_stream();
+    let mut retries = 0u32;
 
-    // write chunk to file
-    while let Some(chunk) = stream.next().await {
-        if cancel_token.is_cancelled() {
-            if !should_resume {
-                tokio::fs::remove_dir_all(&save_path.parent().unwrap())
-                    .await
-                    .ok();
-            }
-            log::info!("Download cancelled: {}", item.url);
-            return Err("Download cancelled".to_string());
-        }
-
-        let chunk = chunk.map_err(err_to_string)?;
-        writer.write_all(&chunk).await.map_err(err_to_string)?;
-        download_delta += chunk.len() as u64;
-        total_transferred += chunk.len() as u64;
+    // Download loop with automatic retry on network errors
+    loop {
+        match stream.next().await {
+            Some(Ok(chunk)) => {
+                retries = 0; // reset on successful chunk
+                writer.write_all(&chunk).await.map_err(err_to_string)?;
+                download_delta += chunk.len() as u64;
+                total_transferred += chunk.len() as u64;
 
                 // Update progress every 10 MB
                 if download_delta >= 10 * 1024 * 1024 {
