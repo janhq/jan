@@ -12,6 +12,7 @@ import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useEffect, useState, useCallback } from 'react'
 import ChangeDataFolderLocation from '@/containers/dialogs/ChangeDataFolderLocation'
 import { FactoryResetDialog } from '@/containers/dialogs'
+import type { FactoryResetOptions } from '@/services/app/types'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import {
   IconBrandDiscord,
@@ -111,15 +112,13 @@ function General() {
     }
   }
 
-  const resetApp = async () => {
-    // Prevent resetting if data folder is root directory
+  const resetApp = async (options: FactoryResetOptions) => {
     if (isRootDir(janDataFolder ?? '/')) {
       toast.error(t('settings:general.couldNotResetRootDirectory'))
       return
     }
     pausePolling()
-    // TODO: Loading indicator
-    await serviceHub.app().factoryReset()
+    await serviceHub.app().factoryReset(options)
   }
 
   const handleOpenLogs = async () => {
