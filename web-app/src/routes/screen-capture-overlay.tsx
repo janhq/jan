@@ -1,7 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { useCallback, useEffect, useState } from 'react'
+import { LogicalSize, PhysicalSize } from '@tauri-apps/api/window'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { route } from '@/constants/routes'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -30,11 +31,15 @@ type CaptureWindowItem = {
   height: number
 }
 
+/** Large enough for the window list; overlay webview defaults are only ~360×220. */
+const WINDOW_PICKER_LOGICAL_SIZE = new LogicalSize(560, 640)
+
 function ScreenCaptureOverlay() {
   const [passThrough, setPassThrough] = useState(false)
   const [windowPickerOpen, setWindowPickerOpen] = useState(false)
   const [windows, setWindows] = useState<CaptureWindowItem[]>([])
   const [loadingWindows, setLoadingWindows] = useState(false)
+  const sizeBeforeWindowPickerRef = useRef<PhysicalSize | null>(null)
 
   useEffect(() => {
     const win = getCurrentWebviewWindow()
@@ -80,7 +85,36 @@ function ScreenCaptureOverlay() {
     }
   }
 
+  const expandOverlayForWindowPicker = useCallback(async () => {
+    if (!IS_TAURI) return
+    try {
+      const win = getCurrentWebviewWindow()
+      sizeBeforeWindowPickerRef.current = await win.innerSize()
+      await win.setSize(WINDOW_PICKER_LOGICAL_SIZE)
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
+
+  const restoreOverlayAfterWindowPicker = useCallback(async () => {
+    if (!IS_TAURI) return
+    const saved = sizeBeforeWindowPickerRef.current
+    if (!saved) return
+    sizeBeforeWindowPickerRef.current = null
+    try {
+      await getCurrentWebviewWindow().setSize(saved)
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
+
+  const closeWindowPicker = useCallback(() => {
+    setWindowPickerOpen(false)
+    void restoreOverlayAfterWindowPicker()
+  }, [restoreOverlayAfterWindowPicker])
+
   const openWindowPicker = async () => {
+    await expandOverlayForWindowPicker()
     setWindowPickerOpen(true)
     setLoadingWindows(true)
     try {
@@ -95,7 +129,7 @@ function ScreenCaptureOverlay() {
   }
 
   const captureWindow = async (windowId: number) => {
-    setWindowPickerOpen(false)
+    closeWindowPicker()
     const id = toast.loading('Capturing window…')
     try {
       const b64 = await invoke<string>('capture_window_png_base64', { windowId })
@@ -111,10 +145,31 @@ function ScreenCaptureOverlay() {
     void getCurrentWebviewWindow().close()
   }
 
+  const titleBarDrag =
+    IS_TAURI && IS_LINUX
+      ? {
+          onMouseDown: (e: MouseEvent) => {
+            if (e.button !== 0) return
+            void getCurrentWebviewWindow().startDragging()
+          },
+        }
+      : IS_TAURI
+        ? { 'data-tauri-drag-region': true as const }
+        : {}
+
   return (
     <div className="h-full w-full p-2 bg-background/92 backdrop-blur-md rounded-lg border border-border shadow-lg text-foreground">
       <div className="flex flex-col gap-2 h-full min-h-0">
-        <div className="text-xs font-medium text-muted-foreground truncate">
+        <div
+          className={
+            IS_TAURI
+              ? 'text-xs font-medium text-muted-foreground truncate min-h-8 flex items-center rounded-md -mx-0.5 px-1 select-none touch-none cursor-grab active:cursor-grabbing'
+              : 'text-xs font-medium text-muted-foreground truncate min-h-8 flex items-center rounded-md -mx-0.5 px-1 select-none touch-none'
+          }
+          title={IS_TAURI ? 'Drag to move' : undefined}
+          aria-label={IS_TAURI ? 'Drag to move window' : undefined}
+          {...titleBarDrag}
+        >
           Jan · screen capture
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -142,12 +197,28 @@ function ScreenCaptureOverlay() {
         </div>
       </div>
 
-      <Dialog open={windowPickerOpen} onOpenChange={setWindowPickerOpen}>
-        <DialogContent className="sm:max-w-md max-h-[70vh] flex flex-col" showCloseButton>
-          <DialogHeader>
-            <DialogTitle>Capture a window</DialogTitle>
-          </DialogHeader>
-          <div className="overflow-y-auto flex-1 min-h-0 space-y-1 pr-1">
+      <Dialog
+        open={windowPickerOpen}
+        onOpenChange={(open) => {
+          if (!open) closeWindowPicker()
+        }}
+      >
+        <DialogContent
+          className="!flex !w-full max-w-3xl !flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
+          showCloseButton
+        >
+          <div className="flex max-h-[min(85vh,620px)] min-h-0 flex-col gap-4 overflow-hidden p-6">
+            <DialogHeader className="shrink-0">
+              <DialogTitle>Capture a window</DialogTitle>
+            </DialogHeader>
+            <div
+              className="space-y-1 overflow-y-auto overscroll-contain pr-1"
+              style={{
+                maxHeight: 'min(440px, 55dvh)',
+                WebkitOverflowScrolling: 'touch',
+              }}
+              onWheel={(e) => e.stopPropagation()}
+            >
             {loadingWindows ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
             ) : windows.length === 0 ? (
@@ -165,12 +236,13 @@ function ScreenCaptureOverlay() {
                 </button>
               ))
             )}
+            </div>
+            <DialogFooter className="shrink-0">
+              <Button variant="outline" size="sm" onClick={closeWindowPicker}>
+                Cancel
+              </Button>
+            </DialogFooter>
           </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setWindowPickerOpen(false)}>
-              Cancel
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

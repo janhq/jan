@@ -37,7 +37,7 @@ export async function openScreenCaptureOverlayWindow(): Promise<void> {
     transparent: true,
     shadow: false,
     alwaysOnTop: true,
-    skipTaskbar: true,
+    skipTaskbar: false,
     visible: false,
     center: true,
     focus: true,

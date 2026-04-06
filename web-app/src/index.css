@@ -142,6 +142,17 @@
     @apply bg-background text-foreground font-sans text-sm antialiased overflow-hidden;
   }
 
+  /* Tauri transparent webviews: default body bg is opaque and hid the desktop behind region pickers. */
+  html.jan-bare-capture-webview,
+  html.jan-bare-capture-webview body {
+    background-color: transparent !important;
+  }
+
+  html.jan-bare-capture-webview #root {
+    background-color: transparent !important;
+    min-height: 100%;
+  }
+
   ::-ms-reveal {
     display: none;
   }

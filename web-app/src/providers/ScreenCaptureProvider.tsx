@@ -183,7 +183,12 @@ export function ScreenCaptureProvider() {
   useEffect(() => {
     if (!isMainWebview) return
     if (screenCaptureToTextEnabled && screenCaptureFloatingToolbarEnabled) {
-      void openScreenCaptureOverlayWindow()
+      void openScreenCaptureOverlayWindow().catch((err) => {
+        console.error(err)
+        toast.error('Could not open capture toolbar', {
+          description: String(err),
+        })
+      })
     } else {
       void closeScreenCaptureOverlayWindow()
     }

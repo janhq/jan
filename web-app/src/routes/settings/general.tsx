@@ -436,11 +436,16 @@ function General() {
                 <>
                   <CardItem
                     title="Screen to text"
-                    description="When enabled, a global shortcut captures your primary display, runs on-device OCR in the app, and opens a preview so you can insert text into chat. macOS may prompt for Screen Recording permission."
+                    description="When enabled, the global shortcut captures your primary display, runs OCR, and opens a preview. macOS may prompt for Screen Recording. Turning this on also enables the floating toolbar below (you can switch it off for hotkey-only)."
                     actions={
                       <Switch
                         checked={screenCaptureToTextEnabled}
-                        onCheckedChange={(v) => setScreenCaptureToTextEnabled(v)}
+                        onCheckedChange={(v) => {
+                          setScreenCaptureToTextEnabled(v)
+                          if (v) {
+                            setScreenCaptureFloatingToolbarEnabled(true)
+                          }
+                        }}
                       />
                     }
                   />
@@ -448,7 +453,7 @@ function General() {
                     <>
                       <CardItem
                         title="Floating toolbar"
-                        description="Opens a small always-on-top window with full-screen, region, and window capture. On Windows and macOS, transparent panels work best; Linux may look opaque depending on your desktop."
+                        description="Opens automatically when on: small always-on-top window for Region, Window, and Full screen capture. Turn off for hotkey-only (full primary display). Check Alt+Tab or other monitors if it is hidden. Linux transparency varies by desktop."
                         actions={
                           <Switch
                             checked={screenCaptureFloatingToolbarEnabled}
