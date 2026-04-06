@@ -648,12 +648,9 @@ async fn download_single_file(
     // write chunk to file
     while let Some(chunk) = stream.next().await {
         if cancel_token.is_cancelled() {
-            if !should_resume {
-                tokio::fs::remove_dir_all(&save_path.parent().unwrap())
-                    .await
-                    .ok();
-            }
-            log::info!("Download cancelled: {}", item.url);
+            // Flush what we have so far so resume can pick up from here
+            writer.flush().await.ok();
+            log::info!("Download cancelled (resumable): {}", item.url);
             return Err("Download cancelled".to_string());
         }
 

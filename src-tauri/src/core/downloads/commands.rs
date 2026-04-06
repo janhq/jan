@@ -1,6 +1,5 @@
 use super::helpers::{_download_files_internal, err_to_string};
 use super::models::DownloadItem;
-use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
 use std::collections::HashMap;
 use tauri::{Runtime, State};
@@ -26,13 +25,13 @@ pub async fn download_files<R: Runtime>(
             .cancel_tokens
             .insert(task_id.to_string(), cancel_token.clone());
     }
-    // TODO: Support resuming downloads when FE is ready
+    // Support resuming downloads from partial .tmp files
     let result = _download_files_internal(
         app.clone(),
         &items,
         &headers,
         task_id,
-        false,
+        true,
         cancel_token.clone(),
     )
     .await;
@@ -43,14 +42,8 @@ pub async fn download_files<R: Runtime>(
         download_manager.cancel_tokens.remove(task_id);
     }
 
-    // delete files if cancelled
-    if cancel_token.is_cancelled() {
-        let jan_data_folder = get_jan_data_folder_path(app.clone());
-        for item in items {
-            let save_path = jan_data_folder.join(&item.save_path);
-            let _ = std::fs::remove_file(&save_path); // don't check error
-        }
-    }
+    // When cancelled, keep .tmp files so downloads can be resumed later.
+    // The .tmp and .url files will be used by the resume logic on next attempt.
 
     result.map_err(err_to_string)
 }
