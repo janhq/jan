@@ -67,22 +67,26 @@ pub fn parse_document(file_path: &str, file_type: &str) -> Result<String, RagErr
         // Systems languages
         | "rs" | "go" | "swift" | "zig"
         // JVM languages
-        | "java" | "kt" | "kts" | "scala" | "groovy"
+        | "java" | "kt" | "kts" | "scala" | "groovy" | "clj" | "cljs" | "hs" | "lhs" | "ml" | "mli" | "f" | "f77" | "f90" | "f95" | "f03" | "f08"
         // Scripting languages
-        | "rb" | "php" | "lua" | "pl" | "pm" | "r" | "jl"
+        | "rb" | "php" | "lua" | "pl" | "pm" | "r" | "jl" | "vbs" | "asm" | "s" | "m" | "mm" | "pas" | "pp" | "erl" | "hrl" | "ex" | "exs"
         // .NET
-        | "cs" | "fs" | "vb"
+        | "cs" | "fs" | "vb" | "xaml" | "csproj" | "sln"
+        // CUDA
+        | "cu" | "cuh"
+        // Shaders
+        | "hlsl" | "glsl" | "cg" | "shader"
         // Shell
-        | "sh" | "bash" | "zsh" | "fish" | "ps1" | "psm1"
+        | "sh" | "bash" | "zsh" | "fish" | "ps1" | "psm1" | "bat" | "cmd"
         // Web
-        | "css" | "scss" | "sass" | "less" | "vue" | "svelte" | "astro"
+        | "css" | "scss" | "sass" | "less" | "vue" | "svelte" | "astro" | "asp" | "aspx" | "jsp"
         // Data / config formats
         | "json" | "jsonc" | "yaml" | "yml" | "toml" | "xml" | "ini"
-        | "cfg" | "conf" | "config" | "env" | "properties"
+        | "cfg" | "conf" | "config" | "env" | "properties" | "lock"
         // Query / markup
-        | "sql" | "graphql" | "gql" | "tex" | "rst" | "adoc"
+        | "sql" | "graphql" | "gql" | "tex" | "rst" | "adoc" | "textile"
         // Misc text
-        | "log" | "diff" | "patch" | "gitignore" | "dockerfile" | "makefile" => parse_text(file_path),
+        | "log" | "diff" | "patch" | "gitignore" | "dockerfile" | "makefile" | "cmake" => parse_text(file_path),
         "csv" | "text/csv" => parse_csv(file_path),
         // Excel family via calamine
         "xlsx"
