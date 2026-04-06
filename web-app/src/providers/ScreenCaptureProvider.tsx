@@ -249,9 +249,9 @@ export function ScreenCaptureProvider() {
         <DialogHeader>
           <DialogTitle>Screen text</DialogTitle>
           <DialogDescription>
-            Text was read from your screen with on-device OCR. If you typed a
-            note in the floating capture bar, it is included above the OCR. Edit,
-            then insert into chat or send.
+            Text was read from your screen with on-device OCR. If you added an
+            optional note after capture (in the floating toolbar or region step), it
+            appears above the OCR. Edit, then insert into chat or send.
           </DialogDescription>
         </DialogHeader>
         <Textarea

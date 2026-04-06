@@ -40,21 +40,21 @@ type CaptureWindowItem = {
 const WINDOW_PICKER_LOGICAL_SIZE = new LogicalSize(560, 680)
 
 function ScreenCaptureOverlay() {
-  const [composer, setComposer] = useState(readScreenCaptureComposerDraft)
   const [passThrough, setPassThrough] = useState(false)
   const [windowPickerOpen, setWindowPickerOpen] = useState(false)
   const [windows, setWindows] = useState<CaptureWindowItem[]>([])
   const [loadingWindows, setLoadingWindows] = useState(false)
   const sizeBeforeWindowPickerRef = useRef<PhysicalSize | null>(null)
 
+  /** Capture-first: optional note is collected after we have the PNG. */
+  const [noteAfterCaptureOpen, setNoteAfterCaptureOpen] = useState(false)
+  const [pendingB64, setPendingB64] = useState<string | null>(null)
+  const [noteDraft, setNoteDraft] = useState('')
+
   useEffect(() => {
     const win = getCurrentWebviewWindow()
     void win.setAlwaysOnTop(true)
   }, [])
-
-  useEffect(() => {
-    writeScreenCaptureComposerDraft(composer)
-  }, [composer])
 
   const applyPassThrough = useCallback(async (enabled: boolean) => {
     try {
@@ -71,15 +71,35 @@ function ScreenCaptureOverlay() {
     }
   }, [])
 
-  const publishB64 = async (b64: string) => {
-    const instruction = composer.trim()
-    writeScreenCaptureComposerDraft(composer)
-    await invoke(
-      'publish_screen_capture_png',
-      instruction
-        ? { pngBase64: b64, instruction }
-        : { pngBase64: b64 }
-    )
+  const openNoteAfterCapture = (b64: string) => {
+    setPendingB64(b64)
+    setNoteDraft(readScreenCaptureComposerDraft())
+    setNoteAfterCaptureOpen(true)
+  }
+
+  const closeNoteAfterCapture = () => {
+    setNoteAfterCaptureOpen(false)
+    setPendingB64(null)
+  }
+
+  const publishPendingCapture = async (mode: 'with_note' | 'skip_note') => {
+    if (!pendingB64) return
+    const b64 = pendingB64
+    try {
+      if (mode === 'with_note') {
+        writeScreenCaptureComposerDraft(noteDraft)
+        const trimmed = noteDraft.trim()
+        await invoke(
+          'publish_screen_capture_png',
+          trimmed ? { pngBase64: b64, instruction: trimmed } : { pngBase64: b64 }
+        )
+      } else {
+        await invoke('publish_screen_capture_png', { pngBase64: b64 })
+      }
+      closeNoteAfterCapture()
+    } catch (e) {
+      toast.error('Could not send capture', { description: String(e) })
+    }
   }
 
   const captureFullScreen = async () => {
@@ -87,7 +107,7 @@ function ScreenCaptureOverlay() {
     try {
       const b64 = await invoke<string>('capture_primary_display_png_base64')
       toast.dismiss(id)
-      await publishB64(b64)
+      openNoteAfterCapture(b64)
     } catch (e) {
       toast.dismiss(id)
       toast.error('Capture failed', { description: String(e) })
@@ -95,7 +115,6 @@ function ScreenCaptureOverlay() {
   }
 
   const openRegion = async () => {
-    writeScreenCaptureComposerDraft(composer)
     try {
       await openScreenCaptureRegionWindow()
     } catch (e) {
@@ -132,7 +151,6 @@ function ScreenCaptureOverlay() {
   }, [restoreOverlayAfterWindowPicker])
 
   const openWindowPicker = async () => {
-    writeScreenCaptureComposerDraft(composer)
     await expandOverlayForWindowPicker()
     setWindowPickerOpen(true)
     setLoadingWindows(true)
@@ -153,7 +171,7 @@ function ScreenCaptureOverlay() {
     try {
       const b64 = await invoke<string>('capture_window_png_base64', { windowId })
       toast.dismiss(id)
-      await publishB64(b64)
+      openNoteAfterCapture(b64)
     } catch (e) {
       toast.dismiss(id)
       toast.error('Window capture failed', { description: String(e) })
@@ -193,17 +211,8 @@ function ScreenCaptureOverlay() {
           <span className="truncate opacity-80">· Jan</span>
         </div>
 
-        <Textarea
-          value={composer}
-          onChange={(e) => setComposer(e.target.value)}
-          placeholder="Message to send with captured text (optional)…"
-          rows={2}
-          className="field-sizing-fixed max-h-16 min-h-8 shrink-0 resize-none overflow-y-auto rounded-md border-border/80 bg-muted/40 px-2 py-1.5 text-[10px] leading-tight shadow-inner md:text-[10px] placeholder:text-muted-foreground/70"
-          spellCheck
-        />
-
         <p className="text-[9px] leading-tight text-muted-foreground">
-          Optional note is placed above OCR text (and your Settings instruction template, if any).
+          Choose a capture type first; you can add an optional note on the next step.
         </p>
 
         <div className="grid w-full grid-flow-col auto-cols-max gap-1 justify-start overflow-x-auto">
@@ -246,6 +255,49 @@ function ScreenCaptureOverlay() {
           </Button>
         </div>
       </div>
+
+      <Dialog
+        open={noteAfterCaptureOpen}
+        onOpenChange={(open) => {
+          if (!open) closeNoteAfterCapture()
+        }}
+      >
+        <DialogContent className="!flex !w-full max-w-md !flex-col gap-3 sm:max-w-md" showCloseButton>
+          <DialogHeader className="shrink-0">
+            <DialogTitle>Optional note</DialogTitle>
+          </DialogHeader>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            Add text to send with the capture (shown above OCR in chat). Leave blank to skip.
+          </p>
+          <Textarea
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            placeholder="Optional message…"
+            rows={3}
+            className="field-sizing-fixed min-h-[4.5rem] resize-none rounded-md border-border/80 bg-muted/40 px-2 py-1.5 text-xs leading-snug shadow-inner placeholder:text-muted-foreground/70"
+            spellCheck
+          />
+          <DialogFooter className="shrink-0 gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-[11px]"
+              onClick={() => void publishPendingCapture('skip_note')}
+            >
+              Skip note
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="text-[11px]"
+              onClick={() => void publishPendingCapture('with_note')}
+            >
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={windowPickerOpen}

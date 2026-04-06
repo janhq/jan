@@ -3,9 +3,21 @@ import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { primaryMonitor } from '@tauri-apps/api/window'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { readScreenCaptureComposerDraft } from '@/constants/screenCapture'
+import {
+  readScreenCaptureComposerDraft,
+  writeScreenCaptureComposerDraft,
+} from '@/constants/screenCapture'
 import { route } from '@/constants/routes'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.screenCaptureRegion as any)({
@@ -34,6 +46,12 @@ function ScreenCaptureRegion() {
   } | null>(null)
   const startClientRef = useRef<{ x: number; y: number } | null>(null)
   const draggingRef = useRef(false)
+
+  const [noteAfterCaptureOpen, setNoteAfterCaptureOpen] = useState(false)
+  const [pendingB64, setPendingB64] = useState<string | null>(null)
+  const [noteDraft, setNoteDraft] = useState('')
+  /** When true, closing the note dialog is from a successful publish — do not run cancel (discard) logic. */
+  const suppressNoteDialogCancelRef = useRef(false)
 
   useEffect(() => {
     const place = async () => {
@@ -66,16 +84,47 @@ function ScreenCaptureRegion() {
         width,
         height,
       })
-      const instruction = readScreenCaptureComposerDraft().trim()
-      await invoke('publish_screen_capture_png', {
-        pngBase64: b64,
-        ...(instruction ? { instruction } : {}),
-      })
       toast.dismiss(loading)
+      setPendingB64(b64)
+      setNoteDraft(readScreenCaptureComposerDraft())
+      setNoteAfterCaptureOpen(true)
     } catch (e) {
       toast.dismiss(loading)
       toast.error('Region capture failed', { description: String(e) })
+      await getCurrentWebviewWindow().close()
     }
+  }, [])
+
+  const publishRegionCapture = useCallback(
+    async (mode: 'with_note' | 'skip_note') => {
+      if (!pendingB64) return
+      const b64 = pendingB64
+      try {
+        if (mode === 'with_note') {
+          writeScreenCaptureComposerDraft(noteDraft)
+          const trimmed = noteDraft.trim()
+          await invoke(
+            'publish_screen_capture_png',
+            trimmed ? { pngBase64: b64, instruction: trimmed } : { pngBase64: b64 }
+          )
+        } else {
+          await invoke('publish_screen_capture_png', { pngBase64: b64 })
+        }
+      } catch (e) {
+        toast.error('Could not send capture', { description: String(e) })
+        return
+      }
+      suppressNoteDialogCancelRef.current = true
+      setNoteAfterCaptureOpen(false)
+      setPendingB64(null)
+      await getCurrentWebviewWindow().close()
+    },
+    [pendingB64, noteDraft]
+  )
+
+  const cancelRegionNote = useCallback(async () => {
+    setNoteAfterCaptureOpen(false)
+    setPendingB64(null)
     await getCurrentWebviewWindow().close()
   }, [])
 
@@ -124,27 +173,74 @@ function ScreenCaptureRegion() {
   }, [])
 
   return (
-    <div
-      className="fixed inset-0 cursor-crosshair touch-none bg-black/35"
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      role="presentation"
-    >
-      {clientBox && clientBox.w > 1 && clientBox.h > 1 ? (
-        <div
-          className="absolute border-2 border-primary bg-primary/15 pointer-events-none"
-          style={{
-            left: clientBox.x,
-            top: clientBox.y,
-            width: clientBox.w,
-            height: clientBox.h,
-          }}
-        />
-      ) : null}
-      <div className="absolute bottom-6 left-0 right-0 text-center text-sm text-white drop-shadow-md pointer-events-none">
-        Drag to select a region · Esc to cancel
+    <>
+      <div
+        className="fixed inset-0 cursor-crosshair touch-none bg-black/35"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        role="presentation"
+      >
+        {clientBox && clientBox.w > 1 && clientBox.h > 1 ? (
+          <div
+            className="absolute border-2 border-primary bg-primary/15 pointer-events-none"
+            style={{
+              left: clientBox.x,
+              top: clientBox.y,
+              width: clientBox.w,
+              height: clientBox.h,
+            }}
+          />
+        ) : null}
+        <div className="absolute bottom-6 left-0 right-0 text-center text-sm text-white drop-shadow-md pointer-events-none">
+          Drag to select a region · Esc to cancel
+        </div>
       </div>
-    </div>
+
+      <Dialog
+        open={noteAfterCaptureOpen}
+        onOpenChange={(open) => {
+          if (open) return
+          if (suppressNoteDialogCancelRef.current) {
+            suppressNoteDialogCancelRef.current = false
+            return
+          }
+          void cancelRegionNote()
+        }}
+      >
+        <DialogContent className="sm:max-w-md" showCloseButton>
+          <DialogHeader>
+            <DialogTitle>Optional note</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Add text to send with the capture (shown above OCR in chat). Leave blank to skip.
+          </p>
+          <Textarea
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            placeholder="Optional message…"
+            rows={3}
+            className="min-h-[4.5rem] resize-none text-sm"
+            spellCheck
+          />
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => void cancelRegionNote()}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void publishRegionCapture('skip_note')}
+            >
+              Skip note
+            </Button>
+            <Button type="button" size="sm" onClick={() => void publishRegionCapture('with_note')}>
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
