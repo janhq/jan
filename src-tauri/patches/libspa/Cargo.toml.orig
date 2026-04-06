@@ -1,0 +1,40 @@
+[package]
+name = "libspa"
+version.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+categories.workspace = true
+description = "Rust bindings for libspa"
+repository.workspace = true
+license.workspace = true
+readme = "README.md"
+homepage.workspace = true
+documentation = "https://pipewire.pages.freedesktop.org/pipewire-rs/libspa/"
+keywords = ["pipewire", "multimedia", "audio", "video"]
+
+[dependencies]
+spa_sys = { package = "libspa-sys", version = "0.9", path = "../libspa-sys" }
+bitflags = "2"
+libc = "0.2"
+nix = "0.30.1"
+cookie-factory = { version = "0.3.3", default-features = false, features = ["std"] }
+nom = "8.0.0"
+convert_case = "0.8.0"
+
+[dev-dependencies]
+pipewire-sys = { version = "0.9", path = "../pipewire-sys" }
+# pipewire = { version = "0.9", path = "../pipewire" }
+
+[build-dependencies]
+system-deps = "7.0.5"
+cc = "1.0.66"
+
+[package.metadata.system-deps]
+libspa = { name = "libspa-0.2", version = "0.2" }
+
+[features]
+v0_3_33 = []
+v0_3_40 = ["v0_3_33"]
+v0_3_65 = ["v0_3_40", "spa_sys/v0_3_65"]
+v0_3_75 = ["v0_3_65"]
