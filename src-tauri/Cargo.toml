@@ -155,7 +155,7 @@ reqwest = { version = "0.11", features = ["json", "blocking", "stream", "native-
 tauri-plugin-updater = "2"
 once_cell = "1.18"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
-xcap = "0.0.14"
+xcap = "0.9.3"
 image = { version = "0.25", default-features = false, features = ["png"] }
 tauri-plugin-global-shortcut = "2"
 

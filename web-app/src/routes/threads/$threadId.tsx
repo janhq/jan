@@ -986,7 +986,7 @@ function ThreadDetail() {
       .finally(() => {
         processingQueueRef.current = false
       })
-  }, [status, threadId, sendQueuedMessage, sessionData.tools.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [status, threadId, sendQueuedMessage, sessionData.tools.length])
 
   // If streaming errors out, discard any queued messages so they don't sit there stuck
   useEffect(() => {

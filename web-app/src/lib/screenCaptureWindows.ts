@@ -26,11 +26,11 @@ export async function openScreenCaptureOverlayWindow(): Promise<void> {
 
   const w = new WebviewWindow(SCREEN_CAPTURE_OVERLAY_LABEL, {
     url: route.screenCaptureOverlay,
-    title: 'Screen capture toolbar',
-    width: 360,
-    height: 220,
-    minWidth: 280,
-    minHeight: 160,
+    title: 'Quick capture',
+    width: 400,
+    height: 340,
+    minWidth: 300,
+    minHeight: 260,
     resizable: true,
     maximizable: false,
     decorations: false,

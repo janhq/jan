@@ -6,6 +6,11 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react
 import { route } from '@/constants/routes'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  readScreenCaptureComposerDraft,
+  writeScreenCaptureComposerDraft,
+} from '@/constants/screenCapture'
 import {
   Dialog,
   DialogContent,
@@ -31,10 +36,11 @@ type CaptureWindowItem = {
   height: number
 }
 
-/** Large enough for the window list; overlay webview defaults are only ~360×220. */
-const WINDOW_PICKER_LOGICAL_SIZE = new LogicalSize(560, 640)
+/** Large enough for the window list and quick-capture UI. */
+const WINDOW_PICKER_LOGICAL_SIZE = new LogicalSize(560, 680)
 
 function ScreenCaptureOverlay() {
+  const [composer, setComposer] = useState(readScreenCaptureComposerDraft)
   const [passThrough, setPassThrough] = useState(false)
   const [windowPickerOpen, setWindowPickerOpen] = useState(false)
   const [windows, setWindows] = useState<CaptureWindowItem[]>([])
@@ -45,6 +51,10 @@ function ScreenCaptureOverlay() {
     const win = getCurrentWebviewWindow()
     void win.setAlwaysOnTop(true)
   }, [])
+
+  useEffect(() => {
+    writeScreenCaptureComposerDraft(composer)
+  }, [composer])
 
   const applyPassThrough = useCallback(async (enabled: boolean) => {
     try {
@@ -62,7 +72,14 @@ function ScreenCaptureOverlay() {
   }, [])
 
   const publishB64 = async (b64: string) => {
-    await invoke('publish_screen_capture_png', { pngBase64: b64 })
+    const instruction = composer.trim()
+    writeScreenCaptureComposerDraft(composer)
+    await invoke(
+      'publish_screen_capture_png',
+      instruction
+        ? { pngBase64: b64, instruction }
+        : { pngBase64: b64 }
+    )
   }
 
   const captureFullScreen = async () => {
@@ -78,6 +95,7 @@ function ScreenCaptureOverlay() {
   }
 
   const openRegion = async () => {
+    writeScreenCaptureComposerDraft(composer)
     try {
       await openScreenCaptureRegionWindow()
     } catch (e) {
@@ -114,6 +132,7 @@ function ScreenCaptureOverlay() {
   }, [restoreOverlayAfterWindowPicker])
 
   const openWindowPicker = async () => {
+    writeScreenCaptureComposerDraft(composer)
     await expandOverlayForWindowPicker()
     setWindowPickerOpen(true)
     setLoadingWindows(true)
@@ -158,33 +177,64 @@ function ScreenCaptureOverlay() {
         : {}
 
   return (
-    <div className="h-full w-full p-2 bg-background/92 backdrop-blur-md rounded-lg border border-border shadow-lg text-foreground">
-      <div className="flex flex-col gap-2 h-full min-h-0">
+    <div className="flex h-full w-full min-h-0 flex-col rounded-xl border border-border/80 bg-background/95 p-2.5 text-foreground shadow-xl backdrop-blur-md">
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5">
         <div
           className={
             IS_TAURI
-              ? 'text-xs font-medium text-muted-foreground truncate min-h-8 flex items-center rounded-md -mx-0.5 px-1 select-none touch-none cursor-grab active:cursor-grabbing'
-              : 'text-xs font-medium text-muted-foreground truncate min-h-8 flex items-center rounded-md -mx-0.5 px-1 select-none touch-none'
+              ? 'flex min-h-7 shrink-0 items-center gap-1.5 rounded-md px-0.5 text-xs font-medium text-muted-foreground select-none touch-none cursor-grab active:cursor-grabbing'
+              : 'flex min-h-7 shrink-0 items-center gap-1.5 rounded-md px-0.5 text-xs font-medium text-muted-foreground select-none touch-none'
           }
           title={IS_TAURI ? 'Drag to move' : undefined}
           aria-label={IS_TAURI ? 'Drag to move window' : undefined}
           {...titleBarDrag}
         >
-          Jan · screen capture
+          <span className="truncate font-semibold text-foreground">Quick capture</span>
+          <span className="truncate opacity-80">· Jan</span>
         </div>
+
+        <Textarea
+          value={composer}
+          onChange={(e) => setComposer(e.target.value)}
+          placeholder="Message to send with captured text (optional)…"
+          rows={3}
+          className="min-h-[4.5rem] resize-none rounded-lg border-border/80 bg-muted/40 text-sm shadow-inner placeholder:text-muted-foreground/70"
+          spellCheck
+        />
+
+        <p className="text-[10px] leading-snug text-muted-foreground">
+          Optional note is placed above OCR text (and your Settings instruction template, if any).
+        </p>
+
         <div className="flex flex-wrap gap-1.5">
-          <Button size="sm" variant="secondary" onClick={() => void captureFullScreen()}>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 text-xs"
+            onClick={() => void captureFullScreen()}
+          >
             Full screen
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => void openRegion()}>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 text-xs"
+            onClick={() => void openRegion()}
+          >
             Region
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => void openWindowPicker()}>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 text-xs"
+            onClick={() => void openWindowPicker()}
+          >
             Window…
           </Button>
         </div>
-        <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/60">
-          <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+
+        <div className="mt-auto flex shrink-0 items-center justify-between gap-2 border-t border-border/50 pt-2">
+          <label className="flex cursor-pointer items-center gap-2 text-xs select-none">
             <Switch
               checked={passThrough}
               onCheckedChange={(v) => void applyPassThrough(v)}

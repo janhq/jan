@@ -15,8 +15,10 @@ fn rgba_to_png_base64(rgba: image::RgbaImage) -> Result<String, String> {
 
 fn primary_or_first_monitor() -> Result<Monitor, String> {
     let monitors = Monitor::all().map_err(|e| e.to_string())?;
-    if let Some(m) = monitors.iter().find(|m| m.is_primary()).cloned() {
-        return Ok(m);
+    for m in &monitors {
+        if m.is_primary().map_err(|e| e.to_string())? {
+            return Ok(m.clone());
+        }
     }
     monitors
         .first()
@@ -54,10 +56,10 @@ pub fn capture_screen_rect_png_base64(
     }
 
     let monitor = monitor_for_global_rect(x, y, width, height)?;
-    let mx = monitor.x() as i64;
-    let my = monitor.y() as i64;
-    let mw = monitor.width() as i64;
-    let mh = monitor.height() as i64;
+    let mx = monitor.x().map_err(|e| e.to_string())? as i64;
+    let my = monitor.y().map_err(|e| e.to_string())? as i64;
+    let mw = monitor.width().map_err(|e| e.to_string())? as i64;
+    let mh = monitor.height().map_err(|e| e.to_string())? as i64;
 
     let gx0 = x as i64;
     let gy0 = y as i64;
@@ -81,9 +83,9 @@ pub fn capture_screen_rect_png_base64(
     let rw = (ix1 - ix0) as u32;
     let rh = (iy1 - iy0) as u32;
 
-    let full = monitor.capture_image().map_err(|e| e.to_string())?;
-    let sub = image::imageops::crop_imm(&full, rx, ry, rw, rh);
-    let cropped = sub.to_image();
+    let cropped = monitor
+        .capture_region(rx, ry, rw, rh)
+        .map_err(|e| e.to_string())?;
     rgba_to_png_base64(cropped)
 }
 
@@ -104,24 +106,29 @@ pub fn list_screen_capture_windows() -> Result<Vec<ScreenCaptureWindowItem>, Str
     let windows = Window::all().map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     for w in windows {
-        if w.is_minimized() {
+        if w.is_minimized().map_err(|e| e.to_string())? {
             continue;
         }
-        if w.width() == 0 || w.height() == 0 {
+        let width = w.width().map_err(|e| e.to_string())?;
+        let height = w.height().map_err(|e| e.to_string())?;
+        if width == 0 || height == 0 {
             continue;
         }
-        let title = w.title().to_string();
-        if title.contains("Screen capture toolbar") || title.contains("Select screen region") {
+        let title = w.title().map_err(|e| e.to_string())?;
+        if title.contains("Quick capture")
+            || title.contains("Screen capture toolbar")
+            || title.contains("Select screen region")
+        {
             continue;
         }
         out.push(ScreenCaptureWindowItem {
-            id: w.id(),
-            app_name: w.app_name().to_string(),
+            id: w.id().map_err(|e| e.to_string())?,
+            app_name: w.app_name().map_err(|e| e.to_string())?,
             title,
-            x: w.x(),
-            y: w.y(),
-            width: w.width(),
-            height: w.height(),
+            x: w.x().map_err(|e| e.to_string())?,
+            y: w.y().map_err(|e| e.to_string())?,
+            width,
+            height,
         });
     }
     Ok(out)
@@ -132,18 +139,27 @@ pub fn capture_window_png_base64(window_id: u32) -> Result<String, String> {
     let windows = Window::all().map_err(|e| e.to_string())?;
     let w = windows
         .iter()
-        .find(|w| w.id() == window_id)
+        .find(|w| w.id().map(|id| id == window_id).unwrap_or(false))
         .ok_or_else(|| format!("Window {window_id} not found"))?;
     let rgba = w.capture_image().map_err(|e| e.to_string())?;
     rgba_to_png_base64(rgba)
 }
 
 /// Delivers a PNG (base64) to the main window via a frontend event (`jan-screen-capture-png`).
+/// Optional `instruction` is merged into the OCR draft (quick-ask style note from the floating toolbar).
 #[tauri::command]
-pub fn publish_screen_capture_png(app: AppHandle, png_base64: String) -> Result<(), String> {
-    app.emit(
-        "jan-screen-capture-png",
-        serde_json::json!({ "base64": png_base64 }),
-    )
-    .map_err(|e| e.to_string())
+pub fn publish_screen_capture_png(
+    app: AppHandle,
+    png_base64: String,
+    instruction: Option<String>,
+) -> Result<(), String> {
+    let mut payload = serde_json::json!({ "base64": png_base64 });
+    if let Some(s) = instruction {
+        let t = s.trim();
+        if !t.is_empty() {
+            payload["instruction"] = serde_json::Value::String(t.to_string());
+        }
+    }
+    app.emit("jan-screen-capture-png", payload)
+        .map_err(|e| e.to_string())
 }

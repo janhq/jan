@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { primaryMonitor } from '@tauri-apps/api/window'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { readScreenCaptureComposerDraft } from '@/constants/screenCapture'
 import { route } from '@/constants/routes'
 import { toast } from 'sonner'
 
@@ -65,7 +66,11 @@ function ScreenCaptureRegion() {
         width,
         height,
       })
-      await invoke('publish_screen_capture_png', { pngBase64: b64 })
+      const instruction = readScreenCaptureComposerDraft().trim()
+      await invoke('publish_screen_capture_png', {
+        pngBase64: b64,
+        ...(instruction ? { instruction } : {}),
+      })
       toast.dismiss(loading)
     } catch (e) {
       toast.dismiss(loading)

@@ -32,6 +32,19 @@ function buildComposedPrompt(ocr: string, template: string): string {
   return `${t}\n\n${body}`
 }
 
+/** OCR + settings template + optional note from the floating toolbar (quick-ask style). */
+function buildScreenCaptureDraft(
+  ocr: string,
+  template: string,
+  toolbarInstruction: string
+): string {
+  const ocrBlock = buildComposedPrompt(ocr, template)
+  const hint = toolbarInstruction.trim()
+  if (!hint) return ocrBlock
+  if (!ocrBlock.trim()) return hint
+  return `${hint}\n\n${ocrBlock}`
+}
+
 export function ScreenCaptureProvider() {
   const screenCaptureToTextEnabled = useGeneralSetting(
     (s) => s.screenCaptureToTextEnabled
@@ -51,41 +64,46 @@ export function ScreenCaptureProvider() {
   const isMainWebview =
     IS_TAURI && getCurrentWebviewWindow().label === 'main'
 
-  const processPngBase64 = useCallback(async (b64: string) => {
-    if (!isMainWebview || busyRef.current) return
-    busyRef.current = true
-    const ocrToast = toast.loading('Reading text (on-device OCR)…')
-    try {
-      const { recognize } = await import('tesseract.js')
-      const dataUrl = `data:image/png;base64,${b64}`
-      const { data } = await recognize(dataUrl, 'eng')
-      toast.dismiss(ocrToast)
-
-      const raw = data.text ?? ''
-      const trimmed = raw.trim()
-      if (!trimmed) {
-        toast.message('No text detected', {
-          description: 'Edit below if you still want to add a message.',
-        })
-      } else {
-        toast.success('Text extracted from screen')
-      }
-
-      setDraftText(raw)
-      setDialogOpen(true)
-
+  const processPngBase64 = useCallback(
+    async (b64: string, toolbarInstruction = '') => {
+      if (!isMainWebview || busyRef.current) return
+      busyRef.current = true
+      const ocrToast = toast.loading('Reading text (on-device OCR)…')
       try {
-        await getCurrentWebviewWindow().setFocus()
-      } catch {
-        /* ignore */
+        const { recognize } = await import('tesseract.js')
+        const dataUrl = `data:image/png;base64,${b64}`
+        const { data } = await recognize(dataUrl, 'eng')
+        toast.dismiss(ocrToast)
+
+        const raw = data.text ?? ''
+        const trimmed = raw.trim()
+        if (!trimmed) {
+          toast.message('No text detected', {
+            description: 'Edit below if you still want to add a message.',
+          })
+        } else {
+          toast.success('Text extracted from screen')
+        }
+
+        const template =
+          useGeneralSetting.getState().screenCaptureInstructionTemplate ?? ''
+        setDraftText(buildScreenCaptureDraft(raw, template, toolbarInstruction))
+        setDialogOpen(true)
+
+        try {
+          await getCurrentWebviewWindow().setFocus()
+        } catch {
+          /* ignore */
+        }
+      } catch (e) {
+        toast.dismiss(ocrToast)
+        toast.error('OCR failed', { description: String(e) })
+      } finally {
+        busyRef.current = false
       }
-    } catch (e) {
-      toast.dismiss(ocrToast)
-      toast.error('OCR failed', { description: String(e) })
-    } finally {
-      busyRef.current = false
-    }
-  }, [isMainWebview])
+    },
+    [isMainWebview]
+  )
 
   const runCapture = useCallback(async () => {
     if (!isMainWebview || busyRef.current) return
@@ -111,12 +129,17 @@ export function ScreenCaptureProvider() {
     if (!isMainWebview) return
 
     let unlisten: (() => void) | undefined
-    void listen<{ base64: string }>(JAN_SCREEN_CAPTURE_PNG_EVENT, (ev) => {
-      const b64 = ev.payload?.base64
-      if (typeof b64 === 'string' && b64.length > 0) {
-        void processPngBase64(b64)
+    void listen<{ base64: string; instruction?: string }>(
+      JAN_SCREEN_CAPTURE_PNG_EVENT,
+      (ev) => {
+        const b64 = ev.payload?.base64
+        const instruction =
+          typeof ev.payload?.instruction === 'string' ? ev.payload.instruction : ''
+        if (typeof b64 === 'string' && b64.length > 0) {
+          void processPngBase64(b64, instruction)
+        }
       }
-    }).then((fn) => {
+    ).then((fn) => {
       unlisten = fn
     })
 
@@ -199,10 +222,8 @@ export function ScreenCaptureProvider() {
   ])
 
   const commit = (sendNow: boolean) => {
-    const template =
-      useGeneralSetting.getState().screenCaptureInstructionTemplate ?? ''
-    const text = buildComposedPrompt(draftText, template)
-    if (!text.trim()) {
+    const text = draftText.trim()
+    if (!text) {
       toast.error('Nothing to insert')
       return
     }
@@ -228,8 +249,9 @@ export function ScreenCaptureProvider() {
         <DialogHeader>
           <DialogTitle>Screen text</DialogTitle>
           <DialogDescription>
-            Text was read from your screen with on-device OCR. Edit it, then
-            insert it into the chat input or send it immediately.
+            Text was read from your screen with on-device OCR. If you typed a
+            note in the floating capture bar, it is included above the OCR. Edit,
+            then insert into chat or send.
           </DialogDescription>
         </DialogHeader>
         <Textarea
