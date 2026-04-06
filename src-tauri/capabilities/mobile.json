@@ -1,14 +1,14 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "mobile",
-  "description": "enables the default permissions for mobile platforms",
+  "description": "mobile permissions without core:default (avoids missing app_hide.toml in dev)",
   "windows": ["main"],
   "remote": {
     "urls": ["http://*"]
   },
   "permissions": [
-    "core:default",
     "core:webview:allow-set-webview-zoom",
+    "core:path:default",
     "core:window:allow-start-dragging",
     "core:window:allow-set-theme",
     "shell:allow-spawn",

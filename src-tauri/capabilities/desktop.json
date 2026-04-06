@@ -1,15 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop",
-  "description": "enables the default permissions for desktop platforms",
+  "description": "desktop platform permissions without core:default (avoids missing app_hide.toml in dev)",
   "windows": ["main"],
   "remote": {
     "urls": ["http://*"]
   },
   "platforms": ["linux", "macOS", "windows"],
   "permissions": [
-    "core:default",
     "core:webview:allow-set-webview-zoom",
+    "core:path:default",
     "core:window:allow-start-dragging",
     "core:window:allow-set-theme",
     "core:window:allow-get-all-windows",
