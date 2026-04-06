@@ -1,39 +1,102 @@
-use std::{fs, path::PathBuf};
+use std::{fs, path::{Path, PathBuf}};
 use tauri::{AppHandle, Manager, Runtime, State};
 
 use super::{
-    constants::CONFIGURATION_FILE_NAME, helpers::copy_dir_recursive, models::AppConfiguration,
+    constants::{CONFIGURATION_FILE_NAME, TAURI_BUNDLE_IDENTIFIER},
+    helpers::copy_dir_recursive,
+    models::AppConfiguration,
 };
 use crate::core::state::AppState;
 
-/// Resolve the Jan config file path without an AppHandle (for CLI use).
-/// Mirrors the logic in get_configuration_file_path() using the dirs crate.
-pub fn resolve_config_file_path() -> PathBuf {
+/// Canonical app support directory (same as Tauri `app_data_dir` for this bundle).
+pub fn resolve_tauri_app_data_dir() -> Option<PathBuf> {
+    dirs::data_dir().map(|d| d.join(TAURI_BUNDLE_IDENTIFIER))
+}
+
+/// If the canonical `settings.json` is missing but a legacy copy exists (e.g.
+/// `%APPDATA%/Jan/settings.json` on Windows), copy it into the canonical location.
+/// See #7898: users who moved their data folder then removed `Roaming/Jan` lost
+/// their config because it only lived in that legacy folder.
+pub fn migrate_legacy_app_configuration(app_data_dir: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(app_data_dir)?;
+    let canonical = app_data_dir.join(CONFIGURATION_FILE_NAME);
+    if canonical.exists() {
+        return Ok(());
+    }
+
+    for legacy in legacy_app_config_candidate_paths(app_data_dir) {
+        if legacy.is_file() {
+            log::info!(
+                "Migrating app configuration from {} to {}",
+                legacy.display(),
+                canonical.display()
+            );
+            fs::copy(&legacy, &canonical)?;
+            return Ok(());
+        }
+    }
+
+    Ok(())
+}
+
+fn legacy_app_config_candidate_paths(app_data_dir: &Path) -> Vec<PathBuf> {
     let package_name = env!("CARGO_PKG_NAME");
+    let mut paths = Vec::new();
 
-    // On Linux, prefer the XDG config dir first (matches Tauri behaviour)
     #[cfg(target_os = "linux")]
-    if let Some(config_dir) = dirs::config_dir() {
-        let path = config_dir.join(package_name);
-        if path.exists() {
-            return path.join(CONFIGURATION_FILE_NAME);
+    {
+        if let Some(config_dir) = dirs::config_dir() {
+            paths.push(config_dir.join(package_name).join(CONFIGURATION_FILE_NAME));
+        }
+        if let Some(data_dir) = dirs::data_dir() {
+            let p = data_dir.join(package_name).join(CONFIGURATION_FILE_NAME);
+            if !paths.contains(&p) {
+                paths.push(p);
+            }
         }
     }
 
-    // Primary path: data_dir/Jan  (e.g. ~/Library/Application Support/Jan on macOS)
-    if let Some(data_dir) = dirs::data_dir() {
-        let path = data_dir.join(package_name);
-        if !path.exists() {
-            let _ = fs::create_dir_all(&path);
+    #[cfg(not(target_os = "linux"))]
+    {
+        if let Some(parent) = app_data_dir.parent() {
+            paths.push(parent.join(package_name).join(CONFIGURATION_FILE_NAME));
         }
-        return path.join(CONFIGURATION_FILE_NAME);
     }
 
-    // Last resort: home directory
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_default();
-    PathBuf::from(home).join(CONFIGURATION_FILE_NAME)
+    paths
+}
+
+fn app_data_dir_with_fallback<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> PathBuf {
+    app_handle.path().app_data_dir().unwrap_or_else(|err| {
+        log::error!("Failed to get app data directory: {err}. Using home directory instead.");
+
+        let home_dir = std::env::var(if cfg!(target_os = "windows") {
+            "USERPROFILE"
+        } else {
+            "HOME"
+        })
+        .expect("Failed to determine the home directory");
+
+        PathBuf::from(home_dir).join(TAURI_BUNDLE_IDENTIFIER)
+    })
+}
+
+/// Resolve the Jan config file path without an AppHandle (for CLI use).
+/// Uses the same canonical directory as Tauri `app_data_dir`, after optional
+/// migration from legacy locations.
+pub fn resolve_config_file_path() -> PathBuf {
+    let app_data = resolve_tauri_app_data_dir().unwrap_or_else(|| {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_default();
+        PathBuf::from(home).join(TAURI_BUNDLE_IDENTIFIER)
+    });
+
+    if let Err(err) = migrate_legacy_app_configuration(&app_data) {
+        log::warn!("Legacy app config migration (CLI) skipped: {err}");
+    }
+
+    app_data.join(CONFIGURATION_FILE_NAME)
 }
 
 /// Resolve the Jan data folder path without an AppHandle (for CLI use).
@@ -68,7 +131,12 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
         return app_default_configuration;
     }
 
-    let configuration_file = get_configuration_file_path(app_handle.clone());
+    let app_path = app_data_dir_with_fallback(&app_handle);
+    if let Err(err) = migrate_legacy_app_configuration(&app_path) {
+        log::warn!("Legacy app config migration skipped: {err}");
+    }
+
+    let configuration_file = app_path.join(CONFIGURATION_FILE_NAME);
 
     let default_data_folder = default_data_folder_path(app_handle.clone());
 
@@ -157,44 +225,11 @@ pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
 
 #[tauri::command]
 pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
-    let app_path = app_handle.path().app_data_dir().unwrap_or_else(|err| {
-        log::error!("Failed to get app data directory: {err}. Using home directory instead.");
-
-        let home_dir = std::env::var(if cfg!(target_os = "windows") {
-            "USERPROFILE"
-        } else {
-            "HOME"
-        })
-        .expect("Failed to determine the home directory");
-
-        PathBuf::from(home_dir)
-    });
-
-    let package_name = env!("CARGO_PKG_NAME");
-    #[cfg(target_os = "linux")]
-    let old_data_dir = {
-        if let Some(config_path) = dirs::config_dir() {
-            config_path.join(package_name)
-        } else {
-            log::debug!("Could not determine config directory");
-            app_path
-                .parent()
-                .unwrap_or(&app_path.join("../"))
-                .join(package_name)
-        }
-    };
-
-    #[cfg(not(target_os = "linux"))]
-    let old_data_dir = app_path
-        .parent()
-        .unwrap_or(&app_path.join("../"))
-        .join(package_name);
-
-    if old_data_dir.exists() {
-        old_data_dir.join(CONFIGURATION_FILE_NAME)
-    } else {
-        app_path.join(CONFIGURATION_FILE_NAME)
+    let app_path = app_data_dir_with_fallback(&app_handle);
+    if let Err(err) = migrate_legacy_app_configuration(&app_path) {
+        log::warn!("Legacy app config migration skipped: {err}");
     }
+    app_path.join(CONFIGURATION_FILE_NAME)
 }
 
 #[tauri::command]

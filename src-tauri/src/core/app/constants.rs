@@ -1,6 +1,10 @@
 // App Configuration Constants
 pub const CONFIGURATION_FILE_NAME: &str = "settings.json";
 
+/// Tauri bundle `identifier` from `tauri.conf.json`. Used to resolve the canonical
+/// app config path for CLI and must match `app_data_dir()` in the desktop app.
+pub const TAURI_BUNDLE_IDENTIFIER: &str = "jan.ai.app";
+
 // Categorised lists of Jan data directories and files.
 // The factory-reset logic selectively deletes by category based on user choices.
 // Add new entries to the appropriate category so they are picked up automatically.
