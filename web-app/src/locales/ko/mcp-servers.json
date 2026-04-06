@@ -58,6 +58,16 @@
     "title": "런타임 설정",
     "description": "Jan이 MCP 서버를 관리하고 재시도하는 방식을 구성합니다.",
     "toolCallTimeout": "도구 호출 제한 시간 (초)",
-    "toolCallTimeoutDesc": "MCP 도구의 응답을 기다리는 최대 시간입니다."
+    "toolCallTimeoutDesc": "MCP 도구의 응답을 기다리는 최대 시간입니다.",
+    "smartToolRouting": "스마트 MCP 도구 라우팅",
+    "smartToolRoutingDesc": "켜면 Jan이 도구를 불러오기 전에 관련 MCP 서버만 선택합니다. 끄면 항상 전체 MCP 도구 목록을 불러옵니다.",
+    "useLightweightRouterModel": "라우팅에 전용 모델 사용",
+    "useLightweightRouterModelDesc": "스마트 라우팅이 켜져 있으면 라우팅 단계가 채팅 모델 대신 별도의(보통 더 작은) 모델로 실행됩니다. 끄면 라우팅에 항상 활성 채팅 모델을 사용합니다.",
+    "routerModel": "라우팅 모델",
+    "routerModelDesc": "제공자와 모델을 한곳에서 선택합니다. 라우팅을 빠르고 저렴하게 유지하려면 경량 모델만 표시됩니다.",
+    "selectRouterModelPlaceholder": "라우팅 모델 선택…",
+    "routerModelSearchPlaceholder": "모델 검색…",
+    "routerModelEmptyList": "사용 가능한 경량 모델이 없습니다. 더 작은 모델을 추가하거나 모델에서 API 키를 설정하세요.",
+    "routerModelEmptySearch": "「{{query}}」에 일치하는 항목이 없습니다."
   }
 }
