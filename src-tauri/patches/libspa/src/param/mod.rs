@@ -3,7 +3,6 @@
 
 //! Types for dealing with SPA parameters.
 
-pub mod audio;
 pub mod format;
 pub mod format_utils;
 pub mod video;
