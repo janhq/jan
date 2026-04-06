@@ -85,8 +85,5 @@ package = "libspa-sys"
 [dev-dependencies.pipewire-sys]
 version = "0.9"
 
-[build-dependencies.cc]
-version = "1.0.66"
-
 [build-dependencies.system-deps]
 version = "7.0.5"
