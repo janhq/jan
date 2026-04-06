@@ -198,7 +198,7 @@ function ScreenCaptureOverlay() {
           onChange={(e) => setComposer(e.target.value)}
           placeholder="Message to send with captured text (optional)…"
           rows={3}
-          className="min-h-[4.5rem] resize-none rounded-lg border-border/80 bg-muted/40 text-sm shadow-inner placeholder:text-muted-foreground/70"
+          className="field-sizing-fixed min-h-[4.5rem] flex-1 resize-none rounded-lg border-border/80 bg-muted/40 text-sm shadow-inner placeholder:text-muted-foreground/70"
           spellCheck
         />
 
@@ -206,11 +206,11 @@ function ScreenCaptureOverlay() {
           Optional note is placed above OCR text (and your Settings instruction template, if any).
         </p>
 
-        <div className="flex flex-wrap gap-1.5">
+        <div className="grid w-full grid-flow-col auto-cols-max gap-1.5 justify-start overflow-x-auto">
           <Button
             size="sm"
             variant="secondary"
-            className="h-8 text-xs"
+            className="h-8 shrink-0 text-xs"
             onClick={() => void captureFullScreen()}
           >
             Full screen
@@ -218,7 +218,7 @@ function ScreenCaptureOverlay() {
           <Button
             size="sm"
             variant="secondary"
-            className="h-8 text-xs"
+            className="h-8 shrink-0 text-xs"
             onClick={() => void openRegion()}
           >
             Region
@@ -226,14 +226,14 @@ function ScreenCaptureOverlay() {
           <Button
             size="sm"
             variant="secondary"
-            className="h-8 text-xs"
+            className="h-8 shrink-0 text-xs"
             onClick={() => void openWindowPicker()}
           >
             Window…
           </Button>
         </div>
 
-        <div className="mt-auto flex shrink-0 items-center justify-between gap-2 border-t border-border/50 pt-2">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/50 pt-2">
           <label className="flex cursor-pointer items-center gap-2 text-xs select-none">
             <Switch
               checked={passThrough}
