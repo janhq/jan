@@ -328,6 +328,17 @@ export const MessageItem = memo(
       groupKey: string,
       hasFollowingContent: boolean
     ) => {
+      const hasReasoning = entries.some(
+        (e) => e.part.type === CONTENT_TYPE.REASONING
+      )
+
+      // No reasoning in this group — render tool parts directly, no CoT wrapper
+      if (!hasReasoning) {
+        return entries.map(({ part, index: partIndex }) =>
+          renderToolInline(part, partIndex)
+        )
+      }
+
       const lastEntryIndex = entries[entries.length - 1].index
       const groupIsStreaming =
         isStreaming && lastEntryIndex === message.parts.length - 1
