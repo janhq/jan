@@ -2,7 +2,12 @@
  * Models Service Types
  */
 
-import { SessionInfo, modelInfo, ThreadMessage, UnloadResult } from '@janhq/core'
+import {
+  SessionInfo,
+  modelInfo,
+  ThreadMessage,
+  UnloadResult,
+} from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 
 // Types for model catalog
@@ -22,6 +27,7 @@ export interface SafetensorsFile {
   model_id: string
   path: string
   file_size: string
+  size_bytes?: number
   sha256?: string
 }
 
@@ -126,7 +132,6 @@ export interface ModelValidationResult {
   metadata?: GgufMetadata
 }
 
-
 export type PreflightReason =
   | 'AUTH_REQUIRED'
   | 'LICENSE_NOT_ACCEPTED'
@@ -186,9 +191,18 @@ export interface ModelsService {
     modelPath: string,
     ctxSize?: number
   ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
-  getHubModelScore(model: CatalogModel, variant?: ModelQuant): Promise<ModelScore>
-  prefetchHubModelScore(model: CatalogModel, variant?: ModelQuant): Promise<ModelScore>
-  getCachedHubModelScore(model: CatalogModel, variant?: ModelQuant): ModelScore | undefined
+  getHubModelScore(
+    model: CatalogModel,
+    variant?: ModelQuant
+  ): Promise<ModelScore>
+  prefetchHubModelScore(
+    model: CatalogModel,
+    variant?: ModelQuant
+  ): Promise<ModelScore>
+  getCachedHubModelScore(
+    model: CatalogModel,
+    variant?: ModelQuant
+  ): ModelScore | undefined
   validateGgufFile(filePath: string): Promise<ModelValidationResult>
   getTokensCount(modelId: string, messages: ThreadMessage[]): Promise<number>
 }

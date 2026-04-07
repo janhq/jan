@@ -46,6 +46,9 @@ export interface HubModelScoreRequest {
   developer?: string
   default_quant_model_id: string
   model_path: string
+  runtime?: 'llamacpp' | 'mlx'
+  quantization?: string
+  total_size_bytes?: number
   ctx_size?: number
   use_case?: string
   capabilities?: string[]

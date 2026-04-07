@@ -26,6 +26,7 @@ import type {
   ModelValidationResult,
   ModelQuant,
   ModelScore,
+  SafetensorsFile,
 } from './types'
 
 // TODO: Replace this with the actual provider later
@@ -47,6 +48,15 @@ interface ScoreCacheStore {
 
 interface CachedHubScoreEntry {
   result: ModelScore
+}
+
+type HubScoreRequestSource = {
+  model_id: string
+  path: string
+  file_size: string
+  runtime: 'llamacpp' | 'mlx'
+  quantization?: string
+  total_size_bytes?: number
 }
 
 export class DefaultModelsService implements ModelsService {
@@ -242,7 +252,7 @@ export class DefaultModelsService implements ModelsService {
   }
 
   private async getPersistentHubScoreCacheKey(
-    scoreVariant: ModelQuant
+    scoreSource: HubScoreRequestSource
   ): Promise<string | null> {
     const hardwareFingerprint = await this.getHardwareFingerprint()
     if (!hardwareFingerprint) {
@@ -252,8 +262,8 @@ export class DefaultModelsService implements ModelsService {
     return this.sha256Hex(
       [
         SCORE_CACHE_SCHEMA_VERSION,
-        scoreVariant.model_id,
-        scoreVariant.path,
+        scoreSource.model_id,
+        scoreSource.path,
         DEFAULT_SCORE_CTX_SIZE,
         hardwareFingerprint,
       ].join('|')
@@ -262,14 +272,14 @@ export class DefaultModelsService implements ModelsService {
 
   private normalizeHubScoreResult(
     result: ModelScore,
-    scoreVariant: ModelQuant,
+    scoreSource: HubScoreRequestSource,
     cacheKey: string | null
   ): ModelScore {
     return {
       ...result,
       estimated_tps: result.estimated_tps ?? 0,
       scored_quant_model_id:
-        result.scored_quant_model_id ?? scoreVariant.model_id,
+        result.scored_quant_model_id ?? scoreSource.model_id,
       cache_key: result.cache_key ?? cacheKey ?? undefined,
       updated_at: result.updated_at ?? Math.floor(Date.now() / 1000),
     }
@@ -285,22 +295,76 @@ export class DefaultModelsService implements ModelsService {
     )
   }
 
-  private getScoreVariant(
+  private inferMlxQuantization(
+    model: CatalogModel,
+    safetensorsFiles: SafetensorsFile[]
+  ): string {
+    const combined = [
+      model.model_name,
+      model.developer,
+      ...safetensorsFiles.map((file) => file.model_id),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+
+    if (combined.includes('8bit') || combined.includes('mlx-8bit')) {
+      return 'mlx-8bit'
+    }
+
+    return 'mlx-4bit'
+  }
+
+  private getDefaultMlxScoreSource(
+    model: CatalogModel
+  ): HubScoreRequestSource | undefined {
+    const safetensorsFiles = model.safetensors_files ?? []
+    const primaryFile = safetensorsFiles[0]
+    if (!primaryFile) {
+      return undefined
+    }
+
+    const totalSizeBytes = safetensorsFiles.reduce(
+      (sum, file) => sum + (file.size_bytes ?? 0),
+      0
+    )
+
+    return {
+      model_id: primaryFile.model_id,
+      path: primaryFile.path,
+      file_size: primaryFile.file_size,
+      runtime: 'mlx',
+      quantization: this.inferMlxQuantization(model, safetensorsFiles),
+      total_size_bytes: totalSizeBytes > 0 ? totalSizeBytes : undefined,
+    }
+  }
+
+  private getHubScoreRequestSource(
     model: CatalogModel,
     variant?: ModelQuant
-  ): ModelQuant | undefined {
-    return variant ?? this.getDefaultScoreVariant(model)
+  ): HubScoreRequestSource | undefined {
+    if (model.is_mlx) {
+      return this.getDefaultMlxScoreSource(model)
+    }
+
+    const scoreVariant = variant ?? this.getDefaultScoreVariant(model)
+    return scoreVariant
+      ? {
+          ...scoreVariant,
+          runtime: 'llamacpp',
+        }
+      : undefined
   }
 
   private getHubScoreCacheKey(
     model: CatalogModel,
     variant?: ModelQuant
   ): string {
-    const scoreVariant = this.getScoreVariant(model, variant)
+    const scoreSource = this.getHubScoreRequestSource(model, variant)
     return [
       model.model_name,
-      scoreVariant?.model_id ?? 'no-variant',
-      scoreVariant?.path ?? 'no-path',
+      scoreSource?.model_id ?? 'no-variant',
+      scoreSource?.path ?? 'no-path',
     ].join('::')
   }
 
@@ -461,6 +525,7 @@ export class DefaultModelsService implements ModelsService {
         model_id: sanitizeModelId(modelId),
         path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
         file_size: formatFileSize(file.size),
+        size_bytes: file.size,
         sha256: file.lfs?.sha256,
       }
     })
@@ -852,24 +917,16 @@ export class DefaultModelsService implements ModelsService {
     model: CatalogModel,
     variant?: ModelQuant
   ): Promise<ModelScore> {
-    const scoreVariant = this.getScoreVariant(model, variant)
+    const scoreSource = this.getHubScoreRequestSource(model, variant)
     const inMemoryCacheKey = this.getHubScoreCacheKey(model, variant)
 
-    if (model.is_mlx) {
+    if (!scoreSource) {
       const unavailable: ModelScore = {
         status: 'unavailable',
         estimated_tps: 0,
-        reason: 'llmfit scoring is currently only available for GGUF models.',
-      }
-      this.hubScoreCache.set(inMemoryCacheKey, unavailable)
-      return unavailable
-    }
-
-    if (!scoreVariant) {
-      const unavailable: ModelScore = {
-        status: 'unavailable',
-        estimated_tps: 0,
-        reason: 'No GGUF variant available for scoring.',
+        reason: model.is_mlx
+          ? 'No MLX safetensors variant available for scoring.'
+          : 'No GGUF variant available for scoring.',
       }
       this.hubScoreCache.set(inMemoryCacheKey, unavailable)
       return unavailable
@@ -888,20 +945,20 @@ export class DefaultModelsService implements ModelsService {
     const loadingState: ModelScore = {
       status: 'loading',
       estimated_tps: 0,
-      scored_quant_model_id: scoreVariant.model_id,
+      scored_quant_model_id: scoreSource.model_id,
     }
     this.hubScoreCache.set(inMemoryCacheKey, loadingState)
 
     const request = (async () => {
       try {
         const persistentCacheKey =
-          await this.getPersistentHubScoreCacheKey(scoreVariant)
+          await this.getPersistentHubScoreCacheKey(scoreSource)
         if (persistentCacheKey) {
           const persisted = await this.readPersistedHubScore(persistentCacheKey)
           if (persisted) {
             const normalizedPersisted = this.normalizeHubScoreResult(
               persisted,
-              scoreVariant,
+              scoreSource,
               persistentCacheKey
             )
             this.hubScoreCache.set(inMemoryCacheKey, normalizedPersisted)
@@ -915,6 +972,9 @@ export class DefaultModelsService implements ModelsService {
             developer?: string
             default_quant_model_id: string
             model_path: string
+            runtime?: 'llamacpp' | 'mlx'
+            quantization?: string
+            total_size_bytes?: number
             ctx_size?: number
             use_case?: string
             capabilities?: string[]
@@ -939,8 +999,11 @@ export class DefaultModelsService implements ModelsService {
           await engine.getHubModelScore({
             model_name: model.model_name,
             developer: model.developer,
-            default_quant_model_id: scoreVariant.model_id,
-            model_path: scoreVariant.path,
+            default_quant_model_id: scoreSource.model_id,
+            model_path: scoreSource.path,
+            runtime: scoreSource.runtime,
+            quantization: scoreSource.quantization,
+            total_size_bytes: scoreSource.total_size_bytes,
             ctx_size: DEFAULT_SCORE_CTX_SIZE,
             use_case: model.use_case,
             capabilities: model.capabilities,
@@ -949,7 +1012,7 @@ export class DefaultModelsService implements ModelsService {
             num_mmproj: model.num_mmproj,
             pinned: model.pinned,
           }),
-          scoreVariant,
+          scoreSource,
           persistentCacheKey
         )
 

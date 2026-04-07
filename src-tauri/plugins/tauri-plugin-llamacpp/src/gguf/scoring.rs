@@ -65,17 +65,25 @@ async fn compute_score_result(
     request: &HubModelScoreRequest,
     system_info: &SystemInfo,
 ) -> Result<(f32, f32, ModelScoreBreakdown), String> {
-    let gguf = read_gguf_metadata_internal(request.model_path.clone()).await?;
-    let model_size = get_model_size(request.model_path.clone()).await?;
-    let derived = derive_model_spec(request, &gguf, model_size)?;
-    let llmfit_model = build_llmfit_model(request, &derived);
+    let runtime = normalize_runtime(request);
+    let is_mlx = runtime == InferenceRuntime::Mlx;
+    let gguf = if is_mlx {
+        None
+    } else {
+        Some(read_gguf_metadata_internal(request.model_path.clone()).await?)
+    };
+    let model_size = request
+        .total_size_bytes
+        .unwrap_or(get_model_size(request.model_path.clone()).await?);
+    let derived = derive_model_spec(request, gguf.as_ref(), model_size)?;
+    let llmfit_model = build_llmfit_model(request, &derived, runtime);
     let llmfit_system = build_llmfit_system_specs(system_info);
 
     let analysis = ModelFit::analyze_with_forced_runtime(
         &llmfit_model,
         &llmfit_system,
         Some(request.ctx_size.unwrap_or(DEFAULT_CTX_SIZE)),
-        Some(InferenceRuntime::LlamaCpp),
+        Some(runtime),
     );
 
     Ok((
@@ -109,13 +117,17 @@ async fn compute_score_result(
 
 fn derive_model_spec(
     request: &HubModelScoreRequest,
-    gguf: &GgufMetadata,
+    gguf: Option<&GgufMetadata>,
     model_size: u64,
 ) -> Result<DerivedModelSpec, String> {
-    let quantization = normalize_quantization(&request.default_quant_model_id)
-        .ok_or_else(|| "Unsupported or unrecognized GGUF quantization".to_string())?;
+    let runtime = normalize_runtime(request);
+    let quantization = request
+        .quantization
+        .clone()
+        .or_else(|| normalize_quantization(&request.default_quant_model_id, runtime))
+        .ok_or_else(|| format!("Unsupported or unrecognized {} quantization", runtime_label(runtime)))?;
     let context_length = infer_context_length(gguf, request.ctx_size)
-        .ok_or_else(|| "Unable to determine GGUF context length".to_string())?;
+        .unwrap_or(request.ctx_size.unwrap_or(DEFAULT_CTX_SIZE));
 
     let parameters_raw = infer_parameter_count_raw(request, gguf, model_size, &quantization)
         .ok_or_else(|| "Unable to determine model parameter count for llmfit".to_string())?;
@@ -138,8 +150,10 @@ fn derive_model_spec(
         .unwrap_or_else(|| infer_capabilities(request, gguf, &inferred_use_case));
 
     let num_experts = infer_metadata_u32(gguf, &["*.expert_count", "*.n_expert"]);
-    let active_experts =
-        infer_metadata_u32(gguf, &["*.expert_used_count", "*.expert_used_count", "*.n_expert_used"]);
+    let active_experts = infer_metadata_u32(
+        gguf,
+        &["*.expert_used_count", "*.expert_used_count", "*.n_expert_used"],
+    );
     let is_moe = num_experts.unwrap_or(0) > 0;
     let active_parameters = if is_moe {
         match (num_experts, active_experts) {
@@ -166,11 +180,15 @@ fn derive_model_spec(
         release_date: request.release_date.clone(),
         num_attention_heads: infer_metadata_u32(gguf, &["*.attention.head_count"]),
         num_key_value_heads: infer_metadata_u32(gguf, &["*.attention.head_count_kv"]),
-        license: gguf.metadata.get("general.license").cloned(),
+        license: gguf.and_then(|metadata| metadata.metadata.get("general.license").cloned()),
     })
 }
 
-fn build_llmfit_model(request: &HubModelScoreRequest, spec: &DerivedModelSpec) -> LlmModel {
+fn build_llmfit_model(
+    request: &HubModelScoreRequest,
+    spec: &DerivedModelSpec,
+    runtime: InferenceRuntime,
+) -> LlmModel {
     let mut model = LlmModel {
         name: request.model_name.clone(),
         provider: request.developer.clone().unwrap_or_else(|| infer_provider(request)),
@@ -189,7 +207,7 @@ fn build_llmfit_model(request: &HubModelScoreRequest, spec: &DerivedModelSpec) -
         release_date: spec.release_date.clone(),
         gguf_sources: vec![],
         capabilities: spec.capabilities.clone(),
-        format: ModelFormat::Gguf,
+        format: model_format_for_runtime(runtime),
         num_attention_heads: spec.num_attention_heads,
         num_key_value_heads: spec.num_key_value_heads,
         license: spec.license.clone(),
@@ -281,18 +299,21 @@ fn build_llmfit_system_specs(system_info: &SystemInfo) -> LlmfitSystemSpecs {
 
 fn infer_parameter_count_raw(
     request: &HubModelScoreRequest,
-    gguf: &GgufMetadata,
+    gguf: Option<&GgufMetadata>,
     model_size: u64,
     quantization: &str,
 ) -> Option<u64> {
-    let text_candidates = [
+    let mut text_candidates = vec![
         request.default_quant_model_id.as_str(),
         request.model_name.as_str(),
-        gguf.metadata
-            .get("general.name")
-            .map(String::as_str)
-            .unwrap_or_default(),
+        request.model_path.as_str(),
     ];
+
+    if let Some(gguf) = gguf {
+        if let Some(name) = gguf.metadata.get("general.name") {
+            text_candidates.push(name.as_str());
+        }
+    }
 
     for candidate in text_candidates {
         if let Some(value) = parse_parameter_count_from_text(candidate) {
@@ -340,7 +361,8 @@ fn parse_parameter_count_from_text(input: &str) -> Option<u64> {
     None
 }
 
-fn infer_context_length(gguf: &GgufMetadata, requested_ctx: Option<u32>) -> Option<u32> {
+fn infer_context_length(gguf: Option<&GgufMetadata>, requested_ctx: Option<u32>) -> Option<u32> {
+    let gguf = gguf?;
     let architecture = gguf.metadata.get("general.architecture")?;
     let context = gguf
         .metadata
@@ -351,17 +373,8 @@ fn infer_context_length(gguf: &GgufMetadata, requested_ctx: Option<u32>) -> Opti
     Some(requested_ctx.map(|ctx| ctx.max(context)).unwrap_or(context))
 }
 
-fn infer_use_case(request: &HubModelScoreRequest, gguf: &GgufMetadata) -> String {
-    let combined = format!(
-        "{} {} {}",
-        request.model_name,
-        request.default_quant_model_id,
-        gguf.metadata
-            .get("general.name")
-            .map(String::as_str)
-            .unwrap_or_default()
-    )
-    .to_ascii_lowercase();
+fn infer_use_case(request: &HubModelScoreRequest, gguf: Option<&GgufMetadata>) -> String {
+    let combined = combined_model_text(request, gguf);
 
     if combined.contains("embed") || combined.contains("embedding") || combined.contains("bge") {
         "Embedding".to_string()
@@ -385,20 +398,11 @@ fn infer_use_case(request: &HubModelScoreRequest, gguf: &GgufMetadata) -> String
 
 fn infer_capabilities(
     request: &HubModelScoreRequest,
-    gguf: &GgufMetadata,
+    gguf: Option<&GgufMetadata>,
     use_case: &str,
 ) -> Vec<Capability> {
     let mut capabilities = Vec::new();
-    let combined = format!(
-        "{} {} {}",
-        request.model_name,
-        request.default_quant_model_id,
-        gguf.metadata
-            .get("general.name")
-            .map(String::as_str)
-            .unwrap_or_default()
-    )
-    .to_ascii_lowercase();
+    let combined = combined_model_text(request, gguf);
 
     if use_case.to_ascii_lowercase().contains("multimodal")
         || request.num_mmproj.unwrap_or(0) > 0
@@ -411,8 +415,7 @@ fn infer_capabilities(
     }
 
     let chat_template = gguf
-        .metadata
-        .get("tokenizer.chat_template")
+        .and_then(|metadata| metadata.metadata.get("tokenizer.chat_template"))
         .map(String::as_str)
         .unwrap_or_default()
         .to_ascii_lowercase();
@@ -438,9 +441,55 @@ fn normalize_capability(capability: &str) -> Option<Capability> {
     }
 }
 
-fn normalize_quantization(input: &str) -> Option<String> {
+fn normalize_runtime(request: &HubModelScoreRequest) -> InferenceRuntime {
+    match request.runtime.as_deref() {
+        Some(runtime) if runtime.eq_ignore_ascii_case("mlx") => InferenceRuntime::Mlx,
+        _ => InferenceRuntime::LlamaCpp,
+    }
+}
+
+fn runtime_label(runtime: InferenceRuntime) -> &'static str {
+    match runtime {
+        InferenceRuntime::Mlx => "MLX",
+        _ => "llama.cpp",
+    }
+}
+
+fn model_format_for_runtime(runtime: InferenceRuntime) -> ModelFormat {
+    match runtime {
+        InferenceRuntime::Mlx => ModelFormat::Mlx,
+        _ => ModelFormat::Gguf,
+    }
+}
+
+fn combined_model_text(request: &HubModelScoreRequest, gguf: Option<&GgufMetadata>) -> String {
+    format!(
+        "{} {} {} {}",
+        request.model_name,
+        request.default_quant_model_id,
+        request.model_path,
+        gguf.and_then(|metadata| metadata.metadata.get("general.name"))
+            .map(String::as_str)
+            .unwrap_or_default()
+    )
+    .to_ascii_lowercase()
+}
+
+fn normalize_quantization(input: &str, runtime: InferenceRuntime) -> Option<String> {
     let lower = input.to_ascii_lowercase();
-    if lower.contains("bf16") {
+    if runtime == InferenceRuntime::Mlx {
+        if lower.contains("8bit") || lower.contains("mlx-8bit") {
+            Some("mlx-8bit".to_string())
+        } else if lower.contains("4bit") || lower.contains("mlx-4bit") {
+            Some("mlx-4bit".to_string())
+        } else if lower.contains("bf16") {
+            Some("BF16".to_string())
+        } else if lower.contains("f16") {
+            Some("F16".to_string())
+        } else {
+            Some("mlx-4bit".to_string())
+        }
+    } else if lower.contains("bf16") {
         Some("BF16".to_string())
     } else if lower.contains("f16") {
         Some("F16".to_string())
@@ -461,7 +510,8 @@ fn normalize_quantization(input: &str) -> Option<String> {
     }
 }
 
-fn infer_metadata_u32(gguf: &GgufMetadata, patterns: &[&str]) -> Option<u32> {
+fn infer_metadata_u32(gguf: Option<&GgufMetadata>, patterns: &[&str]) -> Option<u32> {
+    let gguf = gguf?;
     let architecture = gguf.metadata.get("general.architecture")?;
     for pattern in patterns {
         let key = pattern.replace('*', architecture);
@@ -561,6 +611,9 @@ mod tests {
             developer: Some("Qwen".to_string()),
             default_quant_model_id: "Qwen/Qwen2.5-Coder-7B-Instruct-Q4_K_M".to_string(),
             model_path: "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/model-q4_k_m.gguf".to_string(),
+            runtime: Some("llamacpp".to_string()),
+            quantization: None,
+            total_size_bytes: None,
             ctx_size: Some(8192),
             use_case: Some("Code generation and completion".to_string()),
             capabilities: Some(vec!["tool_use".to_string()]),
@@ -600,28 +653,59 @@ mod tests {
     #[test]
     fn normalizes_gguf_quantization_for_llmfit() {
         assert_eq!(
-            normalize_quantization("model-q8_0.gguf").as_deref(),
+            normalize_quantization("model-q8_0.gguf", InferenceRuntime::LlamaCpp).as_deref(),
             Some("Q8_0")
         );
         assert_eq!(
-            normalize_quantization("model-q4_k_m.gguf").as_deref(),
+            normalize_quantization("model-q4_k_m.gguf", InferenceRuntime::LlamaCpp).as_deref(),
             Some("Q4_K_M")
         );
         assert_eq!(
-            normalize_quantization("model-iq2_xs.gguf").as_deref(),
+            normalize_quantization("model-iq2_xs.gguf", InferenceRuntime::LlamaCpp).as_deref(),
             Some("Q2_K")
         );
     }
 
     #[test]
+    fn normalizes_mlx_quantization_for_llmfit() {
+        assert_eq!(
+            normalize_quantization("Qwen3-4B-4bit", InferenceRuntime::Mlx).as_deref(),
+            Some("mlx-4bit")
+        );
+        assert_eq!(
+            normalize_quantization("mlx-community/Qwen3-8B-8bit", InferenceRuntime::Mlx).as_deref(),
+            Some("mlx-8bit")
+        );
+    }
+
+    #[test]
     fn derives_model_spec_from_request_and_metadata() {
-        let spec = derive_model_spec(&mock_request(), &mock_gguf(), 4_200_000_000)
+        let spec = derive_model_spec(&mock_request(), Some(&mock_gguf()), 4_200_000_000)
             .expect("expected derived model spec");
 
         assert_eq!(spec.quantization, "Q4_K_M");
         assert_eq!(spec.context_length, 32768);
         assert_eq!(spec.parameters_raw, 7_000_000_000);
         assert_eq!(spec.use_case, "Code generation and completion");
+        assert!(spec.capabilities.contains(&Capability::ToolUse));
+    }
+
+    #[test]
+    fn derives_mlx_model_spec_without_gguf_metadata() {
+        let mut request = mock_request();
+        request.model_name = "mlx-community/Qwen2.5-Coder-7B-4bit".to_string();
+        request.default_quant_model_id = "model-00001-of-00004".to_string();
+        request.model_path = "https://huggingface.co/mlx-community/Qwen2.5-Coder-7B-4bit/resolve/main/model-00001-of-00004.safetensors".to_string();
+        request.runtime = Some("mlx".to_string());
+        request.quantization = Some("mlx-4bit".to_string());
+        request.total_size_bytes = Some(4_000_000_000);
+
+        let spec = derive_model_spec(&request, None, 4_000_000_000)
+            .expect("expected derived mlx model spec");
+
+        assert_eq!(spec.quantization, "mlx-4bit");
+        assert_eq!(spec.context_length, 8192);
+        assert_eq!(spec.parameters_raw, 7_000_000_000);
         assert!(spec.capabilities.contains(&Capability::ToolUse));
     }
 }

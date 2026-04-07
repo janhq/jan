@@ -185,7 +185,8 @@ function HubContent() {
               ?.models.some(
                 (m: { id: string }) =>
                   m.id === variant.model_id ||
-                  m.id === `${model.developer}/${sanitizeModelId(variant.model_id)}`
+                  m.id ===
+                    `${model.developer}/${sanitizeModelId(variant.model_id)}`
               )
 
             const isMlxDownloaded = useModelProvider
@@ -194,7 +195,8 @@ function HubContent() {
               ?.models.some(
                 (m: { id: string }) =>
                   m.id === variant.model_id ||
-                  m.id === `${model.developer}/${sanitizeModelId(variant.model_id)}`
+                  m.id ===
+                    `${model.developer}/${sanitizeModelId(variant.model_id)}`
               )
 
             return isLlamaCppDownloaded || isMlxDownloaded
@@ -239,7 +241,8 @@ function HubContent() {
           getScrollElement: () => parentRef.current,
           estimateSize,
           overscan: 8,
-          measureElement: (el: HTMLElement) => el.getBoundingClientRect().height,
+          measureElement: (el: HTMLElement) =>
+            el.getBoundingClientRect().height,
         }
       : { count: 0, getScrollElement: () => null, estimateSize: () => 0 }
   )
@@ -264,7 +267,7 @@ function HubContent() {
   useEffect(() => {
     virtualItems.forEach((virtualItem) => {
       const model = filteredModels[virtualItem.index]
-      if (!model || modelScores[model.model_name] || model.is_mlx) return
+      if (!model || modelScores[model.model_name]) return
 
       const cachedScore = serviceHub.models().getCachedHubModelScore(model)
       if (cachedScore) {
@@ -297,7 +300,9 @@ function HubContent() {
             [model.model_name]: {
               status: 'error',
               reason:
-                error instanceof Error ? error.message : 'Failed to score model.',
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to score model.',
             },
           }))
         })
@@ -474,7 +479,12 @@ function HubContent() {
     <div className="flex flex-col h-svh w-full">
       <div className="flex flex-col h-full w-full ">
         <HeaderPage>
-          <div className={cn("pr-3 py-3  h-10 w-full flex items-center justify-between relative z-20", !IS_MACOS && "pr-30")}>
+          <div
+            className={cn(
+              'pr-3 py-3  h-10 w-full flex items-center justify-between relative z-20',
+              !IS_MACOS && 'pr-30'
+            )}
+          >
             <div className="flex items-center gap-2 w-full">
               {isSearching ? (
                 <Loader className="shrink-0 size-4 animate-spin text-muted-foreground" />
@@ -496,10 +506,13 @@ function HubContent() {
             </div>
           </div>
         </HeaderPage>
-        <div ref={parentRef} className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider">
+        <div
+          ref={parentRef}
+          className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider"
+        >
           <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto">
             {/* Show skeleton immediately on navigation, then show actual content when loaded */}
-            {(isInitialLoad || (loading && !filteredModels.length)) ? (
+            {isInitialLoad || (loading && !filteredModels.length) ? (
               // Skeleton loading state for better perceived performance
               <div className="flex flex-col gap-3 animate-pulse">
                 {[...Array(5)].map((_, i) => (
@@ -580,16 +593,14 @@ function HubContent() {
                                 className={cn(
                                   'text-foreground font-medium text-base capitalize sm:max-w-none',
                                   isRecommendedModel(
-                                    filteredModels[virtualItem.index]
-                                      .model_name
+                                    filteredModels[virtualItem.index].model_name
                                   )
                                     ? 'hub-model-card-step'
                                     : ''
                                 )}
                                 title={
                                   extractModelName(
-                                    filteredModels[virtualItem.index]
-                                      .model_name
+                                    filteredModels[virtualItem.index].model_name
                                   ) || ''
                                 }
                               >
@@ -617,7 +628,6 @@ function HubContent() {
                               </span>
                               <ModelScoreBadge
                                 compact
-                                disabled={filteredModels[virtualItem.index].is_mlx}
                                 score={
                                   modelScores[
                                     filteredModels[virtualItem.index].model_name
@@ -637,8 +647,7 @@ function HubContent() {
                                       m.model_id.toLowerCase().includes(e)
                                     )
                                   ) ??
-                                  filteredModels[virtualItem.index]
-                                    .quants?.[0]
+                                  filteredModels[virtualItem.index].quants?.[0]
                                 }
                                 isDefaultVariant={true}
                                 modelSupportStatus={modelSupportStatus}
@@ -690,8 +699,8 @@ function HubContent() {
                                 title={t('hub:downloads')}
                               />
                               <span className="text-foreground">
-                                {filteredModels[virtualItem.index]
-                                  .downloads || 0}
+                                {filteredModels[virtualItem.index].downloads ||
+                                  0}
                               </span>
                             </div>
                             {!filteredModels[virtualItem.index].is_mlx && (
@@ -708,22 +717,26 @@ function HubContent() {
                               </div>
                             )}
                             {modelScores[
-                                    filteredModels[virtualItem.index].model_name
-                            ]?.status === 'ready' && typeof modelScores[
-                                    filteredModels[virtualItem.index].model_name]?.estimated_tps === 'number' && (
-                              <div className="flex items-center gap-1">
-                                <IconBrandSpeedtest
-                                  size={20}
-                                  className="text-muted-foreground"
-                                  title={t('hub:token-sec')}
-                                />
-                                <span className="text-foreground">
-                                  {modelScores[
-                                    filteredModels[virtualItem.index].model_name
-                                  ]?.estimated_tps.toFixed(1)} tok/sec
-                                </span>
-                              </div>
-                            )}
+                              filteredModels[virtualItem.index].model_name
+                            ]?.status === 'ready' &&
+                              typeof modelScores[
+                                filteredModels[virtualItem.index].model_name
+                              ]?.estimated_tps === 'number' && (
+                                <div className="flex items-center gap-1">
+                                  <IconBrandSpeedtest
+                                    size={20}
+                                    className="text-muted-foreground"
+                                    title={t('hub:token-sec')}
+                                  />
+                                  <span className="text-foreground">
+                                    {modelScores[
+                                      filteredModels[virtualItem.index]
+                                        .model_name
+                                    ]?.estimated_tps.toFixed(1)}{' '}
+                                    tok/sec
+                                  </span>
+                                </div>
+                              )}
                             {filteredModels[virtualItem.index].is_mlx && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -732,13 +745,15 @@ function HubContent() {
                                   </span>
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                  <p>Requires MLX engine (Apple Silicon only)</p>
+                                  <p>
+                                    Requires MLX engine (Apple Silicon only)
+                                  </p>
                                 </TooltipContent>
                               </Tooltip>
                             )}
                             <div className="flex gap-1.5 items-center">
-                              {(filteredModels[virtualItem.index].num_mmproj ?? 0) >
-                                0 && (
+                              {(filteredModels[virtualItem.index].num_mmproj ??
+                                0) > 0 && (
                                 <div className="flex items-center gap-1">
                                   <Tooltip>
                                     <TooltipTrigger asChild>
@@ -774,14 +789,13 @@ function HubContent() {
                               )}
                             </div>
                           </div>
-                          {(filteredModels[virtualItem.index].quants?.length ?? 0) >
-                            1 && (
+                          {(filteredModels[virtualItem.index].quants?.length ??
+                            0) > 1 && (
                             <button
                               className="flex items-center gap-1 hub-show-variants-step ml-auto"
                               onClick={() =>
                                 toggleModelExpansion(
-                                  filteredModels[virtualItem.index]
-                                    .model_name
+                                  filteredModels[virtualItem.index].model_name
                                 )
                               }
                             >
@@ -807,8 +821,8 @@ function HubContent() {
                         {expandedModels[
                           filteredModels[virtualItem.index].model_name
                         ] &&
-                          (filteredModels[virtualItem.index].quants?.length ?? 0) >
-                            0 && (
+                          (filteredModels[virtualItem.index].quants?.length ??
+                            0) > 0 && (
                             <div className="mt-5">
                               {filteredModels[virtualItem.index].quants?.map(
                                 (variant) => (
@@ -820,7 +834,8 @@ function HubContent() {
                                           <span className="mr-2">
                                             {variant.model_id}
                                           </span>
-                                          {(filteredModels[virtualItem.index].num_mmproj ?? 0) > 0 && (
+                                          {(filteredModels[virtualItem.index]
+                                            .num_mmproj ?? 0) > 0 && (
                                             <div className="flex items-center gap-1">
                                               <Tooltip>
                                                 <TooltipTrigger asChild>

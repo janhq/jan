@@ -207,20 +207,10 @@ function HubModelDetailContent() {
       setModelScore(cachedScore)
       if (cachedScore.status !== 'loading') return
     } else {
-      setModelScore(
-        modelData.is_mlx
-          ? {
-              status: 'unavailable',
-              reason:
-                'llmfit scoring is currently only available for GGUF models.',
-            }
-          : {
-              status: 'loading',
-            }
-      )
+      setModelScore({
+        status: 'loading',
+      })
     }
-
-    if (modelData.is_mlx) return
 
     serviceHub
       .models()
@@ -270,14 +260,14 @@ function HubModelDetailContent() {
       <div className="flex flex-col h-svh w-full">
         <HeaderPage>
           <Button
-          onClick={() => navigate({ to: route.hub.index })}
-          aria-label="Go back"
-          variant="ghost"
-          size="sm"
-        >
-          <IconArrowLeft size={18} className="text-muted-foreground" />
-          <span className="text-foreground">Back to Hub</span>
-        </Button>
+            onClick={() => navigate({ to: route.hub.index })}
+            aria-label="Go back"
+            variant="ghost"
+            size="sm"
+          >
+            <IconArrowLeft size={18} className="text-muted-foreground" />
+            <span className="text-foreground">Back to Hub</span>
+          </Button>
         </HeaderPage>
         <div className="flex-1 flex items-center justify-center">
           <p className="text-muted-foreground">Model not found</p>
@@ -295,7 +285,7 @@ function HubModelDetailContent() {
             aria-label="Go back"
             variant="ghost"
             size="sm"
-            className='relative z-20'
+            className="relative z-20"
           >
             <IconArrowLeft size={18} className="text-muted-foreground" />
             <span className="text-foreground">Back to Hub</span>
@@ -311,12 +301,10 @@ function HubModelDetailContent() {
               <h1
                 className="text-2xl font-semibold mb-4 capitalize wrap-break-word line-clamp-2"
                 title={
-                  extractModelName(modelData.model_name) ||
-                  modelData.model_name
+                  extractModelName(modelData.model_name) || modelData.model_name
                 }
               >
-                {extractModelName(modelData.model_name) ||
-                  modelData.model_name}
+                {extractModelName(modelData.model_name) || modelData.model_name}
               </h1>
 
               {/* Stats */}
@@ -376,10 +364,7 @@ function HubModelDetailContent() {
             </div>
 
             <div className="mb-8">
-              <ModelScorePanel
-                score={modelScore}
-                disabled={modelData.is_mlx}
-              />
+              <ModelScorePanel score={modelScore} />
             </div>
 
             {/* Variants Section */}
@@ -505,9 +490,7 @@ function HubModelDetailContent() {
                                   <Button
                                     size="sm"
                                     onClick={() => {
-                                      addLocalDownloadingModel(
-                                        variant.model_id
-                                      )
+                                      addLocalDownloadingModel(variant.model_id)
                                       serviceHub
                                         .models()
                                         .pullModelWithMetadata(
@@ -545,9 +528,7 @@ function HubModelDetailContent() {
               <div className="mb-8">
                 <div className="flex items-center gap-2 mb-4">
                   <IconFileCode size={20} className="text-muted-foreground" />
-                  <h2 className="text-lg font-semibold">
-                    README
-                  </h2>
+                  <h2 className="text-lg font-semibold">README</h2>
                 </div>
 
                 {isLoadingReadme ? (
