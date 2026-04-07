@@ -234,7 +234,7 @@ jobs:
         run: |
           sudo apt update
           # libspa-sys build.rs runs bindgen and requires libclang.so at compile time.
-          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 webkit2gtk-driver libpipewire-0.3-dev clang libclang-dev
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 webkit2gtk-driver libpipewire-0.3-dev libgbm-dev clang libclang-dev
 
       - name: 'Cleanup cache'
         continue-on-error: true
