@@ -1,7 +1,12 @@
 import { render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { describe, expect, it, vi } from 'vitest'
-import { ModelScoreBadge, ModelScorePanel } from '../ModelScoreSummary'
+import {
+  ModelScoreBadge,
+  fitLevelKey,
+  renderLabel,
+  runModeKey,
+} from '../ModelScoreSummary'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: (namespace?: string) => ({
@@ -78,45 +83,28 @@ describe('ModelScoreSummary', () => {
     expect(screen.getByText('Good')).toBeInTheDocument()
   })
 
-  it('renders the ready score panel with breakdown values', () => {
-    render(
-      <ModelScorePanel
-        score={{
-          status: 'ready',
-          overall: 84.2,
-          estimated_tps: 42,
-          breakdown: {
-            quality: 88.1,
-            speed: 72.3,
-            fit: 91.4,
-            context: 80.2,
-            best_quant: 'Q4_K_M',
-            fit_level: 'Good',
-            run_mode: 'GPU',
-            memory_required_gb: 7.5,
-            utilization_pct: 61.2,
-            use_case: 'Coding',
-          },
-        }}
-      />
-    )
-
-    expect(screen.getByText('84.2')).toBeInTheDocument()
-    expect(screen.getByText('Quality')).toBeInTheDocument()
-    expect(screen.getByText('72.3')).toBeInTheDocument()
-    expect(screen.getByText('91.4')).toBeInTheDocument()
-    expect(screen.getByText('Fit Level')).toBeInTheDocument()
-    expect(screen.getAllByText('Good')[0]).toBeInTheDocument()
+  it('maps fit level and run mode keys for translations', () => {
+    expect(fitLevelKey('Good')).toBe('hub:scoreSummary.fitLevels.good')
+    expect(runModeKey('GPU')).toBe('hub:scoreSummary.runModes.gpu')
   })
 
-  it('renders the disabled placeholder state', () => {
-    render(<ModelScorePanel disabled score={{ status: 'unavailable' }} />)
+  it('renders translated labels for status states', () => {
+    const t = (key: string) => {
+      const translations: Record<string, string> = {
+        'scoreSummary.notAvailable': 'Not available',
+        'scoreSummary.scoring': 'Scoring...',
+        'scoreSummary.personalizedScore': 'Personalized score',
+      }
 
-    expect(screen.getByText('Not available')).toBeInTheDocument()
+      return translations[key] ?? key
+    }
+
+    expect(renderLabel(t, undefined, true)).toBe('Not available')
+    expect(renderLabel(t, { status: 'loading', estimated_tps: 0 })).toBe(
+      'Scoring...'
+    )
     expect(
-      screen.getByText(
-        'This model type does not support local llmfit scoring yet.'
-      )
-    ).toBeInTheDocument()
+      renderLabel(t, { status: 'ready', overall: 84.2, estimated_tps: 42 })
+    ).toBe('Personalized score')
   })
 })

@@ -31,7 +31,6 @@ import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { useTranslation } from '@/i18n'
 import {
-  ModelScoreBadge,
   fitLevelKey,
   runModeKey,
 } from '@/components/ModelScoreSummary'
@@ -70,19 +69,6 @@ function pickPreferredModelScore(
   )
 }
 
-function createQuantScoreMap(
-  model: CatalogModel,
-  getScore: (variant: ModelQuant) => ModelScore | undefined
-): Record<string, ModelScore | undefined> {
-  if (!model.quants?.length) {
-    return {}
-  }
-
-  return Object.fromEntries(
-    model.quants.map((variant) => [variant.model_id, getScore(variant)])
-  )
-}
-
 export const Route = createFileRoute('/hub/$modelId')({
   component: HubModelDetailContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
@@ -105,9 +91,6 @@ function HubModelDetailContent() {
   const serviceHub = useServiceHub()
   const [repoData, setRepoData] = useState<CatalogModel | undefined>()
   const [modelScore, setModelScore] = useState<ModelScore>()
-  const [quantScores, setQuantScores] = useState<
-    Record<string, ModelScore | undefined>
-  >({})
 
   const breakdown = modelScore?.breakdown
   const translatedFitLevelKey = fitLevelKey(breakdown?.fit_level)
@@ -276,17 +259,12 @@ function HubModelDetailContent() {
     const cachedScores = scoreableVariants.map((variant) =>
       serviceHub.models().getCachedHubModelScore(modelData, variant)
     )
-    const cachedQuantScores = createQuantScoreMap(modelData, (variant) =>
-      serviceHub.models().getCachedHubModelScore(modelData, variant)
-    )
     const resolvedScores = new Map<string, ModelScore | undefined>(
       scoreableVariants.map((variant, index) => [
         variant?.model_id ?? modelData.model_name,
         cachedScores[index],
       ])
     )
-
-    setQuantScores(cachedQuantScores)
 
     const preferredCachedScore = pickPreferredModelScore(cachedScores)
     setModelScore(
@@ -307,14 +285,6 @@ function HubModelDetailContent() {
 
           const scoreKey = variant?.model_id ?? modelData.model_name
           resolvedScores.set(scoreKey, score)
-
-          if (variant) {
-            setQuantScores(
-              createQuantScoreMap(modelData, (quant) =>
-                resolvedScores.get(quant.model_id)
-              )
-            )
-          }
 
           setModelScore(
             pickPreferredModelScore(Array.from(resolvedScores.values())) ?? {
@@ -558,7 +528,7 @@ function HubModelDetailContent() {
                 </div>
 
                 <div className="w-full overflow-x-auto">
-                  <table className="w-full min-w-[640px]">
+                  <table className="w-full min-w-[500px]">
                     <thead>
                       <tr className="border-b ">
                         <th className="text-left py-3 px-2 text-sm font-medium">
@@ -569,9 +539,6 @@ function HubModelDetailContent() {
                         </th>
                         <th className="text-left py-3 px-2 text-sm font-medium">
                           Size
-                        </th>
-                        <th className="text-left py-3 px-2 text-sm font-medium">
-                          {t('hub:scoreSummary.score')}
                         </th>
                         <th></th>
                         <th className="text-right py-3 px-2 text-sm font-medium">
@@ -609,7 +576,6 @@ function HubModelDetailContent() {
                           .replace(/-GGUF$/i, '')
                           .replace(/_TensorRT$/i, '')
                           .replace(/-TensorRT$/i, '')
-                        const variantScore = quantScores[variant.model_id]
 
                         return (
                           <tr
@@ -630,9 +596,6 @@ function HubModelDetailContent() {
                               <span className="text-sm text-muted-foreground">
                                 {variant.file_size}
                               </span>
-                            </td>
-                            <td className="py-3 px-2">
-                              <ModelScoreBadge compact score={variantScore} />
                             </td>
                             <td>
                               <ModelInfoHoverCard
