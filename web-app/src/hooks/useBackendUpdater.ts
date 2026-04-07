@@ -150,6 +150,22 @@ export const useBackendUpdater = () => {
     []
   )
 
+  const resetUpdateState = useCallback(
+    (extras: Partial<BackendUpdateState> = {}) => {
+      const newState: Partial<BackendUpdateState> = {
+        isUpdateAvailable: false,
+        updateInfo: null,
+        ...extras,
+      }
+      setUpdateState((prev) => ({
+        ...prev,
+        ...newState,
+      }))
+      syncStateToOtherInstances(newState)
+    },
+    [syncStateToOtherInstances]
+  )
+
   const checkForUpdate = useCallback(
     async (resetRemindMeLater = false) => {
       try {
@@ -166,15 +182,7 @@ export const useBackendUpdater = () => {
         }
 
         if (!isLlamacppProviderActive()) {
-          const newState = {
-            isUpdateAvailable: false,
-            updateInfo: null,
-          }
-          setUpdateState((prev) => ({
-            ...prev,
-            ...newState,
-          }))
-          syncStateToOtherInstances(newState)
+          resetUpdateState()
           return null
         }
 
@@ -229,33 +237,17 @@ export const useBackendUpdater = () => {
           return updateInfo
         } else {
           // No update available - reset state
-          const newState = {
-            isUpdateAvailable: false,
-            updateInfo: null,
-          }
-          setUpdateState((prev) => ({
-            ...prev,
-            ...newState,
-          }))
-          syncStateToOtherInstances(newState)
+          resetUpdateState()
           return null
         }
       } catch (error) {
         console.error('Error checking for backend updates:', error)
         // Reset state on error
-        const newState = {
-          isUpdateAvailable: false,
-          updateInfo: null,
-        }
-        setUpdateState((prev) => ({
-          ...prev,
-          ...newState,
-        }))
-        syncStateToOtherInstances(newState)
+        resetUpdateState()
         return null
       }
     },
-    [syncStateToOtherInstances]
+    [syncStateToOtherInstances, resetUpdateState]
   )
 
   const setRemindMeLater = useCallback(
@@ -276,16 +268,7 @@ export const useBackendUpdater = () => {
     if (!updateState.updateInfo) return
 
     if (!isLlamacppProviderActive()) {
-      const newState = {
-        isUpdateAvailable: false,
-        updateInfo: null,
-        isUpdating: false,
-      }
-      setUpdateState((prev) => ({
-        ...prev,
-        ...newState,
-      }))
-      syncStateToOtherInstances(newState)
+      resetUpdateState({ isUpdating: false })
       return
     }
 
