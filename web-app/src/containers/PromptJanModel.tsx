@@ -3,50 +3,19 @@ import { useJanModelPromptDismissed } from '@/hooks/useJanModelPrompt'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
-import type { CatalogModel } from '@/services/models/types'
-import {
-  NEW_JAN_MODEL_HF_REPO,
-  SETUP_SCREEN_QUANTIZATIONS,
-} from '@/constants/models'
+import { useMemo } from 'react'
+import { SETUP_SCREEN_QUANTIZATIONS } from '@/constants/models'
+import { useLatestJanModel } from '@/hooks/useLatestJanModel'
 
 export function PromptJanModel() {
 
-  const { setDismissed } = useJanModelPromptDismissed()
+  const { setDismissedModelName } = useJanModelPromptDismissed()
   const serviceHub = useServiceHub()
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
 
-  const [janNewModel, setJanNewModel] = useState<CatalogModel | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const fetchAttempted = useRef(false)
-
-  const fetchJanModel = useCallback(async () => {
-    if (fetchAttempted.current) return
-    fetchAttempted.current = true
-
-    try {
-      const repo = await serviceHub
-        .models()
-        .fetchHuggingFaceRepo(NEW_JAN_MODEL_HF_REPO, huggingfaceToken)
-
-      if (repo) {
-        const catalogModel = serviceHub
-          .models()
-          .convertHfRepoToCatalogModel(repo)
-        setJanNewModel(catalogModel)
-      }
-    } catch (error) {
-      console.error('Error fetching Jan Model:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [serviceHub, huggingfaceToken])
-
-  useEffect(() => {
-    fetchJanModel()
-  }, [fetchJanModel])
+  const { model: janNewModel, loading: isLoading } = useLatestJanModel()
 
   const defaultVariant = useMemo(() => {
     if (!janNewModel) return null
@@ -70,7 +39,7 @@ export function PromptJanModel() {
   }, [defaultVariant, localDownloadingModels, downloads])
 
   const handleDismiss = () => {
-    setDismissed(true)
+    if (janNewModel) setDismissedModelName(janNewModel.model_name)
   }
 
   const handleDownload = () => {
@@ -88,17 +57,17 @@ export function PromptJanModel() {
       huggingfaceToken,
       true
     )
-    setDismissed(true)
+    if (janNewModel) setDismissedModelName(janNewModel.model_name)
   }
 
-  if (isLoading) return null
+  if (isLoading || !janNewModel) return null
 
   return (
     <div className="fixed bottom-4 right-4 z-50 p-4 shadow-lg bg-background w-4/5 md:w-100 border rounded-lg">
       <div className="flex items-center gap-2">
         <img src="/images/jan-logo.png" alt="Jan" className="size-5" />
         <h2 className="font-medium">
-          Jan v3 Model
+          {janNewModel?.display_name ?? janNewModel?.model_name ?? 'Jan Model'}
           {defaultVariant && (
           <span className="text-muted-foreground">
             {' '}
@@ -108,7 +77,7 @@ export function PromptJanModel() {
         </h2>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
-        Get started with Jan v3, our recommended local AI model optimized for your device.
+        Get started with {janNewModel?.display_name ?? 'Jan'}, our recommended local AI model optimized for your device.
       </p>
       <div className="mt-4 flex justify-end space-x-2">
         <Button

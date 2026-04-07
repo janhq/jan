@@ -15,7 +15,7 @@ export const formatDate = (
   }
 
   if (includeTime) {
-    // Time mode: short month + time, fixed UTC for stable output in tests
+    // Time mode: short month + time, using local timezone
     return new Date(date).toLocaleString('en-US', {
       ...base,
       month: 'short',
@@ -25,7 +25,7 @@ export const formatDate = (
     })
   }
 
-  // Date-only mode: long month, no timezone adjustment
+  // Date-only mode: long month, using local timezone
   return new Date(date).toLocaleDateString('en-US', {
     ...base,
     month: 'long',

@@ -58,6 +58,16 @@
     "title": "Configuración de ejecución",
     "description": "Configura cómo Jan administra y reintenta los servidores MCP.",
     "toolCallTimeout": "Tiempo de espera de llamada a herramienta (segundos)",
-    "toolCallTimeoutDesc": "Tiempo máximo de espera para una respuesta de herramienta MCP antes de expirar."
+    "toolCallTimeoutDesc": "Tiempo máximo de espera para una respuesta de herramienta MCP antes de expirar.",
+    "smartToolRouting": "Enrutado inteligente de herramientas MCP",
+    "smartToolRoutingDesc": "Si está activado, Jan selecciona los servidores MCP relevantes antes de cargar las herramientas. Desactívelo para cargar siempre la lista completa de herramientas MCP.",
+    "useLightweightRouterModel": "Usar un modelo dedicado para el enrutado",
+    "useLightweightRouterModelDesc": "Con el enrutado inteligente activado, el paso de enrutado se ejecuta con un modelo separado (a menudo más pequeño) en lugar del modelo de chat. Desactívelo para usar siempre el modelo de chat activo para el enrutado.",
+    "routerModel": "Modelo de enrutado",
+    "routerModelDesc": "Elija proveedor y modelo en un solo lugar. Solo se muestran modelos ligeros para mantener el enrutado rápido y económico.",
+    "selectRouterModelPlaceholder": "Seleccionar modelo de enrutado…",
+    "routerModelSearchPlaceholder": "Buscar modelos…",
+    "routerModelEmptyList": "No hay modelos ligeros disponibles. Añada un modelo más pequeño o configure las claves API en Modelos.",
+    "routerModelEmptySearch": "No hay coincidencias para «{{query}}»."
   }
 }

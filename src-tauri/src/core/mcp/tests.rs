@@ -238,6 +238,93 @@ fn test_bin_path_construction_windows() {
 }
 
 // ============================================================================
+// get_server_summaries Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_get_server_summaries_no_connected_servers() {
+    use super::commands::get_server_summaries;
+
+    let app = mock_app();
+    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
+    app.manage(AppState {
+        mcp_servers: servers_state.clone(),
+        ..Default::default()
+    });
+
+    let state = app.state::<AppState>();
+    let result = get_server_summaries(state).await;
+
+    assert!(result.is_ok());
+    assert!(result.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_get_server_summaries_with_capabilities_in_active_config() {
+    use super::commands::get_server_summaries;
+    use crate::core::state::AppState;
+
+    let app = mock_app();
+    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
+    app.manage(AppState {
+        mcp_servers: servers_state.clone(),
+        ..Default::default()
+    });
+
+    let state = app.state::<AppState>();
+
+    // Inject a pre-connected server name into mcp_servers (empty RunningServiceEnum is not
+    // straightforward to create in unit tests, so we test the active_servers path directly)
+    {
+        let mut active = state.mcp_active_servers.lock().await;
+        active.insert(
+            "filesystem".to_string(),
+            serde_json::json!({
+                "command": "npx",
+                "args": ["-y", "fs-server"],
+                "capabilities": ["filesystem", "files"],
+                "description": "Read and write local files"
+            }),
+        );
+    }
+
+    // Summaries are derived from the intersection of connected servers and active config.
+    // With no entries in mcp_servers the result should still be empty.
+    let result = get_server_summaries(state).await;
+    assert!(result.is_ok());
+    let summaries = result.unwrap();
+    assert!(summaries.is_empty(), "No connected servers → no summaries");
+}
+
+#[tokio::test]
+async fn test_get_server_summaries_missing_metadata_defaults() {
+    use super::commands::get_server_summaries;
+
+    let app = mock_app();
+    let servers_state: SharedMcpServers = Arc::new(Mutex::new(HashMap::new()));
+    app.manage(AppState {
+        mcp_servers: servers_state.clone(),
+        ..Default::default()
+    });
+
+    let state = app.state::<AppState>();
+
+    // Active server without capabilities/description fields
+    {
+        let mut active = state.mcp_active_servers.lock().await;
+        active.insert(
+            "minimal_server".to_string(),
+            serde_json::json!({ "command": "npx", "args": [] }),
+        );
+    }
+
+    // No entries in mcp_servers → summaries list is empty
+    let result = get_server_summaries(state).await;
+    assert!(result.is_ok());
+    assert!(result.unwrap().is_empty());
+}
+
+// ============================================================================
 // Shutdown Context Tests
 // ============================================================================
 

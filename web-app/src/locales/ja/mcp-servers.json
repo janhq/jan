@@ -58,6 +58,16 @@
     "title": "ランタイム設定",
     "description": "JanがMCPサーバーを管理し再試行する方法を設定します。",
     "toolCallTimeout": "ツール呼び出しタイムアウト（秒）",
-    "toolCallTimeoutDesc": "MCPツールの応答を待機する最大時間（タイムアウトまで）。"
+    "toolCallTimeoutDesc": "MCPツールの応答を待機する最大時間（タイムアウトまで）。",
+    "smartToolRouting": "スマートなMCPツールルーティング",
+    "smartToolRoutingDesc": "有効にすると、Janはツールを読み込む前に関連するMCPサーバーを選びます。無効にすると、常にMCPツールの全リストを読み込みます。",
+    "useLightweightRouterModel": "ルーティング専用モデルを使う",
+    "useLightweightRouterModelDesc": "スマートルーティングがオンなとき、ルーティングはチャットモデルではなく別の（多くの場合小さな）モデルで実行されます。オフにすると、ルーティングに常にアクティブなチャットモデルを使います。",
+    "routerModel": "ルーティングモデル",
+    "routerModelDesc": "プロバイダーとモデルを一か所で選択します。ルーティングを速く安く保つため、軽量モデルのみ表示されます。",
+    "selectRouterModelPlaceholder": "ルーティングモデルを選択…",
+    "routerModelSearchPlaceholder": "モデルを検索…",
+    "routerModelEmptyList": "利用可能な軽量モデルがありません。より小さなモデルを追加するか、「モデル」でAPIキーを設定してください。",
+    "routerModelEmptySearch": "「{{query}}」に一致するものはありません。"
   }
 }

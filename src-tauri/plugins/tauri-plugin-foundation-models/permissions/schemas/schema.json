@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the abort_foundation_models_stream command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-abort-foundation-models-stream",
+          "markdownDescription": "Enables the abort_foundation_models_stream command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the abort_foundation_models_stream command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-abort-foundation-models-stream",
+          "markdownDescription": "Denies the abort_foundation_models_stream command without any pre-configured scope."
+        },
+        {
           "description": "Enables the check_foundation_models_availability command without any pre-configured scope.",
           "type": "string",
           "const": "allow-check-foundation-models-availability",
@@ -319,94 +331,70 @@
           "markdownDescription": "Denies the cleanup_foundation_models_processes command without any pre-configured scope."
         },
         {
-          "description": "Enables the find_foundation_models_session command without any pre-configured scope.",
+          "description": "Enables the foundation_models_chat_completion command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-find-foundation-models-session",
-          "markdownDescription": "Enables the find_foundation_models_session command without any pre-configured scope."
+          "const": "allow-foundation-models-chat-completion",
+          "markdownDescription": "Enables the foundation_models_chat_completion command without any pre-configured scope."
         },
         {
-          "description": "Denies the find_foundation_models_session command without any pre-configured scope.",
+          "description": "Denies the foundation_models_chat_completion command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-find-foundation-models-session",
-          "markdownDescription": "Denies the find_foundation_models_session command without any pre-configured scope."
+          "const": "deny-foundation-models-chat-completion",
+          "markdownDescription": "Denies the foundation_models_chat_completion command without any pre-configured scope."
         },
         {
-          "description": "Enables the get_foundation_models_all_sessions command without any pre-configured scope.",
+          "description": "Enables the foundation_models_chat_completion_stream command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-get-foundation-models-all-sessions",
-          "markdownDescription": "Enables the get_foundation_models_all_sessions command without any pre-configured scope."
+          "const": "allow-foundation-models-chat-completion-stream",
+          "markdownDescription": "Enables the foundation_models_chat_completion_stream command without any pre-configured scope."
         },
         {
-          "description": "Denies the get_foundation_models_all_sessions command without any pre-configured scope.",
+          "description": "Denies the foundation_models_chat_completion_stream command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-get-foundation-models-all-sessions",
-          "markdownDescription": "Denies the get_foundation_models_all_sessions command without any pre-configured scope."
+          "const": "deny-foundation-models-chat-completion-stream",
+          "markdownDescription": "Denies the foundation_models_chat_completion_stream command without any pre-configured scope."
         },
         {
-          "description": "Enables the get_foundation_models_loaded command without any pre-configured scope.",
+          "description": "Enables the is_foundation_models_loaded command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-get-foundation-models-loaded",
-          "markdownDescription": "Enables the get_foundation_models_loaded command without any pre-configured scope."
+          "const": "allow-is-foundation-models-loaded",
+          "markdownDescription": "Enables the is_foundation_models_loaded command without any pre-configured scope."
         },
         {
-          "description": "Denies the get_foundation_models_loaded command without any pre-configured scope.",
+          "description": "Denies the is_foundation_models_loaded command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-get-foundation-models-loaded",
-          "markdownDescription": "Denies the get_foundation_models_loaded command without any pre-configured scope."
+          "const": "deny-is-foundation-models-loaded",
+          "markdownDescription": "Denies the is_foundation_models_loaded command without any pre-configured scope."
         },
         {
-          "description": "Enables the get_foundation_models_random_port command without any pre-configured scope.",
+          "description": "Enables the load_foundation_models command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-get-foundation-models-random-port",
-          "markdownDescription": "Enables the get_foundation_models_random_port command without any pre-configured scope."
+          "const": "allow-load-foundation-models",
+          "markdownDescription": "Enables the load_foundation_models command without any pre-configured scope."
         },
         {
-          "description": "Denies the get_foundation_models_random_port command without any pre-configured scope.",
+          "description": "Denies the load_foundation_models command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-get-foundation-models-random-port",
-          "markdownDescription": "Denies the get_foundation_models_random_port command without any pre-configured scope."
+          "const": "deny-load-foundation-models",
+          "markdownDescription": "Denies the load_foundation_models command without any pre-configured scope."
         },
         {
-          "description": "Enables the is_foundation_models_process_running command without any pre-configured scope.",
+          "description": "Enables the unload_foundation_models command without any pre-configured scope.",
           "type": "string",
-          "const": "allow-is-foundation-models-process-running",
-          "markdownDescription": "Enables the is_foundation_models_process_running command without any pre-configured scope."
+          "const": "allow-unload-foundation-models",
+          "markdownDescription": "Enables the unload_foundation_models command without any pre-configured scope."
         },
         {
-          "description": "Denies the is_foundation_models_process_running command without any pre-configured scope.",
+          "description": "Denies the unload_foundation_models command without any pre-configured scope.",
           "type": "string",
-          "const": "deny-is-foundation-models-process-running",
-          "markdownDescription": "Denies the is_foundation_models_process_running command without any pre-configured scope."
+          "const": "deny-unload-foundation-models",
+          "markdownDescription": "Denies the unload_foundation_models command without any pre-configured scope."
         },
         {
-          "description": "Enables the load_foundation_models_server command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-load-foundation-models-server",
-          "markdownDescription": "Enables the load_foundation_models_server command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the load_foundation_models_server command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-load-foundation-models-server",
-          "markdownDescription": "Denies the load_foundation_models_server command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the unload_foundation_models_server command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-unload-foundation-models-server",
-          "markdownDescription": "Enables the unload_foundation_models_server command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the unload_foundation_models_server command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-unload-foundation-models-server",
-          "markdownDescription": "Denies the unload_foundation_models_server command without any pre-configured scope."
-        },
-        {
-          "description": "Default permissions for the Foundation Models plugin\n#### This default permission set includes:\n\n- `allow-cleanup-foundation-models-processes`\n- `allow-load-foundation-models-server`\n- `allow-unload-foundation-models-server`\n- `allow-is-foundation-models-process-running`\n- `allow-get-foundation-models-random-port`\n- `allow-find-foundation-models-session`\n- `allow-get-foundation-models-loaded`\n- `allow-get-foundation-models-all-sessions`\n- `allow-check-foundation-models-availability`",
+          "description": "Default permissions for the Foundation Models plugin\n#### This default permission set includes:\n\n- `allow-cleanup-foundation-models-processes`\n- `allow-check-foundation-models-availability`\n- `allow-load-foundation-models`\n- `allow-unload-foundation-models`\n- `allow-is-foundation-models-loaded`\n- `allow-foundation-models-chat-completion`\n- `allow-foundation-models-chat-completion-stream`\n- `allow-abort-foundation-models-stream`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the Foundation Models plugin\n#### This default permission set includes:\n\n- `allow-cleanup-foundation-models-processes`\n- `allow-load-foundation-models-server`\n- `allow-unload-foundation-models-server`\n- `allow-is-foundation-models-process-running`\n- `allow-get-foundation-models-random-port`\n- `allow-find-foundation-models-session`\n- `allow-get-foundation-models-loaded`\n- `allow-get-foundation-models-all-sessions`\n- `allow-check-foundation-models-availability`"
+          "markdownDescription": "Default permissions for the Foundation Models plugin\n#### This default permission set includes:\n\n- `allow-cleanup-foundation-models-processes`\n- `allow-check-foundation-models-availability`\n- `allow-load-foundation-models`\n- `allow-unload-foundation-models`\n- `allow-is-foundation-models-loaded`\n- `allow-foundation-models-chat-completion`\n- `allow-foundation-models-chat-completion-stream`\n- `allow-abort-foundation-models-stream`"
         }
       ]
     }

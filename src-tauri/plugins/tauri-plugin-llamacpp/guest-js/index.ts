@@ -23,6 +23,16 @@ function asNumber(v: any, defaultValue = 0): number {
   return isFinite(n) ? n : defaultValue
 }
 
+const I32_MAX = 2147483647
+const I32_MIN = -2147483648
+
+function asI32(v: any, defaultValue = 0): number {
+  const n = Math.trunc(asNumber(v, defaultValue))
+  if (n > I32_MAX) return I32_MAX
+  if (n < I32_MIN) return I32_MIN
+  return n
+}
+
 function asBool(v: any): boolean {
   if (v === '' || v === null || v === undefined) return false
   return v === true || v === 'true' || v === 1 || v === '1'
@@ -38,7 +48,8 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     version_backend: asString(config.version_backend),
     auto_update_engine: asBool(config.auto_update_engine),
     auto_unload: asBool(config.auto_unload),
-    timeout: asNumber(config.timeout, 600),
+    auto_restart_on_crash: asBool(config.auto_restart_on_crash),
+    timeout: asI32(config.timeout, 600),
 
     llamacpp_env: asString(config.llamacpp_env),
     fit: asBool(config.fit),
@@ -46,23 +57,23 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     fit_ctx: asString(config.fit_ctx),
     chat_template: asString(config.chat_template),
 
-    n_gpu_layers: asNumber(config.n_gpu_layers),
+    n_gpu_layers: asI32(config.n_gpu_layers),
     offload_mmproj: asBool(config.offload_mmproj),
     cpu_moe: asBool(config.cpu_moe),
-    n_cpu_moe: asNumber(config.n_cpu_moe),
+    n_cpu_moe: asI32(config.n_cpu_moe),
 
     override_tensor_buffer_t: asString(config.override_tensor_buffer_t),
 
-    ctx_size: asNumber(config.ctx_size),
-    threads: asNumber(config.threads),
-    threads_batch: asNumber(config.threads_batch),
-    n_predict: asNumber(config.n_predict),
-    batch_size: asNumber(config.batch_size),
-    ubatch_size: asNumber(config.ubatch_size),
+    ctx_size: asI32(config.ctx_size),
+    threads: asI32(config.threads),
+    threads_batch: asI32(config.threads_batch),
+    n_predict: asI32(config.n_predict),
+    batch_size: asI32(config.batch_size),
+    ubatch_size: asI32(config.ubatch_size),
 
     device: asString(config.device),
     split_mode: asString(config.split_mode),
-    main_gpu: asNumber(config.main_gpu),
+    main_gpu: asI32(config.main_gpu),
 
     flash_attn: asString(config.flash_attn),
     cont_batching: asBool(config.cont_batching),
@@ -82,7 +93,7 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     rope_freq_scale: asNumber(config.rope_freq_scale, 1.0),
 
     ctx_shift: asBool(config.ctx_shift),
-    parallel: asNumber(config.parallel, 1),
+    parallel: asI32(config.parallel, 1),
   }
 }
 

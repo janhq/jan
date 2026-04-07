@@ -31,6 +31,22 @@ fn default_backoff_multiplier() -> f64 {
     super::constants::DEFAULT_MCP_BACKOFF_MULTIPLIER
 }
 
+fn default_enable_smart_tool_routing() -> bool {
+    true
+}
+
+fn default_use_lightweight_router_model() -> bool {
+    false
+}
+
+fn default_router_model_provider() -> String {
+    String::new()
+}
+
+fn default_router_model_id() -> String {
+    String::new()
+}
+
 /// Runtime MCP settings that can be adjusted via UI
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,6 +59,14 @@ pub struct McpSettings {
     pub max_restart_delay_ms: u64,
     #[serde(default = "default_backoff_multiplier")]
     pub backoff_multiplier: f64,
+    #[serde(default = "default_enable_smart_tool_routing")]
+    pub enable_smart_tool_routing: bool,
+    #[serde(default = "default_use_lightweight_router_model")]
+    pub use_lightweight_router_model: bool,
+    #[serde(default = "default_router_model_provider")]
+    pub router_model_provider: String,
+    #[serde(default = "default_router_model_id")]
+    pub router_model_id: String,
 }
 
 impl Default for McpSettings {
@@ -52,6 +76,10 @@ impl Default for McpSettings {
             base_restart_delay_ms: super::constants::DEFAULT_MCP_BASE_RESTART_DELAY_MS,
             max_restart_delay_ms: super::constants::DEFAULT_MCP_MAX_RESTART_DELAY_MS,
             backoff_multiplier: super::constants::DEFAULT_MCP_BACKOFF_MULTIPLIER,
+            enable_smart_tool_routing: true,
+            use_lightweight_router_model: false,
+            router_model_provider: String::new(),
+            router_model_id: String::new(),
         }
     }
 }
@@ -71,4 +99,12 @@ pub struct ToolWithServer {
     #[serde(rename = "inputSchema")]
     pub input_schema: serde_json::Value,
     pub server: String,
+}
+
+/// Lightweight server metadata used by the frontend orchestrator for tool routing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerSummary {
+    pub name: String,
+    pub capabilities: Vec<String>,
+    pub description: String,
 }

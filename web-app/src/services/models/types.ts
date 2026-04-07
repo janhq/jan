@@ -55,6 +55,7 @@ export interface ModelScore {
 
 export interface CatalogModel {
   model_name: string
+  display_name?: string
   description: string
   library_name?: string
   developer?: string
@@ -138,6 +139,7 @@ export interface ModelsService {
   getModel(modelId: string): Promise<modelInfo | undefined>
   fetchModels(): Promise<modelInfo[]>
   fetchModelCatalog(): Promise<ModelCatalog>
+  fetchLatestJanModel(): Promise<CatalogModel | null>
   fetchHuggingFaceRepo(
     repoId: string,
     hfToken?: string

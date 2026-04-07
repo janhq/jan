@@ -10,7 +10,6 @@ import { MessageItem } from '@/containers/MessageItem'
 
 import { useMessages } from '@/hooks/useMessages'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useAssistant } from '@/hooks/useAssistant'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
@@ -47,18 +46,25 @@ import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { Button } from '@/components/ui/button'
-import { IconAlertCircle } from '@tabler/icons-react'
+import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { useMessageQueue } from '@/stores/message-queue-store'
+import { generateThreadTitle } from '@/lib/thread-title-summarizer'
+import { useAutoScroll } from '@/hooks/useAutoScroll'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
   SUBMITTED: 'submitted',
 } as const
+
+// Title summarization constants
+const MAX_TITLE_SUMMARIZATION_ATTEMPTS = 3
+const TITLE_SUMMARIZATION_MIN_LENGTH = 50
 
 type ThreadModel = {
   id: string
@@ -85,8 +91,6 @@ function ThreadDetail() {
   const search = useSearch({ from: Route.id })
   const searchThreadModel = search.threadModel
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
-  const setCurrentAssistant = useAssistant((state) => state.setCurrentAssistant)
-  const assistants = useAssistant((state) => state.assistants)
   const setMessages = useMessages((state) => state.setMessages)
   const addMessage = useMessages((state) => state.addMessage)
   const updateMessage = useMessages((state) => state.updateMessage)
@@ -108,6 +112,10 @@ function ThreadDetail() {
 
   // AbortController for cancelling tool calls
   const toolCallAbortController = useRef<AbortController | null>(null)
+
+  // Title auto-summarization state
+  const titleAbortRef = useRef<AbortController | null>(null)
+  const titleAttemptsRef = useRef(0)
 
   // Check if we should follow up with tool calls (respects abort signal)
   const followUpMessage = useCallback(
@@ -148,7 +156,11 @@ function ThreadDetail() {
   // context-limit hit, so the user sees it instead of a blank gap.
   const [pendingContinueMessage, setPendingContinueMessage] =
     useState<UIMessage | null>(null)
-  const [isAutoIncreasingContext, setIsAutoIncreasingContext] = useState(false)
+  const [autoIncreaseAttempts, setAutoIncreaseAttempts] = useState(0)
+  const MAX_AUTO_INCREASE_ATTEMPTS = 3
+  const isAutoIncreasingContext =
+    autoIncreaseAttempts > 0 &&
+    autoIncreaseAttempts < MAX_AUTO_INCREASE_ATTEMPTS
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
 
   // Refs so onFinish (captured in closure) always calls the latest callbacks
@@ -275,10 +287,12 @@ function ThreadDetail() {
           try {
             const toolName = toolCall.toolName
 
-            // Request approval if needed (unless auto-approve is enabled)
-            const approved = await useToolApproval
-              .getState()
-              .showApprovalModal(toolName, threadId, toolCall.input)
+            // Built-in RAG tools are internal and should not require approval.
+            const approved = ragToolNames.has(toolName)
+              ? true
+              : await useToolApproval
+                  .getState()
+                  .showApprovalModal(toolName, threadId, toolCall.input)
 
             if (!approved) {
               // User denied the tool call
@@ -353,6 +367,56 @@ function ThreadDetail() {
         sessionData.tools = []
         toolCallAbortController.current = null
       })
+
+      // Auto-summarize thread title after the first assistant response.
+      // The thread title is the user's first message (set in ChatInput on creation),
+      // so we use it directly as the summarization input.
+      // Skipped if already summarized, manually renamed, or max attempts reached.
+      console.log('[ThreadTitle] onFinish fired, isAbort:', isAbort)
+      if (!isAbort) {
+        const currentThread = useThreads.getState().threads[threadId]
+        console.log('[ThreadTitle] thread:', !!currentThread, 'titleSummarized:', currentThread?.metadata?.titleSummarized, 'attempts:', titleAttemptsRef.current)
+        if (
+          currentThread &&
+          !currentThread.metadata?.titleSummarized &&
+          titleAttemptsRef.current < MAX_TITLE_SUMMARIZATION_ATTEMPTS
+        ) {
+          const titleText = currentThread.title
+          console.log('[ThreadTitle] titleText length:', titleText?.length, 'threshold:', TITLE_SUMMARIZATION_MIN_LENGTH)
+
+          if (titleText && titleText.length >= TITLE_SUMMARIZATION_MIN_LENGTH) {
+            // Cancel any previous in-flight summarization
+            titleAbortRef.current?.abort()
+            const controller = new AbortController()
+            titleAbortRef.current = controller
+            titleAttemptsRef.current++
+            const originalTitle = titleText
+
+            console.log('[ThreadTitle] calling generateThreadTitle...')
+            generateThreadTitle(titleText, controller.signal).then((title) => {
+              console.log('[ThreadTitle] result:', title, 'aborted:', controller.signal.aborted)
+              if (!title || controller.signal.aborted) return
+              // Don't overwrite if the user manually renamed while we were generating
+              const thread = useThreads.getState().threads[threadId]
+              if (!thread || thread.title !== originalTitle) return
+
+              useThreads.getState().updateThread(threadId, {
+                title,
+                metadata: { ...thread.metadata, titleSummarized: true },
+              })
+              titleAbortRef.current = null
+            })
+          } else if (titleText) {
+            // Short messages are already good titles — mark as done
+            useThreads.getState().updateThread(threadId, {
+              metadata: {
+                ...currentThread.metadata,
+                titleSummarized: true,
+              },
+            })
+          }
+        }
+      }
     },
     onToolCall: ({ toolCall }) => {
       sessionData.tools.push(toolCall)
@@ -408,25 +472,36 @@ function ThreadDetail() {
     disabledTools, // Re-run when tools are enabled/disabled
   ])
 
-  // Ref for reasoning container auto-scroll
-  const reasoningContainerRef = useRef<HTMLDivElement>(null)
+  // Auto-scroll the reasoning container during streaming, pausing when the user scrolls up
+  const {
+    containerRef: reasoningContainerRef,
+    isAtBottom: isReasoningAtBottom,
+    handleScroll: handleReasoningScroll,
+    scrollToBottom: scrollReasoningToBottom,
+    forceScrollToBottom: forceScrollReasoningToBottom,
+    reset: resetReasoningScroll,
+  } = useAutoScroll()
 
-  // Auto-scroll reasoning container to bottom during streaming
   useEffect(() => {
-    if (status === 'streaming' && reasoningContainerRef.current) {
-      reasoningContainerRef.current.scrollTop =
-        reasoningContainerRef.current.scrollHeight
+    if (status === 'streaming') {
+      resetReasoningScroll()
     }
-  }, [status, chatMessages])
+  }, [status, resetReasoningScroll])
+
+  useEffect(() => {
+    if (status === 'streaming') {
+      scrollReasoningToBottom()
+    }
+  }, [status, chatMessages, scrollReasoningToBottom])
 
   useEffect(() => {
     setCurrentThreadId(threadId)
-    const assistant = assistants.find(
-      (assistant) => assistant.id === thread?.assistants?.[0]?.id
-    )
-    if (assistant) setCurrentAssistant(assistant)
+    // Reset title summarization state for the new thread
+    titleAbortRef.current?.abort()
+    titleAbortRef.current = null
+    titleAttemptsRef.current = 0
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, assistants])
+  }, [threadId])
 
   // Load messages on first mount
   useEffect(() => {
@@ -479,7 +554,7 @@ function ThreadDetail() {
 
   useEffect(() => {
     return () => {
-      // Clear the current thread ID when the component unmounts
+      titleAbortRef.current?.abort()
       setCurrentThreadId(undefined)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -491,6 +566,10 @@ function ThreadDetail() {
       text: string,
       files?: Array<{ type: string; mediaType: string; url: string }>
     ) => {
+      // Cancel any in-flight title summarization so it doesn't compete with this request
+      titleAbortRef.current?.abort()
+      titleAbortRef.current = null
+
       // Get all attachments from the store (includes both images and documents)
       const allAttachments = getAttachments(attachmentsKey)
 
@@ -530,6 +609,11 @@ function ThreadDetail() {
 
           // Update thread metadata if documents were embedded
           if (result.hasEmbeddedDocuments) {
+            const toolApproval = useToolApproval.getState()
+            const ragTools = useAppState.getState().ragToolNames
+            for (const toolName of ragTools) {
+              toolApproval.approveToolForThread(threadId, toolName)
+            }
             useThreads.getState().updateThread(threadId, {
               metadata: { hasDocuments: true },
             })
@@ -575,7 +659,7 @@ function ThreadDetail() {
       sendMessage({
         parts,
         id: messageId,
-        metadata: userMessage.metadata,
+        metadata: { ...userMessage.metadata, createdAt: new Date() },
       })
 
       // Clear attachments after sending
@@ -594,9 +678,26 @@ function ThreadDetail() {
     ]
   )
 
+  // Sends a text-only queued message, bypassing attachment processing entirely.
+  // This prevents stale or new attachments from leaking into auto-sent queue items.
+  const sendQueuedMessage = useCallback(
+    async (text: string) => {
+      const messageId = generateId()
+      const userMessage = newUserThreadContent(threadId, text, [], messageId)
+      addMessage(userMessage)
+
+      sendMessage({
+        parts: [{ type: 'text', text }],
+        id: messageId,
+        metadata: userMessage.metadata,
+      })
+    },
+    [sendMessage, threadId, addMessage]
+  )
+
   // Check for and send initial message from sessionStorage
   const initialMessageSentRef = useRef(false)
-  
+
   useEffect(() => {
     // Prevent duplicate sends
     if (initialMessageSentRef.current) return
@@ -641,6 +742,10 @@ function ThreadDetail() {
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
   // - For assistant messages: finds the closest preceding user message, deletes from there
   const handleRegenerate = (messageId?: string) => {
+    // Cancel any in-flight title summarization before regenerating
+    titleAbortRef.current?.abort()
+    titleAbortRef.current = null
+
     const currentLocalMessages = useMessages.getState().getMessages(threadId)
 
     // If regenerating from a specific message, delete all messages after it
@@ -772,6 +877,9 @@ function ThreadDetail() {
     // Increase context length in steps: <8192 -> 8192 -> 32768 -> x1.5
     const currentCtxLen =
       (model.settings?.ctx_len?.controller_props?.value as number) ?? 8192
+    const maxCtxLen =
+      (model.settings?.ctx_len?.controller_props?.max as number) || 131072
+
     let newCtxLen: number
     if (currentCtxLen < 8192) {
       newCtxLen = 8192
@@ -779,6 +887,12 @@ function ThreadDetail() {
       newCtxLen = 32768
     } else {
       newCtxLen = Math.round(currentCtxLen * 1.5)
+    }
+
+    newCtxLen = Math.min(newCtxLen, maxCtxLen)
+    if (newCtxLen <= currentCtxLen) {
+      setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
+      return
     }
 
     const updatedModel = {
@@ -820,11 +934,10 @@ function ThreadDetail() {
   setContinueFromContentRef.current = setContinueFromContent
 
   // Skip auto-context-increase in agent mode
-  const agentModeActive = useAgentMode(
-    (s) => s.agentThreads[threadId] === true
-  )
+  const agentModeActive = useAgentMode((s) => s.agentThreads[threadId] === true)
   useEffect(() => {
     if (!error || agentModeActive) return
+    if (autoIncreaseAttempts >= MAX_AUTO_INCREASE_ATTEMPTS) return
     const autoIncrease =
       selectedModel?.settings?.auto_increase_ctx_len?.controller_props?.value ??
       true
@@ -836,7 +949,7 @@ function ThreadDetail() {
           error.message?.toLowerCase().includes('limit'))) ||
       error.message === OUT_OF_CONTEXT_SIZE
     if (isContextError) {
-      setIsAutoIncreasingContext(true)
+      setAutoIncreaseAttempts((prev) => prev + 1)
       handleContextSizeIncrease()
     }
   }, [error]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -845,15 +958,51 @@ function ThreadDetail() {
     if (status === 'streaming' || status === 'submitted') {
       setContextLimitError(null)
     }
-    if (isAutoIncreasingContext && (status === 'streaming' || status === 'error')) {
-      setIsAutoIncreasingContext(false)
+    if (status === 'streaming' && autoIncreaseAttempts > 0) {
+      setAutoIncreaseAttempts(0)
     }
     if (status === 'error' && pendingContinueMessage) {
       setPendingContinueMessage(null)
     }
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
-   const threadModel = useMemo(
+  // Message queue: auto-send the next queued message when the stream finishes.
+  // No reactive subscription to the queue here — ChatInput owns the UI.
+  // We only read the store imperatively when status transitions to 'ready'.
+  const processingQueueRef = useRef(false)
+
+  useEffect(() => {
+    if (status !== 'ready' || processingQueueRef.current) return
+    if (sessionData.tools.length > 0) return
+
+    const next = useMessageQueue.getState().dequeue(threadId)
+    if (!next) return
+
+    processingQueueRef.current = true
+    sendQueuedMessage(next.text)
+      .catch((err) => {
+        console.error('Failed to send queued message:', err)
+      })
+      .finally(() => {
+        processingQueueRef.current = false
+      })
+  }, [status, threadId, sendQueuedMessage, sessionData.tools.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // If streaming errors out, discard any queued messages so they don't sit there stuck
+  useEffect(() => {
+    if (status === 'error') {
+      useMessageQueue.getState().clearQueue(threadId)
+    }
+  }, [status, threadId])
+
+  // Clear the queue when navigating away from this thread
+  useEffect(() => {
+    return () => {
+      useMessageQueue.getState().clearQueue(threadId)
+    }
+  }, [threadId])
+
+  const threadModel = useMemo(
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
   )
@@ -883,6 +1032,9 @@ function ThreadDetail() {
                     isLastMessage={isLastMessage}
                     status={status}
                     reasoningContainerRef={reasoningContainerRef}
+                    isReasoningAtBottom={isReasoningAtBottom}
+                    onReasoningScroll={handleReasoningScroll}
+                    onReasoningScrollToBottom={forceScrollReasoningToBottom}
                     onRegenerate={handleRegenerate}
                     onEdit={handleEditMessage}
                     onDelete={handleDeleteMessage}
@@ -899,6 +1051,9 @@ function ThreadDetail() {
                   isLastMessage={true}
                   status={status}
                   reasoningContainerRef={reasoningContainerRef}
+                  isReasoningAtBottom={isReasoningAtBottom}
+                  onReasoningScroll={handleReasoningScroll}
+                  onReasoningScrollToBottom={forceScrollReasoningToBottom}
                   onRegenerate={handleRegenerate}
                   onEdit={handleEditMessage}
                   onDelete={handleDeleteMessage}
@@ -906,7 +1061,8 @@ function ThreadDetail() {
                   isAnimating={false}
                 />
               )}
-              {(status === CHAT_STATUS.SUBMITTED || isAutoIncreasingContext) && (
+              {(status === CHAT_STATUS.SUBMITTED ||
+                isAutoIncreasingContext) && (
                 <div className="flex flex-row items-center gap-2">
                   {(pendingContinueMessage || isAutoIncreasingContext) && (
                     <Shimmer duration={1}>Growing the Mind...</Shimmer>
@@ -930,11 +1086,20 @@ function ThreadDetail() {
                           {(error ?? contextLimitError)?.message}
                         </span>
                       </div>
-                      {((error ?? contextLimitError)?.message?.toLowerCase().includes('context') &&
-                        ((error ?? contextLimitError)?.message?.toLowerCase().includes('size') ||
-                          (error ?? contextLimitError)?.message?.toLowerCase().includes('length') ||
-                          (error ?? contextLimitError)?.message?.toLowerCase().includes('limit'))) ||
-                      (error ?? contextLimitError)?.message === OUT_OF_CONTEXT_SIZE ? (
+                      {((error ?? contextLimitError)?.message
+                        ?.toLowerCase()
+                        .includes('context') &&
+                        ((error ?? contextLimitError)?.message
+                          ?.toLowerCase()
+                          .includes('size') ||
+                          (error ?? contextLimitError)?.message
+                            ?.toLowerCase()
+                            .includes('length') ||
+                          (error ?? contextLimitError)?.message
+                            ?.toLowerCase()
+                            .includes('limit'))) ||
+                      (error ?? contextLimitError)?.message ===
+                        OUT_OF_CONTEXT_SIZE ? (
                         <Button
                           variant="outline"
                           size="sm"
@@ -944,7 +1109,17 @@ function ThreadDetail() {
                           <IconAlertCircle className="size-4 mr-2" />
                           Increase Context Size
                         </Button>
-                      ) : null}
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3"
+                          onClick={() => handleRegenerate()}
+                        >
+                          <IconRefresh className="size-4 mr-2" />
+                          Regenerate
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>

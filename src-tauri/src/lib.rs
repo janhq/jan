@@ -119,6 +119,8 @@ pub fn run() {
         core::server::remote_provider_commands::list_provider_configs,
         // MCP commands
         core::mcp::commands::get_tools,
+        core::mcp::commands::get_tools_for_servers,
+        core::mcp::commands::get_server_summaries,
         core::mcp::commands::call_tool,
         core::mcp::commands::cancel_tool_call,
         core::mcp::commands::restart_mcp_servers,
@@ -203,6 +205,8 @@ pub fn run() {
         core::server::remote_provider_commands::abort_remote_stream,
         // MCP commands
         core::mcp::commands::get_tools,
+        core::mcp::commands::get_tools_for_servers,
+        core::mcp::commands::get_server_summaries,
         core::mcp::commands::call_tool,
         core::mcp::commands::cancel_tool_call,
         core::mcp::commands::restart_mcp_servers,
@@ -243,6 +247,7 @@ pub fn run() {
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
+            mcp_reconnect_notify: Arc::new(tokio::sync::Notify::new()),
         })
         .setup(|app| {
             app.handle().plugin(
@@ -387,7 +392,7 @@ pub fn run() {
                     {
                         use tauri_plugin_foundation_models::cleanup_processes;
                         cleanup_processes(&app_handle).await;
-                        log::info!("Foundation Models processes cleaned up successfully");
+                        log::info!("Foundation Models state cleaned up successfully");
                     }
 
                     log::info!("App cleanup completed");

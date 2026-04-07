@@ -10,6 +10,7 @@ Default permissions for the llamacpp plugin
 - `allow-get-devices`
 - `allow-generate-api-key`
 - `allow-is-process-running`
+- `allow-ensure-session-ready`
 - `allow-get-random-port`
 - `allow-find-session-by-model`
 - `allow-get-loaded-models`
@@ -119,6 +120,32 @@ Enables the determine_supported_backends command without any pre-configured scop
 <td>
 
 Denies the determine_supported_backends command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-ensure-session-ready`
+
+</td>
+<td>
+
+Enables the ensure_session_ready command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-ensure-session-ready`
+
+</td>
+<td>
+
+Denies the ensure_session_ready command without any pre-configured scope.
 
 </td>
 </tr>

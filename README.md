@@ -74,7 +74,7 @@ The easiest way to get started is by downloading one of the following versions f
   </tr>
   <tr>
     <td><b>Linux (Arm64)</b></td>
-    <td><a href='https://github.com/janhq/jan/issues/4543#issuecomment-3734911349'>How-to</a></td>
+    <td><a href='https://github.com/janhq/jan/issues/4543#issuecomment-4142429792'>How-to</a></td>
   </tr>
 </table>
 
@@ -122,9 +122,7 @@ This handles everything: installs dependencies, builds core components, and laun
 
 ```bash
 yarn install
-yarn build:tauri:plugin:api
-yarn build:core
-yarn build:extensions
+yarn build
 yarn dev
 ```
 

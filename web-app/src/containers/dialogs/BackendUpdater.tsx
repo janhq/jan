@@ -1,4 +1,5 @@
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
+import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { IconDownload } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
@@ -10,6 +11,9 @@ import { toast } from 'sonner'
 
 const BackendUpdater = () => {
   const { t } = useTranslation()
+  const isLlamacppEnabled = useModelProvider(
+    (s) => s.getProviderByName('llamacpp')?.active === true
+  )
   const { updateState, updateBackend, checkForUpdate, setRemindMeLater } =
     useBackendUpdater()
 
@@ -24,10 +28,10 @@ const BackendUpdater = () => {
     }
   }
 
-  // Check for updates when component mounts
+  // Check when the shell mounts or when the llamacpp provider is toggled on/off
   useEffect(() => {
     checkForUpdate()
-  }, [checkForUpdate])
+  }, [checkForUpdate, isLlamacppEnabled])
 
   const [backendUpdateState, setBackendUpdateState] = useState({
     remindMeLater: false,
@@ -40,6 +44,11 @@ const BackendUpdater = () => {
       isUpdateAvailable: updateState.isUpdateAvailable,
     })
   }, [updateState])
+
+  // Don't prompt for the Llama.cpp engine when the provider is disabled (jan#7901)
+  if (!isLlamacppEnabled) {
+    return null
+  }
 
   // Don't show if user clicked remind me later
   if (backendUpdateState.remindMeLater) {

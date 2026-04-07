@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::core::server::proxy;
+    use serde_json::json;
 
     #[test]
     fn test_get_destination_path_basic() {
@@ -68,6 +69,7 @@ mod tests {
             trusted_hosts: vec![vec!["localhost".to_string()]],
             host: "localhost".to_string(),
             port: 1337,
+            enable_server_tool_execution: false,
         };
         assert_eq!(config.prefix, "/v1");
         assert_eq!(config.proxy_api_key, "test-key");
@@ -84,6 +86,7 @@ mod tests {
             trusted_hosts: vec![],
             host: "127.0.0.1".to_string(),
             port: 8080,
+            enable_server_tool_execution: false,
         };
         assert_eq!(config.prefix, "");
         assert_eq!(config.proxy_api_key, "");
@@ -292,5 +295,79 @@ mod tests {
             "x-stainless-timeout",
         ];
         assert!(allowed_headers.contains(&"x-api-key"));
+    }
+
+    #[test]
+    fn adds_string_type_for_description_only_leaf() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "url": {
+                    "description": "field property config"
+                }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(schema["properties"]["url"]["type"], json!("string"));
+    }
+
+    #[test]
+    fn normalizes_nested_object_and_array_leaves() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "payload": {
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "description": "Title text"
+                        }
+                    }
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "description": "Array item schema"
+                    }
+                }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(schema["properties"]["payload"]["properties"]["title"]["type"], json!("string"));
+        assert_eq!(schema["properties"]["items"]["items"]["type"], json!("string"));
+    }
+
+    #[test]
+    fn leaves_existing_typed_or_container_nodes_unchanged() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "already typed",
+                    "type": "integer"
+                },
+                "container": {
+                    "description": "container node",
+                    "properties": {
+                        "child": {
+                            "description": "leaf child"
+                        }
+                    }
+                }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(schema["properties"]["name"]["type"], json!("integer"));
+        assert!(schema["properties"]["container"].get("type").is_none());
+        assert_eq!(
+            schema["properties"]["container"]["properties"]["child"]["type"],
+            json!("string"),
+        );
     }
 }

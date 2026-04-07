@@ -58,6 +58,16 @@
     "title": "Runtime Settings",
     "description": "Configure how Jan manages and retries MCP servers.",
     "toolCallTimeout": "Tool call timeout (seconds)",
-    "toolCallTimeoutDesc": "Maximum time to wait for an MCP tool response before timing out."
+    "toolCallTimeoutDesc": "Maximum time to wait for an MCP tool response before timing out.",
+    "smartToolRouting": "Smart MCP tool routing",
+    "smartToolRoutingDesc": "When enabled, Jan selects relevant MCP servers before loading tools. Disable to always load the full MCP tool list.",
+    "useLightweightRouterModel": "Use a dedicated model for routing",
+    "useLightweightRouterModelDesc": "When smart routing is on, run the routing step with a separate (often smaller) model instead of the chat model. Turn off to always use the active chat model for routing.",
+    "routerModel": "Routing model",
+    "routerModelDesc": "Choose provider and model in one place. Only lightweight models are listed so routing stays fast and cheap.",
+    "selectRouterModelPlaceholder": "Select routing model…",
+    "routerModelSearchPlaceholder": "Search models…",
+    "routerModelEmptyList": "No lightweight models available. Add a smaller model or configure API keys in Models.",
+    "routerModelEmptySearch": "No matches for “{{query}}”."
   }
 }
