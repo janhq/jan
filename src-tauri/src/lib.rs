@@ -152,6 +152,7 @@ pub fn run() {
         core::screen_capture::commands::list_screen_capture_windows,
         core::screen_capture::commands::capture_window_png_base64,
         core::screen_capture::commands::publish_screen_capture_png,
+        core::screen_capture::commands::validate_global_shortcut,
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,

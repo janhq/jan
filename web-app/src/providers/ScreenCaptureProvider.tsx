@@ -23,6 +23,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
+import {
+  resolveScreenCaptureOcrLanguages,
+  TESSERACT_LANG_AUTO,
+} from '@/lib/screenCaptureOcrTesseract'
 
 function buildComposedPrompt(ocr: string, template: string): string {
   const t = template.trim()
@@ -72,7 +76,13 @@ export function ScreenCaptureProvider() {
       try {
         const { recognize } = await import('tesseract.js')
         const dataUrl = `data:image/png;base64,${b64}`
-        const { data } = await recognize(dataUrl, 'eng')
+        const gs = useGeneralSetting.getState()
+        const ocrLang = resolveScreenCaptureOcrLanguages(
+          gs.screenCaptureOcrTesseractLang ?? TESSERACT_LANG_AUTO,
+          gs.currentLanguage
+        )
+        // tesseract.js v6 `recognize()` creates and tears down a worker per call; fine for occasional captures.
+        const { data } = await recognize(dataUrl, ocrLang)
         toast.dismiss(ocrToast)
 
         const raw = data.text ?? ''
@@ -85,8 +95,7 @@ export function ScreenCaptureProvider() {
           toast.success('Text extracted from screen')
         }
 
-        const template =
-          useGeneralSetting.getState().screenCaptureInstructionTemplate ?? ''
+        const template = gs.screenCaptureInstructionTemplate ?? ''
         setDraftText(buildScreenCaptureDraft(raw, template, toolbarInstruction))
         setDialogOpen(true)
 

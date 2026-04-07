@@ -6,8 +6,31 @@ import {
   SCREEN_CAPTURE_REGION_LABEL,
 } from '@/constants/screenCapture'
 
-async function waitForWebviewAttach(): Promise<void> {
-  await new Promise((r) => setTimeout(r, 450))
+/** Wait until the native webview exists (`tauri://created`) or fail on `tauri://error`. */
+function waitForWebviewWindowReady(w: WebviewWindow): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const finish = (op: () => void) => {
+      if (settled) return
+      settled = true
+      op()
+    }
+    void w.once('tauri://created', () => {
+      finish(() => resolve())
+    })
+    void w.once('tauri://error', (e) => {
+      finish(() => {
+        const msg =
+          e != null &&
+          typeof e === 'object' &&
+          'payload' in e &&
+          typeof (e as { payload?: unknown }).payload === 'string'
+            ? (e as { payload: string }).payload
+            : 'Failed to create webview window'
+        reject(new Error(msg))
+      })
+    })
+  })
 }
 
 export async function openScreenCaptureOverlayWindow(): Promise<void> {
@@ -43,7 +66,7 @@ export async function openScreenCaptureOverlayWindow(): Promise<void> {
     focus: true,
   })
 
-  await waitForWebviewAttach()
+  await waitForWebviewWindowReady(w)
   await w.show()
   await w.setAlwaysOnTop(true)
 }
@@ -87,7 +110,7 @@ export async function openScreenCaptureRegionWindow(): Promise<void> {
     focus: true,
   })
 
-  await waitForWebviewAttach()
+  await waitForWebviewWindowReady(w)
 
   const mon = await primaryMonitor()
   if (mon) {

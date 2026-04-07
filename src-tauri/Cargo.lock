@@ -21,6 +21,7 @@ dependencies = [
  "futures",
  "futures-util",
  "glob",
+ "global-hotkey",
  "hex",
  "hmac",
  "hostname",

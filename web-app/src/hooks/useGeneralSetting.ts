@@ -16,6 +16,11 @@ type GeneralSettingState = {
   screenCaptureInstructionTemplate: string
   /** Small always-on-top toolbar (separate window) for capture modes. */
   screenCaptureFloatingToolbarEnabled: boolean
+  /**
+   * Tesseract language(s): `auto` follows app UI language, or e.g. `jpn`, `chi_sim+eng`.
+   * @see web-app/src/lib/screenCaptureOcrTesseract.ts
+   */
+  screenCaptureOcrTesseractLang: string
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
   setTokenCounterCompact: (value: boolean) => void
@@ -24,6 +29,7 @@ type GeneralSettingState = {
   setScreenCaptureShortcut: (value: string) => void
   setScreenCaptureInstructionTemplate: (value: string) => void
   setScreenCaptureFloatingToolbarEnabled: (value: boolean) => void
+  setScreenCaptureOcrTesseractLang: (value: string) => void
 }
 
 export const useGeneralSetting = create<GeneralSettingState>()(
@@ -37,6 +43,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       screenCaptureShortcut: 'CommandOrControl+Shift+KeyS',
       screenCaptureInstructionTemplate: '',
       screenCaptureFloatingToolbarEnabled: false,
+      screenCaptureOcrTesseractLang: 'auto',
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setCurrentLanguage: (value) => set({ currentLanguage: value }),
@@ -47,6 +54,8 @@ export const useGeneralSetting = create<GeneralSettingState>()(
         set({ screenCaptureInstructionTemplate: value }),
       setScreenCaptureFloatingToolbarEnabled: (value) =>
         set({ screenCaptureFloatingToolbarEnabled: value }),
+      setScreenCaptureOcrTesseractLang: (value) =>
+        set({ screenCaptureOcrTesseractLang: value }),
       setHuggingfaceToken: (token) => {
         set({ huggingfaceToken: token })
         ExtensionManager.getInstance()

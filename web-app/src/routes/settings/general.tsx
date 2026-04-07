@@ -29,6 +29,13 @@ import { SystemEvent } from '@/types/events'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { restoreOverlayCursorTargeting } from '@/lib/screenCaptureWindows'
+import {
+  OCR_CUSTOM_SELECT_VALUE,
+  TESSERACT_LANG_AUTO,
+  TESSERACT_OCR_PRESET_LANGS,
+  TESSERACT_OCR_PRESET_LABELS,
+  type TesseractOcrPresetLang,
+} from '@/lib/screenCaptureOcrTesseract'
 import { useHardware } from '@/hooks/useHardware'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { isRootDir } from '@/utils/path'
@@ -54,7 +61,13 @@ function General() {
     setScreenCaptureInstructionTemplate,
     screenCaptureFloatingToolbarEnabled,
     setScreenCaptureFloatingToolbarEnabled,
+    screenCaptureOcrTesseractLang,
+    setScreenCaptureOcrTesseractLang,
   } = useGeneralSetting()
+  const ocrLangSetting =
+    screenCaptureOcrTesseractLang == null
+      ? TESSERACT_LANG_AUTO
+      : screenCaptureOcrTesseractLang
   const serviceHub = useServiceHub()
 
   const openFileTitle = (): string => {
@@ -487,6 +500,18 @@ function General() {
                             onChange={(e) =>
                               setScreenCaptureShortcut(e.target.value)
                             }
+                            onBlur={() => {
+                              const s = screenCaptureShortcut.trim()
+                              if (!s) return
+                              void invoke('validate_global_shortcut', {
+                                accelerator: s,
+                              }).catch((err: unknown) => {
+                                toast.error(
+                                  t('settings:screenCapture.shortcutInvalid'),
+                                  { description: String(err) }
+                                )
+                              })
+                            }}
                             spellCheck={false}
                           />
                         }
@@ -505,6 +530,76 @@ function General() {
                             }
                             placeholder="e.g. Summarize the following on-screen text:"
                           />
+                        }
+                      />
+                      <CardItem
+                        title={t('settings:screenCapture.ocrLanguage')}
+                        description={t(
+                          'settings:screenCapture.ocrLanguageDesc'
+                        )}
+                        align="start"
+                        className="items-start flex-row gap-y-2"
+                        actions={
+                          <div className="flex max-w-xl flex-col gap-2">
+                            <select
+                              className="border-input h-9 w-full max-w-md rounded-md border bg-white px-3 py-1 text-sm text-foreground shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30 md:text-sm"
+                              value={
+                                ocrLangSetting === TESSERACT_LANG_AUTO ||
+                                TESSERACT_OCR_PRESET_LANGS.includes(
+                                  ocrLangSetting as TesseractOcrPresetLang
+                                )
+                                  ? ocrLangSetting
+                                  : OCR_CUSTOM_SELECT_VALUE
+                              }
+                              onChange={(e) => {
+                                const v = e.target.value
+                                if (v === OCR_CUSTOM_SELECT_VALUE) {
+                                  const cur = ocrLangSetting
+                                  if (cur === TESSERACT_LANG_AUTO) {
+                                    setScreenCaptureOcrTesseractLang('')
+                                  } else if (
+                                    TESSERACT_OCR_PRESET_LANGS.includes(
+                                      cur as TesseractOcrPresetLang
+                                    )
+                                  ) {
+                                    setScreenCaptureOcrTesseractLang(cur)
+                                  }
+                                  return
+                                }
+                                setScreenCaptureOcrTesseractLang(v)
+                              }}
+                            >
+                              <option value={TESSERACT_LANG_AUTO}>
+                                {t('settings:screenCapture.ocrAuto')}
+                              </option>
+                              {TESSERACT_OCR_PRESET_LANGS.map((code) => (
+                                <option key={code} value={code}>
+                                  {TESSERACT_OCR_PRESET_LABELS[code]} ({code})
+                                </option>
+                              ))}
+                              <option value={OCR_CUSTOM_SELECT_VALUE}>
+                                {t('settings:screenCapture.ocrCustom')}
+                              </option>
+                            </select>
+                            {ocrLangSetting !== TESSERACT_LANG_AUTO &&
+                              !TESSERACT_OCR_PRESET_LANGS.includes(
+                                ocrLangSetting as TesseractOcrPresetLang
+                              ) && (
+                                <Input
+                                  className="font-mono text-xs"
+                                  value={ocrLangSetting}
+                                  onChange={(e) =>
+                                    setScreenCaptureOcrTesseractLang(
+                                      e.target.value
+                                    )
+                                  }
+                                  placeholder={t(
+                                    'settings:screenCapture.ocrCustomPlaceholder'
+                                  )}
+                                  spellCheck={false}
+                                />
+                              )}
+                          </div>
                         }
                       />
                     </>

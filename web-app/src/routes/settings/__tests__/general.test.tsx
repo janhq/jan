@@ -75,6 +75,8 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
     setScreenCaptureInstructionTemplate: vi.fn(),
     screenCaptureFloatingToolbarEnabled: false,
     setScreenCaptureFloatingToolbarEnabled: vi.fn(),
+    screenCaptureOcrTesseractLang: 'auto',
+    setScreenCaptureOcrTesseractLang: vi.fn(),
   }),
 }))
 

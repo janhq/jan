@@ -1,7 +1,18 @@
 use base64::Engine;
 use image::ImageFormat;
+use std::str::FromStr;
 use tauri::{AppHandle, Emitter};
 use xcap::{Monitor, Window};
+
+/// Validates a Tauri/global-shortcut accelerator string (same family as `tauri-plugin-global-shortcut`).
+#[tauri::command]
+pub fn validate_global_shortcut(accelerator: String) -> Result<(), String> {
+    let t = accelerator.trim();
+    if t.is_empty() {
+        return Err("Shortcut cannot be empty".to_string());
+    }
+    global_hotkey::hotkey::HotKey::from_str(t).map(drop).map_err(|e| e.to_string())
+}
 
 fn rgba_to_png_base64(rgba: image::RgbaImage) -> Result<String, String> {
     let dyn_img = image::DynamicImage::ImageRgba8(rgba);
@@ -162,4 +173,25 @@ pub fn publish_screen_capture_png(
     }
     app.emit("jan-screen-capture-png", payload)
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_accepts_tauri_style_default_shortcut() {
+        validate_global_shortcut("CommandOrControl+Shift+KeyS".to_string()).unwrap();
+    }
+
+    #[test]
+    fn validate_rejects_empty() {
+        assert!(validate_global_shortcut("".to_string()).is_err());
+        assert!(validate_global_shortcut("   ".to_string()).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_garbage() {
+        assert!(validate_global_shortcut("not-a-real-shortcut!!!".to_string()).is_err());
+    }
 }
