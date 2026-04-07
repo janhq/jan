@@ -1501,12 +1501,13 @@ export default class llamacpp_extension extends AIEngine {
         const [key, ...valueParts] = pair.split('=')
         const cleanKey = key?.trim()
 
-        if (
-          cleanKey &&
-          valueParts.length > 0 &&
-          !cleanKey.startsWith('LLAMA')
-        ) {
-          target[cleanKey] = valueParts.join('=').trim()
+        if (cleanKey) {
+          if (valueParts.length > 0) {
+            target[cleanKey] = valueParts.join('=').trim().replace(/\\n/g, '\n')
+          }
+          else {
+            delete target[cleanKey]
+          }
         }
       })
   }
@@ -1636,6 +1637,7 @@ export default class llamacpp_extension extends AIEngine {
     const api_key = await this.generateApiKey(modelId, String(port))
     envs['LLAMA_API_KEY'] = api_key
     envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
+    envs['LLAMA_ARG_THINK_BUDGET_MESSAGE'] = "\n\nWait, thinking budget exceeded I must reply now.\n"
 
     // Set user envs
     if (this.llamacpp_env) this.parseEnvFromString(envs, this.llamacpp_env)
