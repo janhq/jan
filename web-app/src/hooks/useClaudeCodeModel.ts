@@ -1,4 +1,6 @@
-import { useState, useCallback } from 'react'
+import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
+import { fileStorage } from '@/lib/fileStorage'
 
 export type ClaudeCodeModelType = 'big' | 'medium' | 'small'
 
@@ -15,7 +17,13 @@ interface ClaudeCodeModels {
   customCli: string
 }
 
-const STORAGE_KEY = 'claude-code-helper-models'
+interface ClaudeCodeState {
+  models: ClaudeCodeModels
+  setModel: (type: ClaudeCodeModelType, modelId: string | null) => void
+  setEnvVars: (envVars: EnvVar[]) => void
+  setCustomCli: (customCli: string) => void
+  clearModels: () => void
+}
 
 const defaultModels: ClaudeCodeModels = {
   big: null,
@@ -25,85 +33,32 @@ const defaultModels: ClaudeCodeModels = {
   customCli: '',
 }
 
-// Load from localStorage once
-const loadFromStorage = (): ClaudeCodeModels => {
-  if (typeof window === 'undefined') return defaultModels
+const STORAGE_KEY = 'claude-code-helper-models'
 
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) {
-      const parsed = JSON.parse(stored)
-      // Validate the structure
-      if (
-        typeof parsed === 'object' &&
-        parsed !== null &&
-        'big' in parsed &&
-        'medium' in parsed &&
-        'small' in parsed &&
-        Array.isArray(parsed.envVars) &&
-        typeof parsed.customCli === 'string'
-      ) {
-        return {
-          big: parsed.big ?? null,
-          medium: parsed.medium ?? null,
-          small: parsed.small ?? null,
-          envVars: parsed.envVars ?? [],
-          customCli: parsed.customCli ?? '',
-        }
-      }
+export const useClaudeCodeModel = create<ClaudeCodeState>()(
+  persist(
+    (set, get) => ({
+      models: defaultModels,
+
+      setModel: (type, modelId) => {
+        set({ models: { ...get().models, [type]: modelId } })
+      },
+
+      setEnvVars: (envVars) => {
+        set({ models: { ...get().models, envVars } })
+      },
+
+      setCustomCli: (customCli) => {
+        set({ models: { ...get().models, customCli } })
+      },
+
+      clearModels: () => {
+        set({ models: defaultModels })
+      },
+    }),
+    {
+      name: STORAGE_KEY,
+      storage: createJSONStorage(() => fileStorage),
     }
-  } catch {
-    console.warn('Failed to load claude-code helper models from localStorage')
-  }
-  return defaultModels
-}
-
-export function useClaudeCodeModel() {
-  const [models, setModels] = useState<ClaudeCodeModels>(loadFromStorage)
-
-  // Save to localStorage - only when models actually changes
-  const saveToStorage = useCallback((data: ClaudeCodeModels) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-    } catch {
-      console.warn('Failed to save claude-code helper models to localStorage')
-    }
-  }, [])
-
-  const setModel = useCallback((type: ClaudeCodeModelType, modelId: string | null) => {
-    setModels((prev) => {
-      const newModels = { ...prev, [type]: modelId }
-      saveToStorage(newModels)
-      return newModels
-    })
-  }, [saveToStorage])
-
-  const setEnvVars = useCallback((envVars: EnvVar[]) => {
-    setModels((prev) => {
-      const newModels = { ...prev, envVars }
-      saveToStorage(newModels)
-      return newModels
-    })
-  }, [saveToStorage])
-
-  const setCustomCli = useCallback((customCli: string) => {
-    setModels((prev) => {
-      const newModels = { ...prev, customCli }
-      saveToStorage(newModels)
-      return newModels
-    })
-  }, [saveToStorage])
-
-  const clearModels = useCallback(() => {
-    setModels(defaultModels)
-    saveToStorage(defaultModels)
-  }, [saveToStorage])
-
-  return {
-    models,
-    setModel,
-    setEnvVars,
-    setCustomCli,
-    clearModels,
-  }
-}
+  )
+)

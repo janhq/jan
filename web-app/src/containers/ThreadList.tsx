@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/sidebar'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { memo, useMemo, useState } from 'react'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { Link } from '@tanstack/react-router'
 import { RenameThreadDialog, DeleteThreadDialog } from '@/containers/dialogs'
 import { toast } from 'sonner'
@@ -47,6 +48,7 @@ const ThreadItem = memo(
     const { t } = useTranslation()
     const [renameOpen, setRenameOpen] = useState(false)
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+    const setupCompleted = useGeneralSetting((s) => s.setupCompleted)
 
     const serviceHub = useServiceHub()
     const getMessages = useMessages((state) => state.getMessages)
@@ -227,9 +229,9 @@ const ThreadItem = memo(
             <DropdownMenuSeparator />
             <DropdownMenuItem
               variant="destructive"
-              disabled={thread.title === 'What is Jan?' && !localStorage.getItem('setup-completed')}
+              disabled={thread.title === 'What is Jan?' && !setupCompleted}
               onSelect={() => {
-                if (thread.title !== 'What is Jan?' || localStorage.getItem('setup-completed')) {
+                if (thread.title !== 'What is Jan?' || setupCompleted) {
                   setDeleteConfirmOpen(true)
                 }
               }}

@@ -17,13 +17,13 @@ import { ModelSetting } from '@/containers/ModelSetting'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { ModelSupportStatus } from '@/containers/ModelSupportStatus'
 import { Fzf } from 'fzf'
-import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { predefinedProviders } from '@/constants/providers'
 import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
+import { useLastUsedModel as lastUsedModelStore } from '@/hooks/useLastUsedModel'
 import { ChevronsUpDown } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -40,16 +40,8 @@ interface SearchableModel {
   highlightedId?: string
 }
 
-// Helper functions for localStorage
 const setLastUsedModel = (provider: string, model: string) => {
-  try {
-    localStorage.setItem(
-      localStorageKey.lastUsedModel,
-      JSON.stringify({ provider, model })
-    )
-  } catch (error) {
-    console.debug('Failed to set last used model in localStorage:', error)
-  }
+  lastUsedModelStore.getState().setLastUsedModel(provider, model)
 }
 
 const DropdownModelProvider = memo(function DropdownModelProvider({

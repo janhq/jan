@@ -1,17 +1,13 @@
-import { localStorageKey } from '@/constants/localStorage'
 import type { ModelInfo } from '@janhq/core'
+import { useLastUsedModel } from '@/hooks/useLastUsedModel'
 
 export const getLastUsedModel = (): {
   provider: string
   model: string
 } | null => {
-  try {
-    const stored = localStorage.getItem(localStorageKey.lastUsedModel)
-    return stored ? JSON.parse(stored) : null
-  } catch (error) {
-    console.debug('Failed to get last used model from localStorage:', error)
-    return null
-  }
+  const { provider, model } = useLastUsedModel.getState()
+  if (provider && model) return { provider, model }
+  return null
 }
 
 // Helper function to determine which model to start

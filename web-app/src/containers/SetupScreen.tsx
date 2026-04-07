@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { localStorageKey, CACHE_EXPIRY_MS } from '@/constants/localStorage'
+import { useLastUsedModel } from '@/hooks/useLastUsedModel'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
@@ -333,11 +334,8 @@ function SetupScreen() {
       const modelId = found ? found.id : catalogId
 
       toast.dismiss(`model-validation-started-${catalogId}`)
-      localStorage.setItem(localStorageKey.setupCompleted, 'true')
-      localStorage.setItem(
-        localStorageKey.lastUsedModel,
-        JSON.stringify({ provider: 'llamacpp', model: modelId })
-      )
+      useGeneralSetting.getState().setSetupCompleted(true)
+      useLastUsedModel.getState().setLastUsedModel('llamacpp', modelId)
       navigate({
         to: route.home,
         replace: true,
