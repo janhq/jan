@@ -215,6 +215,43 @@ const ChatInput = memo(function ChatInput({
 
   const assistantCount = assistants?.length || 0
 
+  const tokenCounterAdditionalContext = useMemo(() => {
+    const activeAssistant =
+      currentThread?.assistants?.[0] ??
+      (currentAssistant
+        ? {
+            instructions: currentAssistant.instructions,
+          }
+        : undefined)
+
+    const systemInstructions =
+      typeof activeAssistant?.instructions === 'string'
+        ? activeAssistant.instructions.trim()
+        : ''
+
+    const toolsText = tools
+      .map((tool) => {
+        const schema = (() => {
+          try {
+            return JSON.stringify(tool.inputSchema ?? {})
+          } catch {
+            return '{}'
+          }
+        })()
+        return `Tool ${tool.server}::${tool.name}\nDescription: ${tool.description}\nSchema: ${schema}`
+      })
+      .join('\n\n')
+
+    const chunks = []
+    if (systemInstructions) {
+      chunks.push(`System instructions:\n${systemInstructions}`)
+    }
+    if (toolsText) {
+      chunks.push(`Available tools:\n${toolsText}`)
+    }
+    return chunks.join('\n\n')
+  }, [tools, currentThread, currentAssistant])
+
   // No auto-selection: let the user explicitly pick an assistant
 
   // Jan Browser Extension hook
@@ -2124,6 +2161,7 @@ const ChatInput = memo(function ChatInput({
                     <TokenCounter
                       messages={threadMessages || []}
                       compact={true}
+                      additionalContextText={tokenCounterAdditionalContext}
                       uploadedFiles={attachments
                         .filter((a) => a.type === 'image' && a.dataUrl)
                         .map((a) => ({
@@ -2205,6 +2243,7 @@ const ChatInput = memo(function ChatInput({
           <div className="flex-1 w-full flex justify-start px-2">
             <TokenCounter
               messages={threadMessages || []}
+              additionalContextText={tokenCounterAdditionalContext}
               uploadedFiles={attachments
                 .filter((a) => a.type === 'image' && a.dataUrl)
                 .map((a) => ({

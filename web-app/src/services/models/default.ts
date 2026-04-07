@@ -614,6 +614,112 @@ export class DefaultModelsService implements ModelsService {
       }
 
       if (engine && typeof engine.getTokensCount === 'function') {
+        const stringifyToolOutput = (value: unknown): string => {
+          if (value == null) return ''
+          if (typeof value === 'string') return value
+          if (typeof value === 'number' || typeof value === 'boolean') {
+            return String(value)
+          }
+          if (Array.isArray(value)) {
+            return value
+              .map((item) => stringifyToolOutput(item))
+              .filter((item) => item.length > 0)
+              .join('\n')
+          }
+          if (typeof value === 'object') {
+            const record = value as Record<string, unknown>
+            if (Array.isArray(record.content)) {
+              const contentText = record.content
+                .map((item) => {
+                  if (!item || typeof item !== 'object') return ''
+                  const contentItem = item as {
+                    type?: string
+                    text?: unknown
+                    content?: unknown
+                  }
+                  if (typeof contentItem.text === 'string') return contentItem.text
+                  if (contentItem.text != null) {
+                    return stringifyToolOutput(contentItem.text)
+                  }
+                  if (contentItem.content != null) {
+                    return stringifyToolOutput(contentItem.content)
+                  }
+                  return ''
+                })
+                .filter((item) => item.length > 0)
+                .join('\n')
+              if (contentText.length > 0) return contentText
+            }
+            try {
+              return JSON.stringify(record)
+            } catch {
+              return ''
+            }
+          }
+          return ''
+        }
+
+        const extractToolContextText = (message: ThreadMessage): string => {
+          const metadata = message.metadata as
+            | {
+                tool_calls?: Array<{
+                  tool?: { function?: { name?: string } }
+                  name?: string
+                  response?: unknown
+                  output?: unknown
+                }>
+              }
+            | undefined
+
+          if (!Array.isArray(metadata?.tool_calls)) return ''
+
+          return metadata.tool_calls
+            .map((toolCall) => {
+              const toolName = toolCall.tool?.function?.name || toolCall.name || 'tool'
+              const payload =
+                toolCall.response != null ? toolCall.response : toolCall.output
+              const outputText = stringifyToolOutput(payload).trim()
+              if (!outputText) return ''
+              return `Tool ${toolName} output:\n${outputText}`
+            })
+            .filter((entry) => entry.length > 0)
+            .join('\n\n')
+        }
+
+        const extractToolContextFromContent = (message: ThreadMessage): string => {
+          if (!Array.isArray(message.content)) return ''
+
+          return message.content
+            .map((contentItem) => {
+              const contentType = String(contentItem.type)
+              if (
+                contentType !== String(ContentType.ToolCall) &&
+                contentType !== 'tool_call'
+              ) {
+                return ''
+              }
+
+              const toolItem = contentItem as unknown as {
+                tool_name?: string
+                input?: unknown
+                output?: unknown
+              }
+
+              const toolName = toolItem.tool_name || 'tool'
+              const inputText = stringifyToolOutput(toolItem.input).trim()
+              const outputText = stringifyToolOutput(toolItem.output).trim()
+
+              const parts = []
+              if (inputText) parts.push(`Input:\n${inputText}`)
+              if (outputText) parts.push(`Output:\n${outputText}`)
+              if (parts.length === 0) return ''
+
+              return `Tool ${toolName} call:\n${parts.join('\n\n')}`
+            })
+            .filter((entry) => entry.length > 0)
+            .join('\n\n')
+        }
+
         // Transform Jan's ThreadMessage format to OpenAI chat completion format
         const transformedMessages = messages
           .map((message) => {
@@ -669,6 +775,26 @@ export class DefaultModelsService implements ModelsService {
                   .map((content) => content.text?.value || '')
 
                 content = textContents.join(' ')
+              }
+            }
+
+            const toolContextFromContent = extractToolContextFromContent(message)
+            const toolContextFromMetadata =
+              toolContextFromContent.length > 0 ? '' : extractToolContextText(message)
+            const toolContext = [toolContextFromContent, toolContextFromMetadata]
+              .filter((entry) => entry.length > 0)
+              .join('\n\n')
+            if (toolContext.length > 0) {
+              if (typeof content === 'string') {
+                content = content ? `${content}\n\n${toolContext}` : toolContext
+              } else if (Array.isArray(content)) {
+                content = [
+                  ...content,
+                  {
+                    type: 'text',
+                    text: toolContext,
+                  },
+                ]
               }
             }
 
