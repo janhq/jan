@@ -10,6 +10,7 @@ import {
   IconDownload,
   IconClock,
   IconFileCode,
+  IconRocket,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
@@ -31,7 +32,8 @@ import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { useTranslation } from '@/i18n'
 import {
   ModelScoreBadge,
-  ModelScorePanel,
+  fitLevelKey,
+  runModeKey,
 } from '@/components/ModelScoreSummary'
 
 type SearchParams = {
@@ -106,6 +108,21 @@ function HubModelDetailContent() {
   const [quantScores, setQuantScores] = useState<
     Record<string, ModelScore | undefined>
   >({})
+
+  const breakdown = modelScore?.breakdown
+  const translatedFitLevelKey = fitLevelKey(breakdown?.fit_level)
+  const translatedRunModeKey = runModeKey(breakdown?.run_mode)
+  const translatedBreakdown = breakdown
+    ? {
+        ...breakdown,
+        fit_level: translatedFitLevelKey
+          ? t(translatedFitLevelKey)
+          : breakdown.fit_level,
+        run_mode: translatedRunModeKey
+          ? t(translatedRunModeKey)
+          : breakdown.run_mode,
+      }
+    : undefined
 
   // State for README content
   const [readmeContent, setReadmeContent] = useState<string>('')
@@ -462,8 +479,72 @@ function HubModelDetailContent() {
               )}
             </div>
 
+            {/* Score Section */}
             <div className="mb-8">
-              <ModelScorePanel score={modelScore} />
+              <div className="flex items-center gap-2 mb-4">
+                <IconRocket size={20} className="text-muted-foreground" />
+                <h2 className="text-lg font-semibold text-foreground">
+                  Hardware score
+                </h2>
+              </div>
+
+              {modelScore?.status === 'ready' && translatedBreakdown ? (
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {[
+                    [
+                      t('hub:scoreSummary.quality'),
+                      translatedBreakdown.quality,
+                    ],
+                    [t('hub:scoreSummary.speed'), translatedBreakdown.speed],
+                    [t('hub:scoreSummary.fit'), translatedBreakdown.fit],
+                    [
+                      t('hub:scoreSummary.context'),
+                      translatedBreakdown.context,
+                    ],
+                    [t('hub:scoreSummary.tps'), modelScore.estimated_tps],
+                    [
+                      t('hub:scoreSummary.bestQuant'),
+                      translatedBreakdown.best_quant,
+                    ],
+                    [
+                      t('hub:scoreSummary.fitLevel'),
+                      translatedBreakdown.fit_level,
+                    ],
+                    [
+                      t('hub:scoreSummary.runMode'),
+                      translatedBreakdown.run_mode,
+                    ],
+                    [
+                      t('hub:scoreSummary.memRequiredGb'),
+                      translatedBreakdown.memory_required_gb,
+                    ],
+                    [
+                      t('hub:scoreSummary.utilizationPct'),
+                      translatedBreakdown.utilization_pct,
+                    ],
+                    [
+                      t('hub:scoreSummary.useCase'),
+                      translatedBreakdown.use_case,
+                    ],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="rounded-md bg-secondary/40 px-3 py-2"
+                    >
+                      <div className="text-xs text-muted-foreground">
+                        {label}
+                      </div>
+                      <div className="mt-1 text-lg font-medium text-foreground">
+                        {typeof value === 'number' ? value.toFixed(1) : value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-4 text-sm text-muted-foreground">
+                  {modelScore?.reason || t('scoreSummary.pendingDescription')}
+                </div>
+              )}
             </div>
 
             {/* Variants Section */}

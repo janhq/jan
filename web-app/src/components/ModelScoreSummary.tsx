@@ -11,7 +11,7 @@ interface ModelScoreSummaryProps {
   className?: string
 }
 
-function fitLevelTone(fitLevel?: string) {
+export function fitLevelTone(fitLevel?: string) {
   switch (fitLevel) {
     case 'Perfect':
       return 'border-emerald-200 bg-emerald-50 text-emerald-700'
@@ -26,39 +26,39 @@ function fitLevelTone(fitLevel?: string) {
   }
 }
 
-function fitLevelKey(fitLevel?: string) {
+export function fitLevelKey(fitLevel?: string) {
   switch (fitLevel) {
     case 'Perfect':
-      return 'scoreSummary.fitLevels.perfect'
+      return 'hub:scoreSummary.fitLevels.perfect'
     case 'Good':
-      return 'scoreSummary.fitLevels.good'
+      return 'hub:scoreSummary.fitLevels.good'
     case 'Marginal':
-      return 'scoreSummary.fitLevels.marginal'
+      return 'hub:scoreSummary.fitLevels.marginal'
     case 'Too Tight':
-      return 'scoreSummary.fitLevels.tooTight'
+      return 'hub:scoreSummary.fitLevels.tooTight'
     default:
       return undefined
   }
 }
 
-function runModeKey(runMode?: string) {
+export function runModeKey(runMode?: string) {
   switch (runMode) {
     case 'GPU':
-      return 'scoreSummary.runModes.gpu'
+      return 'hub:scoreSummary.runModes.gpu'
     case 'CPU Offload':
-      return 'scoreSummary.runModes.cpuOffload'
+      return 'hub:scoreSummary.runModes.cpuOffload'
     case 'CPU Only':
-      return 'scoreSummary.runModes.cpuOnly'
+      return 'hub:scoreSummary.runModes.cpuOnly'
     case 'MoE Offload':
-      return 'scoreSummary.runModes.moeOffload'
+      return 'hub:scoreSummary.runModes.moeOffload'
     case 'Tensor Parallel':
-      return 'scoreSummary.runModes.tensorParallel'
+      return 'hub:scoreSummary.runModes.tensorParallel'
     default:
       return undefined
   }
 }
 
-function renderLabel(
+export function renderLabel(
   t: (key: string) => string,
   score?: ModelScore,
   disabled?: boolean
@@ -116,92 +116,6 @@ export function ModelScoreBadge({
         >
           {translatedFitLevel}
         </span>
-      )}
-    </div>
-  )
-}
-
-export function ModelScorePanel({
-  score,
-  disabled = false,
-  className,
-}: ModelScoreSummaryProps) {
-  const { t } = useTranslation('hub')
-  const breakdown = score?.breakdown
-  const translatedFitLevelKey = fitLevelKey(breakdown?.fit_level)
-  const translatedRunModeKey = runModeKey(breakdown?.run_mode)
-  const translatedBreakdown = breakdown
-    ? {
-        ...breakdown,
-        fit_level: translatedFitLevelKey
-          ? t(translatedFitLevelKey)
-          : breakdown.fit_level,
-        run_mode: translatedRunModeKey
-          ? t(translatedRunModeKey)
-          : breakdown.run_mode,
-      }
-    : undefined
-
-  return (
-    <div
-      className={cn('rounded-xl border border-border bg-card p-4', className)}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">
-            {t('scoreSummary.hubScore')}
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {renderLabel(t, score, disabled)}
-          </p>
-        </div>
-        <div className="text-right">
-          <div className={cn('text-2xl font-semibold')}>
-            {score?.status === 'ready' && typeof score.overall === 'number'
-              ? score.overall.toFixed(1)
-              : t('scoreSummary.na')}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {t('scoreSummary.outOf100')}
-          </div>
-        </div>
-      </div>
-
-      {score?.status === 'ready' && translatedBreakdown ? (
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            [t('scoreSummary.quality'), translatedBreakdown.quality],
-            [t('scoreSummary.speed'), translatedBreakdown.speed],
-            [t('scoreSummary.fit'), translatedBreakdown.fit],
-            [t('scoreSummary.context'), translatedBreakdown.context],
-            [t('scoreSummary.tps'), score.estimated_tps],
-            [t('scoreSummary.bestQuant'), translatedBreakdown.best_quant],
-            [t('scoreSummary.fitLevel'), translatedBreakdown.fit_level],
-            [t('scoreSummary.runMode'), translatedBreakdown.run_mode],
-            [
-              t('scoreSummary.memRequiredGb'),
-              translatedBreakdown.memory_required_gb,
-            ],
-            [
-              t('scoreSummary.utilizationPct'),
-              translatedBreakdown.utilization_pct,
-            ],
-            [t('scoreSummary.useCase'), translatedBreakdown.use_case],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-md bg-secondary/40 px-3 py-2">
-              <div className="text-xs text-muted-foreground">{label}</div>
-              <div className="mt-1 text-lg font-medium text-foreground">
-                {typeof value === 'number' ? value.toFixed(1) : value}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="mt-4 text-sm text-muted-foreground">
-          {disabled
-            ? t('scoreSummary.disabledDescription')
-            : score?.reason || t('scoreSummary.pendingDescription')}
-        </div>
       )}
     </div>
   )
