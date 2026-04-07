@@ -34,6 +34,10 @@ fn migrate_legacy_app_configuration(app_data_dir: &Path) -> std::io::Result<()> 
 }
 
 fn migrate_from_candidates(canonical: &Path, candidates: Vec<PathBuf>) -> std::io::Result<()> {
+    if let Some(parent) = canonical.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
     for legacy in candidates {
         if legacy.is_file() {
             log::info!(
