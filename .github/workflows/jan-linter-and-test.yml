@@ -204,11 +204,9 @@ jobs:
         env:
           NODE_OPTIONS: '--max-old-space-size=2048'
 
-  # ubuntu-22.04: libspa 0.9.2 + bindgen must match system spa/param/video/raw.h; ubuntu-latest (24.04+)
-  # ships newer PipeWire headers where spa_video_info_raw no longer matches the published crate.
   # libclang-dev: libspa-sys build.rs uses bindgen and needs libclang.so at compile time.
   test-on-ubuntu:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
