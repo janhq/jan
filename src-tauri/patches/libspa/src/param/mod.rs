@@ -5,7 +5,6 @@
 
 pub mod format;
 pub mod format_utils;
-pub mod video;
 
 use std::ffi::CStr;
 use std::fmt::Debug;
