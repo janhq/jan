@@ -1504,7 +1504,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330c60081dcc4c72131f8eb70510f1ac07223e5d4163db481a04a0befcffa412"
 dependencies = [
- "libloading 0.7.4",
+ "libloading 0.8.9",
 ]
 
 [[package]]
@@ -9334,12 +9334,13 @@ dependencies = [
 
 [[package]]
 name = "xcap"
-version = "0.9.3"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "669eca0840c322f46ab68505a7e4328421b86127eeead1faed6bfc827dc77713"
+checksum = "1bdf4c8d4c33dfab96fb585cdf991a7bd86d754ac35edd4b80477a9b739892b2"
 dependencies = [
  "dispatch2",
  "image",
+ "lazy_static",
  "libwayshot-xcap",
  "log",
  "objc2 0.6.4",
