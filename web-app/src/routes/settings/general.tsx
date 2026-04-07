@@ -292,11 +292,11 @@ function General() {
                       })}
                       &nbsp;
                     </span>
-                    <div className="flex items-center gap-2 mt-1 ">
-                      <div className="truncate">
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="max-w-100 bg-secondary rounded-sm px-1 py-0.5">
                         <span
                           title={janDataFolder}
-                          className="bg-secondary text-xs p-1 rounded-sm"
+                          className="text-xs line-clamp-1 break-all"
                         >
                           {janDataFolder}
                         </span>

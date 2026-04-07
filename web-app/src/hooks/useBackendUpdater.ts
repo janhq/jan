@@ -1,6 +1,13 @@
 import { useState, useCallback, useEffect } from 'react'
 import { events } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
+import { useModelProvider } from '@/hooks/useModelProvider'
+
+/** Llama.cpp engine updates only apply when the llamacpp model provider is enabled. */
+function isLlamacppProviderActive(): boolean {
+  const p = useModelProvider.getState().getProviderByName('llamacpp')
+  return p?.active === true
+}
 
 export interface BackendUpdateInfo {
   updateNeeded: boolean
@@ -158,6 +165,19 @@ export const useBackendUpdater = () => {
           syncStateToOtherInstances(newState)
         }
 
+        if (!isLlamacppProviderActive()) {
+          const newState = {
+            isUpdateAvailable: false,
+            updateInfo: null,
+          }
+          setUpdateState((prev) => ({
+            ...prev,
+            ...newState,
+          }))
+          syncStateToOtherInstances(newState)
+          return null
+        }
+
         // Get llamacpp extension instance
         const allExtensions = ExtensionManager.getInstance().listExtensions()
 
@@ -254,6 +274,20 @@ export const useBackendUpdater = () => {
 
   const updateBackend = useCallback(async () => {
     if (!updateState.updateInfo) return
+
+    if (!isLlamacppProviderActive()) {
+      const newState = {
+        isUpdateAvailable: false,
+        updateInfo: null,
+        isUpdating: false,
+      }
+      setUpdateState((prev) => ({
+        ...prev,
+        ...newState,
+      }))
+      syncStateToOtherInstances(newState)
+      return
+    }
 
     try {
       // If an update is already in progress, avoid triggering a duplicate update.
