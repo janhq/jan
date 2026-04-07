@@ -1,4 +1,4 @@
-use crate::{RagError, MAX_PDF_FILE_SIZE, MAX_SPREADSHEET_FILE_SIZE, MAX_CSV_FILE_SIZE, MAX_PPTX_FILE_SIZE, MAX_DOCX_FILE_SIZE};
+use crate::{RagError, MAX_PDF_FILE_SIZE, MAX_SPREADSHEET_FILE_SIZE, MAX_CSV_FILE_SIZE, MAX_PPTX_FILE_SIZE, MAX_DOCX_FILE_SIZE, MAX_TEXT_FILE_SIZE};
 use std::borrow::Cow;
 use std::fs;
 use std::io::{Cursor, Read};
@@ -335,7 +335,7 @@ fn parse_html(file_path: &str) -> Result<String, RagError> {
 
 fn read_text_auto(file_path: &str) -> Result<String, RagError> {
     let metadata = fs::metadata(file_path)?;
-    if metadata.len() > 50 * 1024 * 1024 {
+    if metadata.len() > MAX_TEXT_FILE_SIZE {
         return Err(RagError::ParseError("File too large (max 50MB)".to_string()));
     }
     let bytes = fs::read(file_path)?;

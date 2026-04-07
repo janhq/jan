@@ -3,3 +3,4 @@ pub const MAX_CSV_FILE_SIZE: u64 = 20 * 1024 * 1024;
 pub const MAX_SPREADSHEET_FILE_SIZE: u64 = 20 * 1024 * 1024;
 pub const MAX_PPTX_FILE_SIZE: u64 = 20 * 1024 * 1024;
 pub const MAX_DOCX_FILE_SIZE: u64 = 20 * 1024 * 1024;
+pub const MAX_TEXT_FILE_SIZE: u64 = 50 * 1024 * 1024;
