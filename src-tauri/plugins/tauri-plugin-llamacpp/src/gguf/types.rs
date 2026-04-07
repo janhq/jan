@@ -138,9 +138,6 @@ pub struct HubModelScoreResult {
     pub estimated_tps: Option<f32>,
     pub breakdown: Option<ModelScoreBreakdown>,
     pub scored_quant_model_id: String,
-    pub hardware_fingerprint: String,
-    pub cache_key: String,
-    pub updated_at: u64,
     pub used_builtin_fallback: bool,
     pub reason: Option<String>,
 }

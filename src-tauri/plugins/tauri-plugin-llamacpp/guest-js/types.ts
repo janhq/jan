@@ -61,9 +61,6 @@ export interface HubModelScoreResult {
   estimated_tps: number
   breakdown?: ModelScoreBreakdown
   scored_quant_model_id: string
-  hardware_fingerprint: string
-  cache_key: string
-  updated_at: number
   used_builtin_fallback: boolean
   reason?: string
 }

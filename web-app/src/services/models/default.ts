@@ -4,6 +4,7 @@
 
 import { sanitizeModelId } from '@/lib/utils'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
+import type { HardwareData } from '@/services/hardware/types'
 import {
   AIEngine,
   EngineManager,
@@ -29,13 +30,249 @@ import type {
 
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
+const SCORE_CACHE_SCHEMA_VERSION = 'v2'
+const SCORE_CACHE_FILE = 'llmfit_hub_scores.json'
+const SCORE_CACHE_DIR = 'llamacpp'
+const DEFAULT_SCORE_CTX_SIZE = 8192
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+interface ScoreCacheStore {
+  get: <T>(key: string) => Promise<T | undefined>
+  set: (key: string, value: unknown) => Promise<void>
+  save: () => Promise<void>
+}
+
+interface CachedHubScoreEntry {
+  result: ModelScore
+}
 
 export class DefaultModelsService implements ModelsService {
   private hubScoreCache = new Map<string, ModelScore>()
   private hubScoreRequests = new Map<string, Promise<ModelScore>>()
+  private scoreStorePromise: Promise<ScoreCacheStore | null> | null = null
+  private hardwareFingerprintPromise: Promise<string | null> | null = null
 
   private getEngine(provider: string = defaultProvider) {
     return EngineManager.instance().get(provider) as AIEngine | undefined
+  }
+
+  private async getScoreStore(): Promise<ScoreCacheStore | null> {
+    if (this.scoreStorePromise) {
+      return this.scoreStorePromise
+    }
+
+    this.scoreStorePromise = (async () => {
+      if (!isTauriRuntime()) {
+        return null
+      }
+
+      try {
+        const [{ invoke }, { load }] = await Promise.all([
+          import('@tauri-apps/api/core'),
+          import('@tauri-apps/plugin-store'),
+        ])
+        const dataFolder = await invoke<string>('get_jan_data_folder_path')
+
+        return (await load(
+          `${dataFolder}/${SCORE_CACHE_DIR}/${SCORE_CACHE_FILE}`,
+          {
+            autoSave: false,
+            defaults: {},
+          }
+        )) as ScoreCacheStore
+      } catch (error) {
+        console.warn(
+          'Failed to initialize llmfit hub score cache store:',
+          error
+        )
+        return null
+      }
+    })()
+
+    return this.scoreStorePromise
+  }
+
+  private async readPersistedHubScore(
+    cacheKey: string
+  ): Promise<ModelScore | undefined> {
+    const store = await this.getScoreStore()
+    if (store) {
+      const cached = await store.get<CachedHubScoreEntry>(cacheKey)
+      return cached?.result
+    }
+
+    try {
+      const rawCache = localStorage.getItem(SCORE_CACHE_FILE)
+      if (!rawCache) {
+        return undefined
+      }
+
+      const cache = JSON.parse(rawCache) as Record<string, CachedHubScoreEntry>
+      return cache[cacheKey]?.result
+    } catch (error) {
+      console.warn(
+        'Failed to read llmfit hub score cache from localStorage:',
+        error
+      )
+      localStorage.removeItem(SCORE_CACHE_FILE)
+      return undefined
+    }
+  }
+
+  private async writePersistedHubScore(
+    cacheKey: string,
+    result: ModelScore
+  ): Promise<void> {
+    const entry: CachedHubScoreEntry = { result }
+    const store = await this.getScoreStore()
+
+    if (store) {
+      try {
+        await store.set(cacheKey, entry)
+        await store.save()
+        return
+      } catch (error) {
+        console.warn('Failed to write llmfit hub score cache store:', error)
+      }
+    }
+
+    try {
+      const rawCache = localStorage.getItem(SCORE_CACHE_FILE)
+      const cache = rawCache
+        ? (JSON.parse(rawCache) as Record<string, CachedHubScoreEntry>)
+        : {}
+      cache[cacheKey] = entry
+      localStorage.setItem(SCORE_CACHE_FILE, JSON.stringify(cache))
+    } catch (error) {
+      console.warn(
+        'Failed to write llmfit hub score cache to localStorage:',
+        error
+      )
+    }
+  }
+
+  private encodeUint32LE(value: number): Uint8Array {
+    const buffer = new ArrayBuffer(4)
+    new DataView(buffer).setUint32(0, value, true)
+    return new Uint8Array(buffer)
+  }
+
+  private encodeUint64LE(value: number): Uint8Array {
+    const buffer = new ArrayBuffer(8)
+    new DataView(buffer).setBigUint64(0, BigInt(value), true)
+    return new Uint8Array(buffer)
+  }
+
+  private concatBytes(chunks: Uint8Array[]): Uint8Array {
+    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+    const result = new Uint8Array(totalLength)
+    let offset = 0
+
+    for (const chunk of chunks) {
+      result.set(chunk, offset)
+      offset += chunk.length
+    }
+
+    return result
+  }
+
+  private async sha256Hex(input: string | Uint8Array): Promise<string> {
+    const bytes = Uint8Array.from(
+      typeof input === 'string' ? new TextEncoder().encode(input) : input
+    )
+    const hashBuffer = await crypto.subtle.digest('SHA-256', bytes)
+    return Array.from(new Uint8Array(hashBuffer))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('')
+  }
+
+  private async buildHardwareFingerprint(
+    systemInfo: HardwareData
+  ): Promise<string> {
+    const encoder = new TextEncoder()
+    const chunks: Uint8Array[] = [
+      encoder.encode(systemInfo.os_type ?? ''),
+      encoder.encode(systemInfo.os_name ?? ''),
+      encoder.encode(systemInfo.cpu?.name ?? ''),
+      encoder.encode(systemInfo.cpu?.arch ?? ''),
+      this.encodeUint32LE(systemInfo.cpu?.core_count ?? 0),
+      this.encodeUint64LE(systemInfo.total_memory ?? 0),
+    ]
+
+    for (const extension of systemInfo.cpu?.extensions ?? []) {
+      chunks.push(encoder.encode(extension))
+    }
+
+    for (const gpu of systemInfo.gpus ?? []) {
+      chunks.push(encoder.encode(gpu.name ?? ''))
+      chunks.push(encoder.encode(gpu.uuid ?? ''))
+      chunks.push(this.encodeUint64LE(gpu.total_memory ?? 0))
+      chunks.push(encoder.encode(gpu.driver_version ?? ''))
+    }
+
+    return this.sha256Hex(this.concatBytes(chunks))
+  }
+
+  private async getHardwareFingerprint(): Promise<string | null> {
+    if (this.hardwareFingerprintPromise) {
+      return this.hardwareFingerprintPromise
+    }
+
+    this.hardwareFingerprintPromise = (async () => {
+      if (!isTauriRuntime()) {
+        return null
+      }
+
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        const systemInfo = await invoke<HardwareData>(
+          'plugin:hardware|get_system_info'
+        )
+        return await this.buildHardwareFingerprint(systemInfo)
+      } catch (error) {
+        console.warn('Failed to compute llmfit hardware fingerprint:', error)
+        return null
+      }
+    })()
+
+    return this.hardwareFingerprintPromise
+  }
+
+  private async getPersistentHubScoreCacheKey(
+    scoreVariant: ModelQuant
+  ): Promise<string | null> {
+    const hardwareFingerprint = await this.getHardwareFingerprint()
+    if (!hardwareFingerprint) {
+      return null
+    }
+
+    return this.sha256Hex(
+      [
+        SCORE_CACHE_SCHEMA_VERSION,
+        scoreVariant.model_id,
+        scoreVariant.path,
+        DEFAULT_SCORE_CTX_SIZE,
+        hardwareFingerprint,
+      ].join('|')
+    )
+  }
+
+  private normalizeHubScoreResult(
+    result: ModelScore,
+    scoreVariant: ModelQuant,
+    cacheKey: string | null
+  ): ModelScore {
+    return {
+      ...result,
+      estimated_tps: result.estimated_tps ?? 0,
+      scored_quant_model_id:
+        result.scored_quant_model_id ?? scoreVariant.model_id,
+      cache_key: result.cache_key ?? cacheKey ?? undefined,
+      updated_at: result.updated_at ?? Math.floor(Date.now() / 1000),
+    }
   }
 
   private getDefaultScoreVariant(model: CatalogModel): ModelQuant | undefined {
@@ -48,11 +285,17 @@ export class DefaultModelsService implements ModelsService {
     )
   }
 
-  private getScoreVariant(model: CatalogModel, variant?: ModelQuant): ModelQuant | undefined {
+  private getScoreVariant(
+    model: CatalogModel,
+    variant?: ModelQuant
+  ): ModelQuant | undefined {
     return variant ?? this.getDefaultScoreVariant(model)
   }
 
-  private getHubScoreCacheKey(model: CatalogModel, variant?: ModelQuant): string {
+  private getHubScoreCacheKey(
+    model: CatalogModel,
+    variant?: ModelQuant
+  ): string {
     const scoreVariant = this.getScoreVariant(model, variant)
     return [
       model.model_name,
@@ -356,10 +599,11 @@ export class DefaultModelsService implements ModelsService {
     const llamacppEngine = this.getEngine('llamacpp')
     const mlxEngine = this.getEngine('mlx')
     try {
-      await Promise.allSettled([
-        llamacppEngine?.abortImport(id),
-        mlxEngine?.abortImport(id),
-      ].filter(Boolean))
+      await Promise.allSettled(
+        [llamacppEngine?.abortImport(id), mlxEngine?.abortImport(id)].filter(
+          Boolean
+        )
+      )
     } finally {
       events.emit(DownloadEvent.onFileDownloadStopped, {
         modelId: id,
@@ -609,44 +853,62 @@ export class DefaultModelsService implements ModelsService {
     variant?: ModelQuant
   ): Promise<ModelScore> {
     const scoreVariant = this.getScoreVariant(model, variant)
-    const cacheKey = this.getHubScoreCacheKey(model, variant)
+    const inMemoryCacheKey = this.getHubScoreCacheKey(model, variant)
 
     if (model.is_mlx) {
       const unavailable: ModelScore = {
         status: 'unavailable',
+        estimated_tps: 0,
         reason: 'llmfit scoring is currently only available for GGUF models.',
       }
-      this.hubScoreCache.set(cacheKey, unavailable)
+      this.hubScoreCache.set(inMemoryCacheKey, unavailable)
       return unavailable
     }
 
     if (!scoreVariant) {
       const unavailable: ModelScore = {
         status: 'unavailable',
+        estimated_tps: 0,
         reason: 'No GGUF variant available for scoring.',
       }
-      this.hubScoreCache.set(cacheKey, unavailable)
+      this.hubScoreCache.set(inMemoryCacheKey, unavailable)
       return unavailable
     }
 
-    const cached = this.hubScoreCache.get(cacheKey)
+    const cached = this.hubScoreCache.get(inMemoryCacheKey)
     if (cached && cached.status !== 'loading') {
       return cached
     }
 
-    const inFlight = this.hubScoreRequests.get(cacheKey)
+    const inFlight = this.hubScoreRequests.get(inMemoryCacheKey)
     if (inFlight) {
       return inFlight
     }
 
     const loadingState: ModelScore = {
       status: 'loading',
+      estimated_tps: 0,
       scored_quant_model_id: scoreVariant.model_id,
     }
-    this.hubScoreCache.set(cacheKey, loadingState)
+    this.hubScoreCache.set(inMemoryCacheKey, loadingState)
 
     const request = (async () => {
       try {
+        const persistentCacheKey =
+          await this.getPersistentHubScoreCacheKey(scoreVariant)
+        if (persistentCacheKey) {
+          const persisted = await this.readPersistedHubScore(persistentCacheKey)
+          if (persisted) {
+            const normalizedPersisted = this.normalizeHubScoreResult(
+              persisted,
+              scoreVariant,
+              persistentCacheKey
+            )
+            this.hubScoreCache.set(inMemoryCacheKey, normalizedPersisted)
+            return normalizedPersisted
+          }
+        }
+
         const engine = this.getEngine('llamacpp') as AIEngine & {
           getHubModelScore?: (request: {
             model_name: string
@@ -654,47 +916,64 @@ export class DefaultModelsService implements ModelsService {
             default_quant_model_id: string
             model_path: string
             ctx_size?: number
+            use_case?: string
+            capabilities?: string[]
+            release_date?: string
+            tools?: boolean
+            num_mmproj?: number
+            pinned?: boolean
           }) => Promise<ModelScore>
         }
 
         if (!engine || typeof engine.getHubModelScore !== 'function') {
           const unavailable: ModelScore = {
             status: 'unavailable',
+            estimated_tps: 0,
             reason: 'Hub scoring is not available on this platform.',
           }
-          this.hubScoreCache.set(cacheKey, unavailable)
+          this.hubScoreCache.set(inMemoryCacheKey, unavailable)
           return unavailable
         }
 
-        const result = await engine.getHubModelScore({
-          model_name: model.model_name,
-          developer: model.developer,
-          default_quant_model_id: scoreVariant.model_id,
-          model_path: scoreVariant.path,
-          ctx_size: 8192,
-          use_case: model.use_case,
-          capabilities: model.capabilities,
-          release_date: model.created_at ?? model.createdAt,
-          tools: model.tools,
-          num_mmproj: model.num_mmproj,
-          pinned: model.pinned,
-        })
+        const result = this.normalizeHubScoreResult(
+          await engine.getHubModelScore({
+            model_name: model.model_name,
+            developer: model.developer,
+            default_quant_model_id: scoreVariant.model_id,
+            model_path: scoreVariant.path,
+            ctx_size: DEFAULT_SCORE_CTX_SIZE,
+            use_case: model.use_case,
+            capabilities: model.capabilities,
+            release_date: model.created_at ?? model.createdAt,
+            tools: model.tools,
+            num_mmproj: model.num_mmproj,
+            pinned: model.pinned,
+          }),
+          scoreVariant,
+          persistentCacheKey
+        )
 
-        this.hubScoreCache.set(cacheKey, result)
+        this.hubScoreCache.set(inMemoryCacheKey, result)
+        if (persistentCacheKey) {
+          await this.writePersistedHubScore(persistentCacheKey, result)
+        }
+
         return result
       } catch (error) {
         const failed: ModelScore = {
           status: 'error',
-          reason: error instanceof Error ? error.message : 'Failed to score model.',
+          estimated_tps: 0,
+          reason:
+            error instanceof Error ? error.message : 'Failed to score model.',
         }
-        this.hubScoreCache.set(cacheKey, failed)
+        this.hubScoreCache.set(inMemoryCacheKey, failed)
         return failed
       } finally {
-        this.hubScoreRequests.delete(cacheKey)
+        this.hubScoreRequests.delete(inMemoryCacheKey)
       }
     })()
 
-    this.hubScoreRequests.set(cacheKey, request)
+    this.hubScoreRequests.set(inMemoryCacheKey, request)
     return request
   }
 

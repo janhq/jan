@@ -7,26 +7,12 @@ use llmfit_core::fit::{FitLevel, InferenceRuntime, RunMode};
 use llmfit_core::hardware::{GpuBackend, GpuInfo as LlmfitGpuInfo, SystemSpecs as LlmfitSystemSpecs};
 use llmfit_core::models::{quant_bytes_per_param, Capability, LlmModel, ModelFormat};
 use llmfit_core::ModelFit;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{Manager, Runtime};
+use tauri::Runtime;
 use tauri_plugin_hardware::{get_system_info, SystemInfo, Vendor};
 
-const SCORE_CACHE_SCHEMA_VERSION: &str = "v2";
-const SCORE_CACHE_FILE: &str = "llmfit_hub_scores.json";
 const DEFAULT_CTX_SIZE: u32 = 8192;
 const RESERVE_BYTES: u64 = 2_288_490_189;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CachedScoreEntry {
-    result: HubModelScoreResult,
-}
-
-type ScoreCache = HashMap<String, CachedScoreEntry>;
 
 #[derive(Debug, Clone)]
 struct DerivedModelSpec {
@@ -41,21 +27,16 @@ struct DerivedModelSpec {
     active_experts: Option<u32>,
     active_parameters: Option<u64>,
     release_date: Option<String>,
+    num_attention_heads: Option<u32>,
+    num_key_value_heads: Option<u32>,
+    license: Option<String>,
 }
 
 pub async fn score_hub_model_internal<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
+    _app_handle: tauri::AppHandle<R>,
     request: HubModelScoreRequest,
 ) -> Result<HubModelScoreResult, String> {
     let system_info = get_system_info();
-    let hardware_fingerprint = build_hardware_fingerprint(&system_info);
-    let cache_key = build_cache_key(&request, &hardware_fingerprint);
-
-    if let Some(cached) = read_cache_entry(&app_handle, &cache_key)? {
-        return Ok(cached);
-    }
-
-    let updated_at = current_unix_timestamp();
 
     let score_result = match compute_score_result(&request, &system_info).await {
         Ok((overall, estimated_tps, breakdown)) => HubModelScoreResult {
@@ -64,9 +45,6 @@ pub async fn score_hub_model_internal<R: Runtime>(
             estimated_tps: Some(estimated_tps),
             breakdown: Some(breakdown),
             scored_quant_model_id: request.default_quant_model_id.clone(),
-            hardware_fingerprint,
-            cache_key: cache_key.clone(),
-            updated_at,
             used_builtin_fallback: false,
             reason: None,
         },
@@ -76,15 +54,10 @@ pub async fn score_hub_model_internal<R: Runtime>(
             breakdown: None,
             estimated_tps: None,
             scored_quant_model_id: request.default_quant_model_id.clone(),
-            hardware_fingerprint,
-            cache_key: cache_key.clone(),
-            updated_at,
             used_builtin_fallback: false,
             reason: Some(reason),
         },
     };
-
-    write_cache_entry(&app_handle, &cache_key, score_result.clone())?;
     Ok(score_result)
 }
 
@@ -125,6 +98,7 @@ async fn compute_score_result(
                 RunMode::CpuOffload => "CPU Offload".to_string(),
                 RunMode::CpuOnly => "CPU Only".to_string(),
                 RunMode::MoeOffload => "MoE Offload".to_string(),
+                RunMode::TensorParallel => "Tensor Parallel".to_string(),
             },
             memory_required_gb: analysis.memory_required_gb,
             utilization_pct: analysis.utilization_pct,
@@ -190,6 +164,9 @@ fn derive_model_spec(
         active_experts,
         active_parameters,
         release_date: request.release_date.clone(),
+        num_attention_heads: infer_metadata_u32(gguf, &["*.attention.head_count"]),
+        num_key_value_heads: infer_metadata_u32(gguf, &["*.attention.head_count_kv"]),
+        license: gguf.metadata.get("general.license").cloned(),
     })
 }
 
@@ -213,6 +190,9 @@ fn build_llmfit_model(request: &HubModelScoreRequest, spec: &DerivedModelSpec) -
         gguf_sources: vec![],
         capabilities: spec.capabilities.clone(),
         format: ModelFormat::Gguf,
+        num_attention_heads: spec.num_attention_heads,
+        num_key_value_heads: spec.num_key_value_heads,
+        license: spec.license.clone(),
     };
 
     let baseline_memory = model.estimate_memory_gb(model.quantization.as_str(), model.context_length);
@@ -294,6 +274,8 @@ fn build_llmfit_system_specs(system_info: &SystemInfo) -> LlmfitSystemSpecs {
         unified_memory: primary.as_ref().map(|gpu| gpu.unified_memory).unwrap_or(false),
         backend: primary.as_ref().map(|gpu| gpu.backend).unwrap_or(cpu_backend),
         gpus,
+        cluster_mode: false,
+        cluster_node_count: 0,
     }
 }
 
@@ -569,141 +551,9 @@ fn clamp_score(value: f32) -> f32 {
     (value.clamp(0.0, 100.0) * 10.0).round() / 10.0
 }
 
-fn build_hardware_fingerprint(system_info: &SystemInfo) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(system_info.os_type.as_bytes());
-    hasher.update(system_info.os_name.as_bytes());
-    hasher.update(system_info.cpu.name.as_bytes());
-    hasher.update(system_info.cpu.arch.as_bytes());
-    hasher.update(system_info.cpu.core_count.to_le_bytes());
-    hasher.update(system_info.total_memory.to_le_bytes());
-
-    for extension in &system_info.cpu.extensions {
-        hasher.update(extension.as_bytes());
-    }
-
-    for gpu in &system_info.gpus {
-        hasher.update(gpu.name.as_bytes());
-        hasher.update(gpu.uuid.as_bytes());
-        hasher.update(gpu.total_memory.to_le_bytes());
-        hasher.update(gpu.driver_version.as_bytes());
-    }
-
-    hex_string(hasher.finalize().as_slice())
-}
-
-fn build_cache_key(request: &HubModelScoreRequest, hardware_fingerprint: &str) -> String {
-    let raw = format!(
-        "{}|{}|{}|{}|{}",
-        SCORE_CACHE_SCHEMA_VERSION,
-        request.default_quant_model_id,
-        request.model_path,
-        request.ctx_size.unwrap_or(DEFAULT_CTX_SIZE),
-        hardware_fingerprint
-    );
-
-    let mut hasher = Sha256::new();
-    hasher.update(raw.as_bytes());
-    hex_string(hasher.finalize().as_slice())
-}
-
-fn read_cache_entry<R: Runtime>(
-    app_handle: &tauri::AppHandle<R>,
-    cache_key: &str,
-) -> Result<Option<HubModelScoreResult>, String> {
-    let cache = read_cache(app_handle)?;
-    Ok(cache.get(cache_key).map(|entry| entry.result.clone()))
-}
-
-fn write_cache_entry<R: Runtime>(
-    app_handle: &tauri::AppHandle<R>,
-    cache_key: &str,
-    result: HubModelScoreResult,
-) -> Result<(), String> {
-    let mut cache = read_cache(app_handle)?;
-    cache.insert(cache_key.to_string(), CachedScoreEntry { result });
-    write_cache(app_handle, &cache)
-}
-
-fn read_cache<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> Result<ScoreCache, String> {
-    let cache_path = cache_path(app_handle)?;
-    if !cache_path.exists() {
-        return Ok(HashMap::new());
-    }
-
-    let content =
-        fs::read_to_string(&cache_path).map_err(|error| format!("Failed to read cache: {error}"))?;
-    match serde_json::from_str(&content) {
-        Ok(cache) => Ok(cache),
-        Err(_) => {
-            // Invalidate cache file if parsing fails
-            let _ = fs::remove_file(&cache_path);
-            Ok(HashMap::new())
-        }
-    }
-}
-
-fn write_cache<R: Runtime>(
-    app_handle: &tauri::AppHandle<R>,
-    cache: &ScoreCache,
-) -> Result<(), String> {
-    let cache_path = cache_path(app_handle)?;
-    if let Some(parent) = cache_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("Failed to create cache directory: {error}"))?;
-    }
-
-    let content = serde_json::to_string_pretty(cache)
-        .map_err(|error| format!("Failed to serialize cache: {error}"))?;
-    fs::write(cache_path, content).map_err(|error| format!("Failed to write cache: {error}"))
-}
-
-fn cache_path<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("Failed to resolve app data directory: {error}"))?;
-    Ok(app_data_dir.join("llamacpp").join(SCORE_CACHE_FILE))
-}
-
-fn current_unix_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0)
-}
-
-fn hex_string(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tauri_plugin_hardware::{CpuStaticInfo, GpuInfo, SystemInfo, Vendor};
-
-    fn mock_system_info() -> SystemInfo {
-        SystemInfo {
-            cpu: CpuStaticInfo {
-                name: "Test CPU".to_string(),
-                core_count: 8,
-                arch: "x86_64".to_string(),
-                extensions: vec!["avx2".to_string()],
-            },
-            os_type: "windows".to_string(),
-            os_name: "Windows 11".to_string(),
-            total_memory: 32768,
-            gpus: vec![GpuInfo {
-                name: "Test GPU".to_string(),
-                total_memory: 12288,
-                vendor: Vendor::NVIDIA,
-                uuid: "gpu-1".to_string(),
-                driver_version: "1.0".to_string(),
-                nvidia_info: None,
-                vulkan_info: None,
-            }],
-        }
-    }
 
     fn mock_request() -> HubModelScoreRequest {
         HubModelScoreRequest {
@@ -773,21 +623,5 @@ mod tests {
         assert_eq!(spec.parameters_raw, 7_000_000_000);
         assert_eq!(spec.use_case, "Code generation and completion");
         assert!(spec.capabilities.contains(&Capability::ToolUse));
-    }
-
-    #[test]
-    fn builds_hardware_fingerprint_from_system_details() {
-        let one = build_hardware_fingerprint(&mock_system_info());
-        let mut other = mock_system_info();
-        other.total_memory = 65536;
-        let two = build_hardware_fingerprint(&other);
-        assert_ne!(one, two);
-    }
-
-    #[test]
-    fn cache_key_depends_on_hardware_fingerprint() {
-        let one = build_cache_key(&mock_request(), "hardware-a");
-        let two = build_cache_key(&mock_request(), "hardware-b");
-        assert_ne!(one, two);
     }
 }
