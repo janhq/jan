@@ -11,6 +11,13 @@ import {
   IconClock,
   IconFileCode,
   IconRocket,
+  IconBrandSpeedtest,
+  IconBriefcase,
+  IconStar,
+  IconCpu,
+  IconDeviceSdCard,
+  IconStackPush,
+  IconDevicesPc,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
@@ -33,6 +40,7 @@ import { useTranslation } from '@/i18n'
 import {
   fitLevelKey,
   runModeKey,
+  fitLevelTone,
 } from '@/components/ModelScoreSummary'
 
 type SearchParams = {
@@ -115,6 +123,9 @@ function HubModelDetailContent() {
   const [modelSupportStatus, setModelSupportStatus] = useState<
     Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | 'GREY'>
   >({})
+
+  const fitLevel =
+    modelScore?.status === 'ready' ? modelScore.breakdown?.fit_level : undefined
 
   useEffect(() => {
     fetchSources()
@@ -449,66 +460,75 @@ function HubModelDetailContent() {
               )}
             </div>
 
-            {/* Score Section */}
+            {/* Fit Score Section */}
             <div className="mb-8">
-              <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center -center gap-2 mb-4">
                 <IconRocket size={20} className="text-muted-foreground" />
                 <h2 className="text-lg font-semibold text-foreground">
-                  Hardware score
+                  Fit score: {modelScore?.overall?.toFixed(1)}{' '}
                 </h2>
+                <span
+                  className={cn(
+                    'rounded-full border px-1.5 text-[10px] font-semibold uppercase tracking-wide',
+                    fitLevelTone(fitLevel)
+                  )}
+                >
+                  {translatedBreakdown?.fit_level}
+                </span>
               </div>
 
               {modelScore?.status === 'ready' && translatedBreakdown ? (
-                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {[
-                    [
-                      t('hub:scoreSummary.quality'),
-                      translatedBreakdown.quality,
-                    ],
-                    [t('hub:scoreSummary.speed'), translatedBreakdown.speed],
-                    [t('hub:scoreSummary.fit'), translatedBreakdown.fit],
-                    [
-                      t('hub:scoreSummary.context'),
-                      translatedBreakdown.context,
-                    ],
-                    [t('hub:scoreSummary.tps'), modelScore.estimated_tps],
-                    [
-                      t('hub:scoreSummary.bestQuant'),
-                      translatedBreakdown.best_quant,
-                    ],
-                    [
-                      t('hub:scoreSummary.fitLevel'),
-                      translatedBreakdown.fit_level,
-                    ],
-                    [
-                      t('hub:scoreSummary.runMode'),
-                      translatedBreakdown.run_mode,
-                    ],
-                    [
-                      t('hub:scoreSummary.memRequiredGb'),
-                      translatedBreakdown.memory_required_gb,
-                    ],
-                    [
-                      t('hub:scoreSummary.utilizationPct'),
-                      translatedBreakdown.utilization_pct,
-                    ],
-                    [
-                      t('hub:scoreSummary.useCase'),
-                      translatedBreakdown.use_case,
-                    ],
-                  ].map(([label, value]) => (
-                    <div
-                      key={label}
-                      className="rounded-md bg-secondary/40 px-3 py-2"
-                    >
-                      <div className="text-xs text-muted-foreground">
-                        {label}
-                      </div>
-                      <div className="mt-1 text-lg font-medium text-foreground">
-                        {typeof value === 'number' ? value.toFixed(1) : value}
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex gap-2 flex-wrap">
+                  <div className="flex items-center gap-1 px-3 py-1 text-sm bg-secondary rounded-md ">
+                    <IconBriefcase
+                      size={20}
+                      className="text-muted-foreground"
+                      title={t('hub:scoreSummary.useCase')}
+                    />
+                    <span className="text-foreground">
+                      {translatedBreakdown.use_case}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 px-3 py-1 text-sm bg-secondary rounded-md ">
+                    <IconBrandSpeedtest
+                      size={20}
+                      className="text-muted-foreground"
+                      title={t('hub:token-sec')}
+                    />
+                    <span className="text-foreground">
+                      {modelScore?.estimated_tps.toFixed(1)} tok/sec
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 px-3 py-1 text-sm bg-secondary rounded-md ">
+                    <IconStar
+                      size={20}
+                      className="text-muted-foreground"
+                      title={t('hub:scoreSummary.bestQuant')}
+                    />
+                    <span className="text-foreground">
+                      {translatedBreakdown.best_quant}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 px-3 py-1 text-sm bg-secondary rounded-md ">
+                    <IconCpu
+                      size={20}
+                      className="text-muted-foreground"
+                      title={t('hub:scoreSummary.runMode')}
+                    />
+                    <span className="text-foreground">
+                      {translatedBreakdown.run_mode}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 px-3 py-1 text-sm bg-secondary rounded-md ">
+                    <IconDevicesPc
+                      size={20}
+                      className="text-muted-foreground"
+                      title={t('hub:scoreSummary.memRequiredGb')}
+                    />
+                    <span className="text-foreground">
+                      {translatedBreakdown.memory_required_gb.toFixed(1)} Gb
+                    </span>
+                  </div>
                 </div>
               ) : (
                 <div className="mt-4 text-sm text-muted-foreground">
@@ -577,6 +597,11 @@ function HubModelDetailContent() {
                           .replace(/_TensorRT$/i, '')
                           .replace(/-TensorRT$/i, '')
 
+                        // Is Best Quant
+                        const isBestQuant =
+                          modelScore?.breakdown?.best_quant &&
+                          versionName.includes(modelScore.breakdown.best_quant)
+
                         return (
                           <tr
                             key={variant.model_id}
@@ -586,6 +611,16 @@ function HubModelDetailContent() {
                               <span className="text-sm font-medium">
                                 {versionName}
                               </span>
+                              {isBestQuant && (
+                                <span
+                                  className={cn(
+                                    'rounded-full border ml-2 px-1.5 text-[10px] font-semibold uppercase tracking-wide',
+                                    fitLevelTone(fitLevel)
+                                  )}
+                                >
+                                  Best Quant
+                                </span>
+                              )}
                             </td>
                             <td className="py-3 px-2">
                               <span className="text-sm text-muted-foreground">
