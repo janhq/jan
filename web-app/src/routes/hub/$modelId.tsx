@@ -18,6 +18,7 @@ import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useEffect, useMemo, useCallback, useState } from 'react'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import type { DownloadProgressProps } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import type { ModelScore } from '@/services/models/types'
@@ -28,10 +29,56 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { useTranslation } from '@/i18n'
-import { ModelScorePanel } from '@/components/ModelScoreSummary'
+import {
+  ModelScoreBadge,
+  ModelScorePanel,
+} from '@/components/ModelScoreSummary'
 
 type SearchParams = {
   repo: string
+}
+
+function getScoreableVariants(
+  model: CatalogModel
+): Array<ModelQuant | undefined> {
+  if (model.is_mlx || !model.quants?.length) {
+    return [undefined]
+  }
+
+  return model.quants
+}
+
+function pickPreferredModelScore(
+  scores: Array<ModelScore | undefined>
+): ModelScore | undefined {
+  const readyScores = scores.filter(
+    (score): score is ModelScore => score?.status === 'ready'
+  )
+
+  if (readyScores.length > 0) {
+    return readyScores.reduce((bestScore, currentScore) => {
+      const bestOverall = bestScore.overall ?? Number.NEGATIVE_INFINITY
+      const currentOverall = currentScore.overall ?? Number.NEGATIVE_INFINITY
+      return currentOverall > bestOverall ? currentScore : bestScore
+    })
+  }
+
+  return (
+    scores.find((score) => score?.status === 'loading') ?? scores.find(Boolean)
+  )
+}
+
+function createQuantScoreMap(
+  model: CatalogModel,
+  getScore: (variant: ModelQuant) => ModelScore | undefined
+): Record<string, ModelScore | undefined> {
+  if (!model.quants?.length) {
+    return {}
+  }
+
+  return Object.fromEntries(
+    model.quants.map((variant) => [variant.model_id, getScore(variant)])
+  )
 }
 
 export const Route = createFileRoute('/hub/$modelId')({
@@ -56,6 +103,9 @@ function HubModelDetailContent() {
   const serviceHub = useServiceHub()
   const [repoData, setRepoData] = useState<CatalogModel | undefined>()
   const [modelScore, setModelScore] = useState<ModelScore>()
+  const [quantScores, setQuantScores] = useState<
+    Record<string, ModelScore | undefined>
+  >({})
 
   // State for README content
   const [readmeContent, setReadmeContent] = useState<string>('')
@@ -87,21 +137,24 @@ function HubModelDetailContent() {
   }, [modelId, fetchRepo])
   // Find the model data from sources
   const modelData = useMemo(() => {
-    return sources.find((model) => model.model_name === modelId) ?? repoData
+    return (
+      sources.find((model: CatalogModel) => model.model_name === modelId) ??
+      repoData
+    )
   }, [sources, modelId, repoData])
 
   // Download processes
-  const downloadProcesses = useMemo(
-    () =>
-      Object.values(downloads).map((download) => ({
-        id: download.name,
-        name: download.name,
-        progress: download.progress,
-        current: download.current,
-        total: download.total,
-      })),
-    [downloads]
-  )
+  const downloadProcesses = useMemo(() => {
+    const downloadEntries = Object.values(downloads) as DownloadProgressProps[]
+
+    return downloadEntries.map((download) => ({
+      id: download.name,
+      name: download.name,
+      progress: download.progress,
+      current: download.current,
+      total: download.total,
+    }))
+  }, [downloads])
 
   // Handle model use
   const handleUseModel = useCallback(
@@ -185,7 +238,7 @@ function HubModelDetailContent() {
     const sizePattern = /(\d+b)/i
     const uniqueSizes = new Set<string>()
 
-    modelData.quants.forEach((quant) => {
+    modelData.quants.forEach((quant: ModelQuant) => {
       const match = quant.model_id.match(sizePattern)
       if (match) {
         uniqueSizes.add(match[1].toLowerCase())
@@ -202,27 +255,73 @@ function HubModelDetailContent() {
   useEffect(() => {
     if (!modelData) return
 
-    const cachedScore = serviceHub.models().getCachedHubModelScore(modelData)
-    if (cachedScore) {
-      setModelScore(cachedScore)
-      if (cachedScore.status !== 'loading') return
-    } else {
-      setModelScore({
-        status: 'loading',
-      })
-    }
+    const scoreableVariants = getScoreableVariants(modelData)
+    const cachedScores = scoreableVariants.map((variant) =>
+      serviceHub.models().getCachedHubModelScore(modelData, variant)
+    )
+    const cachedQuantScores = createQuantScoreMap(modelData, (variant) =>
+      serviceHub.models().getCachedHubModelScore(modelData, variant)
+    )
+    const resolvedScores = new Map<string, ModelScore | undefined>(
+      scoreableVariants.map((variant, index) => [
+        variant?.model_id ?? modelData.model_name,
+        cachedScores[index],
+      ])
+    )
 
-    serviceHub
-      .models()
-      .getHubModelScore(modelData)
-      .then(setModelScore)
-      .catch((error) => {
-        setModelScore({
-          status: 'error',
-          reason:
-            error instanceof Error ? error.message : 'Failed to score model.',
+    setQuantScores(cachedQuantScores)
+
+    const preferredCachedScore = pickPreferredModelScore(cachedScores)
+    setModelScore(
+      preferredCachedScore ?? {
+        status: 'loading',
+        estimated_tps: 0,
+      }
+    )
+
+    let cancelled = false
+
+    scoreableVariants.forEach((variant) => {
+      serviceHub
+        .models()
+        .getHubModelScore(modelData, variant)
+        .then((score) => {
+          if (cancelled) return
+
+          const scoreKey = variant?.model_id ?? modelData.model_name
+          resolvedScores.set(scoreKey, score)
+
+          if (variant) {
+            setQuantScores(
+              createQuantScoreMap(modelData, (quant) =>
+                resolvedScores.get(quant.model_id)
+              )
+            )
+          }
+
+          setModelScore(
+            pickPreferredModelScore(Array.from(resolvedScores.values())) ?? {
+              status: 'unavailable',
+              estimated_tps: 0,
+              reason: 'No scoreable model variants available.',
+            }
+          )
         })
-      })
+        .catch((error) => {
+          if (cancelled) return
+
+          setModelScore({
+            status: 'error',
+            estimated_tps: 0,
+            reason:
+              error instanceof Error ? error.message : 'Failed to score model.',
+          })
+        })
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [modelData, serviceHub])
 
   // Fetch README content when modelData.readme is available
@@ -378,7 +477,7 @@ function HubModelDetailContent() {
                 </div>
 
                 <div className="w-full overflow-x-auto">
-                  <table className="w-full min-w-[500px]">
+                  <table className="w-full min-w-[640px]">
                     <thead>
                       <tr className="border-b ">
                         <th className="text-left py-3 px-2 text-sm font-medium">
@@ -390,6 +489,9 @@ function HubModelDetailContent() {
                         <th className="text-left py-3 px-2 text-sm font-medium">
                           Size
                         </th>
+                        <th className="text-left py-3 px-2 text-sm font-medium">
+                          {t('hub:scoreSummary.score')}
+                        </th>
                         <th></th>
                         <th className="text-right py-3 px-2 text-sm font-medium">
                           Action
@@ -397,15 +499,17 @@ function HubModelDetailContent() {
                       </tr>
                     </thead>
                     <tbody>
-                      {modelData.quants.map((variant) => {
+                      {modelData.quants.map((variant: ModelQuant) => {
                         const isDownloading =
                           localDownloadingModels.has(variant.model_id) ||
                           downloadProcesses.some(
-                            (e) => e.id === variant.model_id
+                            (download: DownloadProgressProps) =>
+                              download.id === variant.model_id
                           )
                         const downloadProgress =
                           downloadProcesses.find(
-                            (e) => e.id === variant.model_id
+                            (download: DownloadProgressProps) =>
+                              download.id === variant.model_id
                           )?.progress || 0
                         const isDownloaded = llamaProvider?.models.some(
                           (m: { id: string }) => m.id === variant.model_id
@@ -424,6 +528,7 @@ function HubModelDetailContent() {
                           .replace(/-GGUF$/i, '')
                           .replace(/_TensorRT$/i, '')
                           .replace(/-TensorRT$/i, '')
+                        const variantScore = quantScores[variant.model_id]
 
                         return (
                           <tr
@@ -444,6 +549,9 @@ function HubModelDetailContent() {
                               <span className="text-sm text-muted-foreground">
                                 {variant.file_size}
                               </span>
+                            </td>
+                            <td className="py-3 px-2">
+                              <ModelScoreBadge compact score={variantScore} />
                             </td>
                             <td>
                               <ModelInfoHoverCard
@@ -498,8 +606,8 @@ function HubModelDetailContent() {
                                           variant.path,
                                           (
                                             modelData.mmproj_models?.find(
-                                              (e) =>
-                                                e.model_id.toLowerCase() ===
+                                              (mmproj: { model_id: string }) =>
+                                                mmproj.model_id.toLowerCase() ===
                                                 'mmproj-f16'
                                             ) || modelData.mmproj_models?.[0]
                                           )?.path,

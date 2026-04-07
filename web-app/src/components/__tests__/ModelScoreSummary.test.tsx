@@ -42,9 +42,12 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 
 describe('ModelScoreSummary', () => {
   it('renders a loading badge state', () => {
-    render(<ModelScoreBadge score={{ status: 'loading' }} />)
+    const { container } = render(
+      <ModelScoreBadge score={{ status: 'loading' }} />
+    )
 
-    expect(screen.getByText('Score')).toBeInTheDocument()
+    expect(screen.getByTitle('hub:token-sec')).toBeInTheDocument()
+    expect(container.querySelector('.lucide-loader')).toBeInTheDocument()
   })
 
   it('renders fit level in the compact badge', () => {
