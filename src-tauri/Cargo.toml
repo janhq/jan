@@ -170,16 +170,6 @@ tauri-plugin-os = { version = "2.2.1", default-features = false }
 tauri-plugin-shell = { version = "2.2.0", default-features = false }
 tauri-plugin-store = { version = "2", default-features = false }
 
-# Vendored/patched libspa (~full crate under patches/libspa/, not a minimal diff).
-#
-# Jan only needs Linux screen capture (xcap → pipewire → libspa). Cargo has no way to depend on
-# “part” of a crate: libspa ships param/audio, param/video, pod serialization, etc. together.
-# The audio/video modules are PipeWire’s names for buffer/format metadata, not optional features
-# we added. Remove this patch when crates.io libspa matches your target headers (track upstream:
-# https://gitlab.freedesktop.org/pipewire/pipewire-rs/-/issues and https://crates.io/crates/libspa ).
-[patch.crates-io]
-libspa = { path = "patches/libspa" }
-
 # Release profile optimizations for minimal binary size
 [profile.release]
 opt-level = "z"     # Optimize for size
