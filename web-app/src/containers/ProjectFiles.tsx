@@ -397,10 +397,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
           if (event.payload.type === 'enter' || event.payload.type === 'over') {
             setIsDragging(true)
-          } else if (
-            event.payload.type === 'leave' ||
-            event.payload.type === 'cancelled'
-          ) {
+          } else if (event.payload.type === 'leave') {
             setIsDragging(false)
           } else if (event.payload.type === 'drop') {
             setIsDragging(false)

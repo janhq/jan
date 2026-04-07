@@ -788,7 +788,181 @@ const ChatInput = memo(function ChatInput({
     ]
   )
 
+  const processNewDocumentAttachmentsRef = useRef(processNewDocumentAttachments)
+  const hasMmprojRef = useRef(hasMmproj)
+  const attachmentsEnabledRef = useRef(attachmentsEnabled)
+  const maxFileSizeMBRef = useRef(maxFileSizeMB)
+  const parsePreferenceRef = useRef(parsePreference)
+
+  useEffect(() => {
+    processNewDocumentAttachmentsRef.current = processNewDocumentAttachments
+    hasMmprojRef.current = hasMmproj
+    attachmentsEnabledRef.current = attachmentsEnabled
+    maxFileSizeMBRef.current = maxFileSizeMB
+    parsePreferenceRef.current = parsePreference
+  }, [
+    processNewDocumentAttachments,
+    hasMmproj,
+    attachmentsEnabled,
+    maxFileSizeMB,
+    parsePreference,
+  ])
+
+  useEffect(() => {
+    if (!isPlatformTauri()) return
+
+    let unlisten: (() => void) | undefined
+    let cleanedUp = false
+
+    const setupListener = async () => {
+      try {
+        const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+        const appWindow = getCurrentWebviewWindow()
+
+        const unbind = await appWindow.onDragDropEvent(async (event) => {
+          if (!attachmentsEnabledRef.current) return
+
+          if (event.payload.type === 'enter' || event.payload.type === 'over') {
+            setIsDragOver(true)
+          } else if (event.payload.type === 'leave') {
+            setIsDragOver(false)
+          } else if (event.payload.type === 'drop') {
+            setIsDragOver(false)
+            const paths = event.payload.paths
+            if (!paths.length) return
+
+            const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png'])
+            const imagePaths: string[] = []
+            const docPaths: string[] = []
+
+            for (const p of paths) {
+              const ext = p.split('.').pop()?.toLowerCase() ?? ''
+              if (IMAGE_EXTS.has(ext)) {
+                imagePaths.push(p)
+              } else {
+                docPaths.push(p)
+              }
+            }
+
+            // Process images: convert via tauri asset protocol, then run through image pipeline
+            if (imagePaths.length > 0 && hasMmprojRef.current) {
+              try {
+                const { convertFileSrc } = await import('@tauri-apps/api/core')
+                const files: File[] = []
+                for (const p of imagePaths) {
+                  try {
+                    const fileUrl = convertFileSrc(p)
+                    const response = await fetch(fileUrl)
+                    if (!response.ok) throw new Error(`Failed to fetch: ${response.statusText}`)
+                    const blob = await response.blob()
+                    const fileName = p.split(/[/\\]/).pop() ?? 'image'
+                    const ext = fileName.toLowerCase().split('.').pop() ?? 'jpg'
+                    const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg'
+                    files.push(new File([blob], fileName, { type: mimeType }))
+                  } catch (err) {
+                    console.error('Failed to load dropped image:', err)
+                  }
+                }
+                if (files.length > 0) {
+                  void processImageFiles(files)
+                }
+              } catch (err) {
+                console.error('Failed to process dropped images:', err)
+              }
+            }
+
+            // Process documents: mirror handleAttachDocsIngest logic
+            if (docPaths.length > 0) {
+              try {
+                const { fs: coreFs } = await import('@janhq/core')
+                const { createDocumentAttachment: createDoc } = await import('@/types/attachment')
+                const maxBytes =
+                  typeof maxFileSizeMBRef.current === 'number' && maxFileSizeMBRef.current > 0
+                    ? maxFileSizeMBRef.current * 1024 * 1024
+                    : undefined
+
+                const prepared: Attachment[] = []
+                for (const p of docPaths) {
+                  const name = p.split(/[/\\]/).pop() ?? p
+                  const fileType = name.split('.').pop()?.toLowerCase()
+                  let size: number | undefined
+                  try {
+                    const stat = await coreFs.fileStat(p)
+                    size = stat?.size ? Number(stat.size) : undefined
+                  } catch {
+                    // size unknown, proceed anyway
+                  }
+
+                  if (maxBytes !== undefined && size !== undefined && size > maxBytes) {
+                    toast.error('File too large', {
+                      description: `${name} exceeds the ${maxFileSizeMBRef.current}MB limit`,
+                    })
+                    continue
+                  }
+
+                  prepared.push(createDoc({ name, path: p, fileType, size, parseMode: parsePreferenceRef.current }))
+                }
+
+                if (prepared.length === 0) return
+
+                let newDocAttachments: Attachment[] = []
+                let duplicates: string[] = []
+
+                setAttachmentsForThread(attachmentsKeyRef.current, (current) => {
+                  const existingPaths = new Set(
+                    current.filter((a) => a.type === 'document' && a.path).map((a) => a.path)
+                  )
+                  duplicates = []
+                  newDocAttachments = []
+                  for (const att of prepared) {
+                    if (existingPaths.has(att.path)) {
+                      duplicates.push(att.name)
+                    } else {
+                      newDocAttachments.push(att)
+                    }
+                  }
+                  return newDocAttachments.length > 0 ? [...current, ...newDocAttachments] : current
+                })
+
+                if (duplicates.length > 0) {
+                  toast.warning('Files already attached', {
+                    description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
+                  })
+                }
+
+                if (newDocAttachments.length > 0) {
+                  await processNewDocumentAttachmentsRef.current(newDocAttachments)
+                }
+              } catch (err) {
+                console.error('Failed to process dropped documents:', err)
+                toast.error('Failed to attach documents', {
+                  description: err instanceof Error ? err.message : String(err),
+                })
+              }
+            }
+          }
+        })
+
+        if (cleanedUp) {
+          unbind()
+        } else {
+          unlisten = unbind
+        }
+      } catch (error) {
+        console.warn('Failed to setup native drag-drop listener in ChatInput:', error)
+      }
+    }
+
+    setupListener()
+    return () => {
+      cleanedUp = true
+      if (unlisten) unlisten()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const handleAttachDocsIngest = async () => {
+
     try {
       if (!attachmentsEnabled) {
         toast.info('Attachments are disabled in Settings')
@@ -1421,7 +1595,8 @@ const ChatInput = memo(function ChatInput({
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // Only allow drag if model supports mmproj
+    // Visual highlight is driven by the native Tauri onDragDropEvent listener.
+    // This handler only runs in non-Tauri (web) contexts where hasMmproj is the gate.
     if (hasMmproj) {
       setIsDragOver(true)
     }
@@ -1430,8 +1605,7 @@ const ChatInput = memo(function ChatInput({
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // Only set dragOver to false if we're leaving the drop zone entirely
-    // In Tauri, relatedTarget can be null, so we need to handle that case
+    // Only clear if leaving the drop zone entirely (relatedTarget can be null in Tauri)
     const relatedTarget = e.relatedTarget as Node | null
     if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
       setIsDragOver(false)
@@ -1441,7 +1615,8 @@ const ChatInput = memo(function ChatInput({
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // Ensure drag state is maintained during drag over
+    // preventDefault() is required for the browser to allow the drop event.
+    // Highlight state is managed by the native Tauri listener.
     if (hasMmproj) {
       setIsDragOver(true)
     }
@@ -1609,11 +1784,11 @@ const ChatInput = memo(function ChatInput({
               isFocused && 'ring-1 ring-ring/50',
               isDragOver && 'ring-2 ring-ring/50 border-primary'
             )}
-            data-drop-zone={hasMmproj ? 'true' : undefined}
-            onDragEnter={hasMmproj ? handleDragEnter : undefined}
-            onDragLeave={hasMmproj ? handleDragLeave : undefined}
-            onDragOver={hasMmproj ? handleDragOver : undefined}
-            onDrop={hasMmproj ? handleDrop : undefined}
+            data-drop-zone={attachmentsEnabled ? 'true' : undefined}
+            onDragEnter={attachmentsEnabled ? handleDragEnter : undefined}
+            onDragLeave={attachmentsEnabled ? handleDragLeave : undefined}
+            onDragOver={attachmentsEnabled ? handleDragOver : undefined}
+            onDrop={attachmentsEnabled ? handleDrop : undefined}
           >
             {attachments.length > 0 && (
               <div className="flex flex-col gap-2 p-2 pb-0">

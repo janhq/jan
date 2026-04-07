@@ -24,7 +24,7 @@
           "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
           "state": "active"
         },
-        "dragDropEnabled": false
+        "dragDropEnabled": true
       }
     ]
   },
