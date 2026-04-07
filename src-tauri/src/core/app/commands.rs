@@ -1,4 +1,7 @@
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 use tauri::{AppHandle, Manager, Runtime, State};
 
 use super::{
@@ -8,58 +11,58 @@ use super::{
 };
 use crate::core::state::AppState;
 
-/// Canonical app support directory (same as Tauri `app_data_dir` for this bundle).
-pub fn resolve_tauri_app_data_dir() -> Option<PathBuf> {
+/// Canonical Jan app support directory (`%APPDATA%/Jan` on Windows).
+fn resolve_human_readable_app_data_dir() -> Option<PathBuf> {
+    dirs::data_dir().map(|d| d.join(env!("CARGO_PKG_NAME")))
+}
+
+/// Tauri bundle-id app support directory (e.g. `%APPDATA%/jan.ai.app` on Windows).
+fn resolve_bundle_app_data_dir() -> Option<PathBuf> {
     dirs::data_dir().map(|d| d.join(TAURI_BUNDLE_IDENTIFIER))
 }
 
-/// If the canonical `settings.json` is missing but a legacy copy exists (e.g.
-/// `%APPDATA%/Jan/settings.json` on Windows), copy it into the canonical location.
-/// See #7898: users who moved their data folder then removed `Roaming/Jan` lost
-/// their config because it only lived in that legacy folder.
-pub fn migrate_legacy_app_configuration(app_data_dir: &Path) -> std::io::Result<()> {
+/// Keep `%APPDATA%/Jan/settings.json` as canonical, but recover from legacy or
+/// alternate locations if users removed one directory (#7898).
+fn migrate_legacy_app_configuration(app_data_dir: &Path) -> std::io::Result<()> {
     fs::create_dir_all(app_data_dir)?;
     let canonical = app_data_dir.join(CONFIGURATION_FILE_NAME);
     if canonical.exists() {
         return Ok(());
     }
 
-    for legacy in legacy_app_config_candidate_paths(app_data_dir) {
+    migrate_from_candidates(&canonical, legacy_app_config_candidate_paths(app_data_dir))
+}
+
+fn migrate_from_candidates(canonical: &Path, candidates: Vec<PathBuf>) -> std::io::Result<()> {
+    for legacy in candidates {
         if legacy.is_file() {
             log::info!(
-                "Migrating app configuration from {} to {}",
+                "Recovering app configuration from {} to {}",
                 legacy.display(),
                 canonical.display()
             );
-            fs::copy(&legacy, &canonical)?;
+            fs::copy(&legacy, canonical)?;
             return Ok(());
         }
     }
-
     Ok(())
 }
 
 fn legacy_app_config_candidate_paths(app_data_dir: &Path) -> Vec<PathBuf> {
-    let package_name = env!("CARGO_PKG_NAME");
     let mut paths = Vec::new();
+
+    if let Some(bundle_dir) = resolve_bundle_app_data_dir() {
+        paths.push(bundle_dir.join(CONFIGURATION_FILE_NAME));
+    }
 
     #[cfg(target_os = "linux")]
     {
+        let package_name = env!("CARGO_PKG_NAME");
         if let Some(config_dir) = dirs::config_dir() {
-            paths.push(config_dir.join(package_name).join(CONFIGURATION_FILE_NAME));
-        }
-        if let Some(data_dir) = dirs::data_dir() {
-            let p = data_dir.join(package_name).join(CONFIGURATION_FILE_NAME);
-            if !paths.contains(&p) {
-                paths.push(p);
+            let legacy = config_dir.join(package_name).join(CONFIGURATION_FILE_NAME);
+            if legacy != app_data_dir.join(CONFIGURATION_FILE_NAME) {
+                paths.push(legacy);
             }
-        }
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        if let Some(parent) = app_data_dir.parent() {
-            paths.push(parent.join(package_name).join(CONFIGURATION_FILE_NAME));
         }
     }
 
@@ -67,8 +70,9 @@ fn legacy_app_config_candidate_paths(app_data_dir: &Path) -> Vec<PathBuf> {
 }
 
 fn app_data_dir_with_fallback<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> PathBuf {
-    app_handle.path().app_data_dir().unwrap_or_else(|err| {
-        log::error!("Failed to get app data directory: {err}. Using home directory instead.");
+    let package_name = env!("CARGO_PKG_NAME");
+    app_handle.path().data_dir().unwrap_or_else(|err| {
+        log::error!("Failed to get data directory: {err}. Using home directory instead.");
 
         let home_dir = std::env::var(if cfg!(target_os = "windows") {
             "USERPROFILE"
@@ -77,19 +81,21 @@ fn app_data_dir_with_fallback<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> P
         })
         .expect("Failed to determine the home directory");
 
-        PathBuf::from(home_dir).join(TAURI_BUNDLE_IDENTIFIER)
+        PathBuf::from(home_dir)
     })
+    .join(package_name)
 }
 
 /// Resolve the Jan config file path without an AppHandle (for CLI use).
-/// Uses the same canonical directory as Tauri `app_data_dir`, after optional
-/// migration from legacy locations.
+/// Canonical location is `%APPDATA%/Jan/settings.json` (or OS equivalent),
+/// with fallback recovery from bundle-id location when needed.
 pub fn resolve_config_file_path() -> PathBuf {
-    let app_data = resolve_tauri_app_data_dir().unwrap_or_else(|| {
+    let app_data = resolve_human_readable_app_data_dir().unwrap_or_else(|| {
+        let package_name = env!("CARGO_PKG_NAME");
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_default();
-        PathBuf::from(home).join(TAURI_BUNDLE_IDENTIFIER)
+        PathBuf::from(home).join(package_name)
     });
 
     if let Err(err) = migrate_legacy_app_configuration(&app_data) {
@@ -310,4 +316,72 @@ pub fn change_app_data_folder<R: Runtime>(
 #[tauri::command]
 pub fn app_token(state: State<'_, AppState>) -> Option<String> {
     state.app_token.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+    use tempfile::tempdir;
+
+    #[test]
+    fn migration_copies_legacy_when_canonical_missing() {
+        let tmp = tempdir().expect("temp dir");
+        let canonical_dir = tmp.path().join("Jan");
+        let canonical = canonical_dir.join(CONFIGURATION_FILE_NAME);
+        let legacy = tmp.path().join("jan.ai.app").join(CONFIGURATION_FILE_NAME);
+
+        fs::create_dir_all(legacy.parent().unwrap()).expect("create legacy dir");
+        fs::write(&legacy, r#"{"data_folder":"D:\\jan.ai"}"#).expect("write legacy config");
+
+        migrate_from_candidates(&canonical, vec![legacy.clone()]).expect("migration succeeds");
+
+        let recovered = fs::read_to_string(&canonical).expect("read canonical");
+        assert!(recovered.contains(r#""data_folder":"D:\\jan.ai""#));
+        assert!(legacy.exists(), "migration should be copy-only");
+    }
+
+    #[test]
+    fn migration_skips_when_canonical_exists() {
+        let tmp = tempdir().expect("temp dir");
+        let canonical_dir = tmp.path().join("Jan");
+        let canonical = canonical_dir.join(CONFIGURATION_FILE_NAME);
+        let legacy = tmp.path().join("jan.ai.app").join(CONFIGURATION_FILE_NAME);
+
+        fs::create_dir_all(canonical.parent().unwrap()).expect("create canonical dir");
+        fs::create_dir_all(legacy.parent().unwrap()).expect("create legacy dir");
+        fs::write(&canonical, r#"{"data_folder":"D:\\kept"}"#).expect("write canonical config");
+        fs::write(&legacy, r#"{"data_folder":"D:\\legacy"}"#).expect("write legacy config");
+
+        migrate_legacy_app_configuration(&canonical_dir).expect("migration succeeds");
+
+        let current = fs::read_to_string(&canonical).expect("read canonical");
+        assert!(current.contains(r#""data_folder":"D:\\kept""#));
+    }
+
+    #[test]
+    fn migration_handles_missing_legacy_files() {
+        let tmp = tempdir().expect("temp dir");
+        let canonical = tmp.path().join("Jan").join(CONFIGURATION_FILE_NAME);
+        let missing = tmp.path().join("missing").join(CONFIGURATION_FILE_NAME);
+
+        migrate_from_candidates(&canonical, vec![missing]).expect("migration succeeds");
+        assert!(!canonical.exists(), "canonical should remain absent");
+    }
+
+    #[test]
+    fn bundle_identifier_matches_tauri_conf() {
+        let conf_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json");
+        let content = fs::read_to_string(conf_path).expect("read tauri.conf.json");
+        let json: Value = serde_json::from_str(&content).expect("parse tauri.conf.json");
+        let identifier = json
+            .get("identifier")
+            .and_then(|v| v.as_str())
+            .expect("identifier field exists");
+
+        assert_eq!(
+            identifier, TAURI_BUNDLE_IDENTIFIER,
+            "TAURI_BUNDLE_IDENTIFIER must stay synced with tauri.conf.json"
+        );
+    }
 }
