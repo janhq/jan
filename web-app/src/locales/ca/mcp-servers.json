@@ -58,7 +58,17 @@
     "title": "Configuració del temps d’execució",
     "description": "Configura com gestiona i reintenta Jan els servidors MCP.",
     "toolCallTimeout": "Temps d’espera d’una trucada d’eina (segons)",
-    "toolCallTimeoutDesc": "Temps màxim d’espera d’una resposta d’una eina MCP abans de donar temps excedit."
+    "toolCallTimeoutDesc": "Temps màxim d’espera d’una resposta d’una eina MCP abans de donar temps excedit.",
+    "smartToolRouting": "Encaminament intel·ligent d'eines MCP",
+    "smartToolRoutingDesc": "Si està activat, Jan selecciona els servidors MCP rellevants abans de carregar les eines. Desactiva-ho per carregar sempre la llista completa d'eines MCP.",
+    "useLightweightRouterModel": "Utilitzar un model dedicat per a l'encaminament",
+    "useLightweightRouterModelDesc": "Amb l'encaminament intel·ligent activat, el pas d'encaminament s'executa amb un model separat (sovint més petit) en lloc del model de xat. Desactiva-ho per utilitzar sempre el model de xat actiu per a l'encaminament.",
+    "routerModel": "Model d'encaminament",
+    "routerModelDesc": "Trieu proveïdor i model en un sol lloc. Només es mostren models lleugers per mantenir l'encaminament ràpid i barat.",
+    "selectRouterModelPlaceholder": "Seleccioneu el model d'encaminament…",
+    "routerModelSearchPlaceholder": "Cercar models…",
+    "routerModelEmptyList": "No hi ha models lleugers disponibles. Afegiu un model més petit o configureu les claus API a Models.",
+    "routerModelEmptySearch": "Cap coincidència per a «{{query}}»."
   },
   "proactiveMode": "Mode proactiu d’ús del navegador",
   "proactiveModeDesc": "Quan està activat, captura automàticament captures de pantalla del navegador per aportar context addicional a les tasques d’automatització. Requereix l’MCP Jan Browser amb visió i model d’ús d’eines."

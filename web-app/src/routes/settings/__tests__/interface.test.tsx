@@ -41,6 +41,12 @@ vi.mock('@/containers/AccentColorPicker', () => ({
   AccentColorPicker: () => <div data-testid="accent-color-picker">Accent Color Picker</div>,
 }))
 
+vi.mock('@/containers/NotificationPositionSwitcher', () => ({
+  NotificationPositionSwitcher: () => (
+    <div data-testid="notification-position-switcher">Notification Position</div>
+  ),
+}))
+
 vi.mock('@/hooks/useInterfaceSettings', () => ({
   useInterfaceSettings: () => ({
     resetInterface: vi.fn(),

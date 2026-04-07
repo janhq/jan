@@ -136,7 +136,7 @@ version = "2.8.5"
 default-features = false
 features = ["protocol-asset", "macos-private-api", "test"]
 
-[target.'cfg(windows)'.dev-dependencies]
+[dev-dependencies]
 tempfile = "3.20.0"
 
 [target.'cfg(unix)'.dependencies]
@@ -172,7 +172,7 @@ opt-level = "z"     # Optimize for size
 lto = "fat"         # Aggressive Link Time Optimization
 strip = "symbols"   # Strip debug symbols for smaller binary
 codegen-units = 1   # Reduce parallel codegen for better optimization
-panic = "abort"     # Don't unwind on panic, saves space
+panic = "unwind"     # Unwind on panic, allows catching library panics
 overflow-checks = false  # Disable overflow checks for size
 debug = false       # No debug info
 debug-assertions = false  # No debug assertions

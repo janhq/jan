@@ -58,6 +58,16 @@
     "title": "运行时设置",
     "description": "配置 Jan 如何管理和重试 MCP 服务器。",
     "toolCallTimeout": "工具调用超时时间（秒）",
-    "toolCallTimeoutDesc": "在超时前等待 MCP 工具响应的最长时间。"
+    "toolCallTimeoutDesc": "在超时前等待 MCP 工具响应的最长时间。",
+    "smartToolRouting": "智能 MCP 工具路由",
+    "smartToolRoutingDesc": "启用后，Jan 会在加载工具前先选择相关的 MCP 服务器。关闭则始终加载完整的 MCP 工具列表。",
+    "useLightweightRouterModel": "使用独立模型进行路由",
+    "useLightweightRouterModelDesc": "开启智能路由后，路由步骤将使用单独的（通常更小的）模型，而不是聊天模型。关闭则始终使用当前聊天模型进行路由。",
+    "routerModel": "路由模型",
+    "routerModelDesc": "在同一处选择提供商与模型。仅列出轻量模型，以保持路由快速、低成本。",
+    "selectRouterModelPlaceholder": "选择路由模型…",
+    "routerModelSearchPlaceholder": "搜索模型…",
+    "routerModelEmptyList": "没有可用的轻量模型。请添加更小的模型，或在「模型」中配置 API 密钥。",
+    "routerModelEmptySearch": "没有与「{{query}}」匹配的结果。"
   }
 }

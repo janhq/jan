@@ -19,6 +19,70 @@ use crate::core::{
     state::{ProviderConfig, ServerHandle, SharedMcpServers},
 };
 
+/// Some OpenAI tool schema generators (and some MCP servers) may emit schemas where
+/// a property schema only contains `description` but omits `type`.
+///
+/// A strict JSON schema converter inside the upstream server rejects those schemas.
+/// To be robust, we default `type` to `"string"` for description-only leaf schemas.
+pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::Value) {
+    match schema {
+        serde_json::Value::Object(map) => {
+            let has_description = map.contains_key("description");
+            let has_type = map.contains_key("type");
+            let has_nested_schema_keywords = map.contains_key("properties")
+                || map.contains_key("items")
+                || map.contains_key("anyOf")
+                || map.contains_key("oneOf")
+                || map.contains_key("allOf")
+                || map.contains_key("$ref");
+
+            // Only patch leaf nodes (description without `type` AND without nested schema keywords).
+            if has_description && !has_type && !has_nested_schema_keywords {
+                map.insert(
+                    "type".to_string(),
+                    serde_json::Value::String("string".to_string()),
+                );
+            }
+
+            // Recurse into nested schema (properties, items, anyOf, etc.) in one pass.
+            for v in map.values_mut() {
+                normalize_openai_tool_parameters_schema(v);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                normalize_openai_tool_parameters_schema(v);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn normalize_openai_tools_in_chat_body(body: &mut serde_json::Value) {
+    let tools = match body.get_mut("tools") {
+        Some(t) => t,
+        None => return,
+    };
+
+    let tools_arr = match tools.as_array_mut() {
+        Some(a) => a,
+        None => return,
+    };
+
+    for tool in tools_arr.iter_mut() {
+        let function = match tool.get_mut("function") {
+            Some(f) => f,
+            None => continue,
+        };
+        let parameters = match function.get_mut("parameters") {
+            Some(p) => p,
+            None => continue,
+        };
+
+        normalize_openai_tool_parameters_schema(parameters);
+    }
+}
+
 fn http_status_indicates_api_key_retry(status: StatusCode) -> bool {
     matches!(
         status,
@@ -1783,7 +1847,17 @@ async fn proxy_request(
             buffered_body = Some(body_bytes.clone());
 
             match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
-                Ok(json_body) => {
+                Ok(mut json_body) => {
+                    // Work around strict JSON-schema converters that reject property schemas
+                    // of the form `{ "description": "..." }` (missing `type`).
+                    // This happens for OpenAI-style tool schemas used with /chat/completions.
+                    if destination_path == "/chat/completions" {
+                        normalize_openai_tools_in_chat_body(&mut json_body);
+                        if let Ok(normalized_bytes) = serde_json::to_vec(&json_body) {
+                            buffered_body = Some(normalized_bytes.into());
+                        }
+                    }
+
                     if config.enable_server_tool_execution
                         && destination_path == "/chat/completions"
                         && !json_body
