@@ -55,6 +55,7 @@ describe('useModelScore', () => {
 
   it('fetches and stores a preferred score after setting loading state', async () => {
     mockGetHubModelScore.mockResolvedValueOnce({
+      status: 'ready',
       overall: 91,
       estimated_tps: 12,
     })
@@ -77,6 +78,33 @@ describe('useModelScore', () => {
       status: 'ready',
       overall: 91,
       estimated_tps: 12,
+    })
+  })
+
+  it('preserves unavailable responses from the scoring service', async () => {
+    mockGetHubModelScore.mockResolvedValueOnce({
+      status: 'unavailable',
+      estimated_tps: 0,
+      reason: 'Hub scoring is not available on this platform.',
+    })
+
+    const { result } = renderHook(() => useModelScore())
+
+    let score: ModelScore | undefined
+
+    await act(async () => {
+      score = await result.current.fetchModelScore(model)
+    })
+
+    expect(score).toMatchObject({
+      status: 'unavailable',
+      estimated_tps: 0,
+      reason: 'Hub scoring is not available on this platform.',
+    })
+    expect(useModelScore.getState().getScore(model.model_name)).toMatchObject({
+      status: 'unavailable',
+      estimated_tps: 0,
+      reason: 'Hub scoring is not available on this platform.',
     })
   })
 })

@@ -28,8 +28,6 @@ export const useModelScore = create<ModelScoreState>()(
       fetchModelScore: async (model: CatalogModel, variant?: ModelQuant) => {
         const cachedScore = get().scores[model.model_name]
 
-        console.log('Cached score:', cachedScore)
-
         if (cachedScore && cachedScore.status !== 'loading') {
           return cachedScore
         }
@@ -49,9 +47,11 @@ export const useModelScore = create<ModelScoreState>()(
             .models()
             .getHubModelScore(model, variant)
             .then((scoreResult) => {
+              const status = scoreResult.status ?? ('ready' as ModelScoreStatus)
+
               return {
                 ...scoreResult,
-                status: 'ready' as ModelScoreStatus,
+                status,
                 estimated_tps: scoreResult.estimated_tps ?? 0,
                 updated_at:
                   scoreResult.updated_at ?? Math.floor(Date.now() / 1000),

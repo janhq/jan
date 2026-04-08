@@ -119,9 +119,11 @@ fn derive_model_spec(
     model_size: u64,
 ) -> Result<DerivedModelSpec, String> {
     let runtime = normalize_runtime(request);
+    let quantization_source = combined_model_text(request, gguf);
     let quantization = request
         .quantization
         .clone()
+        .or_else(|| normalize_quantization(&quantization_source, runtime))
         .ok_or_else(|| format!("Unsupported or unrecognized {} quantization", runtime_label(runtime)))?;
     let context_length = infer_context_length(gguf, request.ctx_size)
         .unwrap_or(request.ctx_size.unwrap_or(DEFAULT_CTX_SIZE));
@@ -682,6 +684,16 @@ mod tests {
         assert_eq!(spec.parameters_raw, 7_000_000_000);
         assert_eq!(spec.use_case, "Code generation and completion");
         assert!(spec.capabilities.contains(&Capability::ToolUse));
+    }
+
+    #[test]
+    fn derives_quantization_from_request_text_when_missing() {
+        let request = mock_request();
+
+        let spec = derive_model_spec(&request, Some(&mock_gguf()), 4_200_000_000)
+            .expect("expected quantization to be inferred");
+
+        assert_eq!(spec.quantization, "Q4_K_M");
     }
 
     #[test]
