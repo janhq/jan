@@ -63,8 +63,8 @@ export const useModelProvider = create<ModelProviderState>()(
           // One-time migration from the legacy llama.cpp provider name.
           // The flag lives in persisted state so it isn't lost when
           // migrateAllLocalStorageKeys clears the old localStorage entry.
-          const ranCortexMigration = !state.cortexMigrated
-          if (ranCortexMigration) {
+          const needsCortexMigration = !state.cortexMigrated
+          if (needsCortexMigration) {
             legacyModels = state.providers.find(
               (e) => e.provider === 'llama.cpp'
             )?.models
@@ -167,7 +167,7 @@ export const useModelProvider = create<ModelProviderState>()(
                 (e) => !updatedProviders.some((p) => p.provider === e.provider)
               ),
             ],
-            ...(ranCortexMigration ? { cortexMigrated: true } : {}),
+            ...(needsCortexMigration ? { cortexMigrated: true } : {}),
           }
         }),
       updateProvider: (providerName, data) => {

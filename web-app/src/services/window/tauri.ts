@@ -25,8 +25,8 @@ export class TauriWindowService extends DefaultWindowService {
           theme = 'light'
           break
         case 'auto':
-          // Let the OS decide; isDark reflects the current OS preference
-          theme = isDark ? 'dark' : 'light'
+          // Let the OS / Tauri pick the theme for new windows
+          theme = undefined
           break
         default:
           theme = undefined

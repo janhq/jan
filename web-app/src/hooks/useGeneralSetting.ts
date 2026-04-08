@@ -51,6 +51,18 @@ export const useGeneralSetting = create<GeneralSettingState>()(
     {
       name: localStorageKey.settingGeneral,
       storage: createJSONStorage(() => fileStorage),
+      version: 1,
+      migrate: (persistedState: unknown, version: number) => {
+        const state = persistedState as Partial<GeneralSettingState>
+        if (version < 1) {
+          // Existing users already have persisted data, so they must have
+          // completed setup. Without this migration they would rehydrate
+          // with the default (false) and lose the ability to delete the
+          // "What is Jan?" thread.
+          state.setupCompleted = true
+        }
+        return state as GeneralSettingState
+      },
     }
   )
 )

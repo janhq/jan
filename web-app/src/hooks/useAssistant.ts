@@ -198,6 +198,21 @@ export const useAssistant = create<AssistantState>()(
         lastUsedAssistantId: state.lastUsedAssistantId,
         defaultAssistantId: state.defaultAssistantId,
       }),
+      version: 1,
+      migrate: (persistedState: unknown, version: number) => {
+        if (version < 1 && typeof persistedState === 'string') {
+          // Old format stored a plain assistant ID string.
+          // Convert it to the new { lastUsedAssistantId, defaultAssistantId } shape.
+          return {
+            lastUsedAssistantId: persistedState,
+            defaultAssistantId: '',
+          }
+        }
+        return persistedState as {
+          lastUsedAssistantId: string
+          defaultAssistantId: string
+        }
+      },
       onRehydrateStorage: () => (rehydratedState) => {
         if (!rehydratedState) return
 
