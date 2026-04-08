@@ -196,7 +196,7 @@ export function convertThreadMessageToUIMessage(
       if (reasoningSegment) {
         // Extract reasoning text from <think> tags
         const completedMatch = reasoningSegment.match(
-          /<think>([\s\S]*)<\/think>/
+          /<think>([\s\S]*?)<\/think>/
         )
         if (completedMatch) {
           parts.push({
