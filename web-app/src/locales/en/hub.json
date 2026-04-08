@@ -35,6 +35,7 @@
     "useCase": "Use Case",
     "disabledDescription": "This model type does not support local llmfit scoring yet.",
     "pendingDescription": "A score will appear after local analysis completes.",
+    "token-sec": "token/sec",
     "fitLevels": {
       "perfect": "Perfect",
       "good": "Good",

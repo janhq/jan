@@ -23,6 +23,7 @@ import {
   IconFileCode,
   IconEye,
   IconSearch,
+  IconRocket,
   IconTool,
   IconBrandSpeedtest,
 } from '@tabler/icons-react'
@@ -39,6 +40,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Badge } from '@/components/ui/badge'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import HeaderPage from '@/containers/HeaderPage'
@@ -53,7 +55,6 @@ import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { PREFERRED_DOWNLOAD_QUANTIZATIONS } from '@/constants/models'
 import { Button } from '@/components/ui/button'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
-import { ModelScoreBadge } from '@/components/ModelScoreSummary'
 import { useModelScore } from '@/hooks/useModelScores'
 import { selectBestGgufVariant } from '@/lib/modelQuantization'
 
@@ -67,6 +68,20 @@ export const Route = createFileRoute(route.hub.index as any)({
     repo: search.repo as SearchParams['repo'],
   }),
 })
+
+export const FIT_LEVEL_TRANSLATION_KEYS: Record<string, string> = {
+  'Perfect': 'hub:scoreSummary.fitLevels.perfect',
+  'Good': 'hub:scoreSummary.fitLevels.good',
+  'Marginal': 'hub:scoreSummary.fitLevels.marginal',
+  'Too Tight': 'hub:scoreSummary.fitLevels.tooTight',
+}
+
+const FIT_LEVEL_BADGE_VARIANTS = {
+  'Perfect': 'success',
+  'Good': 'default',
+  'Marginal': 'warning',
+  'Too Tight': 'destructive',
+} as const
 
 function HubContent() {
   const [isPending, startTransition] = useTransition()
@@ -186,6 +201,7 @@ function HubContent() {
       filtered = filtered
         ?.map((model) => ({
           ...model,
+          score: modelScores[model.model_name],
           quants: model.quants?.filter((variant: ModelQuant) => {
             // Check both direct match and with developer prefix (like DownloadButton does)
             const isLlamaCppDownloaded = useModelProvider
@@ -217,13 +233,18 @@ function HubContent() {
     if (huggingFaceRepo) {
       filtered = [huggingFaceRepo, ...filtered]
     }
-    return filtered
+
+    return filtered?.map((model) => ({
+      ...model,
+      score: modelScores[model.model_name],
+    }))
   }, [
     sortedModels,
     debouncedSearchValue,
     showOnlyDownloaded,
     huggingFaceRepo,
     searchOptions,
+    modelScores,
   ])
 
   // Dynamic estimate size based on model state
@@ -597,14 +618,61 @@ function HubContent() {
                                       filteredModels[virtualItem.index]
                                     )?.file_size}
                               </span>
-                              <ModelScoreBadge
-                                compact
-                                score={
-                                  modelScores[
-                                    filteredModels[virtualItem.index].model_name
-                                  ]
-                                }
-                              />
+                              <div className="gap-2 inline-flex items-center">
+                                <div className="flex items-center gap-1 px-2 py-0.5">
+                                  <IconRocket
+                                    size={20}
+                                    className="text-muted-foreground"
+                                    title={t('hub:scoreSummary.token-sec')}
+                                  />
+                                  <span
+                                    className={cn(
+                                      'text-xs text-muted-foreground font-medium'
+                                    )}
+                                  >
+                                    {filteredModels[virtualItem.index].score
+                                      ?.status === 'ready' &&
+                                    typeof modelScores[
+                                      filteredModels[virtualItem.index]
+                                        .model_name
+                                    ].overall === 'number' ? (
+                                      filteredModels[
+                                        virtualItem.index
+                                      ].score?.overall.toFixed(1)
+                                    ) : !filteredModels[virtualItem.index]
+                                        .score ||
+                                      filteredModels[virtualItem.index].score
+                                        ?.status === 'loading' ? (
+                                      <Loader className="size-3 animate-spin text-muted-foreground" />
+                                    ) : (
+                                      t('hub:scoreSummary.na')
+                                    )}
+                                  </span>
+                                </div>
+                                {filteredModels[virtualItem.index].score
+                                  ?.breakdown.fit_level !== undefined && (
+                                  <Badge
+                                    className="ml-2"
+                                    variant={
+                                      filteredModels[virtualItem.index].score
+                                        ?.breakdown?.fit_level
+                                        ? FIT_LEVEL_BADGE_VARIANTS[
+                                            filteredModels[virtualItem.index]
+                                              .score?.breakdown
+                                              ?.fit_level as keyof typeof FIT_LEVEL_BADGE_VARIANTS
+                                          ]
+                                        : 'secondary'
+                                    }
+                                  >
+                                    {t(
+                                      FIT_LEVEL_TRANSLATION_KEYS[
+                                        filteredModels[virtualItem.index].score
+                                          ?.breakdown.fit_level
+                                      ]
+                                    )}
+                                  </Badge>
+                                )}
+                              </div>
                               <ModelInfoHoverCard
                                 model={filteredModels[virtualItem.index]}
                                 preferredQuantizations={
@@ -690,7 +758,7 @@ function HubContent() {
                                   <IconBrandSpeedtest
                                     size={20}
                                     className="text-muted-foreground"
-                                    title={t('hub:token-sec')}
+                                    title={t('hub:scoreSummary.token-sec')}
                                   />
                                   <span className="text-foreground">
                                     {modelScores[

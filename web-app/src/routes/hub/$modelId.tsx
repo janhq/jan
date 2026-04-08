@@ -39,7 +39,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useModelScore } from '@/hooks/useModelScores'
 import { getVariantDisplayName, isBestQuantVariant } from './score-utils'
 
-const FIT_LEVEL_TRANSLATION_KEYS: Record<string, string> = {
+export const FIT_LEVEL_TRANSLATION_KEYS: Record<string, string> = {
   'Perfect': 'hub:scoreSummary.fitLevels.perfect',
   'Good': 'hub:scoreSummary.fitLevels.good',
   'Marginal': 'hub:scoreSummary.fitLevels.marginal',
@@ -440,7 +440,7 @@ function HubModelDetailContent() {
                     <IconBrandSpeedtest
                       size={20}
                       className="text-muted-foreground"
-                      title={t('hub:token-sec')}
+                      title={t('hub:scoreSummary.token-sec')}
                     />
                     <span className="text-foreground">
                       {modelScore?.estimated_tps.toFixed(1)} tok/sec
