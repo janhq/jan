@@ -632,10 +632,8 @@ function HubContent() {
                                   >
                                     {filteredModels[virtualItem.index].score
                                       ?.status === 'ready' &&
-                                    typeof modelScores[
-                                      filteredModels[virtualItem.index]
-                                        .model_name
-                                    ].overall === 'number' ? (
+                                    typeof filteredModels[virtualItem.index]
+                                      .score?.overall === 'number' ? (
                                       filteredModels[
                                         virtualItem.index
                                       ].score?.overall.toFixed(1)
@@ -650,7 +648,7 @@ function HubContent() {
                                   </span>
                                 </div>
                                 {filteredModels[virtualItem.index].score
-                                  ?.breakdown.fit_level !== undefined && (
+                                  ?.breakdown?.fit_level !== undefined && (
                                   <Badge
                                     className="ml-2"
                                     variant={
