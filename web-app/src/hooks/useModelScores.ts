@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { localStorageKey } from '@/constants/localStorage'
 import { fileStorage } from '@/lib/fileStorage'
-import type { HardwareData } from '@/services/hardware/types'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { AIEngine, EngineManager } from '@janhq/core'
 import type {
@@ -30,19 +29,6 @@ type ModelScoreState = {
 }
 
 const DEFAULT_SCORE_CTX_SIZE = 8192
-const SCORE_CACHE_SCHEMA_VERSION = 'v2'
-const SCORE_CACHE_FILE = 'llmfit_hub_scores.json'
-const SCORE_CACHE_DIR = 'llamacpp'
-
-interface ScoreCacheStore {
-  get: <T>(key: string) => Promise<T | undefined>
-  set: (key: string, value: unknown) => Promise<void>
-  save: () => Promise<void>
-}
-
-interface CachedHubScoreEntry {
-  result: ModelScore
-}
 
 type HubScoreRequestSource = {
   model_id: string
@@ -56,225 +42,18 @@ type HubScoreRequestSource = {
 const hubScoreCache = new Map<string, ModelScore>()
 const scoreRequests = new Map<string, Promise<ModelScore>>()
 
-let scoreStorePromise: Promise<ScoreCacheStore | null> | null = null
-let hardwareFingerprintPromise: Promise<string | null> | null = null
-
 function getEngine(provider: 'llamacpp' | 'mlx' = 'llamacpp') {
   return EngineManager.instance().get(provider) as AIEngine | undefined
 }
 
-function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-}
-
-async function getScoreStore(): Promise<ScoreCacheStore | null> {
-  if (scoreStorePromise) {
-    return scoreStorePromise
-  }
-
-  scoreStorePromise = (async () => {
-    if (!isTauriRuntime()) {
-      return null
-    }
-
-    try {
-      const [{ invoke }, { load }] = await Promise.all([
-        import('@tauri-apps/api/core'),
-        import('@tauri-apps/plugin-store'),
-      ])
-      const dataFolder = await invoke<string>('get_jan_data_folder_path')
-
-      return (await load(
-        `${dataFolder}/${SCORE_CACHE_DIR}/${SCORE_CACHE_FILE}`,
-        {
-          autoSave: false,
-          defaults: {},
-        }
-      )) as ScoreCacheStore
-    } catch (error) {
-      console.warn('Failed to initialize llmfit hub score cache store:', error)
-      return null
-    }
-  })()
-
-  return scoreStorePromise
-}
-
-async function readPersistedHubScore(
-  cacheKey: string
-): Promise<ModelScore | undefined> {
-  const store = await getScoreStore()
-  if (store) {
-    const cached = await store.get<CachedHubScoreEntry>(cacheKey)
-    return cached?.result
-  }
-
-  try {
-    const rawCache = localStorage.getItem(SCORE_CACHE_FILE)
-    if (!rawCache) {
-      return undefined
-    }
-
-    const cache = JSON.parse(rawCache) as Record<string, CachedHubScoreEntry>
-    return cache[cacheKey]?.result
-  } catch (error) {
-    console.warn(
-      'Failed to read llmfit hub score cache from localStorage:',
-      error
-    )
-    localStorage.removeItem(SCORE_CACHE_FILE)
-    return undefined
-  }
-}
-
-async function writePersistedHubScore(
-  cacheKey: string,
-  result: ModelScore
-): Promise<void> {
-  const entry: CachedHubScoreEntry = { result }
-  const store = await getScoreStore()
-
-  if (store) {
-    try {
-      await store.set(cacheKey, entry)
-      await store.save()
-      return
-    } catch (error) {
-      console.warn('Failed to write llmfit hub score cache store:', error)
-    }
-  }
-
-  try {
-    const rawCache = localStorage.getItem(SCORE_CACHE_FILE)
-    const cache = rawCache
-      ? (JSON.parse(rawCache) as Record<string, CachedHubScoreEntry>)
-      : {}
-    cache[cacheKey] = entry
-    localStorage.setItem(SCORE_CACHE_FILE, JSON.stringify(cache))
-  } catch (error) {
-    console.warn(
-      'Failed to write llmfit hub score cache to localStorage:',
-      error
-    )
-  }
-}
-
-function encodeUint32LE(value: number): Uint8Array {
-  const buffer = new ArrayBuffer(4)
-  new DataView(buffer).setUint32(0, value, true)
-  return new Uint8Array(buffer)
-}
-
-function encodeUint64LE(value: number): Uint8Array {
-  const buffer = new ArrayBuffer(8)
-  new DataView(buffer).setBigUint64(0, BigInt(value), true)
-  return new Uint8Array(buffer)
-}
-
-function concatBytes(chunks: Uint8Array[]): Uint8Array {
-  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
-  const result = new Uint8Array(totalLength)
-  let offset = 0
-
-  for (const chunk of chunks) {
-    result.set(chunk, offset)
-    offset += chunk.length
-  }
-
-  return result
-}
-
-async function sha256Hex(input: string | Uint8Array): Promise<string> {
-  const bytes = Uint8Array.from(
-    typeof input === 'string' ? new TextEncoder().encode(input) : input
-  )
-  const hashBuffer = await crypto.subtle.digest('SHA-256', bytes)
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
-}
-
-async function buildHardwareFingerprint(
-  systemInfo: HardwareData
-): Promise<string> {
-  const encoder = new TextEncoder()
-  const chunks: Uint8Array[] = [
-    encoder.encode(systemInfo.os_type ?? ''),
-    encoder.encode(systemInfo.os_name ?? ''),
-    encoder.encode(systemInfo.cpu?.name ?? ''),
-    encoder.encode(systemInfo.cpu?.arch ?? ''),
-    encodeUint32LE(systemInfo.cpu?.core_count ?? 0),
-    encodeUint64LE(systemInfo.total_memory ?? 0),
-  ]
-
-  for (const extension of systemInfo.cpu?.extensions ?? []) {
-    chunks.push(encoder.encode(extension))
-  }
-
-  for (const gpu of systemInfo.gpus ?? []) {
-    chunks.push(encoder.encode(gpu.name ?? ''))
-    chunks.push(encoder.encode(gpu.uuid ?? ''))
-    chunks.push(encodeUint64LE(gpu.total_memory ?? 0))
-    chunks.push(encoder.encode(gpu.driver_version ?? ''))
-  }
-
-  return sha256Hex(concatBytes(chunks))
-}
-
-async function getHardwareFingerprint(): Promise<string | null> {
-  if (hardwareFingerprintPromise) {
-    return hardwareFingerprintPromise
-  }
-
-  hardwareFingerprintPromise = (async () => {
-    if (!isTauriRuntime()) {
-      return null
-    }
-
-    try {
-      const { invoke } = await import('@tauri-apps/api/core')
-      const systemInfo = await invoke<HardwareData>(
-        'plugin:hardware|get_system_info'
-      )
-      return await buildHardwareFingerprint(systemInfo)
-    } catch (error) {
-      console.warn('Failed to compute llmfit hardware fingerprint:', error)
-      return null
-    }
-  })()
-
-  return hardwareFingerprintPromise
-}
-
-async function getPersistentHubScoreCacheKey(
-  scoreSource: HubScoreRequestSource
-): Promise<string | null> {
-  const hardwareFingerprint = await getHardwareFingerprint()
-  if (!hardwareFingerprint) {
-    return null
-  }
-
-  return sha256Hex(
-    [
-      SCORE_CACHE_SCHEMA_VERSION,
-      scoreSource.model_id,
-      scoreSource.path,
-      DEFAULT_SCORE_CTX_SIZE,
-      hardwareFingerprint,
-    ].join('|')
-  )
-}
-
 function normalizeHubScoreResult(
   result: ModelScore,
-  scoreSource: HubScoreRequestSource,
-  cacheKey: string | null
+  scoreSource: HubScoreRequestSource
 ): ModelScore {
   return {
     ...result,
     estimated_tps: result.estimated_tps ?? 0,
     scored_quant_model_id: result.scored_quant_model_id ?? scoreSource.model_id,
-    cache_key: result.cache_key ?? cacheKey ?? undefined,
     updated_at: result.updated_at ?? Math.floor(Date.now() / 1000),
   }
 }
@@ -470,33 +249,6 @@ export const useModelScore = create<ModelScoreState>()(
 
         const request = (async () => {
           try {
-            const persistentCacheKey =
-              await getPersistentHubScoreCacheKey(scoreSource)
-
-            if (persistentCacheKey) {
-              const persisted = await readPersistedHubScore(persistentCacheKey)
-              if (persisted) {
-                const normalizedPersisted = normalizeHubScoreResult(
-                  persisted,
-                  scoreSource,
-                  persistentCacheKey
-                )
-                hubScoreCache.set(requestKey, normalizedPersisted)
-                if (!variant) {
-                  set((state) => ({
-                    loading: false,
-                    error: null,
-                    scores: {
-                      ...state.scores,
-                      [model.model_name]: normalizedPersisted,
-                    },
-                  }))
-                }
-
-                return normalizedPersisted
-              }
-            }
-
             const engine = getEngine('llamacpp') as AIEngine & {
               getHubModelScore?: (request: {
                 model_name: string
@@ -553,14 +305,10 @@ export const useModelScore = create<ModelScoreState>()(
                 num_mmproj: model.num_mmproj,
                 pinned: model.pinned,
               }),
-              scoreSource,
-              persistentCacheKey
+              scoreSource
             )
 
             hubScoreCache.set(requestKey, score)
-            if (persistentCacheKey) {
-              await writePersistedHubScore(persistentCacheKey, score)
-            }
 
             if (!variant) {
               set((state) => ({
@@ -690,8 +438,6 @@ export const useModelScore = create<ModelScoreState>()(
       reset: () => {
         hubScoreCache.clear()
         scoreRequests.clear()
-        scoreStorePromise = null
-        hardwareFingerprintPromise = null
         set({
           scores: {},
           error: null,

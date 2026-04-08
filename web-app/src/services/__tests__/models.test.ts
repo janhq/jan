@@ -13,16 +13,6 @@ const { mockEvents, mockDownloadEvent } = vi.hoisted(() => ({
   } as Record<string, string>,
 }))
 
-const { mockInvoke, mockStore, mockLoad } = vi.hoisted(() => ({
-  mockInvoke: vi.fn(),
-  mockStore: {
-    get: vi.fn(),
-    set: vi.fn(),
-    save: vi.fn(),
-  },
-  mockLoad: vi.fn(),
-}))
-
 // Mock EngineManager and events
 vi.mock('@janhq/core', () => ({
   EngineManager: {
@@ -30,14 +20,6 @@ vi.mock('@janhq/core', () => ({
   },
   events: mockEvents,
   DownloadEvent: mockDownloadEvent,
-}))
-
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: mockInvoke,
-}))
-
-vi.mock('@tauri-apps/plugin-store', () => ({
-  load: mockLoad,
 }))
 
 // Mock fetch
@@ -79,43 +61,6 @@ describe('DefaultModelsService', () => {
     vi.clearAllMocks()
     ;(EngineManager.instance as any).mockReturnValue(mockEngineManager)
     mockEvents.emit.mockClear()
-    mockLoad.mockResolvedValue(mockStore)
-    mockInvoke.mockImplementation((command: string) => {
-      if (command === 'get_jan_data_folder_path') {
-        return Promise.resolve('/tmp/jan')
-      }
-
-      if (command === 'plugin:hardware|get_system_info') {
-        return Promise.resolve({
-          cpu: {
-            name: 'Test CPU',
-            arch: 'x86_64',
-            core_count: 8,
-            extensions: ['avx2'],
-          },
-          gpus: [
-            {
-              name: 'Test GPU',
-              uuid: 'gpu-1',
-              total_memory: 12288,
-              driver_version: '1.0',
-            },
-          ],
-          os_type: 'windows',
-          os_name: 'Windows 11',
-          total_memory: 32768,
-        })
-      }
-
-      return Promise.resolve(undefined)
-    })
-    mockStore.get.mockResolvedValue(undefined)
-    mockStore.set.mockResolvedValue(undefined)
-    mockStore.save.mockResolvedValue(undefined)
-    Object.defineProperty(window, '__TAURI_INTERNALS__', {
-      value: {},
-      configurable: true,
-    })
   })
 
   describe('fetchModels', () => {
@@ -1206,33 +1151,7 @@ describe('DefaultModelsService', () => {
       )
     })
 
-    it('reads persisted score cache before calling the engine', async () => {
-      const expectedScore = {
-        status: 'ready',
-        overall: 82.4,
-        estimated_tps: 42,
-        scored_quant_model_id: 'qwen/test-model-q4_k_m',
-      }
-      mockStore.get.mockResolvedValueOnce({ result: expectedScore })
-      const mockEngineWithScore = {
-        ...mockEngine,
-        getHubModelScore: vi.fn(),
-      }
-      mockEngineManager.get.mockReturnValue(mockEngineWithScore)
-
-      const result = await modelsService.getHubModelScore(mockCatalogModel)
-
-      expect(mockEngineWithScore.getHubModelScore).not.toHaveBeenCalled()
-      expect(result).toEqual(
-        expect.objectContaining({
-          status: 'ready',
-          overall: 82.4,
-          estimated_tps: 42,
-        })
-      )
-    })
-
-    it('persists engine scores to llmfit_hub_scores.json store', async () => {
+    it('reuses the in-memory hub score cache', async () => {
       const expectedScore = {
         status: 'ready',
         overall: 82.4,
@@ -1245,26 +1164,12 @@ describe('DefaultModelsService', () => {
       }
       mockEngineManager.get.mockReturnValue(mockEngineWithScore)
 
-      await modelsService.getHubModelScore(mockCatalogModel)
+      const firstResult = await modelsService.getHubModelScore(mockCatalogModel)
+      const secondResult =
+        await modelsService.getHubModelScore(mockCatalogModel)
 
-      expect(mockLoad).toHaveBeenCalledWith(
-        '/tmp/jan/llamacpp/llmfit_hub_scores.json',
-        {
-          autoSave: false,
-          defaults: {},
-        }
-      )
-      expect(mockStore.set).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          result: expect.objectContaining({
-            status: 'ready',
-            overall: 82.4,
-            estimated_tps: 42,
-          }),
-        })
-      )
-      expect(mockStore.save).toHaveBeenCalled()
+      expect(mockEngineWithScore.getHubModelScore).toHaveBeenCalledTimes(1)
+      expect(secondResult).toEqual(firstResult)
     })
   })
 })

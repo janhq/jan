@@ -2,8 +2,8 @@
  * Default Models Service - Web implementation
  */
 
-import { sanitizeModelId } from '@/lib/utils'
 import { useModelScore } from '@/hooks/useModelScores'
+import { sanitizeModelId } from '@/lib/utils'
 import {
   AIEngine,
   EngineManager,
