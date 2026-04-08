@@ -529,9 +529,6 @@ pub async fn prioritize_backends(
         ]
     } else {
         vec![
-            "cuda-cu13.0",
-            "cuda-cu12.0",
-            "cuda-cu11.7",
             "common_cpus",
             "avx512",
             "avx2",
