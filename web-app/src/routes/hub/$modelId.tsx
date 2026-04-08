@@ -32,11 +32,12 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
-import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
+import { PREFERRED_DOWNLOAD_QUANTIZATIONS } from '@/constants/models'
 import { useTranslation } from '@/i18n'
 import { Badge } from '@/components/ui/badge'
 import { useShallow } from 'zustand/react/shallow'
 import { useModelScore } from '@/hooks/useModelScores'
+import { getVariantDisplayName, isBestQuantVariant } from './score-utils'
 
 const FIT_LEVEL_TRANSLATION_KEYS: Record<string, string> = {
   'Perfect': 'hub:scoreSummary.fitLevels.perfect',
@@ -538,16 +539,15 @@ function HubModelDetailContent() {
                           : 'GGUF'
 
                         // Extract version name (remove format suffix)
-                        const versionName = variant.model_id
-                          .replace(/_GGUF$/i, '')
-                          .replace(/-GGUF$/i, '')
-                          .replace(/_TensorRT$/i, '')
-                          .replace(/-TensorRT$/i, '')
+                        const versionName = getVariantDisplayName(
+                          variant.model_id
+                        )
 
                         // Is Best Quant
-                        const isBestQuant =
-                          modelScore?.breakdown?.best_quant &&
-                          versionName.includes(modelScore.breakdown.best_quant)
+                        const isBestQuant = isBestQuantVariant(
+                          variant.model_id,
+                          modelScore?.breakdown?.best_quant
+                        )
 
                         return (
                           <tr
@@ -578,8 +578,8 @@ function HubModelDetailContent() {
                               <ModelInfoHoverCard
                                 model={modelData}
                                 variant={variant}
-                                defaultModelQuantizations={
-                                  DEFAULT_MODEL_QUANTIZATIONS
+                                preferredQuantizations={
+                                  PREFERRED_DOWNLOAD_QUANTIZATIONS
                                 }
                                 modelSupportStatus={modelSupportStatus}
                                 onCheckModelSupport={checkModelSupport}

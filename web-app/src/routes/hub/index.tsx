@@ -50,11 +50,12 @@ import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/react/shallow'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
-import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
+import { PREFERRED_DOWNLOAD_QUANTIZATIONS } from '@/constants/models'
 import { Button } from '@/components/ui/button'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { ModelScoreBadge } from '@/components/ModelScoreSummary'
 import { useModelScore } from '@/hooks/useModelScores'
+import { selectBestGgufVariant } from '@/lib/modelQuantization'
 
 type SearchParams = {
   repo: string
@@ -255,6 +256,12 @@ function HubContent() {
       : { count: 0, getScrollElement: () => null, estimateSize: () => 0 }
   )
   const virtualItems = rowVirtualizer.getVirtualItems()
+
+  const getRepresentativeVariant = useCallback(
+    (model: CatalogModel) =>
+      model.is_mlx ? undefined : selectBestGgufVariant(model.quants),
+    []
+  )
 
   useEffect(() => {
     // Use startTransition to keep UI responsive during data fetch
@@ -586,16 +593,8 @@ function HubContent() {
                                 {filteredModels[virtualItem.index].is_mlx
                                   ? filteredModels[virtualItem.index]
                                       .safetensors_files?.[0]?.file_size
-                                  : (
-                                      filteredModels[
-                                        virtualItem.index
-                                      ].quants?.find((m: ModelQuant) =>
-                                        DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                          m.model_id.toLowerCase().includes(e)
-                                        )
-                                      ) ??
+                                  : getRepresentativeVariant(
                                       filteredModels[virtualItem.index]
-                                        .quants?.[0]
                                     )?.file_size}
                               </span>
                               <ModelScoreBadge
@@ -608,19 +607,12 @@ function HubContent() {
                               />
                               <ModelInfoHoverCard
                                 model={filteredModels[virtualItem.index]}
-                                defaultModelQuantizations={
-                                  DEFAULT_MODEL_QUANTIZATIONS
+                                preferredQuantizations={
+                                  PREFERRED_DOWNLOAD_QUANTIZATIONS
                                 }
-                                variant={
-                                  filteredModels[
-                                    virtualItem.index
-                                  ].quants?.find((m: ModelQuant) =>
-                                    DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                      m.model_id.toLowerCase().includes(e)
-                                    )
-                                  ) ??
-                                  filteredModels[virtualItem.index].quants?.[0]
-                                }
+                                variant={getRepresentativeVariant(
+                                  filteredModels[virtualItem.index]
+                                )}
                                 isDefaultVariant={true}
                                 modelSupportStatus={modelSupportStatus}
                                 onCheckModelSupport={checkModelSupport}
@@ -855,8 +847,8 @@ function HubContent() {
                                             filteredModels[virtualItem.index]
                                           }
                                           variant={variant}
-                                          defaultModelQuantizations={
-                                            DEFAULT_MODEL_QUANTIZATIONS
+                                          preferredQuantizations={
+                                            PREFERRED_DOWNLOAD_QUANTIZATIONS
                                           }
                                           modelSupportStatus={
                                             modelSupportStatus
