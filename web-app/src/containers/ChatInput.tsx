@@ -215,20 +215,9 @@ const ChatInput = memo(function ChatInput({
 
   const assistantCount = assistants?.length || 0
 
+  // Tool schemas sent to the model are not part of ThreadMessage[]; add them here only.
+  // Do not include system instructions — they are already present in messages and counted by useTokensCount.
   const tokenCounterAdditionalContext = useMemo(() => {
-    const activeAssistant =
-      currentThread?.assistants?.[0] ??
-      (currentAssistant
-        ? {
-            instructions: currentAssistant.instructions,
-          }
-        : undefined)
-
-    const systemInstructions =
-      typeof activeAssistant?.instructions === 'string'
-        ? activeAssistant.instructions.trim()
-        : ''
-
     const toolsText = tools
       .map((tool) => {
         const schema = (() => {
@@ -242,15 +231,9 @@ const ChatInput = memo(function ChatInput({
       })
       .join('\n\n')
 
-    const chunks = []
-    if (systemInstructions) {
-      chunks.push(`System instructions:\n${systemInstructions}`)
-    }
-    if (toolsText) {
-      chunks.push(`Available tools:\n${toolsText}`)
-    }
-    return chunks.join('\n\n')
-  }, [tools, currentThread, currentAssistant])
+    if (!toolsText) return ''
+    return `Available tools:\n${toolsText}`
+  }, [tools])
 
   // No auto-selection: let the user explicitly pick an assistant
 
