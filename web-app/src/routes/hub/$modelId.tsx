@@ -27,7 +27,6 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import type { DownloadProgressProps } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
-import type { ModelScore } from '@/services/models/types'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -37,6 +36,7 @@ import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { useTranslation } from '@/i18n'
 import { Badge } from '@/components/ui/badge'
 import { useShallow } from 'zustand/react/shallow'
+import { useModelScore } from '@/hooks/useModelScores'
 
 const FIT_LEVEL_TRANSLATION_KEYS: Record<string, string> = {
   'Perfect': 'hub:scoreSummary.fitLevels.perfect',
@@ -62,36 +62,6 @@ const FIT_LEVEL_BADGE_VARIANTS = {
 
 type SearchParams = {
   repo: string
-}
-
-function getScoreableVariants(
-  model: CatalogModel
-): Array<ModelQuant | undefined> {
-  if (model.is_mlx || !model.quants?.length) {
-    return [undefined]
-  }
-
-  return model.quants
-}
-
-function pickPreferredModelScore(
-  scores: Array<ModelScore | undefined>
-): ModelScore | undefined {
-  const readyScores = scores.filter(
-    (score): score is ModelScore => score?.status === 'ready'
-  )
-
-  if (readyScores.length > 0) {
-    return readyScores.reduce((bestScore, currentScore) => {
-      const bestOverall = bestScore.overall ?? Number.NEGATIVE_INFINITY
-      const currentOverall = currentScore.overall ?? Number.NEGATIVE_INFINITY
-      return currentOverall > bestOverall ? currentScore : bestScore
-    })
-  }
-
-  return (
-    scores.find((score) => score?.status === 'loading') ?? scores.find(Boolean)
-  )
 }
 
 export const Route = createFileRoute('/hub/$modelId')({
@@ -122,7 +92,12 @@ function HubModelDetailContent() {
     useDownloadStore()
   const serviceHub = useServiceHub()
   const [repoData, setRepoData] = useState<CatalogModel | undefined>()
-  const [modelScore, setModelScore] = useState<ModelScore>()
+  const { modelScore, fetchPreferredModelScore } = useModelScore(
+    useShallow((state) => ({
+      modelScore: state.getScore(modelId),
+      fetchPreferredModelScore: state.fetchPreferredModelScore,
+    }))
+  )
 
   const breakdown = modelScore?.breakdown
   const translatedBreakdown = breakdown
@@ -286,61 +261,8 @@ function HubModelDetailContent() {
   useEffect(() => {
     if (!modelData) return
 
-    const scoreableVariants = getScoreableVariants(modelData)
-    const cachedScores = scoreableVariants.map((variant) =>
-      serviceHub.models().getCachedHubModelScore(modelData, variant)
-    )
-    const resolvedScores = new Map<string, ModelScore | undefined>(
-      scoreableVariants.map((variant, index) => [
-        variant?.model_id ?? modelData.model_name,
-        cachedScores[index],
-      ])
-    )
-
-    const preferredCachedScore = pickPreferredModelScore(cachedScores)
-    setModelScore(
-      preferredCachedScore ?? {
-        status: 'loading',
-        estimated_tps: 0,
-      }
-    )
-
-    let cancelled = false
-
-    scoreableVariants.forEach((variant) => {
-      serviceHub
-        .models()
-        .getHubModelScore(modelData, variant)
-        .then((score) => {
-          if (cancelled) return
-
-          const scoreKey = variant?.model_id ?? modelData.model_name
-          resolvedScores.set(scoreKey, score)
-
-          setModelScore(
-            pickPreferredModelScore(Array.from(resolvedScores.values())) ?? {
-              status: 'unavailable',
-              estimated_tps: 0,
-              reason: 'No scoreable model variants available.',
-            }
-          )
-        })
-        .catch((error) => {
-          if (cancelled) return
-
-          setModelScore({
-            status: 'error',
-            estimated_tps: 0,
-            reason:
-              error instanceof Error ? error.message : 'Failed to score model.',
-          })
-        })
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [modelData, serviceHub])
+    void fetchPreferredModelScore(modelData)
+  }, [fetchPreferredModelScore, modelData])
 
   // Fetch README content when modelData.readme is available
   useEffect(() => {

@@ -41,7 +41,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
-import type { ModelScore } from '@/services/models/types'
 import HeaderPage from '@/containers/HeaderPage'
 import { ChevronsUpDown, Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -55,6 +54,7 @@ import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { Button } from '@/components/ui/button'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { ModelScoreBadge } from '@/components/ModelScoreSummary'
+import { useModelScore } from '@/hooks/useModelScores'
 
 type SearchParams = {
   repo: string
@@ -118,10 +118,15 @@ function HubContent() {
   const [modelSupportStatus, setModelSupportStatus] = useState<
     Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING'>
   >({})
-  const [modelScores, setModelScores] = useState<Record<string, ModelScore>>({})
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
+  )
+  const { modelScores, fetchModelScore } = useModelScore(
+    useShallow((state) => ({
+      modelScores: state.scores,
+      fetchModelScore: state.fetchModelScore,
+    }))
   )
 
   const toggleModelExpansion = useCallback((modelId: string) => {
@@ -272,47 +277,9 @@ function HubContent() {
       const model = filteredModels[virtualItem.index]
       if (!model || modelScores[model.model_name]) return
 
-      const cachedScore = serviceHub.models().getCachedHubModelScore(model)
-      if (cachedScore) {
-        setModelScores((prev) => ({
-          ...prev,
-          [model.model_name]: cachedScore,
-        }))
-        return
-      }
-
-      setModelScores((prev) => ({
-        ...prev,
-        [model.model_name]: {
-          status: 'loading',
-          estimated_tps: 0,
-        },
-      }))
-
-      serviceHub
-        .models()
-        .prefetchHubModelScore(model)
-        .then((score) => {
-          setModelScores((prev) => ({
-            ...prev,
-            [model.model_name]: score,
-          }))
-        })
-        .catch((error) => {
-          setModelScores((prev) => ({
-            ...prev,
-            [model.model_name]: {
-              status: 'error',
-              estimated_tps: 0,
-              reason:
-                error instanceof Error
-                  ? error.message
-                  : 'Failed to score model.',
-            },
-          }))
-        })
+      void fetchModelScore(model)
     })
-  }, [filteredModels, modelScores, serviceHub, virtualItems])
+  }, [fetchModelScore, filteredModels, modelScores, virtualItems])
 
   const fetchHuggingFaceModel = async (searchValue: string) => {
     if (

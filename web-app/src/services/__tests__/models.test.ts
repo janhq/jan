@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { useModelScore } from '../../hooks/useModelScores'
 import { DefaultModelsService } from '../models/default'
 import type { HuggingFaceRepo, CatalogModel } from '../models/types'
 import { EngineManager, events, DownloadEvent } from '@janhq/core'
@@ -73,6 +74,7 @@ describe('DefaultModelsService', () => {
   }
 
   beforeEach(() => {
+    useModelScore.getState().reset()
     modelsService = new DefaultModelsService()
     vi.clearAllMocks()
     ;(EngineManager.instance as any).mockReturnValue(mockEngineManager)
@@ -795,10 +797,11 @@ describe('DefaultModelsService', () => {
       const result = modelsService.convertHfRepoToCatalogModel(
         repoWithVariousFileSizes
       )
+      const quants = result.quants ?? []
 
-      expect(result.quants[0].file_size).toBe('500.0 MB')
-      expect(result.quants[1].file_size).toBe('3.5 GB')
-      expect(result.quants[2].file_size).toBe('Unknown size')
+      expect(quants[0]?.file_size).toBe('500.0 MB')
+      expect(quants[1]?.file_size).toBe('3.5 GB')
+      expect(quants[2]?.file_size).toBe('Unknown size')
     })
 
     it('should handle empty or undefined tags', () => {
@@ -849,20 +852,22 @@ describe('DefaultModelsService', () => {
 
       const result =
         modelsService.convertHfRepoToCatalogModel(repoWithVariousGGUF)
+      const quants = result.quants ?? []
 
-      expect(result.quants[0].model_id).toBe('microsoft/model')
-      expect(result.quants[1].model_id).toBe('microsoft/MODEL')
-      expect(result.quants[2].model_id).toBe('microsoft/complex-model-name')
+      expect(quants[0]?.model_id).toBe('microsoft/model')
+      expect(quants[1]?.model_id).toBe('microsoft/MODEL')
+      expect(quants[2]?.model_id).toBe('microsoft/complex-model-name')
     })
 
     it('should generate correct download paths', () => {
       const result =
         modelsService.convertHfRepoToCatalogModel(mockHuggingFaceRepo)
+      const quants = result.quants ?? []
 
-      expect(result.quants[0].path).toBe(
+      expect(quants[0]?.path).toBe(
         'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q4_0.gguf'
       )
-      expect(result.quants[1].path).toBe(
+      expect(quants[1]?.path).toBe(
         'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q8_0.GGUF'
       )
     })
@@ -905,12 +910,13 @@ describe('DefaultModelsService', () => {
 
       const result =
         modelsService.convertHfRepoToCatalogModel(repoWithMixedCase)
+      const quants = result.quants ?? []
 
       expect(result.num_quants).toBe(3)
-      expect(result.quants).toHaveLength(3)
-      expect(result.quants[0].model_id).toBe('microsoft/model-1')
-      expect(result.quants[1].model_id).toBe('microsoft/model-2')
-      expect(result.quants[2].model_id).toBe('microsoft/model-3')
+      expect(quants).toHaveLength(3)
+      expect(quants[0]?.model_id).toBe('microsoft/model-1')
+      expect(quants[1]?.model_id).toBe('microsoft/model-2')
+      expect(quants[2]?.model_id).toBe('microsoft/model-3')
     })
 
     it('should handle edge cases with file size formatting', () => {
@@ -937,10 +943,11 @@ describe('DefaultModelsService', () => {
 
       const result =
         modelsService.convertHfRepoToCatalogModel(repoWithEdgeCases)
+      const quants = result.quants ?? []
 
-      expect(result.quants[0].file_size).toBe('0.0 MB')
-      expect(result.quants[1].file_size).toBe('1.0 GB')
-      expect(result.quants[2].file_size).toBe('Unknown size') // 0 is falsy, so it returns 'Unknown size'
+      expect(quants[0]?.file_size).toBe('0.0 MB')
+      expect(quants[1]?.file_size).toBe('1.0 GB')
+      expect(quants[2]?.file_size).toBe('Unknown size') // 0 is falsy, so it returns 'Unknown size'
     })
 
     it('should handle missing optional fields gracefully', () => {
@@ -966,12 +973,13 @@ describe('DefaultModelsService', () => {
       }
 
       const result = modelsService.convertHfRepoToCatalogModel(minimalRepo)
+      const quants = result.quants ?? []
 
       expect(result.model_name).toBe('minimal/repo')
       expect(result.developer).toBe('minimal')
       expect(result.downloads).toBe(0)
       expect(result.description).toBe('**Tags**: ')
-      expect(result.quants[0].file_size).toBe('Unknown size')
+      expect(quants[0]?.file_size).toBe('Unknown size')
     })
   })
 
