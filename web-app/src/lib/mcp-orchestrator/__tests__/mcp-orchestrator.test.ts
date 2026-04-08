@@ -215,13 +215,15 @@ describe('MCPOrchestrator', () => {
       expect(tools).toEqual(mockTools)
     })
 
-    it('returns empty tools when getToolsForServers() throws', async () => {
+    it('falls back to getTools() when getToolsForServers() throws', async () => {
       const service = makeService({
         getServerSummaries: vi.fn().mockResolvedValue(manySummaries),
         getToolsForServers: vi.fn().mockRejectedValue(new Error('server down')),
+        getTools: vi.fn().mockResolvedValue([]),
       })
 
       const tools = await orchestrator.getRelevantTools('read a file', service, [])
+      expect(service.getTools).toHaveBeenCalled()
       expect(tools).toEqual([])
     })
   })

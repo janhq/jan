@@ -127,6 +127,8 @@ const ChatInput = memo(function ChatInput({
   const setActiveModels = useAppState((state) => state.setActiveModels)
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
+  const addToHistory = usePrompt((state) => state.addToHistory)
+  const navigateHistory = usePrompt((state) => state.navigateHistory)
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const currentThread = useThreads((state) => state.getCurrentThread())
   const updateCurrentThreadAssistant = useThreads(
@@ -388,6 +390,7 @@ const ChatInput = memo(function ChatInput({
     }
 
     setMessage('')
+    addToHistory(prompt)
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
@@ -852,12 +855,45 @@ const ChatInput = memo(function ChatInput({
               'cs',
               'fs',
               'vb',
+              'xaml',
+              'csproj',
+              'sln',
+              // CUDA
+              'cu',
+              'cuh',
+              // Shaders
+              'hlsl',
+              'glsl',
+              'cg',
+              'shader',
               // Shell
               'sh',
               'bash',
               'zsh',
               'fish',
               'ps1',
+              'bat',
+              'cmd',
+              'vbs',
+              // More languages
+              'asm',
+              's',
+              'm',
+              'mm',
+              'pas',
+              'pp',
+              'erl',
+              'hrl',
+              'ex',
+              'exs',
+              'clj',
+              'cljs',
+              'hs',
+              'lhs',
+              'ml',
+              'mli',
+              'f',
+              'f90',
               // Web
               'css',
               'scss',
@@ -866,6 +902,10 @@ const ChatInput = memo(function ChatInput({
               'vue',
               'svelte',
               'astro',
+              'php',
+              'asp',
+              'aspx',
+              'jsp',
               // Data / config formats
               'json',
               'jsonc',
@@ -877,16 +917,24 @@ const ChatInput = memo(function ChatInput({
               'cfg',
               'conf',
               'env',
+              'properties',
+              'dockerfile',
+              'makefile',
+              'cmake',
+              'lock',
               // Query / markup
               'sql',
               'graphql',
               'gql',
               'tex',
               'rst',
+              'adoc',
+              'textile',
               // Misc text
               'log',
               'diff',
               'patch',
+              'gitignore',
             ],
           },
           {
@@ -1690,6 +1738,27 @@ const ChatInput = memo(function ChatInput({
                     handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
+                }
+                // Navigate prompt history with Up/Down arrow keys
+                if (e.key === 'ArrowUp' && !isComposing) {
+                  const textarea = e.currentTarget
+                  const cursorAtStart =
+                    textarea.selectionStart === 0 &&
+                    textarea.selectionEnd === 0
+                  if (cursorAtStart || !prompt) {
+                    e.preventDefault()
+                    navigateHistory('up')
+                  }
+                }
+                if (e.key === 'ArrowDown' && !isComposing) {
+                  const textarea = e.currentTarget
+                  const cursorAtEnd =
+                    textarea.selectionStart === prompt.length &&
+                    textarea.selectionEnd === prompt.length
+                  if (cursorAtEnd) {
+                    e.preventDefault()
+                    navigateHistory('down')
+                  }
                 }
               }}
               onPaste={handlePaste}

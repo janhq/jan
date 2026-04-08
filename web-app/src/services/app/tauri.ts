@@ -4,14 +4,20 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { AppConfiguration } from '@janhq/core'
-import type { LogEntry } from './types'
+import type { FactoryResetOptions, LogEntry } from './types'
 import { DefaultAppService } from './default'
 
 export class TauriAppService extends DefaultAppService {
-  async factoryReset(): Promise<void> {
-    // Kill background processes and remove data folder
-    // Note: We can't import stopAllModels directly to avoid circular dependency
-    // Instead we'll use the engine manager directly
+  /**
+   * Factory reset with optional data preservation.
+   *
+   * User settings are persisted to `settings.json` via @tauri-apps/plugin-store
+   * (see #7821). The Rust `factory_reset` command conditionally deletes
+   * directories, config files, and `settings.json` based on the keep flags.
+   * No frontend snapshot/restore is needed — the file store is preserved or
+   * wiped on disk by the Rust side.
+   */
+  async factoryReset(options?: FactoryResetOptions): Promise<void> {
     const { EngineManager } = await import('@janhq/core')
     for (const [, engine] of EngineManager.instance().engines) {
       const activeModels = await engine.getLoadedModels()
@@ -19,8 +25,15 @@ export class TauriAppService extends DefaultAppService {
         await Promise.all(activeModels.map((model: string) => engine.unload(model)))
       }
     }
-    window.localStorage.clear()
-    await invoke('factory_reset')
+
+    const keepAppData = options?.keepAppData ?? false
+    const keepModelsAndConfigs = options?.keepModelsAndConfigs ?? false
+
+    if (!keepAppData && !keepModelsAndConfigs) {
+      await invoke('factory_reset')
+    } else {
+      await invoke('factory_reset', { keepAppData, keepModelsAndConfigs })
+    }
   }
 
   async readLogs(): Promise<LogEntry[]> {

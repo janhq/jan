@@ -2,10 +2,11 @@
  * Default App Service - Generic implementation with minimal returns
  */
 
-import type { AppService, LogEntry } from './types'
+import type { AppService, FactoryResetOptions, LogEntry } from './types'
 
 export class DefaultAppService implements AppService {
-  async factoryReset(): Promise<void> {
+  async factoryReset(options?: FactoryResetOptions): Promise<void> {
+    console.log('factoryReset called with options:', options)
     // No-op
   }
 

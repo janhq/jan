@@ -1,0 +1,86 @@
+---
+title: MCP routing telemetry
+description: Optional callbacks for smart MCP tool routing — latency, fallbacks, and router usage
+keywords:
+  [
+    Jan,
+    MCP,
+    Model Context Protocol,
+    routing,
+    developers,
+    observability,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+
+# MCP routing telemetry
+
+This page is under **Reference** for contributors: it describes code hooks, not anything in the Jan UI. For setup and toggles, use **[MCP Servers](./integrations/mcp-servers)** (Integrations).
+
+End users turn routing on or off under **Settings → MCP Servers**.
+
+With **Smart MCP tool routing** enabled, Jan may load tools from only some MCP servers each turn instead of all of them. The orchestrator can report what happened on that path (timings, fallbacks, and token usage when the model provider returns it) through an optional callback on `getRelevantTools`.
+
+## Using the callback
+
+In the Jan repo, import from the web app package (path is under `web-app/src`):
+
+```ts
+import { mcpOrchestrator, type McpRoutingTelemetry } from '@/lib/mcp-orchestrator'
+
+await mcpOrchestrator.getRelevantTools(userMessage, mcpServiceLike, disabledToolKeys, {
+  routerModel,
+  abortSignal,
+  onRoutingTelemetry: (info: McpRoutingTelemetry) => {
+    console.debug('[mcp-routing]', info)
+  },
+})
+```
+
+<Callout type="info">
+  Shipped Jan does not register `onRoutingTelemetry`. Add it in your branch if you want logs, analytics, or local debugging.
+</Callout>
+
+## Payload fields
+
+| Field | Notes |
+| --- | --- |
+| `routingRan` | `true` only when more than `ROUTING_THRESHOLD` servers are connected and keyword/LLM selection runs (`intent-classifier.ts`). |
+| `bypassedRouting` | `true` when at or below that threshold — full tool list, no server picking. |
+| `pickSource` | `llm`, `keyword`, or `null` if routing was bypassed. |
+| `selectedServerCount` | How many server names were passed into selective tool loading. |
+| `totalLatencyMs` | Time for the whole `getRelevantTools` call (summaries, routing, tool fetches). |
+| `llmRouterLatencyMs` | Time spent in the router’s structured generation step, or `null` if that step did not run. |
+| `fallbackReason` | See the list below. |
+| `selectiveToolsWereEmpty` | Selective load returned no tools before any recovery. |
+| `selectiveFetchHadError` | `getToolsForServers` threw while fetching uncached servers. |
+| `fellBackToFullToolList` | Jan then called `getTools()` to recover. |
+| `llmRouterUsage` | Present when the provider reports usage for the router call (AI SDK shape). |
+
+### `fallbackReason`
+
+- `none` — No tool-load recovery was needed; the LLM router might still have been skipped.
+- `llm_timeout` — Router hit `MCP_ROUTER_TIMEOUT_MS` (~3.5s); keyword routing was used instead.
+- `llm_abort` — The request’s `abortSignal` cancelled the router.
+- `llm_error` — Router call failed (network, provider, schema, etc.).
+- `llm_empty_output` — No allowed server names came back (empty list or names not in the allow-list).
+- `selective_tools_empty` — Selective tool fetch returned nothing; full list was tried next.
+- `selective_fetch_error` — Selective fetch threw; same recovery path as above.
+
+If several things go wrong, **tool-load** reasons take precedence over **LLM-only** ones in `fallbackReason`, so you can tell whether the app widened the tool set because of IPC/load issues.
+
+## Changing `ROUTING_THRESHOLD`
+
+`ROUTING_THRESHOLD` lives in `web-app/src/lib/mcp-orchestrator/intent-classifier.ts`. At or below that many connected servers, Jan loads every tool and does not run server selection — less work when you only run a handful of MCP servers.
+
+Use the callback above to see whether routing is worth it for your setup: high `llm_timeout` / `llm_error` counts suggest a faster router model or a longer router timeout in `mcp-router-llm.ts` (that timeout is **not** the MCP **tool call timeout** in Settings). Frequent `selective_fetch_error` or `selective_tools_empty` usually means a server or config problem, not something you fix by tweaking the threshold alone.
+
+Raising the number delays routing until you connect more servers; lowering it runs routing sooner. Re-test real chats after changing it.
+
+## Related
+
+- **Settings → MCP Servers → Smart MCP tool routing** — turns selective loading on or off.
+- **Use a dedicated model for routing** — optional small model for the router step; `llmRouterUsage` refers to that call when present.
+
+See also [MCP Servers](./integrations/mcp-servers).

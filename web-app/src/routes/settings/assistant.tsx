@@ -103,7 +103,7 @@ function AssistantContent() {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm" className="justify-between">
-                        <span className={cn('truncate', !defaultAssistantId && 'italic')}>
+                        <span className={cn('truncate')}>
                           {defaultAssistant?.name ?? t('assistants:lastUsed')}
                         </span>
                         <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
@@ -114,8 +114,7 @@ function AssistantContent() {
                         key="none"
                         className={cn(
                           'cursor-pointer my-0.5',
-                          !defaultAssistantId && 'bg-secondary-foreground/8',
-                          'italic'
+                          !defaultAssistantId && 'bg-secondary-foreground/8'
                         )}
                         onClick={() => setDefaultAssistant('')}
                       >
