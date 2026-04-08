@@ -2,7 +2,6 @@
  * Default Models Service - Web implementation
  */
 
-import { useModelScore } from '@/hooks/useModelScores'
 import { sanitizeModelId } from '@/lib/utils'
 import {
   AIEngine,
@@ -24,10 +23,58 @@ import type {
   CatalogModel,
   ModelValidationResult,
   ModelQuant,
+  ModelScore,
+  HubScoreRequestSource,
 } from './types'
 
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
+
+const GGUF_QUANT_PREFERENCE_ORDER = [
+  { quantization: 'Q8_0', aliases: ['q8_0'] },
+  { quantization: 'Q6_K', aliases: ['q6_k', 'q6_k_l'] },
+  { quantization: 'Q5_K_M', aliases: ['q5_k_m', 'q5_k_s'] },
+  { quantization: 'Q4_K_M', aliases: ['q4_k_m', 'q4_k_s', 'q4_k_xl', 'q4_0'] },
+  { quantization: 'Q3_K_M', aliases: ['q3_k_m', 'q3_k_s'] },
+  { quantization: 'Q2_K', aliases: ['q2_k'] },
+  { quantization: 'IQ4_XS', aliases: ['iq4_xs'] },
+  { quantization: 'IQ3_M', aliases: ['iq3_m'] },
+  { quantization: 'IQ2_M', aliases: ['iq2_m'] },
+  { quantization: 'IQ1_M', aliases: ['iq1_m'] },
+] as const
+
+const inferGgufQuantization = (value: string): string | undefined => {
+  const normalizedValue = value.toLowerCase()
+
+  return GGUF_QUANT_PREFERENCE_ORDER.find(({ aliases }) =>
+    aliases.some((alias) => normalizedValue.includes(alias))
+  )?.quantization
+}
+
+const selectBestGgufVariant = (
+  quants?: ModelQuant[]
+): ModelQuant | undefined => {
+  if (!quants?.length) {
+    return undefined
+  }
+
+  return [...quants].sort((left, right) => {
+    const leftQuant = inferGgufQuantization(`${left.model_id} ${left.path}`)
+    const rightQuant = inferGgufQuantization(`${right.model_id} ${right.path}`)
+    const leftRank = GGUF_QUANT_PREFERENCE_ORDER.findIndex(
+      ({ quantization }) => quantization === leftQuant
+    )
+    const rightRank = GGUF_QUANT_PREFERENCE_ORDER.findIndex(
+      ({ quantization }) => quantization === rightQuant
+    )
+    const normalizedLeftRank =
+      leftRank === -1 ? Number.POSITIVE_INFINITY : leftRank
+    const normalizedRightRank =
+      rightRank === -1 ? Number.POSITIVE_INFINITY : rightRank
+
+    return normalizedLeftRank - normalizedRightRank
+  })[0]
+}
 
 export class DefaultModelsService implements ModelsService {
   private getEngine(provider: string = defaultProvider) {
@@ -565,16 +612,133 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
-  getCachedHubModelScore(model: CatalogModel, variant?: ModelQuant) {
-    return useModelScore.getState().getCachedHubModelScore(model, variant)
-  }
+  async getHubModelScore(
+    model: CatalogModel,
+    variant?: ModelQuant,
+    ctxSize = 8192
+  ): Promise<ModelScore> {
+    try {
+      const engine = this.getEngine('llamacpp') as AIEngine & {
+        getHubModelScore?: (request: {
+          model_name: string
+          developer?: string
+          model_path: string
+          runtime?: 'llamacpp' | 'mlx'
+          quantization?: string
+          total_size_bytes?: number
+          ctx_size?: number
+          use_case?: string
+          capabilities?: string[]
+          release_date?: string
+          tools?: boolean
+          num_mmproj?: number
+          pinned?: boolean
+        }) => Promise<ModelScore>
+      }
 
-  async prefetchHubModelScore(model: CatalogModel, variant?: ModelQuant) {
-    return useModelScore.getState().fetchModelScore(model, variant)
-  }
+      let scoreSource: HubScoreRequestSource | undefined
 
-  async getHubModelScore(model: CatalogModel, variant?: ModelQuant) {
-    return useModelScore.getState().fetchModelScore(model, variant)
+      if (model.is_mlx) {
+        const safetensorsFiles = model.safetensors_files ?? []
+        let primaryFile = safetensorsFiles[0]
+        if (!primaryFile) {
+          primaryFile = {
+            model_id: '',
+            path: '',
+            file_size: '',
+          }
+        }
+
+        const totalSizeBytes = safetensorsFiles.reduce(
+          (sum, file) => sum + (file.size_bytes ?? 0),
+          0
+        )
+
+        let quantization = ''
+
+        const combined = [
+          model.model_name,
+          model.developer,
+          ...safetensorsFiles.map((file) => file.model_id),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+
+        if (combined.includes('8bit') || combined.includes('mlx-8bit')) {
+          quantization = 'mlx-8bit'
+        } else {
+          quantization = 'mlx-4bit'
+        }
+
+        scoreSource = {
+          model_id: primaryFile.model_id,
+          path: primaryFile.path,
+          file_size: primaryFile.file_size,
+          runtime: 'mlx',
+          quantization: quantization,
+          total_size_bytes: totalSizeBytes > 0 ? totalSizeBytes : undefined,
+        }
+      } else {
+        const scoreVariant = variant ?? selectBestGgufVariant(model.quants)
+
+        scoreSource = scoreVariant
+          ? {
+              ...scoreVariant,
+              runtime: 'llamacpp',
+              quantization: inferGgufQuantization(
+                `${scoreVariant.model_id} ${scoreVariant.path}`
+              ),
+            }
+          : undefined
+      }
+
+      if (!scoreSource) {
+        const unavailable: ModelScore = {
+          status: 'unavailable',
+          estimated_tps: 0,
+          reason: model.is_mlx
+            ? 'No MLX safetensors variant available for scoring.'
+            : 'No GGUF variant available for scoring.',
+        }
+        return unavailable
+      }
+
+      if (engine && typeof engine.getHubModelScore === 'function') {
+        return await engine.getHubModelScore({
+          model_name: model.model_name,
+          developer: model.developer,
+          model_path: scoreSource.path,
+          runtime: scoreSource.runtime,
+          quantization: scoreSource.quantization,
+          total_size_bytes: scoreSource.total_size_bytes,
+          ctx_size: ctxSize,
+          use_case: model.use_case,
+          capabilities: model.capabilities,
+          release_date: model.created_at ?? model.createdAt,
+          tools: model.tools,
+          num_mmproj: model.num_mmproj,
+          pinned: model.pinned,
+        })
+      }
+      // Fallback if method is not available
+      console.warn('getHubModelScore method not available in llamacpp engine')
+      return {
+        status: 'unavailable',
+        estimated_tps: 0,
+        reason: 'Hub scoring is not available on this platform.',
+      }
+    } catch (error) {
+      console.error(
+        `Error checking model score for ${model.model_name}:`,
+        error
+      )
+      return {
+        status: 'unavailable',
+        estimated_tps: 0,
+        reason: 'Hub scoring is not available on this platform.',
+      }
+    }
   }
 
   async validateGgufFile(filePath: string): Promise<ModelValidationResult> {

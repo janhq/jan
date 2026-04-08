@@ -92,10 +92,10 @@ function HubModelDetailContent() {
     useDownloadStore()
   const serviceHub = useServiceHub()
   const [repoData, setRepoData] = useState<CatalogModel | undefined>()
-  const { modelScore, fetchPreferredModelScore } = useModelScore(
+  const { modelScore, fetchModelScore } = useModelScore(
     useShallow((state) => ({
       modelScore: state.getScore(modelId),
-      fetchPreferredModelScore: state.fetchPreferredModelScore,
+      fetchModelScore: state.fetchModelScore,
     }))
   )
 
@@ -261,8 +261,8 @@ function HubModelDetailContent() {
   useEffect(() => {
     if (!modelData) return
 
-    void fetchPreferredModelScore(modelData)
-  }, [fetchPreferredModelScore, modelData])
+    void fetchModelScore(modelData)
+  }, [fetchModelScore, modelData])
 
   // Fetch README content when modelData.readme is available
   useEffect(() => {
@@ -478,7 +478,8 @@ function HubModelDetailContent() {
                 </div>
               ) : (
                 <div className="mt-4 text-sm text-muted-foreground">
-                  {modelScore?.reason || t('scoreSummary.pendingDescription')}
+                  {modelScore?.reason ||
+                    t('hub:scoreSummary.pendingDescription')}
                 </div>
               )}
             </div>

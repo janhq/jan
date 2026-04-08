@@ -44,7 +44,6 @@ export interface ModelScoreBreakdown {
 export interface HubModelScoreRequest {
   model_name: string
   developer?: string
-  default_quant_model_id: string
   model_path: string
   runtime?: 'llamacpp' | 'mlx'
   quantization?: string
@@ -63,7 +62,6 @@ export interface HubModelScoreResult {
   overall?: number
   estimated_tps: number
   breakdown?: ModelScoreBreakdown
-  scored_quant_model_id: string
   used_builtin_fallback: boolean
   reason?: string
 }

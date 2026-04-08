@@ -51,7 +51,6 @@ export interface ModelScore {
   overall?: number
   breakdown?: ModelScoreBreakdown
   estimated_tps: number
-  scored_quant_model_id?: string
   hardware_fingerprint?: string
   cache_key?: string
   updated_at?: number
@@ -140,6 +139,15 @@ export type PreflightReason =
   | 'NETWORK'
   | 'UNKNOWN'
 
+export type HubScoreRequestSource = {
+  model_id: string
+  path: string
+  file_size: string
+  runtime: 'llamacpp' | 'mlx' | undefined
+  quantization?: string
+  total_size_bytes?: number
+}
+
 export interface ModelsService {
   getModel(modelId: string): Promise<modelInfo | undefined>
   fetchModels(): Promise<modelInfo[]>
@@ -193,16 +201,9 @@ export interface ModelsService {
   ): Promise<'RED' | 'YELLOW' | 'GREEN' | 'GREY'>
   getHubModelScore(
     model: CatalogModel,
-    variant?: ModelQuant
+    variant?: ModelQuant,
+    ctxSize?: number
   ): Promise<ModelScore>
-  prefetchHubModelScore(
-    model: CatalogModel,
-    variant?: ModelQuant
-  ): Promise<ModelScore>
-  getCachedHubModelScore(
-    model: CatalogModel,
-    variant?: ModelQuant
-  ): ModelScore | undefined
   validateGgufFile(filePath: string): Promise<ModelValidationResult>
   getTokensCount(modelId: string, messages: ThreadMessage[]): Promise<number>
 }

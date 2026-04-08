@@ -1053,7 +1053,6 @@ describe('DefaultModelsService', () => {
         status: 'ready',
         overall: 82.4,
         estimated_tps: 42,
-        scored_quant_model_id: 'qwen/test-model-q4_k_m',
       }
       const mockEngineWithScore = {
         ...mockEngine,
@@ -1066,10 +1065,9 @@ describe('DefaultModelsService', () => {
       expect(mockEngineWithScore.getHubModelScore).toHaveBeenCalledWith({
         model_name: 'qwen/test-model',
         developer: 'qwen',
-        default_quant_model_id: 'qwen/test-model-q4_k_m',
         model_path: 'https://huggingface.co/qwen/test-model-q4_k_m.gguf',
         runtime: 'llamacpp',
-        quantization: undefined,
+        quantization: 'Q4_K_M',
         total_size_bytes: undefined,
         ctx_size: 8192,
         use_case: 'Instruction following',
@@ -1084,7 +1082,6 @@ describe('DefaultModelsService', () => {
           status: 'ready',
           overall: 82.4,
           estimated_tps: 42,
-          scored_quant_model_id: 'qwen/test-model-q4_k_m',
         })
       )
     })
@@ -1114,7 +1111,6 @@ describe('DefaultModelsService', () => {
         status: 'ready',
         overall: 77.1,
         estimated_tps: 58,
-        scored_quant_model_id: 'model-00001-of-00002',
       }
       const mockEngineWithScore = {
         ...mockEngine,
@@ -1127,7 +1123,6 @@ describe('DefaultModelsService', () => {
       expect(mockEngineWithScore.getHubModelScore).toHaveBeenCalledWith({
         model_name: 'mlx-community/qwen-test-7b-4bit',
         developer: 'qwen',
-        default_quant_model_id: 'model-00001-of-00002',
         model_path:
           'https://huggingface.co/mlx-community/qwen-test-7b-4bit/resolve/main/model-00001-of-00002.safetensors',
         runtime: 'mlx',
@@ -1146,17 +1141,52 @@ describe('DefaultModelsService', () => {
           status: 'ready',
           overall: 77.1,
           estimated_tps: 58,
-          scored_quant_model_id: 'model-00001-of-00002',
         })
       )
     })
 
-    it('reuses the in-memory hub score cache', async () => {
+    it('selects the highest-quality GGUF quant when no variant is provided', async () => {
+      const multiQuantModel = {
+        ...mockCatalogModel,
+        quants: [
+          {
+            model_id: 'qwen/test-model-q4_k_m',
+            path: 'https://huggingface.co/qwen/test-model-q4_k_m.gguf',
+            file_size: '4 GB',
+          },
+          {
+            model_id: 'qwen/test-model-q8_0',
+            path: 'https://huggingface.co/qwen/test-model-q8_0.gguf',
+            file_size: '8 GB',
+          },
+        ],
+      } as CatalogModel
+      const expectedScore = {
+        status: 'ready',
+        overall: 90.1,
+        estimated_tps: 24,
+      }
+      const mockEngineWithScore = {
+        ...mockEngine,
+        getHubModelScore: vi.fn().mockResolvedValue(expectedScore),
+      }
+      mockEngineManager.get.mockReturnValue(mockEngineWithScore)
+
+      await modelsService.getHubModelScore(multiQuantModel)
+
+      expect(mockEngineWithScore.getHubModelScore).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model_path: 'https://huggingface.co/qwen/test-model-q8_0.gguf',
+          quantization: 'Q8_0',
+        })
+      )
+    })
+
+    it('delegates repeated scoring requests through the engine', async () => {
       const expectedScore = {
         status: 'ready',
         overall: 82.4,
         estimated_tps: 42,
-        scored_quant_model_id: 'qwen/test-model-q4_k_m',
       }
       const mockEngineWithScore = {
         ...mockEngine,
@@ -1168,7 +1198,7 @@ describe('DefaultModelsService', () => {
       const secondResult =
         await modelsService.getHubModelScore(mockCatalogModel)
 
-      expect(mockEngineWithScore.getHubModelScore).toHaveBeenCalledTimes(1)
+      expect(mockEngineWithScore.getHubModelScore).toHaveBeenCalledTimes(2)
       expect(secondResult).toEqual(firstResult)
     })
   })

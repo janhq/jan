@@ -44,7 +44,6 @@ pub async fn score_hub_model_internal<R: Runtime>(
             overall: Some(overall),
             estimated_tps: Some(estimated_tps),
             breakdown: Some(breakdown),
-            scored_quant_model_id: request.default_quant_model_id.clone(),
             used_builtin_fallback: false,
             reason: None,
         },
@@ -53,7 +52,6 @@ pub async fn score_hub_model_internal<R: Runtime>(
             overall: None,
             breakdown: None,
             estimated_tps: None,
-            scored_quant_model_id: request.default_quant_model_id.clone(),
             used_builtin_fallback: false,
             reason: Some(reason),
         },
@@ -124,7 +122,6 @@ fn derive_model_spec(
     let quantization = request
         .quantization
         .clone()
-        .or_else(|| normalize_quantization(&request.default_quant_model_id, runtime))
         .ok_or_else(|| format!("Unsupported or unrecognized {} quantization", runtime_label(runtime)))?;
     let context_length = infer_context_length(gguf, request.ctx_size)
         .unwrap_or(request.ctx_size.unwrap_or(DEFAULT_CTX_SIZE));
@@ -304,7 +301,6 @@ fn infer_parameter_count_raw(
     quantization: &str,
 ) -> Option<u64> {
     let mut text_candidates = vec![
-        request.default_quant_model_id.as_str(),
         request.model_name.as_str(),
         request.model_path.as_str(),
     ];
@@ -464,9 +460,8 @@ fn model_format_for_runtime(runtime: InferenceRuntime) -> ModelFormat {
 
 fn combined_model_text(request: &HubModelScoreRequest, gguf: Option<&GgufMetadata>) -> String {
     format!(
-        "{} {} {} {}",
+        "{} {} {}",
         request.model_name,
-        request.default_quant_model_id,
         request.model_path,
         gguf.and_then(|metadata| metadata.metadata.get("general.name"))
             .map(String::as_str)
@@ -609,7 +604,6 @@ mod tests {
         HubModelScoreRequest {
             model_name: "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF".to_string(),
             developer: Some("Qwen".to_string()),
-            default_quant_model_id: "Qwen/Qwen2.5-Coder-7B-Instruct-Q4_K_M".to_string(),
             model_path: "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/model-q4_k_m.gguf".to_string(),
             runtime: Some("llamacpp".to_string()),
             quantization: None,
@@ -694,7 +688,6 @@ mod tests {
     fn derives_mlx_model_spec_without_gguf_metadata() {
         let mut request = mock_request();
         request.model_name = "mlx-community/Qwen2.5-Coder-7B-4bit".to_string();
-        request.default_quant_model_id = "model-00001-of-00004".to_string();
         request.model_path = "https://huggingface.co/mlx-community/Qwen2.5-Coder-7B-4bit/resolve/main/model-00001-of-00004.safetensors".to_string();
         request.runtime = Some("mlx".to_string());
         request.quantization = Some("mlx-4bit".to_string());

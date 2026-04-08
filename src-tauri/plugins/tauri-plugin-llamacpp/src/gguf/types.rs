@@ -96,7 +96,6 @@ pub enum ModelSupportStatus {
 pub struct HubModelScoreRequest {
     pub model_name: String,
     pub developer: Option<String>,
-    pub default_quant_model_id: String,
     pub model_path: String,
     pub runtime: Option<String>,
     pub quantization: Option<String>,
@@ -140,7 +139,6 @@ pub struct HubModelScoreResult {
     pub overall: Option<f32>,
     pub estimated_tps: Option<f32>,
     pub breakdown: Option<ModelScoreBreakdown>,
-    pub scored_quant_model_id: String,
     pub used_builtin_fallback: bool,
     pub reason: Option<String>,
 }
