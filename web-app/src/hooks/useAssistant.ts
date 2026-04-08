@@ -64,9 +64,10 @@ function resolveCurrentAssistant(
   assistants: Assistant[],
   lastUsedAssistantId: string,
   defaultAssistantId: string
-): Assistant {
+): Assistant | undefined {
   const byDefault = assistants.find((a) => a.id === defaultAssistantId)
   const byLastUsed = assistants.find((a) => a.id === lastUsedAssistantId)
+  if (!byDefault && lastUsedAssistantId === '') return undefined
   return byDefault ?? byLastUsed ?? defaultAssistant
 }
 
