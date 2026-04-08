@@ -14,7 +14,7 @@ export class TauriWindowService extends DefaultWindowService {
     try {
       // Read theme directly from the zustand store — always in sync and
       // doesn't depend on localStorage or any storage key name assumptions.
-      const { activeTheme, isDark } = useTheme.getState()
+      const { activeTheme } = useTheme.getState()
       let theme: 'light' | 'dark' | undefined = undefined
 
       switch (activeTheme) {
