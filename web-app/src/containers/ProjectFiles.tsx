@@ -383,6 +383,10 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     attachmentsEnabledRef.current = attachmentsEnabled
   }, [processFilePaths, attachmentsEnabled])
 
+  const dropZoneRef = useRef<HTMLDivElement>(null)
+
+  // Stable listener that lives for the whole component lifetime.
+  // We use refs above so it always calls the freshest version of processFilePaths.
   useEffect(() => {
     let unlisten: (() => void) | undefined
     let cleanedUp = false
@@ -392,21 +396,35 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow')
         const appWindow = getCurrentWebviewWindow()
 
+        const isInsideDropZone = (position: { x: number; y: number }) => {
+          if (!dropZoneRef.current) return false
+          const rect = dropZoneRef.current.getBoundingClientRect()
+          const dpr = window.devicePixelRatio || 1
+          const x = position.x / dpr
+          const y = position.y / dpr
+          return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
+        }
+
         const unbind = await appWindow.onDragDropEvent((event) => {
+          // Bail early if attachments are turned off in Settings
           if (!attachmentsEnabledRef.current) return
 
           if (event.payload.type === 'enter' || event.payload.type === 'over') {
-            setIsDragging(true)
+            setIsDragging(isInsideDropZone(event.payload.position))
           } else if (event.payload.type === 'leave') {
             setIsDragging(false)
           } else if (event.payload.type === 'drop') {
+            const wasInside = isInsideDropZone(event.payload.position)
             setIsDragging(false)
+            if (!wasInside) return
+
             if (event.payload.paths.length > 0) {
               void processFilePathsRef.current(event.payload.paths)
             }
           }
         })
 
+        // Guard against the listener resolving after the component already unmounted
         if (cleanedUp) {
           unbind()
         } else {
@@ -531,6 +549,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         </div>
       ) : isEmpty ? (
         <div
+          ref={dropZoneRef}
           className={cn(
             'flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
             isDragging
@@ -549,6 +568,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         </div>
       ) : (
         <div
+          ref={dropZoneRef}
           className={cn(
             'space-y-2 rounded-lg p-1 -m-1 transition-colors',
             isDragging && 'bg-primary/10 ring-2 ring-primary ring-dashed'
