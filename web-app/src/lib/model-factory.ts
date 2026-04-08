@@ -132,6 +132,17 @@ const CLIENT_SIDE_PARAM_KEYS: ReadonlySet<string> = new Set([
 ])
 
 /**
+ * Inference parameters that Cerebras does not support and must be stripped
+ * before the request body is sent to the Cerebras API.
+ */
+const CEREBRAS_UNSUPPORTED_KEYS: ReadonlySet<string> = new Set([
+  'top_k',
+  'repeat_penalty',
+  'frequency_penalty',
+  'presence_penalty',
+])
+
+/**
  * Create a custom fetch function that injects additional parameters into the
  * request body, normalising key names for OpenAI-compatible APIs:
  * - `max_output_tokens` is remapped to `max_tokens`
@@ -346,6 +357,9 @@ export class ModelFactory {
 
       case 'xai':
         return this.createXaiModel(modelId, provider, parameters)
+
+      case 'cerebras':
+        return this.createCerebrasModel(modelId, provider, parameters)
 
       default:
         return this.createOpenAICompatibleModel(modelId, provider, parameters)
@@ -728,6 +742,65 @@ export class ModelFactory {
       baseURL: provider.base_url || 'https://api.openai.com/v1',
       headers,
       includeUsage: true,
+      fetch: fetchImpl,
+    })
+
+    return openAICompatible.languageModel(modelId)
+  }
+
+  /**
+   * Create a Cerebras model via OpenAI-compatible with Cerebras-specific
+   * settings.
+   *
+   * Cerebras rejects `stream_options` (HTTP 422), so `includeUsage` is
+   * disabled.  Unsupported inference parameters (`top_k`, `repeat_penalty`,
+   * `frequency_penalty`, `presence_penalty`) are stripped before they reach
+   * the request body.
+   */
+  private static createCerebrasModel(
+    modelId: string,
+    provider: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): LanguageModel {
+    const headers: Record<string, string> = {}
+
+    if (provider.custom_header) {
+      provider.custom_header.forEach((customHeader) => {
+        headers[customHeader.header] = customHeader.value
+      })
+    }
+
+    const keyChain = providerRemoteApiKeyChain(provider)
+    // Set Authorization manually for the single-key path; the multi-key path
+    // uses createApiKeyRotatingFetch which injects the header itself.
+    if (keyChain.length === 1) {
+      headers['Authorization'] = `Bearer ${keyChain[0]}`
+    }
+
+    // Strip parameters that Cerebras does not support (module-level constant)
+    const filtered: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(parameters)) {
+      if (!CEREBRAS_UNSUPPORTED_KEYS.has(key)) {
+        filtered[key] = value
+      }
+    }
+
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            filtered,
+            'authorization-bearer'
+          )
+        : createCustomFetch(getRuntimeFetch(), filtered)
+
+    const openAICompatible = createOpenAICompatible({
+      name: provider.provider,
+      baseURL: provider.base_url || 'https://api.cerebras.ai/v1',
+      headers,
+      // Cerebras rejects stream_options; disable to prevent 422 errors
+      includeUsage: false,
       fetch: fetchImpl,
     })
 

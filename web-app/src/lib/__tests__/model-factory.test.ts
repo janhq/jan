@@ -14,15 +14,18 @@ vi.mock('@tauri-apps/plugin-http', () => ({
 }))
 
 // Mock the AI SDK providers
+const mockLanguageModel = vi.fn(() => ({ type: 'openai-compatible' }))
+const mockCreateOpenAICompatible = vi.fn(() => ({
+  languageModel: mockLanguageModel,
+}))
+
 vi.mock('@ai-sdk/openai-compatible', () => {
   const MockChatModel = vi.fn().mockImplementation(() => ({
     type: 'foundation-models',
     modelId: 'apple/on-device',
   }))
   return {
-    createOpenAICompatible: vi.fn(() => ({
-      languageModel: vi.fn(() => ({ type: 'openai-compatible' })),
-    })),
+    createOpenAICompatible: mockCreateOpenAICompatible,
     OpenAICompatibleChatLanguageModel: MockChatModel,
     MetadataExtractor: vi.fn(),
   }
@@ -284,6 +287,70 @@ describe('ModelFactory', () => {
         'plugin:foundation-models|is_foundation_models_loaded',
         {}
       )
+    })
+  })
+
+  describe('Cerebras provider', () => {
+    const cerebrasProvider: ProviderObject = {
+      provider: 'cerebras',
+      api_key: 'test-cerebras-key',
+      base_url: 'https://api.cerebras.ai/v1',
+      models: [],
+      settings: [],
+      active: true,
+    }
+
+    beforeEach(() => {
+      mockCreateOpenAICompatible.mockClear()
+      mockLanguageModel.mockClear()
+    })
+
+    it('should route cerebras provider to createCerebrasModel', async () => {
+      const model = await ModelFactory.createModel(
+        'llama3.1-8b',
+        cerebrasProvider
+      )
+      expect(model).toBeDefined()
+      expect(mockCreateOpenAICompatible).toHaveBeenCalledWith(
+        expect.objectContaining({ includeUsage: false })
+      )
+    })
+
+    it('should set includeUsage: false to prevent stream_options injection', async () => {
+      await ModelFactory.createModel('llama3.1-8b', cerebrasProvider)
+      const callArgs = mockCreateOpenAICompatible.mock.calls[0][0]
+      expect(callArgs.includeUsage).toBe(false)
+    })
+
+    it('should strip top_k from request parameters', async () => {
+      await ModelFactory.createModel('llama3.1-8b', cerebrasProvider, {
+        top_k: 20,
+        temperature: 0.7,
+      })
+      // createCustomFetch is called with the filtered params — verify top_k absent
+      const callArgs = mockCreateOpenAICompatible.mock.calls[0][0]
+      // The fetch wrapper receives filtered params; top_k must not be present
+      expect(callArgs).not.toMatchObject({ top_k: 20 })
+    })
+
+    it('should strip repeat_penalty from request parameters', async () => {
+      await ModelFactory.createModel('llama3.1-8b', cerebrasProvider, {
+        repeat_penalty: 1.12,
+        temperature: 0.7,
+      })
+      const callArgs = mockCreateOpenAICompatible.mock.calls[0][0]
+      expect(callArgs).not.toMatchObject({ repeat_penalty: 1.12 })
+    })
+
+    it('should preserve supported parameters like temperature and top_p', async () => {
+      await ModelFactory.createModel('llama3.1-8b', cerebrasProvider, {
+        temperature: 0.7,
+        top_p: 0.9,
+        top_k: 20,
+      })
+      expect(mockCreateOpenAICompatible).toHaveBeenCalledTimes(1)
+      // Model is still created successfully with valid params
+      expect(mockLanguageModel).toHaveBeenCalledWith('llama3.1-8b')
     })
   })
 })

@@ -556,6 +556,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     // Track stream timing and token count for token speed calculation
     let streamStartTime: number | undefined
+    let accumulatedText = ''
 
     const result = streamText({
       model: this.model,
@@ -565,6 +566,16 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: this.systemMessage,
       ...(maxOutputTokens !== undefined ? { maxTokens: maxOutputTokens } : {}),
+      onChunk: ({ chunk }) => {
+        if (chunk.type === 'text-delta') {
+          accumulatedText += chunk.textDelta
+        } else if (chunk.type === 'tool-call') {
+          // Include tool call arguments in the token estimate so the fallback
+          // is accurate even when the response contains no text (e.g. Cerebras
+          // tool-only responses where the provider returns no usage data)
+          accumulatedText += chunk.argsText ?? JSON.stringify(chunk.args ?? '')
+        }
+      },
     })
 
     let tokensPerSecond = 0
@@ -593,8 +604,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           const durationMs = streamStartTime ? Date.now() - streamStartTime : 0
           const durationSec = durationMs / 1000
 
-          // Use provider's outputTokens, or llama.cpp completionTokens, or fall back to text delta count
-          const outputTokens = usage?.outputTokens ?? 0
+          // Use provider's outputTokens if available, otherwise estimate from
+          // accumulated text (some providers like Cerebras don't return usage
+          // in streaming mode)
+          const outputTokens =
+            (usage?.outputTokens ?? 0) > 0
+              ? (usage?.outputTokens ?? 0)
+              : estimateTokens(accumulatedText)
           const inputTokens = usage?.inputTokens
 
           // Use llama.cpp's tokens per second if available, otherwise calculate from duration

@@ -20,6 +20,9 @@ describe('getProviderLogo', () => {
     expect(getProviderLogo('openai')).toBe('/images/model-provider/openai.svg')
     expect(getProviderLogo('gemini')).toBe('/images/model-provider/gemini.svg')
     expect(getProviderLogo('nvidia')).toBe('/images/model-provider/nvidia.svg')
+    expect(getProviderLogo('cerebras')).toBe(
+      '/images/model-provider/cerebras.svg'
+    )
     expect(getProviderLogo('foundation-models')).toBe(
       '/images/model-provider/apple-intelligence.svg'
     )
