@@ -15,8 +15,6 @@ import {
   IconBriefcase,
   IconStar,
   IconCpu,
-  IconDeviceSdCard,
-  IconStackPush,
   IconDevicesPc,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
