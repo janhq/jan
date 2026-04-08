@@ -6,6 +6,8 @@
   "platforms": ["linux", "macOS", "windows"],
   "permissions": [
     "core:path:default",
+    "core:resources:default",
+    "core:image:default",
     "core:window:allow-start-dragging",
     "core:window:allow-set-theme",
     "core:window:allow-get-all-windows",
