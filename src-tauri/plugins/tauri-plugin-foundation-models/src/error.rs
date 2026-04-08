@@ -36,6 +36,7 @@ impl FoundationModelsError {
         }
     }
 
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     pub fn invalid_request(details: String) -> Self {
         Self {
             code: ErrorCode::InvalidRequest,
@@ -44,6 +45,7 @@ impl FoundationModelsError {
         }
     }
 
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     pub fn inference_error(details: String) -> Self {
         Self {
             code: ErrorCode::InferenceError,
@@ -52,6 +54,7 @@ impl FoundationModelsError {
         }
     }
 
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     pub fn internal_error(details: String) -> Self {
         Self {
             code: ErrorCode::InternalError,
