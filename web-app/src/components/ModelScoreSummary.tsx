@@ -4,69 +4,25 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Loader } from 'lucide-react'
 import { IconRocket } from '@tabler/icons-react'
 
+const FIT_LEVEL_TONE: Record<string, string> = {
+  'Perfect': 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  'Good': 'border-sky-200 bg-sky-50 text-sky-700',
+  'Marginal': 'border-amber-200 bg-amber-50 text-amber-700',
+  'Too Tight': 'border-rose-200 bg-rose-50 text-rose-700',
+}
+
+const FIT_LEVEL_TRANSLATION_KEYS: Record<string, string> = {
+  'Perfect': 'hub:scoreSummary.fitLevels.perfect',
+  'Good': 'hub:scoreSummary.fitLevels.good',
+  'Marginal': 'hub:scoreSummary.fitLevels.marginal',
+  'Too Tight': 'hub:scoreSummary.fitLevels.tooTight',
+}
+
 interface ModelScoreSummaryProps {
   score?: ModelScore
   compact?: boolean
   disabled?: boolean
   className?: string
-}
-
-export function fitLevelTone(fitLevel?: string) {
-  switch (fitLevel) {
-    case 'Perfect':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-700'
-    case 'Good':
-      return 'border-sky-200 bg-sky-50 text-sky-700'
-    case 'Marginal':
-      return 'border-amber-200 bg-amber-50 text-amber-700'
-    case 'Too Tight':
-      return 'border-rose-200 bg-rose-50 text-rose-700'
-    default:
-      return 'border-border bg-secondary/60 text-muted-foreground'
-  }
-}
-
-export function fitLevelKey(fitLevel?: string) {
-  switch (fitLevel) {
-    case 'Perfect':
-      return 'hub:scoreSummary.fitLevels.perfect'
-    case 'Good':
-      return 'hub:scoreSummary.fitLevels.good'
-    case 'Marginal':
-      return 'hub:scoreSummary.fitLevels.marginal'
-    case 'Too Tight':
-      return 'hub:scoreSummary.fitLevels.tooTight'
-    default:
-      return undefined
-  }
-}
-
-export function runModeKey(runMode?: string) {
-  switch (runMode) {
-    case 'GPU':
-      return 'hub:scoreSummary.runModes.gpu'
-    case 'CPU Offload':
-      return 'hub:scoreSummary.runModes.cpuOffload'
-    case 'CPU Only':
-      return 'hub:scoreSummary.runModes.cpuOnly'
-    case 'MoE Offload':
-      return 'hub:scoreSummary.runModes.moeOffload'
-    case 'Tensor Parallel':
-      return 'hub:scoreSummary.runModes.tensorParallel'
-    default:
-      return undefined
-  }
-}
-
-export function renderLabel(
-  t: (key: string) => string,
-  score?: ModelScore,
-  disabled?: boolean
-) {
-  if (disabled) return t('scoreSummary.notAvailable')
-  if (!score || score.status === 'loading') return t('scoreSummary.scoring')
-  if (score.status === 'ready') return t('scoreSummary.personalizedScore')
-  return t('scoreSummary.notAvailable')
 }
 
 export function ModelScoreBadge({
@@ -78,7 +34,9 @@ export function ModelScoreBadge({
   const { t } = useTranslation('hub')
   const fitLevel =
     score?.status === 'ready' ? score.breakdown?.fit_level : undefined
-  const translatedFitLevelKey = fitLevelKey(fitLevel)
+  const translatedFitLevelKey = fitLevel
+    ? FIT_LEVEL_TRANSLATION_KEYS[fitLevel]
+    : undefined
   const translatedFitLevel = translatedFitLevelKey
     ? t(translatedFitLevelKey)
     : fitLevel
@@ -111,7 +69,8 @@ export function ModelScoreBadge({
         <span
           className={cn(
             'rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
-            fitLevelTone(fitLevel)
+            fitLevel ? FIT_LEVEL_TONE[fitLevel] : undefined,
+            !fitLevel && 'border-border bg-secondary/60 text-muted-foreground'
           )}
         >
           {translatedFitLevel}

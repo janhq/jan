@@ -1,12 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { describe, expect, it, vi } from 'vitest'
-import {
-  ModelScoreBadge,
-  fitLevelKey,
-  renderLabel,
-  runModeKey,
-} from '../ModelScoreSummary'
+import { ModelScoreBadge } from '../ModelScoreSummary'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: (namespace?: string) => ({
@@ -83,28 +78,9 @@ describe('ModelScoreSummary', () => {
     expect(screen.getByText('Good')).toBeInTheDocument()
   })
 
-  it('maps fit level and run mode keys for translations', () => {
-    expect(fitLevelKey('Good')).toBe('hub:scoreSummary.fitLevels.good')
-    expect(runModeKey('GPU')).toBe('hub:scoreSummary.runModes.gpu')
-  })
+  it('renders unavailable state when disabled', () => {
+    render(<ModelScoreBadge disabled score={{ status: 'unavailable' }} />)
 
-  it('renders translated labels for status states', () => {
-    const t = (key: string) => {
-      const translations: Record<string, string> = {
-        'scoreSummary.notAvailable': 'Not available',
-        'scoreSummary.scoring': 'Scoring...',
-        'scoreSummary.personalizedScore': 'Personalized score',
-      }
-
-      return translations[key] ?? key
-    }
-
-    expect(renderLabel(t, undefined, true)).toBe('Not available')
-    expect(renderLabel(t, { status: 'loading', estimated_tps: 0 })).toBe(
-      'Scoring...'
-    )
-    expect(
-      renderLabel(t, { status: 'ready', overall: 84.2, estimated_tps: 42 })
-    ).toBe('Personalized score')
+    expect(screen.getByText('N/A')).toBeInTheDocument()
   })
 })

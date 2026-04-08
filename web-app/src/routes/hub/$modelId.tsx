@@ -35,11 +35,30 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { useTranslation } from '@/i18n'
-import {
-  fitLevelKey,
-  runModeKey,
-  fitLevelTone,
-} from '@/components/ModelScoreSummary'
+import { Badge } from '@/components/ui/badge'
+import { useShallow } from 'zustand/react/shallow'
+
+const FIT_LEVEL_TRANSLATION_KEYS: Record<string, string> = {
+  'Perfect': 'hub:scoreSummary.fitLevels.perfect',
+  'Good': 'hub:scoreSummary.fitLevels.good',
+  'Marginal': 'hub:scoreSummary.fitLevels.marginal',
+  'Too Tight': 'hub:scoreSummary.fitLevels.tooTight',
+}
+
+const RUN_MODE_TRANSLATION_KEYS: Record<string, string> = {
+  'GPU': 'hub:scoreSummary.runModes.gpu',
+  'CPU Offload': 'hub:scoreSummary.runModes.cpuOffload',
+  'CPU Only': 'hub:scoreSummary.runModes.cpuOnly',
+  'MoE Offload': 'hub:scoreSummary.runModes.moeOffload',
+  'Tensor Parallel': 'hub:scoreSummary.runModes.tensorParallel',
+}
+
+const FIT_LEVEL_BADGE_VARIANTS = {
+  'Perfect': 'success',
+  'Good': 'default',
+  'Marginal': 'warning',
+  'Too Tight': 'destructive',
+} as const
 
 type SearchParams = {
   repo: string
@@ -87,7 +106,14 @@ function HubModelDetailContent() {
   const { modelId } = useParams({ from: Route.id })
   const navigate = useNavigate()
   const { huggingfaceToken } = useGeneralSetting()
-  const { sources, fetchSources } = useModelSources()
+  const { fetchSources, sourceModel } = useModelSources(
+    useShallow((state: ReturnType<typeof useModelSources.getState>) => ({
+      fetchSources: state.fetchSources,
+      sourceModel: state.sources.find(
+        (model: CatalogModel) => model.model_name === modelId
+      ),
+    }))
+  )
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const search = useSearch({ from: Route.id as any })
   const { getProviderByName } = useModelProvider()
@@ -99,16 +125,20 @@ function HubModelDetailContent() {
   const [modelScore, setModelScore] = useState<ModelScore>()
 
   const breakdown = modelScore?.breakdown
-  const translatedFitLevelKey = fitLevelKey(breakdown?.fit_level)
-  const translatedRunModeKey = runModeKey(breakdown?.run_mode)
   const translatedBreakdown = breakdown
     ? {
         ...breakdown,
-        fit_level: translatedFitLevelKey
-          ? t(translatedFitLevelKey)
+        fit_level: breakdown.fit_level
+          ? t(
+              FIT_LEVEL_TRANSLATION_KEYS[breakdown.fit_level] ??
+                breakdown.fit_level
+            )
           : breakdown.fit_level,
-        run_mode: translatedRunModeKey
-          ? t(translatedRunModeKey)
+        run_mode: breakdown.run_mode
+          ? t(
+              RUN_MODE_TRANSLATION_KEYS[breakdown.run_mode] ??
+                breakdown.run_mode
+            )
           : breakdown.run_mode,
       }
     : undefined
@@ -121,9 +151,6 @@ function HubModelDetailContent() {
   const [modelSupportStatus, setModelSupportStatus] = useState<
     Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | 'GREY'>
   >({})
-
-  const fitLevel =
-    modelScore?.status === 'ready' ? modelScore.breakdown?.fit_level : undefined
 
   useEffect(() => {
     fetchSources()
@@ -144,13 +171,8 @@ function HubModelDetailContent() {
   useEffect(() => {
     fetchRepo()
   }, [modelId, fetchRepo])
-  // Find the model data from sources
-  const modelData = useMemo(() => {
-    return (
-      sources.find((model: CatalogModel) => model.model_name === modelId) ??
-      repoData
-    )
-  }, [sources, modelId, repoData])
+
+  const modelData = sourceModel ?? repoData
 
   // Download processes
   const downloadProcesses = useMemo(() => {
@@ -465,16 +487,20 @@ function HubModelDetailContent() {
                 <h2 className="text-lg font-semibold text-foreground">
                   Fit score: {modelScore?.overall?.toFixed(1)}{' '}
                 </h2>
-                <span
-                  className={cn(
-                    'rounded-full border px-1.5 text-[10px] font-semibold uppercase tracking-wide',
-                    fitLevelTone(fitLevel)
-                  )}
+                <Badge
+                  className="ml-2"
+                  variant={
+                    modelScore?.breakdown?.fit_level
+                      ? FIT_LEVEL_BADGE_VARIANTS[
+                          modelScore.breakdown
+                            .fit_level as keyof typeof FIT_LEVEL_BADGE_VARIANTS
+                        ]
+                      : 'secondary'
+                  }
                 >
                   {translatedBreakdown?.fit_level}
-                </span>
+                </Badge>
               </div>
-
               {modelScore?.status === 'ready' && translatedBreakdown ? (
                 <div className="flex gap-2 flex-wrap">
                   <div className="flex items-center gap-1 px-3 py-1 text-sm bg-secondary rounded-md ">
@@ -517,7 +543,7 @@ function HubModelDetailContent() {
                       {translatedBreakdown.run_mode}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1 px-3 py-1 text-sm bg-secondary rounded-md ">
+                  <div className="flex items-center gap-1 px-3 py-1 text-sm bg-secondary rounded-md">
                     <IconDevicesPc
                       size={20}
                       className="text-muted-foreground"
@@ -610,14 +636,9 @@ function HubModelDetailContent() {
                                 {versionName}
                               </span>
                               {isBestQuant && (
-                                <span
-                                  className={cn(
-                                    'rounded-full border ml-2 px-1.5 text-[10px] font-semibold uppercase tracking-wide',
-                                    fitLevelTone(fitLevel)
-                                  )}
-                                >
+                                <Badge className="ml-2" variant="success">
                                   Best Quant
-                                </span>
+                                </Badge>
                               )}
                             </td>
                             <td className="py-3 px-2">
