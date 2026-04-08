@@ -40,7 +40,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import type { CatalogModel } from '@/services/models/types'
+import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import type { ModelScore } from '@/services/models/types'
 import HeaderPage from '@/containers/HeaderPage'
 import { ChevronsUpDown, Loader } from 'lucide-react'
@@ -48,7 +48,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import Fuse from 'fuse.js'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
-import { useShallow } from 'zustand/shallow'
+import { useShallow } from 'zustand/react/shallow'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
@@ -70,7 +70,10 @@ export const Route = createFileRoute(route.hub.index as any)({
 function HubContent() {
   const [isPending, startTransition] = useTransition()
   const parentRef = useRef(null)
-  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
+  const huggingfaceToken = useGeneralSetting(
+    (state: ReturnType<typeof useGeneralSetting.getState>) =>
+      state.huggingfaceToken
+  )
   const serviceHub = useServiceHub()
 
   const { t } = useTranslation()
@@ -95,7 +98,7 @@ function HubContent() {
   )
 
   const { sources, fetchSources, loading } = useModelSources(
-    useShallow((state) => ({
+    useShallow((state: ReturnType<typeof useModelSources.getState>) => ({
       sources: state.sources,
       fetchSources: state.fetchSources,
       loading: state.loading,
@@ -177,7 +180,7 @@ function HubContent() {
       filtered = filtered
         ?.map((model) => ({
           ...model,
-          quants: model.quants?.filter((variant) => {
+          quants: model.quants?.filter((variant: ModelQuant) => {
             // Check both direct match and with developer prefix (like DownloadButton does)
             const isLlamaCppDownloaded = useModelProvider
               .getState()
@@ -282,6 +285,7 @@ function HubContent() {
         ...prev,
         [model.model_name]: {
           status: 'loading',
+          estimated_tps: 0,
         },
       }))
 
@@ -299,6 +303,7 @@ function HubContent() {
             ...prev,
             [model.model_name]: {
               status: 'error',
+              estimated_tps: 0,
               reason:
                 error instanceof Error
                   ? error.message
@@ -333,7 +338,7 @@ function HubContent() {
             .convertHfRepoToCatalogModel(repoInfo)
           if (
             !sources.some(
-              (s) =>
+              (s: CatalogModel) =>
                 catalogModel.model_name.trim().split('/').pop() ===
                   s.model_name.trim() &&
                 catalogModel.developer?.trim() === s.developer?.trim()
@@ -617,7 +622,7 @@ function HubContent() {
                                   : (
                                       filteredModels[
                                         virtualItem.index
-                                      ].quants?.find((m) =>
+                                      ].quants?.find((m: ModelQuant) =>
                                         DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
                                           m.model_id.toLowerCase().includes(e)
                                         )
@@ -642,7 +647,7 @@ function HubContent() {
                                 variant={
                                   filteredModels[
                                     virtualItem.index
-                                  ].quants?.find((m) =>
+                                  ].quants?.find((m: ModelQuant) =>
                                     DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
                                       m.model_id.toLowerCase().includes(e)
                                     )
@@ -825,7 +830,7 @@ function HubContent() {
                             0) > 0 && (
                             <div className="mt-5">
                               {filteredModels[virtualItem.index].quants?.map(
-                                (variant) => (
+                                (variant: ModelQuant) => (
                                   <CardItem
                                     key={variant.model_id}
                                     title={
