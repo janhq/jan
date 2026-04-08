@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ModelFactory } from '../model-factory'
 import type { ProviderObject } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 
 // Mock the Tauri invoke function
 vi.mock('@tauri-apps/api/core', () => ({
@@ -54,6 +56,8 @@ vi.mock('@/hooks/useServiceHub', () => ({
 }))
 
 const mockedInvoke = vi.mocked(invoke)
+const mockedCreateGoogleGenerativeAI = vi.mocked(createGoogleGenerativeAI)
+const mockedCreateOpenAICompatible = vi.mocked(createOpenAICompatible)
 
 describe('ModelFactory', () => {
   beforeEach(() => {
@@ -92,7 +96,13 @@ describe('ModelFactory', () => {
 
       const model = await ModelFactory.createModel('gemini-pro', provider)
       expect(model).toBeDefined()
-      expect(model.type).toBe('openai-compatible')
+      expect(model.type).toBe('google')
+      expect(mockedCreateGoogleGenerativeAI).toHaveBeenCalledWith({
+        apiKey: 'test-api-key',
+        baseURL: 'https://generativelanguage.googleapis.com/v1',
+        headers: undefined,
+      })
+      expect(mockedCreateOpenAICompatible).not.toHaveBeenCalled()
     })
 
     it('should create a Google model for gemini provider', async () => {
@@ -107,7 +117,13 @@ describe('ModelFactory', () => {
 
       const model = await ModelFactory.createModel('gemini-pro', provider)
       expect(model).toBeDefined()
-      expect(model.type).toBe('openai-compatible')
+      expect(model.type).toBe('google')
+      expect(mockedCreateGoogleGenerativeAI).toHaveBeenCalledWith({
+        apiKey: 'test-api-key',
+        baseURL: 'https://generativelanguage.googleapis.com/v1',
+        headers: undefined,
+      })
+      expect(mockedCreateOpenAICompatible).not.toHaveBeenCalled()
     })
 
     it('should create an OpenAI-compatible model for openai provider', async () => {
