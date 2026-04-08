@@ -71,24 +71,7 @@ jobs:
         run: |
           set -euxo pipefail
           cargo fetch --manifest-path src-tauri/Cargo.toml
-          LIBSPA_RAW="$(ls -d ~/.cargo/registry/src/*/libspa-0.9.2/src/param/video/raw.rs | head -n 1)"
-          python3 - "$LIBSPA_RAW" <<'PY'
-          import pathlib
-          import sys
-
-          p = pathlib.Path(sys.argv[1])
-          s = p.read_text()
-          s = s.replace(
-              "    pub fn new() -> Self {\n        Self(spa_sys::spa_video_info_raw {\n            format: VideoFormat::Unknown.as_raw(),\n            flags: 0,\n            modifier: 0,\n            size: Rectangle {\n                width: 0,\n                height: 0,\n            },\n            framerate: Fraction { num: 0, denom: 0 },\n            max_framerate: Fraction { num: 0, denom: 0 },\n            views: 0,\n            interlace_mode: VideoInterlaceMode::Progressive.as_raw(),\n            pixel_aspect_ratio: Fraction { num: 0, denom: 0 },\n            multiview_mode: 0,\n            multiview_flags: 0,\n            chroma_site: 0,\n            color_range: 0,\n            color_matrix: 0,\n            transfer_function: 0,\n            color_primaries: 0,\n        })\n    }\n",
-              "    pub fn new() -> Self {\n        let mut s = Self(unsafe { std::mem::zeroed() });\n        s.set_format(VideoFormat::Unknown);\n        s\n    }\n",
-          )
-          s = s.replace("    pub fn set_flags(&mut self, flags: VideoFlags) {\n        self.0.flags = flags.bits();\n    }\n", "    pub fn set_flags(&mut self, _flags: VideoFlags) {\n    }\n")
-          s = s.replace("    pub fn flags(self) -> VideoFlags {\n        VideoFlags::from_bits_retain(self.0.flags)\n    }\n", "    pub fn flags(self) -> VideoFlags {\n        VideoFlags::from_bits_retain(0)\n    }\n")
-          s = s.replace("    pub fn set_modifier(&mut self, modifier: u64) {\n        self.0.modifier = modifier;\n    }\n", "    pub fn set_modifier(&mut self, modifier: u64) {\n        self.0.modifier = modifier as _;\n    }\n")
-          s = s.replace("    pub fn modifier(self) -> u64 {\n        self.0.modifier\n    }\n", "    pub fn modifier(self) -> u64 {\n        self.0.modifier as _\n    }\n")
-          p.write_text(s)
-          print(f"patched {p}")
-          PY
+          python3 scripts/patch-libspa.py
 
       - name: Update app version
         run: |

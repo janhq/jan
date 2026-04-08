@@ -31,6 +31,7 @@ dependencies = [
  "jan-utils",
  "libc",
  "libloading 0.8.9",
+ "libspa",
  "log",
  "nix",
  "once_cell",
