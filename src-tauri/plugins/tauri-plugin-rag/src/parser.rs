@@ -1,4 +1,4 @@
-use crate::RagError;
+use crate::{RagError, MAX_PDF_FILE_SIZE, MAX_SPREADSHEET_FILE_SIZE, MAX_CSV_FILE_SIZE, MAX_PPTX_FILE_SIZE, MAX_DOCX_FILE_SIZE};
 use std::borrow::Cow;
 use std::fs;
 use std::io::{Cursor, Read};
@@ -13,6 +13,10 @@ use quick_xml::Reader;
 use zip::read::ZipArchive;
 
 pub fn parse_pdf(file_path: &str) -> Result<String, RagError> {
+    let metadata = fs::metadata(file_path)?;
+    if metadata.len() > MAX_PDF_FILE_SIZE {
+        return Err(RagError::ParseError("File too large (max 20MB)".to_string()));
+    }
     let bytes = fs::read(file_path)?;
     // pdf-extract can panic on some malformed PDFs; guard to avoid crashing the app
     let text = match catch_unwind(AssertUnwindSafe(|| pdf_extract::extract_text_from_mem(&bytes))) {
@@ -67,22 +71,26 @@ pub fn parse_document(file_path: &str, file_type: &str) -> Result<String, RagErr
         // Systems languages
         | "rs" | "go" | "swift" | "zig"
         // JVM languages
-        | "java" | "kt" | "kts" | "scala" | "groovy"
+        | "java" | "kt" | "kts" | "scala" | "groovy" | "clj" | "cljs" | "hs" | "lhs" | "ml" | "mli" | "f" | "f77" | "f90" | "f95" | "f03" | "f08"
         // Scripting languages
-        | "rb" | "php" | "lua" | "pl" | "pm" | "r" | "jl"
+        | "rb" | "php" | "lua" | "pl" | "pm" | "r" | "jl" | "vbs" | "asm" | "s" | "m" | "mm" | "pas" | "pp" | "erl" | "hrl" | "ex" | "exs"
         // .NET
-        | "cs" | "fs" | "vb"
+        | "cs" | "fs" | "vb" | "xaml" | "csproj" | "sln"
+        // CUDA
+        | "cu" | "cuh"
+        // Shaders
+        | "hlsl" | "glsl" | "cg" | "shader"
         // Shell
-        | "sh" | "bash" | "zsh" | "fish" | "ps1" | "psm1"
+        | "sh" | "bash" | "zsh" | "fish" | "ps1" | "psm1" | "bat" | "cmd"
         // Web
-        | "css" | "scss" | "sass" | "less" | "vue" | "svelte" | "astro"
+        | "css" | "scss" | "sass" | "less" | "vue" | "svelte" | "astro" | "asp" | "aspx" | "jsp"
         // Data / config formats
         | "json" | "jsonc" | "yaml" | "yml" | "toml" | "xml" | "ini"
-        | "cfg" | "conf" | "config" | "env" | "properties"
+        | "cfg" | "conf" | "config" | "env" | "properties" | "lock"
         // Query / markup
-        | "sql" | "graphql" | "gql" | "tex" | "rst" | "adoc"
+        | "sql" | "graphql" | "gql" | "tex" | "rst" | "adoc" | "textile"
         // Misc text
-        | "log" | "diff" | "patch" | "gitignore" | "dockerfile" | "makefile" => parse_text(file_path),
+        | "log" | "diff" | "patch" | "gitignore" | "dockerfile" | "makefile" | "cmake" => parse_text(file_path),
         "csv" | "text/csv" => parse_csv(file_path),
         // Excel family via calamine
         "xlsx"
@@ -121,6 +129,10 @@ pub fn parse_document(file_path: &str, file_type: &str) -> Result<String, RagErr
 }
 
 fn parse_docx(file_path: &str) -> Result<String, RagError> {
+    let metadata = std::fs::metadata(file_path)?;
+    if metadata.len() > MAX_DOCX_FILE_SIZE {
+        return Err(RagError::ParseError("File too large (max 20MB)".to_string()));
+    }
     let file = std::fs::File::open(file_path)?;
     let mut zip = ZipArchive::new(file).map_err(|e| RagError::ParseError(e.to_string()))?;
 
@@ -191,6 +203,10 @@ fn parse_docx(file_path: &str) -> Result<String, RagError> {
 }
 
 fn parse_csv(file_path: &str) -> Result<String, RagError> {
+    let metadata = fs::metadata(file_path)?;
+    if metadata.len() > MAX_CSV_FILE_SIZE {
+        return Err(RagError::ParseError("File too large (max 20MB)".to_string()));
+    }
     let mut rdr = csv_crate::ReaderBuilder::new()
         .has_headers(false)
         .flexible(true)
@@ -206,6 +222,10 @@ fn parse_csv(file_path: &str) -> Result<String, RagError> {
 }
 
 fn parse_spreadsheet(file_path: &str) -> Result<String, RagError> {
+    let metadata = fs::metadata(file_path)?;
+    if metadata.len() > MAX_SPREADSHEET_FILE_SIZE {
+        return Err(RagError::ParseError("File too large (max 20MB)".to_string()));
+    }
     let mut workbook = open_workbook_auto(file_path)
         .map_err(|e| RagError::ParseError(e.to_string()))?;
     let mut out = String::new();
@@ -236,6 +256,10 @@ fn parse_spreadsheet(file_path: &str) -> Result<String, RagError> {
 }
 
 fn parse_pptx(file_path: &str) -> Result<String, RagError> {
+    let metadata = std::fs::metadata(file_path)?;
+    if metadata.len() > MAX_PPTX_FILE_SIZE {
+        return Err(RagError::ParseError("File too large (max 20MB)".to_string()));
+    }
     let file = std::fs::File::open(file_path)?;
     let mut zip = ZipArchive::new(file).map_err(|e| RagError::ParseError(e.to_string()))?;
 
@@ -310,6 +334,10 @@ fn parse_html(file_path: &str) -> Result<String, RagError> {
 }
 
 fn read_text_auto(file_path: &str) -> Result<String, RagError> {
+    let metadata = fs::metadata(file_path)?;
+    if metadata.len() > 50 * 1024 * 1024 {
+        return Err(RagError::ParseError("File too large (max 50MB)".to_string()));
+    }
     let bytes = fs::read(file_path)?;
     // Detect encoding
     let mut detector = EncodingDetector::new();

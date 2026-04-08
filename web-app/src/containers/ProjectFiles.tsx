@@ -98,12 +98,45 @@ const SUPPORTED_EXTENSIONS = [
   'cs',
   'fs',
   'vb',
-  // Shell
+  'xaml',
+  'csproj',
+  'sln',
+  // CUDA
+  'cu',
+  'cuh',
+  // Shaders
+  'hlsl',
+  'glsl',
+  'cg',
+  'shader',
+  // Shell / Scripting
   'sh',
   'bash',
   'zsh',
   'fish',
   'ps1',
+  'bat',
+  'cmd',
+  'vbs',
+  // More languages
+  'asm',
+  's',
+  'm',
+  'mm',
+  'pas',
+  'pp',
+  'erl',
+  'hrl',
+  'ex',
+  'exs',
+  'clj',
+  'cljs',
+  'hs',
+  'lhs',
+  'ml',
+  'mli',
+  'f',
+  'f90',
   // Web
   'css',
   'scss',
@@ -112,6 +145,10 @@ const SUPPORTED_EXTENSIONS = [
   'vue',
   'svelte',
   'astro',
+  'php',
+  'asp',
+  'aspx',
+  'jsp',
   // Data / config formats
   'json',
   'jsonc',
@@ -123,16 +160,24 @@ const SUPPORTED_EXTENSIONS = [
   'cfg',
   'conf',
   'env',
+  'properties',
+  'dockerfile',
+  'makefile',
+  'cmake',
+  'lock',
   // Query / markup
   'sql',
   'graphql',
   'gql',
   'tex',
   'rst',
+  'adoc',
+  'textile',
   // Misc text
   'log',
   'diff',
   'patch',
+  'gitignore',
 ]
 
 async function getFilesFromPaths(paths: string[]): Promise<string[]> {
@@ -237,10 +282,11 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         // Filter unsupported file types
         if (!fileType || !SUPPORTED_EXTENSIONS.includes(fileType)) {
           toast.warning(
-            t('common:toast.unsupportedFileType.title') ??
-              'Unsupported file type',
+            t('common:toast.unsupportedFileType.title'),
             {
-              description: name,
+              description: t('common:toast.unsupportedFileType.description', {
+                extension: fileType || 'unknown',
+              }),
             }
           )
           continue

@@ -58,6 +58,16 @@
     "title": "Laufzeiteinstellungen",
     "description": "Konfiguriere, wie Jan MCP-Server verwaltet und erneut versucht.",
     "toolCallTimeout": "Zeitlimit für Tool-Aufruf (Sekunden)",
-    "toolCallTimeoutDesc": "Maximale Wartezeit auf eine Antwort eines MCP-Tools, bevor abgebrochen wird."
+    "toolCallTimeoutDesc": "Maximale Wartezeit auf eine Antwort eines MCP-Tools, bevor abgebrochen wird.",
+    "smartToolRouting": "Intelligente MCP-Tool-Weiterleitung",
+    "smartToolRoutingDesc": "Wenn aktiviert, wählt Jan vor dem Laden der Tools relevante MCP-Server aus. Deaktivieren, um immer die vollständige MCP-Toolliste zu laden.",
+    "useLightweightRouterModel": "Dediziertes Modell für die Weiterleitung verwenden",
+    "useLightweightRouterModelDesc": "Bei aktivierter intelligenter Weiterleitung wird die Weiterleitung mit einem separaten (oft kleineren) Modell statt dem Chat-Modell ausgeführt. Deaktivieren, um immer das aktive Chat-Modell für die Weiterleitung zu nutzen.",
+    "routerModel": "Weiterleitungsmodell",
+    "routerModelDesc": "Anbieter und Modell an einem Ort wählen. Es werden nur leichtgewichtige Modelle aufgelistet, damit die Weiterleitung schnell und günstig bleibt.",
+    "selectRouterModelPlaceholder": "Weiterleitungsmodell auswählen…",
+    "routerModelSearchPlaceholder": "Modelle durchsuchen…",
+    "routerModelEmptyList": "Keine leichtgewichtigen Modelle verfügbar. Fügen Sie ein kleineres Modell hinzu oder konfigurieren Sie API-Schlüssel unter Modelle.",
+    "routerModelEmptySearch": "Keine Treffer für „{{query}}“."
   }
 }

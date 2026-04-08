@@ -43,7 +43,12 @@ describe('MCPOrchestrator LLM routing', () => {
   })
 
   it('uses LLM server list when the model returns non-empty selection', async () => {
-    vi.mocked(mcpRouterLlm.selectServersWithLlm).mockResolvedValue(['email', 'calendar'])
+    vi.mocked(mcpRouterLlm.selectServersWithLlm).mockResolvedValue({
+      names: ['email', 'calendar'],
+      durationMs: 2,
+      errorKind: 'none',
+      emptyValidatedSelection: false,
+    })
 
     const mockTools = [{ name: 'send', description: '', inputSchema: {}, server: 'email' }]
     const service = makeService({
@@ -63,7 +68,12 @@ describe('MCPOrchestrator LLM routing', () => {
   })
 
   it('falls back to keyword routing when LLM returns empty', async () => {
-    vi.mocked(mcpRouterLlm.selectServersWithLlm).mockResolvedValue([])
+    vi.mocked(mcpRouterLlm.selectServersWithLlm).mockResolvedValue({
+      names: [],
+      durationMs: 1,
+      errorKind: 'none',
+      emptyValidatedSelection: false,
+    })
 
     const service = makeService({
       getServerSummaries: vi.fn().mockResolvedValue(manySummaries),

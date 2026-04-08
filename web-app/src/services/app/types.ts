@@ -9,8 +9,13 @@ export interface LogEntry {
   message: string
 }
 
+export interface FactoryResetOptions {
+  keepAppData: boolean
+  keepModelsAndConfigs: boolean
+}
+
 export interface AppService {
-  factoryReset(): Promise<void>
+  factoryReset(options?: FactoryResetOptions): Promise<void>
   readLogs(): Promise<LogEntry[]>
   parseLogLine(line: string): LogEntry
   getJanDataFolder(): Promise<string | undefined>
