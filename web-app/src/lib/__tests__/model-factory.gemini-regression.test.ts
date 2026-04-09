@@ -66,6 +66,7 @@ describe('ModelFactory Gemini regression', () => {
       apiKey: 'test-api-key',
       baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai',
       headers: undefined,
+      fetch: expect.any(Function),
     })
     expect(mockedCreateOpenAICompatible).not.toHaveBeenCalled()
   })

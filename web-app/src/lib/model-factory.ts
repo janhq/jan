@@ -333,7 +333,7 @@ export class ModelFactory {
         return this.createOpenAIModel(modelId, provider, parameters)
       case 'google':
       case 'gemini':
-        return this.createGoogleModel(modelId, provider)
+        return this.createGoogleModel(modelId, provider, parameters)
       case 'azure':
       case 'groq':
       case 'together':
@@ -622,7 +622,8 @@ export class ModelFactory {
    */
   private static createGoogleModel(
     modelId: string,
-    provider: ProviderObject
+    provider: ProviderObject,
+    parameters: Record<string, unknown> = {}
   ): LanguageModel {
     const headers: Record<string, string> = {}
 
@@ -634,10 +635,21 @@ export class ModelFactory {
     }
 
     const keyChain = providerRemoteApiKeyChain(provider)
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            parameters,
+            'x-api-key'
+          )
+        : createCustomFetch(getRuntimeFetch(), parameters)
+
     const google = createGoogleGenerativeAI({
       apiKey: keyChain[0] ?? provider.api_key ?? '',
       baseURL: provider.base_url,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
+      fetch: fetchImpl,
     })
 
     return google(modelId)

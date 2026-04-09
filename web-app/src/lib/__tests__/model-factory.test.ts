@@ -5,6 +5,8 @@ import { invoke } from '@tauri-apps/api/core'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 
+const mockGlobalFetch = vi.fn()
+
 // Mock the Tauri invoke function
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -63,6 +65,8 @@ describe('ModelFactory', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockStartModel.mockResolvedValue(undefined)
+    mockGlobalFetch.mockResolvedValue(new Response('{}'))
+    vi.stubGlobal('fetch', mockGlobalFetch)
   })
 
   describe('createModel', () => {
@@ -101,6 +105,7 @@ describe('ModelFactory', () => {
         apiKey: 'test-api-key',
         baseURL: 'https://generativelanguage.googleapis.com/v1',
         headers: undefined,
+        fetch: expect.any(Function),
       })
       expect(mockedCreateOpenAICompatible).not.toHaveBeenCalled()
     })
@@ -122,8 +127,46 @@ describe('ModelFactory', () => {
         apiKey: 'test-api-key',
         baseURL: 'https://generativelanguage.googleapis.com/v1',
         headers: undefined,
+        fetch: expect.any(Function),
       })
       expect(mockedCreateOpenAICompatible).not.toHaveBeenCalled()
+    })
+
+    it('should forward Gemini parameters through the injected fetch', async () => {
+      const provider: ProviderObject = {
+        provider: 'gemini',
+        api_key: 'test-api-key',
+        base_url: 'https://generativelanguage.googleapis.com/v1',
+        models: [],
+        settings: [],
+        active: true,
+      }
+
+      await ModelFactory.createModel('gemini-pro', provider, {
+        temperature: 0.2,
+        max_output_tokens: 256,
+        ctx_len: 4096,
+      })
+
+      const googleConfig = mockedCreateGoogleGenerativeAI.mock.calls[0]?.[0]
+      expect(googleConfig).toBeDefined()
+      expect(googleConfig?.fetch).toEqual(expect.any(Function))
+
+      await googleConfig!.fetch!(
+        'https://example.com/v1/chat/completions',
+        {
+          method: 'POST',
+          body: JSON.stringify({ prompt: 'hello' }),
+        }
+      )
+
+      expect(mockGlobalFetch).toHaveBeenCalledTimes(1)
+      const [, requestInit] = mockGlobalFetch.mock.calls[0]!
+      expect(JSON.parse(String(requestInit?.body))).toEqual({
+        prompt: 'hello',
+        temperature: 0.2,
+        max_tokens: 256,
+      })
     })
 
     it('should create an OpenAI-compatible model for openai provider', async () => {
