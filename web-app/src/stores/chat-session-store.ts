@@ -4,6 +4,8 @@ import type { Chat, UIMessage } from "@ai-sdk/react";
 import type { ChatStatus } from "ai";
 import { CustomChatTransport } from "@/lib/custom-chat-transport";
 import { useMessageQueue } from "@/stores/message-queue-store";
+import { hapticFeedback } from "@/lib/haptic";
+import { useInterfaceSettings } from "@/hooks/useInterfaceSettings";
 // import { showChatCompletionToast } from "@/components/toasts/chat-completion-toast";
 
 export type SessionData = {
@@ -131,6 +133,8 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
     return standaloneData[sessionId];
   },
   updateStatus: (sessionId, status) => {
+    const wasPreviouslyStreaming = get().sessions[sessionId]?.isStreaming ?? false;
+
     set((state) => {
       const existing = state.sessions[sessionId];
       if (!existing) {
@@ -173,6 +177,16 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
         },
       };
     });
+
+    if (wasPreviouslyStreaming && status === 'ready') {
+      const updated = get().sessions[sessionId];
+      if (updated && updated.chat.messages.length > 0 && updated.data.tools.length === 0) {
+        const { playSoundOnComplete } = useInterfaceSettings.getState()
+        if (playSoundOnComplete) {
+          hapticFeedback('double')
+        }
+      }
+    }
   },
   setSessionTitle: (sessionId, title) => {
     if (!title) return;

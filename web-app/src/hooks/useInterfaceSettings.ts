@@ -109,9 +109,11 @@ interface InterfaceSettingsState {
   fontSize: FontSize
   accentColor: AccentColorValue
   notificationPosition: NotificationPosition
+  playSoundOnComplete: boolean
   setFontSize: (size: FontSize) => void
   setAccentColor: (color: AccentColorValue) => void
   setNotificationPosition: (position: NotificationPosition) => void
+  setPlaySoundOnComplete: (enabled: boolean) => void
   resetInterface: () => void
 }
 
@@ -121,6 +123,7 @@ type InterfaceSettingsPersistedSlice = Omit<
   | 'setFontSize'
   | 'setAccentColor'
   | 'setNotificationPosition'
+  | 'setPlaySoundOnComplete'
 >
 
 export const fontSizeOptions = [
@@ -138,6 +141,7 @@ const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
     fontSize: defaultFontSize,
     accentColor: DEFAULT_ACCENT_COLOR,
     notificationPosition: getDefaultNotificationPosition(),
+    playSoundOnComplete: false,
   }
 }
 
@@ -173,6 +177,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
             fontSize: defaultFontSize,
             accentColor: DEFAULT_ACCENT_COLOR,
             notificationPosition: getDefaultNotificationPosition(),
+            playSoundOnComplete: false,
           })
         },
 
@@ -196,6 +201,10 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
           if (!isNotificationPosition(position)) return
           set({ notificationPosition: position })
         },
+
+        setPlaySoundOnComplete: (enabled: boolean) => {
+          set({ playSoundOnComplete: enabled })
+        },
       }
     },
     {
@@ -205,6 +214,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
         fontSize: state.fontSize,
         accentColor: state.accentColor,
         notificationPosition: state.notificationPosition,
+        playSoundOnComplete: state.playSoundOnComplete,
       }),
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {

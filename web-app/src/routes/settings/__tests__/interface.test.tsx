@@ -50,6 +50,8 @@ vi.mock('@/containers/NotificationPositionSwitcher', () => ({
 vi.mock('@/hooks/useInterfaceSettings', () => ({
   useInterfaceSettings: () => ({
     resetInterface: vi.fn(),
+    playSoundOnComplete: false,
+    setPlaySoundOnComplete: vi.fn(),
   }),
 }))
 
@@ -57,6 +59,12 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
   }),
+}))
+
+vi.mock('@/components/ui/switch', () => ({
+  Switch: ({ checked, onCheckedChange, ...props }: { checked?: boolean; onCheckedChange?: (v: boolean) => void; [key: string]: any }) => (
+    <button data-testid="switch" role="switch" aria-checked={checked} onClick={() => onCheckedChange?.(!checked)} {...props} />
+  ),
 }))
 
 vi.mock('@/components/ui/button', () => ({
@@ -171,6 +179,15 @@ describe('Interface Settings Route', () => {
     )
 
     expect(responsiveItems.length).toBeGreaterThan(0)
+  })
+
+  it('should render play sound on complete switch', () => {
+    const Component = InterfaceRoute.component as React.ComponentType
+    render(<Component />)
+
+    const switchEl = screen.getByTestId('switch')
+    expect(switchEl).toBeInTheDocument()
+    expect(switchEl).toHaveAttribute('aria-checked', 'false')
   })
 
   it('should render main layout structure', () => {
