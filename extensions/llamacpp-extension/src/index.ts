@@ -54,6 +54,7 @@ import {
   DeviceList,
   SystemMemory,
   mapOldBackendToNew,
+  normalizeUpstreamBackend,
   findLatestVersionForBackend,
   prioritizeBackends,
   checkBackendForUpdates,
@@ -1140,7 +1141,7 @@ export default class llamacpp_extension extends AIEngine {
     // Normalize upstream naming (e.g. "ubuntu-rocm-7.2-x64") to Jan
     // conventions (e.g. "linux-hip-x64") so the folder name matches what
     // the backend discovery and dropdown logic expects.
-    const backendIdentifier = await mapOldBackendToNew(rawBackend)
+    const backendIdentifier = await normalizeUpstreamBackend(rawBackend)
 
     logger.info(
       `Detected prefix: ${prefix || 'none'}, version: ${version}, backend: ${rawBackend} -> ${backendIdentifier}`

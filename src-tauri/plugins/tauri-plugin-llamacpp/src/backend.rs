@@ -3,24 +3,31 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+/// Normalizes upstream ggml-org/llama.cpp backend naming to Jan conventions.
+///
+/// Upstream uses names like "ubuntu-rocm-7.2-x64" or "win-hip-x64".
+/// Jan expects "linux-hip-x64" / "win-hip-x64".
+/// Non-HIP names are returned unchanged.
 #[tauri::command]
-pub fn map_old_backend_to_new(old_backend: String) -> String {
-    // Upstream ggml-org/llama.cpp uses "ubuntu-rocm-<ver>-x64" for Linux HIP
-    // and "win-hip-x64" for Windows HIP. Normalise them to Jan conventions.
-    if old_backend.contains("rocm") || old_backend.contains("hip") {
-        let arch = if old_backend.contains("arm64") {
+pub fn normalize_upstream_backend(backend: String) -> String {
+    if backend.contains("rocm") || backend.contains("hip") {
+        let arch = if backend.contains("arm64") {
             "arm64"
         } else {
             "x64"
         };
-        if old_backend.starts_with("ubuntu") || old_backend.starts_with("linux") {
+        if backend.starts_with("ubuntu") || backend.starts_with("linux") {
             return format!("linux-hip-{}", arch);
         }
-        if old_backend.starts_with("win") {
+        if backend.starts_with("win") {
             return format!("win-hip-{}", arch);
         }
     }
+    backend
+}
 
+#[tauri::command]
+pub fn map_old_backend_to_new(old_backend: String) -> String {
     let is_windows = old_backend.starts_with("win-");
     let is_linux = old_backend.starts_with("linux-");
     let os_prefix = if is_windows {
@@ -150,7 +157,7 @@ pub async fn get_local_installed_backends(
                 // Normalize upstream naming (e.g. "ubuntu-rocm-7.2-x64") to
                 // Jan conventions (e.g. "linux-hip-x64") so the merge/display
                 // logic can match local installs against supported backend names.
-                let normalized = map_old_backend_to_new(backend_name);
+                let normalized = normalize_upstream_backend(backend_name);
                 local.push(InstalledBackend {
                     version: version_name.clone(),
                     backend: normalized,
@@ -974,24 +981,29 @@ mod tests {
     }
 
     #[test]
-    fn test_map_old_backend_to_new_hip() {
+    fn test_normalize_upstream_backend_hip() {
         // Jan-native HIP names pass through
         assert_eq!(
-            map_old_backend_to_new("linux-hip-x64".to_string()),
+            normalize_upstream_backend("linux-hip-x64".to_string()),
             "linux-hip-x64"
         );
         assert_eq!(
-            map_old_backend_to_new("win-hip-x64".to_string()),
+            normalize_upstream_backend("win-hip-x64".to_string()),
             "win-hip-x64"
         );
         // Upstream ggml-org naming ("ubuntu-rocm-7.2-x64") maps to Jan convention
         assert_eq!(
-            map_old_backend_to_new("ubuntu-rocm-7.2-x64".to_string()),
+            normalize_upstream_backend("ubuntu-rocm-7.2-x64".to_string()),
             "linux-hip-x64"
         );
         assert_eq!(
-            map_old_backend_to_new("ubuntu-rocm-6.2-x64".to_string()),
+            normalize_upstream_backend("ubuntu-rocm-6.2-x64".to_string()),
             "linux-hip-x64"
+        );
+        // Non-HIP names pass through unchanged
+        assert_eq!(
+            normalize_upstream_backend("linux-cuda-12-common_cpus-x64".to_string()),
+            "linux-cuda-12-common_cpus-x64"
         );
     }
 

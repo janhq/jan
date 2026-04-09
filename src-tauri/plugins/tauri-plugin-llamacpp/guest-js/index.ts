@@ -209,6 +209,14 @@ export async function cleanupLlamaProcesses(): Promise<void> {
 
 // backend functions
 
+/**
+ * Normalizes upstream ggml-org/llama.cpp backend naming to Jan conventions.
+ * e.g. "ubuntu-rocm-7.2-x64" → "linux-hip-x64". Non-HIP names pass through.
+ */
+export async function normalizeUpstreamBackend(backend: string): Promise<string> {
+  return await invoke<string>('plugin:llamacpp|normalize_upstream_backend', { backend })
+}
+
 /*
  * Helper function to map an old backend type string to its new, common equivalent.
  * This is used for migrating stored user preferences.
