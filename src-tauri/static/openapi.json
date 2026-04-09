@@ -114,6 +114,76 @@
         }
       }
     },
+    "/models/available": {
+      "get": {
+        "summary": "List all downloaded models",
+        "description": "Returns all models that are downloaded on disk (both llamacpp and MLX engines), along with their current status (running or available). Unlike `GET /models` which only shows currently loaded models, this endpoint shows everything that could potentially be loaded.",
+        "operationId": "listAvailableModels",
+        "tags": ["Models"],
+        "responses": {
+          "200": {
+            "description": "A list of all downloaded models",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListAvailableModelsResponseDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/models/unload": {
+      "post": {
+        "summary": "Unload a running model",
+        "description": "Stops and unloads a currently running model by its model ID. Works for both llamacpp and MLX models. The model process is terminated and resources are freed.",
+        "operationId": "unloadModel",
+        "tags": ["Models"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "description": "The model ID to unload (as shown in GET /models)."
+                  }
+                },
+                "required": ["model"]
+              },
+              "example": {
+                "model": "janhq/Jan-code-4b-gguf"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Model unloaded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnloadModelResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Model is not currently loaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnloadModelResponseDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/orchestrations": {
       "post": {
         "summary": "Run headless assistant orchestration with tool execution",
@@ -286,6 +356,84 @@
           "cover",
           "engine"
         ]
+      },
+      "AvailableModelDto": {
+        "type": "object",
+        "description": "A downloaded model entry from `/v1/models/available`.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique model identifier (relative path under the engine's models directory)."
+          },
+          "object": {
+            "type": "string",
+            "enum": ["model"]
+          },
+          "engine": {
+            "type": "string",
+            "enum": ["llamacpp", "mlx"],
+            "description": "The inference engine this model belongs to."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["running", "available"],
+            "description": "Whether the model is currently loaded and running."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable model name."
+          },
+          "size_bytes": {
+            "type": "integer",
+            "description": "Size of the model file in bytes."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Model capabilities (e.g., chat, code, embedding)."
+          }
+        },
+        "required": ["id", "object", "engine", "status"]
+      },
+      "ListAvailableModelsResponseDto": {
+        "type": "object",
+        "description": "Response for `GET /v1/models/available`.",
+        "properties": {
+          "object": {
+            "type": "string",
+            "enum": ["list"]
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AvailableModelDto"
+            }
+          }
+        },
+        "required": ["object", "data"]
+      },
+      "UnloadModelResponseDto": {
+        "type": "object",
+        "description": "Response for `POST /v1/models/unload`.",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the unload operation succeeded."
+          },
+          "model": {
+            "type": "string",
+            "description": "The model ID that was requested to be unloaded."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable status message (present on success)."
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message (present on failure)."
+          }
+        },
+        "required": ["success", "model"]
       },
       "ListModelsResponseDto": {
         "type": "object",
