@@ -240,6 +240,19 @@ jobs:
       - name: Build app
         shell: bash
         run: |
+          if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ] && [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" ]; then
+            export TAURI_SIGNING_PRIVATE_KEY="${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
+            export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}"
+          fi
+          if [ -n "${{ secrets.JAN_SIGNING_KEY }}" ]; then
+            export JAN_SIGNING_KEY="${{ secrets.JAN_SIGNING_KEY }}"
+          fi
+          if [ -n "${{ secrets.POSTHOG_KEY }}" ]; then
+            export POSTHOG_KEY="${{ secrets.POSTHOG_KEY }}"
+          fi
+          if [ -n "${{ secrets.POSTHOG_HOST }}" ]; then
+            export POSTHOG_HOST="${{ secrets.POSTHOG_HOST }}"
+          fi
           make build
         env:
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
@@ -252,11 +265,6 @@ jobs:
           AWS_DEFAULT_REGION: auto
           AWS_EC2_METADATA_DISABLED: 'true'
           AWS_MAX_ATTEMPTS: '5'
-          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
-          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
 
       - name: Upload NSIS Installer Artifact
         uses: actions/upload-artifact@v4
