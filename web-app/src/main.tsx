@@ -15,9 +15,12 @@ migrateAllLocalStorageKeys()
 
 // Mobile-specific viewport and styling setup
 const setupMobileViewport = () => {
-  // Check if running on mobile platform (iOS/Android via Tauri)
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
-                   window.matchMedia('(max-width: 768px)').matches
+  const isMobileUa = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+  const isNarrowWeb = window.matchMedia('(max-width: 768px)').matches
+  // Tauri auxiliary webviews (e.g. Quick capture ~340px wide) match "narrow" but must not
+  // get input { font-size: 16px !important }, which overrides all Tailwind text-* on inputs.
+  const isMobile =
+    isMobileUa || (!IS_TAURI && isNarrowWeb)
 
   if (isMobile) {
     // Update viewport meta tag to disable zoom

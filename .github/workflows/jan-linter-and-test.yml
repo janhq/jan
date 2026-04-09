@@ -204,6 +204,7 @@ jobs:
         env:
           NODE_OPTIONS: '--max-old-space-size=2048'
 
+  # libclang-dev: libspa-sys build.rs uses bindgen and needs libclang.so at compile time.
   test-on-ubuntu:
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || 'ubuntu-latest' }}
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -232,7 +233,8 @@ jobs:
       - name: Install Tauri dependencies
         run: |
           sudo apt update
-          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 webkit2gtk-driver
+          # libspa-sys build.rs runs bindgen and requires libclang.so at compile time.
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 webkit2gtk-driver libpipewire-0.3-dev libgbm-dev clang libclang-dev
 
       - name: 'Cleanup cache'
         continue-on-error: true
@@ -246,6 +248,13 @@ jobs:
           corepack prepare yarn@4.5.3 --activate
           yarn --version
           yarn config set -H enableImmutableInstalls false
+
+      - name: Patch libspa 0.9.2 for newer PipeWire headers
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo fetch --manifest-path src-tauri/Cargo.toml
+          python3 scripts/patch-libspa.py
 
       - name: Linter and test
         run: |

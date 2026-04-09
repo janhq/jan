@@ -93,6 +93,7 @@ import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { AssistantsMenu } from '@/components/AssistantsMenu'
+import { SCREEN_CAPTURE_COMMIT_EVENT } from '@/constants/screenCapture'
 
 type ChatInputProps = {
   className?: string
@@ -541,6 +542,35 @@ const ChatInput = memo(function ChatInput({
       clearAttachmentsForThread(attachmentsKey)
     }
   }
+
+  const handleSendMessageRef = useRef(handleSendMessage)
+  handleSendMessageRef.current = handleSendMessage
+
+  useEffect(() => {
+    const onScreenCaptureCommit = (e: Event) => {
+      const ce = e as CustomEvent<{ text: string; sendNow?: boolean }>
+      const detail = ce.detail
+      if (detail == null) return
+      setPrompt(detail.text)
+      if (detail.sendNow) {
+        queueMicrotask(() => {
+          void handleSendMessageRef.current(detail.text)
+        })
+      } else {
+        queueMicrotask(() => textareaRef.current?.focus())
+      }
+    }
+    window.addEventListener(
+      SCREEN_CAPTURE_COMMIT_EVENT,
+      onScreenCaptureCommit as EventListener
+    )
+    return () => {
+      window.removeEventListener(
+        SCREEN_CAPTURE_COMMIT_EVENT,
+        onScreenCaptureCommit as EventListener
+      )
+    }
+  }, [setPrompt])
 
   useEffect(() => {
     const handleFocusIn = () => {

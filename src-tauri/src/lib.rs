@@ -62,7 +62,9 @@ pub fn run() {
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        app_builder = app_builder.plugin(tauri_plugin_hardware::init());
+        app_builder = app_builder
+            .plugin(tauri_plugin_hardware::init())
+            .plugin(tauri_plugin_global_shortcut::Builder::new().build());
     }
 
     // Desktop: include updater commands
@@ -145,6 +147,12 @@ pub fn run() {
         // Download
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
+        core::screen_capture::commands::capture_primary_display_png_base64,
+        core::screen_capture::commands::capture_screen_rect_png_base64,
+        core::screen_capture::commands::list_screen_capture_windows,
+        core::screen_capture::commands::capture_window_png_base64,
+        core::screen_capture::commands::publish_screen_capture_png,
+        core::screen_capture::commands::validate_global_shortcut,
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
