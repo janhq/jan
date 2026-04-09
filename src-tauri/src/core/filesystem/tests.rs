@@ -1,7 +1,9 @@
 use super::commands::*;
+use super::helpers::resolve_path_within_jan_data_folder;
 use crate::core::app::commands::get_jan_data_folder_path;
 use std::fs::{self, File};
 use std::io::Write;
+use std::path::PathBuf;
 use tauri::test::mock_app;
 
 #[test]
@@ -87,4 +89,94 @@ fn test_readdir_sync() {
     assert_eq!(result.len(), 2);
 
     let _ = fs::remove_dir_all(dir_path);
+}
+
+#[cfg(unix)]
+#[test]
+fn test_resolve_jan_scoped_path_allows_canonicalized_home_symlink_target() {
+    use std::os::unix::fs::symlink;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let base_dir = std::env::temp_dir().join(format!("jan-path-scope-{unique}"));
+    let configured_root = base_dir.join("home").join("user").join("jan-data");
+    let canonical_root = base_dir
+        .join("var")
+        .join("home")
+        .join("user")
+        .join("jan-data");
+    fs::create_dir_all(&canonical_root).unwrap();
+    fs::create_dir_all(configured_root.parent().unwrap()).unwrap();
+    symlink(&canonical_root, &configured_root).unwrap();
+
+    let candidate = canonical_root.join("llamacpp/backends/v1/backend.tar.gz");
+    let (_, resolved_path) =
+        resolve_path_within_jan_data_folder(&configured_root, candidate.to_string_lossy().as_ref())
+            .unwrap();
+
+    assert_eq!(resolved_path, candidate);
+
+    let _ = fs::remove_dir_all(&base_dir);
+}
+
+#[test]
+fn test_resolve_jan_scoped_path_accepts_relative_path_inside_root() {
+    let jan_data_folder = unique_test_dir("relative");
+    fs::create_dir_all(&jan_data_folder).unwrap();
+
+    let (_, resolved_path) = resolve_path_within_jan_data_folder(
+        &jan_data_folder,
+        "llamacpp/backends/v1/backend.tar.gz",
+    )
+    .unwrap();
+
+    assert_eq!(
+        resolved_path,
+        jan_data_folder
+            .join("llamacpp/backends/v1/backend.tar.gz")
+            .to_path_buf()
+    );
+
+    let _ = fs::remove_dir_all(&jan_data_folder);
+}
+
+#[test]
+fn test_resolve_jan_scoped_path_rejects_escape_outside_data_folder() {
+    let jan_data_folder = unique_test_dir("escape");
+    fs::create_dir_all(&jan_data_folder).unwrap();
+
+    let result = resolve_path_within_jan_data_folder(&jan_data_folder, "../outside.txt");
+    assert!(result.is_err());
+
+    let _ = fs::remove_dir_all(&jan_data_folder);
+}
+
+#[test]
+fn test_resolve_jan_scoped_path_rejects_absolute_path_outside_root() {
+    let jan_data_folder = unique_test_dir("absolute-inside");
+    let outside_path = unique_test_dir("absolute-outside").join("file.txt");
+    fs::create_dir_all(&jan_data_folder).unwrap();
+    fs::create_dir_all(outside_path.parent().unwrap()).unwrap();
+
+    let result = resolve_path_within_jan_data_folder(
+        &jan_data_folder,
+        outside_path.to_string_lossy().as_ref(),
+    );
+    assert!(result.is_err());
+
+    let _ = fs::remove_dir_all(&jan_data_folder);
+    let _ = fs::remove_dir_all(outside_path.parent().unwrap());
+}
+
+fn unique_test_dir(label: &str) -> PathBuf {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!("jan-filesystem-{label}-{unique}"))
 }
