@@ -11,7 +11,7 @@ import { CatalogModel } from '@/services/models/types'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useShallow } from 'zustand/shallow'
-import { PREFERRED_DOWNLOAD_QUANTIZATIONS } from '@/constants/models'
+import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 
 type ModelProps = {
   model: CatalogModel
@@ -40,7 +40,7 @@ export function DownloadButtonPlaceholder({
 
   const quant =
     model.quants?.find((e) =>
-      PREFERRED_DOWNLOAD_QUANTIZATIONS.some((m) =>
+      DEFAULT_MODEL_QUANTIZATIONS.some((m) =>
         e.model_id.toLowerCase().includes(m)
       )
     ) ?? model.quants?.[0]
@@ -138,7 +138,7 @@ export function DownloadButtonPlaceholder({
     >
       {isDownloading && !isDownloaded && (
         <div className={cn('flex items-center gap-2 w-20')}>
-          <Progress className="border" value={downloadProgress * 100} />
+          <Progress className='border' value={downloadProgress * 100} />
           <span className="text-xs text-center text-muted-foreground">
             {Math.round(downloadProgress * 100)}%
           </span>

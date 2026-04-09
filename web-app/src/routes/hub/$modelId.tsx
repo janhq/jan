@@ -32,19 +32,18 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
-import { PREFERRED_DOWNLOAD_QUANTIZATIONS } from '@/constants/models'
+import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { useTranslation } from '@/i18n'
 import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useShallow } from 'zustand/react/shallow'
 import { useModelScore } from '@/hooks/useModelScores'
-import { getVariantDisplayName, isBestQuantVariant } from './score-utils'
-
-export const FIT_LEVEL_TRANSLATION_KEYS: Record<string, string> = {
-  'Perfect': 'hub:scoreSummary.fitLevels.perfect',
-  'Good': 'hub:scoreSummary.fitLevels.good',
-  'Marginal': 'hub:scoreSummary.fitLevels.marginal',
-  'Too Tight': 'hub:scoreSummary.fitLevels.tooTight',
-}
+import {
+  FIT_LEVEL_BADGE_VARIANTS,
+  FIT_LEVEL_TRANSLATION_KEYS,
+  getVariantDisplayName,
+  isBestQuantVariant,
+} from './score-utils'
 
 const RUN_MODE_TRANSLATION_KEYS: Record<string, string> = {
   'GPU': 'hub:scoreSummary.runModes.gpu',
@@ -53,13 +52,6 @@ const RUN_MODE_TRANSLATION_KEYS: Record<string, string> = {
   'MoE Offload': 'hub:scoreSummary.runModes.moeOffload',
   'Tensor Parallel': 'hub:scoreSummary.runModes.tensorParallel',
 }
-
-const FIT_LEVEL_BADGE_VARIANTS = {
-  'Perfect': 'success',
-  'Good': 'default',
-  'Marginal': 'warning',
-  'Too Tight': 'destructive',
-} as const
 
 type SearchParams = {
   repo: string
@@ -118,6 +110,11 @@ function HubModelDetailContent() {
           : breakdown.run_mode,
       }
     : undefined
+  const isScoreReady =
+    modelScore?.status === 'ready' &&
+    typeof modelScore.overall === 'number' &&
+    translatedBreakdown !== undefined
+  const isScoreLoading = !modelScore || modelScore.status === 'loading'
 
   // State for README content
   const [readmeContent, setReadmeContent] = useState<string>('')
@@ -151,17 +148,17 @@ function HubModelDetailContent() {
   const modelData = sourceModel ?? repoData
 
   // Download processes
-  const downloadProcesses = useMemo(() => {
-    const downloadEntries = Object.values(downloads) as DownloadProgressProps[]
-
-    return downloadEntries.map((download) => ({
-      id: download.name,
-      name: download.name,
-      progress: download.progress,
-      current: download.current,
-      total: download.total,
-    }))
-  }, [downloads])
+  const downloadProcesses = useMemo(
+    () =>
+      Object.values(downloads).map((download) => ({
+        id: download.name,
+        name: download.name,
+        progress: download.progress,
+        current: download.current,
+        total: download.total,
+      })),
+    [downloads]
+  )
 
   // Handle model use
   const handleUseModel = useCallback(
@@ -408,23 +405,32 @@ function HubModelDetailContent() {
               <div className="flex items-center -center gap-2 mb-4">
                 <IconRocket size={20} className="text-muted-foreground" />
                 <h2 className="text-lg font-semibold text-foreground">
-                  Fit score: {modelScore?.overall?.toFixed(1)}{' '}
+                  Fit score
                 </h2>
-                <Badge
-                  className="ml-2"
-                  variant={
-                    modelScore?.breakdown?.fit_level
-                      ? FIT_LEVEL_BADGE_VARIANTS[
-                          modelScore.breakdown
-                            .fit_level as keyof typeof FIT_LEVEL_BADGE_VARIANTS
-                        ]
-                      : 'secondary'
-                  }
-                >
-                  {translatedBreakdown?.fit_level}
-                </Badge>
+                {isScoreReady ? (
+                  <>
+                    <span className="text-lg font-semibold text-foreground">
+                      {modelScore.overall?.toFixed(1)}
+                    </span>
+                    <Badge
+                      className="ml-2"
+                      variant={
+                        modelScore.breakdown?.fit_level
+                          ? FIT_LEVEL_BADGE_VARIANTS[
+                              modelScore.breakdown
+                                .fit_level as keyof typeof FIT_LEVEL_BADGE_VARIANTS
+                            ]
+                          : 'secondary'
+                      }
+                    >
+                      {translatedBreakdown.fit_level}
+                    </Badge>
+                  </>
+                ) : isScoreLoading ? (
+                  <Skeleton className="h-6 w-24 rounded-md" />
+                ) : null}
               </div>
-              {modelScore?.status === 'ready' && translatedBreakdown ? (
+              {isScoreReady ? (
                 <div className="flex gap-2 flex-wrap">
                   <div className="flex items-center gap-1 px-3 py-1 text-sm bg-secondary rounded-md ">
                     <IconBriefcase
@@ -443,7 +449,10 @@ function HubModelDetailContent() {
                       title={t('hub:scoreSummary.token-sec')}
                     />
                     <span className="text-foreground">
-                      {modelScore?.estimated_tps.toFixed(1)} tok/sec
+                      {typeof modelScore.estimated_tps === 'number'
+                        ? modelScore.estimated_tps.toFixed(1)
+                        : t('hub:scoreSummary.na')}{' '}
+                      tok/sec
                     </span>
                   </div>
                   <div className="flex items-center gap-1 px-3 py-1 text-sm bg-secondary rounded-md ">
@@ -578,8 +587,8 @@ function HubModelDetailContent() {
                               <ModelInfoHoverCard
                                 model={modelData}
                                 variant={variant}
-                                preferredQuantizations={
-                                  PREFERRED_DOWNLOAD_QUANTIZATIONS
+                                defaultModelQuantizations={
+                                  DEFAULT_MODEL_QUANTIZATIONS
                                 }
                                 modelSupportStatus={modelSupportStatus}
                                 onCheckModelSupport={checkModelSupport}

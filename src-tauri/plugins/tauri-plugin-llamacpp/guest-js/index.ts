@@ -207,7 +207,6 @@ export async function isModelSupported(
 export async function scoreHubModel(
   request: HubModelScoreRequest
 ): Promise<HubModelScoreResult> {
-  console.info('Scoring model with request:', request)
   return await invoke('plugin:llamacpp|score_hub_model', { request })
 }
 
@@ -223,7 +222,9 @@ export async function cleanupLlamaProcesses(): Promise<void> {
  * This is used for migrating stored user preferences.
  */
 export async function mapOldBackendToNew(oldBackend: string): Promise<string> {
-  return await invoke<string>('plugin:llamacpp|map_old_backend_to_new', { oldBackend })
+  return await invoke<string>('plugin:llamacpp|map_old_backend_to_new', {
+    oldBackend,
+  })
 }
 
 export async function getLocalInstalledBackendsInternal(

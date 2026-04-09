@@ -107,4 +107,47 @@ describe('useModelScore', () => {
       reason: 'Hub scoring is not available on this platform.',
     })
   })
+
+  it('deduplicates concurrent score fetches for the same model', async () => {
+    let resolveScore: ((value: Partial<ModelScore>) => void) | undefined
+
+    mockGetHubModelScore.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveScore = resolve
+        })
+    )
+
+    const { result } = renderHook(() => useModelScore())
+
+    let scores: Array<ModelScore | undefined> = []
+
+    const concurrentRequest = act(async () => {
+      scores = await Promise.all([
+        result.current.fetchModelScore(model),
+        result.current.fetchModelScore(model),
+      ])
+    })
+
+    expect(mockGetHubModelScore).toHaveBeenCalledTimes(1)
+
+    resolveScore?.({
+      status: 'ready',
+      overall: 88,
+      estimated_tps: 14,
+    })
+
+    await concurrentRequest
+
+    expect(scores[0]).toMatchObject({
+      status: 'ready',
+      overall: 88,
+      estimated_tps: 14,
+    })
+    expect(scores[1]).toMatchObject({
+      status: 'ready',
+      overall: 88,
+      estimated_tps: 14,
+    })
+  })
 })

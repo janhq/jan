@@ -12,6 +12,8 @@ use tauri::Runtime;
 use tauri_plugin_hardware::{get_system_info, SystemInfo, Vendor};
 
 const DEFAULT_CTX_SIZE: u32 = 8192;
+// Keep scoring memory estimates aligned with the same ~2.13 GB driver/runtime
+// overhead reservation used by the GGUF support checks.
 const RESERVE_BYTES: u64 = 2_288_490_189;
 
 #[derive(Debug, Clone)]

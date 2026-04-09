@@ -10,6 +10,8 @@ import type {
   ModelScoreStatus,
 } from '@/services/models/types'
 
+const pendingScoreRequests = new Map<string, Promise<ModelScore | undefined>>()
+
 type ModelScoreState = {
   scores: Record<string, ModelScore>
   getScore: (modelId: string) => ModelScore | undefined
@@ -26,7 +28,14 @@ export const useModelScore = create<ModelScoreState>()(
       scores: {},
       getScore: (modelId: string) => get().scores[modelId],
       fetchModelScore: async (model: CatalogModel, variant?: ModelQuant) => {
-        const cachedScore = get().scores[model.model_name]
+        const modelKey = model.model_name
+        const pendingRequest = pendingScoreRequests.get(modelKey)
+
+        if (pendingRequest) {
+          return pendingRequest
+        }
+
+        const cachedScore = get().scores[modelKey]
 
         if (cachedScore && cachedScore.status !== 'loading') {
           return cachedScore
@@ -35,57 +44,67 @@ export const useModelScore = create<ModelScoreState>()(
         set((state) => ({
           scores: {
             ...state.scores,
-            [model.model_name]: {
+            [modelKey]: {
               status: 'loading',
               estimated_tps: 0,
             },
           },
         }))
 
-        try {
-          const score = await getServiceHub()
-            .models()
-            .getHubModelScore(model, variant)
-            .then((scoreResult) => {
-              const status = scoreResult.status ?? ('ready' as ModelScoreStatus)
+        const scoreRequest = getServiceHub()
+          .models()
+          .getHubModelScore(model, variant)
+          .then((scoreResult) => {
+            const status = scoreResult.status ?? ('ready' as ModelScoreStatus)
 
-              return {
-                ...scoreResult,
-                status,
-                estimated_tps: scoreResult.estimated_tps ?? 0,
-                updated_at:
-                  scoreResult.updated_at ?? Math.floor(Date.now() / 1000),
-              }
-            })
+            return {
+              ...scoreResult,
+              status,
+              estimated_tps: scoreResult.estimated_tps ?? 0,
+              updated_at:
+                scoreResult.updated_at ?? Math.floor(Date.now() / 1000),
+            }
+          })
+          .then((score) => {
+            set((state) => ({
+              scores: {
+                ...state.scores,
+                [modelKey]: score,
+              },
+            }))
 
-          set((state) => ({
-            scores: {
-              ...state.scores,
-              [model.model_name]: score,
-            },
-          }))
+            return score
+          })
+          .catch((error) => {
+            const failedScore: ModelScore = {
+              status: 'error',
+              estimated_tps: 0,
+              reason:
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to score model.',
+            }
 
-          return score
-        } catch (error) {
-          const failedScore: ModelScore = {
-            status: 'error',
-            estimated_tps: 0,
-            reason:
-              error instanceof Error ? error.message : 'Failed to score model.',
-          }
+            set((state) => ({
+              scores: {
+                ...state.scores,
+                [modelKey]: failedScore,
+              },
+            }))
 
-          set((state) => ({
-            scores: {
-              ...state.scores,
-              [model.model_name]: failedScore,
-            },
-          }))
+            return failedScore
+          })
+          .finally(() => {
+            pendingScoreRequests.delete(modelKey)
+          })
 
-          return failedScore
-        }
+        pendingScoreRequests.set(modelKey, scoreRequest)
+
+        return scoreRequest
       },
 
       reset: () => {
+        pendingScoreRequests.clear()
         set({
           scores: {},
         })

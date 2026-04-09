@@ -10,7 +10,7 @@ interface ModelInfoHoverCardProps {
   model: CatalogModel
   variant?: ModelQuant
   isDefaultVariant?: boolean
-  preferredQuantizations: string[]
+  defaultModelQuantizations: string[]
   modelSupportStatus: Record<string, string>
   onCheckModelSupport: (variant: ModelQuant) => void
   children?: React.ReactNode
@@ -20,7 +20,7 @@ export const ModelInfoHoverCard = ({
   model,
   variant,
   isDefaultVariant,
-  preferredQuantizations,
+  defaultModelQuantizations,
   modelSupportStatus,
   onCheckModelSupport,
   children,
@@ -28,7 +28,7 @@ export const ModelInfoHoverCard = ({
   const displayVariant =
     variant ||
     model.quants?.find((m: ModelQuant) =>
-      preferredQuantizations.some((e) => m.model_id.toLowerCase().includes(e))
+      defaultModelQuantizations.some((e) => m.model_id.toLowerCase().includes(e))
     ) ||
     model.quants?.[0]
 
@@ -96,7 +96,7 @@ export const ModelInfoHoverCard = ({
     }
   }
 
-  if (model.is_mlx) return null
+  if(model.is_mlx) return null
 
   return (
     <HoverCard>
@@ -152,9 +152,7 @@ export const ModelInfoHoverCard = ({
           </div>
 
           {/* Features Section */}
-          {((model.num_mmproj ?? 0) > 0 ||
-            model.tools ||
-            ((model.num_mmproj ?? 0) > 0 && model.tools)) && (
+          {((model.num_mmproj ?? 0) > 0 || model.tools || ((model.num_mmproj ?? 0) > 0 && model.tools)) && (
             <div className="border-t  pt-3">
               <h5 className="text-xs font-medium text-muted-foreground mb-2">
                 Features
@@ -162,17 +160,23 @@ export const ModelInfoHoverCard = ({
               <div className="flex flex-wrap gap-2">
                 {model.tools && (
                   <div className="flex items-center gap-1.5 px-2 py-1 bg-secondary rounded-sm">
-                    <span className="text-xs font-medium">Tools</span>
+                    <span className="text-xs font-medium">
+                      Tools
+                    </span>
                   </div>
                 )}
                 {(model.num_mmproj ?? 0) > 0 && (
                   <div className="flex items-center gap-1.5 px-2 py-1 bg-secondary rounded-sm">
-                    <span className="text-xs font-medium">Vision</span>
+                    <span className="text-xs font-medium">
+                      Vision
+                    </span>
                   </div>
                 )}
                 {(model.num_mmproj ?? 0) > 0 && model.tools && (
                   <div className="flex items-center gap-1.5 px-2 py-1 bg-secondary rounded-sm">
-                    <span className="text-xs font-medium">Proactive</span>
+                    <span className="text-xs font-medium">
+                      Proactive
+                    </span>
                   </div>
                 )}
               </div>

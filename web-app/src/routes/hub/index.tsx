@@ -52,11 +52,15 @@ import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/react/shallow'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
-import { PREFERRED_DOWNLOAD_QUANTIZATIONS } from '@/constants/models'
+import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { Button } from '@/components/ui/button'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { useModelScore } from '@/hooks/useModelScores'
 import { selectBestGgufVariant } from '@/lib/modelQuantization'
+import {
+  FIT_LEVEL_BADGE_VARIANTS,
+  FIT_LEVEL_TRANSLATION_KEYS,
+} from './score-utils'
 
 type SearchParams = {
   repo: string
@@ -68,20 +72,6 @@ export const Route = createFileRoute(route.hub.index as any)({
     repo: search.repo as SearchParams['repo'],
   }),
 })
-
-export const FIT_LEVEL_TRANSLATION_KEYS: Record<string, string> = {
-  'Perfect': 'hub:scoreSummary.fitLevels.perfect',
-  'Good': 'hub:scoreSummary.fitLevels.good',
-  'Marginal': 'hub:scoreSummary.fitLevels.marginal',
-  'Too Tight': 'hub:scoreSummary.fitLevels.tooTight',
-}
-
-const FIT_LEVEL_BADGE_VARIANTS = {
-  'Perfect': 'success',
-  'Good': 'default',
-  'Marginal': 'warning',
-  'Too Tight': 'destructive',
-} as const
 
 function HubContent() {
   const [isPending, startTransition] = useTransition()
@@ -201,7 +191,6 @@ function HubContent() {
       filtered = filtered
         ?.map((model) => ({
           ...model,
-          score: modelScores[model.model_name],
           quants: model.quants?.filter((variant: ModelQuant) => {
             // Check both direct match and with developer prefix (like DownloadButton does)
             const isLlamaCppDownloaded = useModelProvider
@@ -652,14 +641,17 @@ function HubContent() {
                                           : 'secondary'
                                       }
                                     >
-                                      {t(FIT_LEVEL_TRANSLATION_KEYS[fitLevel])}
+                                      {t(
+                                        FIT_LEVEL_TRANSLATION_KEYS[fitLevel] ??
+                                          fitLevel
+                                      )}
                                     </Badge>
                                   )}
                                 </div>
                                 <ModelInfoHoverCard
                                   model={model}
-                                  preferredQuantizations={
-                                    PREFERRED_DOWNLOAD_QUANTIZATIONS
+                                  defaultModelQuantizations={
+                                    DEFAULT_MODEL_QUANTIZATIONS
                                   }
                                   variant={getRepresentativeVariant(model)}
                                   isDefaultVariant={true}
@@ -874,8 +866,8 @@ function HubContent() {
                                         <ModelInfoHoverCard
                                           model={model}
                                           variant={variant}
-                                          preferredQuantizations={
-                                            PREFERRED_DOWNLOAD_QUANTIZATIONS
+                                          defaultModelQuantizations={
+                                            DEFAULT_MODEL_QUANTIZATIONS
                                           }
                                           modelSupportStatus={
                                             modelSupportStatus
