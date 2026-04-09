@@ -210,7 +210,7 @@ ifeq ($(DETECTED_OS),Darwin)
 	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
 else ifeq ($(DETECTED_OS),Windows)
 	cd src-tauri && cargo build --release --features cli --bin jan-cli
-	cp src-tauri/target/release/jan-cli.exe src-tauri/resources/bin/jan-cli.exe
+	copy src-tauri\target\release\jan-cli.exe src-tauri\resources\bin\jan-cli.exe
 else
 	cd src-tauri && cargo build --release --features cli --bin jan-cli
 	cp src-tauri/target/release/jan-cli src-tauri/resources/bin/jan-cli
@@ -218,7 +218,7 @@ endif
 
 # Debug build for local dev (faster, native arch only)
 build-cli-dev:
-	$(call MKDIR,'src-tauri/resources/bin')	
+	$(call MKDIR,'src-tauri/resources/bin')
 	cd src-tauri && cargo build --features cli --bin jan-cli
 ifeq ($(DETECTED_OS),Windows)
 	copy src-tauri\target\debug\jan-cli.exe src-tauri\resources\bin\jan-cli.exe

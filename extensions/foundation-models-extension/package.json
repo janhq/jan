@@ -19,7 +19,7 @@
     "typescript": "5.9.2"
   },
   "dependencies": {
-    "@janhq/core": "../../core/package.tgz",
+    "@janhq/core": "../../core",
     "@janhq/tauri-plugin-foundation-models-api": "link:../../src-tauri/plugins/tauri-plugin-foundation-models",
     "@tauri-apps/api": "2.8.0",
     "@tauri-apps/plugin-log": "^2.6.0"

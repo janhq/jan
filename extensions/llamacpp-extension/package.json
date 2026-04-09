@@ -27,7 +27,7 @@
     "vitest": "3.2.4"
   },
   "dependencies": {
-    "@janhq/core": "../../core/package.tgz",
+    "@janhq/core": "../../core",
     "@janhq/tauri-plugin-hardware-api": "link:../../src-tauri/plugins/tauri-plugin-hardware",
     "@janhq/tauri-plugin-llamacpp-api": "link:../../src-tauri/plugins/tauri-plugin-llamacpp",
     "@tauri-apps/api": "2.8.0",

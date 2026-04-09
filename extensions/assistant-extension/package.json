@@ -19,7 +19,7 @@
     "typescript": "5.9.2"
   },
   "dependencies": {
-    "@janhq/core": "../../core/package.tgz",
+    "@janhq/core": "../../core",
     "ts-loader": "^9.5.0"
   },
   "files": [
