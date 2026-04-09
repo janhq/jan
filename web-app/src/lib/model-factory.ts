@@ -143,6 +143,49 @@ const CEREBRAS_UNSUPPORTED_KEYS: ReadonlySet<string> = new Set([
 ])
 
 /**
+ * Request-body fields injected by the AI SDK at call time that Cerebras
+ * does not accept.  These are distinct from inference *parameters* (which
+ * come from the Jan UI) and must be stripped from every outgoing request.
+ *
+ * - `parallel_tool_calls` — sent by the AI SDK when tools are enabled;
+ *   Cerebras rejects it with 400 Bad Request.
+ * - `stream_options`      — belt-and-suspenders guard; `includeUsage:false`
+ *   should prevent it, but strip it here too just in case.
+ */
+const CEREBRAS_UNSUPPORTED_BODY_KEYS: ReadonlySet<string> = new Set([
+  'parallel_tool_calls',
+  'stream_options',
+])
+
+/**
+ * Wraps a fetch implementation to:
+ *  1. Strip Cerebras-incompatible fields from every POST request body.
+ *  2. Log the outgoing request and any error responses to the console so
+ *     issues can be diagnosed from DevTools / electron logs.
+ */
+function createCerebrasAwareFetch(
+  baseFetch: typeof globalThis.fetch
+): typeof globalThis.fetch {
+  return async (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> => {
+    if (init?.method === 'POST' || !init?.method) {
+      const body = init?.body ? JSON.parse(init.body as string) : {}
+
+      // Strip fields Cerebras rejects at the request level
+      for (const key of CEREBRAS_UNSUPPORTED_BODY_KEYS) {
+        delete body[key]
+      }
+
+      init = { ...init, body: JSON.stringify(body) }
+    }
+
+    return baseFetch(input, init)
+  }
+}
+
+/**
  * Create a custom fetch function that injects additional parameters into the
  * request body, normalising key names for OpenAI-compatible APIs:
  * - `max_output_tokens` is remapped to `max_tokens`
@@ -785,7 +828,7 @@ export class ModelFactory {
       }
     }
 
-    const fetchImpl =
+    const baseFetchImpl =
       keyChain.length > 1
         ? createApiKeyRotatingFetch(
             getRuntimeFetch(),
@@ -794,6 +837,9 @@ export class ModelFactory {
             'authorization-bearer'
           )
         : createCustomFetch(getRuntimeFetch(), filtered)
+
+    // Layer Cerebras-specific body sanitisation and debug logging on top
+    const fetchImpl = createCerebrasAwareFetch(baseFetchImpl)
 
     const openAICompatible = createOpenAICompatible({
       name: provider.provider,
