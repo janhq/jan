@@ -1,5 +1,7 @@
 use super::helpers::{_download_files_internal, err_to_string};
 use super::models::DownloadItem;
+use crate::core::app::commands::get_jan_data_folder_path;
+use crate::core::filesystem::helpers::resolve_path_within_jan_data_folder;
 use crate::core::state::AppState;
 use std::collections::HashMap;
 use tauri::{Runtime, State};
