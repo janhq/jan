@@ -210,7 +210,7 @@ ifeq ($(DETECTED_OS),Darwin)
 	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
 else ifeq ($(DETECTED_OS),Windows)
 	cd src-tauri && cargo build --release --features cli --bin jan-cli
-	copy src-tauri\target\release\jan-cli.exe src-tauri\resources\bin\jan-cli.exe
+	powershell -Command "Copy-Item -Path 'src-tauri/target/release/jan-cli.exe' -Destination 'src-tauri/resources/bin/jan-cli.exe' -Force"
 else
 	cd src-tauri && cargo build --release --features cli --bin jan-cli
 	cp src-tauri/target/release/jan-cli src-tauri/resources/bin/jan-cli
@@ -221,7 +221,7 @@ build-cli-dev:
 	$(call MKDIR,'src-tauri/resources/bin')
 	cd src-tauri && cargo build --features cli --bin jan-cli
 ifeq ($(DETECTED_OS),Windows)
-	copy src-tauri\target\debug\jan-cli.exe src-tauri\resources\bin\jan-cli.exe
+	powershell -Command "Copy-Item -Path 'src-tauri/target/debug/jan-cli.exe' -Destination 'src-tauri/resources/bin/jan-cli.exe' -Force"
 else
 	install -m755 src-tauri/target/debug/jan-cli src-tauri/resources/bin/jan-cli
 endif
