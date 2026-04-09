@@ -1,9 +1,10 @@
 use super::commands::*;
 use super::helpers::resolve_path_within_jan_data_folder;
 use crate::core::app::commands::get_jan_data_folder_path;
+use jan_utils::normalize_path;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::test::mock_app;
 
 #[test]
@@ -117,7 +118,11 @@ fn test_resolve_jan_scoped_path_allows_canonicalized_home_symlink_target() {
         resolve_path_within_jan_data_folder(&configured_root, candidate.to_string_lossy().as_ref())
             .unwrap();
 
-    assert_eq!(resolved_path, candidate.canonicalize().unwrap());
+    let expected_path = canonical_root
+        .canonicalize()
+        .unwrap()
+        .join("llamacpp/backends/v1/backend.tar.gz");
+    assert_eq!(resolved_path, expected_path);
 
     let _ = fs::remove_dir_all(&base_dir);
 }
@@ -134,7 +139,10 @@ fn test_resolve_jan_scoped_path_accepts_relative_path_inside_root() {
     .unwrap();
 
     assert!(resolved_path.starts_with(&resolved_root));
-    assert_eq!(resolved_root, jan_data_folder.canonicalize().unwrap());
+    assert_eq!(
+        normalize_test_path(&resolved_root),
+        normalize_test_path(&jan_data_folder.canonicalize().unwrap())
+    );
     assert_eq!(
         resolved_path.file_name().and_then(|name| name.to_str()),
         Some("backend.tar.gz")
@@ -179,4 +187,16 @@ fn unique_test_dir(label: &str) -> PathBuf {
         .unwrap()
         .as_nanos();
     std::env::temp_dir().join(format!("jan-filesystem-{label}-{unique}"))
+}
+
+fn normalize_test_path(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let path_str = path.to_string_lossy();
+        if let Some(stripped) = path_str.strip_prefix(r"\\?\") {
+            return normalize_path(Path::new(stripped));
+        }
+    }
+
+    normalize_path(path)
 }

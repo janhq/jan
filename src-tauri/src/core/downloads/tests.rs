@@ -299,7 +299,11 @@ fn test_download_scope_accepts_absolute_path_inside_canonical_root() {
         resolve_path_within_jan_data_folder(&configured_root, candidate.to_string_lossy().as_ref())
             .unwrap();
 
-    assert_eq!(resolved_path, candidate.canonicalize().unwrap());
+    let expected_path = canonical_root
+        .canonicalize()
+        .unwrap()
+        .join("llamacpp/backends/v1/backend.tar.gz");
+    assert_eq!(resolved_path, expected_path);
 
     let _ = fs::remove_dir_all(&base_dir);
 }
