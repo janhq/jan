@@ -100,8 +100,12 @@ jobs:
       - name: Update app version based on latest release tag with build number
         run: |
           echo "Version: ${{ inputs.new_version }}"
+          CREATE_UPDATER_ARTIFACTS=false
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] && [ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]; then
+            CREATE_UPDATER_ARTIFACTS=true
+          fi
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" --argjson create_updater_artifacts "$CREATE_UPDATER_ARTIFACTS" '.version = $version | .bundle.createUpdaterArtifacts = $create_updater_artifacts' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
           mv /tmp/package.json web-app/package.json

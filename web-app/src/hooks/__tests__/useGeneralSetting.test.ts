@@ -38,7 +38,7 @@ describe('useGeneralSetting', () => {
 
     // Reset store state to defaults
     useGeneralSetting.setState({
-      currentLanguage: 'en',
+      currentLanguage: 'tr',
       spellCheckChatInput: true,
       tokenCounterCompact: true,
       huggingfaceToken: undefined,
@@ -58,7 +58,7 @@ describe('useGeneralSetting', () => {
   it('should initialize with default values', () => {
     const { result } = renderHook(() => useGeneralSetting())
 
-    expect(result.current.currentLanguage).toBe('en')
+    expect(result.current.currentLanguage).toBe('tr')
     expect(result.current.spellCheckChatInput).toBe(true)
     expect(result.current.huggingfaceToken).toBeUndefined()
     expect(typeof result.current.setCurrentLanguage).toBe('function')

@@ -98,19 +98,32 @@ jobs:
       - name: Update app version base on tag
         id: version_update
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
         run: |
           echo "Version: ${{ inputs.new_version }}"
+          CREATE_UPDATER_ARTIFACTS=false
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] && [ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]; then
+            CREATE_UPDATER_ARTIFACTS=true
+          fi
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" --argjson create_updater_artifacts "$CREATE_UPDATER_ARTIFACTS" '.version = $version | .bundle.createUpdaterArtifacts = $create_updater_artifacts' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           jq '.bundle.windows.nsis.template = "tauri.bundle.windows.nsis.template"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
           mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
           mv /tmp/package.json web-app/package.json
 
-          # Add sign commands to tauri.windows.conf.json
-          jq '.bundle.windows.signCommand = "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
-          mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
+          if [ -n "${AZURE_KEY_VAULT_URI:-}" ] && [ -n "${AZURE_CLIENT_ID:-}" ] && [ -n "${AZURE_TENANT_ID:-}" ] && [ -n "${AZURE_CLIENT_SECRET:-}" ] && [ -n "${AZURE_CERT_NAME:-}" ]; then
+            jq '.bundle.windows.signCommand = "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
+            mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
+          fi
 
           # Update tauri plugin versions
 
@@ -227,6 +240,19 @@ jobs:
       - name: Build app
         shell: bash
         run: |
+          if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ] && [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" ]; then
+            export TAURI_SIGNING_PRIVATE_KEY="${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
+            export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}"
+          fi
+          if [ -n "${{ secrets.JAN_SIGNING_KEY }}" ]; then
+            export JAN_SIGNING_KEY="${{ secrets.JAN_SIGNING_KEY }}"
+          fi
+          if [ -n "${{ secrets.POSTHOG_KEY }}" ]; then
+            export POSTHOG_KEY="${{ secrets.POSTHOG_KEY }}"
+          fi
+          if [ -n "${{ secrets.POSTHOG_HOST }}" ]; then
+            export POSTHOG_HOST="${{ secrets.POSTHOG_HOST }}"
+          fi
           make build
         env:
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
@@ -239,11 +265,6 @@ jobs:
           AWS_DEFAULT_REGION: auto
           AWS_EC2_METADATA_DISABLED: 'true'
           AWS_MAX_ATTEMPTS: '5'
-          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
-          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
 
       - name: Upload NSIS Installer Artifact
         uses: actions/upload-artifact@v4
@@ -272,13 +293,21 @@ jobs:
           cd ./src-tauri/target/release/bundle/nsis
           if [ "${{ inputs.channel }}" != "stable" ]; then
             FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe
-            WIN_SIG=$(cat Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig)
+            if [ -f "Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig" ]; then
+              WIN_SIG=$(cat Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig)
+            else
+              WIN_SIG=""
+            fi
 
             MSI_FILE="Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64_en-US.msi"
             # PORTABLE_FILE_NAME="Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-portable.exe"
           else
             FILE_NAME=Jan_${{ inputs.new_version }}_x64-setup.exe
-            WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
+            if [ -f "Jan_${{ inputs.new_version }}_x64-setup.exe.sig" ]; then
+              WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
+            else
+              WIN_SIG=""
+            fi
 
             MSI_FILE="Jan_${{ inputs.new_version }}_x64_en-US.msi"
             # PORTABLE_FILE_NAME="Jan_${{ inputs.new_version }}_x64-portable.exe"

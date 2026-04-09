@@ -108,8 +108,12 @@ jobs:
       - name: Update app version base public_provider
         run: |
           echo "Version: ${{ inputs.new_version }}"
+          CREATE_UPDATER_ARTIFACTS=false
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] && [ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]; then
+            CREATE_UPDATER_ARTIFACTS=true
+          fi
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" --argjson create_updater_artifacts "$CREATE_UPDATER_ARTIFACTS" '.version = $version | .bundle.createUpdaterArtifacts = $create_updater_artifacts' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           if [ "${{ inputs.channel }}" != "stable" ]; then
             jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun"}' ./src-tauri/tauri.linux.conf.json > /tmp/tauri.linux.conf.json
@@ -185,11 +189,13 @@ jobs:
         run: |
           make build
 
-          APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
-          yarn tauri signer sign \
-          --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
-          --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
-          "$APP_IMAGE"
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] && [ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]; then
+            APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
+            yarn tauri signer sign \
+            --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+            "$APP_IMAGE"
+          fi
 
         env:
           RELEASE_CHANNEL: '${{ inputs.channel }}'

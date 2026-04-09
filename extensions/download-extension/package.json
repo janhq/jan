@@ -25,7 +25,7 @@
     "README.md"
   ],
   "dependencies": {
-    "@janhq/core": "../../core/package.tgz",
+    "@janhq/core": "../../core",
     "@tauri-apps/api": "2.8.0"
   },
   "bundleDependencies": [],

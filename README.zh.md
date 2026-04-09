@@ -1,10 +1,10 @@
-# Jan - 开源 ChatGPT 替代方案
+# Jan - Açık kaynaklı ChatGPT alternatifi
 
 <img width="2048" height="280" alt="github jan banner" src="https://github.com/user-attachments/assets/f3f87889-c133-433b-b250-236218150d3f" />
 
 <p align="center">
   <a href="README.md">English</a> ·
-  <strong>中文</strong>
+  <strong>Türkçe</strong>
 </p>
 
 <p align="center">
@@ -17,15 +17,15 @@
 </p>
 
 <p align="center">
-  <a href="https://jan.ai/docs/desktop">快速开始</a>
-  - <a href="https://discord.gg/Exe46xPMbK">社区</a>
-  - <a href="https://jan.ai/changelog">更新日志</a>
-  - <a href="https://github.com/janhq/jan/issues">问题反馈</a>
+  <a href="https://jan.ai/docs/desktop">Hızlı Başlangıç</a>
+  - <a href="https://discord.gg/Exe46xPMbK">Topluluk</a>
+  - <a href="https://jan.ai/changelog">Sürüm Notları</a>
+  - <a href="https://github.com/janhq/jan/issues">Hata Bildirimi</a>
 </p>
 
-Jan 致力于通过易于使用的产品，将开源 AI 的精华呈现给大众。下载并运行大语言模型 (LLMs)，享有**完全的控制权**和**隐私保护**。
+Jan, açık kaynak yapay zekanın en iyi yönlerini kullanımı kolay bir ürünle sunar. Büyük dil modellerini indirip çalıştırın; **tam denetim** ve **gizlilik** sizde olsun.
 
-## 安装 (Installation)
+## Kurulum
 
 <p align="center">
   <table>
@@ -35,7 +35,7 @@ Jan 致力于通过易于使用的产品，将开源 AI 的精华呈现给大众
         <a href="https://apps.microsoft.com/detail/xpdcnfn5cpzlqb">
           <img height="60"
             width="200"
-               alt="从 Microsoft Store 获取"
+               alt="Microsoft Store'dan edinin"
                src="https://get.microsoft.com/images/en-us%20dark.svg"/>
         </a>
       </td>
@@ -46,7 +46,7 @@ Jan 致力于通过易于使用的产品，将开源 AI 的精华呈现给大众
         <a href="https://flathub.org/apps/ai.jan.Jan">
           <img height="60"
             width="200"
-               alt="在 Flathub 上获取"
+               alt="Flathub üzerinden edinin"
                src="https://flathub.org/assets/badges/flathub-badge-en.svg"/>
         </a>
       </td>
@@ -54,12 +54,12 @@ Jan 致力于通过易于使用的产品，将开源 AI 的精华呈现给大众
   </table>
 </p>
 
-最简单的入门方式是根据您的操作系统下载以下版本之一：
+Başlamanın en kolay yolu, işletim sisteminize uygun aşağıdaki sürümlerden birini indirmektir:
 
 <table>
   <tr>
-    <td><b>平台</b></td>
-    <td><b>下载链接</b></td>
+    <td><b>Platform</b></td>
+    <td><b>İndir</b></td>
   </tr>
   <tr>
     <td><b>Windows</b></td>
@@ -79,35 +79,35 @@ Jan 致力于通过易于使用的产品，将开源 AI 的精华呈现给大众
   </tr>
   <tr>
     <td><b>Linux (Arm64)</b></td>
-    <td><a href='https://github.com/janhq/jan/issues/4543#issuecomment-3734911349'>操作指南</a></td>
+    <td><a href='https://github.com/janhq/jan/issues/4543#issuecomment-3734911349'>Kurulum Rehberi</a></td>
   </tr>
 </table>
 
 
-您可以从 [jan.ai](https://jan.ai/) 或 [GitHub Releases](https://github.com/janhq/jan/releases) 下载。
+İndirmeyi [jan.ai](https://jan.ai/) veya [GitHub Releases](https://github.com/janhq/jan/releases) üzerinden yapabilirsiniz.
 
-## 核心功能 (Features)
+## Özellikler
 
-- **本地 AI 模型**：从 HuggingFace 下载并运行大语言模型（Llama, Gemma, Qwen, GPT-oss 等）
-- **云端集成**：通过 OpenAI 连接 GPT 模型，通过 Anthropic 连接 Claude 模型，以及 Mistral, Groq 等
-- **自定义助手**：为您的任务创建专门的 AI 助手
-- **兼容 OpenAI 的 API**：在 `localhost:1337` 运行本地服务器，供其他应用程序调用
-- **模型上下文协议 (MCP)**：集成 MCP 以实现 Agent 自动化能力
-- **隐私优先**：当您需要时，所有内容均在本地运行
+- **Yerel AI Modelleri**: HuggingFace üzerinden LLM indirip çalıştırın (Llama, Gemma, Qwen, GPT-oss vb.)
+- **Bulut Entegrasyonu**: OpenAI ile GPT modellerine, Anthropic ile Claude modellerine; ayrıca Mistral, Groq, MiniMax ve diğer servislere bağlanın
+- **Özel Asistanlar**: Görevlerinize özel AI asistanları oluşturun
+- **OpenAI Uyumlu API**: Diğer uygulamalar için `localhost:1337` üzerinde yerel sunucu
+- **Model Context Protocol**: Aracı yetenekleri için MCP entegrasyonu
+- **Önce Gizlilik**: İstediğinizde her şeyi yerelde çalıştırın
 
-## 源码构建 (Build from Source)
+## Kaynaktan Derleme
 
-适合喜欢探索过程的用户：
+Bu bölüm, işi sıfırdan kurmak isteyenler içindir.
 
-### 前置要求 (Prerequisites)
+### Gereksinimler
 
 - Node.js ≥ 20.0.0
 - Yarn ≥ 4.5.3
 - Make ≥ 3.81
-- Rust (用于 Tauri 构建)
-- (仅限 macOS Apple Silicon) MetalToolchain 命令：`xcodebuild -downloadComponent MetalToolchain`
+- Rust (Tauri derlemesi için)
+- (Yalnızca macOS Apple Silicon) MetalToolchain: `xcodebuild -downloadComponent MetalToolchain`
 
-### 使用 Make 运行
+### Make ile Çalıştırma
 
 ```bash
 git clone https://github.com/janhq/jan
@@ -115,68 +115,66 @@ cd jan
 make dev
 ```
 
-这将处理所有步骤：安装依赖、构建核心组件并启动应用程序。
+Bu komut tüm adımları halleder: bağımlılıkları kurar, temel bileşenleri derler ve uygulamayı başlatır.
 
-**可用的 make 命令：**
-- `make dev` - 完整的开发环境设置与启动
-- `make build` - 生产版本构建
-- `make test` - 运行测试和 lint 检查
-- `make clean` - 清除所有生成文件并重新开始
+**Kullanılabilir make hedefleri:**
+- `make dev` - Tam geliştirme kurulumu ve çalıştırma
+- `make build` - Üretim derlemesi
+- `make test` - Testleri ve lint kontrollerini çalıştırma
+- `make clean` - Üretilen her şeyi temizleme ve sıfırlama
 
-### 手动构建命令
+### El ile Komutlar
 
 ```bash
 yarn install
-yarn build:tauri:plugin:api
-yarn build:core
-yarn build:extensions
+yarn build
 yarn dev
 ```
 
-## 系统要求 (System Requirements)
+## Sistem Gereksinimleri
 
-**获得良好体验的最低配置：**
+**Makul bir deneyim için önerilen en düşük seviye:**
 
-- **macOS**: 13.6+ (3B 模型需 8GB RAM，7B 需 16GB，13B 需 32GB)
-- **Windows**: 10+，支持 NVIDIA/AMD/Intel Arc GPU 加速
-- **Linux**: 大多数发行版均可，支持 GPU 加速
+- **macOS**: 13.6+ (3B modeller için 8 GB RAM, 7B için 16 GB, 13B için 32 GB)
+- **Windows**: 10+ ve NVIDIA/AMD/Intel Arc GPU desteği
+- **Linux**: Çoğu dağıtım çalışır, GPU hızlandırma kullanılabilir
 
-有关详细的兼容性说明，请查看我们的[安装指南](https://jan.ai/docs/desktop/mac)。
+Detaylı uyumluluk bilgileri için [kurulum rehberlerine](https://jan.ai/docs/desktop/mac) bakın.
 
-## 故障排除 (Troubleshooting)
+## Sorun Giderme
 
-如果运行出现问题：
+Bir şeyler ters giderse:
 
-1. 查看我们的[故障排除文档](https://jan.ai/docs/desktop/troubleshooting)
-2. 复制您的错误日志和系统规格信息
-3. 在我们的 Discord `#🆘|jan-help` 频道寻求帮助：[Discord](https://discord.gg/FTk2MvZwJH)
+1. [Sorun giderme belgelerine](https://jan.ai/docs/desktop/troubleshooting) bakın
+2. Hata günlüklerinizi ve sistem özelliklerinizi kopyalayın
+3. Discord üzerindeki `#🆘|jan-help` kanalında yardım isteyin: [Discord](https://discord.gg/FTk2MvZwJH)
 
 
-## 贡献 (Contributing)
+## Katkı
 
-欢迎参与贡献！请参阅 [CONTRIBUTING.md](CONTRIBUTING.md) 以获取完整信息。
+Katkılar memnuniyetle karşılanır. Tüm ayrıntılar için [CONTRIBUTING.md](CONTRIBUTING.md) dosyasına bakın.
 
-## 相关链接 (Links)
+## Bağlantılar
 
-- [文档](https://jan.ai/docs) - 建议阅读的操作手册
-- [API 参考](https://jan.ai/api-reference) - 供开发者参考
-- [更新日志](https://jan.ai/changelog) - 了解修复和变更内容
-- [Discord](https://discord.gg/FTk2MvZwJH) - 社区所在地
+- [Dokümantasyon](https://jan.ai/docs) - Önce okunması gereken kullanım kılavuzu
+- [API Referansı](https://jan.ai/api-reference) - Teknik kullanıcılar için
+- [Sürüm Notları](https://jan.ai/changelog) - Değişen ve düzeltilenler
+- [Discord](https://discord.gg/FTk2MvZwJH) - Topluluğun buluşma noktası
 
-## 联系我们 (Contact)
+## İletişim
 
-- **Bug 反馈**: [GitHub Issues](https://github.com/janhq/jan/issues)
-- **商务合作**: hello@jan.ai
-- **人才招聘**: hr@jan.ai
-- **综合讨论**: [Discord](https://discord.gg/FTk2MvZwJH)
+- **Hatalar**: [GitHub Issues](https://github.com/janhq/jan/issues)
+- **İş Birliği**: hello@jan.ai
+- **İş İlanları**: hr@jan.ai
+- **Genel Tartışma**: [Discord](https://discord.gg/FTk2MvZwJH)
 
-## 许可证 (License)
+## Lisans
 
-Apache 2.0 - 因为分享即是关爱。
+Apache 2.0 - Paylaşım iyidir.
 
-## 致谢 (Acknowledgements)
+## Teşekkürler
 
-站在巨人的肩膀上构建：
+Bu proje şu güçlü araçların üzerine kurulu:
 
 - [Llama.cpp](https://github.com/ggerganov/llama.cpp)
 - [Tauri](https://tauri.app/)

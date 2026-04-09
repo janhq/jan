@@ -19,7 +19,7 @@
     "typescript": "5.9.2"
   },
   "dependencies": {
-    "@janhq/core": "../../core/package.tgz",
+    "@janhq/core": "../../core",
     "@janhq/tauri-plugin-llamacpp-api": "link:../../src-tauri/plugins/tauri-plugin-llamacpp",
     "@janhq/tauri-plugin-mlx-api": "link:../../src-tauri/plugins/tauri-plugin-mlx",
     "@tauri-apps/api": "2.8.0",
