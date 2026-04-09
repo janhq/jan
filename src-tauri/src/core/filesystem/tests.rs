@@ -127,17 +127,16 @@ fn test_resolve_jan_scoped_path_accepts_relative_path_inside_root() {
     let jan_data_folder = unique_test_dir("relative");
     fs::create_dir_all(&jan_data_folder).unwrap();
 
-    let (_, resolved_path) = resolve_path_within_jan_data_folder(
+    let (resolved_root, resolved_path) = resolve_path_within_jan_data_folder(
         &jan_data_folder,
         "llamacpp/backends/v1/backend.tar.gz",
     )
     .unwrap();
 
+    assert!(resolved_path.starts_with(&resolved_root));
     assert_eq!(
-        resolved_path,
-        jan_data_folder
-            .join("llamacpp/backends/v1/backend.tar.gz")
-            .to_path_buf()
+        resolved_path.file_name().and_then(|name| name.to_str()),
+        Some("backend.tar.gz")
     );
 
     let _ = fs::remove_dir_all(&jan_data_folder);

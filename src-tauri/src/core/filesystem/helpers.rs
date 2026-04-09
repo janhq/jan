@@ -62,18 +62,30 @@ fn canonicalize_for_scope(path: &Path) -> PathBuf {
     normalize_path(&canonical_parent.join(suffix))
 }
 
+fn normalize_scope_path(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let path_str = path.to_string_lossy();
+        if let Some(stripped) = path_str.strip_prefix(r"\\?\") {
+            return normalize_path(Path::new(stripped));
+        }
+    }
+
+    normalize_path(&path)
+}
+
 pub fn resolve_path_within_jan_data_folder(
     jan_data_folder: &Path,
     path: &str,
 ) -> Result<(PathBuf, PathBuf), String> {
-    let canonical_data = canonicalize_for_scope(jan_data_folder);
+    let canonical_data = normalize_scope_path(canonicalize_for_scope(jan_data_folder));
     let input_path = resolve_path_input(path, jan_data_folder);
     let resolved_path = if input_path.is_absolute() {
         normalize_path(&input_path)
     } else {
         normalize_path(&canonical_data.join(input_path))
     };
-    let canonical_path = canonicalize_for_scope(&resolved_path);
+    let canonical_path = normalize_scope_path(canonicalize_for_scope(&resolved_path));
 
     if !canonical_path.starts_with(&canonical_data) {
         return Err(format!(
