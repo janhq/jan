@@ -573,7 +573,6 @@ pub async fn prioritize_backends(
             "noavx",
             "arm64",
             "x64",
-            "hip",
             "vulkan",
         ]
     };
@@ -1098,11 +1097,12 @@ mod tests {
 
         let result = get_supported_features("linux".to_string(), vec![], gpus).unwrap();
 
-        // Without ROCm installed the runtime check fails → hip must be false on
-        // systems where ROCm is absent (standard CI).
-        // We use a cfg-guarded assertion so the test still passes on ROCm machines.
-        #[cfg(not(target_os = "linux"))]
-        assert!(!result.hip, "HIP should require ROCm runtime");
+        // Without ROCm installed the runtime check fails → hip must be false.
+        // On Linux CI where ROCm is not installed, is_hip_runtime_available()
+        // returns false. Skip the assertion only when ROCm is actually present.
+        if !jan_utils::is_hip_runtime_available() {
+            assert!(!result.hip, "HIP should require ROCm runtime");
+        }
 
         assert!(!result.cuda11);
         assert!(!result.vulkan);

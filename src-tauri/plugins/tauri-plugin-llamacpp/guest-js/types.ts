@@ -158,6 +158,7 @@ export type VulkanInfo = {
 
 export type GpuInfo = {
   driver_version: string
+  vendor?: string
   nvidia_info?: NvidiaInfo | null
   vulkan_info?: VulkanInfo | null
 }

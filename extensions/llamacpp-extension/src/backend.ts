@@ -165,6 +165,8 @@ export async function downloadBackend(
   const proxyConfig = getProxyConfig()
 
   const platformName = IS_WINDOWS ? 'win' : 'linux'
+  // Jan's own llama.cpp releases use .tar.gz on all platforms.
+  // If upstream HIP releases switch to .zip, this will need updating.
   const archiveExt = 'tar.gz'
 
   const backendUrl =
