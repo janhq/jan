@@ -53,30 +53,30 @@ Object.entries(localeFiles).forEach(([path, module]) => {
 
 // Get stored language preference from the zustand store.
 // During initial load the store may not have hydrated yet from file storage,
-// so we fall back to 'en'. The language updates once hydration completes
+// so we fall back to 'tr'. The language updates once hydration completes
 // (see useGeneralSetting subscription at the bottom of this file).
 const getStoredLanguage = (): string => {
   try {
-    return useGeneralSetting.getState().currentLanguage || 'en'
+    return useGeneralSetting.getState().currentLanguage || 'tr'
   } catch {
-    return 'en'
+    return 'tr'
   }
 }
 
 // Translation function
 const translate = (key: string, options: Record<string, unknown> = {}): string => {
   const { language, fallbackLng, resources: res, defaultNS } = i18nInstance
-  
+
   // Parse key to extract namespace and actual key
   let namespace = defaultNS
   let translationKey = key
-  
+
   if (key.includes(':')) {
     const parts = key.split(':')
     namespace = parts[0]
     translationKey = parts[1]
   }
-  
+
   // Helper function to get nested value from object using dot notation
   const getNestedValue = (obj: Record<string, unknown>, path: string): string | undefined => {
     return path.split('.').reduce((current, key) => {
@@ -85,28 +85,28 @@ const translate = (key: string, options: Record<string, unknown> = {}): string =
         : undefined
     }, obj as unknown) as string | undefined
   }
-  
+
   // Try to get translation from current language
   let translation = getNestedValue(res[language]?.[namespace], translationKey)
-  
+
   // Fallback to fallback language if not found
   if (translation === undefined && language !== fallbackLng) {
     translation = getNestedValue(res[fallbackLng]?.[namespace], translationKey)
   }
-  
+
   // If still not found, return the key itself
   if (translation === undefined) {
     console.warn(`Translation missing for key: ${key}`)
     return key
   }
-  
+
   // Handle interpolation
   if (typeof translation === 'string' && options) {
     return translation.replace(/\{\{(\w+)\}\}/g, (match, variable) => {
       return options[variable] !== undefined ? String(options[variable]) : match
     })
   }
-  
+
   return String(translation)
 }
 
@@ -122,7 +122,7 @@ const changeLanguage = (lng: string): void => {
 // Initialize i18n instance
 const initI18n = (): I18nInstance => {
   const currentLanguage = getStoredLanguage()
-  
+
   i18nInstance = {
     language: currentLanguage,
     fallbackLng: 'en',
@@ -132,7 +132,7 @@ const initI18n = (): I18nInstance => {
     changeLanguage,
     t: translate,
   }
-  
+
   return i18nInstance
 }
 
