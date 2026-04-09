@@ -19,6 +19,7 @@ import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import {
   IconFolderPlus,
@@ -36,6 +37,10 @@ import { basenameNoExt } from '@/lib/utils'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
+import {
+  providerHasRemoteApiKeys,
+  providerRemoteApiKeyChain,
+} from '@/lib/provider-api-keys'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -60,6 +65,12 @@ function ProviderDetail() {
   const [isCheckingBackendUpdate, setIsCheckingBackendUpdate] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
   const [importingModel, setImportingModel] = useState<string | null>(null)
+  const [apiKeysDraft, setApiKeysDraft] = useState('')
+  const [showAdvancedApiKeys, setShowAdvancedApiKeys] = useState(false)
+  const [isTestingKeys, setIsTestingKeys] = useState(false)
+  const [keyCheckResults, setKeyCheckResults] = useState<
+    { index: number; masked: string; status: string; detail: string }[]
+  >([])
   const { checkForUpdate: checkForBackendUpdate, installBackend } =
     useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
@@ -174,6 +185,179 @@ function ProviderDetail() {
     }
   }, [importingModel])
 
+  useEffect(() => {
+    if (!provider) return
+    if (provider.provider === 'llamacpp' || provider.provider === 'mlx') return
+    setApiKeysDraft(providerRemoteApiKeyChain(provider).join('\n'))
+  }, [providerName, provider?.api_key, JSON.stringify(provider?.api_key_fallbacks ?? [])])
+
+  const commitApiKeysDraft = useCallback(() => {
+    if (!provider) return
+    const lines = apiKeysDraft
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0)
+    const nextPrimary = lines[0] ?? ''
+    const nextFallbacks = lines.slice(1)
+
+    const prevPrimary = provider.api_key ?? ''
+    const prevFallbacks = provider.api_key_fallbacks ?? []
+    const changed =
+      nextPrimary !== prevPrimary ||
+      JSON.stringify(nextFallbacks) !== JSON.stringify(prevFallbacks)
+    if (!changed) return
+
+    const newSettings = [...provider.settings]
+    const apiKeySettingIndex = newSettings.findIndex((s) => s.key === 'api-key')
+    if (apiKeySettingIndex !== -1) {
+      const apiKeyProps = newSettings[apiKeySettingIndex].controller_props as {
+        value: string | boolean | number
+      }
+      apiKeyProps.value = nextPrimary
+    }
+
+    serviceHub.providers().updateSettings(providerName, newSettings)
+    updateProvider(providerName, {
+      ...provider,
+      settings: newSettings,
+      api_key: nextPrimary,
+      api_key_fallbacks: nextFallbacks,
+    })
+  }, [apiKeysDraft, provider, providerName, serviceHub, updateProvider])
+
+  const rawApiKeyLines = apiKeysDraft.split(/\r?\n/)
+  const primaryKeyDraft = (rawApiKeyLines[0] ?? '').trim()
+  const setPrimaryKeyDraft = (nextPrimary: string) => {
+    const rest = rawApiKeyLines.slice(1)
+    setApiKeysDraft([nextPrimary, ...rest].join('\n'))
+  }
+
+  const advancedApiKeyLines = apiKeysDraft.split(/\r?\n/).map((l) => l.trim())
+  const setKeyAtIndex = (index: number, nextValue: string) => {
+    const next = [...advancedApiKeyLines]
+    next[index] = nextValue.trim()
+    setApiKeysDraft(next.join('\n'))
+  }
+
+  const addKeyLine = () => {
+    setApiKeysDraft([...advancedApiKeyLines, ''].join('\n'))
+  }
+
+  const removeKeyLine = (index: number) => {
+    if (index === 0) return
+    const next = advancedApiKeyLines.filter((_, i) => i !== index)
+    setApiKeysDraft((next.length > 0 ? next : ['']).join('\n'))
+  }
+
+  const maskApiKey = useCallback((value: string) => {
+    if (value.length <= 8) return `${value.slice(0, 2)}***`
+    return `${value.slice(0, 4)}***${value.slice(-4)}`
+  }, [])
+
+  const getStatusLabel = useCallback((status: string) => {
+    switch (status) {
+      case 'ok':
+        return 'OK'
+      case 'unauthorized':
+        return 'Invalid / revoked key (401)'
+      case 'forbidden':
+        return 'Forbidden (403)'
+      case 'rate_limited':
+        return 'Rate limited / out of credit (429)'
+      case 'network_error':
+        return 'Network error'
+      default:
+        return 'Failed'
+    }
+  }, [])
+
+  const getStatusClass = useCallback((status: string) => {
+    switch (status) {
+      case 'ok':
+        return 'text-green-600'
+      case 'unauthorized':
+      case 'forbidden':
+      case 'http_error':
+      case 'network_error':
+      case 'rate_limited':
+        return 'text-yellow-600'
+      default:
+        return 'text-destructive'
+    }
+  }, [])
+
+  const handleTestApiKeys = useCallback(async () => {
+    if (!provider?.base_url) {
+      toast.error(t('providers:models'), {
+        description: t('providers:refreshModelsError'),
+      })
+      return
+    }
+
+    const keyDraftLines = apiKeysDraft.split(/\r?\n/).map((l) => l.trim())
+    const nonEmptyKeyCount = keyDraftLines.filter((l) => l.length > 0).length
+    if (nonEmptyKeyCount === 0) {
+      toast.error(t('providers:models'), {
+        description: t('providers:refreshModelsError'),
+      })
+      return
+    }
+
+    setIsTestingKeys(true)
+    try {
+      const fetchImpl = serviceHub.providers().fetch()
+      const results: { index: number; masked: string; status: string; detail: string }[] = []
+
+      for (let i = 0; i < keyDraftLines.length; i++) {
+        const key = keyDraftLines[i]
+        const keyIndex = i + 1
+        if (!key) continue
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'x-api-key': key,
+          Authorization: `Bearer ${key}`,
+        }
+        if (
+          provider.base_url.includes('localhost:') ||
+          provider.base_url.includes('127.0.0.1:')
+        ) {
+          headers['Origin'] = 'tauri://localhost'
+        }
+
+        try {
+          const response = await fetchImpl(`${provider.base_url}/models`, {
+            method: 'GET',
+            headers,
+          })
+
+          let status = 'http_error'
+          if (response.ok) status = 'ok'
+          else if (response.status === 401) status = 'unauthorized'
+          else if (response.status === 403) status = 'forbidden'
+          else if (response.status === 429) status = 'rate_limited'
+
+          results.push({
+            index: keyIndex,
+            masked: maskApiKey(key),
+            status,
+            detail: `${response.status} ${response.statusText}`,
+          })
+        } catch (err) {
+          results.push({
+            index: keyIndex,
+            masked: maskApiKey(key),
+            status: 'network_error',
+            detail: err instanceof Error ? err.message : 'Unknown error',
+          })
+        }
+      }
+
+      setKeyCheckResults(results)
+    } finally {
+      setIsTestingKeys(false)
+    }
+  }, [apiKeysDraft, maskApiKey, provider?.base_url, serviceHub, t])
+
   // Auto-refresh provider settings to get updated backend configuration
   const refreshSettings = useCallback(async () => {
     if (!provider) return
@@ -200,7 +384,7 @@ function ProviderDetail() {
   // This ensures all screens receive the event intermediately
 
   const handleRefreshModels = async () => {
-    if (!provider || !provider.base_url) {
+    if (!provider || !provider.base_url || !providerHasRemoteApiKeys(provider)) {
       toast.error(t('providers:models'), {
         description: t('providers:refreshModelsError'),
       })
@@ -404,6 +588,14 @@ function ProviderDetail() {
               {/* Settings */}
               <Card>
                 {provider?.settings.map((setting, settingIndex) => {
+                  if (
+                    setting.key === 'api-key' &&
+                    provider?.provider !== 'llamacpp' &&
+                    provider?.provider !== 'mlx'
+                  ) {
+                    return null
+                  }
+
                   // Use the DynamicController component
                   const actionComponent = (
                     <div className="mt-2">
@@ -599,6 +791,181 @@ function ProviderDetail() {
                 <DeleteProvider provider={provider} />
               </Card>
 
+              {provider &&
+                provider.provider !== 'llamacpp' &&
+                provider.provider !== 'mlx' && (
+                  <Card>
+                    <div className="space-y-2">
+                      <div className="space-y-1">
+                        <h2 className="font-medium text-foreground text-base">
+                          {t('providers:apiKeys.title')}
+                        </h2>
+                        <p className="text-sm text-muted-foreground leading-normal">
+                          {t('providers:apiKeys.description')}
+                        </p>
+                      </div>
+                      {!showAdvancedApiKeys && (
+                        <div className="flex flex-col gap-2">
+                          <Input
+                            className="font-mono"
+                            placeholder={t('providers:apiKeys.primaryPlaceholder')}
+                            value={primaryKeyDraft}
+                            onChange={(e) => setPrimaryKeyDraft(e.target.value)}
+                            onBlur={() => commitApiKeysDraft()}
+                            spellCheck={false}
+                            autoComplete="off"
+                          />
+
+                          <div className="flex items-center justify-between gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setShowAdvancedApiKeys(true)
+                                setKeyCheckResults([])
+                              }}
+                            >
+                              {t('providers:apiKeys.advanced')}
+                            </Button>
+                            <span className="text-xs text-muted-foreground">
+                              {t('providers:apiKeys.oneKeyHint')}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {showAdvancedApiKeys && (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-xs text-muted-foreground">
+                              {t('providers:apiKeys.testHint')}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  commitApiKeysDraft()
+                                  setShowAdvancedApiKeys(false)
+                                  setKeyCheckResults([])
+                                }}
+                              >
+                                {t('providers:apiKeys.hideAdvanced')}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={handleTestApiKeys}
+                                disabled={isTestingKeys}
+                              >
+                                {isTestingKeys ? (
+                                  <>
+                                    <IconLoader
+                                      size={14}
+                                      className="animate-spin"
+                                    />
+                                    {t('providers:apiKeys.testing')}
+                                  </>
+                                ) : (
+                                  t('providers:apiKeys.test')
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="text-xs text-muted-foreground">
+                            Primary key is <span className="font-medium">#1</span>. Jan
+                            retries the next key only on{' '}
+                            <span className="font-medium">401/403/429</span>.
+                          </div>
+
+                          <div className="space-y-2">
+                            {advancedApiKeyLines.map((keyValue, idx) => {
+                              const keyIndex = idx + 1
+                              const rowResult = keyCheckResults.find(
+                                (r) => r.index === keyIndex
+                              )
+
+                              return (
+                                <div
+                                  key={idx}
+                                  className="grid grid-cols-[2.5rem_1fr_2rem] gap-x-2 gap-y-1 items-center"
+                                >
+                                  <div className="text-right text-xs font-mono text-muted-foreground">
+                                    #{keyIndex}
+                                  </div>
+
+                                  <div className="min-w-0">
+                                    <Input
+                                      type="password"
+                                      className="font-mono w-full"
+                                      placeholder={t('providers:apiKeys.keyPlaceholder')}
+                                      value={keyValue}
+                                      onChange={(e) => {
+                                        setKeyAtIndex(idx, e.target.value)
+                                      }}
+                                      onBlur={commitApiKeysDraft}
+                                      spellCheck={false}
+                                      autoComplete="off"
+                                    />
+                                  </div>
+
+                                  <div className="flex justify-end">
+                                    {idx !== 0 ? (
+                                      <Button
+                                        size="icon-xs"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setKeyCheckResults([])
+                                          removeKeyLine(idx)
+                                        }}
+                                        title={t('providers:apiKeys.removeKey')}
+                                      >
+                                        -
+                                      </Button>
+                                    ) : (
+                                      <span aria-hidden>&nbsp;</span>
+                                    )}
+                                  </div>
+
+                                  <div aria-hidden />
+                                  <div className="min-w-0">
+                                    {rowResult && (
+                                      <div
+                                        className={cn(
+                                          'text-right text-xs font-medium',
+                                          getStatusClass(rowResult.status)
+                                        )}
+                                        title={rowResult.detail}
+                                      >
+                                        {getStatusLabel(rowResult.status)}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div aria-hidden />
+                                </div>
+                              )
+                            })}
+
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setKeyCheckResults([])
+                                  addKeyLine()
+                                }}
+                              >
+                                + {t('providers:apiKeys.addKey')}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                )}
+
               {/* Models */}
               <Card
                 header={
@@ -704,7 +1071,7 @@ function ProviderDetail() {
                                 predefinedProviders.some(
                                   (p) => p.provider === provider.provider
                                 ) &&
-                                Boolean(provider.api_key?.length))) && (
+                                providerHasRemoteApiKeys(provider))) && (
                               <FavoriteModelAction model={model} />
                             )}
                             <DialogDeleteModel

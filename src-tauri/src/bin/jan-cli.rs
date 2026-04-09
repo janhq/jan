@@ -13,7 +13,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::{
-    cli_delete_thread, cli_get_config, cli_get_data_folder, cli_get_thread,
+    cli_delete_thread, cli_get_data_folder, cli_get_thread,
     cli_list_messages, cli_list_threads, discover_llamacpp_binary,
     discover_mlx_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
     init_mlx_state, list_models, load_llama_model_impl, load_mlx_model_impl,
@@ -819,7 +819,7 @@ async fn handle_serve(args: ServeArgs) {
         detach: _,
         log: _,
         verbose,
-        select,
+        select: _,
     } = args;
 
     // When --fit is on, let llama.cpp decide the context size automatically
@@ -1305,6 +1305,7 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         version_backend: "cli/llama-server".to_string(),
         auto_update_engine: false,
         auto_unload: false,
+        auto_restart_on_crash: false,
         timeout,
         llamacpp_env: String::new(),
         fit,

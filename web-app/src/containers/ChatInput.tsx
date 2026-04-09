@@ -32,6 +32,9 @@ import {
   IconBrandChrome,
   IconUser,
 } from '@tabler/icons-react'
+import { generateId } from 'ai'
+import { useMessageQueue } from '@/stores/message-queue-store'
+import { QueuedMessageChip } from '@/containers/QueuedMessageBubble'
 import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -124,6 +127,8 @@ const ChatInput = memo(function ChatInput({
   const setActiveModels = useAppState((state) => state.setActiveModels)
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
+  const addToHistory = usePrompt((state) => state.addToHistory)
+  const navigateHistory = usePrompt((state) => state.navigateHistory)
   const currentThreadId = useThreads((state) => state.currentThreadId)
   const currentThread = useThreads((state) => state.getCurrentThread())
   const updateCurrentThreadAssistant = useThreads(
@@ -210,6 +215,26 @@ const ChatInput = memo(function ChatInput({
 
   const assistantCount = assistants?.length || 0
 
+  // Tool schemas sent to the model are not part of ThreadMessage[]; add them here only.
+  // Do not include system instructions — they are already present in messages and counted by useTokensCount.
+  const tokenCounterAdditionalContext = useMemo(() => {
+    const toolsText = tools
+      .map((tool) => {
+        const schema = (() => {
+          try {
+            return JSON.stringify(tool.inputSchema ?? {})
+          } catch {
+            return '{}'
+          }
+        })()
+        return `Tool ${tool.server}::${tool.name}\nDescription: ${tool.description}\nSchema: ${schema}`
+      })
+      .join('\n\n')
+
+    if (!toolsText) return ''
+    return `Available tools:\n${toolsText}`
+  }, [tools])
+
   // No auto-selection: let the user explicitly pick an assistant
 
   // Jan Browser Extension hook
@@ -270,6 +295,19 @@ const ChatInput = memo(function ChatInput({
     (a) => a.type === 'document' && a.processing
   )
   const ingestingAny = attachments.some((a) => a.processing)
+
+  // Queued messages for this thread (shown as chips in the input area)
+  const queuedMessages = useMessageQueue(
+    useShallow((s) => s.getQueue(currentThreadId ?? ''))
+  )
+  const queueLength = queuedMessages.length
+
+  const removeQueuedMessage = useCallback(
+    (id: string) => {
+      useMessageQueue.getState().removeMessage(currentThreadId ?? '', id)
+    },
+    [currentThreadId]
+  )
 
   const lastTransferredThreadId = useRef<string | null>(null)
 
@@ -372,9 +410,21 @@ const ChatInput = memo(function ChatInput({
     }
 
     setMessage('')
+    addToHistory(prompt)
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
+      // When the model is still streaming, queue the message for later
+      if (isStreaming && currentThreadId) {
+        useMessageQueue.getState().enqueue(currentThreadId, {
+          id: generateId(),
+          text: prompt,
+          createdAt: Date.now(),
+        })
+        setPrompt('')
+        return
+      }
+
       const assistant = currentThread?.assistants?.[0]
       setCurrentAssistant(assistant)
       // Build file parts for AI SDK
@@ -825,12 +875,45 @@ const ChatInput = memo(function ChatInput({
               'cs',
               'fs',
               'vb',
+              'xaml',
+              'csproj',
+              'sln',
+              // CUDA
+              'cu',
+              'cuh',
+              // Shaders
+              'hlsl',
+              'glsl',
+              'cg',
+              'shader',
               // Shell
               'sh',
               'bash',
               'zsh',
               'fish',
               'ps1',
+              'bat',
+              'cmd',
+              'vbs',
+              // More languages
+              'asm',
+              's',
+              'm',
+              'mm',
+              'pas',
+              'pp',
+              'erl',
+              'hrl',
+              'ex',
+              'exs',
+              'clj',
+              'cljs',
+              'hs',
+              'lhs',
+              'ml',
+              'mli',
+              'f',
+              'f90',
               // Web
               'css',
               'scss',
@@ -839,6 +922,10 @@ const ChatInput = memo(function ChatInput({
               'vue',
               'svelte',
               'astro',
+              'php',
+              'asp',
+              'aspx',
+              'jsp',
               // Data / config formats
               'json',
               'jsonc',
@@ -850,16 +937,24 @@ const ChatInput = memo(function ChatInput({
               'cfg',
               'conf',
               'env',
+              'properties',
+              'dockerfile',
+              'makefile',
+              'cmake',
+              'lock',
               // Query / markup
               'sql',
               'graphql',
               'gql',
               'tex',
               'rst',
+              'adoc',
+              'textile',
               // Misc text
               'log',
               'diff',
               'patch',
+              'gitignore',
             ],
           },
           {
@@ -1513,8 +1608,7 @@ const ChatInput = memo(function ChatInput({
       <div className="relative">
         <div
           className={cn(
-            'relative overflow-hidden p-0.5 rounded-3xl',
-            isStreaming && 'opacity-70'
+            'relative overflow-hidden p-0.5 rounded-3xl'
           )}
         >
           {isStreaming && (
@@ -1621,6 +1715,23 @@ const ChatInput = memo(function ChatInput({
                 </div>
               </div>
             )}
+            {queuedMessages.length > 0 && (
+              <div className="flex flex-col gap-1 px-3 pt-2 pb-0">
+                {queuedMessages.map((msg) => (
+                  <QueuedMessageChip
+                    key={msg.id}
+                    message={msg}
+                    onEdit={(queued) => {
+                      // Put the text back in the input for editing, remove from queue
+                      setPrompt(queued.text)
+                      removeQueuedMessage(queued.id)
+                      textareaRef.current?.focus()
+                    }}
+                    onRemove={removeQueuedMessage}
+                  />
+                ))}
+              </div>
+            )}
             <TextareaAutosize
               dir="auto"
               ref={textareaRef}
@@ -1641,14 +1752,33 @@ const ChatInput = memo(function ChatInput({
                   e.nativeEvent.isComposing || e.keyCode === 229
                 if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
                   e.preventDefault()
-                  // Submit prompt when the following conditions are met:
-                  // - Enter is pressed without Shift
-                  // - The streaming content has finished
-                  // - Prompt is not empty
-                  if (!isStreaming && prompt.trim() && !ingestingAny) {
+                  // Submit prompt when Enter is pressed without Shift and prompt is not empty.
+                  // If streaming, handleSendMessage will queue the message automatically.
+                  if (prompt.trim() && !ingestingAny) {
                     handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
+                }
+                // Navigate prompt history with Up/Down arrow keys
+                if (e.key === 'ArrowUp' && !isComposing) {
+                  const textarea = e.currentTarget
+                  const cursorAtStart =
+                    textarea.selectionStart === 0 &&
+                    textarea.selectionEnd === 0
+                  if (cursorAtStart || !prompt) {
+                    e.preventDefault()
+                    navigateHistory('up')
+                  }
+                }
+                if (e.key === 'ArrowDown' && !isComposing) {
+                  const textarea = e.currentTarget
+                  const cursorAtEnd =
+                    textarea.selectionStart === prompt.length &&
+                    textarea.selectionEnd === prompt.length
+                  if (cursorAtEnd) {
+                    e.preventDefault()
+                    navigateHistory('down')
+                  }
                 }
               }}
               onPaste={handlePaste}
@@ -2014,6 +2144,7 @@ const ChatInput = memo(function ChatInput({
                     <TokenCounter
                       messages={threadMessages || []}
                       compact={true}
+                      additionalContextText={tokenCounterAdditionalContext}
                       uploadedFiles={attachments
                         .filter((a) => a.type === 'image' && a.dataUrl)
                         .map((a) => ({
@@ -2028,16 +2159,29 @@ const ChatInput = memo(function ChatInput({
                 )}
 
               {isStreaming ? (
-                <Button
-                  variant="destructive"
-                  size="icon-sm"
-                  className="rounded-full mr-1 mb-1"
-                  onClick={() => {
-                    if (currentThreadId) stopStreaming(currentThreadId)
-                  }}
-                >
-                  <IconPlayerStopFilled />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="destructive"
+                      size="icon-sm"
+                      className="rounded-full mr-1 mb-1"
+                      onClick={() => {
+                        if (!currentThreadId) return
+                        const queue = useMessageQueue.getState().getQueue(currentThreadId)
+                        if (queue.length > 0) {
+                          useMessageQueue.getState().clearQueue(currentThreadId)
+                        } else {
+                          stopStreaming(currentThreadId)
+                        }
+                      }}
+                    >
+                      <IconPlayerStopFilled />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{queueLength > 0 ? `Clear ${queueLength} queued message(s)` : 'Stop generating'}</p>
+                  </TooltipContent>
+                </Tooltip>
               ) : (
                 <Button
                   variant="default"
@@ -2082,6 +2226,7 @@ const ChatInput = memo(function ChatInput({
           <div className="flex-1 w-full flex justify-start px-2">
             <TokenCounter
               messages={threadMessages || []}
+              additionalContextText={tokenCounterAdditionalContext}
               uploadedFiles={attachments
                 .filter((a) => a.type === 'image' && a.dataUrl)
                 .map((a) => ({

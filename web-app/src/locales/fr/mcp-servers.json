@@ -58,6 +58,16 @@
     "title": "Paramètres d'exécution",
     "description": "Configurez comment Jan gère et réessaye les serveurs MCP.",
     "toolCallTimeout": "Délai d'appel d'outil (secondes)",
-    "toolCallTimeoutDesc": "Temps maximum d'attente pour une réponse d'outil MCP avant l'expiration du délai."
+    "toolCallTimeoutDesc": "Temps maximum d'attente pour une réponse d'outil MCP avant l'expiration du délai.",
+    "smartToolRouting": "Routage intelligent des outils MCP",
+    "smartToolRoutingDesc": "Lorsque cette option est activée, Jan sélectionne les serveurs MCP pertinents avant de charger les outils. Désactivez-la pour toujours charger la liste complète d'outils MCP.",
+    "useLightweightRouterModel": "Utiliser un modèle dédié pour le routage",
+    "useLightweightRouterModelDesc": "Lorsque le routage intelligent est activé, l’étape de routage utilise un modèle distinct (souvent plus petit) au lieu du modèle de chat. Désactivez pour toujours utiliser le modèle de chat actif pour le routage.",
+    "routerModel": "Modèle de routage",
+    "routerModelDesc": "Choisissez le fournisseur et le modèle au même endroit. Seuls les modèles légers sont listés pour un routage rapide et économique.",
+    "selectRouterModelPlaceholder": "Sélectionner un modèle de routage…",
+    "routerModelSearchPlaceholder": "Rechercher des modèles…",
+    "routerModelEmptyList": "Aucun modèle léger disponible. Ajoutez un modèle plus petit ou configurez les clés API dans Modèles.",
+    "routerModelEmptySearch": "Aucun résultat pour « {{query}} »."
   }
 }

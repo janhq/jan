@@ -2,6 +2,7 @@
   "assistants": "Assistants",
   "hardware": "Hardware",
   "mcp-servers": "MCP Servers",
+  "connectors": "Connectors",
   "local_api_server": "Local API Server",
   "remote_access": "Remote Access",
   "integrations": "Integrations",
@@ -18,6 +19,7 @@
   "hideProvider": "Hide provider",
   "showProvider": "Show provider",
   "interface": "Interface",
+  "appearance": "Appearance",
   "privacy": "Privacy",
   "keyboardShortcuts": "Shortcuts",
   "newChat": "New Chat",
@@ -436,6 +438,10 @@
     "fileAlreadyExists": {
       "title": "File Already Exists",
       "description": "File is already attached to this project"
+    },
+    "unsupportedFileType": {
+      "title": "Unsupported File Type",
+      "description": "File extension \".{{extension}}\" is not supported for Project reference."
     },
     "attachmentsDisabledInfo": {
       "title": "Attachments Disabled",

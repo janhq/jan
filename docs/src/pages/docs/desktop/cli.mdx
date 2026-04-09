@@ -35,7 +35,7 @@ The `jan` CLI lets you serve local AI models and launch autonomous agents from y
    ╚════╝ ╚═╝  ╚═╝╚═╝  ╚══╝
 
 Jan runs local AI models (LlamaCPP / MLX) and exposes them via an
-OpenAI-compatible API, then wires AI coding agents like Claude Code or opencode
+OpenAI-compatible API, then wires AI coding agent like Claude Code
 directly to your own hardware — no cloud account, no usage fees, full privacy.
 
 Models downloaded in the Jan desktop app are automatically available here.
@@ -47,17 +47,24 @@ Commands:
   launch   Start a local model, then launch an AI agent with it pre-wired (env vars set automatically)
   threads  List and inspect conversation threads saved by the Jan app
   models   List and load models installed in the Jan data folder
+  agent    pi-mono-style minimal agent
   help     Print this message or the help of the given subcommand(s)
 
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
 Examples:
-  jan launch claude                               # pick a model, then run Claude Code against it
-  jan launch claude --model qwen3.5-35b-a3b       # use a specific model
-  jan launch openclaw --model qwen3.5-35b-a3b     # wire openclaw to a local model
-  jan launch opencode --model qwen3.5-35b-a3b     # wire opencode to a local model
-  jan serve qwen3.5-35b-a3b                       # expose a model at localhost:6767/v1
-  jan serve qwen3.5-35b-a3b --fit                 # auto-fit context to available VRAM
-  jan serve qwen3.5-35b-a3b --detach              # run in the background
-  jan models list                                 # show all installed models
+  jan launch claude                                      # pick a model, then run Claude Code against it
+  jan launch claude --model janhq/Jan-code-4b-gguf       # use a specific model
+  jan launch openclaw --model janhq/Jan-code-4b-gguf     # wire openclaw to a local model
+  jan serve janhq/Jan-code-4b-gguf                       # expose a model at localhost:6767/v1
+  jan serve janhq/Jan-code-4b-gguf --fit                 # auto-fit context to available VRAM
+  jan serve janhq/Jan-code-4b-gguf --detach              # run in the background
+  jan models list                                        # show all installed models
 ```
 
 Models downloaded in the Jan desktop app are automatically available to the CLI.

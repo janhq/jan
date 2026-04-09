@@ -14,6 +14,7 @@ import { AppEvent, events } from '@janhq/core'
 import { SystemEvent } from '@/types/events'
 import { isDev } from '@/lib/utils'
 import { invoke } from '@tauri-apps/api/core'
+import { providerHasRemoteApiKeys, providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 
 type ProviderCustomHeader = {
   header: string
@@ -23,6 +24,7 @@ type ProviderCustomHeader = {
 type RegisterProviderRequest = {
   provider: string
   api_key?: string
+  api_keys?: string[]
   base_url?: string
   custom_headers: ProviderCustomHeader[]
   models: string[]
@@ -32,15 +34,16 @@ async function registerRemoteProvider(provider: ModelProvider) {
   // Skip llamacpp - those are local models
   if (provider.provider === 'llamacpp') return
 
-  // Skip providers without API key (they can't make requests)
-  if (!provider.api_key) {
+  const chain = providerRemoteApiKeyChain(provider)
+  if (chain.length === 0) {
     console.log(`Provider ${provider.provider} has no API key, skipping registration`)
     return
   }
 
   const request: RegisterProviderRequest = {
     provider: provider.provider,
-    api_key: provider.api_key,
+    api_key: chain[0],
+    api_keys: chain.slice(1),
     base_url: provider.base_url,
     custom_headers: (provider.custom_header || []).map((h) => ({
       header: h.header,
@@ -66,7 +69,11 @@ const syncRemoteProviders = () => {
   const currentActive = new Set<string>()
 
   providers.forEach((provider) => {
-    if (provider.active && provider.provider !== 'llamacpp' && provider.api_key) {
+    if (
+      provider.active &&
+      provider.provider !== 'llamacpp' &&
+      providerHasRemoteApiKeys(provider)
+    ) {
       registerRemoteProvider(provider)
       currentActive.add(provider.provider)
     }

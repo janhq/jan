@@ -58,6 +58,16 @@
     "title": "Ustawienia środowiska uruchomieniowego",
     "description": "Skonfiguruj, jak Jan zarządza i ponawia próby połączenia z serwerami MCP.",
     "toolCallTimeout": "Limit czasu wywołania narzędzia (sekundy)",
-    "toolCallTimeoutDesc": "Maksymalny czas oczekiwania na odpowiedź narzędzia MCP przed przekroczeniem limitu czasu."
+    "toolCallTimeoutDesc": "Maksymalny czas oczekiwania na odpowiedź narzędzia MCP przed przekroczeniem limitu czasu.",
+    "smartToolRouting": "Inteligentne routowanie narzędzi MCP",
+    "smartToolRoutingDesc": "Po włączeniu Jan wybiera odpowiednie serwery MCP przed załadowaniem narzędzi. Wyłącz, aby zawsze ładować pełną listę narzędzi MCP.",
+    "useLightweightRouterModel": "Użyj dedykowanego modelu do routowania",
+    "useLightweightRouterModelDesc": "Gdy inteligentne routowanie jest włączone, krok routowania jest wykonywany przez osobny (często mniejszy) model zamiast modelu czatu. Wyłącz, aby zawsze używać aktywnego modelu czatu do routowania.",
+    "routerModel": "Model routowania",
+    "routerModelDesc": "Wybierz dostawcę i model w jednym miejscu. Wyświetlane są tylko lekkie modele, aby routowanie było szybkie i tanie.",
+    "selectRouterModelPlaceholder": "Wybierz model routowania…",
+    "routerModelSearchPlaceholder": "Szukaj modeli…",
+    "routerModelEmptyList": "Brak lekkich modeli. Dodaj mniejszy model lub skonfiguruj klucze API w sekcji Modele.",
+    "routerModelEmptySearch": "Brak wyników dla „{{query}}”."
   }
 }

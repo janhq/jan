@@ -46,14 +46,16 @@ import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { Button } from '@/components/ui/button'
-import { IconAlertCircle } from '@tabler/icons-react'
+import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { useMessageQueue } from '@/stores/message-queue-store'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
+import { useAutoScroll } from '@/hooks/useAutoScroll'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -470,16 +472,27 @@ function ThreadDetail() {
     disabledTools, // Re-run when tools are enabled/disabled
   ])
 
-  // Ref for reasoning container auto-scroll
-  const reasoningContainerRef = useRef<HTMLDivElement>(null)
+  // Auto-scroll the reasoning container during streaming, pausing when the user scrolls up
+  const {
+    containerRef: reasoningContainerRef,
+    isAtBottom: isReasoningAtBottom,
+    handleScroll: handleReasoningScroll,
+    scrollToBottom: scrollReasoningToBottom,
+    forceScrollToBottom: forceScrollReasoningToBottom,
+    reset: resetReasoningScroll,
+  } = useAutoScroll()
 
-  // Auto-scroll reasoning container to bottom during streaming
   useEffect(() => {
-    if (status === 'streaming' && reasoningContainerRef.current) {
-      reasoningContainerRef.current.scrollTop =
-        reasoningContainerRef.current.scrollHeight
+    if (status === 'streaming') {
+      resetReasoningScroll()
     }
-  }, [status, chatMessages])
+  }, [status, resetReasoningScroll])
+
+  useEffect(() => {
+    if (status === 'streaming') {
+      scrollReasoningToBottom()
+    }
+  }, [status, chatMessages, scrollReasoningToBottom])
 
   useEffect(() => {
     setCurrentThreadId(threadId)
@@ -646,7 +659,7 @@ function ThreadDetail() {
       sendMessage({
         parts,
         id: messageId,
-        metadata: userMessage.metadata,
+        metadata: { ...userMessage.metadata, createdAt: new Date() },
       })
 
       // Clear attachments after sending
@@ -663,6 +676,23 @@ function ThreadDetail() {
       serviceHub,
       selectedProvider,
     ]
+  )
+
+  // Sends a text-only queued message, bypassing attachment processing entirely.
+  // This prevents stale or new attachments from leaking into auto-sent queue items.
+  const sendQueuedMessage = useCallback(
+    async (text: string) => {
+      const messageId = generateId()
+      const userMessage = newUserThreadContent(threadId, text, [], messageId)
+      addMessage(userMessage)
+
+      sendMessage({
+        parts: [{ type: 'text', text }],
+        id: messageId,
+        metadata: userMessage.metadata,
+      })
+    },
+    [sendMessage, threadId, addMessage]
   )
 
   // Check for and send initial message from sessionStorage
@@ -936,6 +966,42 @@ function ThreadDetail() {
     }
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Message queue: auto-send the next queued message when the stream finishes.
+  // No reactive subscription to the queue here — ChatInput owns the UI.
+  // We only read the store imperatively when status transitions to 'ready'.
+  const processingQueueRef = useRef(false)
+
+  useEffect(() => {
+    if (status !== 'ready' || processingQueueRef.current) return
+    if (sessionData.tools.length > 0) return
+
+    const next = useMessageQueue.getState().dequeue(threadId)
+    if (!next) return
+
+    processingQueueRef.current = true
+    sendQueuedMessage(next.text)
+      .catch((err) => {
+        console.error('Failed to send queued message:', err)
+      })
+      .finally(() => {
+        processingQueueRef.current = false
+      })
+  }, [status, threadId, sendQueuedMessage, sessionData.tools.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // If streaming errors out, discard any queued messages so they don't sit there stuck
+  useEffect(() => {
+    if (status === 'error') {
+      useMessageQueue.getState().clearQueue(threadId)
+    }
+  }, [status, threadId])
+
+  // Clear the queue when navigating away from this thread
+  useEffect(() => {
+    return () => {
+      useMessageQueue.getState().clearQueue(threadId)
+    }
+  }, [threadId])
+
   const threadModel = useMemo(
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
@@ -966,6 +1032,9 @@ function ThreadDetail() {
                     isLastMessage={isLastMessage}
                     status={status}
                     reasoningContainerRef={reasoningContainerRef}
+                    isReasoningAtBottom={isReasoningAtBottom}
+                    onReasoningScroll={handleReasoningScroll}
+                    onReasoningScrollToBottom={forceScrollReasoningToBottom}
                     onRegenerate={handleRegenerate}
                     onEdit={handleEditMessage}
                     onDelete={handleDeleteMessage}
@@ -982,6 +1051,9 @@ function ThreadDetail() {
                   isLastMessage={true}
                   status={status}
                   reasoningContainerRef={reasoningContainerRef}
+                  isReasoningAtBottom={isReasoningAtBottom}
+                  onReasoningScroll={handleReasoningScroll}
+                  onReasoningScrollToBottom={forceScrollReasoningToBottom}
                   onRegenerate={handleRegenerate}
                   onEdit={handleEditMessage}
                   onDelete={handleDeleteMessage}
@@ -1037,7 +1109,17 @@ function ThreadDetail() {
                           <IconAlertCircle className="size-4 mr-2" />
                           Increase Context Size
                         </Button>
-                      ) : null}
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3"
+                          onClick={() => handleRegenerate()}
+                        >
+                          <IconRefresh className="size-4 mr-2" />
+                          Regenerate
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>

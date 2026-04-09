@@ -11,6 +11,7 @@ import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { DefaultProvidersService } from './default'
 import { getModelCapabilities } from '@/lib/models'
+import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
@@ -141,84 +142,101 @@ export class TauriProvidersService extends DefaultProvidersService {
     }
 
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      }
+      const keyChain = providerRemoteApiKeyChain(provider)
+      const keyAttempts: (string | undefined)[] =
+        keyChain.length > 0 ? keyChain : [undefined]
 
-      // Add Origin header for local providers to avoid CORS issues
-      // Some local providers (like Ollama) require an Origin header
-      if (
-        provider.base_url.includes('localhost:') ||
-        provider.base_url.includes('127.0.0.1:')
-      ) {
-        headers['Origin'] = 'tauri://localhost'
-      }
+      let lastStatus = 0
+      let lastStatusText = ''
 
-      // Only add authentication headers if API key is provided
-      if (provider.api_key) {
-        headers['x-api-key'] = provider.api_key
-        headers['Authorization'] = `Bearer ${provider.api_key}`
-      }
+      for (let ki = 0; ki < keyAttempts.length; ki++) {
+        const key = keyAttempts[ki]
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        }
 
-      if (provider.custom_header) {
-        provider.custom_header.forEach((header) => {
-          headers[header.header] = header.value
+        if (
+          provider.base_url.includes('localhost:') ||
+          provider.base_url.includes('127.0.0.1:')
+        ) {
+          headers['Origin'] = 'tauri://localhost'
+        }
+
+        if (key) {
+          headers['x-api-key'] = key
+          headers['Authorization'] = `Bearer ${key}`
+        }
+
+        if (provider.custom_header) {
+          provider.custom_header.forEach((header) => {
+            headers[header.header] = header.value
+          })
+        }
+
+        const response = await fetchTauri(`${provider.base_url}/models`, {
+          method: 'GET',
+          headers,
         })
-      }
 
-      // Always use Tauri's fetch to avoid CORS issues
-      const response = await fetchTauri(`${provider.base_url}/models`, {
-        method: 'GET',
-        headers,
-      })
+        lastStatus = response.status
+        lastStatusText = response.statusText
 
-      if (!response.ok) {
-        // Provide more specific error messages based on status code (aligned with web implementation)
-        if (response.status === 401) {
-          throw new Error(
-            `Authentication failed: API key is required or invalid for ${provider.provider}`
-          )
-        } else if (response.status === 403) {
-          throw new Error(
-            `Access forbidden: Check your API key permissions for ${provider.provider}`
-          )
-        } else if (response.status === 404) {
-          throw new Error(
-            `Models endpoint not found for ${provider.provider}. Check the base URL configuration.`
-          )
-        } else {
+        if (
+          [401, 403, 429].includes(response.status) &&
+          ki < keyAttempts.length - 1
+        ) {
+          continue
+        }
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            throw new Error(
+              `Authentication failed: API key is required or invalid for ${provider.provider}`
+            )
+          }
+          if (response.status === 403) {
+            throw new Error(
+              `Access forbidden: Check your API key permissions for ${provider.provider}`
+            )
+          }
+          if (response.status === 404) {
+            throw new Error(
+              `Models endpoint not found for ${provider.provider}. Check the base URL configuration.`
+            )
+          }
           throw new Error(
             `Failed to fetch models from ${provider.provider}: ${response.status} ${response.statusText}`
           )
         }
-      }
 
-      const data = await response.json()
+        const data = await response.json()
 
-      // Handle different response formats that providers might use
-      if (data.data && Array.isArray(data.data)) {
-        // OpenAI format: { data: [{ id: "model-id" }, ...] }
-        return data.data
-          .map((model: { id: string }) => model.id)
-          .filter(Boolean)
-      } else if (Array.isArray(data)) {
-        // Direct array format: ["model-id1", "model-id2", ...]
-        return data
-          .filter(Boolean)
-          .map((model) =>
-            typeof model === 'object' && 'id' in model ? model.id : model
-          )
-      } else if (data.models && Array.isArray(data.models)) {
-        // Alternative format: { models: [...] }
-        return data.models
-          .map((model: string | { id: string }) =>
-            typeof model === 'string' ? model : model.id
-          )
-          .filter(Boolean)
-      } else {
+        if (data.data && Array.isArray(data.data)) {
+          return data.data
+            .map((model: { id: string }) => model.id)
+            .filter(Boolean)
+        }
+        if (Array.isArray(data)) {
+          return data
+            .filter(Boolean)
+            .map((model) =>
+              typeof model === 'object' && 'id' in model ? model.id : model
+            )
+        }
+        if (data.models && Array.isArray(data.models)) {
+          return data.models
+            .map((model: string | { id: string }) =>
+              typeof model === 'string' ? model : model.id
+            )
+            .filter(Boolean)
+        }
         console.warn('Unexpected response format from provider API:', data)
         return []
       }
+
+      throw new Error(
+        `Failed to fetch models from ${provider.provider}: ${lastStatus} ${lastStatusText}`
+      )
     } catch (error) {
       console.error('Error fetching models from provider:', error)
 
