@@ -63,12 +63,9 @@ pub async fn run_mcp_commands<R: Runtime>(
     servers_state: SharedMcpServers,
 ) -> Result<(), String> {
     let app_path = get_jan_data_folder_path(app.clone());
-    let app_path_str = app_path.to_str().unwrap().to_string();
-    log::trace!(
-        "Load MCP configs from {}",
-        app_path_str.clone() + "/mcp_config.json"
-    );
-    let config_content = std::fs::read_to_string(app_path_str + "/mcp_config.json")
+    let config_path = app_path.join("mcp_config.json");
+    log::trace!("Load MCP configs from {}", config_path.display());
+    let config_content = std::fs::read_to_string(&config_path)
         .map_err(|e| format!("Failed to read config file: {e}"))?;
 
     let mcp_servers: serde_json::Value = serde_json::from_str(&config_content)
@@ -567,7 +564,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
             cache_dir.push(".npx");
             cmd = Command::new(bun_x_path.display().to_string());
             cmd.arg("x");
-            cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap());
+            cmd.env("BUN_INSTALL", &cache_dir);
         }
 
         let uv_path = if cfg!(windows) {
@@ -582,7 +579,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
             cmd = Command::new(uv_path);
             cmd.arg("tool");
             cmd.arg("run");
-            cmd.env("UV_CACHE_DIR", cache_dir.to_str().unwrap());
+            cmd.env("UV_CACHE_DIR", &cache_dir);
         }
         #[cfg(windows)]
         {
