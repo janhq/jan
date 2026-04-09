@@ -22,7 +22,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { memo, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { RenameThreadDialog, DeleteThreadDialog } from '@/containers/dialogs'
 import { toast } from 'sonner'
@@ -135,7 +135,7 @@ const ThreadItem = memo(
       }
     }
 
-    const handleExport = async (format: 'markdown' | 'json') => {
+    const handleExport = useCallback(async (format: 'markdown' | 'json') => {
       try {
         let exportMessages = messages
         if (exportMessages.length === 0) {
@@ -157,7 +157,7 @@ const ThreadItem = memo(
         console.error('Failed to export thread:', error)
         toast.error(t('common:toast.exportThread.error'))
       }
-    }
+    }, [messages, thread.id, thread.title, serviceHub, t])
 
     return (
       <SidebarMenuItem>

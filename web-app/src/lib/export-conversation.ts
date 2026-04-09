@@ -9,7 +9,7 @@ type ExportOptions = {
 
 // Extracts reasoning from old-format <think> tags and returns separate segments
 function splitThinkTags(text: string): { reasoning: string | null; body: string } {
-  const match = text.match(/<think>([\s\S]*)<\/think>/)
+  const match = text.match(/<think>([\s\S]*?)<\/think>/)
   if (!match) return { reasoning: null, body: text }
 
   const reasoning = match[1].trim()
