@@ -299,7 +299,7 @@ fn test_download_scope_accepts_absolute_path_inside_canonical_root() {
         resolve_path_within_jan_data_folder(&configured_root, candidate.to_string_lossy().as_ref())
             .unwrap();
 
-    assert_eq!(resolved_path, candidate);
+    assert_eq!(resolved_path, candidate.canonicalize().unwrap());
 
     let _ = fs::remove_dir_all(&base_dir);
 }

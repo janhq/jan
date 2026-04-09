@@ -117,7 +117,7 @@ fn test_resolve_jan_scoped_path_allows_canonicalized_home_symlink_target() {
         resolve_path_within_jan_data_folder(&configured_root, candidate.to_string_lossy().as_ref())
             .unwrap();
 
-    assert_eq!(resolved_path, candidate);
+    assert_eq!(resolved_path, candidate.canonicalize().unwrap());
 
     let _ = fs::remove_dir_all(&base_dir);
 }
@@ -134,6 +134,7 @@ fn test_resolve_jan_scoped_path_accepts_relative_path_inside_root() {
     .unwrap();
 
     assert!(resolved_path.starts_with(&resolved_root));
+    assert_eq!(resolved_root, jan_data_folder.canonicalize().unwrap());
     assert_eq!(
         resolved_path.file_name().and_then(|name| name.to_str()),
         Some("backend.tar.gz")
