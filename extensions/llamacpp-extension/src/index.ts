@@ -60,6 +60,7 @@ import {
   removeOldBackendVersions,
   shouldMigrateBackend,
   handleSettingUpdate,
+  findSessionByModel as findLlamaSessionOptional,
 } from '@janhq/tauri-plugin-llamacpp-api'
 import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 
@@ -69,6 +70,11 @@ import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
  * Override the default app.log function to use Jan's logging system.
  * @param args
  */
+/** Default RAG embedding model when nothing local is configured */
+const DEFAULT_EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
+const DEFAULT_EMBEDDING_MODEL_URL =
+  'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true'
+
 const logger = {
   info: function (...args: any[]) {
     console.log(...args)
@@ -1857,6 +1863,74 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  private async findSessionByModelIfLoaded(
+    modelId: string
+  ): Promise<SessionInfo | null> {
+    try {
+      return (await findLlamaSessionOptional(modelId)) ?? null
+    } catch (e) {
+      logger.error(e)
+      return null
+    }
+  }
+
+  /**
+   * Choose which llama.cpp model id to use for embeddings (RAG / file uploads).
+   * User setting wins; otherwise first installed model marked embedding; otherwise HF default id.
+   */
+  private async pickEmbeddingModelId(): Promise<string> {
+    const configured = String(this.config.embedding_model_id ?? '').trim()
+    if (configured) {
+      return configured
+    }
+
+    const models = await this.list()
+    const embeddingModels = models
+      .filter((m) => m.embedding === true)
+      .sort((a, b) => a.id.localeCompare(b.id))
+
+    if (embeddingModels.length === 0) {
+      return DEFAULT_EMBEDDING_MODEL_ID
+    }
+
+    const preferred = embeddingModels.find(
+      (m) => m.id === DEFAULT_EMBEDDING_MODEL_ID
+    )
+    return (preferred ?? embeddingModels[0]).id
+  }
+
+  /**
+   * Ensure model.yml exists locally; only hits Hugging Face for the bundled default id.
+   */
+  private async ensureEmbeddingModelOnDisk(modelId: string): Promise<void> {
+    const downloaded = await this.list()
+    if (downloaded.some((m) => m.id === modelId)) {
+      return
+    }
+
+    if (modelId === DEFAULT_EMBEDDING_MODEL_ID) {
+      try {
+        await this.import(modelId, {
+          modelPath: DEFAULT_EMBEDDING_MODEL_URL,
+        })
+      } catch (e) {
+        logger.error('Failed to download default embedding model', modelId, e)
+        const msg = e instanceof Error ? e.message : String(e)
+        throw new Error(
+          `Could not download the default embedding model "${modelId}" (${msg}). ` +
+            `Hugging Face may be blocked or offline. Import a local embedding GGUF (e.g. BERT / nomic-bert) via Models, ` +
+            `then set "Embedding model ID" in llama.cpp settings to that model's folder name.`
+        )
+      }
+      return
+    }
+
+    throw new Error(
+      `Embedding model "${modelId}" is not installed under llama.cpp. ` +
+        `Import it first, or clear "Embedding model ID" to auto-select an installed embedding model.`
+    )
+  }
+
   private async ensureHealthySession(modelId: string): Promise<SessionInfo> {
     return invoke<SessionInfo>('plugin:llamacpp|ensure_session_ready', {
       modelId,
@@ -2069,22 +2143,12 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async embed(text: string[]): Promise<EmbeddingResponse> {
-    // Ensure the sentence-transformer model is present
-    let sInfo = await this.findSessionByModel('sentence-transformer-mini')
+    const modelId = await this.pickEmbeddingModelId()
+    let sInfo = await this.findSessionByModelIfLoaded(modelId)
+
     if (!sInfo) {
-      const downloadedModelList = await this.list()
-      if (
-        !downloadedModelList.some(
-          (model) => model.id === 'sentence-transformer-mini'
-        )
-      ) {
-        await this.import('sentence-transformer-mini', {
-          modelPath:
-            'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
-        })
-      }
-      // Load specifically in embedding mode
-      sInfo = await this.load('sentence-transformer-mini', undefined, true)
+      await this.ensureEmbeddingModelOnDisk(modelId)
+      sInfo = await this.load(modelId, undefined, true)
     }
 
     const ubatchSize =
@@ -2121,9 +2185,9 @@ export default class llamacpp_extension extends AIEngine {
       // If embeddings endpoint is not available (501), reload with embedding mode and retry once
       if (response.status === 501) {
         try {
-          await this.unload('sentence-transformer-mini')
+          await this.unload(modelId)
         } catch {}
-        sInfo = await this.load('sentence-transformer-mini', undefined, true)
+        sInfo = await this.load(modelId, undefined, true)
         response = await attemptRequest(sInfo as SessionInfo, batchInput)
       }
 
