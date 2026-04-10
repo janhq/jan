@@ -409,7 +409,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model,
       middleware: extractReasoningMiddleware({
-        tagName: 'think',
+        tagName: modelId.toLowerCase().includes('gemma') ? 'thought' : 'think',
         separator: '\n',
       }),
     })
@@ -499,7 +499,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model: model,
       middleware: extractReasoningMiddleware({
-        tagName: 'think',
+        tagName: modelId.toLowerCase().includes('gemma') ? 'thought' : 'think',
         separator: '\n',
       }),
     })
@@ -573,7 +573,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model,
       middleware: extractReasoningMiddleware({
-        tagName: 'think',
+        tagName: modelId.toLowerCase().includes('gemma') ? 'thought' : 'think',
         separator: '\n',
       }),
     })
@@ -771,6 +771,14 @@ export class ModelFactory {
       fetch: fetchImpl,
     })
 
-    return openAICompatible.languageModel(modelId)
+    const model = openAICompatible.languageModel(modelId)
+
+    return wrapLanguageModel({
+      model,
+      middleware: extractReasoningMiddleware({
+        tagName: modelId.toLowerCase().includes('gemma') ? 'thought' : 'think',
+        separator: '\n',
+      }),
+    })
   }
 }
