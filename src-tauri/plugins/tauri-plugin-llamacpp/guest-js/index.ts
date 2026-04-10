@@ -4,6 +4,8 @@ import {
   DeviceInfo,
   UnloadResult,
   GgufMetadata,
+  HubModelScoreRequest,
+  HubModelScoreResult,
   LlamacppConfig,
   BackendVersion,
   BackendFeatures,
@@ -202,6 +204,12 @@ export async function isModelSupported(
   })
 }
 
+export async function scoreHubModel(
+  request: HubModelScoreRequest
+): Promise<HubModelScoreResult> {
+  return await invoke('plugin:llamacpp|score_hub_model', { request })
+}
+
 // Cleanup commands
 export async function cleanupLlamaProcesses(): Promise<void> {
   return await invoke('plugin:llamacpp|cleanup_llama_processes')
@@ -214,7 +222,9 @@ export async function cleanupLlamaProcesses(): Promise<void> {
  * This is used for migrating stored user preferences.
  */
 export async function mapOldBackendToNew(oldBackend: string): Promise<string> {
-  return await invoke<string>('plugin:llamacpp|map_old_backend_to_new', { oldBackend })
+  return await invoke<string>('plugin:llamacpp|map_old_backend_to_new', {
+    oldBackend,
+  })
 }
 
 export async function getLocalInstalledBackendsInternal(

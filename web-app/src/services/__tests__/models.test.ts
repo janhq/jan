@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { useModelScore } from '../../hooks/useModelScores'
 import { DefaultModelsService } from '../models/default'
 import type { HuggingFaceRepo, CatalogModel } from '../models/types'
 import { EngineManager, events, DownloadEvent } from '@janhq/core'
@@ -47,6 +48,7 @@ describe('DefaultModelsService', () => {
     isModelSupported: vi.fn(),
     isToolSupported: vi.fn(),
     checkMmprojExists: vi.fn(),
+    getHubModelScore: vi.fn(),
   }
 
   const mockEngineManager = {
@@ -54,6 +56,7 @@ describe('DefaultModelsService', () => {
   }
 
   beforeEach(() => {
+    useModelScore.getState().reset()
     modelsService = new DefaultModelsService()
     vi.clearAllMocks()
     ;(EngineManager.instance as any).mockReturnValue(mockEngineManager)
@@ -264,10 +267,15 @@ describe('DefaultModelsService', () => {
       const result = await modelsService.startModel(provider, model)
 
       expect(result).toEqual(mockSession)
-      expect(mockEngine.load).toHaveBeenCalledWith(model, {
-        ctx_size: 4096,
-        n_gpu_layers: 32,
-      }, false, false)
+      expect(mockEngine.load).toHaveBeenCalledWith(
+        model,
+        {
+          ctx_size: 4096,
+          n_gpu_layers: 32,
+        },
+        false,
+        false
+      )
     })
 
     it('should handle start model error', async () => {
@@ -616,7 +624,7 @@ describe('DefaultModelsService', () => {
       last_modified: '2021-12-01T00:00:00Z',
       private: false,
       disabled: false,
-      library_name: "mlx",
+      library_name: 'mlx',
       gated: false,
       author: 'microsoft',
       siblings: [
@@ -734,10 +742,11 @@ describe('DefaultModelsService', () => {
       const result = modelsService.convertHfRepoToCatalogModel(
         repoWithVariousFileSizes
       )
+      const quants = result.quants ?? []
 
-      expect(result.quants[0].file_size).toBe('500.0 MB')
-      expect(result.quants[1].file_size).toBe('3.5 GB')
-      expect(result.quants[2].file_size).toBe('Unknown size')
+      expect(quants[0]?.file_size).toBe('500.0 MB')
+      expect(quants[1]?.file_size).toBe('3.5 GB')
+      expect(quants[2]?.file_size).toBe('Unknown size')
     })
 
     it('should handle empty or undefined tags', () => {
@@ -788,20 +797,22 @@ describe('DefaultModelsService', () => {
 
       const result =
         modelsService.convertHfRepoToCatalogModel(repoWithVariousGGUF)
+      const quants = result.quants ?? []
 
-      expect(result.quants[0].model_id).toBe('microsoft/model')
-      expect(result.quants[1].model_id).toBe('microsoft/MODEL')
-      expect(result.quants[2].model_id).toBe('microsoft/complex-model-name')
+      expect(quants[0]?.model_id).toBe('microsoft/model')
+      expect(quants[1]?.model_id).toBe('microsoft/MODEL')
+      expect(quants[2]?.model_id).toBe('microsoft/complex-model-name')
     })
 
     it('should generate correct download paths', () => {
       const result =
         modelsService.convertHfRepoToCatalogModel(mockHuggingFaceRepo)
+      const quants = result.quants ?? []
 
-      expect(result.quants[0].path).toBe(
+      expect(quants[0]?.path).toBe(
         'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q4_0.gguf'
       )
-      expect(result.quants[1].path).toBe(
+      expect(quants[1]?.path).toBe(
         'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q8_0.GGUF'
       )
     })
@@ -844,12 +855,13 @@ describe('DefaultModelsService', () => {
 
       const result =
         modelsService.convertHfRepoToCatalogModel(repoWithMixedCase)
+      const quants = result.quants ?? []
 
       expect(result.num_quants).toBe(3)
-      expect(result.quants).toHaveLength(3)
-      expect(result.quants[0].model_id).toBe('microsoft/model-1')
-      expect(result.quants[1].model_id).toBe('microsoft/model-2')
-      expect(result.quants[2].model_id).toBe('microsoft/model-3')
+      expect(quants).toHaveLength(3)
+      expect(quants[0]?.model_id).toBe('microsoft/model-1')
+      expect(quants[1]?.model_id).toBe('microsoft/model-2')
+      expect(quants[2]?.model_id).toBe('microsoft/model-3')
     })
 
     it('should handle edge cases with file size formatting', () => {
@@ -876,10 +888,11 @@ describe('DefaultModelsService', () => {
 
       const result =
         modelsService.convertHfRepoToCatalogModel(repoWithEdgeCases)
+      const quants = result.quants ?? []
 
-      expect(result.quants[0].file_size).toBe('0.0 MB')
-      expect(result.quants[1].file_size).toBe('1.0 GB')
-      expect(result.quants[2].file_size).toBe('Unknown size') // 0 is falsy, so it returns 'Unknown size'
+      expect(quants[0]?.file_size).toBe('0.0 MB')
+      expect(quants[1]?.file_size).toBe('1.0 GB')
+      expect(quants[2]?.file_size).toBe('Unknown size') // 0 is falsy, so it returns 'Unknown size'
     })
 
     it('should handle missing optional fields gracefully', () => {
@@ -905,12 +918,13 @@ describe('DefaultModelsService', () => {
       }
 
       const result = modelsService.convertHfRepoToCatalogModel(minimalRepo)
+      const quants = result.quants ?? []
 
       expect(result.model_name).toBe('minimal/repo')
       expect(result.developer).toBe('minimal')
       expect(result.downloads).toBe(0)
       expect(result.description).toBe('**Tags**: ')
-      expect(result.quants[0].file_size).toBe('Unknown size')
+      expect(quants[0]?.file_size).toBe('Unknown size')
     })
   })
 
@@ -1010,6 +1024,182 @@ describe('DefaultModelsService', () => {
       const result = await modelsService.isModelSupported('/path/to/model.gguf')
 
       expect(result).toBe('GREY')
+    })
+  })
+
+  describe('getHubModelScore', () => {
+    const mockCatalogModel = {
+      model_name: 'qwen/test-model',
+      description: 'Test model',
+      developer: 'qwen',
+      downloads: 100,
+      use_case: 'Instruction following',
+      capabilities: ['tool_use'],
+      created_at: '2026-03-20T00:00:00.000Z',
+      tools: true,
+      num_mmproj: 0,
+      pinned: true,
+      quants: [
+        {
+          model_id: 'qwen/test-model-q4_k_m',
+          path: 'https://huggingface.co/qwen/test-model-q4_k_m.gguf',
+          file_size: '4 GB',
+        },
+      ],
+    } as CatalogModel
+
+    it('delegates scoring to the llamacpp engine', async () => {
+      const expectedScore = {
+        status: 'ready',
+        overall: 82.4,
+        estimated_tps: 42,
+      }
+      const mockEngineWithScore = {
+        ...mockEngine,
+        getHubModelScore: vi.fn().mockResolvedValue(expectedScore),
+      }
+      mockEngineManager.get.mockReturnValue(mockEngineWithScore)
+
+      const result = await modelsService.getHubModelScore(mockCatalogModel)
+
+      expect(mockEngineWithScore.getHubModelScore).toHaveBeenCalledWith({
+        model_name: 'qwen/test-model',
+        developer: 'qwen',
+        model_path: 'https://huggingface.co/qwen/test-model-q4_k_m.gguf',
+        runtime: 'llamacpp',
+        quantization: 'Q4_K_M',
+        total_size_bytes: undefined,
+        ctx_size: 8192,
+        use_case: 'Instruction following',
+        capabilities: ['tool_use'],
+        release_date: '2026-03-20T00:00:00.000Z',
+        tools: true,
+        num_mmproj: 0,
+        pinned: true,
+      })
+      expect(result).toEqual(
+        expect.objectContaining({
+          status: 'ready',
+          overall: 82.4,
+          estimated_tps: 42,
+        })
+      )
+    })
+
+    it('delegates MLX scoring with aggregated safetensors size', async () => {
+      const mlxModel = {
+        ...mockCatalogModel,
+        model_name: 'mlx-community/qwen-test-7b-4bit',
+        quants: [],
+        is_mlx: true,
+        safetensors_files: [
+          {
+            model_id: 'model-00001-of-00002',
+            path: 'https://huggingface.co/mlx-community/qwen-test-7b-4bit/resolve/main/model-00001-of-00002.safetensors',
+            file_size: '2 GB',
+            size_bytes: 2_000_000_000,
+          },
+          {
+            model_id: 'model-00002-of-00002',
+            path: 'https://huggingface.co/mlx-community/qwen-test-7b-4bit/resolve/main/model-00002-of-00002.safetensors',
+            file_size: '2 GB',
+            size_bytes: 2_000_000_000,
+          },
+        ],
+      } as CatalogModel
+      const expectedScore = {
+        status: 'ready',
+        overall: 77.1,
+        estimated_tps: 58,
+      }
+      const mockEngineWithScore = {
+        ...mockEngine,
+        getHubModelScore: vi.fn().mockResolvedValue(expectedScore),
+      }
+      mockEngineManager.get.mockReturnValue(mockEngineWithScore)
+
+      const result = await modelsService.getHubModelScore(mlxModel)
+
+      expect(mockEngineWithScore.getHubModelScore).toHaveBeenCalledWith({
+        model_name: 'mlx-community/qwen-test-7b-4bit',
+        developer: 'qwen',
+        model_path:
+          'https://huggingface.co/mlx-community/qwen-test-7b-4bit/resolve/main/model-00001-of-00002.safetensors',
+        runtime: 'mlx',
+        quantization: 'mlx-4bit',
+        total_size_bytes: 4_000_000_000,
+        ctx_size: 8192,
+        use_case: 'Instruction following',
+        capabilities: ['tool_use'],
+        release_date: '2026-03-20T00:00:00.000Z',
+        tools: true,
+        num_mmproj: 0,
+        pinned: true,
+      })
+      expect(result).toEqual(
+        expect.objectContaining({
+          status: 'ready',
+          overall: 77.1,
+          estimated_tps: 58,
+        })
+      )
+    })
+
+    it('selects the highest-quality GGUF quant when no variant is provided', async () => {
+      const multiQuantModel = {
+        ...mockCatalogModel,
+        quants: [
+          {
+            model_id: 'qwen/test-model-q4_k_m',
+            path: 'https://huggingface.co/qwen/test-model-q4_k_m.gguf',
+            file_size: '4 GB',
+          },
+          {
+            model_id: 'qwen/test-model-q8_0',
+            path: 'https://huggingface.co/qwen/test-model-q8_0.gguf',
+            file_size: '8 GB',
+          },
+        ],
+      } as CatalogModel
+      const expectedScore = {
+        status: 'ready',
+        overall: 90.1,
+        estimated_tps: 24,
+      }
+      const mockEngineWithScore = {
+        ...mockEngine,
+        getHubModelScore: vi.fn().mockResolvedValue(expectedScore),
+      }
+      mockEngineManager.get.mockReturnValue(mockEngineWithScore)
+
+      await modelsService.getHubModelScore(multiQuantModel)
+
+      expect(mockEngineWithScore.getHubModelScore).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model_path: 'https://huggingface.co/qwen/test-model-q8_0.gguf',
+          quantization: 'Q8_0',
+        })
+      )
+    })
+
+    it('delegates repeated scoring requests through the engine', async () => {
+      const expectedScore = {
+        status: 'ready',
+        overall: 82.4,
+        estimated_tps: 42,
+      }
+      const mockEngineWithScore = {
+        ...mockEngine,
+        getHubModelScore: vi.fn().mockResolvedValue(expectedScore),
+      }
+      mockEngineManager.get.mockReturnValue(mockEngineWithScore)
+
+      const firstResult = await modelsService.getHubModelScore(mockCatalogModel)
+      const secondResult =
+        await modelsService.getHubModelScore(mockCatalogModel)
+
+      expect(mockEngineWithScore.getHubModelScore).toHaveBeenCalledTimes(2)
+      expect(secondResult).toEqual(firstResult)
     })
   })
 })

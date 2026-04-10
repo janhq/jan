@@ -26,6 +26,46 @@ export interface GgufMetadata {
   metadata: Record<string, string>
 }
 
+export type ModelScoreStatus = 'ready' | 'unavailable' | 'error'
+
+export interface ModelScoreBreakdown {
+  quality: number
+  speed: number
+  fit: number
+  context: number
+  best_quant: string
+  fit_level: string
+  run_mode: string
+  memory_required_gb: number
+  utilization_pct: number
+  use_case: string
+}
+
+export interface HubModelScoreRequest {
+  model_name: string
+  developer?: string
+  model_path: string
+  runtime?: 'llamacpp' | 'mlx'
+  quantization?: string
+  total_size_bytes?: number
+  ctx_size?: number
+  use_case?: string
+  capabilities?: string[]
+  release_date?: string
+  tools?: boolean
+  num_mmproj?: number
+  pinned?: boolean
+}
+
+export interface HubModelScoreResult {
+  status: ModelScoreStatus
+  overall?: number
+  estimated_tps: number
+  breakdown?: ModelScoreBreakdown
+  used_builtin_fallback: boolean
+  reason?: string
+}
+
 // llama.cpp settings
 export type LlamacppConfig = {
   version_backend: string
