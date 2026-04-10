@@ -2159,6 +2159,240 @@ async fn proxy_request(
             return Ok(response_builder.body(Body::from(body_str)).unwrap());
         }
 
+        // ── GET /models/available — list all downloaded (on-disk) models ──
+        (hyper::Method::GET, "/models/available") => {
+            log::debug!("Handling GET /v1/models/available request");
+
+            let data_folder = PathBuf::from(&jan_data_folder);
+            let mut all_models: Vec<serde_json::Value> = Vec::new();
+
+            for engine in &["llamacpp", "mlx"] {
+                let models_root = data_folder.join(engine).join("models");
+                if !models_root.exists() {
+                    continue;
+                }
+
+                let mut stack = vec![models_root.clone()];
+                while let Some(dir) = stack.pop() {
+                    let yml_path = dir.join("model.yml");
+                    if yml_path.exists() {
+                        if let Ok(content) = fs::read_to_string(&yml_path) {
+                            if let Ok(yml) =
+                                serde_yaml::from_str::<serde_json::Value>(&content)
+                            {
+                                let model_id = dir
+                                    .strip_prefix(&models_root)
+                                    .unwrap_or(&dir)
+                                    .to_string_lossy()
+                                    .into_owned();
+
+                                // Check if this model is currently loaded
+                                let is_running = {
+                                    let llama_guard = sessions.lock().await;
+                                    let llama_running = llama_guard
+                                        .values()
+                                        .any(|s| s.info.model_id == model_id);
+                                    drop(llama_guard);
+
+                                    if llama_running {
+                                        true
+                                    } else {
+                                        let mlx_guard = mlx_sessions.lock().await;
+                                        mlx_guard
+                                            .values()
+                                            .any(|s| s.info.model_id == model_id)
+                                    }
+                                };
+
+                                all_models.push(serde_json::json!({
+                                    "id": model_id,
+                                    "object": "model",
+                                    "engine": engine,
+                                    "status": if is_running { "running" } else { "available" },
+                                    "name": yml.get("name").and_then(|v| v.as_str()).unwrap_or(&model_id),
+                                    "size_bytes": yml.get("size_bytes").and_then(|v| v.as_u64()).unwrap_or(0),
+                                    "capabilities": yml.get("capabilities").cloned().unwrap_or(serde_json::json!([])),
+                                }));
+                                continue; // don't recurse into a model directory
+                            }
+                        }
+                    }
+                    // Recurse into subdirectories
+                    if let Ok(entries) = fs::read_dir(&dir) {
+                        for entry in entries.flatten() {
+                            if entry.path().is_dir() {
+                                stack.push(entry.path());
+                            }
+                        }
+                    }
+                }
+            }
+
+            all_models.sort_by(|a, b| {
+                let a_id = a.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let b_id = b.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                a_id.cmp(b_id)
+            });
+
+            let response_json = serde_json::json!({
+                "object": "list",
+                "data": all_models
+            });
+
+            let body_str =
+                serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
+
+            let mut response_builder = Response::builder()
+                .status(StatusCode::OK)
+                .header(hyper::header::CONTENT_TYPE, "application/json");
+
+            response_builder = add_cors_headers_with_host_and_origin(
+                response_builder,
+                &host_header,
+                &origin_header,
+                &config.trusted_hosts,
+            );
+
+            log::debug!("Returning {} available models", all_models.len());
+
+            return Ok(response_builder.body(Body::from(body_str)).unwrap());
+        }
+
+        // ── POST /models/unload — unload a running model by model_id ──
+        (hyper::Method::POST, "/models/unload") => {
+            log::debug!("Handling POST /v1/models/unload request");
+
+            let body_bytes = match hyper::body::to_bytes(body).await {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    let mut error_response =
+                        Response::builder().status(StatusCode::BAD_REQUEST);
+                    error_response = add_cors_headers_with_host_and_origin(
+                        error_response,
+                        &host_header,
+                        &origin_header,
+                        &config.trusted_hosts,
+                    );
+                    return Ok(error_response
+                        .body(Body::from("Failed to read request body"))
+                        .unwrap());
+                }
+            };
+
+            let json_body: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+                Ok(v) => v,
+                Err(e) => {
+                    let mut error_response =
+                        Response::builder().status(StatusCode::BAD_REQUEST);
+                    error_response = add_cors_headers_with_host_and_origin(
+                        error_response,
+                        &host_header,
+                        &origin_header,
+                        &config.trusted_hosts,
+                    );
+                    return Ok(error_response
+                        .body(Body::from(format!("Invalid JSON: {e}")))
+                        .unwrap());
+                }
+            };
+
+            let model_id = match json_body.get("model").and_then(|v| v.as_str()) {
+                Some(id) => id.to_string(),
+                None => {
+                    let mut error_response =
+                        Response::builder().status(StatusCode::BAD_REQUEST);
+                    error_response = add_cors_headers_with_host_and_origin(
+                        error_response,
+                        &host_header,
+                        &origin_header,
+                        &config.trusted_hosts,
+                    );
+                    return Ok(error_response
+                        .body(Body::from(
+                            r#"{"error": "Missing 'model' field in request body"}"#,
+                        ))
+                        .unwrap());
+                }
+            };
+
+            log::info!("Unloading model: {}", model_id);
+
+            // Try llama.cpp sessions first
+            let mut unloaded = false;
+            {
+                let mut map = sessions.lock().await;
+                let pid = map
+                    .iter()
+                    .find(|(_, s)| s.info.model_id == model_id)
+                    .map(|(&pid, _)| pid);
+
+                if let Some(pid) = pid {
+                    if let Some(mut session) = map.remove(&pid) {
+                        log::info!("Terminating llama.cpp process for model '{}'", model_id);
+                        let _ = session.child.kill().await;
+                        let _ = session.child.wait().await;
+                        unloaded = true;
+                    }
+                }
+            }
+
+            // Try MLX sessions
+            if !unloaded {
+                let mut mlx_map = mlx_sessions.lock().await;
+                let pid = mlx_map
+                    .iter()
+                    .find(|(_, s)| s.info.model_id == model_id)
+                    .map(|(&pid, _)| pid);
+
+                if let Some(pid) = pid {
+                    if let Some(mut session) = mlx_map.remove(&pid) {
+                        log::info!("Terminating MLX process for model '{}'", model_id);
+                        let _ = session.child.kill().await;
+                        let _ = session.child.wait().await;
+                        unloaded = true;
+                    }
+                }
+            }
+
+            let (status_code, response_json) = if unloaded {
+                log::info!("Successfully unloaded model: {}", model_id);
+                (
+                    StatusCode::OK,
+                    serde_json::json!({
+                        "success": true,
+                        "model": model_id,
+                        "message": format!("Model '{}' has been unloaded", model_id)
+                    }),
+                )
+            } else {
+                log::warn!("Model '{}' not found in running sessions", model_id);
+                (
+                    StatusCode::NOT_FOUND,
+                    serde_json::json!({
+                        "success": false,
+                        "model": model_id,
+                        "error": format!("Model '{}' is not currently loaded", model_id)
+                    }),
+                )
+            };
+
+            let body_str =
+                serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
+
+            let mut response_builder = Response::builder()
+                .status(status_code)
+                .header(hyper::header::CONTENT_TYPE, "application/json");
+
+            response_builder = add_cors_headers_with_host_and_origin(
+                response_builder,
+                &host_header,
+                &origin_header,
+                &config.trusted_hosts,
+            );
+
+            return Ok(response_builder.body(Body::from(body_str)).unwrap());
+        }
+
         (hyper::Method::GET, "/openapi.json") => {
             let static_body = include_str!("../../../static/openapi.json"); // relative to src-tauri/src/
                                                                             // Parse the static OpenAPI JSON and update the server URL with actual host and port
