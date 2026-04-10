@@ -165,19 +165,21 @@ export async function downloadBackend(
   const proxyConfig = getProxyConfig()
 
   const platformName = IS_WINDOWS ? 'win' : 'linux'
+  // Jan's own llama.cpp releases use .tar.gz on all platforms.
+  // If upstream HIP releases switch to .zip, this will need updating.
+  const archiveExt = 'tar.gz'
 
-  // Build URLs per source
   const backendUrl =
     source === 'github'
-      ? `https://github.com/janhq/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`
-      : `https://catalog.jan.ai/llama.cpp/releases/${version}/llama-${version}-bin-${backend}.tar.gz`
+      ? `https://github.com/janhq/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.${archiveExt}`
+      : `https://catalog.jan.ai/llama.cpp/releases/${version}/llama-${version}-bin-${backend}.${archiveExt}`
 
   const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
 
   const downloadItems = [
     {
       url: backendUrl,
-      save_path: await joinPath([backendDir, 'backend.tar.gz']),
+      save_path: await joinPath([backendDir, `backend.${archiveExt}`]),
       proxy: proxyConfig,
       model_id: taskId,
     },
@@ -251,9 +253,9 @@ export async function downloadBackend(
       return
     }
 
-    // decompress the downloaded tar.gz files
+    // decompress the downloaded archives (.tar.gz and .zip)
     for (const { save_path } of downloadItems) {
-      if (save_path.endsWith('.tar.gz')) {
+      if (save_path.endsWith('.tar.gz') || save_path.endsWith('.zip')) {
         const parentDir = await dirname(save_path)
         await invoke('decompress', { path: save_path, outputDir: parentDir })
         await fs.rm(save_path)

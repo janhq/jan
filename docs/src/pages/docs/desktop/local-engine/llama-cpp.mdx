@@ -117,12 +117,20 @@ Choose based on your CUDA version (check NVIDIA Control Panel):
 - `win-noavx-x64` (very old CPUs)
 - `win-common_cpus-x64` (broadest compatibility)
 
+### AMD Graphics Cards (ROCm/HIP)
+If you have an AMD GPU with [ROCm](https://rocm.docs.amd.com/) installed, the HIP backend offers better performance than Vulkan:
+- `win-hip-x64`
+
+<Callout type="info">
+ROCm must be installed system-wide before the HIP backend can be used. If ROCm is not detected, Jan will fall back to Vulkan automatically.
+</Callout>
+
 ### Other Graphics Cards (Vulkan — AMD, Intel Arc)
-- `win-vulkan-x64` (recommended for GPU acceleration)
+- `win-vulkan-x64` (recommended for GPU acceleration without ROCm)
 - `win-vulkan-common_cpus-x64` (Vulkan with broader CPU support)
 
 <Callout type="info">
-**Quick Test**: Start with `win-avx2-cuda-cu12.0-x64` for NVIDIA, `win-vulkan-x64` for AMD/Intel Arc, or `win-avx2-x64` for CPU-only.
+**Quick Test**: Start with `win-avx2-cuda-cu12.0-x64` for NVIDIA, `win-hip-x64` for AMD with ROCm, `win-vulkan-x64` for AMD/Intel Arc without ROCm, or `win-avx2-x64` for CPU-only.
 </Callout>
 
 </Tabs.Tab>
@@ -154,12 +162,20 @@ Choose based on your CUDA version:
 - `linux-noavx-x64` (very old CPUs)
 - `linux-common_cpus-x64` (broadest compatibility)
 
+### AMD Graphics Cards (ROCm/HIP)
+If you have an AMD GPU with [ROCm](https://rocm.docs.amd.com/) installed, the HIP backend offers better performance than Vulkan:
+- `linux-hip-x64`
+
+<Callout type="info">
+ROCm must be installed system-wide before the HIP backend can be used. If ROCm is not detected, Jan will fall back to Vulkan automatically. You can install ROCm from [AMD's official guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/).
+</Callout>
+
 ### Other Graphics Cards (Vulkan — AMD, Intel Arc)
-- `linux-vulkan-x64` (recommended for GPU acceleration)
+- `linux-vulkan-x64` (recommended for GPU acceleration without ROCm)
 - `linux-vulkan-common_cpus-x64` (Vulkan with broader CPU support)
 
 <Callout type="info">
-**Quick Test**: Start with `linux-avx2-cuda-cu12.0-x64` for NVIDIA, `linux-vulkan-x64` for AMD/Intel Arc, or `linux-avx2-x64` for CPU-only.
+**Quick Test**: Start with `linux-avx2-cuda-cu12.0-x64` for NVIDIA, `linux-hip-x64` for AMD with ROCm, `linux-vulkan-x64` for AMD/Intel Arc without ROCm, or `linux-avx2-x64` for CPU-only.
 </Callout>
 
 </Tabs.Tab>

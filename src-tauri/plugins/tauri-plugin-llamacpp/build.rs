@@ -19,6 +19,7 @@ const COMMANDS: &[&str] = &[
     "get_model_size",
     "is_model_supported",
     // backend management
+    "normalize_upstream_backend",
     "map_old_backend_to_new",
     "get_local_installed_backends",
     "list_supported_backends",

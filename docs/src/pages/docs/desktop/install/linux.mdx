@@ -159,10 +159,38 @@ CUDA offers better performance than Vulkan.
 </Tabs.Tab>
 
 <Tabs.Tab>
-Requires Vulkan support.
 
-1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
-2. Select appropriate backend in **llama-cpp Backend**. Details in our [guide](/docs/desktop/local-engines/llama-cpp).
+AMD GPUs can use either **ROCm/HIP** (better performance) or **Vulkan** (no extra setup).
+
+**Option A — ROCm/HIP (recommended for supported GPUs):**
+
+<Steps>
+
+### Step 1: Install ROCm
+
+Follow the [official AMD ROCm installation guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/).
+
+Verify the installation:
+
+```sh
+rocminfo
+```
+
+### Step 2: Enable HIP Backend
+
+1. Navigate to **Settings** > **Local Engine** > **Llama.cpp**
+2. Select the `linux-hip-x64` backend
+
+</Steps>
+
+**Option B — Vulkan (no extra setup):**
+
+1. Navigate to **Settings** > **Local Engine** > **Llama.cpp**
+2. Select a Vulkan backend (`linux-vulkan-common_cpus-x64`). Details in our [llama.cpp guide](/docs/desktop/local-engine/llama-cpp).
+
+<Callout type="info">
+If ROCm is installed, Jan will automatically prefer HIP over Vulkan for better performance.
+</Callout>
 
 </Tabs.Tab>
 
@@ -170,7 +198,7 @@ Requires Vulkan support.
 Requires Vulkan support.
 
 1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
-2. Select appropriate backend in **llama-cpp Backend**. Details in our [guide](/docs/desktop/local-engines/llama-cpp).
+2. Select appropriate backend in **llama-cpp Backend**. Details in our [guide](/docs/desktop/local-engine/llama-cpp).
 </Tabs.Tab>
 
 </Tabs>
