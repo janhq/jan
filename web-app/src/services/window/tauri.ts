@@ -57,24 +57,7 @@ export class TauriWindowService extends DefaultWindowService {
       // Setup theme listener for this window
       this.setupThemeListenerForWindow(webviewWindow)
 
-      return {
-        label: config.label,
-        async close() {
-          await webviewWindow.close()
-        },
-        async show() {
-          await webviewWindow.show()
-        },
-        async hide() {
-          await webviewWindow.hide()
-        },
-        async focus() {
-          await webviewWindow.setFocus()
-        },
-        async setTitle(title: string) {
-          await webviewWindow.setTitle(title)
-        },
-      }
+      return this.toWindowInstance(config.label, webviewWindow)
     } catch (error) {
       console.error('Error creating Tauri window:', error)
       throw error
@@ -88,24 +71,7 @@ export class TauriWindowService extends DefaultWindowService {
       const existingWindow = await WebviewWindow.getByLabel(label)
 
       if (existingWindow) {
-        return {
-          label: label,
-          async close() {
-            await existingWindow.close()
-          },
-          async show() {
-            await existingWindow.show()
-          },
-          async hide() {
-            await existingWindow.hide()
-          },
-          async focus() {
-            await existingWindow.setFocus()
-          },
-          async setTitle(title: string) {
-            await existingWindow.setTitle(title)
-          },
-        }
+        return this.toWindowInstance(label, existingWindow)
       }
 
       return null
@@ -177,6 +143,30 @@ export class TauriWindowService extends DefaultWindowService {
         error
       )
       throw error
+    }
+  }
+
+  private toWindowInstance(
+    label: string,
+    window: WebviewWindow
+  ): WebviewWindowInstance {
+    return {
+      label,
+      async close() {
+        await window.close()
+      },
+      async show() {
+        await window.show()
+      },
+      async hide() {
+        await window.hide()
+      },
+      async focus() {
+        await window.setFocus()
+      },
+      async setTitle(title: string) {
+        await window.setTitle(title)
+      },
     }
   }
 
