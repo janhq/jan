@@ -65,6 +65,10 @@ async function getNonceSeed(): Promise<string> {
 
 // Get current app version
 async function getCurrentVersion(): Promise<string> {
+  if (typeof VERSION === 'string' && VERSION.length > 0) {
+    return VERSION
+  }
+
   try {
     const { getVersion } = await import('@tauri-apps/api/app')
     return await getVersion()
