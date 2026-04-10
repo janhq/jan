@@ -1,6 +1,6 @@
 // WARNING: These APIs will be deprecated soon due to removing FS API access from frontend.
 // It's added to ensure the legacy implementation from frontend still functions before removal.
-use super::helpers::resolve_path;
+use super::helpers::{resolve_app_path_within_jan_data_folder, resolve_path};
 use super::models::{DialogOpenOptions, FileStat};
 use rfd::AsyncFileDialog;
 use std::fs;
@@ -12,15 +12,12 @@ pub fn rm<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Res
         return Err("rm error: Invalid argument".to_string());
     }
 
-    let jan_data_folder =
-        crate::core::app::commands::get_jan_data_folder_path(app_handle.clone());
-    let path = resolve_path(app_handle, &args[0]);
-    let canonical_data = jan_data_folder.canonicalize().unwrap_or(jan_data_folder);
-    let canonical_path = path.canonicalize().unwrap_or_else(|_| path.clone());
-    if !canonical_path.starts_with(&canonical_data) {
+    let (canonical_data, path) = resolve_app_path_within_jan_data_folder(app_handle, &args[0])
+        .map_err(|_| format!("rm error: path {} is not under jan data folder", args[0]))?;
+    if !path.starts_with(&canonical_data) {
         return Err(format!(
             "rm error: path {} is not under jan data folder {}",
-            canonical_path.display(),
+            path.display(),
             canonical_data.display()
         ));
     }
@@ -158,15 +155,7 @@ pub fn write_yaml(
     save_path: &str,
 ) -> Result<(), String> {
     // TODO: have an internal function to check scope
-    let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
-    let save_path = jan_utils::normalize_path(&jan_data_folder.join(save_path));
-    if !save_path.starts_with(&jan_data_folder) {
-        return Err(format!(
-            "Error: save path {} is not under jan_data_folder {}",
-            save_path.to_string_lossy(),
-            jan_data_folder.to_string_lossy(),
-        ));
-    }
+    let (_jan_data_folder, save_path) = resolve_app_path_within_jan_data_folder(app, save_path)?;
     let file = fs::File::create(&save_path).map_err(|e| e.to_string())?;
     let mut writer = std::io::BufWriter::new(file);
     serde_yaml::to_writer(&mut writer, &data).map_err(|e| e.to_string())?;
@@ -178,15 +167,7 @@ pub fn read_yaml<R: Runtime>(
     app: tauri::AppHandle<R>,
     path: &str,
 ) -> Result<serde_json::Value, String> {
-    let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
-    let path = jan_utils::normalize_path(&jan_data_folder.join(path));
-    if !path.starts_with(&jan_data_folder) {
-        return Err(format!(
-            "Error: path {} is not under jan_data_folder {}",
-            path.to_string_lossy(),
-            jan_data_folder.to_string_lossy(),
-        ));
-    }
+    let (_jan_data_folder, path) = resolve_app_path_within_jan_data_folder(app, path)?;
     let file = fs::File::open(&path).map_err(|e| e.to_string())?;
     let reader = std::io::BufReader::new(file);
     let data: serde_json::Value = serde_yaml::from_reader(reader).map_err(|e| e.to_string())?;
@@ -199,17 +180,9 @@ pub fn decompress<R: Runtime>(
     path: &str,
     output_dir: &str,
 ) -> Result<(), String> {
-    let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
-    let path_buf = jan_utils::normalize_path(&jan_data_folder.join(path));
-
-    let output_dir_buf = jan_utils::normalize_path(&jan_data_folder.join(output_dir));
-    if !output_dir_buf.starts_with(&jan_data_folder) {
-        return Err(format!(
-            "Error: output directory {} is not under jan_data_folder {}",
-            output_dir_buf.to_string_lossy(),
-            jan_data_folder.to_string_lossy(),
-        ));
-    }
+    let (_jan_data_folder, path_buf) = resolve_app_path_within_jan_data_folder(app.clone(), path)?;
+    let (_jan_data_folder, output_dir_buf) =
+        resolve_app_path_within_jan_data_folder(app, output_dir)?;
 
     // Ensure output directory exists
     fs::create_dir_all(&output_dir_buf).map_err(|e| {
