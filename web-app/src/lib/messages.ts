@@ -140,7 +140,9 @@ export type ToolResult = {
  */
 export const parseReasoning = (text: string) => {
   // Check for thinking formats
-  const hasThinkTag = text.includes('<think>') && !text.includes('</think>')
+  const hasThinkTag =
+    (text.includes('<think>') && !text.includes('</think>')) ||
+    (text.includes('<thought>') && !text.includes('</thought>'))
   const hasAnalysisChannel =
     text.includes('<|channel|>analysis<|message|>') &&
     !text.includes('<|start|>assistant<|channel|>final<|message|>')
@@ -149,7 +151,7 @@ export const parseReasoning = (text: string) => {
     return { reasoningSegment: text, textSegment: '' }
 
   // Check for completed think tag format
-  const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/)
+  const thinkMatch = text.match(/<(think|thought)>([\s\S]*?)<\/\1>/)
   if (thinkMatch?.index !== undefined) {
     const splitIndex = thinkMatch.index + thinkMatch[0].length
     return {
@@ -199,22 +201,22 @@ export function convertThreadMessageToUIMessage(
 
       // BACKWARD COMPATIBILITY: Handle old format with <think> tags
       if (reasoningSegment) {
-        // Extract reasoning text from <think> tags
+        // Extract reasoning text from <think> or <thought> tags
         const completedMatch = reasoningSegment.match(
-          /<think>([\s\S]*)<\/think>/
+          /<(think|thought)>([\s\S]*)<\/\1>/
         )
         if (completedMatch) {
           parts.push({
             type: 'reasoning',
-            text: completedMatch[1],
+            text: completedMatch[2],
           })
         } else {
-          // In-progress reasoning - extract content after <think> tag
-          const inProgressMatch = reasoningSegment.match(/<think>([\s\S]*)/)
+          // In-progress reasoning - extract content after <think> or <thought> tag
+          const inProgressMatch = reasoningSegment.match(/<(think|thought)>([\s\S]*)/)
           if (inProgressMatch) {
             parts.push({
               type: 'reasoning',
-              text: inProgressMatch[1],
+              text: inProgressMatch[2],
             })
           }
         }
