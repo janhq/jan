@@ -15,6 +15,7 @@ import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionTypeEnum, FileStat, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { IconLoader2, IconPaperclip } from '@tabler/icons-react'
+import { isPlatformTauri } from '@/lib/platform/utils'
 
 type ProjectFilesProps = {
   projectId: string
@@ -263,9 +264,14 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   }, [loadProjectFiles])
 
 
+  const uploadingRef = useRef(uploading)
+  useEffect(() => {
+    uploadingRef.current = uploading
+  }, [uploading])
+
   const processFilePaths = useCallback(
     async (paths: string[]) => {
-      if (!paths.length || uploading) return
+      if (!paths.length || uploadingRef.current) return
 
       // Get files from paths (recursively for directories)
       const filePaths = await getFilesFromPaths(paths)
@@ -372,7 +378,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         setUploading(false)
       }
     },
-    [files, loadProjectFiles, maxFileSizeMB, projectId, serviceHub, t, uploading]
+    [files, loadProjectFiles, maxFileSizeMB, projectId, serviceHub, t]
   )
 
   const processFilePathsRef = useRef(processFilePaths)
@@ -388,6 +394,8 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   // Stable listener that lives for the whole component lifetime.
   // We use refs above so it always calls the freshest version of processFilePaths.
   useEffect(() => {
+    if (!isPlatformTauri()) return
+
     let unlisten: (() => void) | undefined
     let cleanedUp = false
 
@@ -496,6 +504,13 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     e.preventDefault()
     e.stopPropagation()
     setIsDragging(false)
+    if (!attachmentsEnabled) return
+
+    if (!isPlatformTauri()) {
+      toast.info('Browser dragging unsupported', {
+         description: 'Drag and drop for Project attachments is not supported in the web browser. Please use the Upload button.'
+      })
+    }
   }
 
   const handleDeleteFile = async (fileId: string) => {
@@ -525,7 +540,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   const isEmpty = !loading && files.length === 0
 
   return (
-    <div className="p-4">
+    <div ref={dropZoneRef} className="p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium">{t('common:projects.files')}</h3>
         <Button
@@ -549,7 +564,6 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         </div>
       ) : isEmpty ? (
         <div
-          ref={dropZoneRef}
           className={cn(
             'flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
             isDragging
@@ -557,9 +571,9 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
               : 'bg-secondary/30 border-border hover:bg-secondary/50'
           )}
           onClick={handleUpload}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          onDragOver={attachmentsEnabled && !isPlatformTauri() ? handleDragOver : undefined}
+          onDragLeave={attachmentsEnabled && !isPlatformTauri() ? handleDragLeave : undefined}
+          onDrop={attachmentsEnabled && !isPlatformTauri() ? handleDrop : undefined}
         >
           <FileText className="size-8 text-muted-foreground/50 mb-3" />
           <p className="text-sm text-muted-foreground text-center">
@@ -568,14 +582,13 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         </div>
       ) : (
         <div
-          ref={dropZoneRef}
           className={cn(
             'space-y-2 rounded-lg p-1 -m-1 transition-colors',
             isDragging && 'bg-primary/10 ring-2 ring-primary ring-dashed'
           )}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          onDragOver={attachmentsEnabled && !isPlatformTauri() ? handleDragOver : undefined}
+          onDragLeave={attachmentsEnabled && !isPlatformTauri() ? handleDragLeave : undefined}
+          onDrop={attachmentsEnabled && !isPlatformTauri() ? handleDrop : undefined}
         >
           {files.map((file) => (
             <div

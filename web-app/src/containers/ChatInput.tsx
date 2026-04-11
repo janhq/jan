@@ -850,7 +850,7 @@ const ChatInput = memo(function ChatInput({
             if (!paths.length) return
 
             // Split dropped paths into images vs docs — each goes to its own pipeline.
-            const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png'])
+            const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'])
             const imagePaths: string[] = []
             const docPaths: string[] = []
 
@@ -882,7 +882,15 @@ const ChatInput = memo(function ChatInput({
                       const blob = await response.blob()
                       const fileName = p.split(/[/\\]/).pop() ?? 'image'
                       const ext = fileName.toLowerCase().split('.').pop() ?? 'jpg'
-                      const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg'
+                      const mimeMap: Record<string, string> = {
+                        png: 'image/png',
+                        gif: 'image/gif',
+                        webp: 'image/webp',
+                        bmp: 'image/bmp',
+                        jpeg: 'image/jpeg',
+                        jpg: 'image/jpeg',
+                      }
+                      const mimeType = mimeMap[ext] || 'image/jpeg'
                       files.push(new File([blob], fileName, { type: mimeType }))
                     } catch (err) {
                       console.error('Failed to load dropped image:', err)
@@ -1265,15 +1273,15 @@ const ChatInput = memo(function ChatInput({
 
   const getFileTypeFromExtension = (fileName: string): string => {
     const extension = fileName.toLowerCase().split('.').pop()
-    switch (extension) {
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg'
-      case 'png':
-        return 'image/png'
-      default:
-        return ''
+    const mimeTypes: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      webp: 'image/webp',
+      bmp: 'image/bmp'
     }
+    return extension && mimeTypes[extension] ? mimeTypes[extension] : ''
   }
 
   const formatBytes = (bytes?: number): string => {
@@ -1302,7 +1310,14 @@ const ChatInput = memo(function ChatInput({
     const oversizedFiles: string[] = []
     const invalidTypeFiles: string[] = []
 
-    const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
+    const allowedTypes = [
+      'image/jpg',
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'image/bmp'
+    ]
     const validFiles: File[] = []
 
     // First pass: validate file size and type (no duplicate check yet)
@@ -1626,12 +1641,11 @@ const ChatInput = memo(function ChatInput({
 
   // ---- Browser-side drag handlers ----
   // In Tauri, the native listener above handles highlight + file processing.
-  // These exist so the browser allows the drop (preventDefault is required) and
-  // as a fallback for non-Tauri builds where hasMmproj still gates image drops.
+  // These exist so the browser allows the drop (preventDefault is required)
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    if (hasMmproj) {
+    if (attachmentsEnabled) {
       setIsDragOver(true)
     }
   }
@@ -1639,7 +1653,7 @@ const ChatInput = memo(function ChatInput({
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // Only clear when actually leaving the zone (relatedTarget can be null in Tauri)
+    // Only clear when actually leaving the zone
     const relatedTarget = e.relatedTarget as Node | null
     if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
       setIsDragOver(false)
@@ -1649,9 +1663,7 @@ const ChatInput = memo(function ChatInput({
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // preventDefault() tells the browser drops are welcome here.
-    // The native listener drives the actual isDragOver state in Tauri.
-    if (hasMmproj) {
+    if (attachmentsEnabled) {
       setIsDragOver(true)
     }
   }
@@ -1661,8 +1673,8 @@ const ChatInput = memo(function ChatInput({
     e.stopPropagation()
     setIsDragOver(false)
 
-    // Only allow drop if model supports mmproj
-    if (!hasMmproj) {
+    // Only allow drop if attachments exist
+    if (!attachmentsEnabled) {
       return
     }
 
@@ -1820,10 +1832,26 @@ const ChatInput = memo(function ChatInput({
               isDragOver && 'ring-2 ring-ring/50 border-primary'
             )}
             data-drop-zone={attachmentsEnabled ? 'true' : undefined}
-            onDragEnter={attachmentsEnabled ? handleDragEnter : undefined}
-            onDragLeave={attachmentsEnabled ? handleDragLeave : undefined}
-            onDragOver={attachmentsEnabled ? handleDragOver : undefined}
-            onDrop={attachmentsEnabled ? handleDrop : undefined}
+            onDragEnter={
+              attachmentsEnabled && !isPlatformTauri()
+                ? handleDragEnter
+                : undefined
+            }
+            onDragLeave={
+              attachmentsEnabled && !isPlatformTauri()
+                ? handleDragLeave
+                : undefined
+            }
+            onDragOver={
+              attachmentsEnabled && !isPlatformTauri()
+                ? handleDragOver
+                : undefined
+            }
+            onDrop={
+              attachmentsEnabled && !isPlatformTauri()
+                ? handleDrop
+                : undefined
+            }
           >
             {attachments.length > 0 && (
               <div className="flex flex-col gap-2 p-2 pb-0">
