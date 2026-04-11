@@ -2434,43 +2434,52 @@ async fn proxy_request(
             let model_id = match json_body.get("model").and_then(|v| v.as_str()) {
                 Some(id) => id.to_string(),
                 None => {
-                    let mut error_response =
-                        Response::builder().status(StatusCode::BAD_REQUEST);
-                    error_response = add_cors_headers_with_host_and_origin(
-                        error_response,
-                        &host_header,
-                        &origin_header,
-                        &config.trusted_hosts,
-                    );
-                    return Ok(error_response
-                        .body(Body::from(
-                            r#"{"error": "Missing 'model' field in request body"}"#,
-                        ))
-                        .unwrap());
+                    let response_json = serde_json::json!({"error": "Missing 'model' field in request body"});
+                    let body_str = serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
+                    let mut resp = Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .header(hyper::header::CONTENT_TYPE, "application/json");
+                    resp = add_cors_headers_with_host_and_origin(resp, &host_header, &origin_header, &config.trusted_hosts);
+                    return Ok(resp.body(Body::from(body_str)).unwrap());
                 }
             };
 
-            // Check if model is already loaded
+            // Issue #1: Path traversal sanitisation
+            if model_id.contains("..") || model_id.starts_with('/') || model_id.starts_with('\\') {
+                let response_json = serde_json::json!({"error": "Invalid model ID: path traversal not allowed"});
+                let body_str = serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
+                let mut resp = Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .header(hyper::header::CONTENT_TYPE, "application/json");
+                resp = add_cors_headers_with_host_and_origin(resp, &host_header, &origin_header, &config.trusted_hosts);
+                return Ok(resp.body(Body::from(body_str)).unwrap());
+            }
+
+            // Check if model is already loaded (llamacpp and MLX sessions)
             {
                 let guard = sessions.lock().await;
-                if guard.values().any(|s| s.info.model_id == model_id) {
+                let llama_loaded = guard.values().any(|s| s.info.model_id == model_id);
+                drop(guard);
+
+                let mlx_loaded = if !llama_loaded {
+                    let mlx_guard = mlx_sessions.lock().await;
+                    mlx_guard.values().any(|s| s.info.model_id == model_id)
+                } else {
+                    false
+                };
+
+                if llama_loaded || mlx_loaded {
                     let response_json = serde_json::json!({
                         "success": true,
                         "model": model_id,
                         "message": format!("Model '{}' is already loaded", model_id)
                     });
-                    let body_str = serde_json::to_string(&response_json)
-                        .unwrap_or_else(|_| "{}".to_string());
-                    let mut response_builder = Response::builder()
+                    let body_str = serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
+                    let mut resp = Response::builder()
                         .status(StatusCode::OK)
                         .header(hyper::header::CONTENT_TYPE, "application/json");
-                    response_builder = add_cors_headers_with_host_and_origin(
-                        response_builder,
-                        &host_header,
-                        &origin_header,
-                        &config.trusted_hosts,
-                    );
-                    return Ok(response_builder.body(Body::from(body_str)).unwrap());
+                    resp = add_cors_headers_with_host_and_origin(resp, &host_header, &origin_header, &config.trusted_hosts);
+                    return Ok(resp.body(Body::from(body_str)).unwrap());
                 }
             }
 
@@ -2478,7 +2487,7 @@ async fn proxy_request(
 
             let data_folder = PathBuf::from(&jan_data_folder);
 
-            // Find model.yml to get model_path
+            // Find model.yml — only llamacpp engine is supported for now
             let models_root = data_folder.join("llamacpp").join("models");
             let yml_path = models_root.join(&model_id).join("model.yml");
 
@@ -2497,37 +2506,44 @@ async fn proxy_request(
                                 (mp, emb)
                             }
                             Err(e) => {
-                                let mut resp = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
+                                let response_json = serde_json::json!({"error": format!("Failed to parse model.yml: {e}")});
+                                let body_str = serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
+                                let mut resp = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).header(hyper::header::CONTENT_TYPE, "application/json");
                                 resp = add_cors_headers_with_host_and_origin(resp, &host_header, &origin_header, &config.trusted_hosts);
-                                return Ok(resp.body(Body::from(format!(r#"{{"error": "Failed to parse model.yml: {e}"}}"#))).unwrap());
+                                return Ok(resp.body(Body::from(body_str)).unwrap());
                             }
                         }
                     }
                     Err(e) => {
-                        let mut resp = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
+                        let response_json = serde_json::json!({"error": format!("Failed to read model.yml: {e}")});
+                        let body_str = serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
+                        let mut resp = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).header(hyper::header::CONTENT_TYPE, "application/json");
                         resp = add_cors_headers_with_host_and_origin(resp, &host_header, &origin_header, &config.trusted_hosts);
-                        return Ok(resp.body(Body::from(format!(r#"{{"error": "Failed to read model.yml: {e}"}}"#))).unwrap());
+                        return Ok(resp.body(Body::from(body_str)).unwrap());
                     }
                 }
             } else {
-                let mut resp = Response::builder().status(StatusCode::NOT_FOUND);
+                let response_json = serde_json::json!({"error": format!("Model '{}' not found. Only llamacpp models are supported by this endpoint. No model.yml at {:?}", model_id, yml_path)});
+                let body_str = serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
+                let mut resp = Response::builder().status(StatusCode::NOT_FOUND).header(hyper::header::CONTENT_TYPE, "application/json");
                 resp = add_cors_headers_with_host_and_origin(resp, &host_header, &origin_header, &config.trusted_hosts);
-                return Ok(resp.body(Body::from(
-                    format!(r#"{{"error": "Model '{}' not found. No model.yml at {:?}"}}"#, model_id, yml_path)
-                )).unwrap());
+                return Ok(resp.body(Body::from(body_str)).unwrap());
             };
 
             if model_path.is_empty() {
-                let mut resp = Response::builder().status(StatusCode::BAD_REQUEST);
+                let response_json = serde_json::json!({"error": "model_path is empty in model.yml"});
+                let body_str = serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
+                let mut resp = Response::builder().status(StatusCode::BAD_REQUEST).header(hyper::header::CONTENT_TYPE, "application/json");
                 resp = add_cors_headers_with_host_and_origin(resp, &host_header, &origin_header, &config.trusted_hosts);
-                return Ok(resp.body(Body::from(
-                    r#"{"error": "model_path is empty in model.yml"}"#
-                )).unwrap());
+                return Ok(resp.body(Body::from(body_str)).unwrap());
             }
 
             // Find the latest installed backend
             let backends_root = data_folder.join("llamacpp").join("backends");
             let mut backend_path = String::new();
+            let mut found_version = String::new();
+            let mut found_variant = String::new();
+
             if backends_root.exists() {
                 let exe_name = if cfg!(target_os = "windows") {
                     "llama-server.exe"
@@ -2550,6 +2566,8 @@ async fn proxy_request(
                             let bin = variant.path().join("build").join("bin").join(exe_name);
                             if bin.exists() {
                                 backend_path = bin.to_string_lossy().to_string();
+                                found_version = version_dir.file_name().to_string_lossy().to_string();
+                                found_variant = variant.file_name().to_string_lossy().to_string();
                                 break 'outer;
                             }
                         }
@@ -2558,18 +2576,25 @@ async fn proxy_request(
             }
 
             if backend_path.is_empty() {
-                let mut resp = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
+                let response_json = serde_json::json!({"error": "No llama.cpp backend found. Please download a backend first."});
+                let body_str = serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
+                let mut resp = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).header(hyper::header::CONTENT_TYPE, "application/json");
                 resp = add_cors_headers_with_host_and_origin(resp, &host_header, &origin_header, &config.trusted_hosts);
-                return Ok(resp.body(Body::from(
-                    r#"{"error": "No llama.cpp backend found. Please download a backend first."}"#
-                )).unwrap());
+                return Ok(resp.body(Body::from(body_str)).unwrap());
             }
 
-            // Find a free port
-            let port: u16 = match std::net::TcpListener::bind("127.0.0.1:0") {
-                Ok(listener) => listener.local_addr().map(|a| a.port()).unwrap_or(39291),
-                Err(_) => 39291,
+            // Find a free port — bind to :0 and hold the listener until we pass
+            // the port to llama.cpp (minimizes TOCTOU window)
+            let (port, _listener_guard) = match std::net::TcpListener::bind("127.0.0.1:0") {
+                Ok(listener) => {
+                    let port = listener.local_addr().map(|a| a.port()).unwrap_or(39291);
+                    // Drop the listener just before spawning so llama.cpp can bind
+                    (port, Some(listener))
+                }
+                Err(_) => (39291, None),
             };
+            // Drop the listener so llama.cpp can bind to the port
+            drop(_listener_guard);
 
             // Allow overrides from request body
             let ctx_size = json_body.get("ctx_size").and_then(|v| v.as_i64()).unwrap_or(4096) as i32;
@@ -2577,20 +2602,8 @@ async fn proxy_request(
             let flash_attn = json_body.get("flash_attn").and_then(|v| v.as_str()).unwrap_or("auto").to_string();
             let timeout = json_body.get("timeout").and_then(|v| v.as_u64()).unwrap_or(600);
 
-            // Extract version_backend from the backend_path
-            let version_backend = {
-                let bp = PathBuf::from(&backend_path);
-                // backend_path looks like: .../backends/b8671/win-cuda-.../build/bin/llama-server.exe
-                // We want "b8671/win-cuda-..."
-                if let (Some(version), Some(variant)) = (
-                    bp.ancestors().nth(4).and_then(|p| p.file_name()),
-                    bp.ancestors().nth(3).and_then(|p| p.file_name()),
-                ) {
-                    format!("{}/{}", version.to_string_lossy(), variant.to_string_lossy())
-                } else {
-                    "unknown".to_string()
-                }
-            };
+            // Build version_backend from discovered backend directory names
+            let version_backend = format!("{}/{}", found_version, found_variant);
 
             let llamacpp_config = LlamacppConfig {
                 version_backend,
