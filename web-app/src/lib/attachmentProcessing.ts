@@ -260,7 +260,9 @@ export const processAttachmentsForSend = async (
         continue
       }
 
-      // Default: ingest as embeddings
+      // Default: ingest as embeddings.
+      // Also reached when targetMode is 'inline' but parsedContent is absent
+      // (i.e. parsing failed above) — intentional: embeddings is the safe fallback.
       notifyUpdate(doc.name, 'processing')
 
       const res = projectId
