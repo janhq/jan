@@ -529,7 +529,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
         <div className="mb-3 space-y-1.5">
           <div className="flex justify-between gap-2 text-xs text-muted-foreground">
             <span>
-              {t('common:projects.uploadingFiles') ?? 'Uploading files…'}
+              {t('common:projects.uploadingFiles')}
             </span>
             <span className="tabular-nums shrink-0">
               {uploadProgress.current} / {uploadProgress.total}
