@@ -148,24 +148,24 @@ export class TauriWindowService extends DefaultWindowService {
 
   private toWindowInstance(
     label: string,
-    window: WebviewWindow
+    webviewWindow: WebviewWindow
   ): WebviewWindowInstance {
     return {
       label,
       async close() {
-        await window.close()
+        await webviewWindow.close()
       },
       async show() {
-        await window.show()
+        await webviewWindow.show()
       },
       async hide() {
-        await window.hide()
+        await webviewWindow.hide()
       },
       async focus() {
-        await window.setFocus()
+        await webviewWindow.setFocus()
       },
       async setTitle(title: string) {
-        await window.setTitle(title)
+        await webviewWindow.setTitle(title)
       },
     }
   }
