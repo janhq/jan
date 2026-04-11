@@ -2895,7 +2895,10 @@ async fn proxy_request(
         let mut outbound_req = client.request(method.clone(), upstream_url.clone());
 
         for (name, value) in headers.iter() {
-            if name != hyper::header::HOST && name != hyper::header::AUTHORIZATION {
+            if name != hyper::header::HOST
+                && name != hyper::header::AUTHORIZATION
+                && name != hyper::header::CONTENT_LENGTH
+            {
                 outbound_req = outbound_req.header(name, value);
             }
         }
