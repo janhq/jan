@@ -9,7 +9,7 @@ import { useLatestJanModel } from '@/hooks/useLatestJanModel'
 
 export function PromptJanModel() {
 
-  const { setDismissed } = useJanModelPromptDismissed()
+  const { setDismissedModelName } = useJanModelPromptDismissed()
   const serviceHub = useServiceHub()
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
@@ -39,7 +39,7 @@ export function PromptJanModel() {
   }, [defaultVariant, localDownloadingModels, downloads])
 
   const handleDismiss = () => {
-    setDismissed(true)
+    if (janNewModel) setDismissedModelName(janNewModel.model_name)
   }
 
   const handleDownload = () => {
@@ -57,7 +57,7 @@ export function PromptJanModel() {
       huggingfaceToken,
       true
     )
-    setDismissed(true)
+    if (janNewModel) setDismissedModelName(janNewModel.model_name)
   }
 
   if (isLoading || !janNewModel) return null

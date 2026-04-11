@@ -6,7 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { MCPTool } from '@/types/completion'
 import { DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 import type { MCPServerConfig, MCPServers, MCPSettings } from '@/hooks/useMCPServers'
-import type { MCPConfig } from './types'
+import type { MCPConfig, ServerSummary } from './types'
 import { DefaultMCPService } from './default'
 
 export class TauriMCPService extends DefaultMCPService {
@@ -59,6 +59,14 @@ export class TauriMCPService extends DefaultMCPService {
 
   async getTools(): Promise<MCPTool[]> {
     return window.core?.api?.getTools()
+  }
+
+  async getToolsForServers(serverNames: string[]): Promise<MCPTool[]> {
+    return invoke('get_tools_for_servers', { serverNames })
+  }
+
+  async getServerSummaries(): Promise<ServerSummary[]> {
+    return invoke('get_server_summaries')
   }
 
   async getConnectedServers(): Promise<string[]> {

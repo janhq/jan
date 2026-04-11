@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ModelFactory } from '../model-factory'
 import type { ProviderObject } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+
+const mockGlobalFetch = vi.fn()
 
 // Mock the Tauri invoke function
 vi.mock('@tauri-apps/api/core', () => ({
@@ -54,11 +58,15 @@ vi.mock('@/hooks/useServiceHub', () => ({
 }))
 
 const mockedInvoke = vi.mocked(invoke)
+const mockedCreateGoogleGenerativeAI = vi.mocked(createGoogleGenerativeAI)
+const mockedCreateOpenAICompatible = vi.mocked(createOpenAICompatible)
 
 describe('ModelFactory', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockStartModel.mockResolvedValue(undefined)
+    mockGlobalFetch.mockResolvedValue(new Response('{}'))
+    vi.stubGlobal('fetch', mockGlobalFetch)
   })
 
   describe('createModel', () => {
@@ -92,7 +100,14 @@ describe('ModelFactory', () => {
 
       const model = await ModelFactory.createModel('gemini-pro', provider)
       expect(model).toBeDefined()
-      expect(model.type).toBe('openai-compatible')
+      expect(model.type).toBe('google')
+      expect(mockedCreateGoogleGenerativeAI).toHaveBeenCalledWith({
+        apiKey: 'test-api-key',
+        baseURL: 'https://generativelanguage.googleapis.com/v1',
+        headers: undefined,
+        fetch: expect.any(Function),
+      })
+      expect(mockedCreateOpenAICompatible).not.toHaveBeenCalled()
     })
 
     it('should create a Google model for gemini provider', async () => {
@@ -107,7 +122,51 @@ describe('ModelFactory', () => {
 
       const model = await ModelFactory.createModel('gemini-pro', provider)
       expect(model).toBeDefined()
-      expect(model.type).toBe('openai-compatible')
+      expect(model.type).toBe('google')
+      expect(mockedCreateGoogleGenerativeAI).toHaveBeenCalledWith({
+        apiKey: 'test-api-key',
+        baseURL: 'https://generativelanguage.googleapis.com/v1',
+        headers: undefined,
+        fetch: expect.any(Function),
+      })
+      expect(mockedCreateOpenAICompatible).not.toHaveBeenCalled()
+    })
+
+    it('should forward Gemini parameters through the injected fetch', async () => {
+      const provider: ProviderObject = {
+        provider: 'gemini',
+        api_key: 'test-api-key',
+        base_url: 'https://generativelanguage.googleapis.com/v1',
+        models: [],
+        settings: [],
+        active: true,
+      }
+
+      await ModelFactory.createModel('gemini-pro', provider, {
+        temperature: 0.2,
+        max_output_tokens: 256,
+        ctx_len: 4096,
+      })
+
+      const googleConfig = mockedCreateGoogleGenerativeAI.mock.calls[0]?.[0]
+      expect(googleConfig).toBeDefined()
+      expect(googleConfig?.fetch).toEqual(expect.any(Function))
+
+      await googleConfig!.fetch!(
+        'https://example.com/v1/chat/completions',
+        {
+          method: 'POST',
+          body: JSON.stringify({ prompt: 'hello' }),
+        }
+      )
+
+      expect(mockGlobalFetch).toHaveBeenCalledTimes(1)
+      const [, requestInit] = mockGlobalFetch.mock.calls[0]!
+      expect(JSON.parse(String(requestInit?.body))).toEqual({
+        prompt: 'hello',
+        temperature: 0.2,
+        max_tokens: 256,
+      })
     })
 
     it('should create an OpenAI-compatible model for openai provider', async () => {
@@ -135,6 +194,21 @@ describe('ModelFactory', () => {
       }
 
       const model = await ModelFactory.createModel('llama-3', provider)
+      expect(model).toBeDefined()
+      expect(model.type).toBe('openai-compatible')
+    })
+
+    it('should create an OpenAI-compatible model for minimax provider', async () => {
+      const provider: ProviderObject = {
+        provider: 'minimax',
+        api_key: 'test-api-key',
+        base_url: 'https://api.minimax.io/v1',
+        models: [],
+        settings: [],
+        active: true,
+      }
+
+      const model = await ModelFactory.createModel('MiniMax-M2.7', provider)
       expect(model).toBeDefined()
       expect(model.type).toBe('openai-compatible')
     })
@@ -207,7 +281,7 @@ describe('ModelFactory', () => {
       await expect(
         ModelFactory.createModel('apple/on-device', foundationModelsProvider)
       ).rejects.toThrow(
-        'The Foundation Models server binary is missing. Please reinstall Jan.'
+        'Apple Foundation Models are currently unavailable on this device.'
       )
     })
 
@@ -221,27 +295,35 @@ describe('ModelFactory', () => {
       )
     })
 
-    it('should throw when available but no session is found after start', async () => {
+    it('should throw when available but model is not loaded after start', async () => {
       mockedInvoke
         .mockResolvedValueOnce('available') // check_foundation_models_availability
-        .mockResolvedValueOnce(null)        // find_foundation_models_session
+        .mockResolvedValueOnce(false)       // is_foundation_models_loaded
 
       await expect(
         ModelFactory.createModel('apple/on-device', foundationModelsProvider)
       ).rejects.toThrow(
-        'No running Foundation Models session. The server may have failed to start'
+        'No running Foundation Models session. The model may have failed to load — please check the logs.'
+      )
+
+      expect(mockStartModel).toHaveBeenCalledWith(
+        foundationModelsProvider,
+        'apple/on-device'
+      )
+      expect(mockedInvoke).toHaveBeenCalledWith(
+        'plugin:foundation-models|check_foundation_models_availability',
+        {}
+      )
+      expect(mockedInvoke).toHaveBeenCalledWith(
+        'plugin:foundation-models|is_foundation_models_loaded',
+        {}
       )
     })
 
-    it('should create a model when available and session exists', async () => {
+    it('should create a model when available and model is loaded', async () => {
       mockedInvoke
         .mockResolvedValueOnce('available') // check_foundation_models_availability
-        .mockResolvedValueOnce({            // find_foundation_models_session
-          pid: 12345,
-          port: 9876,
-          model_id: 'apple/on-device',
-          api_key: 'test-session-key',
-        })
+        .mockResolvedValueOnce(true)        // is_foundation_models_loaded
 
       const model = await ModelFactory.createModel(
         'apple/on-device',
@@ -249,12 +331,16 @@ describe('ModelFactory', () => {
       )
 
       expect(model).toBeDefined()
+      expect(mockStartModel).toHaveBeenCalledWith(
+        foundationModelsProvider,
+        'apple/on-device'
+      )
       expect(mockedInvoke).toHaveBeenCalledWith(
         'plugin:foundation-models|check_foundation_models_availability',
         {}
       )
       expect(mockedInvoke).toHaveBeenCalledWith(
-        'plugin:foundation-models|find_foundation_models_session',
+        'plugin:foundation-models|is_foundation_models_loaded',
         {}
       )
     })

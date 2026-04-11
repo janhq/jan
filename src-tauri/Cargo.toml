@@ -47,6 +47,7 @@ mobile = [
     "tauri/wry",
     "dep:sqlx",
 ]
+# foundation-models excluded from test-tauri - framework not available in CI
 test-tauri = [
     "tauri/wry",
     "tauri/x11",
@@ -54,12 +55,15 @@ test-tauri = [
     "tauri/macos-private-api",
     "tauri/tray-icon",
     "tauri/test",
-    "desktop",
+    "deep-link",
+    "hardware",
+    "mlx",
 ]
 cli = ["dep:env_logger", "dep:dialoguer", "dep:indicatif", "dep:console"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [] }
+serde_json = "1.0"
 
 [dependencies]
 dirs = "6.0.0"
@@ -132,7 +136,7 @@ version = "2.8.5"
 default-features = false
 features = ["protocol-asset", "macos-private-api", "test"]
 
-[target.'cfg(windows)'.dev-dependencies]
+[dev-dependencies]
 tempfile = "3.20.0"
 
 [target.'cfg(unix)'.dependencies]
@@ -168,7 +172,7 @@ opt-level = "z"     # Optimize for size
 lto = "fat"         # Aggressive Link Time Optimization
 strip = "symbols"   # Strip debug symbols for smaller binary
 codegen-units = 1   # Reduce parallel codegen for better optimization
-panic = "abort"     # Don't unwind on panic, saves space
+panic = "unwind"     # Unwind on panic, allows catching library panics
 overflow-checks = false  # Disable overflow checks for size
 debug = false       # No debug info
 debug-assertions = false  # No debug assertions

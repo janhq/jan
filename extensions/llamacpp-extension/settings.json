@@ -37,6 +37,13 @@
     "controllerProps": { "value": true }
   },
   {
+    "key": "auto_restart_on_crash",
+    "title": "Auto-Restart Crashed Models",
+    "description": "Automatically reloads a model if its llama-server process crashes.",
+    "controllerType": "checkbox",
+    "controllerProps": { "value": false }
+  },
+  {
     "key": "timeout",
     "title": "Timeout for llamacpp",
     "description": "Llamacpp connection and load timeout in seconds",
@@ -232,10 +239,10 @@
   {
     "key": "cache_type_k",
     "title": "KV Cache K Type",
-    "description": "KV cache data type for Keys (default: f16).",
+    "description": "KV cache data type for Keys (default: q8_0).",
     "controllerType": "dropdown",
     "controllerProps": {
-      "value": "f16",
+      "value": "q8_0",
       "options": [
         { "value": "f32", "name": "f32" },
         { "value": "f16", "name": "f16" },
@@ -252,10 +259,10 @@
   {
     "key": "cache_type_v",
     "title": "KV Cache V Type",
-    "description": "KV cache data type for Values (default: f16).",
+    "description": "KV cache data type for Values (default: q8_0).",
     "controllerType": "dropdown",
     "controllerProps": {
-      "value": "f16",
+      "value": "q8_0",
       "options": [
         { "value": "f32", "name": "f32" },
         { "value": "f16", "name": "f16" },

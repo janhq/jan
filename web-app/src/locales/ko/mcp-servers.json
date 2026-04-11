@@ -1,0 +1,73 @@
+{
+  "editServer": "MCP 서버 수정",
+  "addServer": "MCP 서버 추가",
+  "browserExtension": {
+    "connecting": {
+      "checking": "확장 프로그램 상태 확인 중..."
+    },
+    "notInstalled": {
+      "title": "Jan이 브라우저에서 작업을 수행합니다",
+      "description": "Jan에게 브라우저 접근 권한을 부여하려면 확장 프로그램을 설치하세요",
+      "getExtension": "확장 프로그램 가져오기"
+    }
+  },
+  "serverName": "서버 이름",
+  "enterServerName": "서버 이름 입력",
+  "command": "명령어",
+  "enterCommand": "명령어 입력 (uvx 또는 npx)",
+  "arguments": "인자 (Arguments)",
+  "argument": "인자 {{index}}",
+  "envVars": "환경 변수",
+  "key": "키",
+  "value": "값",
+  "save": "저장",
+  "status": "상태",
+  "connected": "연결됨",
+  "disconnected": "연결 끊김",
+  "deleteServer": {
+    "title": "MCP 서버 삭제",
+    "description": "정말로 {{serverName}} MCP 서버를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+    "delete": "삭제",
+    "success": "{{serverName}} MCP 서버가 성공적으로 삭제되었습니다"
+  },
+  "editJson": {
+    "title": "MCP 서버 JSON 수정: {{serverName}}",
+    "titleAll": "모든 MCP 서버 JSON 수정",
+    "placeholder": "JSON 설정을 입력하세요",
+    "errorParse": "초기 데이터를 파싱하는 데 실패했습니다",
+    "errorPaste": "붙여넣은 내용이 유효한 JSON 형식이 아닙니다",
+    "errorFormat": "유효하지 않은 JSON 형식",
+    "errorServerName": "서버 이름은 필수이며 비워둘 수 없습니다",
+    "errorMissingServerNameKey": "JSON 구조는 {\"serverName\": {config}} 형태여야 합니다 - 서버 이름 키가 누락되었습니다",
+    "errorInvalidType": "'{{serverName}}' 서버의 '{{type}}' 유형이 유효하지 않습니다. 유형은 'stdio', 'http' 또는 'sse' 중 하나여야 합니다",
+    "save": "저장"
+  },
+  "checkParams": "튜토리얼에 따라 매개변수를 확인해 주세요.",
+  "title": "MCP 서버",
+  "experimental": "실험적 기능",
+  "editAllJson": "모든 서버 JSON 수정",
+  "findMore": "더 많은 MCP 서버 찾기:",
+  "allowPermissions": "모든 MCP 도구 권한 허용",
+  "allowPermissionsDesc": "활성화하면 권한 확인창을 표시하지 않고 모든 MCP 도구 호출을 자동으로 승인합니다. 이 설정은 새 채팅을 포함한 모든 대화에 전역적으로 적용됩니다.",
+  "noServers": "검색된 MCP 서버가 없습니다",
+  "args": "인자",
+  "env": "환경 변수",
+  "serverStatusActive": "{{serverKey}} 서버가 성공적으로 활성화되었습니다",
+  "serverStatusInactive": "{{serverKey}} 서버가 성공적으로 비활성화되었습니다",
+  "runtimeSettings": {
+    "title": "런타임 설정",
+    "description": "Jan이 MCP 서버를 관리하고 재시도하는 방식을 구성합니다.",
+    "toolCallTimeout": "도구 호출 제한 시간 (초)",
+    "toolCallTimeoutDesc": "MCP 도구의 응답을 기다리는 최대 시간입니다.",
+    "smartToolRouting": "스마트 MCP 도구 라우팅",
+    "smartToolRoutingDesc": "켜면 Jan이 도구를 불러오기 전에 관련 MCP 서버만 선택합니다. 끄면 항상 전체 MCP 도구 목록을 불러옵니다.",
+    "useLightweightRouterModel": "라우팅에 전용 모델 사용",
+    "useLightweightRouterModelDesc": "스마트 라우팅이 켜져 있으면 라우팅 단계가 채팅 모델 대신 별도의(보통 더 작은) 모델로 실행됩니다. 끄면 라우팅에 항상 활성 채팅 모델을 사용합니다.",
+    "routerModel": "라우팅 모델",
+    "routerModelDesc": "제공자와 모델을 한곳에서 선택합니다. 라우팅을 빠르고 저렴하게 유지하려면 경량 모델만 표시됩니다.",
+    "selectRouterModelPlaceholder": "라우팅 모델 선택…",
+    "routerModelSearchPlaceholder": "모델 검색…",
+    "routerModelEmptyList": "사용 가능한 경량 모델이 없습니다. 더 작은 모델을 추가하거나 모델에서 API 키를 설정하세요.",
+    "routerModelEmptySearch": "「{{query}}」에 일치하는 항목이 없습니다."
+  }
+}

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { fileStorage } from '@/lib/fileStorage'
 
 type LocalApiServerState = {
   // Run local API server once app opens
@@ -39,6 +40,9 @@ type LocalApiServerState = {
   // Server request timeout (default 600 sec)
   proxyTimeout: number
   setProxyTimeout: (value: number) => void
+  // Execute tools on the Local API server for chat endpoints
+  enableServerToolExecution: boolean
+  setEnableServerToolExecution: (value: boolean) => void
 }
 
 export const useLocalApiServer = create<LocalApiServerState>()(
@@ -74,13 +78,16 @@ export const useLocalApiServer = create<LocalApiServerState>()(
       setTrustedHosts: (hosts) => set({ trustedHosts: hosts }),
       proxyTimeout: 600,
       setProxyTimeout: (value) => set({ proxyTimeout: value }),
+      enableServerToolExecution: false,
+      setEnableServerToolExecution: (value) =>
+        set({ enableServerToolExecution: value }),
       apiKey: '',
       setApiKey: (value) => set({ apiKey: value }),
     }),
     {
       name: localStorageKey.settingLocalApiServer,
-      storage: createJSONStorage(() => localStorage),
-      version: 2,
+      storage: createJSONStorage(() => fileStorage),
+      version: 3,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Partial<LocalApiServerState>
         if (version < 1) {
@@ -90,6 +97,10 @@ export const useLocalApiServer = create<LocalApiServerState>()(
         if (version < 2) {
           // v1 → v2: add defaultModelLocalApiServer field
           state.defaultModelLocalApiServer = null
+        }
+        if (version < 3) {
+          // v2 -> v3: add server-side tool execution toggle
+          state.enableServerToolExecution = false
         }
         return state
       },

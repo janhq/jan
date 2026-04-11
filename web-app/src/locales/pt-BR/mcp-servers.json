@@ -58,6 +58,16 @@
     "title": "Configurações de Execução",
     "description": "Configure como o Jan gerencia e tenta novamente os servidores MCP.",
     "toolCallTimeout": "Tempo limite de chamada da ferramenta (segundos)",
-    "toolCallTimeoutDesc": "Tempo máximo de espera por uma resposta da ferramenta MCP antes de atingir o tempo limite."
+    "toolCallTimeoutDesc": "Tempo máximo de espera por uma resposta da ferramenta MCP antes de atingir o tempo limite.",
+    "smartToolRouting": "Roteamento inteligente de ferramentas MCP",
+    "smartToolRoutingDesc": "Quando ativado, o Jan seleciona servidores MCP relevantes antes de carregar as ferramentas. Desative para sempre carregar a lista completa de ferramentas MCP.",
+    "useLightweightRouterModel": "Usar um modelo dedicado para roteamento",
+    "useLightweightRouterModelDesc": "Com o roteamento inteligente ativo, a etapa de roteamento usa um modelo separado (geralmente menor) em vez do modelo do chat. Desative para sempre usar o modelo ativo do chat para roteamento.",
+    "routerModel": "Modelo de roteamento",
+    "routerModelDesc": "Escolha provedor e modelo em um só lugar. Apenas modelos leves são listados para manter o roteamento rápido e barato.",
+    "selectRouterModelPlaceholder": "Selecionar modelo de roteamento…",
+    "routerModelSearchPlaceholder": "Pesquisar modelos…",
+    "routerModelEmptyList": "Nenhum modelo leve disponível. Adicione um modelo menor ou configure chaves de API em Modelos.",
+    "routerModelEmptySearch": "Nenhum resultado para “{{query}}”."
   }
 }

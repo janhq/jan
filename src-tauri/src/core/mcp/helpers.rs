@@ -13,7 +13,7 @@ use tauri_plugin_http::reqwest;
 use tokio::{
     io::AsyncReadExt,
     process::Command,
-    sync::Mutex,
+    sync::{Mutex, Notify},
     time::{sleep, timeout},
 };
 
@@ -159,35 +159,40 @@ pub async fn run_mcp_commands<R: Runtime>(
     Ok(())
 }
 
-/// Monitor MCP server health without removing it from the HashMap
-pub async fn monitor_mcp_server_handle(
+/// Monitor MCP server health and auto-reconnect on failure with exponential backoff
+pub async fn monitor_mcp_server_handle<R: Runtime>(
+    app: AppHandle<R>,
     servers_state: SharedMcpServers,
     name: String,
+    config: Value,
     shutdown_flag: Arc<Mutex<bool>>,
-) -> Option<rmcp::service::QuitReason> {
+    reconnect_notify: Arc<Notify>,
+) {
     log::info!("Monitoring MCP server {name} health");
+    let mut consecutive_failures: u32 = 0;
 
-    // Monitor server health with periodic checks
     loop {
-        // Small delay between health checks
-        sleep(Duration::from_secs(5)).await;
+        // Wait for either the periodic health check or an immediate reconnect signal
+        tokio::select! {
+            _ = sleep(Duration::from_secs(2)) => {}
+            _ = reconnect_notify.notified() => {
+                log::info!("MCP server {name} monitor received reconnect signal");
+            }
+        }
 
         {
             let shutdown = shutdown_flag.lock().await;
             if *shutdown {
-                return Some(rmcp::service::QuitReason::Closed);
+                log::info!("MCP server {name} monitor shutting down (shutdown flag)");
+                return;
             }
         }
 
         let health_check_result = {
             let servers = servers_state.lock().await;
             if let Some(service) = servers.get(&name) {
-                // Try to list tools as a health check with a short timeout
                 match timeout(Duration::from_secs(2), service.list_all_tools()).await {
-                    Ok(Ok(_)) => {
-                        // Server responded successfully
-                        true
-                    }
+                    Ok(Ok(_)) => true,
                     Ok(Err(e)) => {
                         log::warn!("MCP server {name} health check failed: {e}");
                         false
@@ -198,30 +203,118 @@ pub async fn monitor_mcp_server_handle(
                     }
                 }
             } else {
-                // Server was removed from HashMap (e.g., by deactivate_mcp_server)
-                log::info!("MCP server {name} no longer in running services");
-                return Some(rmcp::service::QuitReason::Closed);
+                // Entry was removed (e.g., by get_tools cleanup or deactivate).
+                // Only stop monitoring if the server was deliberately deactivated.
+                let still_active = {
+                    let app_state = app.state::<AppState>();
+                    let active_servers = app_state.mcp_active_servers.lock().await;
+                    active_servers.contains_key(&name)
+                };
+                if still_active {
+                    log::info!("MCP server {name} entry missing but still active, will reconnect");
+                    false
+                } else {
+                    log::info!("MCP server {name} removed and deactivated, stopping monitor");
+                    return;
+                }
             }
         };
 
-        if !health_check_result {
-            // Server failed health check - remove it and return
-            log::error!("MCP server {name} failed health check, removing from active servers");
+        if health_check_result {
+            // Reset failure count on success
+            consecutive_failures = 0;
+            continue;
+        }
+
+        // Server failed health check — remove the dead entry and try to reconnect
+        log::error!("MCP server {name} failed health check, attempting auto-reconnect");
+
+        // Clean up the dead server entry (if still present) and its tracked PID
+        {
             let mut servers = servers_state.lock().await;
             if let Some(service) = servers.remove(&name) {
-                // Try to cancel the service gracefully
                 match service {
                     RunningServiceEnum::NoInit(service) => {
-                        log::info!("Stopping server {name}...");
                         let _ = service.cancel().await;
                     }
                     RunningServiceEnum::WithInit(service) => {
-                        log::info!("Stopping server {name} with initialization...");
                         let _ = service.cancel().await;
                     }
                 }
             }
-            return Some(rmcp::service::QuitReason::Closed);
+        }
+        {
+            let app_state = app.state::<AppState>();
+            let mut pids = app_state.mcp_server_pids.lock().await;
+            pids.remove(&name);
+        }
+
+        // Emit event so frontend shows accurate disconnected status
+        emit_mcp_update_event(&app, &name);
+
+        consecutive_failures += 1;
+
+        // Calculate backoff delay
+        let settings = {
+            let app_state = app.state::<AppState>();
+            let guard = app_state.mcp_settings.lock().await;
+            guard.clone()
+        };
+        let base_delay_ms = settings.base_restart_delay_ms;
+        let max_delay_ms = settings.max_restart_delay_ms;
+        let multiplier = settings.backoff_multiplier;
+        let delay_ms = (base_delay_ms as f64
+            * multiplier.powi((consecutive_failures - 1) as i32))
+            as u64;
+        let capped_delay_ms = delay_ms.min(max_delay_ms);
+
+        log::info!(
+            "MCP server {name} reconnect attempt {} in {}ms",
+            consecutive_failures,
+            capped_delay_ms
+        );
+        sleep(Duration::from_millis(capped_delay_ms)).await;
+
+        // Check shutdown flag before reconnect attempt
+        {
+            let shutdown = shutdown_flag.lock().await;
+            if *shutdown {
+                log::info!("MCP server {name} monitor shutting down before reconnect");
+                return;
+            }
+        }
+
+        // Check that server is still in active configs (user hasn't deactivated it)
+        let still_active = {
+            let app_state = app.state::<AppState>();
+            let active_servers = app_state.mcp_active_servers.lock().await;
+            active_servers.contains_key(&name)
+        };
+
+        if !still_active {
+            log::info!("MCP server {name} was deactivated, stopping monitor");
+            return;
+        }
+
+        // Attempt reconnect
+        match schedule_mcp_start_task(
+            app.clone(),
+            servers_state.clone(),
+            name.clone(),
+            config.clone(),
+        )
+        .await
+        {
+            Ok(_) => {
+                log::info!("MCP server {name} reconnected successfully");
+                consecutive_failures = 0;
+                // Emit event so frontend shows accurate connected status
+                emit_mcp_update_event(&app, &name);
+            }
+            Err(e) => {
+                log::error!("MCP server {name} reconnect attempt {consecutive_failures} failed: {e}");
+                // Loop continues — will retry with increased backoff
+            }
         }
     }
 }
@@ -253,6 +346,33 @@ pub async fn start_mcp_server<R: Runtime>(
     match first_start_result {
         Ok(_) => {
             log::info!("MCP server {name} started successfully");
+
+            // Spawn health monitoring with auto-reconnect
+            let monitor_app = app.clone();
+            let monitor_servers = servers_state.clone();
+            let monitor_name = name.clone();
+            let monitor_config = config.clone();
+            let shutdown_flag = app_state.mcp_shutdown_in_progress.clone();
+            let reconnect_notify = app_state.mcp_reconnect_notify.clone();
+
+            let monitor_handle = tauri::async_runtime::spawn(async move {
+                monitor_mcp_server_handle(
+                    monitor_app,
+                    monitor_servers,
+                    monitor_name,
+                    monitor_config,
+                    shutdown_flag,
+                    reconnect_notify,
+                )
+                .await;
+            });
+
+            // Store the monitoring task handle so it can be aborted on shutdown
+            {
+                let mut monitoring_tasks = app_state.mcp_monitoring_tasks.lock().await;
+                monitoring_tasks.insert(name.clone(), monitor_handle);
+            }
+
             Ok(())
         }
         Err(e) => {
@@ -507,6 +627,26 @@ async fn schedule_mcp_start_task<R: Runtime>(
 
         match service {
             Ok(server) => {
+                // Keep the stderr pipe alive to prevent the child process from
+                // receiving SIGPIPE and to capture diagnostic output.
+                if let Some(mut stderr_stream) = stderr {
+                    let stderr_name = name.clone();
+                    tokio::spawn(async move {
+                        let mut buf = [0u8; 1024];
+                        while let Ok(n) = stderr_stream.read(&mut buf).await {
+                            if n == 0 {
+                                break;
+                            }
+                            if let Ok(text) = std::str::from_utf8(&buf[..n]) {
+                                for line in text.lines() {
+                                    if !line.trim().is_empty() {
+                                        log::warn!("[mcp-stderr:{}] {}", stderr_name, line);
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
                 log::trace!("Connected to server: {:#?}", server.peer_info());
                 servers
                     .lock()
@@ -543,6 +683,65 @@ async fn schedule_mcp_start_task<R: Runtime>(
         if !server_still_running {
             return Err(format!("MCP server {name} quit immediately after starting"));
         }
+
+        // Verify tools/list is reachable before emitting the ready event.
+        // Stdio servers (especially via npx mcp-remote) may need extra time
+        // after serve() completes before the transport is ready for JSON-RPC.
+        const MAX_TOOL_VERIFY_ATTEMPTS: u32 = 3;
+        const TOOL_VERIFY_TIMEOUT_SECS: u64 = 2;
+        const TOOL_VERIFY_BACKOFF_MS: u64 = 1000;
+
+        for attempt in 1..=MAX_TOOL_VERIFY_ATTEMPTS {
+            let verify_result = {
+                let servers_map = servers.lock().await;
+                if let Some(service) = servers_map.get(&name) {
+                    Some(
+                        timeout(
+                            Duration::from_secs(TOOL_VERIFY_TIMEOUT_SECS),
+                            service.list_all_tools(),
+                        )
+                        .await,
+                    )
+                } else {
+                    log::info!(
+                        "MCP server {name} was removed during tools/list verification; skipping"
+                    );
+                    None
+                }
+            };
+
+            match verify_result {
+                None => {
+                    // Server was removed from state (e.g., user toggled it off).
+                    // Skip emitting the event entirely — this is intentional.
+                    return Ok(());
+                }
+                Some(Ok(Ok(_tools))) => {
+                    log::info!(
+                        "MCP server {name} tools/list verified on attempt {attempt}"
+                    );
+                    break;
+                }
+                Some(Ok(Err(e))) => {
+                    log::warn!(
+                        "MCP server {name} tools/list failed on attempt {attempt}/{MAX_TOOL_VERIFY_ATTEMPTS}: {e}"
+                    );
+                    if attempt < MAX_TOOL_VERIFY_ATTEMPTS {
+                        sleep(Duration::from_millis(TOOL_VERIFY_BACKOFF_MS)).await;
+                    }
+                }
+                Some(Err(_)) => {
+                    log::warn!(
+                        "MCP server {name} tools/list timed out on attempt {attempt}/{MAX_TOOL_VERIFY_ATTEMPTS}"
+                    );
+                    if attempt < MAX_TOOL_VERIFY_ATTEMPTS {
+                        sleep(Duration::from_millis(TOOL_VERIFY_BACKOFF_MS)).await;
+                    }
+                }
+            }
+        }
+        // If all attempts failed, we still proceed to emit the event.
+        // The health monitor will handle ongoing reconnection.
 
         // Create lock file for Jan Browser MCP
         if name == "Jan Browser MCP" {

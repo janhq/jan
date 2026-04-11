@@ -45,6 +45,7 @@ describe('useInterfaceSettings', () => {
 
     expect(result.current.fontSize).toBe('16px')
     expect(result.current.accentColor).toBe('gray')
+    expect(result.current.notificationPosition).toBe('top-right')
     expect(typeof result.current.setFontSize).toBe('function')
     expect(typeof result.current.setAccentColor).toBe('function')
     expect(typeof result.current.resetInterface).toBe('function')
@@ -106,6 +107,30 @@ describe('useInterfaceSettings', () => {
 
     expect(result.current.fontSize).toBe('16px')
     expect(result.current.accentColor).toBe('gray')
+    expect(result.current.notificationPosition).toBe('top-right')
+  })
+
+  it('should update notification position', () => {
+    const { result } = renderHook(() => useInterfaceSettings())
+
+    act(() => {
+      result.current.setNotificationPosition('bottom-left')
+    })
+
+    expect(result.current.notificationPosition).toBe('bottom-left')
+  })
+
+  it('should ignore invalid notification position', () => {
+    const { result } = renderHook(() => useInterfaceSettings())
+
+    act(() => {
+      result.current.setNotificationPosition('bottom-left')
+    })
+    act(() => {
+      result.current.setNotificationPosition('top-center' as any)
+    })
+
+    expect(result.current.notificationPosition).toBe('bottom-left')
   })
 
   describe('Reset interface functionality', () => {

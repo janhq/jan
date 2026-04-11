@@ -58,6 +58,16 @@
     "title": "Cài đặt thời gian chạy",
     "description": "Cấu hình cách Jan quản lý và thử lại các máy chủ MCP.",
     "toolCallTimeout": "Thời gian chờ lệnh (giây)",
-    "toolCallTimeoutDesc": "Thời gian tối đa chờ phản hồi từ công cụ MCP trước khi hết thời gian."
+    "toolCallTimeoutDesc": "Thời gian tối đa chờ phản hồi từ công cụ MCP trước khi hết thời gian.",
+    "smartToolRouting": "Định tuyến công cụ MCP thông minh",
+    "smartToolRoutingDesc": "Khi bật, Jan chọn các máy chủ MCP liên quan trước khi tải công cụ. Tắt để luôn tải toàn bộ danh sách công cụ MCP.",
+    "useLightweightRouterModel": "Dùng model riêng cho định tuyến",
+    "useLightweightRouterModelDesc": "Khi định tuyến thông minh bật, bước định tuyến chạy bằng model riêng (thường nhỏ hơn) thay vì model trò chuyện. Tắt để luôn dùng model trò chuyện đang hoạt động cho định tuyến.",
+    "routerModel": "Model định tuyến",
+    "routerModelDesc": "Chọn nhà cung cấp và model tại một nơi. Chỉ hiển thị model nhẹ để định tuyến nhanh và rẻ.",
+    "selectRouterModelPlaceholder": "Chọn model định tuyến…",
+    "routerModelSearchPlaceholder": "Tìm model…",
+    "routerModelEmptyList": "Không có model nhẹ. Hãy thêm model nhỏ hơn hoặc cấu hình khóa API trong Models.",
+    "routerModelEmptySearch": "Không có kết quả cho “{{query}}”."
   }
 }

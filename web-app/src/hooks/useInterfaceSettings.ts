@@ -1,7 +1,13 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { fileStorage } from '@/lib/fileStorage'
 import { useTheme } from './useTheme'
+import {
+  getDefaultNotificationPosition,
+  isNotificationPosition,
+  type NotificationPosition,
+} from '@/utils/toastPlacement'
 
 export type FontSize = '14px' | '15px' | '16px' | '18px' | '20px'
 
@@ -102,14 +108,19 @@ const applyAccentColorToDOM = (colorValue: string, isDark: boolean) => {
 interface InterfaceSettingsState {
   fontSize: FontSize
   accentColor: AccentColorValue
+  notificationPosition: NotificationPosition
   setFontSize: (size: FontSize) => void
   setAccentColor: (color: AccentColorValue) => void
+  setNotificationPosition: (position: NotificationPosition) => void
   resetInterface: () => void
 }
 
 type InterfaceSettingsPersistedSlice = Omit<
   InterfaceSettingsState,
-  'resetInterface' | 'setFontSize' | 'setAccentColor'
+  | 'resetInterface'
+  | 'setFontSize'
+  | 'setAccentColor'
+  | 'setNotificationPosition'
 >
 
 export const fontSizeOptions = [
@@ -126,15 +137,21 @@ const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
   return {
     fontSize: defaultFontSize,
     accentColor: DEFAULT_ACCENT_COLOR,
+    notificationPosition: getDefaultNotificationPosition(),
   }
 }
 
-const interfaceStorage = createJSONStorage<InterfaceSettingsState>(() =>
-  localStorage
+const interfaceStorage = createJSONStorage<InterfaceSettingsPersistedSlice>(() =>
+  fileStorage
 )
 
 export const useInterfaceSettings = create<InterfaceSettingsState>()(
-  persist(
+  persist<
+    InterfaceSettingsState,
+    [],
+    [],
+    InterfaceSettingsPersistedSlice
+  >(
     (set) => {
       const defaultState = createDefaultInterfaceValues()
       return {
@@ -155,6 +172,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
           set({
             fontSize: defaultFontSize,
             accentColor: DEFAULT_ACCENT_COLOR,
+            notificationPosition: getDefaultNotificationPosition(),
           })
         },
 
@@ -173,11 +191,21 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
           // Update state
           set({ fontSize: size })
         },
+
+        setNotificationPosition: (position) => {
+          if (!isNotificationPosition(position)) return
+          set({ notificationPosition: position })
+        },
       }
     },
     {
       name: localStorageKey.settingInterface,
       storage: interfaceStorage,
+      partialize: (state) => ({
+        fontSize: state.fontSize,
+        accentColor: state.accentColor,
+        notificationPosition: state.notificationPosition,
+      }),
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {
         if (state) {
@@ -198,6 +226,13 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
           // Apply accent color preset
           const accentColorValue = state.accentColor || DEFAULT_ACCENT_COLOR
           applyAccentColorToDOM(accentColorValue, isDark)
+
+          if (
+            !state.notificationPosition ||
+            !isNotificationPosition(state.notificationPosition)
+          ) {
+            state.notificationPosition = getDefaultNotificationPosition()
+          }
         }
 
         // Return the state to be used for hydration

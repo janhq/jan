@@ -5,10 +5,11 @@ import { RenderMarkdown } from './RenderMarkdown'
 import { cn } from '@/lib/utils'
 import { twMerge } from 'tailwind-merge'
 import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningTrigger,
-} from '@/components/ai-elements/reasoning'
+  ChainOfThought,
+  ChainOfThoughtContent,
+  ChainOfThoughtHeader,
+} from '@/components/ai-elements/chain-of-thought'
+import { Streamdown } from 'streamdown'
 import {
   Tool,
   ToolContent,
@@ -17,8 +18,9 @@ import {
   ToolOutput,
 } from '@/components/ai-elements/tool'
 import { CopyButton } from './CopyButton'
+import { formatDate } from '@/utils/formatDate'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { IconRefresh, IconPaperclip } from '@tabler/icons-react'
+import { IconRefresh, IconPaperclip, IconArrowDown } from '@tabler/icons-react'
 import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
@@ -43,6 +45,9 @@ export type MessageItemProps = {
   isLastMessage: boolean
   status: ChatStatus
   reasoningContainerRef?: React.RefObject<HTMLDivElement | null>
+  isReasoningAtBottom?: boolean
+  onReasoningScroll?: () => void
+  onReasoningScrollToBottom?: () => void
   onRegenerate?: (messageId: string) => void
   onEdit?: (messageId: string, newText: string) => void
   onDelete?: (messageId: string) => void
@@ -60,11 +65,16 @@ export const MessageItem = memo(
     isAnimating,
     hideActions,
     reasoningContainerRef,
+    isReasoningAtBottom,
+    onReasoningScroll,
+    onReasoningScrollToBottom,
     onRegenerate,
     onEdit,
     onDelete,
   }: MessageItemProps) => {
     const selectedModel = useModelProvider((state) => state.selectedModel)
+    const metadata = message.metadata as Record<string, unknown> | undefined
+    const createdAt = (metadata?.createdAt as Date) ?? new Date()
     const [previewImage, setPreviewImage] = useState<{
       url: string
       filename?: string
@@ -190,6 +200,14 @@ export const MessageItem = memo(
                 isStreaming={isStreaming && isLastPart}
                 messageId={message.id}
                 isAnimating={isAnimating}
+                onApplyContentEdit={
+                  onEdit && !hideActions
+                    ? (newContent) => onEdit(message.id, newContent)
+                    : undefined
+                }
+                paragraphEditDisabled={
+                  hideActions || (isStreaming && isLastPart)
+                }
               />
             </>
           )}
@@ -248,42 +266,7 @@ export const MessageItem = memo(
       return null
     }
 
-    const renderReasoningPart = (
-      part: { type: 'reasoning'; text: string },
-      partIndex: number
-    ) => {
-      const isLastPart = partIndex === message.parts.length - 1
-      const shouldBeOpen = isStreaming && isLastPart
-
-      return (
-        <Reasoning
-          key={`${message.id}-${partIndex}`}
-          className="w-full text-muted-foreground"
-          isStreaming={isStreaming && isLastPart}
-          defaultOpen={shouldBeOpen}
-        >
-          <ReasoningTrigger />
-          <div className="relative">
-            {isStreaming && (
-              <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-neutral-50 mask-t-from-98% dark:from-background to-transparent pointer-events-none z-10" />
-            )}
-            <div
-              ref={isStreaming ? reasoningContainerRef : null}
-              className={twMerge(
-                'w-full overflow-auto relative',
-                isStreaming
-                  ? 'max-h-32 opacity-70 mt-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
-                  : 'h-auto opacity-100'
-              )}
-            >
-              <ReasoningContent>{part.text}</ReasoningContent>
-            </div>
-          </div>
-        </Reasoning>
-      )
-    }
-
-    const renderToolPart = (part: any, partIndex: number) => {
+    const renderToolInline = (part: any, partIndex: number) => {
       if (!part.type.startsWith('tool-') || !('state' in part)) {
         return null
       }
@@ -293,7 +276,7 @@ export const MessageItem = memo(
         <Tool
           key={`${message.id}-${partIndex}`}
           state={part.state}
-          className="mb-4"
+          className="mb-2"
         >
           <ToolHeader
             title={toolName}
@@ -329,29 +312,152 @@ export const MessageItem = memo(
       )
     }
 
+    // Group consecutive reasoning + tool parts into a single CoT block.
+    // Empty text parts and step-start markers (inserted by the AI SDK during
+    // multi-step tool use) are absorbed so they don't split the group.
+    const isCotPart = (part: any) =>
+      part.type === CONTENT_TYPE.REASONING ||
+      part.type.startsWith('tool-') ||
+      part.type === 'step-start' ||
+      (part.type === CONTENT_TYPE.TEXT && (!part.text || part.text.trim() === ''))
+
+    type PartEntry = { part: any; index: number }
+
+    const renderCotGroup = (
+      entries: PartEntry[],
+      groupKey: string,
+      hasFollowingContent: boolean
+    ) => {
+      const hasReasoning = entries.some(
+        (e) => e.part.type === CONTENT_TYPE.REASONING
+      )
+
+      // No reasoning in this group — render tool parts directly, no CoT wrapper
+      if (!hasReasoning) {
+        return entries.map(({ part, index: partIndex }) =>
+          renderToolInline(part, partIndex)
+        )
+      }
+
+      const lastEntryIndex = entries[entries.length - 1].index
+      const groupIsStreaming =
+        isStreaming && lastEntryIndex === message.parts.length - 1
+
+      return (
+        <ChainOfThought
+          key={groupKey}
+          className="w-full text-muted-foreground"
+          isStreaming={groupIsStreaming}
+          shouldCollapse={hasFollowingContent}
+          defaultOpen={true}
+        >
+          <ChainOfThoughtHeader />
+          <ChainOfThoughtContent>
+            {entries.map(({ part, index: partIndex }) => {
+              if (part.type === CONTENT_TYPE.REASONING) {
+                const isLastMsgPart =
+                  partIndex === message.parts.length - 1
+                const partIsStreaming = isStreaming && isLastMsgPart
+
+                return (
+                  <div
+                    key={`${message.id}-r-${partIndex}`}
+                    className="relative"
+                  >
+                    {partIsStreaming && (
+                      <div className="absolute top-0 left-0 right-0 h-8 bg-linear-to-br from-neutral-50 mask-t-from-98% dark:from-background to-transparent pointer-events-none z-10" />
+                    )}
+                    <div
+                      ref={partIsStreaming ? reasoningContainerRef : null}
+                      onScroll={
+                        partIsStreaming ? onReasoningScroll : undefined
+                      }
+                      className={twMerge(
+                        'w-full overflow-auto relative',
+                        partIsStreaming
+                          ? 'max-h-64 opacity-70 mt-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden'
+                          : 'h-auto opacity-100'
+                      )}
+                    >
+                      <Streamdown
+                        animate={true}
+                        animationDuration={500}
+                      >
+                        {part.text}
+                      </Streamdown>
+                    </div>
+                    {partIsStreaming && !isReasoningAtBottom && (
+                      <Button
+                        className="absolute bottom-2 left-[50%] translate-x-[-50%] rounded-full size-7 z-10"
+                        onClick={onReasoningScrollToBottom}
+                        size="icon"
+                        type="button"
+                        variant="outline"
+                      >
+                        <IconArrowDown className="size-3" />
+                      </Button>
+                    )}
+                  </div>
+                )
+              }
+
+              // Tool part inside CoT
+              return renderToolInline(part, partIndex)
+            })}
+          </ChainOfThoughtContent>
+        </ChainOfThought>
+      )
+    }
+
+    const renderedParts = useMemo(() => {
+      const elements: React.ReactNode[] = []
+      let cotBuffer: PartEntry[] = []
+
+      const flushCot = (hasFollowing: boolean) => {
+        if (cotBuffer.length === 0) return
+        const key = `${message.id}-cot-${cotBuffer[0].index}`
+        elements.push(renderCotGroup(cotBuffer, key, hasFollowing))
+        cotBuffer = []
+      }
+
+      for (let i = 0; i < message.parts.length; i++) {
+        const part = message.parts[i] as any
+        if (isCotPart(part)) {
+          cotBuffer.push({ part, index: i })
+        } else {
+          flushCot(true) // text/file follows → collapse the CoT
+          switch (part.type) {
+            case CONTENT_TYPE.TEXT:
+              elements.push(
+                renderTextPart(part as { type: 'text'; text: string }, i)
+              )
+              break
+            case CONTENT_TYPE.FILE:
+              elements.push(renderFilePart(part as any, i))
+              break
+            default:
+              break
+          }
+        }
+      }
+      flushCot(false) // end of message, no following content → keep open
+
+      return elements
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [message.parts, isStreaming, isReasoningAtBottom])
+
     return (
       <div className="w-full mb-4">
 
         {/* Render message parts */}
-        {message.parts.map((part, i) => {
-          switch (part.type) {
-            case CONTENT_TYPE.TEXT:
-              return renderTextPart(part as { type: 'text'; text: string }, i)
-            case CONTENT_TYPE.FILE:
-              return renderFilePart(part as any, i)
-            case CONTENT_TYPE.REASONING:
-              return renderReasoningPart(
-                part as { type: 'reasoning'; text: string },
-                i
-              )
-            default:
-              return renderToolPart(part, i)
-          }
-        })}
+        {renderedParts}
 
         {/* Message actions for user messages */}
         {message.role === 'user' && !hideActions && (
           <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs mt-4">
+            <span className="text-muted-foreground">
+              {formatDate(createdAt)}
+            </span>
             <CopyButton text={getFullTextContent()} />
 
             {onEdit && status !== CHAT_STATUS.STREAMING && (
@@ -371,6 +477,11 @@ export const MessageItem = memo(
         {/* Message actions for assistant messages (non-tool) */}
         {message.role === 'assistant' && (
             <div className="flex items-center gap-2 text-muted-foreground text-xs mt-1">
+              {!isStreaming && (
+                <span className="text-muted-foreground">
+                  {formatDate(createdAt)}
+                </span>
+              )}
               <div
                 className={cn(
                   'flex items-center gap-1',
@@ -404,9 +515,7 @@ export const MessageItem = memo(
 
               <TokenSpeedIndicator
                 streaming={isStreaming}
-                metadata={
-                  message.metadata as Record<string, unknown> | undefined
-                }
+                metadata={metadata}
               />
             </div>
           )}

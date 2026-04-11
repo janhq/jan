@@ -90,14 +90,9 @@ export function convertUIMessageToThreadMessage(
       }
     })
 
-  // Handle createdAt - may be on the message or not depending on SDK version
-  const msgAny = uiMessage as any
+  const metadata = uiMessage.metadata as Record<string, unknown> | undefined
   const createdAt =
-    msgAny.createdAt instanceof Date
-      ? msgAny.createdAt.getTime()
-      : typeof msgAny.createdAt === 'number'
-        ? msgAny.createdAt
-        : Date.now()
+    metadata?.createdAt instanceof Date ? metadata.createdAt.getTime() : Date.now()
 
   return {
     id: uiMessage.id,
@@ -323,8 +318,10 @@ export function convertThreadMessageToUIMessage(
     id: threadMessage.id,
     role: threadMessage.role as 'user' | 'assistant' | 'system',
     parts,
-    createdAt: new Date(threadMessage.created_at || Date.now()),
-    metadata: threadMessage.metadata || {}
+    metadata: {
+      ...(threadMessage.metadata || {}),
+      createdAt: new Date(threadMessage.created_at || Date.now()),
+    },
   } as UIMessage
 }
 

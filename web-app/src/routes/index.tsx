@@ -10,6 +10,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
 import { predefinedProviders } from '@/constants/providers'
+import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
 
 type ThreadModel = {
   id: string
@@ -57,7 +58,7 @@ function Index() {
 
     // Predefined providers need either API key or models (for llamacpp/jan)
     return (
-      provider.api_key?.length ||
+      providerHasRemoteApiKeys(provider) ||
       (provider.provider === 'llamacpp' && provider.models.length) ||
       (provider.provider === 'jan' && provider.models.length)
     )

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { fileStorage } from '@/lib/fileStorage'
 
 export type ToolApprovalModalProps = {
   toolName: string
@@ -112,7 +113,7 @@ export const useToolApproval = create<ToolApprovalState>()(
     }),
     {
       name: localStorageKey.toolApproval,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => fileStorage),
       // Only persist approved tools and global permission setting, not modal state
       partialize: (state) => ({
         approvedTools: state.approvedTools,
