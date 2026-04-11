@@ -27,8 +27,8 @@ export const modelSettings = {
       'Number of model layers to offload to the GPU (-1 for all layers, 0 for CPU only).',
     controller_type: 'input',
     controller_props: {
-      value: 100,
-      placeholder: '100',
+      value: 0,
+      placeholder: '0',
       type: 'number',
     },
   },
