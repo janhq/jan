@@ -53,6 +53,7 @@ import {
   OpenAICompatibleChatLanguageModel,
 } from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createXai } from '@ai-sdk/xai'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
@@ -332,6 +333,7 @@ export class ModelFactory {
         return this.createOpenAIModel(modelId, provider, parameters)
       case 'google':
       case 'gemini':
+        return this.createGoogleModel(modelId, provider, parameters)
       case 'azure':
       case 'groq':
       case 'together':
@@ -613,6 +615,44 @@ export class ModelFactory {
     })
 
     return anthropic(modelId)
+  }
+
+  /**
+   * Create a Google/Gemini model using the official AI SDK
+   */
+  private static createGoogleModel(
+    modelId: string,
+    provider: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): LanguageModel {
+    const headers: Record<string, string> = {}
+
+    // Add custom headers if specified
+    if (provider.custom_header) {
+      provider.custom_header.forEach((customHeader) => {
+        headers[customHeader.header] = customHeader.value
+      })
+    }
+
+    const keyChain = providerRemoteApiKeyChain(provider)
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            parameters,
+            'x-api-key'
+          )
+        : createCustomFetch(getRuntimeFetch(), parameters)
+
+    const google = createGoogleGenerativeAI({
+      apiKey: keyChain[0] ?? provider.api_key ?? '',
+      baseURL: provider.base_url,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+      fetch: fetchImpl,
+    })
+
+    return google(modelId)
   }
 
   /**
