@@ -10,6 +10,10 @@ type ModelProviderState = {
   selectedProvider: string
   selectedModel: Model | null
   deletedModels: string[]
+  // Tracks whether the one-time cortex model settings migration has run.
+  // Kept in persisted state so we don't rely on a raw localStorage flag that
+  // gets destroyed by migrateAllLocalStorageKeys on each startup.
+  cortexMigrated: boolean
   getModelBy: (modelId: string) => Model | undefined
   setProviders: (providers: ModelProvider[]) => void
   getProviderByName: (providerName: string) => ModelProvider | undefined
@@ -30,6 +34,7 @@ export const useModelProvider = create<ModelProviderState>()(
       selectedProvider: 'llamacpp',
       selectedModel: null,
       deletedModels: [],
+      cortexMigrated: false,
       getModelBy: (modelId: string) => {
         const provider = get().providers.find(
           (provider) => provider.provider === get().selectedProvider
@@ -55,14 +60,14 @@ export const useModelProvider = create<ModelProviderState>()(
             })
 
           let legacyModels: Model[] | undefined = []
-          /// Cortex Migration
-          if (
-            localStorage.getItem('cortex_model_settings_migrated') !== 'true'
-          ) {
+          // One-time migration from the legacy llama.cpp provider name.
+          // The flag lives in persisted state so it isn't lost when
+          // migrateAllLocalStorageKeys clears the old localStorage entry.
+          const needsCortexMigration = !state.cortexMigrated
+          if (needsCortexMigration) {
             legacyModels = state.providers.find(
               (e) => e.provider === 'llama.cpp'
             )?.models
-            localStorage.setItem('cortex_model_settings_migrated', 'true')
           }
           // Ensure deletedModels is always an array
           const currentDeletedModels = Array.isArray(state.deletedModels)
@@ -162,6 +167,7 @@ export const useModelProvider = create<ModelProviderState>()(
                 (e) => !updatedProviders.some((p) => p.provider === e.provider)
               ),
             ],
+            ...(needsCortexMigration ? { cortexMigrated: true } : {}),
           }
         }),
       updateProvider: (providerName, data) => {
@@ -541,7 +547,7 @@ export const useModelProvider = create<ModelProviderState>()(
         }
         return state
       },
-      version: 11,
+      version: 12,
     }
   )
 )

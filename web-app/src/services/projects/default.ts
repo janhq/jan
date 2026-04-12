@@ -1,35 +1,36 @@
 /**
- * Default Projects Service - localStorage implementation
+ * Default Projects Service - file-backed storage implementation
  */
 
 import { ulid } from 'ulidx'
 import type { ProjectsService, ThreadFolder } from './types'
 import { localStorageKey } from '@/constants/localStorage'
+import { fileStorage } from '@/lib/fileStorage'
 
 export class DefaultProjectsService implements ProjectsService {
   private storageKey = localStorageKey.threadManagement
 
-  private loadFromStorage(): ThreadFolder[] {
+  private async loadFromStorage(): Promise<ThreadFolder[]> {
     try {
-      const stored = localStorage.getItem(this.storageKey)
+      const stored = await fileStorage.getItem(this.storageKey)
       if (!stored) return []
       const data = JSON.parse(stored)
       return data.state?.folders || []
     } catch (error) {
-      console.error('Error loading projects from localStorage:', error)
+      console.error('Error loading projects from storage:', error)
       return []
     }
   }
 
-  private saveToStorage(projects: ThreadFolder[]): void {
+  private async saveToStorage(projects: ThreadFolder[]): Promise<void> {
     try {
       const data = {
         state: { folders: projects },
         version: 0,
       }
-      localStorage.setItem(this.storageKey, JSON.stringify(data))
+      await fileStorage.setItem(this.storageKey, JSON.stringify(data))
     } catch (error) {
-      console.error('Error saving projects to localStorage:', error)
+      console.error('Error saving projects to storage:', error)
     }
   }
 
@@ -45,35 +46,32 @@ export class DefaultProjectsService implements ProjectsService {
       assistantId,
     }
 
-    const projects = this.loadFromStorage()
-    const updatedProjects = [...projects, newProject]
-    this.saveToStorage(updatedProjects)
-
+    const projects = await this.loadFromStorage()
+    await this.saveToStorage([...projects, newProject])
     return newProject
   }
 
   async updateProject(id: string, name: string, assistantId?: string): Promise<void> {
-    const projects = this.loadFromStorage()
-    const updatedProjects = projects.map((project) =>
+    const projects = await this.loadFromStorage()
+    const updated = projects.map((project) =>
       project.id === id
         ? { ...project, name, updated_at: Date.now(), assistantId }
         : project
     )
-    this.saveToStorage(updatedProjects)
+    await this.saveToStorage(updated)
   }
 
   async deleteProject(id: string): Promise<void> {
-    const projects = this.loadFromStorage()
-    const updatedProjects = projects.filter((project) => project.id !== id)
-    this.saveToStorage(updatedProjects)
+    const projects = await this.loadFromStorage()
+    await this.saveToStorage(projects.filter((project) => project.id !== id))
   }
 
   async getProjectById(id: string): Promise<ThreadFolder | undefined> {
-    const projects = this.loadFromStorage()
+    const projects = await this.loadFromStorage()
     return projects.find((project) => project.id === id)
   }
 
   async setProjects(projects: ThreadFolder[]): Promise<void> {
-    this.saveToStorage(projects)
+    await this.saveToStorage(projects)
   }
 }
