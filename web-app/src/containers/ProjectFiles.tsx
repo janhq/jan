@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { FileText, Trash2, UploadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ import { useAttachments } from '@/hooks/useAttachments'
 import { ExtensionTypeEnum, FileStat, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { IconLoader2, IconPaperclip } from '@tabler/icons-react'
+import { isPlatformTauri } from '@/lib/platform/utils'
 
 type ProjectFilesProps = {
   projectId: string
@@ -262,9 +263,15 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     loadProjectFiles()
   }, [loadProjectFiles])
 
+
+  const uploadingRef = useRef(uploading)
+  useEffect(() => {
+    uploadingRef.current = uploading
+  }, [uploading])
+
   const processFilePaths = useCallback(
     async (paths: string[]) => {
-      if (!paths.length) return
+      if (!paths.length || uploadingRef.current) return
 
       // Get files from paths (recursively for directories)
       const filePaths = await getFilesFromPaths(paths)
@@ -374,11 +381,80 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     [files, loadProjectFiles, maxFileSizeMB, projectId, serviceHub, t]
   )
 
+  const processFilePathsRef = useRef(processFilePaths)
+  const attachmentsEnabledRef = useRef(attachmentsEnabled)
+
+  useEffect(() => {
+    processFilePathsRef.current = processFilePaths
+    attachmentsEnabledRef.current = attachmentsEnabled
+  }, [processFilePaths, attachmentsEnabled])
+
+  const dropZoneRef = useRef<HTMLDivElement>(null)
+
+  // Stable listener that lives for the whole component lifetime.
+  // We use refs above so it always calls the freshest version of processFilePaths.
+  useEffect(() => {
+    if (!isPlatformTauri()) return
+
+    let unlisten: (() => void) | undefined
+    let cleanedUp = false
+
+    const setupListener = async () => {
+      try {
+        const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+        const appWindow = getCurrentWebviewWindow()
+
+        const isInsideDropZone = (position: { x: number; y: number }) => {
+          if (!dropZoneRef.current) return false
+          const rect = dropZoneRef.current.getBoundingClientRect()
+          const dpr = window.devicePixelRatio || 1
+          const x = position.x / dpr
+          const y = position.y / dpr
+          return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
+        }
+
+        const unbind = await appWindow.onDragDropEvent((event) => {
+          // Bail early if attachments are turned off in Settings
+          if (!attachmentsEnabledRef.current) return
+
+          if (event.payload.type === 'enter' || event.payload.type === 'over') {
+            setIsDragging(isInsideDropZone(event.payload.position))
+          } else if (event.payload.type === 'leave') {
+            setIsDragging(false)
+          } else if (event.payload.type === 'drop') {
+            const wasInside = isInsideDropZone(event.payload.position)
+            setIsDragging(false)
+            if (!wasInside) return
+
+            if (event.payload.paths.length > 0) {
+              void processFilePathsRef.current(event.payload.paths)
+            }
+          }
+        })
+
+        // Guard against the listener resolving after the component already unmounted
+        if (cleanedUp) {
+          unbind()
+        } else {
+          unlisten = unbind
+        }
+      } catch (error) {
+        console.warn('Failed to setup native drag-drop listener:', error)
+      }
+    }
+
+    setupListener()
+    return () => {
+      cleanedUp = true
+      if (unlisten) unlisten()
+    }
+  }, [])
+
   const handleUpload = async () => {
     if (!attachmentsEnabled) {
       toast.info(
         t('common:toast.attachmentsDisabledInfo.title') ??
-          'Attachments are disabled in Settings'
+        'Attachments are disabled in Settings'
       )
       return
     }
@@ -417,56 +493,23 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setIsDragging(true)
   }
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setIsDragging(false)
   }
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setIsDragging(false)
+    if (!attachmentsEnabled) return
 
-    if (!attachmentsEnabled) {
-      toast.info(
-        t('common:toast.attachmentsDisabledInfo.title') ??
-          'Attachments are disabled in Settings'
-      )
-      return
-    }
-
-    // Get file paths from the drop event (Tauri provides paths directly)
-    const paths: string[] = []
-    const items = e.dataTransfer.items
-    if (items) {
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i]
-        if (item.kind === 'file') {
-          const file = item.getAsFile()
-          if (file && 'path' in file && typeof file.path === 'string') {
-            paths.push(file.path)
-          }
-        }
-      }
-    }
-
-    if (paths.length === 0) {
-      // Fallback for web: check dataTransfer.files
-      const dtFiles = e.dataTransfer.files
-      for (let i = 0; i < dtFiles.length; i++) {
-        const file = dtFiles[i]
-        if ('path' in file && typeof file.path === 'string') {
-          paths.push(file.path)
-        }
-      }
-    }
-
-    if (paths.length > 0) {
-      await processFilePaths(paths)
+    if (!isPlatformTauri()) {
+      toast.info('Browser dragging unsupported', {
+         description: 'Drag and drop for Project attachments is not supported in the web browser. Please use the Upload button.'
+      })
     }
   }
 
@@ -497,7 +540,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   const isEmpty = !loading && files.length === 0
 
   return (
-    <div className="p-4">
+    <div ref={dropZoneRef} className="p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium">{t('common:projects.files')}</h3>
         <Button
@@ -528,9 +571,9 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
               : 'bg-secondary/30 border-border hover:bg-secondary/50'
           )}
           onClick={handleUpload}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          onDragOver={attachmentsEnabled && !isPlatformTauri() ? handleDragOver : undefined}
+          onDragLeave={attachmentsEnabled && !isPlatformTauri() ? handleDragLeave : undefined}
+          onDrop={attachmentsEnabled && !isPlatformTauri() ? handleDrop : undefined}
         >
           <FileText className="size-8 text-muted-foreground/50 mb-3" />
           <p className="text-sm text-muted-foreground text-center">
@@ -543,9 +586,9 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
             'space-y-2 rounded-lg p-1 -m-1 transition-colors',
             isDragging && 'bg-primary/10 ring-2 ring-primary ring-dashed'
           )}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          onDragOver={attachmentsEnabled && !isPlatformTauri() ? handleDragOver : undefined}
+          onDragLeave={attachmentsEnabled && !isPlatformTauri() ? handleDragLeave : undefined}
+          onDrop={attachmentsEnabled && !isPlatformTauri() ? handleDrop : undefined}
         >
           {files.map((file) => (
             <div
@@ -586,22 +629,22 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           ))}
 
           <div
-          className={cn(
-            'flex mt-2 flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
-            isDragging
-              ? 'bg-primary/10 border-primary'
-              : 'bg-secondary/30 border-border hover:bg-secondary/50'
-          )}
-          onClick={handleUpload}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <FileText className="size-8 text-muted-foreground/50 mb-3" />
-          <p className="text-sm text-muted-foreground text-center">
-            {t('common:projects.filesDescription')}
-          </p>
-        </div>
+            className={cn(
+              'flex mt-2 flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed cursor-pointer transition-colors',
+              isDragging
+                ? 'bg-primary/10 border-primary'
+                : 'bg-secondary/30 border-border hover:bg-secondary/50'
+            )}
+            onClick={handleUpload}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <FileText className="size-8 text-muted-foreground/50 mb-3" />
+            <p className="text-sm text-muted-foreground text-center">
+              {t('common:projects.filesDescription')}
+            </p>
+          </div>
         </div>
       )}
     </div>

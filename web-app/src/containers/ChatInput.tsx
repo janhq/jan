@@ -147,7 +147,7 @@ const ChatInput = memo(function ChatInput({
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
-  const { 
+  const {
     loading,
     currentAssistant,
     setCurrentAssistant,
@@ -208,9 +208,9 @@ const ChatInput = memo(function ChatInput({
 
   const avatar = currentThread
     ? assistants.find((a) => a.id === currentThread?.assistants?.[0]?.id)
-        ?.avatar ||
-      currentThread?.assistants?.[0]?.avatar ||
-      ''
+      ?.avatar ||
+    currentThread?.assistants?.[0]?.avatar ||
+    ''
     : assistants.find((a) => a.id === selectedAssistantId)?.avatar || ''
 
   const assistantCount = assistants?.length || 0
@@ -348,14 +348,14 @@ const ChatInput = memo(function ChatInput({
           prev.map((att) =>
             att.name === fileName
               ? {
-                  ...att,
-                  ...updatedAttachment,
-                  processing: status === 'processing',
-                  processed:
-                    status === 'done'
-                      ? true
-                      : (updatedAttachment?.processed ?? att.processed),
-                }
+                ...att,
+                ...updatedAttachment,
+                processing: status === 'processing',
+                processed:
+                  status === 'done'
+                    ? true
+                    : (updatedAttachment?.processed ?? att.processed),
+              }
               : att
           )
         )
@@ -648,17 +648,17 @@ const ChatInput = memo(function ChatInput({
       const rawContextThreshold =
         typeof modelContextLength === 'number' && modelContextLength > 0
           ? Math.floor(
-              modelContextLength *
-                (typeof autoInlineContextRatio === 'number'
-                  ? autoInlineContextRatio
-                  : 0.75)
-            )
+            modelContextLength *
+            (typeof autoInlineContextRatio === 'number'
+              ? autoInlineContextRatio
+              : 0.75)
+          )
           : undefined
 
       const contextThreshold =
         typeof rawContextThreshold === 'number' &&
-        Number.isFinite(rawContextThreshold) &&
-        rawContextThreshold > 0
+          Number.isFinite(rawContextThreshold) &&
+          rawContextThreshold > 0
           ? rawContextThreshold
           : undefined
 
@@ -808,7 +808,217 @@ const ChatInput = memo(function ChatInput({
     ]
   )
 
+  const processNewDocumentAttachmentsRef = useRef(processNewDocumentAttachments)
+  const processImageFilesRef = useRef<((files: File[]) => Promise<void>) | null>(null)
+  const hasMmprojRef = useRef(hasMmproj)
+  const attachmentsEnabledRef = useRef(attachmentsEnabled)
+  const maxFileSizeMBRef = useRef(maxFileSizeMB)
+  const parsePreferenceRef = useRef(parsePreference)
+
+  // Keep these refs fresh so the stable listener always picks up latest values
+  useEffect(() => {
+    processNewDocumentAttachmentsRef.current = processNewDocumentAttachments
+    hasMmprojRef.current = hasMmproj
+    attachmentsEnabledRef.current = attachmentsEnabled
+    maxFileSizeMBRef.current = maxFileSizeMB
+    parsePreferenceRef.current = parsePreference
+  }, [
+    processNewDocumentAttachments,
+    hasMmproj,
+    attachmentsEnabled,
+    maxFileSizeMB,
+    parsePreference,
+  ])
+
+  const dropZoneRef = useRef<HTMLDivElement>(null)
+
+  // One native Tauri listener for the whole component lifetime.
+  // Skip this entirely in web mode since there's no Tauri API there.
+  useEffect(() => {
+    if (!isPlatformTauri()) return
+
+    let unlisten: (() => void) | undefined
+    let cleanedUp = false
+
+    const setupListener = async () => {
+      try {
+        const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+        const appWindow = getCurrentWebviewWindow()
+
+        const isInsideDropZone = (position: { x: number; y: number }) => {
+          if (!dropZoneRef.current) return false
+          const rect = dropZoneRef.current.getBoundingClientRect()
+          const dpr = window.devicePixelRatio || 1
+          const x = position.x / dpr
+          const y = position.y / dpr
+          return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
+        }
+
+        const unbind = await appWindow.onDragDropEvent(async (event) => {
+          if (!attachmentsEnabledRef.current) return
+
+          if (event.payload.type === 'enter' || event.payload.type === 'over') {
+            setIsDragOver(isInsideDropZone(event.payload.position))
+          } else if (event.payload.type === 'leave') {
+            setIsDragOver(false)
+          } else if (event.payload.type === 'drop') {
+            const wasInside = isInsideDropZone(event.payload.position)
+            setIsDragOver(false)
+            
+            if (!wasInside) return
+            const paths = event.payload.paths
+            if (!paths.length) return
+
+            // Split dropped paths into images vs docs — each goes to its own pipeline.
+            const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'])
+            const imagePaths: string[] = []
+            const docPaths: string[] = []
+
+            for (const p of paths) {
+              const ext = p.split('.').pop()?.toLowerCase() ?? ''
+              if (IMAGE_EXTS.has(ext)) {
+                imagePaths.push(p)
+              } else {
+                docPaths.push(p)
+              }
+            }
+
+            // Process images: convert via tauri asset protocol, then run through image pipeline
+            // Images need a vision-capable model loaded. Tell the user if they don't have one, similar to what the image picker button does.
+            if (imagePaths.length > 0) {
+              if (!hasMmprojRef.current) {
+                toast.info('Vision model required', {
+                  description: 'Load a vision-capable model to attach images.',
+                })
+              } else {
+                try {
+                  const { convertFileSrc } = await import('@tauri-apps/api/core')
+                  const files: File[] = []
+                  for (const p of imagePaths) {
+                    try {
+                      const fileUrl = convertFileSrc(p)
+                      const response = await fetch(fileUrl)
+                      if (!response.ok) throw new Error(`Failed to fetch: ${response.statusText}`)
+                      const blob = await response.blob()
+                      const fileName = p.split(/[/\\]/).pop() ?? 'image'
+                      const ext = fileName.toLowerCase().split('.').pop() ?? 'jpg'
+                      const mimeMap: Record<string, string> = {
+                        png: 'image/png',
+                        gif: 'image/gif',
+                        webp: 'image/webp',
+                        bmp: 'image/bmp',
+                        jpeg: 'image/jpeg',
+                        jpg: 'image/jpeg',
+                      }
+                      const mimeType = mimeMap[ext] || 'image/jpeg'
+                      files.push(new File([blob], fileName, { type: mimeType }))
+                    } catch (err) {
+                      console.error('Failed to load dropped image:', err)
+                    }
+                  }
+                  if (files.length > 0) {
+                    if (processImageFilesRef.current) {
+                      void processImageFilesRef.current(files)
+                    }
+                  }
+                } catch (err) {
+                  console.error('Failed to process dropped images:', err)
+                }
+              }
+            }
+
+            // Anything that's not an image goes through the document pipeline, same logic as the "Add documents or files" button.
+            if (docPaths.length > 0) {
+              try {
+                const { fs: coreFs } = await import('@janhq/core')
+                const { createDocumentAttachment: createDoc } = await import('@/types/attachment')
+                const maxBytes =
+                  typeof maxFileSizeMBRef.current === 'number' && maxFileSizeMBRef.current > 0
+                    ? maxFileSizeMBRef.current * 1024 * 1024
+                    : undefined
+
+                const prepared: Attachment[] = []
+                for (const p of docPaths) {
+                  const name = p.split(/[/\\]/).pop() ?? p
+                  const fileType = name.split('.').pop()?.toLowerCase()
+                  let size: number | undefined
+                  try {
+                    const stat = await coreFs.fileStat(p)
+                    size = stat?.size ? Number(stat.size) : undefined
+                  } catch {
+                    // size unknown, proceed anyway
+                  }
+
+                  if (maxBytes !== undefined && size !== undefined && size > maxBytes) {
+                    toast.error('File too large', {
+                      description: `${name} exceeds the ${maxFileSizeMBRef.current}MB limit`,
+                    })
+                    continue
+                  }
+
+                  prepared.push(createDoc({ name, path: p, fileType, size, parseMode: parsePreferenceRef.current }))
+                }
+
+                if (prepared.length === 0) return
+
+                let newDocAttachments: Attachment[] = []
+                let duplicates: string[] = []
+
+                setAttachmentsForThread(attachmentsKeyRef.current, (current) => {
+                  const existingPaths = new Set(
+                    current.filter((a) => a.type === 'document' && a.path).map((a) => a.path)
+                  )
+                  duplicates = []
+                  newDocAttachments = []
+                  for (const att of prepared) {
+                    if (existingPaths.has(att.path)) {
+                      duplicates.push(att.name)
+                    } else {
+                      newDocAttachments.push(att)
+                    }
+                  }
+                  return newDocAttachments.length > 0 ? [...current, ...newDocAttachments] : current
+                })
+
+                if (duplicates.length > 0) {
+                  toast.warning('Files already attached', {
+                    description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
+                  })
+                }
+
+                if (newDocAttachments.length > 0) {
+                  await processNewDocumentAttachmentsRef.current(newDocAttachments)
+                }
+              } catch (err) {
+                console.error('Failed to process dropped documents:', err)
+                toast.error('Failed to attach documents', {
+                  description: err instanceof Error ? err.message : String(err),
+                })
+              }
+            }
+          }
+        })
+
+        if (cleanedUp) {
+          unbind()
+        } else {
+          unlisten = unbind
+        }
+      } catch (error) {
+        console.warn('Failed to setup native drag-drop listener in ChatInput:', error)
+      }
+    }
+
+    setupListener()
+    return () => {
+      cleanedUp = true
+      if (unlisten) unlisten()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const handleAttachDocsIngest = async () => {
+
     try {
       if (!attachmentsEnabled) {
         toast.info('Attachments are disabled in Settings')
@@ -1083,15 +1293,15 @@ const ChatInput = memo(function ChatInput({
 
   const getFileTypeFromExtension = (fileName: string): string => {
     const extension = fileName.toLowerCase().split('.').pop()
-    switch (extension) {
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg'
-      case 'png':
-        return 'image/png'
-      default:
-        return ''
+    const mimeTypes: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      webp: 'image/webp',
+      bmp: 'image/bmp'
     }
+    return extension && mimeTypes[extension] ? mimeTypes[extension] : ''
   }
 
   const formatBytes = (bytes?: number): string => {
@@ -1120,7 +1330,14 @@ const ChatInput = memo(function ChatInput({
     const oversizedFiles: string[] = []
     const invalidTypeFiles: string[] = []
 
-    const allowedTypes = ['image/jpg', 'image/jpeg', 'image/png']
+    const allowedTypes = [
+      'image/jpg',
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'image/bmp'
+    ]
     const validFiles: File[] = []
 
     // First pass: validate file size and type (no duplicate check yet)
@@ -1243,11 +1460,11 @@ const ChatInput = memo(function ChatInput({
                 prev.map((a) =>
                   matchImg(a)
                     ? {
-                        ...a,
-                        processing: false,
-                        processed: true,
-                        id: result.id,
-                      }
+                      ...a,
+                      processing: false,
+                      processed: true,
+                      id: result.id,
+                    }
                     : a
                 )
               )
@@ -1299,6 +1516,10 @@ const ChatInput = memo(function ChatInput({
       setMessage('')
     }
   }
+
+  useEffect(() => {
+    processImageFilesRef.current = processImageFiles
+  }, [processImageFiles])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -1438,11 +1659,13 @@ const ChatInput = memo(function ChatInput({
     ]
   )
 
+  // ---- Browser-side drag handlers ----
+  // In Tauri, the native listener above handles highlight + file processing.
+  // These exist so the browser allows the drop (preventDefault is required)
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // Only allow drag if model supports mmproj
-    if (hasMmproj) {
+    if (attachmentsEnabled) {
       setIsDragOver(true)
     }
   }
@@ -1450,8 +1673,7 @@ const ChatInput = memo(function ChatInput({
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // Only set dragOver to false if we're leaving the drop zone entirely
-    // In Tauri, relatedTarget can be null, so we need to handle that case
+    // Only clear when actually leaving the zone
     const relatedTarget = e.relatedTarget as Node | null
     if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
       setIsDragOver(false)
@@ -1461,8 +1683,7 @@ const ChatInput = memo(function ChatInput({
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    // Ensure drag state is maintained during drag over
-    if (hasMmproj) {
+    if (attachmentsEnabled) {
       setIsDragOver(true)
     }
   }
@@ -1472,8 +1693,8 @@ const ChatInput = memo(function ChatInput({
     e.stopPropagation()
     setIsDragOver(false)
 
-    // Only allow drop if model supports mmproj
-    if (!hasMmproj) {
+    // Only allow drop if attachments exist
+    if (!attachmentsEnabled) {
       return
     }
 
@@ -1624,16 +1845,33 @@ const ChatInput = memo(function ChatInput({
           )}
 
           <div
+            ref={dropZoneRef}
             className={cn(
               'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30',
               isFocused && 'ring-1 ring-ring/50',
               isDragOver && 'ring-2 ring-ring/50 border-primary'
             )}
-            data-drop-zone={hasMmproj ? 'true' : undefined}
-            onDragEnter={hasMmproj ? handleDragEnter : undefined}
-            onDragLeave={hasMmproj ? handleDragLeave : undefined}
-            onDragOver={hasMmproj ? handleDragOver : undefined}
-            onDrop={hasMmproj ? handleDrop : undefined}
+            data-drop-zone={attachmentsEnabled ? 'true' : undefined}
+            onDragEnter={
+              attachmentsEnabled && !isPlatformTauri()
+                ? handleDragEnter
+                : undefined
+            }
+            onDragLeave={
+              attachmentsEnabled && !isPlatformTauri()
+                ? handleDragLeave
+                : undefined
+            }
+            onDragOver={
+              attachmentsEnabled && !isPlatformTauri()
+                ? handleDragOver
+                : undefined
+            }
+            onDrop={
+              attachmentsEnabled && !isPlatformTauri()
+                ? handleDrop
+                : undefined
+            }
           >
             {attachments.length > 0 && (
               <div className="flex flex-col gap-2 p-2 pb-0">
@@ -1808,67 +2046,67 @@ const ChatInput = memo(function ChatInput({
               >
                 {/* Dropdown for attachments — hidden in agent mode */}
                 {!effectiveAgentMode && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="secondary" size="icon-sm" className='rounded-full mr-2 mb-1'>
-                      <PlusIcon size={18} className="text-muted-foreground" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {/* Vision image attachment - always enabled, prompts to download vision model if needed */}
-                    <DropdownMenuItem onClick={handleImagePickerClick}>
-                      <IconPhoto size={18} className="text-muted-foreground" />
-                      <span>Add Images</span>
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        className="hidden"
-                        multiple
-                        onChange={handleFileChange}
-                      />
-                    </DropdownMenuItem>
-                    {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
-                    <DropdownMenuItem
-                      onClick={handleAttachDocsIngest}
-                      disabled={!selectedModel?.capabilities?.includes('tools')}
-                    >
-                      {ingestingDocs ? (
-                        <IconLoader2
-                          size={18}
-                          className="text-muted-foreground animate-spin"
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="secondary" size="icon-sm" className='rounded-full mr-2 mb-1'>
+                        <PlusIcon size={18} className="text-muted-foreground" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      {/* Vision image attachment - always enabled, prompts to download vision model if needed */}
+                      <DropdownMenuItem onClick={handleImagePickerClick}>
+                        <IconPhoto size={18} className="text-muted-foreground" />
+                        <span>Add Images</span>
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          className="hidden"
+                          multiple
+                          onChange={handleFileChange}
                         />
-                      ) : (
-                        <IconPaperclip
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      )}
-                      <span>
-                        {ingestingDocs
-                          ? 'Indexing documents…'
-                          : 'Add documents or files'}
-                      </span>
-                    </DropdownMenuItem>
-                    {/* Use Assistant - only show when no projectId */}
-                    {!projectId && assistantCount < 2 && (
-                      <DropdownMenuSub>
-                        <DropdownMenuSubTrigger>
-                          <IconUser size={18} className="text-muted-foreground" />
-                          <span>Use Assistant</span>
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
-                          <AssistantsMenu
-                            selectedAssistant={selectedAssistantId}
-                            setSelectedAssistant={setSelectedAssistantId}
-                            currentThread={currentThread}
-                            updateCurrentThreadAssistant={
-                              updateCurrentThreadAssistant
-                            }
-                            assistants={assistants}
+                      </DropdownMenuItem>
+                      {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
+                      <DropdownMenuItem
+                        onClick={handleAttachDocsIngest}
+                        disabled={!selectedModel?.capabilities?.includes('tools')}
+                      >
+                        {ingestingDocs ? (
+                          <IconLoader2
+                            size={18}
+                            className="text-muted-foreground animate-spin"
                           />
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    )}
+                        ) : (
+                          <IconPaperclip
+                            size={18}
+                            className="text-muted-foreground"
+                          />
+                        )}
+                        <span>
+                          {ingestingDocs
+                            ? 'Indexing documents…'
+                            : 'Add documents or files'}
+                        </span>
+                      </DropdownMenuItem>
+                      {/* Use Assistant - only show when no projectId */}
+                      {!projectId && assistantCount < 2 && (
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger>
+                            <IconUser size={18} className="text-muted-foreground" />
+                            <span>Use Assistant</span>
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                            <AssistantsMenu
+                              selectedAssistant={selectedAssistantId}
+                              setSelectedAssistant={setSelectedAssistantId}
+                              currentThread={currentThread}
+                              updateCurrentThreadAssistant={
+                                updateCurrentThreadAssistant
+                              }
+                              assistants={assistants}
+                            />
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
@@ -1989,9 +2227,9 @@ const ChatInput = memo(function ChatInput({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                          variant="ghost"
-                          size="icon-xs"
-                        >
+                        variant="ghost"
+                        size="icon-xs"
+                      >
                         <IconCodeCircle2
                           size={18}
                           className="text-muted-foreground"
