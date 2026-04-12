@@ -1345,6 +1345,9 @@ export default class llamacpp_extension extends AIEngine {
             logger.warn('Failed to cancel download task:', cancelError)
           }
 
+          // Clean up the model folder on validation failure
+          await this.deleteModelFolder(modelId)
+
           // Emit validation failure event
           events.emit(DownloadEvent.onModelValidationFailed, {
             modelId,
@@ -1473,8 +1476,8 @@ export default class llamacpp_extension extends AIEngine {
       logger.warn('Failed to cancel download task:', cancelError)
     }
 
-    // Delete the entire model folder if it exists (for validation failures)
-    await this.deleteModelFolder(modelId)
+    // Keep partial .tmp files so downloads can be resumed later.
+    // The model folder is only cleaned up on validation failures (handled in import()).
   }
 
   /**
