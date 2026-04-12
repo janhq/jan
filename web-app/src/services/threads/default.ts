@@ -7,6 +7,20 @@ import { ConversationalExtension, ExtensionTypeEnum } from '@janhq/core'
 import type { ThreadsService } from './types'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 
+function toModelPayload(model?: Thread['model']) {
+  return { id: model?.id ?? '*', engine: model?.provider ?? 'llamacpp' }
+}
+
+function fromModelResponse(
+  assistantModel: { id: string; engine?: string } | undefined,
+  fallback?: Thread['model']
+): Thread['model'] | undefined {
+  if (assistantModel) {
+    return { id: assistantModel.id, provider: assistantModel.engine }
+  }
+  return fallback
+}
+
 export class DefaultThreadsService implements ThreadsService {
   async fetchThreads(): Promise<Thread[]> {
     return (
@@ -31,15 +45,7 @@ export class DefaultThreadsService implements ThreadsService {
           )
 
           return filteredThreads.map((e) => {
-            // Model is always stored in assistants[0].model
-            const model = e.assistants?.[0]?.model
-              ? {
-                  id: e.assistants[0].model.id,
-                  provider: e.assistants[0].model.engine,
-                }
-              : undefined
-
-            // Check if this is a "real" assistant (has instructions) or just model storage
+            const model = fromModelResponse(e.assistants?.[0]?.model)
             const assistants = e.assistants
 
             return {
@@ -78,27 +84,10 @@ export class DefaultThreadsService implements ThreadsService {
     // If there's a real assistant (with instructions), include full assistant data
     // Otherwise, just include minimal model-only entry for storage
     const hasRealAssistant = thread.assistants && thread.assistants.length > 0
+    const modelPayload = toModelPayload(thread.model)
     const assistantsPayload = hasRealAssistant
-      ? [
-          {
-            ...thread.assistants![0],
-            model: {
-              id: thread.model?.id ?? '*',
-              engine: thread.model?.provider ?? 'llamacpp',
-            },
-          },
-        ]
-      : [
-          {
-            // Minimal entry just to store model info
-            id: 'model-only',
-            name: 'Model',
-            model: {
-              id: thread.model?.id ?? '*',
-              engine: thread.model?.provider ?? 'llamacpp',
-            },
-          },
-        ]
+      ? [{ ...thread.assistants![0], model: modelPayload }]
+      : [{ id: 'model-only', name: 'Model', model: modelPayload }]
 
     return (
       ExtensionManager.getInstance()
@@ -112,13 +101,7 @@ export class DefaultThreadsService implements ThreadsService {
           },
         })
         .then((e) => {
-          // Model is always stored in assistants[0].model
-          const model = e.assistants?.[0]?.model
-            ? {
-                id: e.assistants[0].model.id,
-                provider: e.assistants[0].model.engine,
-              }
-            : thread.model
+          const model = fromModelResponse(e.assistants?.[0]?.model, thread.model)
 
           const assistants = e.assistants
 
@@ -144,25 +127,13 @@ export class DefaultThreadsService implements ThreadsService {
       .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
       ?.modifyThread({
         ...thread,
-        assistants: thread.assistants?.map((e) => {
-          return {
-            model: {
-              id: thread.model?.id ?? '*',
-              engine: thread.model?.provider ?? 'llamacpp',
-            },
-            id: e.id,
-            name: e.name,
-            instructions: e.instructions,
-          }
-        }) ?? [
-          {
-            model: {
-              id: thread.model?.id ?? '*',
-              engine: thread.model?.provider ?? 'llamacpp',
-            },
-            id: 'jan',
-            name: 'Jan',
-          },
+        assistants: thread.assistants?.map((e) => ({
+          model: toModelPayload(thread.model),
+          id: e.id,
+          name: e.name,
+          instructions: e.instructions,
+        })) ?? [
+          { model: toModelPayload(thread.model), id: 'jan', name: 'Jan' },
         ],
         metadata: {
           ...thread.metadata,
