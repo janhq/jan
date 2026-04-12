@@ -582,9 +582,15 @@ async fn download_single_file(
     log::info!("Started downloading: {decoded_url}");
     let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
     let mut download_delta = 0u64;
-    let mut initial_progress = 0u64;
+    let mut total_transferred = 0u64;
 
-    let (resp, actual_url) = if should_resume {
+    // Retry constants for network error recovery
+    const MAX_RETRIES: u32 = 10;
+    const INITIAL_RETRY_DELAY_SECS: u64 = 2;
+    const MAX_RETRY_DELAY_SECS: u64 = 60;
+
+    // --- Initial connection ---
+    let (initial_resp, actual_url) = if should_resume {
         let downloaded_size = tmp_save_path.metadata().map_err(err_to_string)?.len();
         match _get_maybe_resume(&client, &item.url, downloaded_size).await {
             Ok(resp) => {
@@ -593,7 +599,7 @@ async fn download_single_file(
                     item.url,
                     downloaded_size
                 );
-                initial_progress = downloaded_size;
+                total_transferred = downloaded_size;
 
                 // Initialize progress for resumed download
                 progress_tracker
@@ -628,8 +634,6 @@ async fn download_single_file(
         log::info!("Downloading via Jan mirror: {}", actual_url);
     }
 
-    let mut stream = resp.bytes_stream();
-
     let file = if should_resume {
         // resume download, append to existing file
         tokio::fs::OpenOptions::new()
@@ -643,42 +647,124 @@ async fn download_single_file(
         File::create(&tmp_save_path).await.map_err(err_to_string)?
     };
     let mut writer = tokio::io::BufWriter::new(file);
-    let mut total_transferred = initial_progress;
+    let mut stream = initial_resp.bytes_stream();
+    let mut retries = 0u32;
 
-    // write chunk to file
-    while let Some(chunk) = stream.next().await {
-        if cancel_token.is_cancelled() {
-            if !should_resume {
-                tokio::fs::remove_dir_all(&save_path.parent().unwrap())
-                    .await
-                    .ok();
+    // Download loop with automatic retry on network errors
+    loop {
+        match stream.next().await {
+            Some(Ok(chunk)) => {
+                retries = 0; // reset on successful chunk
+                writer.write_all(&chunk).await.map_err(err_to_string)?;
+                download_delta += chunk.len() as u64;
+                total_transferred += chunk.len() as u64;
+
+                // Update progress every 10 MB
+                if download_delta >= 10 * 1024 * 1024 {
+                    progress_tracker
+                        .update_progress(&file_id, total_transferred)
+                        .await;
+
+                    let (combined_transferred, combined_total) =
+                        progress_tracker.get_total_progress().await;
+                    let evt = DownloadEvent {
+                        transferred: combined_transferred,
+                        total: combined_total,
+                    };
+                    app.emit(&evt_name, evt).unwrap();
+
+                    download_delta = 0u64;
+                }
             }
-            log::info!("Download cancelled: {}", item.url);
-            return Err("Download cancelled".to_string());
+            Some(Err(e)) => {
+                // Network error — flush, wait, and retry with Range header
+                writer.flush().await.ok();
+
+                if cancel_token.is_cancelled() {
+                    log::info!("Download cancelled (resumable): {}", item.url);
+                    return Err("Download cancelled".to_string());
+                }
+
+                retries += 1;
+                if retries > MAX_RETRIES {
+                    log::error!(
+                        "Download failed after {} retries: {} - {}",
+                        MAX_RETRIES,
+                        item.url,
+                        e
+                    );
+                    return Err(format!("Download failed after {MAX_RETRIES} retries: {e}"));
+                }
+
+                log::warn!(
+                    "Download interrupted (attempt {}/{}): {} - {}",
+                    retries,
+                    MAX_RETRIES,
+                    item.url,
+                    e
+                );
+
+                // Retry loop: keep trying to reconnect until success, max retries, or cancel
+                loop {
+                    let delay = std::cmp::min(
+                        INITIAL_RETRY_DELAY_SECS * 2u64.saturating_pow(retries - 1),
+                        MAX_RETRY_DELAY_SECS,
+                    );
+                    log::info!("Retrying in {}s...", delay);
+
+                    tokio::select! {
+                        _ = tokio::time::sleep(Duration::from_secs(delay)) => {}
+                        _ = cancel_token.cancelled() => {
+                            log::info!("Download cancelled during retry wait: {}", item.url);
+                            return Err("Download cancelled".to_string());
+                        }
+                    }
+
+                    match _get_maybe_resume_with_fallback(&client, &item.url, total_transferred).await {
+                        Ok((new_resp, _)) => {
+                            log::info!(
+                                "Resumed download from {} bytes: {}",
+                                total_transferred,
+                                item.url
+                            );
+                            stream = new_resp.bytes_stream();
+                            break; // break inner retry loop, continue outer download loop
+                        }
+                        Err(reconnect_err) => {
+                            retries += 1;
+                            if retries > MAX_RETRIES {
+                                log::error!(
+                                    "Download failed after {} retries: {} - {}",
+                                    MAX_RETRIES,
+                                    item.url,
+                                    reconnect_err
+                                );
+                                return Err(format!(
+                                    "Download failed after {MAX_RETRIES} retries: {reconnect_err}"
+                                ));
+                            }
+                            log::warn!(
+                                "Reconnect failed (attempt {}/{}): {} - {}",
+                                retries,
+                                MAX_RETRIES,
+                                item.url,
+                                reconnect_err
+                            );
+                            // loop back — delay is recomputed at top with updated retries
+                        }
+                    }
+                }
+            }
+            None => {
+                // Stream ended — download complete
+                break;
+            }
         }
 
-        let chunk = chunk.map_err(err_to_string)?;
-        writer.write_all(&chunk).await.map_err(err_to_string)?;
-        download_delta += chunk.len() as u64;
-        total_transferred += chunk.len() as u64;
-
-        // Update progress every 10 MB
-        if download_delta >= 10 * 1024 * 1024 {
-            // Update individual file progress
-            progress_tracker
-                .update_progress(&file_id, total_transferred)
-                .await;
-
-            // Emit combined progress event
-            let (combined_transferred, combined_total) =
-                progress_tracker.get_total_progress().await;
-            let evt = DownloadEvent {
-                transferred: combined_transferred,
-                total: combined_total,
-            };
-            app.emit(&evt_name, evt).unwrap();
-
-            download_delta = 0u64;
+        if cancel_token.is_cancelled() {
+            writer.flush().await.ok();
+            log::info!("Download cancelled (resumable): {}", item.url);
+            return Err("Download cancelled".to_string());
         }
     }
 
