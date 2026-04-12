@@ -94,6 +94,8 @@
     "notificationPositionTopLeft": "Top left",
     "notificationPositionBottomRight": "Bottom right",
     "notificationPositionBottomLeft": "Bottom left",
+    "playSoundOnComplete": "Play sound on completion",
+    "playSoundOnCompleteDesc": "Play a notification sound when the model finishes responding.",
     "windowBackground": "Window Background",
     "windowBackgroundDesc": "Set the app window's background color.",
     "appMainView": "App Main View",

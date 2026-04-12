@@ -46,8 +46,10 @@ describe('useInterfaceSettings', () => {
     expect(result.current.fontSize).toBe('16px')
     expect(result.current.accentColor).toBe('gray')
     expect(result.current.notificationPosition).toBe('top-right')
+    expect(result.current.playSoundOnComplete).toBe(false)
     expect(typeof result.current.setFontSize).toBe('function')
     expect(typeof result.current.setAccentColor).toBe('function')
+    expect(typeof result.current.setPlaySoundOnComplete).toBe('function')
     expect(typeof result.current.resetInterface).toBe('function')
   })
 
@@ -98,6 +100,7 @@ describe('useInterfaceSettings', () => {
     act(() => {
       result.current.setFontSize('18px')
       result.current.setAccentColor('blue')
+      result.current.setPlaySoundOnComplete(true)
     })
 
     // Reset
@@ -108,6 +111,25 @@ describe('useInterfaceSettings', () => {
     expect(result.current.fontSize).toBe('16px')
     expect(result.current.accentColor).toBe('gray')
     expect(result.current.notificationPosition).toBe('top-right')
+    expect(result.current.playSoundOnComplete).toBe(false)
+  })
+
+  it('should update play sound on complete setting', () => {
+    const { result } = renderHook(() => useInterfaceSettings())
+
+    expect(result.current.playSoundOnComplete).toBe(false)
+
+    act(() => {
+      result.current.setPlaySoundOnComplete(true)
+    })
+
+    expect(result.current.playSoundOnComplete).toBe(true)
+
+    act(() => {
+      result.current.setPlaySoundOnComplete(false)
+    })
+
+    expect(result.current.playSoundOnComplete).toBe(false)
   })
 
   it('should update notification position', () => {
