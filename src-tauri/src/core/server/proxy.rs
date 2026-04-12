@@ -29,12 +29,20 @@ pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::V
         serde_json::Value::Object(map) => {
             let has_description = map.contains_key("description");
             let has_type = map.contains_key("type");
+            let is_object_type = map.get("type").and_then(|v| v.as_str()) == Some("object");
             let has_nested_schema_keywords = map.contains_key("properties")
                 || map.contains_key("items")
                 || map.contains_key("anyOf")
                 || map.contains_key("oneOf")
                 || map.contains_key("allOf")
                 || map.contains_key("$ref");
+
+            if is_object_type && !map.contains_key("properties") {
+                map.insert(
+                    "properties".to_string(),
+                    serde_json::Value::Object(serde_json::Map::new()),
+                );
+            }
 
             // Only patch leaf nodes (description without `type` AND without nested schema keywords).
             if has_description && !has_type && !has_nested_schema_keywords {
@@ -717,7 +725,8 @@ async fn collect_mcp_openai_tools(
             tool_to_server.insert(tool.name.to_string(), server_name.clone());
 
             // Reuse the same schema conversion as the `get_tools` command.
-            let parameters = serde_json::Value::Object((*tool.input_schema).clone());
+            let mut parameters = serde_json::Value::Object((*tool.input_schema).clone());
+            normalize_openai_tool_parameters_schema(&mut parameters);
             let description = tool
                 .description
                 .as_ref()

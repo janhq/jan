@@ -65,6 +65,47 @@ export type ServiceHub = {
   }
 }
 
+function normalizeToolInputSchemaValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(normalizeToolInputSchemaValue)
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value
+  }
+
+  const normalized = Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, childValue]) => [
+      key,
+      normalizeToolInputSchemaValue(childValue),
+    ])
+  )
+
+  const hasDescription = Object.prototype.hasOwnProperty.call(normalized, 'description')
+  const hasType = Object.prototype.hasOwnProperty.call(normalized, 'type')
+  const hasNestedSchemaKeywords =
+    Object.prototype.hasOwnProperty.call(normalized, 'properties') ||
+    Object.prototype.hasOwnProperty.call(normalized, 'items') ||
+    Object.prototype.hasOwnProperty.call(normalized, 'anyOf') ||
+    Object.prototype.hasOwnProperty.call(normalized, 'oneOf') ||
+    Object.prototype.hasOwnProperty.call(normalized, 'allOf') ||
+    Object.prototype.hasOwnProperty.call(normalized, '$ref')
+
+  if (normalized.type === 'object' && !Object.prototype.hasOwnProperty.call(normalized, 'properties')) {
+    normalized.properties = {}
+  }
+
+  if (hasDescription && !hasType && !hasNestedSchemaKeywords) {
+    normalized.type = 'string'
+  }
+
+  return normalized
+}
+
+export function normalizeToolInputSchema<T>(schema: T): T {
+  return normalizeToolInputSchemaValue(schema) as T
+}
+
 /** Text from the most recent user message (for MCP server routing). */
 function extractLatestUserText(messages: UIMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -248,7 +289,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
                 toolsRecord[tool.name] = {
                   description: tool.description,
                   inputSchema: jsonSchema(
-                    tool.inputSchema as Record<string, unknown>
+                    normalizeToolInputSchema(tool.inputSchema as Record<string, unknown>)
                   ),
                 } as Tool
               }
@@ -304,7 +345,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               toolsRecord[tool.name] = {
                 description: tool.description,
                 inputSchema: jsonSchema(
-                  tool.inputSchema as Record<string, unknown>
+                  normalizeToolInputSchema(tool.inputSchema as Record<string, unknown>)
                 ),
               } as Tool
             }
