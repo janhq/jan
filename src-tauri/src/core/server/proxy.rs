@@ -5,11 +5,11 @@ use hyper::{Body, Request, Response, Server, StatusCode};
 use jan_utils::{extract_host_from_origin, is_cors_header, is_valid_host, remove_prefix};
 use reqwest::Client;
 use serde_json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::fs;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use tauri_plugin_llamacpp::{LLamaBackendSession, LlamacppConfig, load_llama_model_impl};
 use tokio::sync::Mutex;
@@ -1016,6 +1016,7 @@ async fn proxy_request(
     mcp_servers: SharedMcpServers,
     mcp_settings: Arc<Mutex<McpSettings>>,
     jan_data_folder: String,
+    models_loading: Arc<Mutex<HashSet<String>>>,
 ) -> Result<Response<Body>, hyper::Error> {
     if req.method() == hyper::Method::OPTIONS {
         log::debug!(
@@ -2444,8 +2445,17 @@ async fn proxy_request(
                 }
             };
 
-            // Issue #1: Path traversal sanitisation
-            if model_id.contains("..") || model_id.starts_with('/') || model_id.starts_with('\\') {
+            // Path traversal guard — reject literal, path-normalised, and
+            // percent-encoded variants of "..", "/" and "\" so that model_id
+            // can never escape models_root when used in PathBuf::join().
+            let model_id_lower = model_id.to_lowercase();
+            let has_pct_traversal = model_id_lower.contains("%2e%2e")
+                || model_id_lower.contains("%2f")
+                || model_id_lower.contains("%5c");
+            let has_path_traversal = Path::new(&model_id).components().any(|c| {
+                matches!(c, Component::ParentDir | Component::RootDir | Component::Prefix(_))
+            });
+            if has_pct_traversal || has_path_traversal {
                 let response_json = serde_json::json!({"error": "Invalid model ID: path traversal not allowed"});
                 let body_str = serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
                 let mut resp = Response::builder()
@@ -2481,6 +2491,26 @@ async fn proxy_request(
                     resp = add_cors_headers_with_host_and_origin(resp, &host_header, &origin_header, &config.trusted_hosts);
                     return Ok(resp.body(Body::from(body_str)).unwrap());
                 }
+            }
+
+            // Concurrent-load guard: reject duplicate in-flight requests for the
+            // same model_id.  Without this, two simultaneous callers could both
+            // pass the already-loaded check above (TOCTOU) and race to spawn two
+            // llama-server processes for the same model.
+            {
+                let mut loading = models_loading.lock().await;
+                if loading.contains(&model_id) {
+                    let response_json = serde_json::json!({
+                        "error": format!("Model '{}' is already being loaded", model_id)
+                    });
+                    let body_str = serde_json::to_string(&response_json).unwrap_or_else(|_| "{}".to_string());
+                    let mut resp = Response::builder()
+                        .status(StatusCode::CONFLICT)
+                        .header(hyper::header::CONTENT_TYPE, "application/json");
+                    resp = add_cors_headers_with_host_and_origin(resp, &host_header, &origin_header, &config.trusted_hosts);
+                    return Ok(resp.body(Body::from(body_str)).unwrap());
+                }
+                loading.insert(model_id.clone());
             }
 
             log::info!("Loading model: {}", model_id);
@@ -2648,7 +2678,7 @@ async fn proxy_request(
 
             let envs: HashMap<String, String> = HashMap::new();
 
-            match load_llama_model_impl(
+            let load_result = load_llama_model_impl(
                 sessions.clone(),
                 &backend_path,
                 model_id.clone(),
@@ -2660,8 +2690,12 @@ async fn proxy_request(
                 is_embedding,
                 timeout,
             )
-            .await
-            {
+            .await;
+
+            // Release the loading slot whether the load succeeded or failed.
+            models_loading.lock().await.remove(&model_id);
+
+            match load_result {
                 Ok(session_info) => {
                     log::info!("Successfully loaded model '{}' on port {}", model_id, session_info.port);
                     let response_json = serde_json::json!({
@@ -3257,6 +3291,8 @@ async fn start_server_internal(
         .pool_idle_timeout(std::time::Duration::from_secs(30))
         .build()?;
 
+    let models_loading: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+
     let make_svc = make_service_fn(move |_conn| {
         let client = client.clone();
         let config = config.clone();
@@ -3266,6 +3302,7 @@ async fn start_server_internal(
         let mcp_servers = mcp_servers.clone();
         let mcp_settings = mcp_settings.clone();
         let jan_data_folder = jan_data_folder.clone();
+        let models_loading = models_loading.clone();
 
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
@@ -3279,6 +3316,7 @@ async fn start_server_internal(
                     mcp_servers.clone(),
                     mcp_settings.clone(),
                     jan_data_folder.clone(),
+                    models_loading.clone(),
                 )
             }))
         }
