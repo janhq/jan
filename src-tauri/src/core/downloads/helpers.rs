@@ -790,6 +790,11 @@ async fn _get_maybe_resume_with_hmac(
     Ok(resp)
 }
 
+/// Attempt a GET download, optionally resuming from `start_bytes`.
+///
+/// When `start_bytes > 0`, a `Range: bytes={start_bytes}-` header is sent and
+/// the server **must** reply with `206 Partial Content`; any other status is an
+/// error. When `start_bytes == 0` (fresh download), any 2xx status is accepted.
 pub async fn _get_maybe_resume(
     client: &reqwest::Client,
     url: &str,
