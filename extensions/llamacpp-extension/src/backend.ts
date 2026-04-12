@@ -184,45 +184,29 @@ export async function downloadBackend(
   ]
 
   // also download CUDA runtime + cuBLAS + cuBLASLt if needed
-  if (
-    (backend.includes('cu11.7') || backend.includes('cuda-11')) &&
-    !(await _isCudaInstalled(backendDir, '11.7'))
-  ) {
-    downloadItems.push({
-      url:
-        source === 'github'
-          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`
-          : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`,
-      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda11.tar.gz']),
-      proxy: proxyConfig,
-      model_id: taskId,
-    })
-  } else if (
-    (backend.includes('cu12.0') || backend.includes('cuda-12')) &&
-    !(await _isCudaInstalled(backendDir, '12.0'))
-  ) {
-    downloadItems.push({
-      url:
-        source === 'github'
-          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`
-          : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`,
-      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda12.tar.gz']),
-      proxy: proxyConfig,
-      model_id: taskId,
-    })
-  } else if (
-    backend.includes('cuda-13') &&
-    !(await _isCudaInstalled(backendDir, '13.0'))
-  ) {
-    downloadItems.push({
-      url:
-        source === 'github'
-          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`
-          : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`,
-      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda13.tar.gz']),
-      proxy: proxyConfig,
-      model_id: taskId,
-    })
+  const cudaVariants = [
+    { patterns: ['cu11.7', 'cuda-11'], version: '11.7', archive: 'cuda11' },
+    { patterns: ['cu12.0', 'cuda-12'], version: '12.0', archive: 'cuda12' },
+    { patterns: ['cuda-13'],           version: '13.0', archive: 'cuda13' },
+  ]
+
+  for (const cuda of cudaVariants) {
+    if (
+      cuda.patterns.some((p) => backend.includes(p)) &&
+      !(await _isCudaInstalled(backendDir, cuda.version))
+    ) {
+      const cudaFile = `cudart-llama-bin-${platformName}-cu${cuda.version}-x64.tar.gz`
+      downloadItems.push({
+        url:
+          source === 'github'
+            ? `https://github.com/janhq/llama.cpp/releases/download/${version}/${cudaFile}`
+            : `https://catalog.jan.ai/llama.cpp/releases/${version}/${cudaFile}`,
+        save_path: await joinPath([backendDir, 'build', 'bin', `${cuda.archive}.tar.gz`]),
+        proxy: proxyConfig,
+        model_id: taskId,
+      })
+      break
+    }
   }
   const downloadType = 'Engine'
 
