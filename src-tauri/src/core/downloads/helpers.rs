@@ -741,7 +741,7 @@ pub async fn _get_maybe_resume_with_fallback(
 
     // Fallback to original URL (no HMAC headers needed)
     log::info!("Downloading from original URL: {}", url);
-    let resp = _get_maybe_resume_internal(client, url, start_bytes).await?;
+    let resp = _get_maybe_resume(client, url, start_bytes).await?;
     Ok((resp, url.to_string()))
 }
 
@@ -790,52 +790,24 @@ async fn _get_maybe_resume_with_hmac(
     Ok(resp)
 }
 
-/// Internal function to attempt download from a single URL (without HMAC)
-async fn _get_maybe_resume_internal(
-    client: &reqwest::Client,
-    url: &str,
-    start_bytes: u64,
-) -> Result<reqwest::Response, String> {
-    if start_bytes > 0 {
-        let resp = client
-            .get(url)
-            .header("Range", format!("bytes={start_bytes}-"))
-            .send()
-            .await
-            .map_err(err_to_string)?;
-        if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
-            return Err(format!(
-                "Failed to resume download: HTTP status {}, {}",
-                resp.status(),
-                resp.text().await.unwrap_or_default()
-            ));
-        }
-        Ok(resp)
-    } else {
-        let resp = client.get(url).send().await.map_err(err_to_string)?;
-        if !resp.status().is_success() {
-            return Err(format!(
-                "Failed to download: HTTP status {}, {}",
-                resp.status(),
-                resp.text().await.unwrap_or_default()
-            ));
-        }
-        Ok(resp)
-    }
-}
-
+/// Attempt a GET download, optionally resuming from `start_bytes`.
+///
+/// When `start_bytes > 0`, a `Range: bytes={start_bytes}-` header is sent and
+/// the server **must** reply with `206 Partial Content`; any other status is an
+/// error. When `start_bytes == 0` (fresh download), any 2xx status is accepted.
 pub async fn _get_maybe_resume(
     client: &reqwest::Client,
     url: &str,
     start_bytes: u64,
 ) -> Result<reqwest::Response, String> {
+    let mut request = client.get(url);
     if start_bytes > 0 {
-        let resp = client
-            .get(url)
-            .header("Range", format!("bytes={start_bytes}-"))
-            .send()
-            .await
-            .map_err(err_to_string)?;
+        request = request.header("Range", format!("bytes={start_bytes}-"));
+    }
+
+    let resp = request.send().await.map_err(err_to_string)?;
+
+    if start_bytes > 0 {
         if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
             return Err(format!(
                 "Failed to resume download: HTTP status {}, {}",
@@ -843,16 +815,13 @@ pub async fn _get_maybe_resume(
                 resp.text().await.unwrap_or_default()
             ));
         }
-        Ok(resp)
-    } else {
-        let resp = client.get(url).send().await.map_err(err_to_string)?;
-        if !resp.status().is_success() {
-            return Err(format!(
-                "Failed to download: HTTP status {}, {}",
-                resp.status(),
-                resp.text().await.unwrap_or_default()
-            ));
-        }
-        Ok(resp)
+    } else if !resp.status().is_success() {
+        return Err(format!(
+            "Failed to download: HTTP status {}, {}",
+            resp.status(),
+            resp.text().await.unwrap_or_default()
+        ));
     }
+
+    Ok(resp)
 }

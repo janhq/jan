@@ -1,6 +1,7 @@
 use super::helpers::*;
 use super::models::*;
 use crate::core::filesystem::helpers::resolve_path_within_jan_data_folder;
+use mockito;
 use reqwest::header::HeaderMap;
 use std::collections::HashMap;
 
@@ -384,4 +385,82 @@ fn test_download_item_deserialization() {
 
     assert_eq!(item.url, "https://example.com/file.zip");
     assert_eq!(item.save_path, "downloads/file.zip");
+}
+
+// ===== _get_maybe_resume tests =====
+
+#[tokio::test]
+async fn test_get_maybe_resume_returns_206_when_resuming() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/file.bin")
+        .match_header("Range", "bytes=1024-")
+        .with_status(206)
+        .with_body("partial content")
+        .create_async()
+        .await;
+
+    let client = reqwest::Client::new();
+    let result = _get_maybe_resume(&client, &format!("{}/file.bin", server.url()), 1024).await;
+
+    assert!(result.is_ok());
+    let resp = result.unwrap();
+    assert_eq!(resp.status(), 206);
+    mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn test_get_maybe_resume_errors_on_non_206_when_resuming() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/file.bin")
+        .match_header("Range", "bytes=1024-")
+        .with_status(200)
+        .with_body("full content")
+        .create_async()
+        .await;
+
+    let client = reqwest::Client::new();
+    let result = _get_maybe_resume(&client, &format!("{}/file.bin", server.url()), 1024).await;
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Failed to resume download"));
+    mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn test_get_maybe_resume_succeeds_on_200_fresh_download() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/file.bin")
+        .with_status(200)
+        .with_body("file content")
+        .create_async()
+        .await;
+
+    let client = reqwest::Client::new();
+    let result = _get_maybe_resume(&client, &format!("{}/file.bin", server.url()), 0).await;
+
+    assert!(result.is_ok());
+    let resp = result.unwrap();
+    assert_eq!(resp.status(), 200);
+    mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn test_get_maybe_resume_errors_on_non_2xx_fresh_download() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/file.bin")
+        .with_status(404)
+        .with_body("not found")
+        .create_async()
+        .await;
+
+    let client = reqwest::Client::new();
+    let result = _get_maybe_resume(&client, &format!("{}/file.bin", server.url()), 0).await;
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Failed to download"));
+    mock.assert_async().await;
 }

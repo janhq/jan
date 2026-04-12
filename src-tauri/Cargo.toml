@@ -137,6 +137,7 @@ default-features = false
 features = ["protocol-asset", "macos-private-api", "test"]
 
 [dev-dependencies]
+mockito = "1"
 tempfile = "3.20.0"
 
 [target.'cfg(unix)'.dependencies]
