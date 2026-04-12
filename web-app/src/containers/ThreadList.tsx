@@ -1,4 +1,4 @@
-import { Folder, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
+import { Download, Folder, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
 import { useThreads } from '@/hooks/useThreads'
 import { useMessages } from '@/hooks/useMessages'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -22,12 +22,13 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { memo, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { RenameThreadDialog, DeleteThreadDialog } from '@/containers/dialogs'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { ThreadMessage } from '@janhq/core'
+import { exportConversation, cleanThreadTitle } from '@/lib/export-conversation'
 
 const ThreadItem = memo(
   ({
@@ -134,6 +135,30 @@ const ThreadItem = memo(
       }
     }
 
+    const handleExport = useCallback(async (format: 'markdown' | 'json') => {
+      try {
+        let exportMessages = messages
+        if (exportMessages.length === 0) {
+          exportMessages = await serviceHub.messages().fetchMessages(thread.id)
+        }
+
+        if (exportMessages.length === 0) {
+          toast.error(t('common:toast.exportThread.empty'))
+          return
+        }
+
+        exportConversation({
+          threadTitle: cleanThreadTitle(thread.title),
+          messages: exportMessages,
+          format,
+        })
+        toast.success(t('common:toast.exportThread.success'))
+      } catch (error) {
+        console.error('Failed to export thread:', error)
+        toast.error(t('common:toast.exportThread.error'))
+      }
+    }, [messages, thread.id, thread.title, serviceHub, t])
+
     return (
       <SidebarMenuItem>
         {currentProjectId ? 
@@ -199,6 +224,30 @@ const ThreadItem = memo(
                     </DropdownMenuItem>
                   ))
                 )}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="gap-2">
+                <Download className="size-4" />
+                <span>{t('common:exportThread')}</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="min-w-40">
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleExport('markdown')
+                  }}
+                >
+                  <span>{t('common:exportMarkdown')}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleExport('json')
+                  }}
+                >
+                  <span>{t('common:exportJson')}</span>
+                </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             {thread.metadata?.project && (

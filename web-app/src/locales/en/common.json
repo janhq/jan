@@ -113,6 +113,9 @@
   "threadImage": "Thread image",
   "editMessage": "Edit Message",
   "deleteMessage": "Delete Message",
+  "exportThread": "Export",
+  "exportMarkdown": "Markdown (.md)",
+  "exportJson": "JSON (.json)",
   "deleteThread": "Delete Thread",
   "renameThread": "Rename Thread",
   "threadTitle": "Thread Title",
@@ -346,6 +349,11 @@
     "deleteAllThreads": {
       "title": "Delete All Threads",
       "description": "All threads have been permanently deleted."
+    },
+    "exportThread": {
+      "success": "Conversation exported successfully",
+      "error": "Failed to export conversation",
+      "empty": "No messages to export"
     },
     "renameThread": {
       "title": "Rename Thread",
