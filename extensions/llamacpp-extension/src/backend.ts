@@ -187,6 +187,7 @@ export async function downloadBackend(
   const cudaVariants = [
     { patterns: ['cu11.7', 'cuda-11'], version: '11.7', archive: 'cuda11' },
     { patterns: ['cu12.0', 'cuda-12'], version: '12.0', archive: 'cuda12' },
+    // Note: cuda-13 only has one pattern; there is no 'cu13.0'-style backend name in use yet.
     { patterns: ['cuda-13'],           version: '13.0', archive: 'cuda13' },
   ]
 

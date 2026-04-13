@@ -262,6 +262,32 @@ describe('Backend functions', () => {
       )
     })
 
+    it('should include cudart for cuda-13 if not installed', async () => {
+      vi.stubGlobal('IS_WINDOWS', false)
+      vi.mocked(getSystemInfo).mockResolvedValue({
+        os_type: 'linux',
+        cpu: { arch: 'x86_64', extensions: [] },
+        gpus: [
+          {
+            driver_version: '560.00',
+            nvidia_info: { compute_capability: '12.0' },
+          },
+        ],
+      } as any)
+
+      await downloadBackend('linux-cuda-13-common_cpus-x64', 'v1.0.0')
+
+      const downloadItems = vi.mocked(mockDownloadManager.downloadFiles).mock
+        .calls[0][0]
+      expect(downloadItems.length).toBe(2)
+      expect(downloadItems[1].url).toContain(
+        'cudart-llama-bin-linux-cu13.0-x64.tar.gz'
+      )
+      expect(downloadItems[1].save_path).toBe(
+        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/linux-cuda-13-common_cpus-x64/build/bin/cuda13.tar.gz`
+      )
+    })
+
     it('should correctly extract parent directory from Windows paths', async () => {
       vi.stubGlobal('IS_WINDOWS', true)
 
