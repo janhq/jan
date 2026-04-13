@@ -8,8 +8,20 @@ pub async fn parse_document<R: tauri::Runtime>(
     file_type: String,
 ) -> Result<String, RagError> {
     log::info!("Parsing document: {} (type: {})", file_path, file_type);
-    let res = catch_unwind(AssertUnwindSafe(|| parser::parse_document(&file_path, &file_type)));
-    match res {
+    // Run parsing on a dedicated blocking thread so that catch_unwind
+    // reliably catches panics from libraries like pdf-extract/adobe-cmap-parser
+    let result = tokio::task::spawn_blocking(move || {
+        catch_unwind(AssertUnwindSafe(|| {
+            parser::parse_document(&file_path, &file_type)
+        }))
+    })
+    .await
+    .map_err(|e| {
+        log::error!("Document parsing task failed: {}", e);
+        RagError::ParseError("Document parsing task failed".to_string())
+    })?;
+
+    match result {
         Ok(result) => result,
         Err(payload) => {
             let reason = if let Some(s) = payload.downcast_ref::<&str>() {

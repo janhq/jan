@@ -18,22 +18,24 @@ pub fn parse_pdf(file_path: &str) -> Result<String, RagError> {
         return Err(RagError::ParseError("File too large (max 20MB)".to_string()));
     }
     let bytes = fs::read(file_path)?;
-    // pdf-extract can panic on some malformed PDFs; guard to avoid crashing the app
+
+    // Try pdf-extract first (better formatting), fall back to pdf_oxide if it panics or errors
     let text = match catch_unwind(AssertUnwindSafe(|| pdf_extract::extract_text_from_mem(&bytes))) {
         Ok(Ok(t)) => t,
-        Ok(Err(e)) => return Err(RagError::ParseError(format!("PDF parse error: {}", e))),
+        Ok(Err(e)) => {
+            log::warn!("pdf-extract failed ({}), falling back to pdf_oxide", e);
+            extract_with_pdf_oxide(file_path)?
+        }
         Err(payload) => {
             let reason = if let Some(s) = payload.downcast_ref::<&str>() {
-                *s
+                (*s).to_string()
             } else if let Some(s) = payload.downcast_ref::<String>() {
-                s.as_str()
+                s.clone()
             } else {
-                "unknown parser panic"
+                "unknown parser panic".to_string()
             };
-            return Err(RagError::ParseError(format!(
-                "PDF parsing failed unexpectedly: {}",
-                reason
-            )));
+            log::warn!("pdf-extract panicked ({}), falling back to pdf_oxide", reason);
+            extract_with_pdf_oxide(file_path)?
         }
     };
 
@@ -52,6 +54,21 @@ pub fn parse_pdf(file_path: &str) -> Result<String, RagError> {
     }
 
     Ok(text)
+}
+
+fn extract_with_pdf_oxide(file_path: &str) -> Result<String, RagError> {
+    let mut doc = pdf_oxide::PdfDocument::open(file_path)
+        .map_err(|e| RagError::ParseError(format!("Failed to open PDF: {}", e)))?;
+    let page_count = doc.page_count()
+        .map_err(|e| RagError::ParseError(format!("Failed to get page count: {}", e)))?;
+    let mut all_text = String::new();
+    for i in 0..page_count {
+        match doc.extract_text(i) {
+            Ok(text) => all_text.push_str(&text),
+            Err(e) => log::warn!("pdf_oxide: failed to extract page {}: {}", i, e),
+        }
+    }
+    Ok(all_text)
 }
 
 pub fn parse_text(file_path: &str) -> Result<String, RagError> {
