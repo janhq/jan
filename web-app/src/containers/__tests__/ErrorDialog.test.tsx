@@ -88,7 +88,31 @@ describe('ErrorDialog', () => {
 
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith('stderr details')
-      expect(successToast).toHaveBeenCalled()
+      expect(successToast).toHaveBeenCalledWith('common:toast.errorCopied.title', {
+        id: 'copy-error',
+        description: 'common:toast.errorCopied.description',
+      })
+    })
+  })
+
+  it('shows a translated error toast when copying fails', async () => {
+    writeText.mockRejectedValueOnce(new Error('clipboard unavailable'))
+    useAppState.setState({
+      errorMessage: {
+        subtitle: 'mcp-servers:checkParams',
+        message: 'stderr details',
+      },
+    })
+
+    render(<ErrorDialog />)
+
+    fireEvent.click(screen.getByText('common:copy'))
+
+    await waitFor(() => {
+      expect(errorToast).toHaveBeenCalledWith('common:toast.errorCopyFailed.title', {
+        id: 'copy-error-failed',
+        description: 'common:toast.errorCopyFailed.description',
+      })
     })
   })
 
@@ -103,7 +127,21 @@ describe('ErrorDialog', () => {
     render(<ErrorDialog />)
 
     expect(screen.getByText('long stderr details')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /details/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'common:errorDialog.details' }))
     expect(screen.queryByText('long stderr details')).not.toBeInTheDocument()
+  })
+
+  it('renders the translated fallback title when no title is provided', () => {
+    useAppState.setState({
+      errorMessage: {
+        subtitle: 'mcp-servers:checkParams',
+        message: 'stderr details',
+      },
+    })
+
+    render(<ErrorDialog />)
+
+    expect(screen.getByText('common:errorDialog.titleFallback')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'common:errorDialog.details' })).toBeInTheDocument()
   })
 })

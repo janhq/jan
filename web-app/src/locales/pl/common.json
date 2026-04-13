@@ -295,6 +295,10 @@
     "noProjectsFound": "Nie znaleziono projektów",
     "tryDifferentSearch": "Spróbuj innego wyszukiwania"
   },
+  "errorDialog": {
+    "titleFallback": "Coś poszło nie tak",
+    "details": "Szczegóły"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "Wszystkie Wątki Usunięte z Ulubionych",
@@ -311,6 +315,14 @@
     "deleteThread": {
       "title": "Usuń Wątek",
       "description": "Wątek został usunięty."
+    },
+    "errorCopied": {
+      "title": "Skopiowano pomyślnie",
+      "description": "Informacje o błędzie zostały skopiowane do schowka"
+    },
+    "errorCopyFailed": {
+      "title": "Nie udało się skopiować",
+      "description": "Nie udało się skopiować informacji o błędzie do schowka"
     },
     "editMessage": {
       "title": "Edytuj Wiadomość",

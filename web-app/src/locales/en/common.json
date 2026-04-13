@@ -261,6 +261,10 @@
       "title": "Message Metadata"
     }
   },
+  "errorDialog": {
+    "titleFallback": "Something went wrong",
+    "details": "Details"
+  },
   "projects": {
     "title": "Projects",
     "new": "New Projects",
@@ -354,6 +358,14 @@
     "deleteThread": {
       "title": "Delete Thread",
       "description": "This thread has been permanently deleted."
+    },
+    "errorCopied": {
+      "title": "Copy successful",
+      "description": "Error information copied to clipboard"
+    },
+    "errorCopyFailed": {
+      "title": "Failed to copy",
+      "description": "Failed to copy error information to clipboard"
     },
     "editMessage": {
       "title": "Edit Message",

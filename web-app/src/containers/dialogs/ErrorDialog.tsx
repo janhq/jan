@@ -25,14 +25,14 @@ export default function ErrorDialog() {
     setIsCopying(true)
     try {
       await navigator.clipboard.writeText(errorMessage?.message ?? '')
-      toast.success('Copy successful', {
+      toast.success(t('common:toast.errorCopied.title'), {
         id: 'copy-error',
-        description: 'Error information copied to clipboard',
+        description: t('common:toast.errorCopied.description'),
       })
     } catch {
-      toast.error('Failed to copy', {
+      toast.error(t('common:toast.errorCopyFailed.title'), {
         id: 'copy-error-failed',
-        description: 'Failed to copy error information to clipboard',
+        description: t('common:toast.errorCopyFailed.description'),
       })
     } finally {
       setTimeout(() => setIsCopying(false), 2000)
@@ -54,7 +54,7 @@ export default function ErrorDialog() {
             <div>
               <DialogTitle>{t('common:error')}</DialogTitle>
               <DialogDescription className="mt-1 text-main-view-fg/70">
-                {errorMessage?.title ?? 'Something went wrong'}
+                {errorMessage?.title ?? t('common:errorDialog.titleFallback')}
               </DialogDescription>
             </div>
           </div>
@@ -72,7 +72,7 @@ export default function ErrorDialog() {
               ) : (
                 <ChevronRight className="size-3" />
               )}
-              Details
+              {t('common:errorDialog.details')}
             </button>
 
             {isDetailExpanded && (
@@ -91,7 +91,7 @@ export default function ErrorDialog() {
           <span className="text-sm text-main-view-fg/60">{errorMessage?.subtitle}</span>
         </div>
 
-        <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-right">
+        <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <Button
             variant="link"
             onClick={() => handleDialogOpen(false)}

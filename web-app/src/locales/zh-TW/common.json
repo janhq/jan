@@ -301,6 +301,10 @@
       "title": "訊息元資料"
     }
   },
+  "errorDialog": {
+    "titleFallback": "發生了一些問題",
+    "details": "詳細資訊"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "所有對話已取消收藏",
@@ -317,6 +321,14 @@
     "deleteThread": {
       "title": "刪除對話",
       "description": "此對話已永久刪除。"
+    },
+    "errorCopied": {
+      "title": "複製成功",
+      "description": "錯誤資訊已複製到剪貼簿"
+    },
+    "errorCopyFailed": {
+      "title": "複製失敗",
+      "description": "無法將錯誤資訊複製到剪貼簿"
     },
     "editMessage": {
       "title": "編輯訊息",
