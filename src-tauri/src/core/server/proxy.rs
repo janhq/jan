@@ -24,6 +24,7 @@ use crate::core::{
 ///
 /// A strict JSON schema converter inside the upstream server rejects those schemas.
 /// To be robust, we default `type` to `"string"` for description-only leaf schemas.
+/// Keep this behavior aligned with `normalizeToolInputSchema` in the frontend.
 pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::Value) {
     match schema {
         serde_json::Value::Object(map) => {
@@ -724,7 +725,9 @@ async fn collect_mcp_openai_tools(
         for tool in tools {
             tool_to_server.insert(tool.name.to_string(), server_name.clone());
 
-            // Reuse the same schema conversion as the `get_tools` command.
+            // Normalize schemas before sending them to strict OpenAI-compatible providers.
+            // The `get_tools` Tauri command still returns raw schemas; the frontend
+            // normalizes those separately before provider registration.
             let mut parameters = serde_json::Value::Object((*tool.input_schema).clone());
             normalize_openai_tool_parameters_schema(&mut parameters);
             let description = tool

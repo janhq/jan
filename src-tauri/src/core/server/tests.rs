@@ -434,4 +434,35 @@ mod tests {
         assert_eq!(schema["properties"]["metadata"]["description"], json!("Optional metadata"));
         assert_eq!(schema["properties"]["metadata"]["properties"], json!({}));
     }
+
+    #[test]
+    fn normalizes_combinator_members_recursively() {
+        let mut schema = json!({
+            "anyOf": [
+                {
+                    "type": "object"
+                },
+                {
+                    "description": "fallback string"
+                }
+            ],
+            "oneOf": [
+                {
+                    "type": "object"
+                }
+            ],
+            "allOf": [
+                {
+                    "description": "merged leaf"
+                }
+            ]
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(schema["anyOf"][0]["properties"], json!({}));
+        assert_eq!(schema["anyOf"][1]["type"], json!("string"));
+        assert_eq!(schema["oneOf"][0]["properties"], json!({}));
+        assert_eq!(schema["allOf"][0]["type"], json!("string"));
+    }
 }

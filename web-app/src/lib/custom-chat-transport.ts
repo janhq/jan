@@ -102,8 +102,13 @@ function normalizeToolInputSchemaValue(value: unknown): unknown {
   return normalized
 }
 
-export function normalizeToolInputSchema<T>(schema: T): T {
-  return normalizeToolInputSchemaValue(schema) as T
+type ToolInputSchema = Record<string, unknown>
+
+// Keep this behavior aligned with `normalize_openai_tool_parameters_schema` in Rust.
+export function normalizeToolInputSchema(
+  schema: ToolInputSchema
+): ToolInputSchema {
+  return normalizeToolInputSchemaValue(schema) as ToolInputSchema
 }
 
 /** Text from the most recent user message (for MCP server routing). */

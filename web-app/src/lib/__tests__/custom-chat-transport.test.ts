@@ -119,4 +119,52 @@ describe('normalizeToolInputSchema', () => {
       },
     })
   })
+
+  it('normalizes combinator members recursively', () => {
+    expect(
+      normalizeToolInputSchema({
+        anyOf: [
+          {
+            type: 'object',
+          },
+          {
+            description: 'fallback string',
+          },
+        ],
+        oneOf: [
+          {
+            type: 'object',
+          },
+        ],
+        allOf: [
+          {
+            description: 'merged leaf',
+          },
+        ],
+      })
+    ).toEqual({
+      anyOf: [
+        {
+          type: 'object',
+          properties: {},
+        },
+        {
+          description: 'fallback string',
+          type: 'string',
+        },
+      ],
+      oneOf: [
+        {
+          type: 'object',
+          properties: {},
+        },
+      ],
+      allOf: [
+        {
+          description: 'merged leaf',
+          type: 'string',
+        },
+      ],
+    })
+  })
 })
