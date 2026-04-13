@@ -11,6 +11,8 @@ import { Switch } from '@/components/ui/switch'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
+import { sanitizeModelId } from '@/lib/utils'
+import { fs } from '@janhq/core'
 import {
   IconLoader2,
   IconEye,
@@ -42,6 +44,9 @@ export const ImportVisionModelDialog = ({
     string | null
   >(null)
   const [isValidatingMmproj, setIsValidatingMmproj] = useState(false)
+  const [importMode, setImportMode] = useState<'file' | 'directory'>('file')
+  const [modelDirectory, setModelDirectory] = useState<string | null>(null)
+  const [discoveredModelFiles, setDiscoveredModelFiles] = useState<string[]>([])
 
   const validateGgufFile = useCallback(
     async (filePath: string, fileType: 'model' | 'mmproj'): Promise<void> => {
@@ -159,6 +164,9 @@ export const ImportVisionModelDialog = ({
   )
 
   const handleFileSelect = async (type: 'model' | 'mmproj') => {
+    setImportMode('file')
+    setModelDirectory(null)
+    setDiscoveredModelFiles([])
     const selectedFile = await serviceHub.dialog().open({
       multiple: false,
       directory: false,
@@ -186,7 +194,129 @@ export const ImportVisionModelDialog = ({
     }
   }
 
+  const listGgufFilesFromDirectory = useCallback(
+    async (dirPath: string): Promise<string[]> => {
+      const files: string[] = []
+      const entries = await fs.readdirSync(dirPath)
+
+      for (const entry of entries) {
+        const stat = await fs.fileStat(entry)
+        if (stat?.isDirectory) {
+          const nestedFiles = await listGgufFilesFromDirectory(entry)
+          files.push(...nestedFiles)
+          continue
+        }
+
+        const isGguf = entry.toLowerCase().endsWith('.gguf')
+        const isMmproj = entry.toLowerCase().includes('mmproj')
+        if (isGguf && !isMmproj) {
+          files.push(entry)
+        }
+      }
+
+      return files
+    },
+    []
+  )
+
+  const buildModelIdFromPath = (filePath: string): string => {
+    const fileName = filePath.split(/[\\/]/).pop() || ''
+    const baseName = fileName.replace(/\.(gguf|GGUF)$/, '')
+    return sanitizeModelId(baseName.replace(/\s/g, '-'))
+  }
+
+  const handleDirectorySelect = async () => {
+    setImportMode('directory')
+    setModelFile(null)
+    setMmProjFile(null)
+    setModelName('')
+    setValidationError(null)
+    setMmprojValidationError(null)
+    setIsValidating(false)
+    setIsValidatingMmproj(false)
+
+    const selectedDirectory = await serviceHub.dialog().open({
+      multiple: false,
+      directory: true,
+    })
+
+    if (!selectedDirectory || typeof selectedDirectory !== 'string') return
+
+    try {
+      const modelFiles = await listGgufFilesFromDirectory(selectedDirectory)
+      setModelDirectory(selectedDirectory)
+      setDiscoveredModelFiles(modelFiles)
+      if (modelFiles.length === 0) {
+        toast.error('No GGUF models found in folder')
+      }
+    } catch (error) {
+      setModelDirectory(selectedDirectory)
+      setDiscoveredModelFiles([])
+      toast.error('Failed to scan model folder', {
+        description:
+          error instanceof Error ? error.message : 'Unknown error occurred',
+      })
+    }
+  }
+
   const handleImport = async () => {
+    if (importMode === 'directory') {
+      if (!modelDirectory) {
+        toast.error('Please select a model folder')
+        return
+      }
+      if (discoveredModelFiles.length === 0) {
+        toast.error('No GGUF models found in selected folder')
+        return
+      }
+      if (isVisionModel) {
+        toast.error('Folder import only supports text GGUF models')
+        return
+      }
+
+      setImporting(true)
+      try {
+        const existingIds = new Set(provider.models.map((model) => model.id))
+        const seenIds = new Set<string>()
+        let importedCount = 0
+        let skippedCount = 0
+
+        for (const filePath of discoveredModelFiles) {
+          const modelId = buildModelIdFromPath(filePath)
+          if (!modelId || existingIds.has(modelId) || seenIds.has(modelId)) {
+            skippedCount += 1
+            continue
+          }
+
+          await serviceHub.models().pullModel(modelId, filePath)
+          seenIds.add(modelId)
+          importedCount += 1
+        }
+
+        if (importedCount > 0) {
+          toast.success('Folder import completed', {
+            description: `Imported ${importedCount} model${importedCount > 1 ? 's' : ''}${skippedCount > 0 ? `, skipped ${skippedCount}` : ''}.`,
+          })
+          resetForm()
+          setOpen(false)
+          onSuccess?.()
+        } else {
+          toast.error('No models imported', {
+            description: 'All discovered models already exist or are invalid.',
+          })
+        }
+      } catch (error) {
+        console.error('Folder import error:', error)
+        toast.error('Failed to import models from folder', {
+          description:
+            error instanceof Error ? error.message : 'Unknown error occurred',
+        })
+      } finally {
+        setImporting(false)
+      }
+      return
+    }
+
     if (!modelFile) {
       toast.error('Please select a model file')
       return
@@ -260,6 +390,9 @@ export const ImportVisionModelDialog = ({
     setIsValidating(false)
     setMmprojValidationError(null)
     setIsValidatingMmproj(false)
+    setImportMode('file')
+    setModelDirectory(null)
+    setDiscoveredModelFiles([])
   }
 
   // Re-validate MMProj file when model name changes
@@ -344,8 +477,89 @@ export const ImportVisionModelDialog = ({
 
           {/* File Selection Area */}
           <div className="space-y-4">
+            <div className="border rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-medium">Import Mode</h3>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={importMode === 'file' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setImportMode('file')}
+                    disabled={importing}
+                  >
+                    Single File
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={importMode === 'directory' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={handleDirectorySelect}
+                    disabled={importing || isVisionModel}
+                  >
+                    Import Folder
+                  </Button>
+                </div>
+              </div>
+              {isVisionModel && (
+                <p className="text-xs text-muted-foreground">
+                  Folder import is disabled when Vision Model Support is enabled.
+                </p>
+              )}
+            </div>
+
+            {importMode === 'directory' && (
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-medium">Model Folder</h3>
+                  <span className="text-xs bg-secondary px-2 py-1 rounded-sm">
+                    Required
+                  </span>
+                </div>
+                {modelDirectory ? (
+                  <div className="space-y-2">
+                    <div className="border rounded-lg p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <IconCheck size={16} />
+                          <span className="text-sm font-medium truncate">
+                            {modelDirectory}
+                          </span>
+                        </div>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleDirectorySelect}
+                          disabled={importing}
+                        >
+                          Change
+                        </Button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Found {discoveredModelFiles.length} importable GGUF
+                      model{discoveredModelFiles.length === 1 ? '' : 's'}.
+                    </p>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="link"
+                    onClick={handleDirectorySelect}
+                    disabled={importing}
+                    className="w-full h-12 border border-dashed text-muted-foreground"
+                  >
+                    Select Model Folder
+                  </Button>
+                )}
+              </div>
+            )}
+
             {/* Model File Selection */}
-            <div className="border  rounded-lg p-4 space-y-3">
+            <div
+              className="border  rounded-lg p-4 space-y-3"
+              style={{ display: importMode === 'file' ? 'block' : 'none' }}
+            >
               <div className="flex items-center gap-2">
                 <h3 className="font-medium">
                   Model File (GGUF)
@@ -437,7 +651,7 @@ export const ImportVisionModelDialog = ({
             </div>
 
             {/* MMPROJ File Selection - only show if vision model is enabled */}
-            {isVisionModel && (
+            {isVisionModel && importMode === 'file' && (
               <div className="border rounded-lg p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <h3 className="font-medium">MMPROJ File</h3>
@@ -544,9 +758,12 @@ export const ImportVisionModelDialog = ({
             size="sm"
             disabled={
               importing ||
-              !modelFile ||
-              !modelName ||
-              (isVisionModel && !mmProjFile) ||
+              (importMode === 'file' &&
+                (!modelFile ||
+                  !modelName ||
+                  (isVisionModel && !mmProjFile))) ||
+              (importMode === 'directory' &&
+                (!modelDirectory || discoveredModelFiles.length === 0)) ||
               validationError !== null ||
               isValidating ||
               mmprojValidationError !== null ||
@@ -557,7 +774,12 @@ export const ImportVisionModelDialog = ({
             {importing ? (
               'Importing...'
             ) : (
-              <>Import {isVisionModel ? 'Vision ' : ''}Model</>
+              <>
+                Import{' '}
+                {importMode === 'directory'
+                  ? 'Folder'
+                  : `${isVisionModel ? 'Vision ' : ''}Model`}
+              </>
             )}
           </Button>
         </div>
