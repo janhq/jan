@@ -51,6 +51,14 @@
     "appLogs": "App Logs",
     "appLogsDesc": "View detailed logs of the App."
   },
+  "screenCapture": {
+    "ocrLanguage": "OCR language (Tesseract)",
+    "ocrLanguageDesc": "Used when reading text from the screen. Match app interface follows your Settings language. Custom accepts Tesseract traineddata codes; use + for multiple languages (e.g. chi_sim+eng). Data for a language downloads on first OCR.",
+    "ocrAuto": "Match app interface",
+    "ocrCustom": "Custom…",
+    "ocrCustomPlaceholder": "e.g. tha, heb, or chi_sim+eng",
+    "shortcutInvalid": "Invalid shortcut format"
+  },
   "others": {
     "spellCheck": "Spell Check",
     "spellCheckDesc": "Enable spell check for your threads.",

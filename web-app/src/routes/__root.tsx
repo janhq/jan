@@ -31,6 +31,7 @@ import { WindowControls } from '@/components/WindowControls'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import ErrorDialog from '@/containers/dialogs/ErrorDialog'
 import MissingDependenciesDialog from '@/containers/dialogs/MissingDependenciesDialog'
+import { ScreenCaptureProvider } from '@/providers/ScreenCaptureProvider'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -107,40 +108,68 @@ const LogsLayout = () => {
   )
 }
 
-function RootLayout() {
-  const getInitialLayoutType = () => {
-    const pathname = window.location.pathname
-    return (
-      pathname === route.localApiServerlogs ||
-      pathname === route.systemMonitor ||
-      pathname === route.appLogs
-    )
+/** Transparent shell for floating capture UI (no opaque LogsLayout — that blocked see-through). */
+const BareCaptureLayout = () => {
+  useEffect(() => {
+    const html = document.documentElement
+    const body = document.body
+    html.classList.add('jan-bare-capture-webview')
+    body.classList.add('jan-bare-capture-webview')
+    return () => {
+      html.classList.remove('jan-bare-capture-webview')
+      body.classList.remove('jan-bare-capture-webview')
+    }
+  }, [])
+
+  return (
+    <div className="h-svh w-svw min-h-0 overflow-visible bg-transparent">
+      <Outlet />
+    </div>
+  )
+}
+
+type ChromeLayout = 'app' | 'logs' | 'bare-capture'
+
+function normalizePathname(pathname: string): string {
+  const p = pathname.replace(/\/$/, '') || '/'
+  return p === '' ? '/' : p
+}
+
+function getInitialChromeLayout(): ChromeLayout {
+  const pathname = normalizePathname(window.location.pathname)
+  if (
+    pathname === route.screenCaptureOverlay ||
+    pathname === route.screenCaptureRegion
+  ) {
+    return 'bare-capture'
   }
+  if (
+    pathname === route.localApiServerlogs ||
+    pathname === route.systemMonitor ||
+    pathname === route.appLogs
+  ) {
+    return 'logs'
+  }
+  return 'app'
+}
+
+function RootLayout() {
+  const chromeLayout = getInitialChromeLayout()
 
   useEffect(() => {
-    // Wait for the UI to be fully rendered before hiding the loader
     const hideLoader = () => {
       requestAnimationFrame(() => {
-        // Hide the HTML loader
         document.body.classList.add('loaded')
-
-        // Remove the HTML loader element after transition
         const loader = document.getElementById('initial-loader')
         if (loader) {
-          setTimeout(() => {
-            loader.remove()
-          }, 300)
+          setTimeout(() => loader.remove(), 300)
         }
       })
     }
-
-    // Give providers time to initialize and paint
+    // Same timing for all webviews (including floating toolbar): logo splash until first paint settles.
     const timer = setTimeout(hideLoader, 200)
-
     return () => clearTimeout(timer)
   }, [])
-
-  const IS_LOGS_ROUTE = getInitialLayoutType()
 
   return (
     <Fragment>
@@ -152,7 +181,14 @@ function RootLayout() {
           <ExtensionProvider>
             <DataProvider />
             <GlobalEventHandler />
-            {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
+            <ScreenCaptureProvider />
+            {chromeLayout === 'bare-capture' ? (
+              <BareCaptureLayout />
+            ) : chromeLayout === 'logs' ? (
+              <LogsLayout />
+            ) : (
+              <AppLayout />
+            )}
           </ExtensionProvider>
           {/* <TanStackRouterDevtools position="bottom-right" /> */}
           <ToolApproval />

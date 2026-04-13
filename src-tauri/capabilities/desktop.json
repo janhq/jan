@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop",
-  "description": "enables the default permissions for desktop platforms",
-  "windows": ["main"],
+  "description": "Desktop platform default permissions for main, screen capture overlay, and region picker webviews.",
+  "windows": ["main", "jan-screen-capture-overlay", "jan-screen-region-picker"],
   "remote": {
     "urls": ["http://*"]
   },
@@ -18,6 +18,15 @@
     "shell:allow-open",
     "core:app:allow-set-app-theme",
     "core:window:allow-set-focus",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-primary-monitor",
+    "core:window:allow-outer-position",
+    "core:window:allow-scale-factor",
+    "core:window:allow-set-ignore-cursor-events",
     "os:default",
     "opener:default",
     "log:default",
@@ -30,6 +39,10 @@
     "mlx:default",
     "deep-link:default",
     "hardware:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-unregister-all",
+    "global-shortcut:allow-is-registered",
     {
       "identifier": "http:default",
       "allow": [
