@@ -94,7 +94,7 @@ function ProjectPageContent() {
       </HeaderPage>
 
       <div className="h-full relative flex flex-col px-4 md:px-8 py-4 overflow-y-auto">
-        <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
+        <div className="mx-auto w-full md:w-4/5 xl:w-4/6 min-w-0">
           {/* Project Name with Dropdown */}
           <div className="flex items-center justify-between gap-2 mb-4">
             <h1 className="text-2xl font-semibold">
