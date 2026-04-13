@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getProxyConfig } from './util'
+import {
+  getProxyConfig,
+  resolveEmbeddingModelIdFromModels,
+  DEFAULT_EMBEDDING_MODEL_ID,
+} from './util'
 
 // Mock console.log and console.error to avoid noise in tests
 const mockConsole = {
@@ -522,5 +526,51 @@ describe('getProxyConfig', () => {
       verify_peer_ssl: true,
       verify_host_ssl: true,
     })
+  })
+})
+
+describe('resolveEmbeddingModelIdFromModels', () => {
+  it('returns configured id when set (explicit user choice)', () => {
+    expect(
+      resolveEmbeddingModelIdFromModels('my-embedder', [
+        { id: 'other', embedding: true },
+      ])
+    ).toBe('my-embedder')
+  })
+
+  it('returns default HF bundle id when no embedding models installed', () => {
+    expect(
+      resolveEmbeddingModelIdFromModels('', [
+        { id: 'qwen-chat', embedding: false },
+      ])
+    ).toBe(DEFAULT_EMBEDDING_MODEL_ID)
+  })
+
+  it('auto-picks sole embedding model', () => {
+    expect(
+      resolveEmbeddingModelIdFromModels('', [
+        { id: 'qwen-chat', embedding: false },
+        { id: 'local-bert', embedding: true },
+      ])
+    ).toBe('local-bert')
+  })
+
+  it('prefers sentence-transformer-mini when multiple embedding models exist', () => {
+    expect(
+      resolveEmbeddingModelIdFromModels('', [
+        { id: 'aaa-embed', embedding: true },
+        { id: DEFAULT_EMBEDDING_MODEL_ID, embedding: true },
+        { id: 'zzz-embed', embedding: true },
+      ])
+    ).toBe(DEFAULT_EMBEDDING_MODEL_ID)
+  })
+
+  it('sorts ids and picks first when default not among embedding models', () => {
+    expect(
+      resolveEmbeddingModelIdFromModels('', [
+        { id: 'zebra', embedding: true },
+        { id: 'alpha', embedding: true },
+      ])
+    ).toBe('alpha')
   })
 })

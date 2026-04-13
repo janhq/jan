@@ -38,6 +38,8 @@ import {
   getProxyConfig,
   buildEmbedBatches,
   mergeEmbedResponses,
+  resolveEmbeddingModelIdFromModels,
+  DEFAULT_EMBEDDING_MODEL_ID,
   type EmbedBatchResult,
 } from './util'
 import { basename } from '@tauri-apps/api/path'
@@ -70,8 +72,6 @@ import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
  * Override the default app.log function to use Jan's logging system.
  * @param args
  */
-/** Default RAG embedding model when nothing local is configured */
-const DEFAULT_EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
 const DEFAULT_EMBEDDING_MODEL_URL =
   'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true'
 
@@ -134,6 +134,10 @@ export default class llamacpp_extension extends AIEngine {
   private isUpdatingBackend: boolean = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private unlistenValidationStarted?: () => void
+  /** Cached auto-picked embedding id (no user override) to avoid scanning models every embed() */
+  private embeddingAutoPickCache: { modelId: string; expiresAt: number } | null =
+    null
+  private static readonly EMBEDDING_AUTO_PICK_CACHE_MS = 30_000
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -805,6 +809,10 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     this.config[key] = value
+
+    if (key === 'embedding_model_id') {
+      this.embeddingAutoPickCache = null
+    }
 
     if (key === 'version_backend') {
       const valueStr = value as string
@@ -1869,7 +1877,10 @@ export default class llamacpp_extension extends AIEngine {
     try {
       return (await findLlamaSessionOptional(modelId)) ?? null
     } catch (e) {
-      logger.error(e)
+      logger.warn(
+        `find_session_by_model failed for "${modelId}"; treating as no loaded session (may retry load):`,
+        e
+      )
       return null
     }
   }
@@ -1884,19 +1895,29 @@ export default class llamacpp_extension extends AIEngine {
       return configured
     }
 
-    const models = await this.list()
-    const embeddingModels = models
-      .filter((m) => m.embedding === true)
-      .sort((a, b) => a.id.localeCompare(b.id))
-
-    if (embeddingModels.length === 0) {
-      return DEFAULT_EMBEDDING_MODEL_ID
+    const now = Date.now()
+    if (
+      this.embeddingAutoPickCache &&
+      this.embeddingAutoPickCache.expiresAt > now
+    ) {
+      return this.embeddingAutoPickCache.modelId
     }
 
-    const preferred = embeddingModels.find(
-      (m) => m.id === DEFAULT_EMBEDDING_MODEL_ID
-    )
-    return (preferred ?? embeddingModels[0]).id
+    const models = await this.list()
+    const chosen = resolveEmbeddingModelIdFromModels('', models)
+
+    // Only cache when we resolved a real local embedding model — not the HF default,
+    // so importing an embedding model is picked up without waiting for TTL.
+    if (chosen !== DEFAULT_EMBEDDING_MODEL_ID) {
+      this.embeddingAutoPickCache = {
+        modelId: chosen,
+        expiresAt: now + llamacpp_extension.EMBEDDING_AUTO_PICK_CACHE_MS,
+      }
+    } else {
+      this.embeddingAutoPickCache = null
+    }
+
+    return chosen
   }
 
   /**
