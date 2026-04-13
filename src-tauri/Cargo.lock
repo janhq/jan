@@ -30,7 +30,6 @@ dependencies = [
  "libc",
  "libloading 0.8.9",
  "log",
- "mockito",
  "nix",
  "once_cell",
  "rand 0.8.5",
