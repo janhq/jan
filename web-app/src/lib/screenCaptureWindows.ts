@@ -1,5 +1,5 @@
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { primaryMonitor } from '@tauri-apps/api/window'
+import { availableMonitors, primaryMonitor } from '@tauri-apps/api/window'
 import { route } from '@/constants/routes'
 import {
   SCREEN_CAPTURE_OVERLAY_LABEL,
@@ -7,6 +7,35 @@ import {
 } from '@/constants/screenCapture'
 
 /** Wait until the native webview exists (`tauri://created`) or fail on `tauri://error`. */
+/** Bounding box covering every monitor so region selection works on secondary displays. */
+export async function getUnionOfAllMonitorsPhysicalRect(): Promise<{
+  position: { x: number; y: number }
+  size: { width: number; height: number }
+} | null> {
+  const monitors = await availableMonitors()
+  if (monitors.length === 0) {
+    const m = await primaryMonitor()
+    return m ? { position: m.position, size: m.size } : null
+  }
+  let minX = Infinity
+  let minY = Infinity
+  let maxRight = -Infinity
+  let maxBottom = -Infinity
+  for (const m of monitors) {
+    const { x, y } = m.position
+    const w = m.size.width
+    const h = m.size.height
+    minX = Math.min(minX, x)
+    minY = Math.min(minY, y)
+    maxRight = Math.max(maxRight, x + w)
+    maxBottom = Math.max(maxBottom, y + h)
+  }
+  return {
+    position: { x: minX, y: minY },
+    size: { width: maxRight - minX, height: maxBottom - minY },
+  }
+}
+
 function waitForWebviewWindowReady(w: WebviewWindow): Promise<void> {
   return new Promise((resolve, reject) => {
     let settled = false
@@ -112,10 +141,10 @@ export async function openScreenCaptureRegionWindow(): Promise<void> {
 
   await waitForWebviewWindowReady(w)
 
-  const mon = await primaryMonitor()
-  if (mon) {
-    await w.setPosition(mon.position)
-    await w.setSize(mon.size)
+  const bounds = await getUnionOfAllMonitorsPhysicalRect()
+  if (bounds) {
+    await w.setPosition(bounds.position)
+    await w.setSize(bounds.size)
   }
   await w.setAlwaysOnTop(true)
   await w.show()

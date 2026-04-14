@@ -1,12 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { primaryMonitor } from '@tauri-apps/api/window'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   readScreenCaptureComposerDraft,
   writeScreenCaptureComposerDraft,
 } from '@/constants/screenCapture'
+import { getUnionOfAllMonitorsPhysicalRect } from '@/lib/screenCaptureWindows'
 import { route } from '@/constants/routes'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -56,10 +56,10 @@ function ScreenCaptureRegion() {
   useEffect(() => {
     const place = async () => {
       const win = getCurrentWebviewWindow()
-      const mon = await primaryMonitor()
-      if (mon) {
-        await win.setPosition(mon.position)
-        await win.setSize(mon.size)
+      const bounds = await getUnionOfAllMonitorsPhysicalRect()
+      if (bounds) {
+        await win.setPosition(bounds.position)
+        await win.setSize(bounds.size)
       }
       await win.setAlwaysOnTop(true)
     }
