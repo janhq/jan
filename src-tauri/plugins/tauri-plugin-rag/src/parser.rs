@@ -39,8 +39,10 @@ pub fn parse_pdf(file_path: &str) -> Result<String, RagError> {
         }
     };
 
-    // Validate that the PDF has extractable text (not image-based/scanned)
-    // Count meaningful characters (excluding whitespace)
+    // Validate that the PDF has extractable text (not image-based/scanned).
+    // This guard applies to output from both pdf-extract and the pdf_oxide fallback,
+    // so image-based PDFs that also crash pdf-extract are caught here instead of
+    // silently returning an empty string.
     let meaningful_chars = text.chars()
         .filter(|c| !c.is_whitespace())
         .count();
@@ -64,7 +66,12 @@ fn extract_with_pdf_oxide(file_path: &str) -> Result<String, RagError> {
     let mut all_text = String::new();
     for i in 0..page_count {
         match doc.extract_text(i) {
-            Ok(text) => all_text.push_str(&text),
+            Ok(text) => {
+                if !all_text.is_empty() {
+                    all_text.push_str("\n\n");
+                }
+                all_text.push_str(&text);
+            }
             Err(e) => log::warn!("pdf_oxide: failed to extract page {}: {}", i, e),
         }
     }

@@ -9,7 +9,11 @@ pub async fn parse_document<R: tauri::Runtime>(
 ) -> Result<String, RagError> {
     log::info!("Parsing document: {} (type: {})", file_path, file_type);
     // Run parsing on a dedicated blocking thread so that catch_unwind
-    // reliably catches panics from libraries like pdf-extract/adobe-cmap-parser
+    // reliably catches panics from synchronous parser libraries.
+    //
+    // Note: PDF-specific panics are now handled inside parse_pdf itself,
+    // which falls back to pdf_oxide. This outer catch_unwind is a backstop
+    // for any other parser (docx, xlsx, csv, etc.) that might panic.
     let result = tokio::task::spawn_blocking(move || {
         catch_unwind(AssertUnwindSafe(|| {
             parser::parse_document(&file_path, &file_type)
