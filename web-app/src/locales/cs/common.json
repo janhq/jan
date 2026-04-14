@@ -76,6 +76,7 @@
   "noThreadsYetDesc": "Začněte novou konverzaci a uvidíte zde historii vláken.",
   "downloads": "Stahování",
   "downloading": "Stahování",
+  "uploadingAttachments": "Nahrávání příloh…",
   "cancelDownload": "Zrušit stahování",
   "downloadCancelled": "Stahování zrušeno",
   "downloadComplete": "Stahování dokončeno",
@@ -299,7 +300,8 @@
     "update": "Aktualizovat",
     "searchProjects": "Hledat projekty...",
     "noProjectsFound": "Nebyly nalezeny žádné projekty",
-    "tryDifferentSearch": "Zkuste jiný vyhledávací výraz"
+    "tryDifferentSearch": "Zkuste jiný vyhledávací výraz",
+    "uploadingFiles": "Nahrávání souborů…"
   },
   "errorDialog": {
     "titleFallback": "Něco se pokazilo",
