@@ -1,3 +1,4 @@
+import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { availableMonitors, primaryMonitor } from '@tauri-apps/api/window'
 import { route } from '@/constants/routes'
@@ -6,11 +7,10 @@ import {
   SCREEN_CAPTURE_REGION_LABEL,
 } from '@/constants/screenCapture'
 
-/** Wait until the native webview exists (`tauri://created`) or fail on `tauri://error`. */
 /** Bounding box covering every monitor so region selection works on secondary displays. */
 export async function getUnionOfAllMonitorsPhysicalRect(): Promise<{
-  position: { x: number; y: number }
-  size: { width: number; height: number }
+  position: PhysicalPosition
+  size: PhysicalSize
 } | null> {
   const monitors = await availableMonitors()
   if (monitors.length === 0) {
@@ -31,11 +31,12 @@ export async function getUnionOfAllMonitorsPhysicalRect(): Promise<{
     maxBottom = Math.max(maxBottom, y + h)
   }
   return {
-    position: { x: minX, y: minY },
-    size: { width: maxRight - minX, height: maxBottom - minY },
+    position: new PhysicalPosition(minX, minY),
+    size: new PhysicalSize(maxRight - minX, maxBottom - minY),
   }
 }
 
+/** Wait until the native webview exists (`tauri://created`) or fail on `tauri://error`. */
 function waitForWebviewWindowReady(w: WebviewWindow): Promise<void> {
   return new Promise((resolve, reject) => {
     let settled = false
