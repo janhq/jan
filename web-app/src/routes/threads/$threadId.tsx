@@ -596,6 +596,12 @@ function ThreadDetail() {
       const hasDocuments = combinedAttachments.some(
         (a) => a.type === 'document' && !a.processed
       )
+      const hasEmbeddingDocuments = combinedAttachments.some(
+        (a) =>
+          a.type === 'document' &&
+          !a.processed &&
+          a.parseMode !== 'inline'
+      )
 
       // When there are unprocessed documents (e.g. first-message flow),
       // show the user message in the conversation immediately so the UI
@@ -620,7 +626,7 @@ function ThreadDetail() {
       let processedAttachments = combinedAttachments
       const projectId = thread?.metadata?.project?.id
       if (combinedAttachments.length > 0) {
-        if (hasDocuments) setProcessingEmbeddings(true)
+        if (hasEmbeddingDocuments) setProcessingEmbeddings(true)
         try {
           const parsePreference = useAttachments.getState().parseMode
           const result = await processAttachmentsForSend({
