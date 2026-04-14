@@ -4,7 +4,32 @@ use super::helpers::{resolve_app_path_within_jan_data_folder, resolve_path};
 use super::models::{DialogOpenOptions, FileStat};
 use rfd::AsyncFileDialog;
 use std::fs;
+use std::path::Path;
 use tauri::Runtime;
+
+fn collect_gguf_files_recursive(dir: &Path, out: &mut Vec<String>) -> Result<(), String> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
+        if meta.is_dir() {
+            collect_gguf_files_recursive(&path, out)?;
+        } else {
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if name.ends_with(".gguf") && !name.contains("mmproj") {
+                out.push(path.to_string_lossy().to_string());
+            }
+        }
+    }
+    Ok(())
+}
 
 #[tauri::command]
 pub fn rm<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Result<(), String> {
@@ -128,6 +153,26 @@ pub fn write_file_sync<R: Runtime>(
     let path = resolve_path(app_handle, &args[0]);
     let content = &args[1];
     fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+/// Recursively lists importable `.gguf` files under the given directories (absolute paths).
+/// Excludes files whose names contain `mmproj` (case-insensitive), matching folder-import UX.
+#[tauri::command]
+pub fn get_gguf_files<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    paths: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let mut out: Vec<String> = Vec::new();
+    for root in paths {
+        if root.is_empty() {
+            continue;
+        }
+        let resolved = resolve_path(app_handle.clone(), &root);
+        collect_gguf_files_recursive(&resolved, &mut out)?;
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
 }
 
 #[tauri::command]

@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { sanitizeModelId } from '@/lib/utils'
+import { buildModelIdFromPath } from '@/lib/buildModelIdFromPath'
 import { fs } from '@janhq/core'
 import {
   IconLoader2,
@@ -47,6 +47,10 @@ export const ImportVisionModelDialog = ({
   const [importMode, setImportMode] = useState<'file' | 'directory'>('file')
   const [modelDirectory, setModelDirectory] = useState<string | null>(null)
   const [discoveredModelFiles, setDiscoveredModelFiles] = useState<string[]>([])
+  const [folderImportProgress, setFolderImportProgress] = useState<{
+    current: number
+    total: number
+  } | null>(null)
 
   const validateGgufFile = useCallback(
     async (filePath: string, fileType: 'model' | 'mmproj'): Promise<void> => {
@@ -194,37 +198,6 @@ export const ImportVisionModelDialog = ({
     }
   }
 
-  const listGgufFilesFromDirectory = useCallback(
-    async (dirPath: string): Promise<string[]> => {
-      const files: string[] = []
-      const entries = await fs.readdirSync(dirPath)
-
-      for (const entry of entries) {
-        const stat = await fs.fileStat(entry)
-        if (stat?.isDirectory) {
-          const nestedFiles = await listGgufFilesFromDirectory(entry)
-          files.push(...nestedFiles)
-          continue
-        }
-
-        const isGguf = entry.toLowerCase().endsWith('.gguf')
-        const isMmproj = entry.toLowerCase().includes('mmproj')
-        if (isGguf && !isMmproj) {
-          files.push(entry)
-        }
-      }
-
-      return files
-    },
-    []
-  )
-
-  const buildModelIdFromPath = (filePath: string): string => {
-    const fileName = filePath.split(/[\\/]/).pop() || ''
-    const baseName = fileName.replace(/\.(gguf|GGUF)$/, '')
-    return sanitizeModelId(baseName.replace(/\s/g, '-'))
-  }
-
   const handleDirectorySelect = async () => {
     setImportMode('directory')
     setModelFile(null)
@@ -243,7 +216,7 @@ export const ImportVisionModelDialog = ({
     if (!selectedDirectory || typeof selectedDirectory !== 'string') return
 
     try {
-      const modelFiles = await listGgufFilesFromDirectory(selectedDirectory)
+      const modelFiles = await fs.getGgufFiles([selectedDirectory])
       setModelDirectory(selectedDirectory)
       setDiscoveredModelFiles(modelFiles)
       if (modelFiles.length === 0) {
@@ -275,31 +248,77 @@ export const ImportVisionModelDialog = ({
       }
 
       setImporting(true)
+      setFolderImportProgress({ current: 0, total: discoveredModelFiles.length })
       try {
         const existingIds = new Set(provider.models.map((model) => model.id))
         const seenIds = new Set<string>()
         let importedCount = 0
         let skippedCount = 0
+        let emptyModelIdCount = 0
+        const failures: { path: string; message: string }[] = []
 
-        for (const filePath of discoveredModelFiles) {
+        for (let i = 0; i < discoveredModelFiles.length; i++) {
+          const filePath = discoveredModelFiles[i]
+          setFolderImportProgress({
+            current: i + 1,
+            total: discoveredModelFiles.length,
+          })
+
           const modelId = buildModelIdFromPath(filePath)
-          if (!modelId || existingIds.has(modelId) || seenIds.has(modelId)) {
+          if (!modelId) {
+            emptyModelIdCount += 1
+            skippedCount += 1
+            console.warn(
+              'Skipping GGUF file: could not derive a model id from filename:',
+              filePath
+            )
+            continue
+          }
+          if (existingIds.has(modelId) || seenIds.has(modelId)) {
             skippedCount += 1
             continue
           }
 
-          await serviceHub.models().pullModel(modelId, filePath)
-          seenIds.add(modelId)
-          importedCount += 1
+          try {
+            await serviceHub.models().pullModel(modelId, filePath)
+            seenIds.add(modelId)
+            importedCount += 1
+          } catch (err) {
+            const message =
+              err instanceof Error ? err.message : 'Unknown error occurred'
+            failures.push({ path: filePath, message })
+            console.error('Folder import failed for file:', filePath, err)
+          }
         }
 
-        if (importedCount > 0) {
+        if (importedCount > 0 && failures.length === 0) {
           toast.success('Folder import completed', {
-            description: `Imported ${importedCount} model${importedCount > 1 ? 's' : ''}${skippedCount > 0 ? `, skipped ${skippedCount}` : ''}.`,
+            description: [
+              `Imported ${importedCount} model${importedCount > 1 ? 's' : ''}`,
+              skippedCount > 0 ? `, skipped ${skippedCount}` : '',
+              emptyModelIdCount > 0
+                ? ` (${emptyModelIdCount} could not get a valid id from filename)`
+                : '',
+            ].join(''),
           })
           resetForm()
           setOpen(false)
           onSuccess?.()
+        } else if (importedCount > 0 && failures.length > 0) {
+          toast.warning('Folder import partially completed', {
+            description: `Imported ${importedCount} model${importedCount > 1 ? 's' : ''}; ${failures.length} failed. First error: ${failures[0].message}`,
+          })
+          resetForm()
+          setOpen(false)
+          onSuccess?.()
+        } else if (failures.length > 0) {
+          toast.error('Failed to import models from folder', {
+            description: `${failures.length} error(s). First: ${failures[0].message}`,
+          })
+        } else if (emptyModelIdCount > 0) {
+          toast.warning('Some files were skipped', {
+            description: `${emptyModelIdCount} file(s) could not be assigned a valid model id from their names.`,
+          })
         } else {
           toast.error('No models imported', {
             description: 'All discovered models already exist or are invalid.',
@@ -313,6 +332,7 @@ export const ImportVisionModelDialog = ({
         })
       } finally {
         setImporting(false)
+        setFolderImportProgress(null)
       }
       return
     }
@@ -393,6 +413,7 @@ export const ImportVisionModelDialog = ({
     setImportMode('file')
     setModelDirectory(null)
     setDiscoveredModelFiles([])
+    setFolderImportProgress(null)
   }
 
   // Re-validate MMProj file when model name changes
@@ -556,20 +577,18 @@ export const ImportVisionModelDialog = ({
             )}
 
             {/* Model File Selection */}
-            <div
-              className="border  rounded-lg p-4 space-y-3"
-              style={{ display: importMode === 'file' ? 'block' : 'none' }}
-            >
-              <div className="flex items-center gap-2">
-                <h3 className="font-medium">
-                  Model File (GGUF)
-                </h3>
-                <span className="text-xs bg-secondary px-2 py-1 rounded-sm">
-                  Required
-                </span>
-              </div>
+            {importMode === 'file' && (
+              <div className="border  rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-medium">
+                    Model File (GGUF)
+                  </h3>
+                  <span className="text-xs bg-secondary px-2 py-1 rounded-sm">
+                    Required
+                  </span>
+                </div>
 
-              {modelFile ? (
+                {modelFile ? (
                 <div className="space-y-2">
                   <div className="border rounded-lg p-3">
                     <div className="flex items-center justify-between">
@@ -648,7 +667,8 @@ export const ImportVisionModelDialog = ({
                   Select GGUF File
                 </Button>
               )}
-            </div>
+              </div>
+            )}
 
             {/* MMPROJ File Selection - only show if vision model is enabled */}
             {isVisionModel && importMode === 'file' && (
@@ -772,7 +792,13 @@ export const ImportVisionModelDialog = ({
           >
             {importing && <IconLoader2 className="mr-2 size-4 animate-spin" />}
             {importing ? (
-              'Importing...'
+              importMode === 'directory' &&
+              folderImportProgress &&
+              folderImportProgress.total > 0 ? (
+                `Importing ${folderImportProgress.current} / ${folderImportProgress.total}...`
+              ) : (
+                'Importing...'
+              )
             ) : (
               <>
                 Import{' '}
