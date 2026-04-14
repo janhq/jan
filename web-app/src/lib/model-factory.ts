@@ -302,6 +302,26 @@ function createFoundationModelsFetch(
 }
 
 /**
+ * Map of model keywords to their respective reasoning tags.
+ */
+const REASONING_TAG_MAP: Record<string, string> = {
+  gemma: 'thought',
+}
+
+/**
+ * Determines the reasoning tag name based on the model ID.
+ */
+function getReasoningTagName(modelId: string): string {
+  const lowerId = modelId.toLowerCase()
+  for (const [keyword, tag] of Object.entries(REASONING_TAG_MAP)) {
+    if (lowerId.includes(keyword)) {
+      return tag
+    }
+  }
+  return 'think'
+}
+
+/**
  * Factory for creating language models based on provider type.
  * Supports native AI SDK providers (Anthropic, Google) and OpenAI-compatible providers.
  */
@@ -409,7 +429,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model,
       middleware: extractReasoningMiddleware({
-        tagName: modelId.toLowerCase().includes('gemma') ? 'thought' : 'think',
+        tagName: getReasoningTagName(modelId),
         separator: '\n',
       }),
     })
@@ -499,7 +519,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model: model,
       middleware: extractReasoningMiddleware({
-        tagName: modelId.toLowerCase().includes('gemma') ? 'thought' : 'think',
+        tagName: getReasoningTagName(modelId),
         separator: '\n',
       }),
     })
@@ -573,7 +593,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model,
       middleware: extractReasoningMiddleware({
-        tagName: modelId.toLowerCase().includes('gemma') ? 'thought' : 'think',
+        tagName: getReasoningTagName(modelId),
         separator: '\n',
       }),
     })
@@ -776,7 +796,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model,
       middleware: extractReasoningMiddleware({
-        tagName: modelId.toLowerCase().includes('gemma') ? 'thought' : 'think',
+        tagName: getReasoningTagName(modelId),
         separator: '\n',
       }),
     })
