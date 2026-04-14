@@ -4,6 +4,7 @@ import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
 import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import {
   Tooltip,
   TooltipContent,
@@ -295,6 +296,11 @@ const ChatInput = memo(function ChatInput({
     (a) => a.type === 'document' && a.processing
   )
   const ingestingAny = attachments.some((a) => a.processing)
+
+  const [fileIngestProgress, setFileIngestProgress] = useState<{
+    completed: number
+    total: number
+  } | null>(null)
 
   // Queued messages for this thread (shown as chips in the input area)
   const queuedMessages = useMessageQueue(
@@ -762,6 +768,7 @@ const ChatInput = memo(function ChatInput({
             parsePreference,
             perFileChoices: docChoices.size > 0 ? docChoices : undefined,
             updateAttachmentProcessing,
+            onIngestProgress: setFileIngestProgress,
           })
 
         if (processedAttachments.length > 0) {
@@ -787,6 +794,8 @@ const ChatInput = memo(function ChatInput({
         }
       } catch (e) {
         console.error('Failed to process attachments:', e)
+      } finally {
+        setFileIngestProgress(null)
       }
     },
     [
@@ -1221,50 +1230,61 @@ const ChatInput = memo(function ChatInput({
     )
 
     if (currentThreadId && newFiles.length > 0) {
+      const ingestTotal = newFiles.length
       void (async () => {
-        for (const img of newFiles) {
-          const matchImg = (a: Attachment) =>
-            a.type === 'image' &&
-            (img.contentHash ? a.contentHash === img.contentHash : a.name === img.name)
+        setFileIngestProgress({ completed: 0, total: ingestTotal })
+        try {
+          for (let i = 0; i < newFiles.length; i++) {
+            const img = newFiles[i]
+            const matchImg = (a: Attachment) =>
+              a.type === 'image' &&
+              (img.contentHash
+                ? a.contentHash === img.contentHash
+                : a.name === img.name)
 
-          try {
-            // Mark as processing
-            setAttachmentsForThread(attachmentsKey, (prev) =>
-              prev.map((a) => (matchImg(a) ? { ...a, processing: true } : a))
-            )
-
-            const result = await serviceHub
-              .uploads()
-              .ingestImage(currentThreadId, img)
-
-            if (result?.id) {
-              // Mark as processed with ID
+            try {
               setAttachmentsForThread(attachmentsKey, (prev) =>
-                prev.map((a) =>
-                  matchImg(a)
-                    ? {
-                        ...a,
-                        processing: false,
-                        processed: true,
-                        id: result.id,
-                      }
-                    : a
-                )
+                prev.map((a) => (matchImg(a) ? { ...a, processing: true } : a))
               )
-            } else {
-              throw new Error('No ID returned from image ingestion')
+
+              const result = await serviceHub
+                .uploads()
+                .ingestImage(currentThreadId, img)
+
+              if (result?.id) {
+                setAttachmentsForThread(attachmentsKey, (prev) =>
+                  prev.map((a) =>
+                    matchImg(a)
+                      ? {
+                          ...a,
+                          processing: false,
+                          processed: true,
+                          id: result.id,
+                        }
+                      : a
+                  )
+                )
+              } else {
+                throw new Error('No ID returned from image ingestion')
+              }
+            } catch (error) {
+              console.error('Failed to ingest image:', error)
+              setAttachmentsForThread(attachmentsKey, (prev) =>
+                prev.filter((a) => !matchImg(a))
+              )
+              toast.error(`Failed to ingest ${img.name}`, {
+                description:
+                  error instanceof Error ? error.message : String(error),
+              })
+            } finally {
+              setFileIngestProgress({
+                completed: i + 1,
+                total: ingestTotal,
+              })
             }
-          } catch (error) {
-            console.error('Failed to ingest image:', error)
-            // Remove failed image
-            setAttachmentsForThread(attachmentsKey, (prev) =>
-              prev.filter((a) => !matchImg(a))
-            )
-            toast.error(`Failed to ingest ${img.name}`, {
-              description:
-                error instanceof Error ? error.message : String(error),
-            })
           }
+        } finally {
+          setFileIngestProgress(null)
         }
       })()
     }
@@ -1713,6 +1733,24 @@ const ChatInput = memo(function ChatInput({
                       )
                     })}
                 </div>
+                {fileIngestProgress && fileIngestProgress.total > 0 && (
+                  <div className="space-y-1.5 pr-1">
+                    <div className="flex justify-between gap-2 text-xs text-muted-foreground">
+                      <span>{t('common:uploadingAttachments')}</span>
+                      <span className="tabular-nums shrink-0">
+                        {fileIngestProgress.completed} /{' '}
+                        {fileIngestProgress.total}
+                      </span>
+                    </div>
+                    <Progress
+                      value={
+                        (fileIngestProgress.completed /
+                          fileIngestProgress.total) *
+                        100
+                      }
+                    />
+                  </div>
+                )}
               </div>
             )}
             {queuedMessages.length > 0 && (
