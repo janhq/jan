@@ -76,6 +76,7 @@
   "noThreadsYetDesc": "開始一個新的對話以在此處查看您的對話歷史記錄。",
   "downloads": "下載",
   "downloading": "下載中",
+  "uploadingAttachments": "正在上傳附件…",
   "cancelDownload": "取消下載",
   "downloadCancelled": "下載已取消",
   "downloadComplete": "下載完成",
@@ -252,6 +253,7 @@
     "searchProjects": "搜尋專案...",
     "noProjectsFound": "找不到專案",
     "tryDifferentSearch": "嘗試不同的搜尋詞",
+    "uploadingFiles": "正在上傳檔案…",
     "createNewProject": "建立新專案",
     "deleteProjectDialog": {
       "title": "刪除專案",
