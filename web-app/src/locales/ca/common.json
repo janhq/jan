@@ -68,6 +68,7 @@
   "noThreadsYetDesc": "Inicia una conversa nova per veure aquí l’historial dels teus fils.",
   "downloads": "Descàrregues",
   "downloading": "S’està descarregant",
+  "uploadingAttachments": "S’estan pujant els fitxers adjunts…",
   "cancelDownload": "Cancel·la la descàrrega",
   "downloadCancelled": "Descàrrega cancel·lada",
   "downloadComplete": "Descàrrega completada",
@@ -290,7 +291,8 @@
     "update": "Actualitza",
     "searchProjects": "Cerca projectes...",
     "noProjectsFound": "No s’han trobat projectes",
-    "tryDifferentSearch": "Prova amb un terme de cerca diferent"
+    "tryDifferentSearch": "Prova amb un terme de cerca diferent",
+    "uploadingFiles": "S’estan pujant els fitxers…"
   },
   "attachmentsIngestion": {
     "title": "Tria com ingerir els adjunts",
