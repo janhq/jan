@@ -24,10 +24,30 @@ describe('parseReasoning', () => {
     expect(result).toEqual({ reasoningSegment: '<think>thinking...', textSegment: '' })
   })
 
+  it('detects in-progress <thought> tag (no closing)', () => {
+    const result = parseReasoning('<thought>thinking...')
+    expect(result).toEqual({ reasoningSegment: '<thought>thinking...', textSegment: '' })
+  })
+
   it('detects completed <think> tag', () => {
     const result = parseReasoning('<think>reason</think>answer')
     expect(result.reasoningSegment).toBe('<think>reason</think>')
     expect(result.textSegment).toBe('answer')
+  })
+
+  it('detects completed <thought> tag', () => {
+    const result = parseReasoning('<thought>reason</thought>answer')
+    expect(result.reasoningSegment).toBe('<thought>reason</thought>')
+    expect(result.textSegment).toBe('answer')
+  })
+
+  it('handles text before closed reasoning tags', () => {
+    const text = 'Some prefix <think>Internal thought</think>Some suffix'
+    const result = parseReasoning(text)
+    expect(result).toEqual({
+      reasoningSegment: 'Some prefix <think>Internal thought</think>',
+      textSegment: 'Some suffix',
+    })
   })
 
   it('detects in-progress analysis channel', () => {
@@ -42,6 +62,15 @@ describe('parseReasoning', () => {
     const result = parseReasoning(text)
     expect(result.reasoningSegment).toContain('<|channel|>analysis')
     expect(result.textSegment).toBe('reply')
+  })
+
+  it('handles multiple tags by splitting at the first closed tag', () => {
+    const text = '<think>First</think><think>Second</think>Answer'
+    const result = parseReasoning(text)
+    expect(result).toEqual({
+      reasoningSegment: '<think>First</think>',
+      textSegment: '<think>Second</think>Answer',
+    })
   })
 })
 
@@ -511,6 +540,7 @@ describe('extractContentPartsFromUIMessage', () => {
           type: 'tool-search',
           toolCallId: 'tc-1',
           input: { q: 'test' },
+          state: 'output-available',
           output: 'result',
         },
       ],

@@ -303,13 +303,20 @@ function createFoundationModelsFetch(
 
 /**
  * Map of model keywords to their respective reasoning tags.
+ * Used for models that use tags other than the default 'think'.
  */
 const REASONING_TAG_MAP: Record<string, string> = {
   gemma: 'thought',
 }
 
 /**
+ * The default tag used for reasoning extraction if no specific override is found.
+ */
+const DEFAULT_REASONING_TAG = 'think'
+
+/**
  * Determines the reasoning tag name based on the model ID.
+ * Defaults to 'think' if no specific override is found in the map.
  */
 function getReasoningTagName(modelId: string): string {
   const lowerId = modelId.toLowerCase()
@@ -318,7 +325,7 @@ function getReasoningTagName(modelId: string): string {
       return tag
     }
   }
-  return 'think'
+  return DEFAULT_REASONING_TAG
 }
 
 /**
