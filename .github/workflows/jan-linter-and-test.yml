@@ -93,7 +93,13 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Run Rust test coverage
-        run: ./scripts/rust-coverage.sh
+        run: |
+          cargo llvm-cov clean --workspace --manifest-path src-tauri/Cargo.toml
+          cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
+          cargo llvm-cov --no-report --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
+          cargo llvm-cov --no-report --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
+          cargo llvm-cov --no-report --manifest-path src-tauri/utils/Cargo.toml
+          cargo llvm-cov report --lcov --output-path rust-lcov.info --manifest-path src-tauri/Cargo.toml
 
       - name: Upload Rust code coverage for ref branch
         uses: actions/upload-artifact@v4
