@@ -92,6 +92,14 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      - name: Create Tauri externalBin stubs
+        run: |
+          TRIPLE=$(rustc -vV | awk '/^host:/ { print $2 }')
+          mkdir -p src-tauri/resources/bin
+          for bin in uv bun; do
+            touch "src-tauri/resources/bin/${bin}-${TRIPLE}"
+          done
+
       - name: Run Rust test coverage
         run: |
           cargo llvm-cov clean --workspace --manifest-path src-tauri/Cargo.toml
