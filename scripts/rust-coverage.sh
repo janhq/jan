@@ -3,10 +3,13 @@
 # Outputs: rust-lcov.info in the current directory.
 set -euo pipefail
 
-# Tauri build script validates externalBin paths exist. Create stubs so
-# the build succeeds in CI where the real binaries aren't downloaded.
+# Tauri build script validates resources and externalBin paths exist.
+# Create stubs so the build succeeds in CI where these aren't present.
 TRIPLE=$(rustc -vV | awk '/^host:/ { print $2 }')
-mkdir -p src-tauri/resources/bin
+mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install
+[ -f src-tauri/resources/LICENSE ] || touch src-tauri/resources/LICENSE
+[ -f src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
+[ "$(ls -A src-tauri/resources/pre-install 2>/dev/null)" ] || touch src-tauri/resources/pre-install/.gitkeep
 for bin in uv bun; do
   stub="src-tauri/resources/bin/${bin}-${TRIPLE}"
   [ -f "$stub" ] || touch "$stub"

@@ -92,10 +92,13 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Create Tauri externalBin stubs
+      - name: Create Tauri resource stubs for CI
         run: |
           TRIPLE=$(rustc -vV | awk '/^host:/ { print $2 }')
-          mkdir -p src-tauri/resources/bin
+          mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install
+          touch src-tauri/resources/pre-install/.gitkeep
+          touch src-tauri/resources/LICENSE
+          touch src-tauri/resources/bin/jan-cli
           for bin in uv bun; do
             touch "src-tauri/resources/bin/${bin}-${TRIPLE}"
           done
