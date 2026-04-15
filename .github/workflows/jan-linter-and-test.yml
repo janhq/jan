@@ -40,11 +40,11 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.base_ref }}
       - name: Use Node.js 20.x
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
@@ -80,7 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.base_ref }}
 
@@ -93,13 +93,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Run Rust test coverage
-        run: |
-          cargo llvm-cov clean --workspace --manifest-path src-tauri/Cargo.toml
-          cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
-          cargo llvm-cov --no-report --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-          cargo llvm-cov --no-report --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
-          cargo llvm-cov --no-report --manifest-path src-tauri/utils/Cargo.toml
-          cargo llvm-cov report --lcov --output-path rust-lcov.info --manifest-path src-tauri/Cargo.toml
+        run: ./scripts/rust-coverage.sh
 
       - name: Upload Rust code coverage for ref branch
         uses: actions/upload-artifact@v4
@@ -112,12 +106,12 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Installing node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
@@ -152,12 +146,12 @@ jobs:
     runs-on: windows-desktop-${{ matrix.antivirus-tools }}
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Installing node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
@@ -191,7 +185,7 @@ jobs:
     runs-on: 'windows-latest'
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -200,7 +194,7 @@ jobs:
           choco install --yes --no-progress make
 
       - name: Installing node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
@@ -241,7 +235,7 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -257,7 +251,7 @@ jobs:
           swap-storage: true
 
       - name: Installing node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
@@ -299,12 +293,12 @@ jobs:
     continue-on-error: true
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Installing node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
       - name: 'Cleanup cache'
@@ -337,13 +331,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Run Rust test coverage
-        run: |
-          cargo llvm-cov clean --workspace --manifest-path src-tauri/Cargo.toml
-          cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
-          cargo llvm-cov --no-report --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
-          cargo llvm-cov --no-report --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
-          cargo llvm-cov --no-report --manifest-path src-tauri/utils/Cargo.toml
-          cargo llvm-cov report --lcov --output-path rust-lcov.info --manifest-path src-tauri/Cargo.toml
+        run: ./scripts/rust-coverage.sh
 
       - name: Merge coverage reports
         run: |
@@ -355,6 +343,8 @@ jobs:
           name: ref-lcov.info
 
       - name: Download Rust code coverage report from base branch
+        id: download-rust-cov
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: ref-rust-lcov.info
@@ -362,7 +352,12 @@ jobs:
 
       - name: Merge base branch coverage reports
         run: |
-          cat ./lcov.info ./base-rust-cov/rust-lcov.info > base-merged-lcov.info
+          if [ -f ./base-rust-cov/rust-lcov.info ]; then
+            cat ./lcov.info ./base-rust-cov/rust-lcov.info > base-merged-lcov.info
+          else
+            echo "Rust base coverage not available, using TS-only coverage"
+            cp ./lcov.info base-merged-lcov.info
+          fi
 
       - name: Generate Code Coverage report
         id: code-coverage
