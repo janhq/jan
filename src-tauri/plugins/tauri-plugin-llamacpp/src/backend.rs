@@ -272,7 +272,8 @@ pub async fn list_supported_backends(
 
     // Sort newest version first; if versions tie, sort by backend name
     merged.sort_by(|a, b| {
-        let version_cmp = b.version.cmp(&a.version);
+        let version_cmp = parse_backend_version(b.version.clone())
+            .cmp(&parse_backend_version(a.version.clone()));
         if version_cmp == std::cmp::Ordering::Equal {
             a.backend.cmp(&b.backend)
         } else {
@@ -494,7 +495,9 @@ pub fn find_latest_version_for_backend(
     }
 
     // Sort by version (newest first)
-    matching_backends.sort_by(|a, b| b.version.cmp(&a.version));
+    matching_backends.sort_by(|a, b| {
+        parse_backend_version(b.version.clone()).cmp(&parse_backend_version(a.version.clone()))
+    });
 
     // Return the full string including the original asset name
     Some(format!(

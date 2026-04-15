@@ -4,12 +4,16 @@ import {
   getBackendExePath,
   isBackendInstalled,
   downloadBackend,
+  listSupportedBackends,
 } from '../backend'
 import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 import { fs, getJanDataFolderPath, events } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { dirname } from '@tauri-apps/api/path'
-import { isCudaInstalledFromRust } from '@janhq/tauri-plugin-llamacpp-api'
+import {
+  isCudaInstalledFromRust,
+  determineSupportedBackends,
+} from '@janhq/tauri-plugin-llamacpp-api'
 
 // Mock constants: Hardcode path string directly inside the mock to avoid hoisting issues
 const MOCK_JAN_PATH_STRING = '/path/to/jan'
@@ -35,23 +39,30 @@ vi.mock('@janhq/tauri-plugin-hardware-api', () => ({
 }))
 vi.mock('../util', () => ({
   getProxyConfig: vi.fn().mockReturnValue({}),
-  basenameNoExt: vi.fn((name) => name.replace(/\.tar\.gz$/, '')),
 }))
 vi.mock('@tauri-apps/api/path', () => ({
   // Mock dirname to return the direct parent directory (used for decompress outputDir)
   dirname: vi.fn(async (path) => path.split('/').slice(0, -1).join('/')),
   basename: vi.fn(async (path) => path.split('/').pop()),
 }))
-vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
-  const actual = await vi.importActual<
-    typeof import('@janhq/tauri-plugin-llamacpp-api')
-  >('@janhq/tauri-plugin-llamacpp-api')
-
-  return {
-    ...actual,
-    isCudaInstalledFromRust: vi.fn().mockResolvedValue(false),
-  }
-})
+vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({
+  isCudaInstalledFromRust: vi.fn().mockResolvedValue(false),
+  determineSupportedBackends: vi.fn().mockResolvedValue([
+    'linux-common_cpus-x64',
+    'linux-vulkan-common_cpus-x64',
+    'win-common_cpus-x64',
+    'win-vulkan-common_cpus-x64',
+    'win-cuda-12-common_cpus-x64',
+    'win-cuda-13-common_cpus-x64',
+    'macos-arm64',
+    'macos-x64',
+  ]),
+  getSupportedFeaturesFromRust: vi.fn().mockResolvedValue({}),
+  normalizeFeatures: vi.fn((v: any) => v),
+  getLocalInstalledBackendsInternal: vi.fn().mockResolvedValue([]),
+  listSupportedBackendsFromRust: vi.fn(async (remote: any[]) => remote),
+  mapOldBackendToNew: vi.fn(async (v: string) => v),
+}))
 
 // Mock the global fetch function
 global.fetch = vi.fn()
@@ -78,10 +89,22 @@ vi.mocked(window.core.extensionManager.getByName).mockReturnValue(
   mockDownloadManager
 )
 
+function buildUpstreamRelease(tag: string, assetStems: string[]) {
+  return {
+    tag_name: tag,
+    assets: assetStems.map((stem) => ({
+      name: stem.endsWith('.zip') || stem.endsWith('.tar.gz')
+        ? stem.startsWith('cudart-')
+          ? stem
+          : `llama-${tag}-bin-${stem}`
+        : `llama-${tag}-bin-${stem}.tar.gz`,
+    })),
+  }
+}
+
 describe('Backend functions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // Mock getJanDataFolderPath explicitly to a simple path
     vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
 
     vi.mocked(getSystemInfo).mockResolvedValue({
@@ -93,9 +116,8 @@ describe('Backend functions', () => {
       gpus: [],
     } as any)
 
-    // Default mock for isBackendInstalled dependencies
     vi.mocked(fs.existsSync).mockImplementation(async (path: string) => {
-      if (path.includes('build')) return true // Assume build dir check passes
+      if (path.includes('build')) return true
       return false
     })
     vi.mocked(window.core.extensionManager.getByName).mockReturnValue(
@@ -103,81 +125,58 @@ describe('Backend functions', () => {
     )
     vi.mocked(mockDownloadManager.downloadFiles).mockClear()
     vi.mocked(isCudaInstalledFromRust).mockResolvedValue(false)
+    vi.mocked(determineSupportedBackends).mockResolvedValue([
+      'linux-common_cpus-x64',
+      'linux-vulkan-common_cpus-x64',
+      'win-common_cpus-x64',
+      'win-vulkan-common_cpus-x64',
+      'win-cuda-12-common_cpus-x64',
+      'win-cuda-13-common_cpus-x64',
+      'macos-arm64',
+      'macos-x64',
+    ])
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-
   describe('getBackendDir and getBackendExePath', () => {
     it('should use the specific backend name for directory path', async () => {
       vi.mocked(fs.existsSync).mockImplementation(async (path: string) =>
         path.includes('build')
-      ) // Mock build dir check
-
-      const dir = await getBackendDir('linux-avx2-x64', 'v1.2.3')
-      expect(dir).toBe(`/path/to/jan/llamacpp/backends/v1.2.3/linux-avx2-x64`)
-
-      const exePath = await getBackendExePath('linux-avx2-x64', 'v1.2.3')
-      expect(exePath).toBe(
-        `/path/to/jan/llamacpp/backends/v1.2.3/linux-avx2-x64/build/bin/llama-server`
       )
-    })
 
-    it('should use the new common backend name for directory path if it was the asset name', async () => {
-      vi.mocked(fs.existsSync).mockImplementation(async (path: string) =>
-        path.includes('build')
-      ) // Mock build dir check
-
-      const dir = await getBackendDir('win-common_cpus-x64', 'v2.0.0')
+      const dir = await getBackendDir('linux-vulkan-common_cpus-x64', 'b8802')
       expect(dir).toBe(
-        `/path/to/jan/llamacpp/backends/v2.0.0/win-common_cpus-x64`
+        `/path/to/jan/llamacpp/backends/b8802/linux-vulkan-common_cpus-x64`
       )
 
-      const exePath = await getBackendExePath('win-common_cpus-x64', 'v2.0.0')
+      const exePath = await getBackendExePath(
+        'linux-vulkan-common_cpus-x64',
+        'b8802'
+      )
       expect(exePath).toBe(
-        `/path/to/jan/llamacpp/backends/v2.0.0/win-common_cpus-x64/build/bin/llama-server`
+        `/path/to/jan/llamacpp/backends/b8802/linux-vulkan-common_cpus-x64/build/bin/llama-server`
       )
     })
   })
 
   describe('isBackendInstalled', () => {
-    it('should return true when backend is installed using its specific name', async () => {
-      vi.stubGlobal('IS_WINDOWS', false) // Linux/macOS for llama-server
-      // Mock both the check for the 'build' directory and the final executable path
+    it('should return true when backend executable exists', async () => {
+      vi.stubGlobal('IS_WINDOWS', false)
       vi.mocked(fs.existsSync).mockImplementation(async (path: string) => {
-        const expectedExePath = `/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
+        const expectedExePath = `${MOCK_JAN_PATH_STRING}/llamacpp/backends/b8802/linux-vulkan-common_cpus-x64/build/bin/llama-server`
         if (path === expectedExePath) return true
         if (path.endsWith('/build')) return true
         return false
       })
 
-      const result = await isBackendInstalled('win-avx2-x64', 'v1.0.0')
-      expect(result).toBe(true)
-      // Check that it was called with the final exe path
-      expect(fs.existsSync).toHaveBeenCalledWith(
-        `/path/to/jan/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
+      const result = await isBackendInstalled(
+        'linux-vulkan-common_cpus-x64',
+        'b8802'
       )
-    })
-  })
-  describe('isBackendInstalled', () => {
-    it('should return true when backend is installed using its specific name', async () => {
-      vi.stubGlobal('IS_WINDOWS', false) // Linux/macOS for llama-server
-      // Mock both the check for the 'build' directory and the final executable path
-      vi.mocked(fs.existsSync).mockImplementation(async (path: string) => {
-        const expectedExePath = `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
-        if (path === expectedExePath) return true
-        if (path.endsWith('/build')) return true
-        return false
-      })
-
-      const result = await isBackendInstalled('win-avx2-x64', 'v1.0.0')
       expect(result).toBe(true)
-      // Check that it was called with the final exe path
-      expect(fs.existsSync).toHaveBeenCalledWith(
-        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-avx2-x64/build/bin/llama-server`
-      )
     })
   })
 
@@ -191,13 +190,36 @@ describe('Backend functions', () => {
         }
       )
       vi.mocked(invoke).mockImplementation(async (command: string) => {
-        if (command === 'is_library_available') return false
         if (command === 'decompress') return undefined
         return undefined
       })
       vi.mocked(fs.rm).mockResolvedValue(undefined)
     })
-    it('should include cudart for cuda-12-common_cpus if not installed', async () => {
+
+    it('downloads upstream ubuntu-vulkan asset for linux-vulkan-common_cpus-x64', async () => {
+      vi.stubGlobal('IS_WINDOWS', false)
+      vi.mocked(fetch).mockResolvedValue({
+        ok: true,
+        json: async () => [
+          buildUpstreamRelease('b8802', ['ubuntu-vulkan-x64', 'ubuntu-x64']),
+        ],
+      } as any)
+
+      await listSupportedBackends()
+      await downloadBackend('linux-vulkan-common_cpus-x64', 'b8802')
+
+      const downloadItems = vi.mocked(mockDownloadManager.downloadFiles).mock
+        .calls[0][0]
+      expect(downloadItems).toHaveLength(1)
+      expect(downloadItems[0].url).toBe(
+        'https://github.com/ggml-org/llama.cpp/releases/download/b8802/llama-b8802-bin-ubuntu-vulkan-x64.tar.gz'
+      )
+      expect(downloadItems[0].save_path).toBe(
+        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/b8802/linux-vulkan-common_cpus-x64/backend.tar.gz`
+      )
+    })
+
+    it('downloads win-cuda archive plus matching cudart zip', async () => {
       vi.stubGlobal('IS_WINDOWS', true)
       vi.mocked(getSystemInfo).mockResolvedValue({
         os_type: 'windows',
@@ -209,81 +231,49 @@ describe('Backend functions', () => {
           },
         ],
       } as any)
-
-      await downloadBackend('win-cuda-12-common_cpus-x64', 'v1.0.0')
-
-      const downloadItems = vi.mocked(mockDownloadManager.downloadFiles).mock
-        .calls[0][0]
-      expect(downloadItems.length).toBe(2)
-      expect(downloadItems[0].url).toContain(
-        'win-cuda-12-common_cpus-x64.tar.gz'
-      )
-      expect(downloadItems[0].save_path).toBe(
-        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-cuda-12-common_cpus-x64/backend.tar.gz`
-      )
-      expect(downloadItems[1].url).toContain(
-        'cudart-llama-bin-win-cu12.0-x64.tar.gz'
-      )
-      expect(downloadItems[1].save_path).toBe(
-        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-cuda-12-common_cpus-x64/build/bin/cuda12.tar.gz`
-      )
-    })
-
-    it('should include cudart for old cuda-cu11.7 if not installed', async () => {
-      vi.stubGlobal('IS_WINDOWS', false)
-      vi.mocked(getSystemInfo).mockResolvedValue({
-        os_type: 'linux',
-        cpu: { arch: 'x86_64', extensions: [] },
-        gpus: [
+      vi.mocked(fetch).mockResolvedValue({
+        ok: true,
+        json: async () => [
           {
-            driver_version: '452.39',
-            nvidia_info: { compute_capability: '7.0' },
+            tag_name: 'b8802',
+            assets: [
+              { name: 'llama-b8802-bin-win-cuda-12.4-x64.zip' },
+              { name: 'cudart-llama-bin-win-cuda-12.4-x64.zip' },
+            ],
           },
         ],
       } as any)
 
-      // Downloading old name asset
-      await downloadBackend('linux-avx2-cuda-cu11.7-x64', 'v1.0.0')
+      await listSupportedBackends()
+      await downloadBackend('win-cuda-12-common_cpus-x64', 'b8802')
 
       const downloadItems = vi.mocked(mockDownloadManager.downloadFiles).mock
         .calls[0][0]
-      expect(downloadItems.length).toBe(2)
-      expect(downloadItems[0].url).toContain(
-        'linux-avx2-cuda-cu11.7-x64.tar.gz'
+      expect(downloadItems).toHaveLength(2)
+      expect(downloadItems[0].url).toBe(
+        'https://github.com/ggml-org/llama.cpp/releases/download/b8802/llama-b8802-bin-win-cuda-12.4-x64.zip'
       )
       expect(downloadItems[0].save_path).toBe(
-        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/linux-avx2-cuda-cu11.7-x64/backend.tar.gz`
+        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/b8802/win-cuda-12-common_cpus-x64/backend.zip`
       )
-      expect(downloadItems[1].url).toContain(
-        'cudart-llama-bin-linux-cu11.7-x64.tar.gz'
+      expect(downloadItems[1].url).toBe(
+        'https://github.com/ggml-org/llama.cpp/releases/download/b8802/cudart-llama-bin-win-cuda-12.4-x64.zip'
       )
       expect(downloadItems[1].save_path).toBe(
-        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/linux-avx2-cuda-cu11.7-x64/build/bin/cuda11.tar.gz`
+        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/b8802/win-cuda-12-common_cpus-x64/build/bin/cuda12.zip`
       )
     })
 
-    it('should correctly extract parent directory from Windows paths', async () => {
-      vi.stubGlobal('IS_WINDOWS', true)
-
-      // Mock getSystemInfo for Windows/x64
-      vi.mocked(getSystemInfo).mockResolvedValue({
-        os_type: 'windows',
-        cpu: { arch: 'x86_64', extensions: [] },
-        gpus: [],
+    it('throws a clear error when no upstream asset is known for the requested backend', async () => {
+      vi.stubGlobal('IS_WINDOWS', false)
+      vi.mocked(fetch).mockResolvedValue({
+        ok: true,
+        json: async () => [],
       } as any)
 
-      // Mock dirname to return Windows-style path components (for dirname mock)
-      vi.mocked(dirname).mockResolvedValue(
-        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-avx2-x64`
-      )
-
-      await downloadBackend('win-avx2-x64', 'v1.0.0')
-
-      // Verify decompress was called with correct parent directory
-      expect(invoke).toHaveBeenCalledWith('decompress', {
-        path: `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-avx2-x64/backend.tar.gz`,
-        outputDir: `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-avx2-x64`,
-      })
+      await expect(
+        downloadBackend('linux-cuda-12-common_cpus-x64', 'b8802')
+      ).rejects.toThrow(/No upstream release asset known/)
     })
   })
 })

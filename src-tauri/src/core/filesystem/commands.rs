@@ -2,9 +2,31 @@
 // It's added to ensure the legacy implementation from frontend still functions before removal.
 use super::helpers::{resolve_app_path_within_jan_data_folder, resolve_path};
 use super::models::{DialogOpenOptions, FileStat};
+use crate::core::app::commands::get_jan_data_folder_path;
+use jan_utils::normalize_file_path;
 use rfd::AsyncFileDialog;
 use std::fs;
+use std::path::PathBuf;
 use tauri::Runtime;
+
+/// Resolve a path without canonicalizing. Unlike `resolve_path`, symlinks
+/// are NOT dereferenced — this matters for `mv`, where we need to move the
+/// symlink itself rather than its target file.
+fn resolve_path_no_canonical<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    path: &str,
+) -> PathBuf {
+    if path.starts_with("file:/") || path.starts_with("file:\\") {
+        let normalized = normalize_file_path(path);
+        let relative_normalized = normalized
+            .trim_start_matches(std::path::MAIN_SEPARATOR)
+            .trim_start_matches('/')
+            .trim_start_matches('\\');
+        get_jan_data_folder_path(app_handle).join(relative_normalized)
+    } else {
+        PathBuf::from(path)
+    }
+}
 
 #[tauri::command]
 pub fn rm<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Result<(), String> {
@@ -49,10 +71,10 @@ pub fn mv<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Res
         return Err("mv error: Invalid argument - source and destination required".to_string());
     }
 
-    let source = resolve_path(app_handle.clone(), &args[0]);
-    let destination = resolve_path(app_handle, &args[1]);
+    let source = resolve_path_no_canonical(app_handle.clone(), &args[0]);
+    let destination = resolve_path_no_canonical(app_handle, &args[1]);
 
-    if !source.exists() {
+    if source.symlink_metadata().is_err() {
         return Err("mv error: Source path does not exist".to_string());
     }
 
@@ -180,9 +202,12 @@ pub fn decompress<R: Runtime>(
     path: &str,
     output_dir: &str,
 ) -> Result<(), String> {
-    let (_jan_data_folder, path_buf) = resolve_app_path_within_jan_data_folder(app.clone(), path)?;
+    // Output dir is strictly sandboxed to Jan's data folder. The input path
+    // is allowed to be anywhere readable on disk so the user can install a
+    // backend archive picked via the OS file dialog (e.g. ~/Downloads).
     let (_jan_data_folder, output_dir_buf) =
-        resolve_app_path_within_jan_data_folder(app, output_dir)?;
+        resolve_app_path_within_jan_data_folder(app.clone(), output_dir)?;
+    let path_buf = resolve_path(app, path);
 
     // Ensure output directory exists
     fs::create_dir_all(&output_dir_buf).map_err(|e| {

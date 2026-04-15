@@ -1,10 +1,9 @@
 import { getJanDataFolderPath, fs, joinPath, events } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
-import { getProxyConfig, basenameNoExt } from './util'
+import { getProxyConfig } from './util'
 import { dirname } from '@tauri-apps/api/path'
 import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 import {
-  mapOldBackendToNew,
   getLocalInstalledBackendsInternal,
   normalizeFeatures,
   determineSupportedBackends,
@@ -29,41 +28,107 @@ export async function getLocalInstalledBackends(): Promise<
   ])
   return await getLocalInstalledBackendsInternal(backendDir)
 }
+
+// We ship upstream ggml-org/llama.cpp builds for "Check for Updates" because
+// the janhq/llama.cpp fork's release cadence lags upstream by many builds.
+// Upstream uses a different asset-naming scheme than the fork; we map its
+// stems (e.g. "ubuntu-vulkan-x64") to Jan's internal backend names and
+// remember per (version, backend) which archive to pull at download time.
+
+interface UpstreamAssetInfo {
+  assetFileName: string
+  cudartAssetFileName?: string
+}
+
+const upstreamAssetMap = new Map<string, UpstreamAssetInfo>()
+const upstreamKey = (version: string, backend: string) =>
+  `${version}|${backend}`
+
+// Convert upstream ggml-org release asset stem (filename without
+// "llama-<ver>-bin-" prefix and without ".tar.gz"/".zip" suffix) to the
+// internal backend identifier Jan uses elsewhere. Returns null if the asset
+// does not correspond to a backend Jan supports.
+export function mapUpstreamAssetToInternal(stem: string): string | null {
+  switch (stem) {
+    case 'macos-arm64':
+      return 'macos-arm64'
+    case 'macos-x64':
+      return 'macos-x64'
+    case 'ubuntu-x64':
+      return 'linux-common_cpus-x64'
+    case 'ubuntu-arm64':
+      return 'linux-arm64'
+    case 'ubuntu-vulkan-x64':
+      return 'linux-vulkan-common_cpus-x64'
+    case 'win-cpu-x64':
+      return 'win-common_cpus-x64'
+    case 'win-cpu-arm64':
+      return 'win-arm64'
+    case 'win-vulkan-x64':
+      return 'win-vulkan-common_cpus-x64'
+  }
+  // Upstream ships "win-cuda-<major>.<minor>-x64" (e.g. win-cuda-12.4-x64).
+  // Jan buckets CUDA by major version only.
+  const cudaMatch = /^win-cuda-(\d+)\.(\d+)-x64$/.exec(stem)
+  if (cudaMatch) {
+    return `win-cuda-${cudaMatch[1]}-common_cpus-x64`
+  }
+  return null
+}
+
 /*
- * currently reads available backends in remote
- *
+ * Fetch available remote backends from upstream ggml-org/llama.cpp.
+ * Populates upstreamAssetMap with the actual asset filenames so
+ * downloadBackend knows what to pull.
  */
 async function fetchRemoteSupportedBackends(
   supportedBackends: string[]
 ): Promise<{ version: string; backend: string }[]> {
-  // Pull the latest releases from the repo
-  const { releases } = await _fetchGithubReleases('janhq', 'llama.cpp')
-  releases.sort((a, b) => b.tag_name.localeCompare(a.tag_name))
+  const { releases } = await _fetchGithubReleases('ggml-org', 'llama.cpp')
+  releases.sort((a, b) =>
+    b.tag_name.localeCompare(a.tag_name, undefined, { numeric: true })
+  )
   releases.splice(10) // keep only the latest 10 releases
 
-  // Walk the assets and keep only those that match a supported backend
   const remote: { version: string; backend: string }[] = []
 
   for (const release of releases) {
     const version = release.tag_name
     const prefix = `llama-${version}-bin-`
 
+    // Index CUDA runtime archives present in this release, keyed by CUDA
+    // major version. Upstream only ships Windows CUDA runtimes.
+    const cudartByMajor: Record<string, string> = {}
+    for (const asset of release.assets) {
+      const m = /^cudart-llama-bin-win-cuda-(\d+)\.(\d+)-x64\.zip$/.exec(
+        asset.name
+      )
+      if (m) cudartByMajor[m[1]] = asset.name
+    }
+
     for (const asset of release.assets) {
       const name = asset.name
-
       if (!name.startsWith(prefix)) continue
 
-      const backend = basenameNoExt(name).slice(prefix.length)
-
-      if (supportedBackends.includes(backend)) {
-        remote.push({ version, backend })
+      let stem: string
+      if (name.endsWith('.tar.gz')) {
+        stem = name.slice(prefix.length, -'.tar.gz'.length)
+      } else if (name.endsWith('.zip')) {
+        stem = name.slice(prefix.length, -'.zip'.length)
+      } else {
         continue
       }
-      const mappedNew = await mapOldBackendToNew(backend)
-      if (mappedNew !== backend && supportedBackends.includes(mappedNew)) {
-        // Push the ORIGINAL backend name here, as this is the name of the file on the server.
-        remote.push({ version, backend })
-      }
+
+      const internal = mapUpstreamAssetToInternal(stem)
+      if (!internal) continue
+      if (!supportedBackends.includes(internal)) continue
+
+      const cudaMajor = /^win-cuda-(\d+)-common_cpus-x64$/.exec(internal)?.[1]
+      upstreamAssetMap.set(upstreamKey(version, internal), {
+        assetFileName: name,
+        cudartAssetFileName: cudaMajor ? cudartByMajor[cudaMajor] : undefined,
+      })
+      remote.push({ version, backend: internal })
     }
   }
 
@@ -152,8 +217,7 @@ export async function isBackendInstalled(
 
 export async function downloadBackend(
   backend: string,
-  version: string,
-  source: 'github' | 'cdn' = 'github'
+  version: string
 ): Promise<void> {
   const backendDir = await getBackendDir(backend, version)
 
@@ -164,70 +228,69 @@ export async function downloadBackend(
   // Get proxy configuration from localStorage
   const proxyConfig = getProxyConfig()
 
-  const platformName = IS_WINDOWS ? 'win' : 'linux'
+  // If we don't have the asset info cached (e.g. user never opened the
+  // backends list this session), refresh it before downloading.
+  let assetInfo = upstreamAssetMap.get(upstreamKey(version, backend))
+  if (!assetInfo) {
+    try {
+      await listSupportedBackends()
+      assetInfo = upstreamAssetMap.get(upstreamKey(version, backend))
+    } catch (e) {
+      console.warn(
+        `Could not refresh upstream release index before download: ${String(e)}`
+      )
+    }
+  }
+  if (!assetInfo) {
+    throw new Error(
+      `No upstream release asset known for ${backend} @ ${version}. Use "Install Backend from File" for this backend.`
+    )
+  }
 
-  // Build URLs per source
-  const backendUrl =
-    source === 'github'
-      ? `https://github.com/janhq/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`
-      : `https://catalog.jan.ai/llama.cpp/releases/${version}/llama-${version}-bin-${backend}.tar.gz`
+  const upstreamBase = 'https://github.com/ggml-org/llama.cpp/releases/download'
+  const backendUrl = `${upstreamBase}/${version}/${assetInfo.assetFileName}`
+  const archiveFileName = assetInfo.assetFileName.endsWith('.zip')
+    ? 'backend.zip'
+    : 'backend.tar.gz'
 
   const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
 
   const downloadItems = [
     {
       url: backendUrl,
-      save_path: await joinPath([backendDir, 'backend.tar.gz']),
+      save_path: await joinPath([backendDir, archiveFileName]),
       proxy: proxyConfig,
       model_id: taskId,
     },
   ]
 
-  // also download CUDA runtime + cuBLAS + cuBLASLt if needed
+  // Windows CUDA backends also need the matching CUDA runtime zip. Upstream
+  // only ships Windows CUDA runtimes (no Linux CUDA builds at all).
+  const cudaMajor = /^win-cuda-(\d+)-common_cpus-x64$/.exec(backend)?.[1]
   if (
-    (backend.includes('cu11.7') || backend.includes('cuda-11')) &&
-    !(await _isCudaInstalled(backendDir, '11.7'))
+    cudaMajor &&
+    assetInfo.cudartAssetFileName &&
+    !(await _isCudaInstalled(backendDir, `${cudaMajor}.0`))
   ) {
     downloadItems.push({
-      url:
-        source === 'github'
-          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`
-          : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu11.7-x64.tar.gz`,
-      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda11.tar.gz']),
-      proxy: proxyConfig,
-      model_id: taskId,
-    })
-  } else if (
-    (backend.includes('cu12.0') || backend.includes('cuda-12')) &&
-    !(await _isCudaInstalled(backendDir, '12.0'))
-  ) {
-    downloadItems.push({
-      url:
-        source === 'github'
-          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`
-          : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu12.0-x64.tar.gz`,
-      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda12.tar.gz']),
-      proxy: proxyConfig,
-      model_id: taskId,
-    })
-  } else if (
-    backend.includes('cuda-13') &&
-    !(await _isCudaInstalled(backendDir, '13.0'))
-  ) {
-    downloadItems.push({
-      url:
-        source === 'github'
-          ? `https://github.com/janhq/llama.cpp/releases/download/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`
-          : `https://catalog.jan.ai/llama.cpp/releases/${version}/cudart-llama-bin-${platformName}-cu13.0-x64.tar.gz`,
-      save_path: await joinPath([backendDir, 'build', 'bin', 'cuda13.tar.gz']),
+      url: `${upstreamBase}/${version}/${assetInfo.cudartAssetFileName}`,
+      save_path: await joinPath([
+        backendDir,
+        'build',
+        'bin',
+        assetInfo.cudartAssetFileName.endsWith('.zip')
+          ? `cuda${cudaMajor}.zip`
+          : `cuda${cudaMajor}.tar.gz`,
+      ]),
       proxy: proxyConfig,
       model_id: taskId,
     })
   }
+
   const downloadType = 'Engine'
 
   console.log(
-    `Downloading backend ${backend} version ${version} from ${source}: ${JSON.stringify(
+    `Downloading backend ${backend} version ${version} from upstream: ${JSON.stringify(
       downloadItems
     )}`
   )
@@ -251,9 +314,9 @@ export async function downloadBackend(
       return
     }
 
-    // decompress the downloaded tar.gz files
+    // decompress the downloaded archives
     for (const { save_path } of downloadItems) {
-      if (save_path.endsWith('.tar.gz')) {
+      if (save_path.endsWith('.tar.gz') || save_path.endsWith('.zip')) {
         const parentDir = await dirname(save_path)
         await invoke('decompress', { path: save_path, outputDir: parentDir })
         await fs.rm(save_path)
@@ -262,13 +325,9 @@ export async function downloadBackend(
 
     events.emit('onFileDownloadSuccess', { modelId: taskId, downloadType })
   } catch (error) {
-    // Fallback: if GitHub fails, retry once with CDN
-    if (
-      source === 'github' &&
-      error?.toString() !== 'Error: Download cancelled'
-    ) {
-      console.warn(`GitHub download failed, falling back to CDN:`, error)
-      return await downloadBackend(backend, version, 'cdn')
+    if (error?.toString() === 'Error: Download cancelled') {
+      events.emit('onFileDownloadStopped', { modelId: taskId, downloadType })
+      return
     }
     console.error(`Failed to download backend ${backend}: `, error)
     events.emit('onFileDownloadError', { modelId: taskId, downloadType })
