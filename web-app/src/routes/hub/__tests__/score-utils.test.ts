@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getVariantDisplayName, isBestQuantVariant } from '../score-utils'
+import { getVariantDisplayName, isBestQuantVariant } from '../../../utils/scoreUtils'
 
 describe('hub score utils', () => {
   it('strips format suffixes from variant ids', () => {

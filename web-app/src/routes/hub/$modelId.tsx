@@ -43,7 +43,7 @@ import {
   FIT_LEVEL_TRANSLATION_KEYS,
   getVariantDisplayName,
   isBestQuantVariant,
-} from './score-utils'
+} from '../../utils/scoreUtils'
 
 const RUN_MODE_TRANSLATION_KEYS: Record<string, string> = {
   'GPU': 'hub:scoreSummary.runModes.gpu',
@@ -449,7 +449,7 @@ function HubModelDetailContent() {
                       title={t('hub:scoreSummary.token-sec')}
                     />
                     <span className="text-foreground">
-                      {typeof modelScore.estimated_tps === 'number'
+                      {modelScore.estimated_tps > 0
                         ? modelScore.estimated_tps.toFixed(1)
                         : t('hub:scoreSummary.na')}{' '}
                       tok/sec

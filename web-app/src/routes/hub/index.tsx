@@ -60,7 +60,7 @@ import { selectBestGgufVariant } from '@/lib/modelQuantization'
 import {
   FIT_LEVEL_BADGE_VARIANTS,
   FIT_LEVEL_TRANSLATION_KEYS,
-} from './score-utils'
+} from '../../utils/scoreUtils'
 
 type SearchParams = {
   repo: string
@@ -716,10 +716,8 @@ function HubContent() {
                                   </span>
                                 </div>
                               )}
-                              {modelScores[model.model_name]?.status ===
-                                'ready' &&
-                                typeof modelScores[model.model_name]
-                                  ?.estimated_tps === 'number' && (
+                              {modelScores[model.model_name]?.status === 'ready' 
+                              && modelScores[model.model_name]?.estimated_tps > 0 && (
                                   <div className="flex items-center gap-1">
                                     <IconBrandSpeedtest
                                       size={20}
