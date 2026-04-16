@@ -93,7 +93,7 @@ export const ChainOfThought = memo(
 
     const contextValue = useMemo(
       () => ({ isStreaming, isOpen, setIsOpen }),
-      [isStreaming, isOpen]
+      [isStreaming, isOpen, setIsOpen]
     )
 
     return (

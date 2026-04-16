@@ -203,6 +203,13 @@ vi.mock('@/hooks/useServiceHub', () => ({
     opener: () => ({
       revealItemInDir: vi.fn(),
     }),
+    path: () => ({
+      join: vi.fn().mockResolvedValue('/test/data/folder/logs'),
+      sep: vi.fn().mockReturnValue('/'),
+      dirname: vi.fn().mockResolvedValue('/test/data/folder'),
+      basename: vi.fn().mockResolvedValue('logs'),
+      extname: vi.fn().mockResolvedValue(''),
+    }),
   }),
 }))
 
