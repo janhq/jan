@@ -303,6 +303,10 @@
     "tryDifferentSearch": "Zkuste jiný vyhledávací výraz",
     "uploadingFiles": "Nahrávání souborů…"
   },
+  "errorDialog": {
+    "titleFallback": "Něco se pokazilo",
+    "details": "Podrobnosti"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "Všechna vlákna odebrána z oblíbených",
@@ -319,6 +323,14 @@
     "deleteThread": {
       "title": "Smazat vlákno",
       "description": "Toto vlákno bylo trvale smazáno."
+    },
+    "errorCopied": {
+      "title": "Zkopírování se podařilo",
+      "description": "Informace o chybě byly zkopírovány do schránky"
+    },
+    "errorCopyFailed": {
+      "title": "Nepodařilo se zkopírovat",
+      "description": "Nepodařilo se zkopírovat informace o chybě do schránky"
     },
     "editMessage": {
       "title": "Upravit zprávu",

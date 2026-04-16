@@ -247,6 +247,10 @@
       "title": "Metadata Pesan"
     }
   },
+  "errorDialog": {
+    "titleFallback": "Terjadi kesalahan",
+    "details": "Detail"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "Semua Utas Batal Difavoritkan",
@@ -263,6 +267,14 @@
     "deleteThread": {
       "title": "Hapus Utas",
       "description": "Utas ini telah dihapus secara permanen."
+    },
+    "errorCopied": {
+      "title": "Berhasil disalin",
+      "description": "Informasi kesalahan disalin ke papan klip"
+    },
+    "errorCopyFailed": {
+      "title": "Gagal menyalin",
+      "description": "Gagal menyalin informasi kesalahan ke papan klip"
     },
     "editMessage": {
       "title": "Edit Pesan",

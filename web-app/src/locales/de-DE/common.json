@@ -303,6 +303,10 @@
     "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff",
     "uploadingFiles": "Dateien werden hochgeladen…"
   },
+  "errorDialog": {
+    "titleFallback": "Etwas ist schiefgelaufen",
+    "details": "Details"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "Alle Threads De-Favorisieren ",
@@ -347,6 +351,14 @@
     "deleteThread": {
       "title": "Thread löschen",
       "description": "This thread has been permanently deleted."
+    },
+    "errorCopied": {
+      "title": "Erfolgreich kopiert",
+      "description": "Fehlerinformationen wurden in die Zwischenablage kopiert"
+    },
+    "errorCopyFailed": {
+      "title": "Kopieren fehlgeschlagen",
+      "description": "Fehlerinformationen konnten nicht in die Zwischenablage kopiert werden"
     },
     "editMessage": {
       "title": "Nachricht bearbeiten",
