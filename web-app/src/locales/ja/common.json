@@ -294,6 +294,10 @@
     "update": "更新",
     "uploadingFiles": "ファイルをアップロードしています…"
   },
+  "errorDialog": {
+    "titleFallback": "問題が発生しました",
+    "details": "詳細"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "すべてのスレッドのお気に入りを解除しました",
@@ -310,6 +314,14 @@
     "deleteThread": {
       "title": "スレッドを削除",
       "description": "このスレッドは完全に削除されました。"
+    },
+    "errorCopied": {
+      "title": "コピーしました",
+      "description": "エラー情報をクリップボードにコピーしました"
+    },
+    "errorCopyFailed": {
+      "title": "コピーに失敗しました",
+      "description": "エラー情報をクリップボードにコピーできませんでした"
     },
     "editMessage": {
       "title": "メッセージを編集",
