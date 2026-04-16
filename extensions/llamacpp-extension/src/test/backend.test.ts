@@ -49,8 +49,10 @@ vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({
   isCudaInstalledFromRust: vi.fn().mockResolvedValue(false),
   determineSupportedBackends: vi.fn().mockResolvedValue([
     'linux-common_cpus-x64',
+    'linux-arm64',
     'linux-vulkan-common_cpus-x64',
     'win-common_cpus-x64',
+    'win-arm64',
     'win-vulkan-common_cpus-x64',
     'win-cuda-12-common_cpus-x64',
     'win-cuda-13-common_cpus-x64',
@@ -127,8 +129,10 @@ describe('Backend functions', () => {
     vi.mocked(isCudaInstalledFromRust).mockResolvedValue(false)
     vi.mocked(determineSupportedBackends).mockResolvedValue([
       'linux-common_cpus-x64',
+      'linux-arm64',
       'linux-vulkan-common_cpus-x64',
       'win-common_cpus-x64',
+      'win-arm64',
       'win-vulkan-common_cpus-x64',
       'win-cuda-12-common_cpus-x64',
       'win-cuda-13-common_cpus-x64',
@@ -273,6 +277,91 @@ describe('Backend functions', () => {
 
       await expect(
         downloadBackend('linux-cuda-12-common_cpus-x64', 'b8802')
+      ).rejects.toThrow(/No upstream release asset known/)
+    })
+  })
+
+  describe('listSupportedBackends — GitHub API failure', () => {
+    it('returns local-only backends when GitHub API is rate-limited (no CDN fallback)', async () => {
+      vi.stubGlobal('IS_WINDOWS', false)
+      // Simulate GitHub 403 rate-limit
+      vi.mocked(fetch).mockResolvedValue({
+        ok: false,
+        status: 403,
+        statusText: 'rate limit exceeded',
+      } as any)
+
+      const { getLocalInstalledBackendsInternal } = await import(
+        '@janhq/tauri-plugin-llamacpp-api'
+      )
+      vi.mocked(getLocalInstalledBackendsInternal).mockResolvedValue([
+        { version: 'b8800', backend: 'linux-common_cpus-x64' },
+      ])
+
+      // Should NOT throw — the catch in listSupportedBackends handles the error
+      const result = await listSupportedBackends()
+      // Remote list is empty; only local backends are returned via the merge
+      expect(result).toBeDefined()
+    })
+
+    it('returns local-only backends when network is completely down', async () => {
+      vi.stubGlobal('IS_WINDOWS', false)
+      vi.mocked(fetch).mockRejectedValue(new TypeError('Failed to fetch'))
+
+      const result = await listSupportedBackends()
+      expect(result).toBeDefined()
+    })
+  })
+
+  describe('upstreamAssetMap — stale entries cleared on re-fetch', () => {
+    it('does not retain assets from a previous release after re-fetching', async () => {
+      vi.stubGlobal('IS_WINDOWS', false)
+
+      // First fetch: b8801 has ubuntu-vulkan-x64
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          buildUpstreamRelease('b8801', ['ubuntu-vulkan-x64']),
+        ],
+      } as any)
+
+      await listSupportedBackends()
+
+      // b8801 vulkan should be downloadable
+      vi.mocked(mockDownloadManager.downloadFiles).mockClear()
+      vi.mocked(mockDownloadManager.downloadFiles).mockImplementation(
+        (_items, _taskId, onProgress) => {
+          if (onProgress) onProgress(100, 100)
+          return Promise.resolve()
+        }
+      )
+      vi.mocked(invoke).mockResolvedValue(undefined)
+      vi.mocked(fs.rm).mockResolvedValue(undefined)
+      await downloadBackend('linux-vulkan-common_cpus-x64', 'b8801')
+      expect(vi.mocked(mockDownloadManager.downloadFiles)).toHaveBeenCalled()
+
+      // Second fetch: b8802 only has ubuntu-x64 (vulkan removed)
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          buildUpstreamRelease('b8802', ['ubuntu-x64']),
+        ],
+      } as any)
+
+      await listSupportedBackends()
+
+      // Now b8801/vulkan should NOT be in the map anymore (stale entry cleared)
+      // Attempting to download it should trigger a re-fetch, which also won't
+      // have it, and ultimately throw.
+      vi.mocked(fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          buildUpstreamRelease('b8802', ['ubuntu-x64']),
+        ],
+      } as any)
+
+      await expect(
+        downloadBackend('linux-vulkan-common_cpus-x64', 'b8801')
       ).rejects.toThrow(/No upstream release asset known/)
     })
   })

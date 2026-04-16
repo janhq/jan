@@ -90,6 +90,10 @@ async function fetchRemoteSupportedBackends(
   )
   releases.splice(10) // keep only the latest 10 releases
 
+  // Clear stale entries from prior fetches so the map doesn't grow unboundedly
+  // across repeated settings-page visits within a single session.
+  upstreamAssetMap.clear()
+
   const remote: { version: string; backend: string }[] = []
 
   for (const release of releases) {
@@ -345,31 +349,29 @@ async function _getSupportedFeatures() {
 }
 
 /**
- * Fetch releases with GitHub-first strategy and fallback to CDN on any error.
- * CDN endpoint is expected to mirror GitHub releases JSON shape.
+ * Fetch releases from GitHub API.
+ *
+ * The CDN fallback (catalog.jan.ai) is intentionally NOT used for upstream
+ * ggml-org/llama.cpp queries because the CDN mirrors the janhq/llama.cpp fork
+ * whose asset names are incompatible with mapUpstreamAssetToInternal(). If the
+ * GitHub API is unavailable (rate-limited, offline, etc.) the error propagates
+ * to the caller so users see a clear network error instead of a silent
+ * "no updates available" with zero matches.
  */
 async function _fetchGithubReleases(
   owner: string,
   repo: string
-): Promise<{ releases: any[]; source: 'github' | 'cdn' }> {
+): Promise<{ releases: any[] }> {
   const githubUrl = `https://api.github.com/repos/${owner}/${repo}/releases`
-  try {
-    const response = await fetch(githubUrl)
-    if (!response.ok)
-      throw new Error(`GitHub error: ${response.status} ${response.statusText}`)
-    const releases = await response.json()
-    return { releases, source: 'github' }
-  } catch (_err) {
-    const cdnUrl = 'https://catalog.jan.ai/llama.cpp/releases/releases.json'
-    const response = await fetch(cdnUrl)
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch releases from both sources. CDN error: ${response.status} ${response.statusText}`
-      )
-    }
-    const releases = await response.json()
-    return { releases, source: 'cdn' }
+  const response = await fetch(githubUrl)
+  if (!response.ok) {
+    throw new Error(
+      `GitHub API error: ${response.status} ${response.statusText}. ` +
+        `Release list unavailable — check network or try again later.`
+    )
   }
+  const releases = await response.json()
+  return { releases }
 }
 
 // accept backendDir (full path) and cuda version (e.g. '11.7' or '12.0' or '13.0')
