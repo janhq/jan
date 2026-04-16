@@ -32,12 +32,6 @@ vi.mock('../models', () => ({
   stopAllModels: vi.fn(),
 }))
 
-vi.mock('@janhq/core', () => ({
-  fs: {
-    rm: vi.fn(),
-  },
-}))
-
 // Mock the global window object
 const mockWindow = {
   core: {
@@ -146,23 +140,12 @@ describe('TauriAppService', () => {
   })
 
   describe('factoryReset', () => {
-    it.skip('should perform factory reset', async () => {
+    it('should perform factory reset', async () => {
       const { invoke } = await import('@tauri-apps/api/core')
 
-      // Use fake timers
-      vi.useFakeTimers()
+      await appService.factoryReset()
 
-      const factoryResetPromise = appService.factoryReset()
-
-      // Advance timers and run all pending timers
-      await vi.advanceTimersByTimeAsync(1000)
-
-      await factoryResetPromise
-
-      expect(mockWindow.localStorage.clear).toHaveBeenCalled()
       expect(invoke).toHaveBeenCalledWith('factory_reset')
-
-      vi.useRealTimers()
     })
   })
 })

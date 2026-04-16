@@ -171,13 +171,11 @@ const SidebarProvider = React.forwardRef<
 				setOpen,
 				isMobile,
 				openMobile,
-				//* remove setOpenMobile from dependencies because setOpenMobile are state setters created by useState
-				// setOpenMobile,
 				toggleSidebar,
-				//* add width to dependencies
 				width,
-				//* add isDraggingRail to dependencies
+				setWidth,
 				isDraggingRail,
+				setIsDraggingRail,
 			],
 		);
 
