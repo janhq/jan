@@ -86,6 +86,7 @@
   "noThreadsYetDesc": "Start a new conversation to see your thread history here.",
   "downloads": "Downloads",
   "downloading": "Downloading",
+  "uploadingAttachments": "Uploading attachments…",
   "cancelDownload": "Cancel download",
   "downloadCancelled": "Download Cancelled",
   "downloadComplete": "Download Complete",
@@ -261,6 +262,10 @@
       "title": "Message Metadata"
     }
   },
+  "errorDialog": {
+    "titleFallback": "Something went wrong",
+    "details": "Details"
+  },
   "projects": {
     "title": "Projects",
     "new": "New Projects",
@@ -281,6 +286,7 @@
     "noAssistantAssigned": "No assistant assigned to this project",
     "files": "Files",
     "filesDescription": "Add PDFs, documents, or other text to reference in this project.",
+    "uploadingFiles": "Uploading files…",
     "deleteProjectDialog": {
       "title": "Delete Project",
       "permanentDelete": "This will permanently delete all threads.",
@@ -354,6 +360,14 @@
     "deleteThread": {
       "title": "Delete Thread",
       "description": "This thread has been permanently deleted."
+    },
+    "errorCopied": {
+      "title": "Copy successful",
+      "description": "Error information copied to clipboard"
+    },
+    "errorCopyFailed": {
+      "title": "Failed to copy",
+      "description": "Failed to copy error information to clipboard"
     },
     "editMessage": {
       "title": "Edit Message",
