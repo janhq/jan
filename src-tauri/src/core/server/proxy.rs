@@ -24,17 +24,26 @@ use crate::core::{
 ///
 /// A strict JSON schema converter inside the upstream server rejects those schemas.
 /// To be robust, we default `type` to `"string"` for description-only leaf schemas.
+/// Keep this behavior aligned with `normalizeToolInputSchema` in the frontend.
 pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::Value) {
     match schema {
         serde_json::Value::Object(map) => {
             let has_description = map.contains_key("description");
             let has_type = map.contains_key("type");
+            let is_object_type = map.get("type").and_then(|v| v.as_str()) == Some("object");
             let has_nested_schema_keywords = map.contains_key("properties")
                 || map.contains_key("items")
                 || map.contains_key("anyOf")
                 || map.contains_key("oneOf")
                 || map.contains_key("allOf")
                 || map.contains_key("$ref");
+
+            if is_object_type && !map.contains_key("properties") {
+                map.insert(
+                    "properties".to_string(),
+                    serde_json::Value::Object(serde_json::Map::new()),
+                );
+            }
 
             // Only patch leaf nodes (description without `type` AND without nested schema keywords).
             if has_description && !has_type && !has_nested_schema_keywords {
@@ -716,8 +725,11 @@ async fn collect_mcp_openai_tools(
         for tool in tools {
             tool_to_server.insert(tool.name.to_string(), server_name.clone());
 
-            // Reuse the same schema conversion as the `get_tools` command.
-            let parameters = serde_json::Value::Object((*tool.input_schema).clone());
+            // Normalize schemas before sending them to strict OpenAI-compatible providers.
+            // The `get_tools` Tauri command still returns raw schemas; the frontend
+            // normalizes those separately before provider registration.
+            let mut parameters = serde_json::Value::Object((*tool.input_schema).clone());
+            normalize_openai_tool_parameters_schema(&mut parameters);
             let description = tool
                 .description
                 .as_ref()
