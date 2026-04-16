@@ -189,6 +189,7 @@ function ProviderDetail() {
     if (!provider) return
     if (provider.provider === 'llamacpp' || provider.provider === 'mlx') return
     setApiKeysDraft(providerRemoteApiKeyChain(provider).join('\n'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerName, provider?.api_key, JSON.stringify(provider?.api_key_fallbacks ?? [])])
 
   const commitApiKeysDraft = useCallback(() => {
