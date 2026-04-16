@@ -32,6 +32,7 @@ import {
   isBackendInstalled,
   getBackendExePath,
   getBackendDir,
+  mapUpstreamAssetToInternal,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 import {
@@ -1135,11 +1136,23 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error(`Invalid backend archive name: ${archiveName}`)
     }
 
-    // Include prefix in the backend identifier if present
-    const backendIdentifier = prefix ? `${prefix}${backend}` : backend
+    // Upstream ggml-org archives (e.g. ubuntu-vulkan-x64) are named
+    // differently from Jan's internal backend identifiers (e.g.
+    // linux-vulkan-common_cpus-x64). If the user installed a vanilla upstream
+    // archive, translate the stem so the backend lands in a directory whose
+    // name matches `determineSupportedBackends` — otherwise it installs on
+    // disk but never appears in the UI dropdown (issue #7973).
+    //
+    // Custom-prefixed forks (k_, ik_, etc.) keep their original stem: their
+    // backend names are meant to be distinct.
+    const internal = !prefix ? mapUpstreamAssetToInternal(backend) : null
+    const backendIdentifier = prefix
+      ? `${prefix}${backend}`
+      : (internal ?? backend)
 
     logger.info(
-      `Detected prefix: ${prefix || 'none'}, version: ${version}, backend: ${backendIdentifier}`
+      `Detected prefix: ${prefix || 'none'}, version: ${version}, backend: ${backendIdentifier}` +
+        (internal ? ` (mapped from upstream stem "${backend}")` : '')
     )
 
     const backendDir = await getBackendDir(backendIdentifier, version)

@@ -1,5 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
 
+// mapUpstreamAssetToInternal is the helper that translates upstream
+// ggml-org/llama.cpp asset stems (e.g. "ubuntu-vulkan-x64") to Jan's internal
+// backend identifiers (e.g. "linux-vulkan-common_cpus-x64") for the
+// install-from-file flow. Without this mapping, a user who downloads a vanilla
+// upstream archive and installs it lands in a directory whose name doesn't
+// match what determineSupportedBackends returns — so the backend installs on
+// disk but never appears in the UI dropdown (issue #7973).
+
 // The module under test pulls in @janhq/core etc. at import time, so stub the
 // bits it touches before importing.
 vi.mock('@janhq/core', () => ({
@@ -16,8 +24,12 @@ vi.mock('@tauri-apps/api/path', () => ({
 vi.mock('@janhq/tauri-plugin-hardware-api', () => ({
   getSystemInfo: vi.fn(),
 }))
-vi.mock('../util', () => ({ getProxyConfig: vi.fn() }))
+vi.mock('../util', () => ({
+  getProxyConfig: vi.fn(),
+  basenameNoExt: vi.fn(),
+}))
 vi.mock('@janhq/tauri-plugin-llamacpp-api', () => ({
+  mapOldBackendToNew: vi.fn(),
   getLocalInstalledBackendsInternal: vi.fn(),
   normalizeFeatures: vi.fn(),
   determineSupportedBackends: vi.fn(),
@@ -33,7 +45,7 @@ vi.stubGlobal('window', {
 
 import { mapUpstreamAssetToInternal } from '../backend'
 
-describe('mapUpstreamAssetToInternal', () => {
+describe('mapUpstreamAssetToInternal (install-from-file)', () => {
   it('maps macOS asset stems 1:1', () => {
     expect(mapUpstreamAssetToInternal('macos-arm64')).toBe('macos-arm64')
     expect(mapUpstreamAssetToInternal('macos-x64')).toBe('macos-x64')
@@ -73,6 +85,10 @@ describe('mapUpstreamAssetToInternal', () => {
   })
 
   it('returns null for assets Jan does not currently ship backends for', () => {
+    // When installBackend sees null it falls back to the original stem — so
+    // these names do reach disk, they just won't be auto-mapped to a Jan
+    // backend identifier. Keeping the list explicit so we notice if upstream
+    // ever renames a stem we *do* support.
     expect(mapUpstreamAssetToInternal('ubuntu-rocm-7.2-x64')).toBeNull()
     expect(mapUpstreamAssetToInternal('ubuntu-openvino-2026.0-x64')).toBeNull()
     expect(mapUpstreamAssetToInternal('ubuntu-s390x')).toBeNull()
