@@ -8,6 +8,7 @@ import { useTranslation } from '@/i18n'
 import { extractModelName } from '@/lib/models'
 import { cn, sanitizeModelId } from '@/lib/utils'
 import { CatalogModel } from '@/services/models/types'
+import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useShallow } from 'zustand/shallow'
@@ -31,8 +32,9 @@ export function DownloadButtonPlaceholder({
       }))
     )
   const { t } = useTranslation()
-  const getProviderByName = useModelProvider((state) => state.getProviderByName)
-  const llamaProvider = getProviderByName('llamacpp')
+  const llamaProvider = useModelProvider((state) =>
+    state.getProviderByName('llamacpp')
+  )
 
   const serviceHub = useServiceHub()
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
@@ -145,14 +147,22 @@ export function DownloadButtonPlaceholder({
         </div>
       )}
       {isDownloaded ? (
-        <Button
-          variant="default"
-          size="sm"
-          onClick={() => handleUseModel(downloadedModelId)}
-          data-test-id={`hub-model-${modelId}`}
-        >
-          {t('hub:newChat')}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => handleUseModel(downloadedModelId)}
+            data-test-id={`hub-model-${modelId}`}
+          >
+            {t('hub:newChat')}
+          </Button>
+          {llamaProvider && (
+            <DialogDeleteModel
+              provider={llamaProvider}
+              modelId={downloadedModelId}
+            />
+          )}
+        </div>
       ) : (
         <Button
           data-test-id={`hub-model-${modelId}`}

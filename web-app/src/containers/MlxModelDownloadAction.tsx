@@ -7,6 +7,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
 import { CatalogModel } from '@/services/models/types'
+import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import { cn } from '@/lib/utils'
 import { DownloadEvent, EngineManager, events } from '@janhq/core'
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
@@ -19,6 +20,10 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
 
   const navigate = useNavigate()
+
+  const mlxProvider = useModelProvider((state) =>
+    state.getProviderByName('mlx')
+  )
 
   const [isDownloaded, setDownloaded] = useState(false)
 
@@ -55,25 +60,23 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
 
   // Get the actual downloaded model ID (with or without developer prefix)
   const downloadedModelId = useMemo(() => {
-    const mlxProvider = useModelProvider.getState().getProviderByName('mlx')
     const foundModel = mlxProvider?.models.find(
       (m: { id: string }) =>
         m.id === modelId ||
         m.id === `${model.developer}/${modelId}`
     )
     return foundModel?.id || modelId
-  }, [modelId, model.developer])
+  }, [mlxProvider, modelId, model.developer])
 
   // Check if MLX model is already downloaded
   useEffect(() => {
-    const mlxProvider = useModelProvider.getState().getProviderByName('mlx')
     const downloaded = mlxProvider?.models.some(
       (m: { id: string }) =>
         m.id === modelId ||
         m.id === `${model.developer}/${modelId}`
     )
     setDownloaded(!!downloaded)
-  }, [modelId, model.developer])
+  }, [mlxProvider, modelId, model.developer])
 
   // Listen for download success
   useEffect(() => {
@@ -181,14 +184,22 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
         </div>
       )}
       {isDownloaded ? (
-        <Button
-          variant="default"
-          size="sm"
-          onClick={handleUseModel}
-          data-test-id={`hub-model-${modelId}`}
-        >
-          {t('hub:newChat')}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleUseModel}
+            data-test-id={`hub-model-${modelId}`}
+          >
+            {t('hub:newChat')}
+          </Button>
+          {mlxProvider && (
+            <DialogDeleteModel
+              provider={mlxProvider}
+              modelId={downloadedModelId}
+            />
+          )}
+        </div>
       ) : (
         <Button
           data-test-id={`hub-model-${modelId}`}

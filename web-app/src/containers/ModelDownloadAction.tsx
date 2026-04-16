@@ -6,7 +6,9 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
+import { sanitizeModelId } from '@/lib/utils'
 import { CatalogModel } from '@/services/models/types'
+import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import { IconDownload } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo } from 'react'
@@ -82,10 +84,15 @@ export const ModelDownloadAction = ({
     downloadProcesses.some((e) => e.id === variant.model_id)
   const downloadProgress =
     downloadProcesses.find((e) => e.id === variant.model_id)?.progress || 0
-  const isDownloaded = useModelProvider
-    .getState()
-    .getProviderByName('llamacpp')
-    ?.models.some((m: { id: string }) => m.id === variant.model_id)
+  const llamaProvider = useModelProvider((state) =>
+    state.getProviderByName('llamacpp')
+  )
+  const downloadedModel = llamaProvider?.models.find(
+    (m: { id: string }) =>
+      m.id === variant.model_id ||
+      m.id === `${model.developer}/${sanitizeModelId(variant.model_id)}`
+  )
+  const isDownloaded = !!downloadedModel
 
   if (isDownloading) {
     return (
@@ -100,16 +107,22 @@ export const ModelDownloadAction = ({
     )
   }
 
-  if (isDownloaded) {
+  if (isDownloaded && llamaProvider && downloadedModel) {
     return (
-      <Button
-        variant="default"
-        size="sm"
-        onClick={() => handleUseModel(variant.model_id)}
-        title={t('hub:useModel')}
-      >
-        {t('hub:newChat')}
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="default"
+          size="sm"
+          onClick={() => handleUseModel(downloadedModel.id)}
+          title={t('hub:useModel')}
+        >
+          {t('hub:newChat')}
+        </Button>
+        <DialogDeleteModel
+          provider={llamaProvider}
+          modelId={downloadedModel.id}
+        />
+      </div>
     )
   }
 
