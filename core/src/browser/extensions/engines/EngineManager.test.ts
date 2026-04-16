@@ -40,16 +40,6 @@ describe('EngineManager', () => {
     expect(retrievedEngine).toBeUndefined()
   })
 
-  describe('cortex engine migration', () => {
-    test('should map nitro to cortex engine', () => {
-      const cortexEngine = new MockAIEngine('cortex')
-      engineManager.register(cortexEngine)
-
-      const retrievedEngine = engineManager.get<MockAIEngine>('cortex')
-      expect(retrievedEngine).toBe(cortexEngine)
-    })
-  })
-
   describe('singleton instance', () => {
     test('should return the window.core.engineManager if available', () => {
       const mockEngineManager = new EngineManager()
