@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { McpRouterModelPicker } from '@/containers/McpRouterModelPicker'
 import { isRouterModelSelectable } from '@/lib/mcp-router-model-filter'
+import { normalizeAppError } from '@/utils/appError'
 
 
 // Function to mask sensitive URL parameters
@@ -358,7 +359,7 @@ function MCPServersDesktop() {
               active: false,
             })
             setErrorMessage({
-              message: error,
+              message: normalizeAppError(error),
               subtitle: t('mcp-servers:checkParams'),
             })
           })

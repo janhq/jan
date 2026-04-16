@@ -300,6 +300,10 @@
     "tryDifferentSearch": "Tente um termo de busca diferente",
     "uploadingFiles": "Enviando arquivos…"
   },
+  "errorDialog": {
+    "titleFallback": "Algo deu errado",
+    "details": "Detalhes"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "Todas as Conversas Removidas dos Favoritos",
@@ -316,6 +320,14 @@
     "deleteThread": {
       "title": "Remover Conversa",
       "description": "Esta conversa foi removida permanentemente."
+    },
+    "errorCopied": {
+      "title": "Cópia realizada com sucesso",
+      "description": "As informações do erro foram copiadas para a área de transferência"
+    },
+    "errorCopyFailed": {
+      "title": "Falha ao copiar",
+      "description": "Não foi possível copiar as informações do erro para a área de transferência"
     },
     "editMessage": {
       "title": "Editar Mensagem",
