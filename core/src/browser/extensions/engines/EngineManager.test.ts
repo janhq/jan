@@ -1,7 +1,7 @@
 import { describe, it, test, expect, beforeEach } from 'vitest'
 import { EngineManager } from './EngineManager'
 import { AIEngine } from './AIEngine'
-import { InferenceEngine } from '../../../types'
+
 
 // @ts-ignore
 class MockAIEngine implements AIEngine {
@@ -41,43 +41,11 @@ describe('EngineManager', () => {
   })
 
   describe('cortex engine migration', () => {
-    test.skip('should map nitro to cortex engine', () => {
-      const cortexEngine = new MockAIEngine(InferenceEngine.cortex)
-      // @ts-ignore
+    test('should map nitro to cortex engine', () => {
+      const cortexEngine = new MockAIEngine('cortex')
       engineManager.register(cortexEngine)
 
-      // @ts-ignore
-      const retrievedEngine = engineManager.get<MockAIEngine>(InferenceEngine.nitro)
-      expect(retrievedEngine).toBe(cortexEngine)
-    })
-
-    test.skip('should map cortex_llamacpp to cortex engine', () => {
-      const cortexEngine = new MockAIEngine(InferenceEngine.cortex)
-      // @ts-ignore
-      engineManager.register(cortexEngine)
-
-      // @ts-ignore
-      const retrievedEngine = engineManager.get<MockAIEngine>(InferenceEngine.cortex_llamacpp)
-      expect(retrievedEngine).toBe(cortexEngine)
-    })
-
-    test.skip('should map cortex_onnx to cortex engine', () => {
-      const cortexEngine = new MockAIEngine(InferenceEngine.cortex)
-      // @ts-ignore
-      engineManager.register(cortexEngine)
-
-      // @ts-ignore
-      const retrievedEngine = engineManager.get<MockAIEngine>(InferenceEngine.cortex_onnx)
-      expect(retrievedEngine).toBe(cortexEngine)
-    })
-
-    test.skip('should map cortex_tensorrtllm to cortex engine', () => {
-      const cortexEngine = new MockAIEngine(InferenceEngine.cortex)
-      // @ts-ignore
-      engineManager.register(cortexEngine)
-
-      // @ts-ignore
-      const retrievedEngine = engineManager.get<MockAIEngine>(InferenceEngine.cortex_tensorrtllm)
+      const retrievedEngine = engineManager.get<MockAIEngine>('cortex')
       expect(retrievedEngine).toBe(cortexEngine)
     })
   })
