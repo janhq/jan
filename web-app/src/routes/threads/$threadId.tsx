@@ -783,7 +783,7 @@ function ThreadDetail() {
   // Handle regenerate from any message (user or assistant)
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
   // - For assistant messages: finds the closest preceding user message, deletes from there
-  const handleRegenerate = (messageId?: string) => {
+  const handleRegenerate = useCallback((messageId?: string) => {
     // Cancel any in-flight title summarization before regenerating
     titleAbortRef.current?.abort()
     titleAbortRef.current = null
@@ -827,7 +827,7 @@ function ThreadDetail() {
     // Call the AI SDK regenerate function - it will handle truncating the UI messages
     // and generating a new response from the selected message
     regenerate(messageId ? { messageId } : undefined)
-  }
+  }, [threadId, deleteMessage, regenerate])
 
   // Handle edit message - updates the message and regenerates from it
   const handleEditMessage = useCallback(
@@ -1028,7 +1028,7 @@ function ThreadDetail() {
       .finally(() => {
         processingQueueRef.current = false
       })
-  }, [status, threadId, sendQueuedMessage, sessionData.tools.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [status, threadId, sendQueuedMessage, sessionData.tools.length])
 
   // If streaming errors out, discard any queued messages so they don't sit there stuck
   useEffect(() => {
