@@ -201,7 +201,7 @@ export class TauriProvidersService extends DefaultProvidersService {
           }
           if (response.status === 404) {
             throw new Error(
-              `Models endpoint not found for ${provider.provider}. Check the base URL configuration.`
+              `Models endpoint not found for ${provider.provider}. Check the base URL configuration and make sure it includes the correct version path such as /v1 or /v2.`
             )
           }
           throw new Error(
@@ -231,7 +231,9 @@ export class TauriProvidersService extends DefaultProvidersService {
             .filter(Boolean)
         }
         console.warn('Unexpected response format from provider API:', data)
-        return []
+        throw new Error(
+          `Unexpected response format from ${provider.provider}. The provider responded successfully, but Jan could not read a model list from /models.`
+        )
       }
 
       throw new Error(
@@ -245,6 +247,7 @@ export class TauriProvidersService extends DefaultProvidersService {
         'Authentication failed',
         'Access forbidden',
         'Models endpoint not found',
+        'Unexpected response format from',
         'Failed to fetch models from',
       ]
 

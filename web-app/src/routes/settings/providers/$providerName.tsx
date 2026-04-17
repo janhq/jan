@@ -41,6 +41,7 @@ import {
   providerHasRemoteApiKeys,
   providerRemoteApiKeyChain,
 } from '@/lib/provider-api-keys'
+import { getProviderRefreshErrorMessage } from '@/services/providers/errors'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -433,14 +434,19 @@ function ProviderDetail() {
         })
       }
     } catch (error) {
+      const fallbackMessage = t('providers:refreshModelsFailed', {
+        provider: provider.provider,
+      })
+      const description = getProviderRefreshErrorMessage(
+        error,
+        fallbackMessage
+      )
       console.error(
         t('providers:refreshModelsFailed', { provider: provider.provider }),
         error
       )
       toast.error(t('providers:models'), {
-        description: t('providers:refreshModelsFailed', {
-          provider: provider.provider,
-        }),
+        description,
       })
     } finally {
       setRefreshingModels(false)
