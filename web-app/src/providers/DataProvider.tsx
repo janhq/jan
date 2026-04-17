@@ -35,7 +35,9 @@ async function registerRemoteProvider(provider: ModelProvider) {
   if (provider.provider === 'llamacpp') return
 
   const chain = providerRemoteApiKeyChain(provider)
-  if (chain.length === 0) {
+  // Ollama local provider does not require a real API key,
+  // but we allow registration with a dummy key for compatibility.
+  if (chain.length === 0 && provider.provider !== 'ollama') {
     console.log(`Provider ${provider.provider} has no API key, skipping registration`)
     return
   }

@@ -27,7 +27,7 @@ export const useModelProvider = create<ModelProviderState>()(
   persist(
     (set, get) => ({
       providers: [],
-      selectedProvider: 'llamacpp',
+      selectedProvider: 'ollama',
       selectedModel: null,
       deletedModels: [],
       getModelBy: (modelId: string) => {

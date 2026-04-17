@@ -27,6 +27,40 @@ export const openAIProviderSettings = [
 export const predefinedProviders = [
   {
     active: true,
+    api_key: 'ollama',
+    base_url: 'http://127.0.0.1:11434/v1',
+    explore_models_url: 'https://ollama.com/library',
+    provider: 'ollama',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          'Ollama 本地推理引擎无需 API Key，保留此字段用于兼容 OpenAI 格式。',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'ollama',
+          value: 'ollama',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'Ollama 本地服务地址。默认使用本机 11434 端口。',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'http://127.0.0.1:11434/v1',
+          value: 'http://127.0.0.1:11434/v1',
+        },
+      },
+    ],
+    models: [],
+  },
+  {
+    active: true,
     api_key: '',
     base_url: 'https://api.openai.com/v1',
     explore_models_url: 'https://platform.openai.com/docs/models',
