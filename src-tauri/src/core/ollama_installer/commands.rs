@@ -14,6 +14,131 @@ fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {e}")
 }
 
+/// Common Windows installation paths for Ollama, ordered by likelihood.
+fn ollama_install_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    // 1. User-level install (most common on modern Windows)
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        candidates.push(PathBuf::from(local_app_data).join("Programs").join("Ollama").join("ollama.exe"));
+    }
+
+    // 2. System-level install (64-bit)
+    if let Ok(program_files) = std::env::var("PROGRAMFILES") {
+        candidates.push(PathBuf::from(program_files).join("Ollama").join("ollama.exe"));
+    }
+
+    // 3. System-level install (32-bit)
+    if let Ok(program_files_x86) = std::env::var("PROGRAMFILES(x86)") {
+        candidates.push(PathBuf::from(program_files_x86).join("Ollama").join("ollama.exe"));
+    }
+
+    // 4. Fallback: user's home directory (rare but possible)
+    if let Ok(user_profile) = std::env::var("USERPROFILE") {
+        candidates.push(PathBuf::from(user_profile).join("AppData").join("Local").join("Programs").join("Ollama").join("ollama.exe"));
+    }
+
+    candidates
+}
+
+/// Checks the Windows Registry (Uninstall keys) for Ollama install location.
+#[cfg(target_os = "windows")]
+fn find_ollama_via_registry() -> Option<PathBuf> {
+    use std::process::Command;
+
+    let registry_keys = [
+        r"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Uninstall\Ollama",
+        r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Ollama",
+        r"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Ollama",
+    ];
+
+    for key in &registry_keys {
+        let output = Command::new("reg")
+            .args(["query", key, "/v", "InstallLocation"])
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            continue;
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // Parse line like:    InstallLocation    REG_SZ    C:\Users\...\Programs\Ollama
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 3 && parts[0] == "InstallLocation" {
+                let install_dir = parts[parts.len() - 1].trim();
+                let exe_path = PathBuf::from(install_dir).join("ollama.exe");
+                if exe_path.exists() {
+                    return Some(exe_path);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+fn find_ollama_via_registry() -> Option<PathBuf> {
+    None
+}
+
+/// Returns the full path to ollama.exe if it exists on this system.
+#[tauri::command]
+pub fn check_ollama_installed() -> Option<String> {
+    // First, check common file paths
+    for candidate in ollama_install_candidates() {
+        if candidate.exists() {
+            log::info!("Found Ollama installed at: {}", candidate.display());
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    // Fall back to registry scan
+    if let Some(path) = find_ollama_via_registry() {
+        log::info!("Found Ollama via registry at: {}", path.display());
+        return Some(path.to_string_lossy().to_string());
+    }
+
+    log::info!("Ollama installation not found on this system");
+    None
+}
+
+/// Starts the Ollama application from the given path.
+/// This spawns ollama.exe without waiting for it to complete (daemon mode).
+#[tauri::command]
+pub async fn start_ollama(ollama_path: String) -> Result<(), String> {
+    let path = PathBuf::from(&ollama_path);
+    if !path.exists() {
+        return Err(format!("Ollama executable not found at: {}", ollama_path));
+    }
+
+    log::info!("Starting Ollama from: {}", path.display());
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        // Spawn ollama.exe without a console window.
+        // .spawn() returns immediately; the process runs independently.
+        let result = std::process::Command::new(&path)
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("Failed to start Ollama: {e}"))?;
+
+        log::info!("Ollama started with PID: {}", result.id());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        return Err("start_ollama is only supported on Windows".to_string());
+    }
+
+    Ok(())
+}
+
 /// Downloads the Ollama installer to the system temp directory and runs it silently.
 /// If the installer already exists locally, skips the download and proceeds directly to installation.
 #[tauri::command]

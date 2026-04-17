@@ -72,6 +72,7 @@ function HubContent() {
   const serviceHub = useServiceHub()
   const {
     isRunning: ollamaRunning,
+    isInstalled: ollamaInstalled,
     version: ollamaVersion,
     models: ollamaModels,
     refresh: refreshOllama,
@@ -79,6 +80,7 @@ function HubContent() {
     installProgress: ollamaInstallProgress,
     installMessage: ollamaInstallMessage,
     installOllama,
+    startOllama,
   } = useOllamaStatus(5000)
 
   const { t } = useTranslation()
@@ -467,7 +469,7 @@ function HubContent() {
                 <div className="flex items-center gap-3">
                   <div className={cn(
                     'w-2.5 h-2.5 rounded-full shrink-0',
-                    ollamaRunning ? 'bg-green-500' : ollamaInstalling ? 'bg-yellow-500' : 'bg-red-500'
+                    ollamaRunning ? 'bg-green-500' : ollamaInstalling ? 'bg-yellow-500' : ollamaInstalled ? 'bg-orange-400' : 'bg-red-500'
                   )} />
                   <div className="flex flex-col">
                     <span className="text-sm font-medium text-foreground">
@@ -475,14 +477,21 @@ function HubContent() {
                         ? 'Ollama 运行中'
                         : ollamaInstalling
                           ? '正在安装 Ollama...'
-                          : 'Ollama 未启动'}
+                          : ollamaInstalled
+                            ? 'Ollama 已安装但未启动'
+                            : 'Ollama 未安装'}
                     </span>
                     {ollamaRunning && (
                       <span className="text-xs text-muted-foreground">
                         版本 {ollamaVersion} · 已安装 {ollamaModels.length} 个模型
                       </span>
                     )}
-                    {!ollamaRunning && !ollamaInstalling && (
+                    {!ollamaRunning && !ollamaInstalling && ollamaInstalled && (
+                      <span className="text-xs text-muted-foreground">
+                        点击"启动 Ollama"按钮即可运行
+                      </span>
+                    )}
+                    {!ollamaRunning && !ollamaInstalling && !ollamaInstalled && (
                       <span className="text-xs text-muted-foreground">
                         需要 Ollama 才能使用本地模型
                       </span>
@@ -495,7 +504,16 @@ function HubContent() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  {!ollamaRunning && !ollamaInstalling && (
+                  {!ollamaRunning && !ollamaInstalling && ollamaInstalled && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={startOllama}
+                    >
+                      启动 Ollama
+                    </Button>
+                  )}
+                  {!ollamaRunning && !ollamaInstalling && !ollamaInstalled && (
                     <Button
                       variant="default"
                       size="sm"

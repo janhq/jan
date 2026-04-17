@@ -25,6 +25,8 @@ export interface InstallProgress {
 
 interface OllamaStatus {
   isRunning: boolean
+  isInstalled: boolean
+  installPath?: string
   version?: string
   models: OllamaModel[]
   error?: string
@@ -40,6 +42,7 @@ const OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
 export function useOllamaStatus(pollIntervalMs = 5000) {
   const [status, setStatus] = useState<OllamaStatus>({
     isRunning: false,
+    isInstalled: false,
     models: [],
     isLoading: true,
     isInstalling: false,
@@ -49,6 +52,23 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
   })
   const abortRef = useRef<AbortController | null>(null)
   const unlistenRef = useRef<UnlistenFn | null>(null)
+
+  // Check if Ollama is installed on the system (scans paths + registry)
+  const checkInstalled = useCallback(async () => {
+    try {
+      const path = await invoke<string | null>('check_ollama_installed')
+      setStatus((prev) => ({
+        ...prev,
+        isInstalled: !!path,
+        installPath: path ?? undefined,
+      }))
+      return path
+    } catch (error) {
+      console.error('Failed to check Ollama installation:', error)
+      setStatus((prev) => ({ ...prev, isInstalled: false }))
+      return null
+    }
+  }, [])
 
   const fetchStatus = useCallback(async () => {
     abortRef.current?.abort()
@@ -108,6 +128,40 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
     }
   }, [])
 
+  // Start Ollama from the detected installation path
+  const startOllama = useCallback(async () => {
+    const path = status.installPath
+    if (!path) {
+      setStatus((prev) => ({
+        ...prev,
+        error: '未找到 Ollama 安装路径',
+      }))
+      return
+    }
+
+    setStatus((prev) => ({
+      ...prev,
+      isLoading: true,
+      installMessage: '正在启动 Ollama...',
+    }))
+
+    try {
+      await invoke<void>('start_ollama', { ollama_path: path })
+      // Wait a bit for Ollama to start, then refresh status
+      setTimeout(() => {
+        fetchStatus()
+      }, 2000)
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      console.error('Failed to start Ollama:', msg)
+      setStatus((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: `启动失败: ${msg}`,
+      }))
+    }
+  }, [status.installPath, fetchStatus])
+
   const installOllama = useCallback(async () => {
     // Clean up any existing listener
     if (unlistenRef.current) {
@@ -166,7 +220,10 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
   }, [fetchStatus])
 
   useEffect(() => {
-    fetchStatus()
+    // First check if installed, then check if running
+    checkInstalled().then(() => {
+      fetchStatus()
+    })
     const timer = setInterval(fetchStatus, pollIntervalMs)
     return () => {
       clearInterval(timer)
@@ -176,11 +233,12 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
         unlistenRef.current = null
       }
     }
-  }, [fetchStatus, pollIntervalMs])
+  }, [fetchStatus, pollIntervalMs, checkInstalled])
 
   return {
     ...status,
     refresh: fetchStatus,
     installOllama,
+    startOllama,
   }
 }
