@@ -145,6 +145,8 @@ pub fn run() {
         // Download
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
+        // Ollama installer
+        core::ollama_installer::commands::install_ollama,
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
@@ -231,6 +233,8 @@ pub fn run() {
         // Download
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
+        // Ollama installer
+        core::ollama_installer::commands::install_ollama,
     ]);
 
     let app = app_builder

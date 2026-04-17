@@ -52,6 +52,7 @@ import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
 import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 
 type SearchParams = {
@@ -69,7 +70,16 @@ function HubContent() {
   const [isPending, startTransition] = useTransition()
   const parentRef = useRef(null)
   const serviceHub = useServiceHub()
-  const { isRunning: ollamaRunning, version: ollamaVersion, models: ollamaModels, refresh: refreshOllama } = useOllamaStatus(5000)
+  const {
+    isRunning: ollamaRunning,
+    version: ollamaVersion,
+    models: ollamaModels,
+    refresh: refreshOllama,
+    isInstalling: ollamaInstalling,
+    installProgress: ollamaInstallProgress,
+    installMessage: ollamaInstallMessage,
+    installOllama,
+  } = useOllamaStatus(5000)
 
   const { t } = useTranslation()
 
@@ -452,36 +462,61 @@ function HubContent() {
         <div ref={parentRef} className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider">
           <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto">
             {/* Ollama Status Card */}
-            <div className="bg-card border border-border rounded-lg p-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className={cn(
-                  'w-2.5 h-2.5 rounded-full',
-                  ollamaRunning ? 'bg-green-500' : 'bg-red-500'
-                )} />
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium text-foreground">
-                    {ollamaRunning ? 'Ollama 运行中' : 'Ollama 未启动'}
-                  </span>
-                  {ollamaRunning && (
-                    <span className="text-xs text-muted-foreground">
-                      版本 {ollamaVersion} · 已安装 {ollamaModels.length} 个模型
+            <div className="bg-card border border-border rounded-lg p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    'w-2.5 h-2.5 rounded-full shrink-0',
+                    ollamaRunning ? 'bg-green-500' : ollamaInstalling ? 'bg-yellow-500' : 'bg-red-500'
+                  )} />
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">
+                      {ollamaRunning
+                        ? 'Ollama 运行中'
+                        : ollamaInstalling
+                          ? '正在安装 Ollama...'
+                          : 'Ollama 未启动'}
                     </span>
+                    {ollamaRunning && (
+                      <span className="text-xs text-muted-foreground">
+                        版本 {ollamaVersion} · 已安装 {ollamaModels.length} 个模型
+                      </span>
+                    )}
+                    {!ollamaRunning && !ollamaInstalling && (
+                      <span className="text-xs text-muted-foreground">
+                        需要 Ollama 才能使用本地模型
+                      </span>
+                    )}
+                    {ollamaInstalling && (
+                      <span className="text-xs text-muted-foreground">
+                        {ollamaInstallMessage}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {!ollamaRunning && !ollamaInstalling && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={installOllama}
+                    >
+                      一键安装
+                    </Button>
                   )}
-                  {!ollamaRunning && (
-                    <span className="text-xs text-muted-foreground">
-                      请确认 Ollama 已安装并运行
-                    </span>
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={refreshOllama}
+                    disabled={ollamaInstalling}
+                  >
+                    <IconRefresh size={16} className="text-muted-foreground" />
+                  </Button>
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={refreshOllama}
-                className="shrink-0"
-              >
-                <IconRefresh size={16} className="text-muted-foreground" />
-              </Button>
+              {ollamaInstalling && (
+                <Progress value={ollamaInstallProgress} className="h-1.5" />
+              )}
             </div>
             {/* Show skeleton immediately on navigation, then show actual content when loaded */}
             {(isInitialLoad || (loading && !filteredModels.length)) ? (
