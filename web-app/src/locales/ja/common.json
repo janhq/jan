@@ -388,5 +388,6 @@
       "description": "スレッドは「{{projectName}}」から正常に削除されました"
     }
   },
-  "inferenceCenter": "推理中心"
+  "inferenceCenter": "推理中心",
+  "modelMarketplace": "モデルマーケット"
 }

@@ -1,4 +1,4 @@
-import { LucideIcon } from 'lucide-react'
+import { LucideIcon, Store } from 'lucide-react'
 import { route } from '@/constants/routes'
 
 import {
@@ -127,6 +127,11 @@ const getNavMainItems = (
     title: 'common:inferenceCenter',
     url: route.hub.index,
     animatedIcon: BlocksIcon,
+  },
+  {
+    title: 'common:modelMarketplace',
+    url: route.marketplace.index,
+    icon: Store,
   },
   {
     title: 'common:settings',

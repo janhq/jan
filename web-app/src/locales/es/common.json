@@ -467,5 +467,6 @@
   "files": {
     "chunksCount": "{{count}} fragmentos"
   },
-  "inferenceCenter": "推理中心"
+  "inferenceCenter": "推理中心",
+  "modelMarketplace": "Mercado de Modelos"
 }

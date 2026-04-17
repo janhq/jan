@@ -397,5 +397,6 @@
       "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
     }
   },
-  "inferenceCenter": "推理中心"
+  "inferenceCenter": "推理中心",
+  "modelMarketplace": "Modellmarktplatz"
 }

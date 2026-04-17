@@ -398,5 +398,6 @@
   "attachmentEmbeddedIndicator": "Incorporado para RAG",
   "viewInjectedContent": "Ver conteúdo injetado",
   "injectedContentTitle": "Conteúdo de arquivo injetado",
-  "inferenceCenter": "推理中心"
+  "inferenceCenter": "推理中心",
+  "modelMarketplace": "Mercado de Modelos"
 }

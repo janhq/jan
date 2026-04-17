@@ -407,5 +407,6 @@
       "description": "Обсуждение успешно удалено из проекта \"{{projectName}}\""
     }
   },
-  "inferenceCenter": "推理中心"
+  "inferenceCenter": "推理中心",
+  "modelMarketplace": "Магазин Моделей"
 }

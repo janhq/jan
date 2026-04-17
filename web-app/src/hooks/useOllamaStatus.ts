@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
+import { toast } from 'sonner'
 
 export interface OllamaModel {
   name: string
@@ -52,6 +53,7 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
   })
   const abortRef = useRef<AbortController | null>(null)
   const unlistenRef = useRef<UnlistenFn | null>(null)
+  const isRunningRef = useRef(false)
 
   // Check if Ollama is installed on the system (scans paths + registry)
   const checkInstalled = useCallback(async () => {
@@ -108,6 +110,7 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
         models = (tagsData.models as OllamaModel[]) ?? []
       }
 
+      isRunningRef.current = true
       setStatus((prev) => ({
         ...prev,
         isRunning: true,
@@ -118,6 +121,7 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
       }))
     } catch (error) {
       if ((error as Error).name === 'AbortError') return
+      isRunningRef.current = false
       setStatus((prev) => ({
         ...prev,
         isRunning: false,
@@ -132,6 +136,7 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
   const startOllama = useCallback(async () => {
     const path = status.installPath
     if (!path) {
+      toast.error('未找到 Ollama 安装路径')
       setStatus((prev) => ({
         ...prev,
         error: '未找到 Ollama 安装路径',
@@ -145,15 +150,30 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
       installMessage: '正在启动 Ollama...',
     }))
 
+    const toastId = toast.loading('正在启动 Ollama，请稍候...')
+
     try {
       await invoke<void>('start_ollama', { ollama_path: path })
-      // Wait a bit for Ollama to start, then refresh status
-      setTimeout(() => {
-        fetchStatus()
-      }, 2000)
+      toast.success('Ollama 启动命令已发送', {
+        id: toastId,
+        description: '正在等待 Ollama 服务就绪...',
+      })
+      // Poll status multiple times with increasing intervals
+      const pollIntervals = [2000, 3000, 5000, 5000]
+      for (const interval of pollIntervals) {
+        await new Promise((resolve) => setTimeout(resolve, interval))
+        await fetchStatus()
+        if (isRunningRef.current) {
+          toast.success('Ollama 已成功启动！', { id: toastId })
+          return
+        }
+      }
+      // If still not running after all polls
+      toast.warning('Ollama 启动时间较长，请手动检查状态', { id: toastId })
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       console.error('Failed to start Ollama:', msg)
+      toast.error(`启动失败: ${msg}`, { id: toastId })
       setStatus((prev) => ({
         ...prev,
         isLoading: false,

@@ -465,5 +465,6 @@
   "files": {
     "chunksCount": "청크 {{count}}개"
   },
-  "inferenceCenter": "推理中心"
+  "inferenceCenter": "推理中心",
+  "modelMarketplace": "모델 마켓플레이스"
 }

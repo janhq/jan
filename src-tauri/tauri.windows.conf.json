@@ -38,7 +38,9 @@
         "type": "downloadBootstrapper"
       },
       "nsis": {
-        "installerHooks": "nsis/ollama.nsh"
+        "installerHooks": "nsis/ollama.nsh",
+        "languages": ["SimpChinese"],
+        "displayLanguageSelector": false
       }
     }
   }

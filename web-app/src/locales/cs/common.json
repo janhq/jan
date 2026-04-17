@@ -397,5 +397,6 @@
       "description": "Vlákno bylo úspěšně odebráno z \"{{projectName}}\""
     }
   },
-  "inferenceCenter": "推理中心"
+  "inferenceCenter": "推理中心",
+  "modelMarketplace": "Tržiště Modelů"
 }

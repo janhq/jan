@@ -398,5 +398,6 @@
       "description": "El fil s’ha eliminat de \"{{projectName}}\" correctament"
     }
   },
-  "inferenceCenter": "推理中心"
+  "inferenceCenter": "推理中心",
+  "modelMarketplace": "Botiga de Models"
 }

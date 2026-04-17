@@ -397,5 +397,6 @@
       "description": "Chủ đề đã được xóa khỏi \"{{projectName}}\" thành công"
     }
   },
-  "inferenceCenter": "推理中心"
+  "inferenceCenter": "推理中心",
+  "modelMarketplace": "Chợ Mô Hình"
 }

@@ -25,6 +25,10 @@ export const route = {
     index: '/hub/',
     model: '/hub/$modelId',
   },
+  marketplace: {
+    index: '/marketplace/',
+    model: '/marketplace/$modelId',
+  },
   localApiServerlogs: '/local-api-server/logs',
   systemMonitor: '/system-monitor',
   threadsDetail: '/threads/$threadId',

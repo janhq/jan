@@ -397,5 +397,6 @@
     "tryDifferentSearch": "Coba kata kunci pencarian lain",
     "uploadingFiles": "Mengunggah file…"
   },
-  "inferenceCenter": "推理中心"
+  "inferenceCenter": "推理中心",
+  "modelMarketplace": "Pasar Model"
 }

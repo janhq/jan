@@ -397,5 +397,6 @@
       "description": "執行緒已成功從「{{projectName}}」中移除"
     }
   },
-  "inferenceCenter": "推理中心"
+  "inferenceCenter": "推理中心",
+  "modelMarketplace": "模型市場"
 }
