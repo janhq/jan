@@ -398,7 +398,9 @@ pub async fn is_cuda_installed(
     os_type: String,
     jan_data_folder_path: String,
 ) -> Result<bool, String> {
-    // Define library name lookup table
+    // Keys use the synthetic version labels passed by the TypeScript caller
+    // (e.g. "12.0" means "any CUDA 12.x"). The library filenames are major-
+    // version-bucketed by NVIDIA, so minor-version precision is not needed.
     let mut libname_lookup: HashMap<String, &str> = HashMap::new();
     libname_lookup.insert("windows-11.7".to_string(), "cudart64_110.dll");
     libname_lookup.insert("windows-12.0".to_string(), "cudart64_12.dll");
