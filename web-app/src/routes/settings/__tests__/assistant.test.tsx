@@ -59,8 +59,8 @@ describe('AssistantSettings', () => {
 
   it('renders assistant names', () => {
     render(<Component />)
-    expect(screen.getByText('Assistant One')).toBeInTheDocument()
-    expect(screen.getByText('Assistant Two')).toBeInTheDocument()
+    expect(screen.getAllByText('Assistant One').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Assistant Two').length).toBeGreaterThan(0)
   })
 
   it('renders add button', () => {

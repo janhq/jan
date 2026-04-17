@@ -10,7 +10,11 @@ vi.mock('@/containers/SettingsMenu', () => ({ default: () => <div data-testid="s
 vi.mock('@/containers/Card', () => ({
   Card: ({ header, children }: any) => <div data-testid="card">{header}{children}</div>,
   CardItem: ({ title, description, actions }: any) => (
-    <div data-testid="card-item"><span>{typeof title === 'string' ? title : ''}</span>{actions}</div>
+    <div data-testid="card-item">
+      <span>{typeof title === 'string' ? title : ''}</span>
+      <div>{description}</div>
+      {actions}
+    </div>
   ),
 }))
 vi.mock('@/i18n/react-i18next-compat', () => ({ useTranslation: () => ({ t: (k: string) => k }) }))
