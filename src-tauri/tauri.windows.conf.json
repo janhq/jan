@@ -30,12 +30,15 @@
   },
   "bundle": {
     "targets": ["nsis", "msi"],
-    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/jan-cli.exe"],
+    "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/jan-cli.exe", "nsis/ollama-config.ini"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
       "webviewInstallMode": {
         "silent": true,
         "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installerHooks": "nsis/ollama.nsh"
       }
     }
   }
