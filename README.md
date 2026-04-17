@@ -174,9 +174,13 @@ make clean    # 清理构建产物
 
 ## 致谢
 
-本项目基于 [Jan](https://github.com/janhq/jan) 开源项目深度定制，感谢 Jan 团队的杰出工作。
+### 特别鸣谢
 
-核心依赖：
+本项目基于 **[Jan](https://github.com/janhq/jan)** 开源项目深度定制。衷心感谢 [Jan 项目组](https://github.com/janhq/jan) 的杰出工作——他们构建了一个优秀的开源 AI 桌面应用框架，为本地大模型推理社区做出了重要贡献。
+
+> 🙏 如果没有 Jan 团队的开源成果，容芯AI助手不可能诞生。向所有 Jan 贡献者致敬！
+
+### 核心依赖
 
 - [Llama.cpp](https://github.com/ggerganov/llama.cpp) - 高性能本地 LLM 推理
 - [Ollama](https://ollama.com/) - 本地大模型运行框架
