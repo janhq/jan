@@ -1,4 +1,4 @@
-# Rongxin AI Assistant - Local AI Inference Desktop App
+# RongxinAI - Local AI Inference Desktop App
 
 <p align="center">
   <a href="README.md">中文</a> ·
@@ -11,7 +11,7 @@
   <img alt="GitHub closed issues" src="https://img.shields.io/github/issues-closed/rongxinzy/jan"/>
 </p>
 
-Rongxin AI Assistant (容芯AI助手) is an open-source AI desktop application deeply customized based on [Jan](https://github.com/janhq/jan), focused on providing Chinese users with a **localized, private, zero-config** large language model inference experience.
+RongxinAI (RongxinAI) is an open-source AI desktop application deeply customized based on [Jan](https://github.com/janhq/jan), focused on providing Chinese users with a **localized, private, zero-config** large language model inference experience.
 
 > All data runs locally, never uploaded to the cloud. Your privacy is fully protected.
 
@@ -45,5 +45,5 @@ Apache 2.0
 ---
 
 <p align="center">
-  <i>Rongxin AI Assistant - AI inference at your fingertips</i>
+  <i>RongxinAI - AI inference at your fingertips</i>
 </p>

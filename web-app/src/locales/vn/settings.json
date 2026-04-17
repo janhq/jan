@@ -42,8 +42,8 @@
   "reportAnIssueDesc": "Tìm thấy lỗi? Hãy giúp chúng tôi bằng cách báo cáo vấn đề trên GitHub.",
   "reportIssue": "Báo cáo Vấn đề",
   "credits": "Ghi công",
-  "creditsDesc1": "容芯AI助手 is built with ❤️ by 容芯致远 (Rongxin Zhiyuan), based on the open-source Jan project by Menlo Research.",
-  "creditsDesc2": "Special thanks to open-source dependencies—especially llama.cpp and Tauri—and to the Jan open-source community and 容芯AI助手 users.",
+  "creditsDesc1": "RongxinAI is built with ❤️ by 容芯致远 (Rongxin Zhiyuan), based on the open-source Jan project by Menlo Research.",
+  "creditsDesc2": "Special thanks to open-source dependencies—especially llama.cpp and Tauri—and to the Jan open-source community and RongxinAI users.",
   "appVersion": "Phiên bản Ứng dụng",
   "dataFolder": {
     "appData": "Dữ liệu ứng dụng",

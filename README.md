@@ -1,4 +1,4 @@
-# 容芯AI助手 - 本地 AI 推理桌面应用
+# RongxinAI（容芯AI助手）- 本地 AI 推理桌面应用
 
 <p align="center">
   <strong>中文</strong> ·
@@ -18,7 +18,7 @@
   - <a href="#问题反馈">问题反馈</a>
 </p>
 
-容芯AI助手是一款基于 [Jan](https://github.com/janhq/jan) 深度定制的开源 AI 桌面应用，专注于为中国用户提供**本地化、私有化、零配置**的大语言模型推理体验。
+RongxinAI（容芯AI助手）是一款基于 [Jan](https://github.com/janhq/jan) 深度定制的开源 AI 桌面应用，专注于为中国用户提供**本地化、私有化、零配置**的大语言模型推理体验。
 
 > 所有数据运行在本地，不上传云端，彻底保护您的隐私。
 
@@ -35,7 +35,7 @@
   </tr>
   <tr>
     <td><b>Windows (x64)</b></td>
-    <td><a href='https://github.com/rongxinzy/jan/releases'>容芯AI助手_setup.exe</a></td>
+    <td><a href='https://github.com/rongxinzy/jan/releases'>RongxinAI_setup.exe</a></td>
   </tr>
   <tr>
     <td><b>macOS</b></td>
@@ -145,7 +145,7 @@ make clean    # 清理构建产物
 ## 项目架构
 
 ```
-容芯AI助手
+RongxinAI
 ├── web-app/              # React 前端应用（UI、状态管理、路由）
 ├── src-tauri/            # Tauri Rust 后端（系统调用、下载、文件系统）
 │   └── plugins/          # Tauri 插件（llama.cpp、MLX、硬件检测等）
@@ -178,7 +178,7 @@ make clean    # 清理构建产物
 
 本项目基于 **[Jan](https://github.com/janhq/jan)** 开源项目深度定制。衷心感谢 [Jan 项目组](https://github.com/janhq/jan) 的杰出工作——他们构建了一个优秀的开源 AI 桌面应用框架，为本地大模型推理社区做出了重要贡献。
 
-> 🙏 如果没有 Jan 团队的开源成果，容芯AI助手不可能诞生。向所有 Jan 贡献者致敬！
+> 🙏 如果没有 Jan 团队的开源成果，RongxinAI 不可能诞生。向所有 Jan 贡献者致敬！
 
 ### 核心依赖
 
@@ -194,5 +194,5 @@ Apache 2.0 - 自由使用，开放共享。
 ---
 
 <p align="center">
-  <i>容芯AI助手 - 让 AI 推理触手可及</i>
+  <i>RongxinAI - 让 AI 推理触手可及</i>
 </p>

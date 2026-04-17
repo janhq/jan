@@ -1,4 +1,4 @@
-# 容芯AI助手 - Agent Onboarding Guide
+# RongxinAI - Agent Onboarding Guide
 
 > 本文档面向 AI 编码助手。在做出任何修改前请先阅读本文。
 > 本项目是基于 [Jan](https://github.com/janhq/jan) 深度定制的中国本地化 AI 桌面应用。
@@ -7,14 +7,14 @@
 
 ## Project Overview
 
-**容芯AI助手** 是一款基于 Jan 深度定制的开源 AI 桌面应用，专注于为中国用户提供**本地化、私有化、零配置**的大语言模型推理体验。
+**RongxinAI** 是一款基于 Jan 深度定制的开源 AI 桌面应用，专注于为中国用户提供**本地化、私有化、零配置**的大语言模型推理体验。
 
-- **品牌名**: 容芯AI助手
+- **品牌名**: RongxinAI
 - **上游项目**: [Jan](https://github.com/janhq/jan) by Menlo Research
 - **仓库**: https://github.com/rongxinzy/jan
 - **License**: Apache 2.0
 
-容芯AI助手是一款 **Tauri v2** 桌面应用（当前主要支持 Windows，macOS/Linux 待扩展）。核心定制包括：
+RongxinAI是一款 **Tauri v2** 桌面应用（当前主要支持 Windows，macOS/Linux 待扩展）。核心定制包括：
 - **Ollama 默认集成**：开箱即用，自动检测/安装 Ollama 本地推理引擎
 - **ModelScope 模型市场**：替代 HuggingFace，解决国内访问问题
 - **中文本地化**：默认简体中文界面，针对中文模型（Qwen 系列）优化
@@ -171,7 +171,7 @@ Hub 页面 → Ollama 未启动 → 显示"一键安装"按钮
 ### 4. 本地化适配
 
 **已本地化内容：**
-- 品牌名："容芯AI助手"
+- 品牌名："RongxinAI"
 - 默认语言：zh-CN
 - GitHub/官网链接替换为 `rongxinzy/jan`
 - 侧边栏："推理中心" 替代 "Hub"

@@ -85,7 +85,7 @@ function General() {
       const s = await invoke<{ installed: boolean; path: string | null }>('install_jan_cli')
       setCliInstalled(s.installed)
       setCliPath(s.path)
-      toast.success(`容芯AI助手 CLI installed to ${s.path}`)
+      toast.success(`RongxinAI CLI installed to ${s.path}`)
     } catch (e) {
       toast.error('Install failed', { description: String(e) })
     } finally {
@@ -99,7 +99,7 @@ function General() {
       await invoke('uninstall_jan_cli')
       setCliInstalled(false)
       setCliPath(null)
-      toast.success('容芯AI助手 CLI uninstalled')
+      toast.success('RongxinAI CLI uninstalled')
     } catch (e) {
       toast.error('Uninstall failed', { description: String(e) })
     } finally {
@@ -388,11 +388,11 @@ function General() {
             <Card title="Advanced">
               {IS_TAURI && (
                 <CardItem
-                  title="容芯AI助手 CLI"
+                  title="RongxinAI CLI"
                   description={
                     cliInstalled && cliPath
-                      ? `Installed at ${cliPath} — use 容芯AI助手 from your terminal to serve models.`
-                      : 'Use 容芯AI助手 from your terminal to serve models without opening the app.'
+                      ? `Installed at ${cliPath} — use RongxinAI from your terminal to serve models.`
+                      : 'Use RongxinAI from your terminal to serve models without opening the app.'
                   }
                   actions={
                     cliInstalled ? (
