@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { codeToHtml } from 'shiki'
@@ -9,8 +9,20 @@ vi.mock('shiki', () => ({
   codeToHtml: vi.fn().mockResolvedValue('<pre><code>highlighted</code></pre>'),
 }))
 
+// Preserve original clipboard so tests that delete it do not leak.
+const originalClipboard = navigator.clipboard
+
 beforeEach(() => {
   vi.clearAllMocks()
+})
+
+afterEach(() => {
+  // Restore clipboard (some tests replace it with undefined)
+  Object.defineProperty(navigator, 'clipboard', {
+    value: originalClipboard,
+    writable: true,
+    configurable: true,
+  })
 })
 
 describe('highlightCode', () => {

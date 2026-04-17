@@ -186,4 +186,5 @@ Object.defineProperty(window, 'matchMedia', {
 // runs a cleanup after each test case (e.g. clearing jsdom)
 afterEach(() => {
   cleanup()
+  vi.clearAllMocks()
 })
