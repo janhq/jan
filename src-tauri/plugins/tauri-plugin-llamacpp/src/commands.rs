@@ -22,7 +22,7 @@ use crate::process::{
 };
 use crate::state::{LLamaBackendSession, LlamacppState, SessionInfo};
 use jan_utils::{
-    add_cuda_paths, binary_requires_cuda, setup_library_path, setup_windows_process_flags,
+    binary_requires_cuda, find_cuda_paths, setup_library_path, setup_windows_process_flags,
 };
 
 #[cfg(unix)]
@@ -122,18 +122,13 @@ pub async fn load_llama_model_impl(
     command.stderr(Stdio::piped());
     setup_windows_process_flags(&mut command);
 
-    // Try to add CUDA paths (works on both Windows and Linux)
-    let cuda_found = add_cuda_paths(&mut command);
-
-    // Optionally check if binary needs CUDA
-    if !cuda_found && binary_requires_cuda(&bin_path) {
+    let cuda = find_cuda_paths();
+    if cuda.lib_paths.is_empty() && cuda.bin_paths.is_empty() && binary_requires_cuda(&bin_path) {
         log::warn!(
             "llama.cpp backend appears to require CUDA, but CUDA not found. Process may fail to start. Please install cuda runtime and try again!"
         );
     }
-
-    // Add the binary's directory to library path
-    setup_library_path(bin_path.parent(), &mut command);
+    setup_library_path(bin_path.parent(), &cuda, &mut command);
 
     // Spawn the child process
     let mut child = command.spawn().map_err(ServerError::Io)?;
