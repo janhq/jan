@@ -17,13 +17,11 @@ import {
   DropDrawerTrigger,
 } from '../dropdrawer'
 
-// Mock the mobile hook
 const mockUseIsMobile = vi.fn()
 vi.mock('@/hooks/use-mobile', () => ({
   useIsMobile: () => mockUseIsMobile(),
 }))
 
-// Mock framer-motion to avoid animation complexity in tests
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <div data-testid="animate-presence">{children}</div>,
   motion: {
@@ -31,20 +29,15 @@ vi.mock('framer-motion', () => ({
   },
 }))
 
-describe('DropDrawer Utilities', () => {
-  it('renders without crashing', () => {
-    expect(() => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Test</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem>Item</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-    }).not.toThrow()
-  })
-})
+// Helper to render a standard DropDrawer with given content
+function renderDropDrawer(content: React.ReactNode, triggerText = 'Open Menu') {
+  return render(
+    <DropDrawer>
+      <DropDrawerTrigger>{triggerText}</DropDrawerTrigger>
+      <DropDrawerContent>{content}</DropDrawerContent>
+    </DropDrawer>
+  )
+}
 
 describe('DropDrawer Component', () => {
   beforeEach(() => {
@@ -52,482 +45,125 @@ describe('DropDrawer Component', () => {
   })
 
   describe('Desktop Mode', () => {
-    beforeEach(() => {
-      mockUseIsMobile.mockReturnValue(false)
-    })
+    beforeEach(() => { mockUseIsMobile.mockReturnValue(false) })
 
-    it('renders dropdown menu on desktop', () => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Menu</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem>Item 1</DropDrawerItem>
-            <DropDrawerItem>Item 2</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      expect(screen.getByText('Open Menu')).toBeInTheDocument()
-    })
-
-    it('renders dropdown menu structure', () => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Menu</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem>Desktop Item</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Only the trigger is visible initially
+    it('renders trigger with menu aria attribute', () => {
+      renderDropDrawer(<DropDrawerItem>Item</DropDrawerItem>)
       expect(screen.getByText('Open Menu')).toBeInTheDocument()
       expect(screen.getByRole('button')).toHaveAttribute('aria-haspopup', 'menu')
     })
 
-    it('structures dropdown with separators', () => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Menu</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem>Item 1</DropDrawerItem>
-            <DropDrawerSeparator />
-            <DropDrawerItem>Item 2</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Verify component structure - content is not visible until opened
-      expect(screen.getByText('Open Menu')).toBeInTheDocument()
-    })
-
-    it('structures dropdown with labels', () => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Menu</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerLabel>Menu Section</DropDrawerLabel>
-            <DropDrawerItem>Item 1</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Only verify trigger is present - content shows on interaction
+    it.each([
+      ['separators', <><DropDrawerItem>Item 1</DropDrawerItem><DropDrawerSeparator /><DropDrawerItem>Item 2</DropDrawerItem></>],
+      ['labels', <><DropDrawerLabel>Section</DropDrawerLabel><DropDrawerItem>Item</DropDrawerItem></>],
+      ['groups', <DropDrawerGroup><DropDrawerItem>Group Item</DropDrawerItem></DropDrawerGroup>],
+      ['footer', <><DropDrawerItem>Item</DropDrawerItem><DropDrawerFooter>Footer</DropDrawerFooter></>],
+      ['submenu', <DropDrawerSub><DropDrawerSubTrigger>Sub</DropDrawerSubTrigger><DropDrawerSubContent><DropDrawerItem>Sub Item</DropDrawerItem></DropDrawerSubContent></DropDrawerSub>],
+    ])('structures dropdown with %s', (_label, content) => {
+      renderDropDrawer(content)
       expect(screen.getByText('Open Menu')).toBeInTheDocument()
     })
   })
 
   describe('Mobile Mode', () => {
-    beforeEach(() => {
-      mockUseIsMobile.mockReturnValue(true)
-    })
+    beforeEach(() => { mockUseIsMobile.mockReturnValue(true) })
 
-    it('renders drawer on mobile', () => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Drawer</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem>Mobile Item</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
+    it('renders trigger with dialog aria attribute', () => {
+      renderDropDrawer(<DropDrawerItem>Mobile Item</DropDrawerItem>, 'Open Drawer')
       expect(screen.getByText('Open Drawer')).toBeInTheDocument()
-    })
-
-    it('renders drawer structure', () => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Drawer</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem>Mobile Item</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Verify drawer trigger is present
-      const trigger = screen.getByText('Open Drawer')
-      expect(trigger).toBeInTheDocument()
       expect(screen.getByRole('button')).toHaveAttribute('aria-haspopup', 'dialog')
     })
 
     it('does not render separators in mobile mode', () => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Drawer</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem>Item 1</DropDrawerItem>
-            <DropDrawerSeparator />
-            <DropDrawerItem>Item 2</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
+      renderDropDrawer(
+        <><DropDrawerItem>Item 1</DropDrawerItem><DropDrawerSeparator /><DropDrawerItem>Item 2</DropDrawerItem></>,
+        'Open Drawer'
       )
-
-      // Mobile separators return null, so they shouldn't be in the DOM
-      const separators = screen.queryAllByRole('separator')
-      expect(separators).toHaveLength(0)
+      expect(screen.queryAllByRole('separator')).toHaveLength(0)
     })
 
-    it('renders drawer with labels structure', () => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Drawer</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerLabel>Drawer Section</DropDrawerLabel>
-            <DropDrawerItem>Item 1</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Verify drawer structure is present
+    it.each([
+      ['labels', <><DropDrawerLabel>Section</DropDrawerLabel><DropDrawerItem>Item</DropDrawerItem></>],
+      ['groups', <DropDrawerGroup><DropDrawerItem>Item</DropDrawerItem></DropDrawerGroup>],
+      ['footer', <><DropDrawerItem>Item</DropDrawerItem><DropDrawerFooter>Footer</DropDrawerFooter></>],
+      ['submenu', <DropDrawerSub><DropDrawerSubTrigger>Sub</DropDrawerSubTrigger><DropDrawerSubContent><DropDrawerItem>Sub Item</DropDrawerItem></DropDrawerSubContent></DropDrawerSub>],
+    ])('structures drawer with %s', (_label, content) => {
+      renderDropDrawer(content, 'Open Drawer')
       expect(screen.getByText('Open Drawer')).toBeInTheDocument()
     })
   })
 
-  describe('DropDrawerItem', () => {
-    beforeEach(() => {
-      mockUseIsMobile.mockReturnValue(false)
-    })
+  describe('DropDrawerItem props', () => {
+    beforeEach(() => { mockUseIsMobile.mockReturnValue(false) })
 
-    it('can be structured with click handlers', () => {
-      const handleClick = vi.fn()
-
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Menu</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem onClick={handleClick}>Clickable Item</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Verify structure is valid
+    it.each([
+      ['click handler', { onClick: vi.fn() }],
+      ['variant', { variant: 'destructive' as const }],
+      ['disabled', { disabled: true }],
+    ])('accepts %s prop', (_label, props) => {
+      renderDropDrawer(<DropDrawerItem {...props}>Test Item</DropDrawerItem>)
       expect(screen.getByText('Open Menu')).toBeInTheDocument()
-      expect(handleClick).not.toHaveBeenCalled()
+      if (props.onClick) expect(props.onClick).not.toHaveBeenCalled()
     })
 
-    it('can be structured with icons', () => {
-      const TestIcon = () => <span data-testid="test-icon">Icon</span>
-
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Menu</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem icon={<TestIcon />}>Item with Icon</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
+    it('renders with icon', () => {
+      renderDropDrawer(
+        <DropDrawerItem icon={<span data-testid="test-icon">Icon</span>}>Item</DropDrawerItem>
       )
-
-      // Structure is valid
-      expect(screen.getByText('Open Menu')).toBeInTheDocument()
-    })
-
-    it('accepts variant props', () => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Menu</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem variant="destructive">
-              Delete Item
-            </DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Component structure is valid with variants
-      expect(screen.getByText('Open Menu')).toBeInTheDocument()
-    })
-
-    it('accepts disabled prop', () => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Menu</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem disabled>
-              Disabled Item
-            </DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Component structure is valid with disabled prop
       expect(screen.getByText('Open Menu')).toBeInTheDocument()
     })
   })
 
-  describe('DropDrawerGroup', () => {
-    it('structures groups in desktop mode', () => {
-      mockUseIsMobile.mockReturnValue(false)
+  describe('Custom Props and Styling', () => {
+    beforeEach(() => { mockUseIsMobile.mockReturnValue(false) })
 
+    it('applies custom className to trigger', () => {
       render(
         <DropDrawer>
-          <DropDrawerTrigger>Open Menu</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerGroup>
-              <DropDrawerItem>Group Item 1</DropDrawerItem>
-              <DropDrawerItem>Group Item 2</DropDrawerItem>
-            </DropDrawerGroup>
-          </DropDrawerContent>
+          <DropDrawerTrigger className="custom-trigger">Custom Trigger</DropDrawerTrigger>
+          <DropDrawerContent><DropDrawerItem>Item</DropDrawerItem></DropDrawerContent>
         </DropDrawer>
       )
-
-      // Component structure is valid
-      expect(screen.getByText('Open Menu')).toBeInTheDocument()
-    })
-
-    it('structures groups in mobile mode', () => {
-      mockUseIsMobile.mockReturnValue(true)
-
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Drawer</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerGroup>
-              <DropDrawerItem>Item 1</DropDrawerItem>
-              <DropDrawerItem>Item 2</DropDrawerItem>
-            </DropDrawerGroup>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Component structure is valid in mobile mode
-      expect(screen.getByText('Open Drawer')).toBeInTheDocument()
+      expect(screen.getByText('Custom Trigger')).toHaveClass('custom-trigger')
     })
   })
 
-  describe('DropDrawerFooter', () => {
-    it('structures footer in desktop mode', () => {
+  describe('Responsive Behavior', () => {
+    it('adapts aria-haspopup between desktop and mobile', () => {
       mockUseIsMobile.mockReturnValue(false)
+      const { rerender } = renderDropDrawer(<DropDrawerItem>Item</DropDrawerItem>, 'Responsive')
 
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Menu</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem>Item</DropDrawerItem>
-            <DropDrawerFooter>Footer Content</DropDrawerFooter>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Component structure is valid
-      expect(screen.getByText('Open Menu')).toBeInTheDocument()
-    })
-
-    it('structures footer in mobile mode', () => {
-      mockUseIsMobile.mockReturnValue(true)
-
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Drawer</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem>Item</DropDrawerItem>
-            <DropDrawerFooter>Mobile Footer</DropDrawerFooter>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Component structure is valid in mobile mode
-      expect(screen.getByText('Open Drawer')).toBeInTheDocument()
-    })
-  })
-
-  describe('Submenu Components', () => {
-    beforeEach(() => {
-      mockUseIsMobile.mockReturnValue(false)
-    })
-
-    it('structures submenu in desktop mode', () => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Menu</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerSub>
-              <DropDrawerSubTrigger>Submenu Trigger</DropDrawerSubTrigger>
-              <DropDrawerSubContent>
-                <DropDrawerItem>Submenu Item</DropDrawerItem>
-              </DropDrawerSubContent>
-            </DropDrawerSub>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Component structure is valid
-      expect(screen.getByText('Open Menu')).toBeInTheDocument()
-    })
-
-    it('structures submenu in mobile mode', () => {
-      mockUseIsMobile.mockReturnValue(true)
-
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Drawer</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerSub>
-              <DropDrawerSubTrigger>
-                Mobile Submenu
-              </DropDrawerSubTrigger>
-              <DropDrawerSubContent>
-                <DropDrawerItem>Submenu Item</DropDrawerItem>
-              </DropDrawerSubContent>
-            </DropDrawerSub>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Component structure is valid in mobile mode
-      expect(screen.getByText('Open Drawer')).toBeInTheDocument()
-    })
-
-    it('handles submenu content correctly in mobile mode', () => {
-      mockUseIsMobile.mockReturnValue(true)
-
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Drawer</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerSub>
-              <DropDrawerSubTrigger>Mobile Submenu</DropDrawerSubTrigger>
-              <DropDrawerSubContent>
-                <DropDrawerItem>Hidden Item</DropDrawerItem>
-              </DropDrawerSubContent>
-            </DropDrawerSub>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Component handles mobile submenu structure correctly
-      expect(screen.getByText('Open Drawer')).toBeInTheDocument()
-    })
-  })
-
-  describe('Accessibility', () => {
-    beforeEach(() => {
-      mockUseIsMobile.mockReturnValue(false)
-    })
-
-    it('maintains proper ARIA attributes on triggers', () => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Menu</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerGroup>
-              <DropDrawerItem>Item 1</DropDrawerItem>
-            </DropDrawerGroup>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      const trigger = screen.getByRole('button')
-      expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
-    })
-
-    it('supports disabled state', () => {
-      const handleClick = vi.fn()
+      expect(screen.getByRole('button')).toHaveAttribute('aria-haspopup', 'menu')
 
       mockUseIsMobile.mockReturnValue(true)
-
-      render(
+      rerender(
         <DropDrawer>
-          <DropDrawerTrigger>Open Drawer</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem disabled onClick={handleClick}>
-              Disabled Item
-            </DropDrawerItem>
-          </DropDrawerContent>
+          <DropDrawerTrigger>Responsive</DropDrawerTrigger>
+          <DropDrawerContent><DropDrawerItem>Item</DropDrawerItem></DropDrawerContent>
         </DropDrawer>
       )
-
-      // Component structure supports disabled prop
-      expect(screen.getByText('Open Drawer')).toBeInTheDocument()
-      expect(handleClick).not.toHaveBeenCalled()
+      expect(screen.getByRole('button')).toHaveAttribute('aria-haspopup', 'dialog')
     })
   })
 
   describe('Error Boundaries', () => {
     it('requires proper context usage', () => {
-      // Suppress console.error for this test
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      expect(() => {
-        render(<DropDrawerItem>Orphan Item</DropDrawerItem>)
-      }).toThrow()
-
+      expect(() => { render(<DropDrawerItem>Orphan Item</DropDrawerItem>) }).toThrow()
       consoleSpy.mockRestore()
     })
   })
 
-  describe('Custom Props and Styling', () => {
-    beforeEach(() => {
-      mockUseIsMobile.mockReturnValue(false)
-    })
-
-    it('applies custom className', () => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger className="custom-trigger">Custom Trigger</DropDrawerTrigger>
-          <DropDrawerContent className="custom-content">
-            <DropDrawerItem className="custom-item">Custom Item</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      const trigger = screen.getByText('Custom Trigger')
-      expect(trigger).toHaveClass('custom-trigger')
-    })
-
-    it('accepts additional props', () => {
-      render(
-        <DropDrawer>
-          <DropDrawerTrigger>Open Menu</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem data-custom="test-value">Custom Props Item</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Component structure accepts custom props
-      expect(screen.getByText('Open Menu')).toBeInTheDocument()
-    })
-  })
-
-  describe('Responsive Behavior', () => {
-    it('adapts to different screen sizes', () => {
-      const { rerender } = render(
-        <DropDrawer>
-          <DropDrawerTrigger>Responsive Trigger</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem>Responsive Item</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      // Desktop mode
-      mockUseIsMobile.mockReturnValue(false)
-      rerender(
-        <DropDrawer>
-          <DropDrawerTrigger>Responsive Trigger</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem>Responsive Item</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
-      )
-
-      let trigger = screen.getByText('Responsive Trigger')
-      expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
-
-      // Mobile mode
+  describe('Accessibility - disabled state', () => {
+    it('supports disabled state in mobile', () => {
       mockUseIsMobile.mockReturnValue(true)
-      rerender(
-        <DropDrawer>
-          <DropDrawerTrigger>Responsive Trigger</DropDrawerTrigger>
-          <DropDrawerContent>
-            <DropDrawerItem>Responsive Item</DropDrawerItem>
-          </DropDrawerContent>
-        </DropDrawer>
+      const handleClick = vi.fn()
+      renderDropDrawer(
+        <DropDrawerItem disabled onClick={handleClick}>Disabled Item</DropDrawerItem>,
+        'Open Drawer'
       )
-
-      trigger = screen.getByText('Responsive Trigger')
-      expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
+      expect(screen.getByText('Open Drawer')).toBeInTheDocument()
+      expect(handleClick).not.toHaveBeenCalled()
     })
   })
 })
