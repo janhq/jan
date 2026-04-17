@@ -97,7 +97,7 @@
   "noModels": "モデルが見つかりません",
   "customAvatar": "カスタムアバター",
   "editAssistant": "アシスタントを編集",
-  "jan": "Jan",
+  "jan": "容芯AI助手",
   "metadata": "メタデータ",
   "regenerate": "再生成",
   "threadImage": "スレッド画像",
@@ -387,5 +387,6 @@
       "title": "スレッドが削除されました",
       "description": "スレッドは「{{projectName}}」から正常に削除されました"
     }
-  }
+  },
+  "inferenceCenter": "推理中心"
 }

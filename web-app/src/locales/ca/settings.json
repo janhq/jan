@@ -42,8 +42,8 @@
   "reportAnIssueDesc": "Has trobat un error? Ajuda’ns enviant una incidència a GitHub.",
   "reportIssue": "Informa del problema",
   "credits": "Crèdits",
-  "creditsDesc1": "👋 Jan el construeix amb ❤️ l’equip de Menlo Research.",
-  "creditsDesc2": "Agraïments especials a les nostres dependències de codi obert — especialment llama.cpp i Tauri — i a la nostra comunitat d’IA.",
+  "creditsDesc1": "容芯AI助手 is built with ❤️ by 容芯致远 (Rongxin Zhiyuan), based on the open-source Jan project by Menlo Research.",
+  "creditsDesc2": "Special thanks to open-source dependencies—especially llama.cpp and Tauri—and to the Jan open-source community and 容芯AI助手 users.",
   "appVersion": "Versió de l’app",
   "dataFolder": {
     "appData": "Dades de l’app",
@@ -318,5 +318,7 @@
     "updateError": "No s’ha pogut actualitzar Llamacpp"
   },
   "backendInstallSuccess": "El backend s’ha instal·lat correctament",
-  "backendInstallError": "No s’ha pogut instal·lar el backend"
+  "backendInstallError": "No s’ha pogut instal·lar el backend",
+  "website": "官网",
+  "websiteDesc": "访问容芯致远官网。"
 }

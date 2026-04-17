@@ -81,6 +81,53 @@ export interface HuggingFaceRepo {
   readme?: string
 }
 
+// ModelScope repository information
+export interface ModelScopeRepo {
+  Code: number
+  Success: boolean
+  Data: {
+    Name: string
+    Path: string
+    Description: string
+    Downloads: number
+    CreatedTime: number
+    LastUpdatedTime: number
+    Tags: string[]
+    Libraries: string[]
+    ReadMeContent: string
+    Organization?: {
+      Name: string
+    }
+    ModelInfos?: {
+      gguf?: {
+        gguf_file_list?: Array<{
+          key_name: string
+          quantized: string
+          file_info: Array<{
+            name: string
+            size: number
+            sha256: string
+          }>
+        }>
+      }
+    }
+  }
+}
+
+export interface ModelScopeFileList {
+  Code: number
+  Success: boolean
+  Data: {
+    Files: Array<{
+      Name: string
+      Path: string
+      Size: number
+      Sha256: string
+      IsLFS: boolean
+    }>
+  }
+}
+
 export interface GgufMetadata {
   version: number
   tensor_count: number
@@ -112,6 +159,10 @@ export interface ModelsService {
     hfToken?: string
   ): Promise<HuggingFaceRepo | null>
   convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel
+  fetchModelScopeRepo(
+    modelId: string
+  ): Promise<ModelScopeRepo | null>
+  convertMsRepoToCatalogModel(repo: ModelScopeRepo): CatalogModel
   updateModel(modelId: string, model: Partial<CoreModel>): Promise<void>
   pullModel(
     id: string,

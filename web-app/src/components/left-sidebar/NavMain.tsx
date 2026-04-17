@@ -124,7 +124,7 @@ const getNavMainItems = (
     ),
   },
   {
-    title: 'common:hub',
+    title: 'common:inferenceCenter',
     url: route.hub.index,
     animatedIcon: BlocksIcon,
   },

@@ -13,5 +13,10 @@
   "useModel": "使用此模型",
   "downloadModel": "下载模型",
   "tools": "工具",
-  "searchPlaceholder": "在 Hugging Face 上搜索模型..."
+  "searchPlaceholder": "在 ModelScope 上搜索模型...",
+  "ollamaRunning": "Ollama 运行中",
+  "ollamaStopped": "Ollama 未启动",
+  "ollamaVersion": "版本",
+  "ollamaModels": "已安装模型",
+  "ollamaHint": "请确认 Ollama 已安装并运行"
 }

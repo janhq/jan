@@ -23,7 +23,6 @@ import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import { Progress } from '@/components/ui/progress'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
 import { useTranslation } from '@/i18n'
@@ -43,7 +42,6 @@ function HubModelDetailContent() {
   const { t } = useTranslation()
   const { modelId } = useParams({ from: Route.id })
   const navigate = useNavigate()
-  const { huggingfaceToken } = useGeneralSetting()
   const { sources, fetchSources } = useModelSources()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const search = useSearch({ from: Route.id as any })
@@ -68,16 +66,34 @@ function HubModelDetailContent() {
   }, [fetchSources])
 
   const fetchRepo = useCallback(async () => {
-    const repoInfo = await serviceHub
+    // Try ModelScope first
+    const msRepoInfo = await serviceHub
       .models()
-      .fetchHuggingFaceRepo(search.repo || modelId, huggingfaceToken)
-    if (repoInfo) {
+      .fetchModelScopeRepo(search.repo || modelId)
+    if (msRepoInfo) {
       const repoDetail = serviceHub
         .models()
-        .convertHfRepoToCatalogModel(repoInfo)
+        .convertMsRepoToCatalogModel(msRepoInfo)
+      setRepoData(repoDetail || undefined)
+      // Use ReadMeContent directly from ModelScope API
+      if (msRepoInfo.Data.ReadMeContent) {
+        setReadmeContent(msRepoInfo.Data.ReadMeContent)
+        setIsLoadingReadme(false)
+      }
+      return
+    }
+
+    // Fallback to HuggingFace (for backward compatibility)
+    const hfRepoInfo = await serviceHub
+      .models()
+      .fetchHuggingFaceRepo(search.repo || modelId)
+    if (hfRepoInfo) {
+      const repoDetail = serviceHub
+        .models()
+        .convertHfRepoToCatalogModel(hfRepoInfo)
       setRepoData(repoDetail || undefined)
     }
-  }, [serviceHub, modelId, search, huggingfaceToken])
+  }, [serviceHub, modelId, search])
 
   useEffect(() => {
     fetchRepo()
@@ -198,22 +214,12 @@ function HubModelDetailContent() {
 
   // Fetch README content when modelData.readme is available
   useEffect(() => {
+    // Skip if README already loaded from ModelScope API
+    if (readmeContent && !modelData?.readme) return
+
     if (modelData?.readme) {
       setIsLoadingReadme(true)
-      // Try fetching without headers first
-      // There is a weird issue where this HF link will return error when access public repo with auth header
       fetch(modelData.readme)
-        .then((response) => {
-          if (!response.ok && huggingfaceToken && modelData?.readme) {
-            // Retry with Authorization header if first fetch failed
-            return fetch(modelData.readme, {
-              headers: {
-                Authorization: `Bearer ${huggingfaceToken}`,
-              },
-            })
-          }
-          return response
-        })
         .then((response) => response.text())
         .then((content) => {
           setReadmeContent(content)
@@ -224,7 +230,7 @@ function HubModelDetailContent() {
           setIsLoadingReadme(false)
         })
     }
-  }, [modelData?.readme, huggingfaceToken])
+  }, [modelData?.readme])
 
   if (!modelData) {
     return (
@@ -474,7 +480,7 @@ function HubModelDetailContent() {
                                                 'mmproj-f16'
                                             ) || modelData.mmproj_models?.[0]
                                           )?.path,
-                                          huggingfaceToken
+                                          undefined
                                         )
                                     }}
                                     className={cn(isDownloading && 'hidden')}

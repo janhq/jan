@@ -13,5 +13,10 @@
   "useModel": "Use this model",
   "downloadModel": "Download model",
   "tools": "Tools",
-  "searchPlaceholder": "Search for models on Hugging Face..."
+  "searchPlaceholder": "Search for models on ModelScope...",
+  "ollamaRunning": "Ollama Running",
+  "ollamaStopped": "Ollama Stopped",
+  "ollamaVersion": "Version",
+  "ollamaModels": "Installed Models",
+  "ollamaHint": "Please make sure Ollama is installed and running"
 }

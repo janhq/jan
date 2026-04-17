@@ -24,6 +24,7 @@ import {
   IconEye,
   IconSearch,
   IconTool,
+  IconRefresh,
 } from '@tabler/icons-react'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -44,7 +45,7 @@ import HeaderPage from '@/containers/HeaderPage'
 import { ChevronsUpDown, Loader } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Fuse from 'fuse.js'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useOllamaStatus } from '@/hooks/useOllamaStatus'
 import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/shallow'
 import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
@@ -67,8 +68,8 @@ export const Route = createFileRoute(route.hub.index as any)({
 function HubContent() {
   const [isPending, startTransition] = useTransition()
   const parentRef = useRef(null)
-  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const serviceHub = useServiceHub()
+  const { isRunning: ollamaRunning, version: ollamaVersion, models: ollamaModels, refresh: refreshOllama } = useOllamaStatus(5000)
 
   const { t } = useTranslation()
 
@@ -106,7 +107,7 @@ function HubContent() {
   )
   const [isSearching, setIsSearching] = useState(false)
   const [showOnlyDownloaded, setShowOnlyDownloaded] = useState(false)
-  const [huggingFaceRepo, setHuggingFaceRepo] = useState<CatalogModel | null>(
+  const [modelScopeRepo, setModelScopeRepo] = useState<CatalogModel | null>(
     null
   )
   const [modelSupportStatus, setModelSupportStatus] = useState<
@@ -198,16 +199,16 @@ function HubContent() {
         }))
         .filter((model) => (model.quants?.length ?? 0) > 0)
     }
-    // Add HuggingFace repo at the beginning if available
-    if (huggingFaceRepo) {
-      filtered = [huggingFaceRepo, ...filtered]
+    // Add ModelScope repo at the beginning if available
+    if (modelScopeRepo) {
+      filtered = [modelScopeRepo, ...filtered]
     }
     return filtered
   }, [
     sortedModels,
     debouncedSearchValue,
     showOnlyDownloaded,
-    huggingFaceRepo,
+    modelScopeRepo,
     searchOptions,
   ])
 
@@ -256,7 +257,7 @@ function HubContent() {
     return () => clearTimeout(timer)
   }, [isInitialLoad, filteredModels.length])
 
-  const fetchHuggingFaceModel = async (searchValue: string) => {
+  const fetchModelScopeModel = async (searchValue: string) => {
     if (
       !searchValue.length ||
       (!searchValue.includes('/') && !searchValue.startsWith('http'))
@@ -273,11 +274,11 @@ function HubContent() {
       try {
         const repoInfo = await serviceHub
           .models()
-          .fetchHuggingFaceRepo(searchValue, huggingfaceToken)
+          .fetchModelScopeRepo(searchValue)
         if (repoInfo) {
           const catalogModel = serviceHub
             .models()
-            .convertHfRepoToCatalogModel(repoInfo)
+            .convertMsRepoToCatalogModel(repoInfo)
           if (
             !sources.some(
               (s) =>
@@ -286,11 +287,11 @@ function HubContent() {
                 catalogModel.developer?.trim() === s.developer?.trim()
             )
           ) {
-            setHuggingFaceRepo(catalogModel)
+            setModelScopeRepo(catalogModel)
           }
         }
       } catch (error) {
-        console.error('Error fetching repository info:', error)
+        console.error('Error fetching ModelScope repository info:', error)
       } finally {
         setIsSearching(false)
       }
@@ -300,10 +301,10 @@ function HubContent() {
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     setIsSearching(false)
     setSearchValue(e.target.value)
-    setHuggingFaceRepo(null) // Clear previous repo info
+    setModelScopeRepo(null) // Clear previous repo info
 
     if (!showOnlyDownloaded) {
-      fetchHuggingFaceModel(e.target.value)
+      fetchModelScopeModel(e.target.value)
     }
   }
 
@@ -407,10 +408,10 @@ function HubContent() {
               setIsInitialLoad(true)
               setShowOnlyDownloaded(checked)
               if (checked) {
-                setHuggingFaceRepo(null)
+                setModelScopeRepo(null)
               } else {
-                // Re-trigger HuggingFace search when switching back to "All models"
-                fetchHuggingFaceModel(searchValue)
+                // Re-trigger ModelScope search when switching back to "All models"
+                fetchModelScopeModel(searchValue)
               }
             }}
           />
@@ -450,6 +451,38 @@ function HubContent() {
         </HeaderPage>
         <div ref={parentRef} className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider">
           <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto">
+            {/* Ollama Status Card */}
+            <div className="bg-card border border-border rounded-lg p-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  'w-2.5 h-2.5 rounded-full',
+                  ollamaRunning ? 'bg-green-500' : 'bg-red-500'
+                )} />
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium text-foreground">
+                    {ollamaRunning ? 'Ollama 运行中' : 'Ollama 未启动'}
+                  </span>
+                  {ollamaRunning && (
+                    <span className="text-xs text-muted-foreground">
+                      版本 {ollamaVersion} · 已安装 {ollamaModels.length} 个模型
+                    </span>
+                  )}
+                  {!ollamaRunning && (
+                    <span className="text-xs text-muted-foreground">
+                      请确认 Ollama 已安装并运行
+                    </span>
+                  )}
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={refreshOllama}
+                className="shrink-0"
+              >
+                <IconRefresh size={16} className="text-muted-foreground" />
+              </Button>
+            </div>
             {/* Show skeleton immediately on navigation, then show actual content when loaded */}
             {(isInitialLoad || (loading && !filteredModels.length)) ? (
               // Skeleton loading state for better perceived performance

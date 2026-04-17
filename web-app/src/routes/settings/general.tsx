@@ -15,7 +15,7 @@ import { FactoryResetDialog } from '@/containers/dialogs'
 import type { FactoryResetOptions } from '@/services/app/types'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import {
-  IconBrandDiscord,
+  IconWorld,
   IconBrandGithub,
   IconExternalLink,
   IconFolder,
@@ -26,11 +26,9 @@ import {
 import { toast } from 'sonner'
 import { isDev } from '@/lib/utils'
 import { SystemEvent } from '@/types/events'
-import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { isRootDir } from '@/utils/path'
-const TOKEN_VALIDATION_TIMEOUT_MS = 10_000
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -42,8 +40,6 @@ function General() {
   const {
     spellCheckChatInput,
     setSpellCheckChatInput,
-    huggingfaceToken,
-    setHuggingfaceToken,
   } = useGeneralSetting()
   const serviceHub = useServiceHub()
 
@@ -63,7 +59,6 @@ function General() {
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
-  const [isValidatingToken, setIsValidatingToken] = useState(false)
   const [cliInstalled, setCliInstalled] = useState<boolean | null>(null)
   const [cliPath, setCliPath] = useState<string | null>(null)
   const [isCliLoading, setIsCliLoading] = useState(false)
@@ -90,7 +85,7 @@ function General() {
       const s = await invoke<{ installed: boolean; path: string | null }>('install_jan_cli')
       setCliInstalled(s.installed)
       setCliPath(s.path)
-      toast.success(`Jan CLI installed to ${s.path}`)
+      toast.success(`容芯AI助手 CLI installed to ${s.path}`)
     } catch (e) {
       toast.error('Install failed', { description: String(e) })
     } finally {
@@ -104,7 +99,7 @@ function General() {
       await invoke('uninstall_jan_cli')
       setCliInstalled(false)
       setCliPath(null)
-      toast.success('Jan CLI uninstalled')
+      toast.success('容芯AI助手 CLI uninstalled')
     } catch (e) {
       toast.error('Uninstall failed', { description: String(e) })
     } finally {
@@ -393,11 +388,11 @@ function General() {
             <Card title="Advanced">
               {IS_TAURI && (
                 <CardItem
-                  title="Jan CLI"
+                  title="容芯AI助手 CLI"
                   description={
                     cliInstalled && cliPath
-                      ? `Installed at ${cliPath} — use jan from your terminal to serve models.`
-                      : 'Use jan from your terminal to serve models without opening the app.'
+                      ? `Installed at ${cliPath} — use 容芯AI助手 from your terminal to serve models.`
+                      : 'Use 容芯AI助手 from your terminal to serve models without opening the app.'
                   }
                   actions={
                     cliInstalled ? (
@@ -455,85 +450,6 @@ function General() {
                   />
                 }
               />
-              <CardItem
-                title={t('settings:general.huggingfaceToken', {
-                  ns: 'settings',
-                })}
-                description={t('settings:general.huggingfaceTokenDesc', {
-                  ns: 'settings',
-                })}
-                actions={
-                  <div className="flex items-center gap-2">
-                    <Input
-                      id="hf-token"
-                      value={huggingfaceToken || ''}
-                      onChange={(e) => setHuggingfaceToken(e.target.value)}
-                      placeholder={'hf_xxx_xxx'}
-                      required
-                    />
-                    <Button
-                      variant="outline"
-                      size='sm'
-                      disabled={isValidatingToken}
-                      onClick={async () => {
-                        const token = (huggingfaceToken || '').trim()
-                        if (!token) {
-                          toast.error(
-                            'Please enter a Hugging Face token to validate'
-                          )
-                          return
-                        }
-                        setIsValidatingToken(true)
-                        const controller = new AbortController()
-                        const timeoutId = setTimeout(
-                          () => controller.abort(),
-                          TOKEN_VALIDATION_TIMEOUT_MS
-                        )
-                        try {
-                          const resp = await fetch(
-                            'https://huggingface.co/api/whoami-v2',
-                            {
-                              headers: { Authorization: `Bearer ${token}` },
-                              signal: controller.signal,
-                            }
-                          )
-                          if (resp.ok) {
-                            const data = await resp.json()
-                            toast.success('Token is valid', {
-                              description: data?.name
-                                ? `Signed in as ${data.name}`
-                                : 'Your Hugging Face token is valid.',
-                            })
-                          } else {
-                            toast.error('Token invalid', {
-                              description:
-                                'The provided Hugging Face token is invalid. Please check your token and try again.',
-                            })
-                          }
-                        } catch (e) {
-                          const name = (e as { name?: string })?.name
-                          if (name === 'AbortError') {
-                            toast.error('Validation timed out', {
-                              description:
-                                'The validation request timed out. Please check your network connection and try again.',
-                            })
-                          } else {
-                            toast.error('Validation failed', {
-                              description:
-                                'A network error occurred while validating the token. Please check your internet connection.',
-                            })
-                          }
-                        } finally {
-                          clearTimeout(timeoutId)
-                          setIsValidatingToken(false)
-                        }
-                      }}
-                    >
-                      Verify
-                    </Button>
-                  </div>
-                }
-              />
             </Card>
 
             {/* Resources */}
@@ -559,7 +475,7 @@ function General() {
                 description={t('settings:general.releaseNotesDesc')}
                 actions={
                   <a
-                    href="https://github.com/janhq/jan/releases"
+                    href="https://github.com/rongxinzy/jan/releases"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -579,7 +495,7 @@ function General() {
                 description={t('settings:general.githubDesc')}
                 actions={
                   <a
-                    href="https://github.com/janhq/jan"
+                    href="https://github.com/rongxinzy/jan"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -591,15 +507,15 @@ function General() {
                 }
               />
               <CardItem
-                title={t('settings:general.discord')}
-                description={t('settings:general.discordDesc')}
+                title={t('settings:general.website')}
+                description={t('settings:general.websiteDesc')}
                 actions={
                   <a
-                    href="https://discord.com/invite/FTk2MvZwJH"
+                    href="http://www.rongxzy.com/"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <IconBrandDiscord
+                    <IconWorld
                       size={18}
                       className="text-muted-foreground"
                     />
@@ -615,7 +531,7 @@ function General() {
                 description={t('settings:general.reportAnIssueDesc')}
                 actions={
                   <a
-                    href="https://github.com/janhq/jan/issues/new"
+                    href="https://github.com/rongxinzy/jan/issues/new"
                     target="_blank"
                   >
                     <div className="flex items-center gap-1">

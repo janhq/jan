@@ -42,8 +42,8 @@
   "reportAnIssueDesc": "バグを見つけましたか？GitHubで問題を報告して、私たちを助けてください。",
   "reportIssue": "問題を報告",
   "credits": "クレジット",
-  "creditsDesc1": "👋 JanはMenlo Researchチームによって❤️を込めて作られています。",
-  "creditsDesc2": "オープンソースの依存関係、特にllama.cppとTauri、そして素晴らしいAIコミュニティに感謝します。",
+  "creditsDesc1": "容芯AI助手 is built with ❤️ by 容芯致远 (Rongxin Zhiyuan), based on the open-source Jan project by Menlo Research.",
+  "creditsDesc2": "Special thanks to open-source dependencies—especially llama.cpp and Tauri—and to the Jan open-source community and 容芯AI助手 users.",
   "appVersion": "アプリのバージョン",
   "dataFolder": {
     "appData": "アプリデータ",
@@ -275,5 +275,7 @@
     "updateError": "Llamacppの更新に失敗しました"
   },
   "backendInstallSuccess": "バックエンドは正常にインストールされました",
-  "backendInstallError": "バックエンドのインストールに失敗しました"
+  "backendInstallError": "バックエンドのインストールに失敗しました",
+  "website": "官网",
+  "websiteDesc": "访问容芯致远官网。"
 }

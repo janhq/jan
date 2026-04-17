@@ -98,7 +98,7 @@
   "noModels": "Tidak ada model yang ditemukan",
   "customAvatar": "Avatar kustom",
   "editAssistant": "Edit Asisten",
-  "jan": "Jan",
+  "jan": "容芯AI助手",
   "metadata": "Metadata",
   "regenerate": "Hasilkan Ulang",
   "threadImage": "Gambar utas",
@@ -396,5 +396,6 @@
     "noProjectsFound": "Tidak ada proyek ditemukan",
     "tryDifferentSearch": "Coba kata kunci pencarian lain",
     "uploadingFiles": "Mengunggah file…"
-  }
+  },
+  "inferenceCenter": "推理中心"
 }

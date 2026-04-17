@@ -1,0 +1,124 @@
+[
+  {
+    "model_name": "Qwen2.5-7B-Instruct-GGUF",
+    "developer": "qwen",
+    "downloads": 54533,
+    "description": "Qwen2.5 鏄?Qwen 澶ц瑷€妯″瀷鐨勬渶鏂扮郴鍒椼€?B 鎸囦护寰皟妯″瀷鐨?GGUF 閲忓寲鐗堟湰锛屾敮鎸佷腑鏂囧拰鑻辨枃锛屼笂涓嬫枃闀垮害 128K銆?,
+    "created_at": "2024-09-01T00:00:00Z",
+    "tags": ["chat", "gguf", "chinese", "english"],
+    "quants": [
+      {
+        "model_id": "qwen2.5-7b-instruct-q4_k_m",
+        "path": "https://www.modelscope.cn/models/qwen/Qwen2.5-7B-Instruct-GGUF/resolve/master/qwen2.5-7b-instruct-q4_k_m.gguf",
+        "file_size": "4.7 GB"
+      },
+      {
+        "model_id": "qwen2.5-7b-instruct-q5_k_m",
+        "path": "https://www.modelscope.cn/models/qwen/Qwen2.5-7B-Instruct-GGUF/resolve/master/qwen2.5-7b-instruct-q5_k_m.gguf",
+        "file_size": "5.5 GB"
+      }
+    ],
+    "num_quants": 2,
+    "tools": true
+  },
+  {
+    "model_name": "Qwen2.5-14B-Instruct-GGUF",
+    "developer": "qwen",
+    "downloads": 25452,
+    "description": "Qwen2.5 14B 鎸囦护寰皟妯″瀷 GGUF 閲忓寲鐗堬紝鎬ц兘 stronger锛岄€傚悎涓珮绔?GPU銆?,
+    "created_at": "2024-09-01T00:00:00Z",
+    "tags": ["chat", "gguf", "chinese", "english"],
+    "quants": [
+      {
+        "model_id": "qwen2.5-14b-instruct-q4_k_m",
+        "path": "https://www.modelscope.cn/models/qwen/Qwen2.5-14B-Instruct-GGUF/resolve/master/qwen2.5-14b-instruct-q4_k_m.gguf",
+        "file_size": "9.0 GB"
+      }
+    ],
+    "num_quants": 1,
+    "tools": true
+  },
+  {
+    "model_name": "Qwen2-7B-Instruct-GGUF",
+    "developer": "qwen",
+    "downloads": 32033,
+    "description": "Qwen2 7B 鎸囦护寰皟妯″瀷 GGUF 閲忓寲鐗堬紝绋冲畾鍙潬鐨勯€氱敤涓枃澶фā鍨嬨€?,
+    "created_at": "2024-02-01T00:00:00Z",
+    "tags": ["chat", "gguf", "chinese", "english"],
+    "quants": [
+      {
+        "model_id": "qwen2-7b-instruct-q4_k_m",
+        "path": "https://www.modelscope.cn/models/qwen/Qwen2-7B-Instruct-GGUF/resolve/master/qwen2-7b-instruct-q4_k_m.gguf",
+        "file_size": "4.4 GB"
+      },
+      {
+        "model_id": "qwen2-7b-instruct-q5_k_m",
+        "path": "https://www.modelscope.cn/models/qwen/Qwen2-7B-Instruct-GGUF/resolve/master/qwen2-7b-instruct-q5_k_m.gguf",
+        "file_size": "5.1 GB"
+      }
+    ],
+    "num_quants": 2,
+    "tools": true
+  },
+  {
+    "model_name": "Qwen1.5-7B-Chat-GGUF",
+    "developer": "qwen",
+    "downloads": 9079,
+    "description": "Qwen1.5 7B Chat 妯″瀷 GGUF 閲忓寲鐗堬紝鎻愪緵澶氱绮惧害閫夋嫨銆?,
+    "created_at": "2024-02-01T00:00:00Z",
+    "tags": ["chat", "gguf", "chinese", "english"],
+    "quants": [
+      {
+        "model_id": "qwen1_5-7b-chat-q4_k_m",
+        "path": "https://www.modelscope.cn/models/qwen/Qwen1.5-7B-Chat-GGUF/resolve/master/qwen1_5-7b-chat-q4_k_m.gguf",
+        "file_size": "4.4 GB"
+      },
+      {
+        "model_id": "qwen1_5-7b-chat-q5_k_m",
+        "path": "https://www.modelscope.cn/models/qwen/Qwen1.5-7B-Chat-GGUF/resolve/master/qwen1_5-7b-chat-q5_k_m.gguf",
+        "file_size": "5.2 GB"
+      }
+    ],
+    "num_quants": 2,
+    "tools": true
+  },
+  {
+    "model_name": "Meta-Llama-3.1-8B-Instruct-GGUF",
+    "developer": "QuantFactory",
+    "downloads": 2112,
+    "description": "Meta Llama 3.1 8B 鎸囦护寰皟妯″瀷鐨?GGUF 閲忓寲鐗堟湰锛屽璇█鏀寔锛屼笂涓嬫枃 128K銆?,
+    "created_at": "2024-07-01T00:00:00Z",
+    "tags": ["chat", "gguf", "english", "multilingual"],
+    "quants": [
+      {
+        "model_id": "Meta-Llama-3.1-8B-Instruct.Q4_K_M",
+        "path": "https://www.modelscope.cn/models/QuantFactory/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/master/Meta-Llama-3.1-8B-Instruct.Q4_K_M.gguf",
+        "file_size": "4.6 GB"
+      },
+      {
+        "model_id": "Meta-Llama-3.1-8B-Instruct.Q5_K_M",
+        "path": "https://www.modelscope.cn/models/QuantFactory/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/master/Meta-Llama-3.1-8B-Instruct.Q5_K_M.gguf",
+        "file_size": "5.3 GB"
+      }
+    ],
+    "num_quants": 2,
+    "tools": true
+  },
+  {
+    "model_name": "Mistral-7B-Instruct-v0.3-GGUF",
+    "developer": "bartowski",
+    "downloads": 1412,
+    "description": "Mistral 7B Instruct v0.3 GGUF 閲忓寲鐗堬紝娉曞浗 Mistral AI 鍑哄搧鐨勯珮鎬ц兘寮€婧愭ā鍨嬨€?,
+    "created_at": "2024-05-01T00:00:00Z",
+    "tags": ["chat", "gguf", "english"],
+    "quants": [
+      {
+        "model_id": "Mistral-7B-Instruct-v0.3-Q4_K_M",
+        "path": "https://www.modelscope.cn/models/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/master/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf",
+        "file_size": "4.4 GB"
+      }
+    ],
+    "num_quants": 1,
+    "tools": true
+  }
+]

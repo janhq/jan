@@ -96,7 +96,7 @@
   "noModels": "Nenhum modelo encontrado",
   "customAvatar": "Avatar personalizado",
   "editAssistant": "Editar Assistente",
-  "jan": "Jan",
+  "jan": "容芯AI助手",
   "metadata": "Metadados",
   "regenerate": "Regenerar",
   "threadImage": "Imagem da conversa",
@@ -397,5 +397,6 @@
   "attachmentInjectedIndicator": "Injetado no chat",
   "attachmentEmbeddedIndicator": "Incorporado para RAG",
   "viewInjectedContent": "Ver conteúdo injetado",
-  "injectedContentTitle": "Conteúdo de arquivo injetado"
+  "injectedContentTitle": "Conteúdo de arquivo injetado",
+  "inferenceCenter": "推理中心"
 }

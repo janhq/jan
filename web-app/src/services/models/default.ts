@@ -22,6 +22,8 @@ import type {
   HuggingFaceRepo,
   CatalogModel,
   ModelValidationResult,
+  ModelScopeRepo,
+  ModelScopeFileList,
 } from './types'
 import {
   extractToolContextFromContent,
@@ -214,6 +216,107 @@ export class DefaultModelsService implements ModelsService {
     }
   }
 
+  async fetchModelScopeRepo(
+    modelId: string
+  ): Promise<ModelScopeRepo | null> {
+    try {
+      const cleanModelId = modelId
+        .replace(/^https?:\/\/www\.modelscope\.cn\//, '')
+        .replace(/^www\.modelscope\.cn\//, '')
+        .replace(/^models\//, '')
+        .replace(/\/$/, '')
+        .trim()
+
+      if (!cleanModelId || !cleanModelId.includes('/')) {
+        return null
+      }
+
+      const response = await fetch(
+        `https://www.modelscope.cn/api/v1/models/${cleanModelId}`
+      )
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null
+        }
+        throw new Error(
+          `Failed to fetch ModelScope repository: ${response.status} ${response.statusText}`
+        )
+      }
+
+      const repoData = (await response.json()) as ModelScopeRepo
+      return repoData
+    } catch (error) {
+      console.error('Error fetching ModelScope repository:', error)
+      return null
+    }
+  }
+
+  async fetchModelScopeFiles(
+    modelId: string
+  ): Promise<ModelScopeFileList | null> {
+    try {
+      const response = await fetch(
+        `https://www.modelscope.cn/api/v1/models/${modelId}/repo/files?Recursive=true`
+      )
+      if (!response.ok) return null
+      return (await response.json()) as ModelScopeFileList
+    } catch (error) {
+      console.error('Error fetching ModelScope files:', error)
+      return null
+    }
+  }
+
+  convertMsRepoToCatalogModel(repo: ModelScopeRepo): CatalogModel {
+    const formatFileSize = (size?: number) => {
+      if (!size) return 'Unknown size'
+      if (size < 1024 ** 3) return `${(size / 1024 ** 2).toFixed(1)} MB`
+      return `${(size / 1024 ** 3).toFixed(1)} GB`
+    }
+
+    const data = repo.Data
+    const ns = data.Path
+    const name = data.Name
+    const fullId = `${ns}/${name}`
+
+    // Try to get GGUF file list from ModelInfos.gguf first
+    const ggufList = data.ModelInfos?.gguf?.gguf_file_list ?? []
+
+    const quants = ggufList.flatMap((item) =>
+      item.file_info
+        .filter((f) => !f.name.toLowerCase().includes('mmproj'))
+        .map((f) => ({
+          model_id: `${ns}/${sanitizeModelId(f.name.replace(/\.gguf$/i, ''))}`,
+          path: `https://www.modelscope.cn/models/${fullId}/resolve/master/${f.name}`,
+          file_size: formatFileSize(f.size),
+        }))
+    )
+
+    const mmprojModels = ggufList.flatMap((item) =>
+      item.file_info
+        .filter((f) => f.name.toLowerCase().includes('mmproj'))
+        .map((f) => ({
+          model_id: sanitizeModelId(f.name.replace(/\.gguf$/i, '')),
+          path: `https://www.modelscope.cn/models/${fullId}/resolve/master/${f.name}`,
+          file_size: formatFileSize(f.size),
+        }))
+    )
+
+    return {
+      model_name: name,
+      developer: ns,
+      downloads: data.Downloads || 0,
+      created_at: new Date(data.CreatedTime * 1000).toISOString(),
+      num_quants: quants.length,
+      quants,
+      num_mmproj: mmprojModels.length,
+      mmproj_models: mmprojModels,
+      is_mlx: false,
+      readme: '',
+      description: data.Description || `**Tags**: ${data.Tags?.join(', ')}`,
+    }
+  }
+
   async updateModel(modelId: string, model: Partial<CoreModel>): Promise<void> {
     if (model.settings) {
       this.getEngine()?.updateSettings(
@@ -255,6 +358,15 @@ export class DefaultModelsService implements ModelsService {
     let modelSize: number | undefined
     let mmprojSha256: string | undefined
     let mmprojSize: number | undefined
+
+    // ModelScope URL format: https://www.modelscope.cn/models/{ns}/{name}/resolve/master/{filename}
+    const isModelScope = modelPath.includes('modelscope.cn')
+
+    if (isModelScope) {
+      // For ModelScope, always skip verification for now
+      // (the download URL already points directly to the file)
+      skipVerification = true
+    }
 
     // Extract repo ID from model URL
     // URL format: https://huggingface.co/{repo}/resolve/main/{filename}

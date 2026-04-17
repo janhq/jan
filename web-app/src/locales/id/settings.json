@@ -42,8 +42,8 @@
   "reportAnIssueDesc": "Menemukan bug? Bantu kami dengan mengajukan masalah di GitHub.",
   "reportIssue": "Laporkan Masalah",
   "credits": "Kredit",
-  "creditsDesc1": "Jan dibuat dengan ❤️ oleh Tim Menlo.",
-  "creditsDesc2": "Terima kasih khusus kepada dependensi sumber terbuka kami—terutama llama.cpp dan Tauri—dan kepada komunitas AI kami yang luar biasa.",
+  "creditsDesc1": "容芯AI助手 is built with ❤️ by 容芯致远 (Rongxin Zhiyuan), based on the open-source Jan project by Menlo Research.",
+  "creditsDesc2": "Special thanks to open-source dependencies—especially llama.cpp and Tauri—and to the Jan open-source community and 容芯AI助手 users.",
   "appVersion": "Versi Aplikasi",
   "dataFolder": {
     "appData": "Data Aplikasi",
@@ -278,5 +278,7 @@
     "updateError": "Gagal memperbarui Llamacpp"
   },
   "backendInstallSuccess": "Backend berhasil diinstal",
-  "backendInstallError": "Gagal menginstal backend"
+  "backendInstallError": "Gagal menginstal backend",
+  "website": "官网",
+  "websiteDesc": "访问容芯致远官网。"
 }

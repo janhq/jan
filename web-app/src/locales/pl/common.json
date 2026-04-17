@@ -96,7 +96,7 @@
   "noModelsFoundFor": "Brak modeli dla \"{{searchValue}}\"",
   "customAvatar": "Własny awatar",
   "editAssistant": "Edytuj Asystenta",
-  "jan": "Jan",
+  "jan": "容芯AI助手",
   "metadata": "Metadane",
   "regenerate": "Odtwórz",
   "threadImage": "Obraz wątku",
@@ -396,5 +396,6 @@
   "conversationNotAvailable": "Rozmowa niedostępna",
   "conversationNotAvailableDescription": "Rozmowa, do której próbujesz uzyskać dostęp, nie jest dostępna lub została usunięta.",
   "temporaryChat": "Tymczasowy Czat",
-  "temporaryChatTooltip": "Tymczasowy czat nie pojawi się w Twojej historii"
+  "temporaryChatTooltip": "Tymczasowy czat nie pojawi się w Twojej historii",
+  "inferenceCenter": "推理中心"
 }

@@ -109,6 +109,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Jan'
     case 'llamacpp':
       return 'Llama.cpp'
+    case 'ollama':
+      return 'Ollama'
     case 'mlx':
       return 'MLX'
     case 'foundation-models':

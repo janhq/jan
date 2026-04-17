@@ -42,8 +42,8 @@
   "reportAnIssueDesc": "¿Encontraste un error? Ayúdanos reportando un problema en GitHub.",
   "reportIssue": "Reportar problema",
   "credits": "Créditos",
-  "creditsDesc1": "👋 Jan está hecho con ❤️ por el equipo de Menlo Research.",
-  "creditsDesc2": "Un agradecimiento especial a nuestras dependencias de código abierto, especialmente llama.cpp y Tauri, y a nuestra increíble comunidad de IA.",
+  "creditsDesc1": "容芯AI助手 is built with ❤️ by 容芯致远 (Rongxin Zhiyuan), based on the open-source Jan project by Menlo Research.",
+  "creditsDesc2": "Special thanks to open-source dependencies—especially llama.cpp and Tauri—and to the Jan open-source community and 容芯AI助手 users.",
   "appVersion": "Versión de la aplicación",
   "dataFolder": {
     "appData": "Datos de la aplicación",
@@ -496,5 +496,7 @@
       "startSetup": "Iniciar configuración",
       "connecting": "Conectando..."
     }
-  }
+  },
+  "website": "官网",
+  "websiteDesc": "访问容芯致远官网。"
 }

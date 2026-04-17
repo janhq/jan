@@ -42,8 +42,8 @@
   "reportAnIssueDesc": "发现错误？通过在 GitHub 上提交问题来帮助我们。",
   "reportIssue": "报告问题",
   "credits": "致谢",
-  "creditsDesc1": "Jan 由 Menlo 团队用 ❤️ 构建。",
-  "creditsDesc2": "特别感谢我们的开源依赖项——尤其是 llama.cpp 和 Tauri——以及我们出色的 AI 社区。",
+  "creditsDesc1": "容芯AI助手由容芯致远团队基于开源项目 Jan（Menlo Research）构建。",
+  "creditsDesc2": "特别感谢 llama.cpp、Tauri 等开源依赖，以及 Jan 开源社区和容芯致远的用户们。",
   "appVersion": "应用版本",
   "dataFolder": {
     "appData": "应用数据",
@@ -252,8 +252,8 @@
     "credits": "致谢",
     "creditsDesc1": "Jan 由 Menlo 团队用 ❤️ 构建。",
     "creditsDesc2": "特别感谢我们的开源依赖项——尤其是 llama.cpp 和 Tauri——以及我们出色的 AI 社区。",
-    "huggingfaceToken": "HuggingFace 令牌",
-    "huggingfaceTokenDesc": "您用于访问模型的 HuggingFace API 令牌。"
+    "modelscopeMarket": "ModelScope 模型市场",
+    "modelscopeMarketDesc": "从 ModelScope（魔搭社区）浏览和下载 GGUF 模型。"
   },
   "extensions": {
     "title": "扩展"
@@ -278,5 +278,7 @@
     "updateError": "更新 Llamacpp 失败"
   },
   "backendInstallSuccess": "后端安装成功",
-  "backendInstallError": "后端安装失败"
+  "backendInstallError": "后端安装失败",
+  "website": "官网",
+  "websiteDesc": "访问容芯致远官网。"
 }

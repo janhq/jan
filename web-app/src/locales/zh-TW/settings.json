@@ -42,8 +42,8 @@
   "reportAnIssueDesc": "發現錯誤？透過在 GitHub 上提交問題來幫助我們。",
   "reportIssue": "報告問題",
   "credits": "致謝",
-  "creditsDesc1": "Jan 由 Menlo 團隊用 ❤️ 構建。",
-  "creditsDesc2": "特別感謝我們的開源依賴項——尤其是 llama.cpp 和 Tauri——以及我們出色的 AI 社群。",
+  "creditsDesc1": "容芯AI助手由容芯致遠團隊基於開源專案 Jan（Menlo Research）建構。",
+  "creditsDesc2": "特別感謝 llama.cpp、Tauri 等開源依賴，以及 Jan 開源社群和容芯致遠的用戶們。",
   "appVersion": "應用程式版本",
   "dataFolder": {
     "appData": "應用程式資料",
@@ -278,5 +278,7 @@
     "updateError": "更新 Llamacpp 失敗"
   },
   "backendInstallSuccess": "後端安裝成功",
-  "backendInstallError": "後端安裝失敗"
+  "backendInstallError": "後端安裝失敗",
+  "website": "官网",
+  "websiteDesc": "访问容芯致远官网。"
 }

@@ -103,7 +103,7 @@
   "generateAiResponse": "Tạo phản hồi AI",
   "customAvatar": "Ảnh đại diện tùy chỉnh",
   "editAssistant": "Chỉnh sửa Trợ lý",
-  "jan": "Jan",
+  "jan": "容芯AI助手",
   "metadata": "Siêu dữ liệu",
   "regenerate": "Tái tạo",
   "threadImage": "Hình ảnh chủ đề",
@@ -396,5 +396,6 @@
       "title": "Chủ đề đã được xóa",
       "description": "Chủ đề đã được xóa khỏi \"{{projectName}}\" thành công"
     }
-  }
+  },
+  "inferenceCenter": "推理中心"
 }

@@ -42,8 +42,8 @@
   "reportAnIssueDesc": "버그를 발견하셨나요? GitHub에 이슈를 등록하여 저희를 도와주세요.",
   "reportIssue": "문제 신고",
   "credits": "크레딧",
-  "creditsDesc1": "👋 Jan은 Menlo Research 팀이 ❤️를 담아 만들었습니다.",
-  "creditsDesc2": "오픈 소스 종속성(특히 llama.cpp 및 Tauri)과 멋진 AI 커뮤니티에 특별히 감사드립니다.",
+  "creditsDesc1": "容芯AI助手 is built with ❤️ by 容芯致远 (Rongxin Zhiyuan), based on the open-source Jan project by Menlo Research.",
+  "creditsDesc2": "Special thanks to open-source dependencies—especially llama.cpp and Tauri—and to the Jan open-source community and 容芯AI助手 users.",
   "appVersion": "앱 버전",
   "dataFolder": {
     "appData": "앱 데이터",
@@ -496,5 +496,7 @@
       "startSetup": "설정 시작",
       "connecting": "연결 중..."
     }
-  }
+  },
+  "website": "官网",
+  "websiteDesc": "访问容芯致远官网。"
 }

@@ -98,7 +98,7 @@
   "noModels": "Keine Modelle gefunden",
   "customAvatar": "Benutzerdefinierter Avatar",
   "editAssistant": "Assistenten bearbeiten",
-  "jan": "Jan",
+  "jan": "容芯AI助手",
   "metadata": "Metadaten",
   "regenerate": "Neu generieren",
   "threadImage": "Thread Bild",
@@ -396,5 +396,6 @@
       "title": "Download abgeschlossen",
       "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
     }
-  }
+  },
+  "inferenceCenter": "推理中心"
 }

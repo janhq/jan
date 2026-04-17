@@ -98,7 +98,7 @@
   "noModels": "Aucun modèle trouvé",
   "customAvatar": "Avatar personnalisé",
   "editAssistant": "Modifier l'assistant",
-  "jan": "Jan",
+  "jan": "容芯AI助手",
   "metadata": "Métadonnées",
   "regenerate": "Régénérer",
   "threadImage": "Image de la discussion",
@@ -399,5 +399,6 @@
   "attachmentInjectedIndicator": "Injecté dans la discussion",
   "attachmentEmbeddedIndicator": "Intégré pour RAG",
   "viewInjectedContent": "Voir le contenu injecté",
-  "injectedContentTitle": "Contenu du fichier injecté"
+  "injectedContentTitle": "Contenu du fichier injecté",
+  "inferenceCenter": "推理中心"
 }

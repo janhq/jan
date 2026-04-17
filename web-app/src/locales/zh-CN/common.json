@@ -110,7 +110,7 @@
   },
   "customAvatar": "自定义头像",
   "editAssistant": "编辑助手",
-  "jan": "Jan",
+  "jan": "容芯AI助手",
   "metadata": "元数据",
   "regenerate": "重新生成",
   "threadImage": "会话图片",
@@ -396,5 +396,6 @@
       "title": "线程已移除",
       "description": "线程已成功从\"{{projectName}}\"中移除"
     }
-  }
+  },
+  "inferenceCenter": "推理中心"
 }

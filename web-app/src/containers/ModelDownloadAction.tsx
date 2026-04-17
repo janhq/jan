@@ -2,7 +2,6 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { route } from '@/constants/routes'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
@@ -21,7 +20,6 @@ export const ModelDownloadAction = ({
   const serviceHub = useServiceHub()
 
   const { t } = useTranslation()
-  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const { downloads, localDownloadingModels, addLocalDownloadingModel } =
     useDownloadStore()
   const downloadProcesses = useMemo(
@@ -66,13 +64,12 @@ export const ModelDownloadAction = ({
             (e) => e.model_id.toLowerCase() === 'mmproj-f16'
           ) || model.mmproj_models?.[0]
         )?.path,
-        huggingfaceToken
+        undefined
       )
   }, [
     serviceHub,
     variant.path,
     variant.model_id,
-    huggingfaceToken,
     model.mmproj_models,
     addLocalDownloadingModel,
   ])

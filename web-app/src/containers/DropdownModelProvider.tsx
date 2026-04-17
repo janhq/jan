@@ -347,6 +347,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       const activeProviders = providers
         .filter((p) => p.active && p.provider !== 'foundation-models')
         .sort((a, b) => {
+          const aIsOllama = a.provider === 'ollama'
+          const bIsOllama = b.provider === 'ollama'
+          if (aIsOllama && !bIsOllama) return -1
+          if (!aIsOllama && bIsOllama) return 1
+
           const aIsLocal = a.provider === 'llamacpp' || a.provider === 'mlx'
           const bIsLocal = b.provider === 'llamacpp' || b.provider === 'mlx'
           // Local (llamacpp) first

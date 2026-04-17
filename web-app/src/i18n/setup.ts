@@ -57,9 +57,9 @@ Object.entries(localeFiles).forEach(([path, module]) => {
 // (see useGeneralSetting subscription at the bottom of this file).
 const getStoredLanguage = (): string => {
   try {
-    return useGeneralSetting.getState().currentLanguage || 'en'
+    return useGeneralSetting.getState().currentLanguage || 'zh-CN'
   } catch {
-    return 'en'
+    return 'zh-CN'
   }
 }
 
@@ -125,7 +125,7 @@ const initI18n = (): I18nInstance => {
   
   i18nInstance = {
     language: currentLanguage,
-    fallbackLng: 'en',
+    fallbackLng: 'zh-CN',
     resources,
     namespaces,
     defaultNS: 'common',

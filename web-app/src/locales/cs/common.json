@@ -98,7 +98,7 @@
   "noModels": "Nebyly nalezeny žádné modely",
   "customAvatar": "Vlastní avatar",
   "editAssistant": "Upravit asistenta",
-  "jan": "Jan",
+  "jan": "容芯AI助手",
   "metadata": "Metadata",
   "regenerate": "Regenerovat",
   "threadImage": "Obrázek vlákna",
@@ -396,5 +396,6 @@
       "title": "Vlákno odebráno",
       "description": "Vlákno bylo úspěšně odebráno z \"{{projectName}}\""
     }
-  }
+  },
+  "inferenceCenter": "推理中心"
 }

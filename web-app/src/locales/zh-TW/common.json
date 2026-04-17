@@ -110,7 +110,7 @@
   },
   "customAvatar": "自訂頭像",
   "editAssistant": "編輯助理",
-  "jan": "Jan",
+  "jan": "容芯AI助手",
   "metadata": "元數據",
   "regenerate": "重新產生",
   "threadImage": "對話圖片",
@@ -396,5 +396,6 @@
       "title": "執行緒已移除",
       "description": "執行緒已成功從「{{projectName}}」中移除"
     }
-  }
+  },
+  "inferenceCenter": "推理中心"
 }

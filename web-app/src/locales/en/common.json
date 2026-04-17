@@ -108,7 +108,7 @@
   "noModels": "No models found",
   "customAvatar": "Custom avatar",
   "editAssistant": "Edit Assistant",
-  "jan": "Jan",
+  "jan": "容芯AI助手",
   "metadata": "Metadata",
   "regenerate": "Regenerate",
   "threadImage": "Thread image",
@@ -468,5 +468,6 @@
   },
   "files": {
     "chunksCount": "{{count}} chunks"
-  }
+  },
+  "inferenceCenter": "推理中心"
 }

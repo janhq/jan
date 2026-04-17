@@ -110,7 +110,7 @@
   "noModels": "No se encontraron modelos",
   "customAvatar": "Avatar personalizado",
   "editAssistant": "Editar asistente",
-  "jan": "Jan",
+  "jan": "容芯AI助手",
   "metadata": "Metadatos",
   "regenerate": "Regenerar",
   "threadImage": "Imagen del hilo",
@@ -466,5 +466,6 @@
   },
   "files": {
     "chunksCount": "{{count}} fragmentos"
-  }
+  },
+  "inferenceCenter": "推理中心"
 }

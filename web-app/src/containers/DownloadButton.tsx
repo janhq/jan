@@ -1,7 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
@@ -35,7 +34,6 @@ export function DownloadButtonPlaceholder({
   const llamaProvider = getProviderByName('llamacpp')
 
   const serviceHub = useServiceHub()
-  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const [isDownloaded, setDownloaded] = useState<boolean>(false)
 
   const quant =
@@ -96,11 +94,11 @@ export function DownloadButtonPlaceholder({
     return (
       <div className="flex items-center gap-2">
         <a
-          href={`https://huggingface.co/${model.developer ? `${model.developer}/` : ''}${model.model_name}`}
+          href={`https://www.modelscope.cn/models/${model.developer ? `${model.developer}/` : ''}${model.model_name}`}
           target="_blank"
           rel="noopener noreferrer"
         >
-          <Button size="sm">View on HuggingFace</Button>
+          <Button size="sm">在 ModelScope 查看</Button>
         </a>
       </div>
     )
@@ -126,7 +124,7 @@ export function DownloadButtonPlaceholder({
     )?.path
     serviceHub
       .models()
-      .pullModelWithMetadata(modelId, modelUrl, mmprojPath, huggingfaceToken)
+      .pullModelWithMetadata(modelId, modelUrl, mmprojPath, undefined)
   }
 
   return (
