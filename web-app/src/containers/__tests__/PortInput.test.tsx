@@ -25,11 +25,11 @@ describe('PortInput', () => {
     expect(mockSetServerPort).toHaveBeenCalledWith(8080)
   })
 
-  it('calls setServerPort on blur with any value', () => {
+  it('does not call setServerPort when port is out of range', () => {
     render(<PortInput />)
     const input = screen.getByDisplayValue('1337')
     fireEvent.change(input, { target: { value: '99999' } })
     fireEvent.blur(input)
-    expect(mockSetServerPort).toHaveBeenCalled()
+    expect(mockSetServerPort).not.toHaveBeenCalled()
   })
 })
