@@ -3,7 +3,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Jan",
+        "title": "容芯AI助手",
         "width": 1200,
         "minWidth": 1024,
         "height": 800,
@@ -29,7 +29,7 @@
     ]
   },
   "bundle": {
-    "targets": ["nsis", "msi"],
+    "targets": ["nsis"],
     "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/jan-cli.exe", "nsis/ollama-config.ini"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
