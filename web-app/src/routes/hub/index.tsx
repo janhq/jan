@@ -446,19 +446,19 @@ function HubContent() {
       const serviceHub = getServiceHub()
       toast.info(`正在获取 ModelScope 模型文件列表: ${model}`)
       const files = await serviceHub.models().fetchModelScopeFiles(model)
-      if (!files || !files.files || files.files.length === 0) {
+      if (!files || !files.Files || files.Files.length === 0) {
         toast.error('未找到模型文件')
         return
       }
-      const ggufFile = files.files.find((f: { name: string }) =>
-        f.name.toLowerCase().endsWith('.gguf')
+      const ggufFile = files.Files.find((f: { Name: string }) =>
+        f.Name.toLowerCase().endsWith('.gguf')
       )
       if (!ggufFile) {
         toast.error('未找到 GGUF 文件')
         return
       }
-      const downloadUrl = `https://www.modelscope.cn/models/${model}/resolve/master/${ggufFile.name}`
-      toast.info(`开始下载: ${ggufFile.name}`)
+      const downloadUrl = `https://www.modelscope.cn/models/${model}/resolve/master/${ggufFile.Name}`
+      toast.info(`开始下载: ${ggufFile.Name}`)
       await serviceHub.models().pullModelWithMetadata(
         model,
         downloadUrl,

@@ -80,12 +80,19 @@ function MarketplaceModelDetailContent() {
       setFileList(null)
       return
     }
+    console.log('[MarketplaceDetail] model.id:', model.id)
     setFilesLoading(true)
     serviceHub
       .models()
       .fetchModelScopeFiles(model.id)
-      .then((list: ModelScopeFileListResult | null) => setFileList(list))
-      .catch(() => setFileList(null))
+      .then((list: ModelScopeFileListResult | null) => {
+        console.log('[MarketplaceDetail] fileList:', list)
+        setFileList(list)
+      })
+      .catch((err) => {
+        console.error('[MarketplaceDetail] fetchModelScopeFiles failed:', err)
+        setFileList(null)
+      })
       .finally(() => setFilesLoading(false))
   }, [model, serviceHub])
 
@@ -117,11 +124,11 @@ function MarketplaceModelDetailContent() {
 
   // Determine the best GGUF file to download
   const bestFile = useMemo(() => {
-    if (!fileList?.files) return null
-    const ggufs = fileList.files.filter(
+    if (!fileList?.Files) return null
+    const ggufs = fileList.Files.filter(
       (f) =>
-        f.name.toLowerCase().endsWith('.gguf') &&
-        !f.name.toLowerCase().includes('mmproj')
+        f.Name.toLowerCase().endsWith('.gguf') &&
+        !f.Name.toLowerCase().includes('mmproj')
     )
     if (ggufs.length === 0) return null
     const priority = (name: string) => {
@@ -131,13 +138,13 @@ function MarketplaceModelDetailContent() {
       if (lower.includes('q8_0')) return 1
       return 0
     }
-    return [...ggufs].sort((a, b) => priority(b.name) - priority(a.name))[0]
+    return [...ggufs].sort((a, b) => priority(b.Name) - priority(a.Name))[0]
   }, [fileList])
 
   const downloadModelId = useMemo(() => {
     if (!bestFile || !model) return null
     const ns = model.id.split('/')[0]
-    return `${ns}/${sanitizeModelId(bestFile.name.replace(/\.gguf$/i, ''))}`
+    return `${ns}/${sanitizeModelId(bestFile.Name.replace(/\.gguf$/i, ''))}`
   }, [bestFile, model])
 
   const downloadProcesses = useMemo(
@@ -169,7 +176,7 @@ function MarketplaceModelDetailContent() {
 
   const handleDownload = useCallback(() => {
     if (!downloadModelId || !bestFile || !model) return
-    const path = `https://www.modelscope.cn/models/${model.id}/resolve/master/${bestFile.path}`
+    const path = `https://www.modelscope.cn/models/${model.id}/resolve/master/${bestFile.Path}`
     addLocalDownloadingModel(downloadModelId)
     serviceHub
       .models()
@@ -386,6 +393,13 @@ function MarketplaceModelDetailContent() {
                           正在获取文件列表...
                         </span>
                       </div>
+                    ) : fileList === null ? (
+                      <div className="flex flex-col gap-1 py-2 text-sm text-muted-foreground">
+                        <div className="flex items-center gap-2">
+                          <IconFile size={16} />
+                          <span>获取文件列表失败，请打开控制台查看详细错误</span>
+                        </div>
+                      </div>
                     ) : bestFile ? (
                       <div className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3 min-w-0">
@@ -397,15 +411,15 @@ function MarketplaceModelDetailContent() {
                           </div>
                           <div className="flex flex-col min-w-0">
                             <span className="text-sm font-medium text-foreground truncate">
-                              {bestFile.name}
+                              {bestFile.Name}
                             </span>
                             <span className="text-xs text-muted-foreground">
-                              {bestFile.size > 0
-                                ? toGigabytes(bestFile.size)
+                              {bestFile.Size > 0
+                                ? toGigabytes(bestFile.Size)
                                 : '大小未知'}
-                              {bestFile.sha256 && (
+                              {bestFile.Sha256 && (
                                 <span className="ml-2 font-mono">
-                                  SHA: {bestFile.sha256.slice(0, 8)}…
+                                  SHA: {bestFile.Sha256.slice(0, 8)}…
                                 </span>
                               )}
                             </span>

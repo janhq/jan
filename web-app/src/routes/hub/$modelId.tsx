@@ -66,10 +66,21 @@ function HubModelDetailContent() {
   }, [fetchSources])
 
   const fetchRepo = useCallback(async () => {
+    let repoId = search.repo || modelId || ''
+
+    // If the ID is just a model name without namespace, try to find the full
+    // namespace/name from the preloaded catalog sources.
+    if (repoId && !repoId.includes('/')) {
+      const matched = sources.find((s) => s.model_name === repoId)
+      if (matched?.developer) {
+        repoId = `${matched.developer}/${repoId}`
+      }
+    }
+
     // Try ModelScope first
     const msRepoInfo = await serviceHub
       .models()
-      .fetchModelScopeRepo(search.repo || modelId)
+      .fetchModelScopeRepo(repoId)
     if (msRepoInfo) {
       const repoDetail = serviceHub
         .models()
@@ -86,14 +97,14 @@ function HubModelDetailContent() {
     // Fallback to HuggingFace (for backward compatibility)
     const hfRepoInfo = await serviceHub
       .models()
-      .fetchHuggingFaceRepo(search.repo || modelId)
+      .fetchHuggingFaceRepo(repoId)
     if (hfRepoInfo) {
       const repoDetail = serviceHub
         .models()
         .convertHfRepoToCatalogModel(hfRepoInfo)
       setRepoData(repoDetail || undefined)
     }
-  }, [serviceHub, modelId, search])
+  }, [serviceHub, modelId, search, sources])
 
   useEffect(() => {
     fetchRepo()

@@ -115,15 +115,15 @@ export interface ModelScopeRepo {
 }
 
 export interface ModelScopeFile {
-  name: string
-  path: string
-  size: number
-  sha256: string | null
-  is_lfs: boolean
+  Name: string
+  Path: string
+  Size: number
+  Sha256: string | null
+  IsLFS: boolean
 }
 
 export interface ModelScopeFileListResult {
-  files: ModelScopeFile[]
+  Files: ModelScopeFile[]
 }
 
 export interface GgufMetadata {

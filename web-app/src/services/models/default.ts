@@ -205,9 +205,9 @@ export class DefaultModelsService implements ModelsService {
       }
 
       const result = await invoke<{
-        repo: ModelScopeRepo
+        Repo: ModelScopeRepo
       }>('get_modelscope_repo', { modelId: cleanModelId })
-      return result.repo
+      return result.Repo
     } catch (error) {
       console.error('Error fetching ModelScope repository:', error)
       return null
@@ -218,13 +218,15 @@ export class DefaultModelsService implements ModelsService {
     modelId: string
   ): Promise<ModelScopeFileListResult | null> {
     try {
+      console.log('[fetchModelScopeFiles] requesting files for:', modelId)
       const result = await invoke<ModelScopeFileListResult>(
         'get_modelscope_model_files',
         { modelId }
       )
+      console.log('[fetchModelScopeFiles] result:', result)
       return result
     } catch (error) {
-      console.error('Error fetching ModelScope files:', error)
+      console.error('[fetchModelScopeFiles] ERROR:', error)
       return null
     }
   }

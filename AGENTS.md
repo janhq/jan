@@ -266,6 +266,50 @@ cd src-tauri && cargo check
 - **Linting**: `cargo clippy`
 - **Error handling**: Use `Result<T, E>`; avoid panics
 
+### 外部 API 字段透传原则（可靠性 > 风格）
+
+对于映射外部第三方 API（如 ModelScope、HuggingFace）的数据结构，**全链路保持 API 原始字段名**，禁止使用 `#[serde(rename)]`、`#[serde(alias)]` 或 `rename_all` 做人为的风格转换。
+
+**原因**：
+- 减少转换层级 = 减少出错概率。serde 的 rename/alias 配置一旦与 API 实际返回不符（如字段缺失、大小写变化），会导致整个结构反序列化失败。
+- 调试时可以逐字节对比 API 响应和代码字段，定位问题极快。
+- API 是真相来源。当服务端升级改了字段名时，透传设计只需要改一处，而不是在 Rust、前端各自修 rename 映射。
+
+**具体规则**：
+
+1. **Rust 层**：struct 字段名与 API JSON key 完全一致。
+   - ModelScope 内部 API 返回 PascalCase（如 `Name`, `IsLFS`, `ReadMeContent`）→ Rust 直接用 PascalCase 字段名。
+   - ModelScope OpenAPI 返回 snake_case / camelCase（如 `display_name`, `created_at`）→ Rust 保持 snake_case。
+   - 允许在文件顶部使用 `#![allow(non_snake_case)]` 抑制相关 warning。
+
+2. **前端 TS 层**：与 Rust 返回的字段名保持一致，不做二次 camelCase 转换。
+   - 例如 Rust 返回 `{ "Name": "...", "IsLFS": true }`，前端接口就写成 `Name: string; IsLFS: boolean`，不要转成 `name / isLfs`。
+
+3. **应用层转换**：如果需要在 UI 或业务逻辑中使用更友好的命名，在**应用层**（如 `convertMsRepoToCatalogModel`）做显式字段映射，而不是在 serde 层隐式转换。
+
+**反例（禁止）**：
+```rust
+// ❌ 禁止：用 alias/rename 做风格转换
+#[serde(alias = "Name")]
+pub name: String,
+#[serde(alias = "IsLFS")]
+pub is_lfs: bool,
+```
+
+**正例（推荐）**：
+```rust
+// ✅ 推荐：与 API 字段名完全一致
+#![allow(non_snake_case)]
+
+pub struct ModelScopeFile {
+    pub Name: String,
+    pub Path: String,
+    pub Size: i64,
+    pub Sha256: Option<String>,
+    pub IsLFS: bool,
+}
+```
+
 ### Git Conventions
 - **Target branch**: `main`
 - **Commit messages**: Use conventional commits:

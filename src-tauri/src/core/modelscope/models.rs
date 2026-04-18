@@ -1,4 +1,11 @@
+#![allow(non_snake_case)]
+
 use serde::{Deserialize, Serialize};
+
+// ============================================================
+// OpenAPI 类型（/openapi/v1/*）
+// API 返回原始字段为 snake_case/camelCase，保持原样
+// ============================================================
 
 /// ModelScope API 模型摘要信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,48 +92,44 @@ pub struct ModelScopeDetailResult {
     pub model: ModelScopeModelDetail,
 }
 
+// ============================================================
+// 内部 API 类型（/api/v1/models/*）
+// API 返回原始字段为 PascalCase，全链路透传，不做任何 rename/alias
+// ============================================================
+
 /// ModelScope 单个文件信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelScopeFile {
-    #[serde(alias = "Name")]
-    pub name: String,
-    #[serde(alias = "Path")]
-    pub path: String,
-    #[serde(alias = "Size")]
-    pub size: i64,
-    #[serde(alias = "Sha256")]
-    pub sha256: Option<String>,
-    #[serde(alias = "IsLFS")]
-    pub is_lfs: bool,
+    pub Name: String,
+    pub Path: String,
+    pub Size: i64,
+    pub Sha256: Option<String>,
+    pub IsLFS: bool,
 }
 
 /// ModelScope 文件列表数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelScopeFileListData {
-    #[serde(rename = "Files")]
-    pub files: Vec<ModelScopeFile>,
+    pub Files: Vec<ModelScopeFile>,
 }
 
 /// ModelScope 文件列表响应（内部 API: /api/v1/models/{id}/repo/files）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelScopeFileListApiResponse {
-    #[serde(rename = "Code")]
-    pub code: i32,
-    #[serde(rename = "Success")]
-    pub success: bool,
-    #[serde(rename = "Data")]
-    pub data: ModelScopeFileListData,
-    #[serde(rename = "Message")]
-    pub message: Option<String>,
+    pub Code: i32,
+    pub Success: bool,
+    pub Data: ModelScopeFileListData,
+    pub Message: Option<String>,
 }
 
 /// 前端可用的文件列表响应
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelScopeFileListResult {
-    pub files: Vec<ModelScopeFile>,
+    pub Files: Vec<ModelScopeFile>,
 }
 
 /// ModelScope 仓库单个 GGUF 文件信息
+/// 注意：API 返回此部分为 snake_case，保持原样
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelScopeRepoFileInfo {
     pub name: String,
@@ -135,6 +138,7 @@ pub struct ModelScopeRepoFileInfo {
 }
 
 /// ModelScope 仓库 GGUF 条目
+/// 注意：API 返回此部分为 snake_case，保持原样
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelScopeRepoGgufItem {
     pub key_name: String,
@@ -143,6 +147,7 @@ pub struct ModelScopeRepoGgufItem {
 }
 
 /// ModelScope 仓库 ModelInfos
+/// 注意：API 返回此部分为 snake_case，保持原样
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelScopeRepoModelInfos {
     pub gguf: Option<ModelScopeRepoGgufList>,
@@ -156,45 +161,35 @@ pub struct ModelScopeRepoGgufList {
 /// ModelScope 仓库组织信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelScopeRepoOrganization {
-    pub name: String,
+    pub Name: String,
 }
 
 /// ModelScope 仓库数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
 pub struct ModelScopeRepoData {
-    pub name: String,
-    pub path: String,
-    pub description: String,
-    #[serde(rename = "Downloads")]
-    pub downloads: i64,
-    #[serde(rename = "CreatedTime")]
-    pub created_time: i64,
-    #[serde(rename = "LastUpdatedTime")]
-    pub last_updated_time: i64,
-    #[serde(rename = "Tags")]
-    pub tags: Vec<String>,
-    #[serde(rename = "Libraries")]
-    pub libraries: Vec<String>,
-    #[serde(rename = "ReadMeContent")]
-    pub readme_content: String,
-    pub organization: Option<ModelScopeRepoOrganization>,
-    pub model_infos: Option<ModelScopeRepoModelInfos>,
+    pub Name: String,
+    pub Path: String,
+    pub Description: String,
+    pub Downloads: i64,
+    pub CreatedTime: i64,
+    pub LastUpdatedTime: i64,
+    pub Tags: Vec<String>,
+    pub Libraries: Vec<String>,
+    pub ReadMeContent: String,
+    pub Organization: Option<ModelScopeRepoOrganization>,
+    pub ModelInfos: Option<ModelScopeRepoModelInfos>,
 }
 
 /// ModelScope 仓库 API 响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelScopeRepoApiResponse {
-    #[serde(rename = "Code")]
-    pub code: i32,
-    #[serde(rename = "Success")]
-    pub success: bool,
-    #[serde(rename = "Data")]
-    pub data: ModelScopeRepoData,
+    pub Code: i32,
+    pub Success: bool,
+    pub Data: ModelScopeRepoData,
 }
 
 /// 前端可用的仓库响应
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelScopeRepoResult {
-    pub repo: ModelScopeRepoApiResponse,
+    pub Repo: ModelScopeRepoApiResponse,
 }

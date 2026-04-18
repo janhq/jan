@@ -175,12 +175,12 @@ pub async fn get_modelscope_repo(
             )
         })?;
 
-    if !api_resp.success {
+    if !api_resp.Success {
         return Err("ModelScope repo API returned success=false".to_string());
     }
 
     Ok(ModelScopeRepoResult {
-        repo: api_resp,
+        Repo: api_resp,
     })
 }
 
@@ -222,15 +222,15 @@ pub async fn get_modelscope_model_files(
             )
         })?;
 
-    if !api_resp.success {
+    if !api_resp.Success {
         return Err(format!(
             "ModelScope files API returned success=false: {}",
-            api_resp.message.unwrap_or_default()
+            api_resp.Message.unwrap_or_default()
         ));
     }
 
     Ok(ModelScopeFileListResult {
-        files: api_resp.data.files,
+        Files: api_resp.Data.Files,
     })
 }
 
