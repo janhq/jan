@@ -40,6 +40,27 @@ interface OllamaStatus {
 
 const OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
 
+/** Fetch with a hard timeout (ms). Links external AbortSignal so parent cancels work too. */
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit & { timeout?: number } = {}
+): Promise<Response> {
+  const { timeout = 3000, ...rest } = init
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), timeout)
+
+  if (rest.signal) {
+    rest.signal.addEventListener('abort', () => controller.abort(), { once: true })
+  }
+
+  try {
+    const response = await fetch(input, { ...rest, signal: controller.signal })
+    return response
+  } finally {
+    clearTimeout(id)
+  }
+}
+
 export function useOllamaStatus(pollIntervalMs = 5000) {
   const [status, setStatus] = useState<OllamaStatus>({
     isRunning: false,
@@ -80,9 +101,10 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
     setStatus((prev) => ({ ...prev, isLoading: true }))
 
     try {
-      const versionRes = await fetch(`${OLLAMA_BASE_URL}/api/version`, {
+      const versionRes = await fetchWithTimeout(`${OLLAMA_BASE_URL}/api/version`, {
         method: 'GET',
-        signal: controller.signal,
+        timeout: 3000,
+        headers: { Accept: 'application/json' },
       })
 
       if (!versionRes.ok) {
@@ -99,9 +121,9 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
       const versionData = await versionRes.json()
       const version = versionData.version as string
 
-      const tagsRes = await fetch(`${OLLAMA_BASE_URL}/api/tags`, {
+      const tagsRes = await fetchWithTimeout(`${OLLAMA_BASE_URL}/api/tags`, {
         method: 'GET',
-        signal: controller.signal,
+        timeout: 5000,
       })
 
       let models: OllamaModel[] = []
@@ -153,23 +175,36 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
     const toastId = toast.loading('正在启动 Ollama，请稍候...')
 
     try {
+      // Declarative check: if Ollama is already running (auto-start, manual, etc.),
+      // don't bother starting it again — just report success.
+      await fetchStatus()
+      if (isRunningRef.current) {
+        toast.success('Ollama 已在运行中', {
+          id: toastId,
+          description: '检测到本地 Ollama 服务已就绪',
+        })
+        return
+      }
+
       await invoke<void>('start_ollama', { ollama_path: path })
-      toast.success('Ollama 启动命令已发送', {
+      toast.success('启动命令已发送', {
         id: toastId,
         description: '正在等待 Ollama 服务就绪...',
       })
+
       // Poll status multiple times with increasing intervals
-      const pollIntervals = [2000, 3000, 5000, 5000]
+      // Total wait: 1s + 2s + 3s + 5s + 8s = ~19s of actual polling
+      const pollIntervals = [1000, 2000, 3000, 5000, 8000]
       for (const interval of pollIntervals) {
         await new Promise((resolve) => setTimeout(resolve, interval))
         await fetchStatus()
         if (isRunningRef.current) {
-          toast.success('Ollama 已成功启动！', { id: toastId })
+          toast.success('Ollama 服务已就绪！', { id: toastId })
           return
         }
       }
       // If still not running after all polls
-      toast.warning('Ollama 启动时间较长，请手动检查状态', { id: toastId })
+      toast.warning('Ollama 启动时间较长，请检查服务状态', { id: toastId })
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       console.error('Failed to start Ollama:', msg)
