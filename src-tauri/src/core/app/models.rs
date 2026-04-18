@@ -3,14 +3,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppConfiguration {
     pub data_folder: String,
-    // Add other fields as needed
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub modelscope_token: Option<String>,
 }
 
 impl AppConfiguration {
     pub fn default() -> Self {
         Self {
-            data_folder: String::from("./data"), // Set a default value for the data_folder
-                                                 // Add other fields with default values as needed
+            data_folder: String::from("./data"),
+            modelscope_token: None,
         }
     }
 }

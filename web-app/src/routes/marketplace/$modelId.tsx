@@ -5,252 +5,86 @@ import {
   useNavigate,
   useSearch,
 } from '@tanstack/react-router'
-import {
-  IconArrowLeft,
-  IconDownload,
-  IconClock,
-  IconFileCode,
-} from '@tabler/icons-react'
+import { IconArrowLeft, IconDownload, IconHeart, IconClock } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
-import { useModelSources } from '@/hooks/useModelSources'
-import { extractModelName, extractDescription } from '@/lib/models'
-import { RenderMarkdown } from '@/containers/RenderMarkdown'
-import { useEffect, useMemo, useCallback, useState } from 'react'
-import { useModelProvider } from '@/hooks/useModelProvider'
-import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { useServiceHub } from '@/hooks/useServiceHub'
-import type { CatalogModel, ModelQuant } from '@/services/models/types'
-import { Progress } from '@/components/ui/progress'
+import { useModelScopeDetail } from '@/hooks/useModelScope'
+// import { useServiceHub } from '@/hooks/useServiceHub'
+import { useEffect, useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
-import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
-import { useTranslation } from '@/i18n'
-
-type SearchParams = {
-  repo: string
-}
+import { RenderMarkdown } from '@/containers/RenderMarkdown'
+import { Loader } from 'lucide-react'
 
 export const Route = createFileRoute('/marketplace/$modelId' as any)({
   component: MarketplaceModelDetailContent,
-  validateSearch: (search: Record<string, unknown>): SearchParams => ({
-    repo: search.repo as SearchParams['repo'],
-  }),
 })
 
 function MarketplaceModelDetailContent() {
-  const { t } = useTranslation()
   const { modelId } = useParams({ from: Route.id as any })
   const navigate = useNavigate()
-  const { sources, fetchSources } = useModelSources()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const search = useSearch({ from: Route.id as any })
-  const { getProviderByName } = useModelProvider()
-  const llamaProvider = getProviderByName('llamacpp')
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore()
-  const serviceHub = useServiceHub()
-  const [repoData, setRepoData] = useState<CatalogModel | undefined>()
+  // const serviceHub = useServiceHub()
 
-  // State for README content
-  const [readmeContent, setReadmeContent] = useState<string>('')
-  const [isLoadingReadme, setIsLoadingReadme] = useState(false)
+  const [token, setTokenState] = useState<string | null>(null)
+  const [tokenInput, setTokenInput] = useState('')
+  const [showTokenDialog, setShowTokenDialog] = useState(false)
 
-  // State for model support status
-  const [modelSupportStatus, setModelSupportStatus] = useState<
-    Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING' | 'GREY'>
-  >({})
+  const { detail, loading, error, needsAuth, fetchDetail } = useModelScopeDetail()
 
+  // Fetch token
   useEffect(() => {
-    fetchSources()
-  }, [fetchSources])
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke<string | null>('get_modelscope_token')
+        .then((t) => setTokenState(t))
+        .catch(() => setTokenState(null))
+    })
+  }, [])
 
-  const fetchRepo = useCallback(async () => {
-    // Try ModelScope first
-    const msRepoInfo = await serviceHub
-      .models()
-      .fetchModelScopeRepo(search.repo || modelId)
-    if (msRepoInfo) {
-      const repoDetail = serviceHub
-        .models()
-        .convertMsRepoToCatalogModel(msRepoInfo)
-      setRepoData(repoDetail || undefined)
-      // Use ReadMeContent directly from ModelScope API
-      if (msRepoInfo.Data.ReadMeContent) {
-        setReadmeContent(msRepoInfo.Data.ReadMeContent)
-        setIsLoadingReadme(false)
-      }
-      return
-    }
+  // Parse owner/repo from modelId
+  const parts = (search.repo || modelId || '').split('/')
+  const owner = parts[0] || ''
+  const repoName = parts.slice(1).join('/') || ''
 
-    // Fallback to HuggingFace (for backward compatibility)
-    const hfRepoInfo = await serviceHub
-      .models()
-      .fetchHuggingFaceRepo(search.repo || modelId)
-    if (hfRepoInfo) {
-      const repoDetail = serviceHub
-        .models()
-        .convertHfRepoToCatalogModel(hfRepoInfo)
-      setRepoData(repoDetail || undefined)
-    }
-  }, [serviceHub, modelId, search])
-
+  // Fetch detail when token or modelId changes
   useEffect(() => {
-    fetchRepo()
-  }, [modelId, fetchRepo])
-  // Find the model data from sources
-  const modelData = useMemo(() => {
-    return sources.find((model) => model.model_name === modelId) ?? repoData
-  }, [sources, modelId, repoData])
+    if (owner && repoName) {
+      fetchDetail(owner, repoName, token)
+    }
+  }, [owner, repoName, token, fetchDetail])
 
-  // Download processes
-  const downloadProcesses = useMemo(
-    () =>
-      Object.values(downloads).map((download) => ({
-        id: download.name,
-        name: download.name,
-        progress: download.progress,
-        current: download.current,
-        total: download.total,
-      })),
-    [downloads]
-  )
+  // Show token dialog when auth is required
+  useEffect(() => {
+    if (needsAuth && !showTokenDialog) {
+      setShowTokenDialog(true)
+    }
+  }, [needsAuth])
 
-  // Handle model use
-  const handleUseModel = useCallback(
-    (modelId: string) => {
-      navigate({
-        to: route.home,
-        params: {},
-        search: {
-          threadModel: {
-            id: modelId,
-            provider: 'llamacpp',
-          },
-        },
+  const handleSaveToken = useCallback(() => {
+    if (!tokenInput.trim()) return
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('save_modelscope_token', { token: tokenInput.trim() }).then(() => {
+        setTokenState(tokenInput.trim())
+        setShowTokenDialog(false)
+        setTokenInput('')
+        // Re-fetch detail with new token
+        if (owner && repoName) {
+          fetchDetail(owner, repoName, tokenInput.trim())
+        }
       })
-    },
-    [navigate]
-  )
+    })
+  }, [tokenInput, owner, repoName, fetchDetail])
 
-  // Format the date
-  const formatDate = (dateString: string) => {
+  const model = detail?.model
+
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return ''
     const date = new Date(dateString)
     const now = new Date()
     const diffTime = Math.abs(now.getTime() - date.getTime())
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-
-    if (diffDays < 7) {
-      return `${diffDays} days ago`
-    } else if (diffDays < 30) {
-      const weeks = Math.floor(diffDays / 7)
-      return `${weeks} week${weeks > 1 ? 's' : ''} ago`
-    } else if (diffDays < 365) {
-      const months = Math.floor(diffDays / 30)
-      return `${months} month${months > 1 ? 's' : ''} ago`
-    } else {
-      const years = Math.floor(diffDays / 365)
-      return `${years} year${years > 1 ? 's' : ''} ago`
-    }
-  }
-
-  // Check model support function
-  const checkModelSupport = useCallback(
-    async (variant: ModelQuant) => {
-      const modelKey = variant.model_id
-
-      // Don't check again if already checking or checked
-      if (modelSupportStatus[modelKey]) {
-        return
-      }
-
-      // Set loading state
-      setModelSupportStatus((prev) => ({
-        ...prev,
-        [modelKey]: 'LOADING',
-      }))
-
-      try {
-        // Use the HuggingFace path for the model
-        const modelPath = variant.path
-        const supported = await serviceHub
-          .models()
-          .isModelSupported(modelPath, 8192)
-        setModelSupportStatus((prev) => ({
-          ...prev,
-          [modelKey]: supported,
-        }))
-      } catch (error) {
-        console.error('Error checking model support:', error)
-        setModelSupportStatus((prev) => ({
-          ...prev,
-          [modelKey]: 'RED',
-        }))
-      }
-    },
-    [modelSupportStatus, serviceHub]
-  )
-
-  // Extract tags from quants (model variants)
-  const tags = useMemo(() => {
-    if (!modelData?.quants) return []
-    // Extract unique size indicators from quant names
-    const sizePattern = /(\d+b)/i
-    const uniqueSizes = new Set<string>()
-
-    modelData.quants.forEach((quant) => {
-      const match = quant.model_id.match(sizePattern)
-      if (match) {
-        uniqueSizes.add(match[1].toLowerCase())
-      }
-    })
-
-    return Array.from(uniqueSizes).sort((a, b) => {
-      const numA = parseInt(a)
-      const numB = parseInt(b)
-      return numA - numB
-    })
-  }, [modelData])
-
-  // Fetch README content when modelData.readme is available
-  useEffect(() => {
-    // Skip if README already loaded from ModelScope API
-    if (readmeContent && !modelData?.readme) return
-
-    if (modelData?.readme) {
-      setIsLoadingReadme(true)
-      fetch(modelData.readme)
-        .then((response) => response.text())
-        .then((content) => {
-          setReadmeContent(content)
-          setIsLoadingReadme(false)
-        })
-        .catch((error) => {
-          console.error('Failed to fetch README:', error)
-          setIsLoadingReadme(false)
-        })
-    }
-  }, [modelData?.readme])
-
-  if (!modelData) {
-    return (
-      <div className="flex flex-col h-svh w-full">
-        <HeaderPage>
-          <Button
-          onClick={() => navigate({ to: route.marketplace.index })}
-          aria-label="Go back"
-          variant="ghost"
-          size="sm"
-        >
-          <IconArrowLeft size={18} className="text-muted-foreground" />
-          <span className="text-foreground">Back to Marketplace</span>
-        </Button>
-        </HeaderPage>
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-muted-foreground">Model not found</p>
-        </div>
-      </div>
-    )
+    if (diffDays < 7) return `${diffDays} 天前`
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} 周前`
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)} 月前`
+    return `${Math.floor(diffDays / 365)} 年前`
   }
 
   return (
@@ -259,285 +93,202 @@ function MarketplaceModelDetailContent() {
         <div className="flex items-center gap-2 w-full">
           <Button
             onClick={() => navigate({ to: route.marketplace.index })}
-            aria-label="Go back"
+            aria-label="返回"
             variant="ghost"
             size="sm"
-            className='relative z-20'
+            className="relative z-20"
           >
             <IconArrowLeft size={18} className="text-muted-foreground" />
-            <span className="text-foreground">Back to Marketplace</span>
+            <span className="text-foreground">返回模型市场</span>
           </Button>
+          {token && (
+            <span className="text-xs px-2 py-0.5 rounded border border-green-500/30 text-green-600 bg-green-500/10">
+              Token 已配置
+            </span>
+          )}
         </div>
       </HeaderPage>
 
-      <div className="flex-1 overflow-y-auto ">
+      {/* Token dialog */}
+      {showTokenDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-card border border-border rounded-lg p-6 w-[420px] max-w-[90vw]">
+            <h3 className="text-lg font-medium mb-2">需要 ModelScope 访问令牌</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              查看此模型的详情需要 ModelScope 访问令牌。
+              <br />
+              你可以前往{' '}
+              <a
+                href="https://www.modelscope.cn/my/myaccesstoken"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline"
+              >
+                魔搭控制台
+              </a>{' '}
+              获取令牌。
+            </p>
+            <input
+              type="text"
+              placeholder="输入 ModelScope Access Token"
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              className="w-full px-3 py-2 rounded border border-border bg-background text-sm mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowTokenDialog(false)
+                  setTokenInput('')
+                }}
+              >
+                暂不配置
+              </Button>
+              <Button size="sm" onClick={handleSaveToken}>
+                保存并查看
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto">
         <div className="md:w-4/5 mx-auto">
           <div className="max-w-4xl mx-auto p-6">
-            {/* Model Header */}
-            <div className="mb-8">
-              <h1
-                className="text-2xl font-semibold mb-4 capitalize wrap-break-word line-clamp-2"
-                title={
-                  extractModelName(modelData.model_name) ||
-                  modelData.model_name
-                }
-              >
-                {extractModelName(modelData.model_name) ||
-                  modelData.model_name}
-              </h1>
-
-              {/* Stats */}
-              <div className="flex items-center gap-4 text-sm text-foreground mb-4 flex-wrap">
-                {modelData.developer && (
-                  <>
-                    <span>By {modelData.developer}</span>
-                  </>
-                )}
-                <div className="flex items-center gap-2">
-                  <IconDownload size={16} />
-                  <span>{modelData.downloads || 0} Downloads</span>
-                </div>
-                {modelData.created_at && (
-                  <div className="flex items-center gap-2">
-                    <IconClock size={16} />
-                    <span>Updated {formatDate(modelData.created_at)}</span>
-                  </div>
+            {loading && !model ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader className="size-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : error && !model ? (
+              <div className="text-center py-12">
+                <p className="text-destructive mb-2">加载失败</p>
+                <p className="text-sm text-muted-foreground">{error}</p>
+                {needsAuth && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-4"
+                    onClick={() => setShowTokenDialog(true)}
+                  >
+                    配置访问令牌
+                  </Button>
                 )}
               </div>
+            ) : model ? (
+              <>
+                {/* Model Header */}
+                <div className="mb-8">
+                  <h1 className="text-2xl font-semibold mb-4 capitalize wrap-break-word line-clamp-2">
+                    {model.display_name || model.id.split('/').pop() || model.id}
+                  </h1>
 
-              {/* Description */}
-              {modelData.description && (
-                <div className="text-muted-foreground mb-4">
-                  <RenderMarkdown
-                    className="select-none reset-heading"
-                    components={{
-                      a: ({ ...props }) => (
-                        <a
-                          {...props}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        />
-                      ),
-                    }}
-                    content={
-                      extractDescription(modelData.description) ||
-                      modelData.description
-                    }
-                  />
-                </div>
-              )}
-
-              {/* Tags */}
-              {tags.length > 0 && (
-                <div className="flex gap-2 flex-wrap">
-                  {tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-3 py-1 text-sm bg-secondary rounded-md"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Variants Section */}
-            {modelData.quants && modelData.quants.length > 0 && (
-              <div className="mb-8">
-                <div className="flex items-center gap-2 mb-4">
-                  <IconFileCode size={20} className="text-muted-foreground" />
-                  <h2 className="text-lg font-semibold text-foreground">
-                    Variants ({modelData.quants.length})
-                  </h2>
-                </div>
-
-                <div className="w-full overflow-x-auto">
-                  <table className="w-full min-w-[500px]">
-                    <thead>
-                      <tr className="border-b ">
-                        <th className="text-left py-3 px-2 text-sm font-medium">
-                          Version
-                        </th>
-                        <th className="text-left py-3 px-2 text-sm font-medium">
-                          Format
-                        </th>
-                        <th className="text-left py-3 px-2 text-sm font-medium">
-                          Size
-                        </th>
-                        <th></th>
-                        <th className="text-right py-3 px-2 text-sm font-medium">
-                          Action
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {modelData.quants.map((variant) => {
-                        const isDownloading =
-                          localDownloadingModels.has(variant.model_id) ||
-                          downloadProcesses.some(
-                            (e) => e.id === variant.model_id
-                          )
-                        const downloadProgress =
-                          downloadProcesses.find(
-                            (e) => e.id === variant.model_id
-                          )?.progress || 0
-                        const isDownloaded = llamaProvider?.models.some(
-                          (m: { id: string }) => m.id === variant.model_id
-                        )
-
-                        // Extract format from model_id
-                        const format = variant.model_id
-                          .toLowerCase()
-                          .includes('tensorrt')
-                          ? 'TensorRT'
-                          : 'GGUF'
-
-                        // Extract version name (remove format suffix)
-                        const versionName = variant.model_id
-                          .replace(/_GGUF$/i, '')
-                          .replace(/-GGUF$/i, '')
-                          .replace(/_TensorRT$/i, '')
-                          .replace(/-TensorRT$/i, '')
-
-                        return (
-                          <tr
-                            key={variant.model_id}
-                            className="border-b border-border"
-                          >
-                            <td className="py-3 px-2">
-                              <span className="text-sm font-medium">
-                                {versionName}
-                              </span>
-                            </td>
-                            <td className="py-3 px-2">
-                              <span className="text-sm text-muted-foreground">
-                                {format}
-                              </span>
-                            </td>
-                            <td className="py-3 px-2">
-                              <span className="text-sm text-muted-foreground">
-                                {variant.file_size}
-                              </span>
-                            </td>
-                            <td>
-                              <ModelInfoHoverCard
-                                model={modelData}
-                                variant={variant}
-                                defaultModelQuantizations={
-                                  DEFAULT_MODEL_QUANTIZATIONS
-                                }
-                                modelSupportStatus={modelSupportStatus}
-                                onCheckModelSupport={checkModelSupport}
-                              />
-                            </td>
-                            <td className="py-3 px-2 text-right ml-auto">
-                              {(() => {
-                                if (isDownloading && !isDownloaded) {
-                                  return (
-                                    <div className="flex items-center justify-end gap-2">
-                                      <Progress
-                                        value={downloadProgress * 100}
-                                        className="w-12"
-                                      />
-                                      <span className="text-xs text-muted-foreground text-right">
-                                        {Math.round(downloadProgress * 100)}%
-                                      </span>
-                                    </div>
-                                  )
-                                }
-
-                                if (isDownloaded) {
-                                  return (
-                                    <Button
-                                      variant="default"
-                                      size="sm"
-                                      onClick={() =>
-                                        handleUseModel(variant.model_id)
-                                      }
-                                    >
-                                      {t('hub:newChat')}
-                                    </Button>
-                                  )
-                                }
-
-                                return (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => {
-                                      addLocalDownloadingModel(
-                                        variant.model_id
-                                      )
-                                      serviceHub
-                                        .models()
-                                        .pullModelWithMetadata(
-                                          variant.model_id,
-                                          variant.path,
-                                          (
-                                            modelData.mmproj_models?.find(
-                                              (e) =>
-                                                e.model_id.toLowerCase() ===
-                                                'mmproj-f16'
-                                            ) || modelData.mmproj_models?.[0]
-                                          )?.path,
-                                          undefined
-                                        )
-                                    }}
-                                    className={cn(isDownloading && 'hidden')}
-                                    variant="outline"
-                                  >
-                                    Download
-                                  </Button>
-                                )
-                              })()}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* README Section */}
-            {modelData.readme && (
-              <div className="mb-8">
-                <div className="flex items-center gap-2 mb-4">
-                  <IconFileCode size={20} className="text-muted-foreground" />
-                  <h2 className="text-lg font-semibold">
-                    README
-                  </h2>
-                </div>
-
-                {isLoadingReadme ? (
-                  <div className="flex items-center justify-center py-8">
-                    <span className="text-muted-foreground">
-                      Loading README...
-                    </span>
+                  {/* Stats */}
+                  <div className="flex items-center gap-4 text-sm text-foreground mb-4 flex-wrap">
+                    <span>By {model.id.split('/')[0]}</span>
+                    <div className="flex items-center gap-1">
+                      <IconDownload size={16} />
+                      <span>{model.downloads.toLocaleString()} 下载</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <IconHeart size={16} />
+                      <span>{model.likes.toLocaleString()} 喜欢</span>
+                    </div>
+                    {model.created_at && (
+                      <div className="flex items-center gap-1">
+                        <IconClock size={16} />
+                        <span>更新于 {formatDate(model.created_at)}</span>
+                      </div>
+                    )}
                   </div>
-                ) : readmeContent ? (
-                  <div className="prose prose-invert max-w-none">
-                    <RenderMarkdown
-                      components={{
-                        a: ({ ...props }) => (
-                          <a
-                            {...props}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          />
-                        ),
-                      }}
-                      content={readmeContent}
-                    />
+
+                  {/* Tasks */}
+                  {model.tasks && model.tasks.length > 0 && (
+                    <div className="flex gap-2 flex-wrap mb-4">
+                      {model.tasks.map((task) => (
+                        <span
+                          key={task}
+                          className="px-3 py-1 text-sm bg-secondary rounded-md"
+                        >
+                          {task}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* License */}
+                  {model.license && (
+                    <div className="text-sm text-muted-foreground mb-4">
+                      许可证: {model.license}
+                    </div>
+                  )}
+
+                  {/* Description */}
+                  {model.description && (
+                    <div className="text-muted-foreground mb-4">
+                      <RenderMarkdown
+                        className="select-none reset-heading"
+                        components={{
+                          a: ({ ...props }: any) => (
+                            <a {...props} target="_blank" rel="noopener noreferrer" />
+                          ),
+                        }}
+                        content={model.description}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* README */}
+                {model.readme ? (
+                  <div className="mb-8">
+                    <div className="flex items-center gap-2 mb-4">
+                      <h2 className="text-lg font-semibold text-foreground">README</h2>
+                    </div>
+                    <div className="prose prose-invert max-w-none">
+                      <RenderMarkdown
+                        components={{
+                          a: ({ ...props }: any) => (
+                            <a {...props} target="_blank" rel="noopener noreferrer" />
+                          ),
+                        }}
+                        content={model.readme}
+                      />
+                    </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center py-8">
-                    <span className="text-muted-foreground">
-                      Failed to load README
-                    </span>
+                  <div className="mb-8 p-4 rounded bg-muted/50 text-center text-muted-foreground text-sm">
+                    暂无 README 内容
+                    {!token && (
+                      <div className="mt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowTokenDialog(true)}
+                        >
+                          配置令牌查看完整信息
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
+
+                {/* ModelScope link */}
+                <div className="flex items-center justify-center py-4">
+                  <a
+                    href={`https://www.modelscope.cn/models/${model.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-primary hover:underline"
+                  >
+                    在 ModelScope 上查看此模型 →
+                  </a>
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">
+                模型未找到
               </div>
             )}
           </div>

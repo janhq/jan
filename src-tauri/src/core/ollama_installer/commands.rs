@@ -64,10 +64,14 @@ fn find_ollama_via_registry() -> Option<PathBuf> {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         // Parse line like:    InstallLocation    REG_SZ    C:\Users\...\Programs\Ollama
+        // Note: install path may contain spaces (e.g. "C:\Program Files\Ollama"),
+        // so we must NOT use split_whitespace(). Instead we extract everything after REG_SZ.
         for line in stdout.lines() {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 3 && parts[0] == "InstallLocation" {
-                let install_dir = parts[parts.len() - 1].trim();
+            if let Some(reg_sz_pos) = line.find("REG_SZ") {
+                let install_dir = line[reg_sz_pos + 6..].trim();
+                if install_dir.is_empty() {
+                    continue;
+                }
                 let exe_path = PathBuf::from(install_dir).join("ollama.exe");
                 if exe_path.exists() {
                     return Some(exe_path);
@@ -245,6 +249,7 @@ pub async fn install_ollama<R: Runtime>(app: tauri::AppHandle<R>) -> Result<(), 
 
         // Create HTTP client
         let client = reqwest::Client::builder()
+            .no_proxy()
             .connect_timeout(Duration::from_secs(30))
             .timeout(Duration::from_secs(600))
             .build()
@@ -386,6 +391,7 @@ pub async fn install_ollama<R: Runtime>(app: tauri::AppHandle<R>) -> Result<(), 
 }
 
 /// Executes the Ollama installer with silent flag.
+#[cfg(target_os = "windows")]
 async fn run_ollama_installer(installer_path: &PathBuf) -> Result<(), String> {
     log::info!(
         "Running Ollama installer silently: {}",
@@ -410,4 +416,9 @@ async fn run_ollama_installer(installer_path: &PathBuf) -> Result<(), String> {
 
     log::info!("Ollama installer finished successfully");
     Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+async fn run_ollama_installer(_installer_path: &PathBuf) -> Result<(), String> {
+    Err("Ollama installer is only supported on Windows".to_string())
 }

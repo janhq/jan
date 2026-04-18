@@ -5,6 +5,8 @@ pub mod downloads;
 pub mod extensions;
 pub mod filesystem;
 pub mod mcp;
+pub mod modelscope;
+pub mod ollama_control_plane;
 pub mod ollama_installer;
 pub mod server;
 pub mod setup;

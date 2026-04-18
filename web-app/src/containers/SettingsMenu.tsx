@@ -14,6 +14,7 @@ import {
   IconTopologyStar3,
   IconLock,
   IconCpu,
+  IconBuildingStore,
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
@@ -139,6 +140,11 @@ const SettingsMenu = () => {
       title: 'common:connectors',
       route: route.settings.mcp_servers,
       icon: IconTopologyStar3,
+    },
+    {
+      title: 'ModelScope',
+      route: route.settings.modelscope,
+      icon: IconBuildingStore,
     },
     {
       title: 'common:claude_code',

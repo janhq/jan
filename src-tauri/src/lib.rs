@@ -150,6 +150,20 @@ pub fn run() {
         core::ollama_installer::commands::check_ollama_installed,
         core::ollama_installer::commands::check_ollama_running,
         core::ollama_installer::commands::start_ollama,
+        // ModelScope
+        core::modelscope::commands::list_modelscope_models,
+        core::modelscope::commands::get_modelscope_model_detail,
+        core::modelscope::commands::save_modelscope_token,
+        core::modelscope::commands::get_modelscope_token,
+        core::modelscope::commands::clear_modelscope_token,
+        // Ollama control plane
+        core::ollama_control_plane::commands::ollama_show_model,
+        core::ollama_control_plane::commands::ollama_pull_model,
+        core::ollama_control_plane::commands::ollama_delete_model,
+        core::ollama_control_plane::commands::ollama_copy_model,
+        core::ollama_control_plane::commands::ollama_create_model,
+        core::ollama_control_plane::commands::ollama_ps,
+        core::ollama_control_plane::commands::stop_ollama,
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
@@ -241,6 +255,20 @@ pub fn run() {
         core::ollama_installer::commands::check_ollama_installed,
         core::ollama_installer::commands::check_ollama_running,
         core::ollama_installer::commands::start_ollama,
+        // ModelScope
+        core::modelscope::commands::list_modelscope_models,
+        core::modelscope::commands::get_modelscope_model_detail,
+        core::modelscope::commands::save_modelscope_token,
+        core::modelscope::commands::get_modelscope_token,
+        core::modelscope::commands::clear_modelscope_token,
+        // Ollama control plane
+        core::ollama_control_plane::commands::ollama_show_model,
+        core::ollama_control_plane::commands::ollama_pull_model,
+        core::ollama_control_plane::commands::ollama_delete_model,
+        core::ollama_control_plane::commands::ollama_copy_model,
+        core::ollama_control_plane::commands::ollama_create_model,
+        core::ollama_control_plane::commands::ollama_ps,
+        core::ollama_control_plane::commands::stop_ollama,
     ]);
 
     let app = app_builder

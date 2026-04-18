@@ -1,837 +1,556 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { useModelSources } from '@/hooks/useModelSources'
-import { cn, sanitizeModelId } from '@/lib/utils'
+import { useModelScope } from '@/hooks/useModelScope'
+import { cn } from '@/lib/utils'
 import {
   useState,
-  useMemo,
   useEffect,
-  ChangeEvent,
   useCallback,
   useRef,
-  useTransition,
 } from 'react'
-import { useModelProvider } from '@/hooks/useModelProvider'
-import { Card, CardItem } from '@/containers/Card'
-import { extractModelName, extractDescription } from '@/lib/models'
 import {
-  IconChevronDown,
-  IconChevronUp,
-  IconDownload,
-  IconFileCode,
-  IconEye,
   IconSearch,
-  IconTool,
+  IconChevronDown,
+  IconFilter,
+  IconX,
 } from '@tabler/icons-react'
-import { Switch } from '@/components/ui/switch'
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { ModelInfoHoverCard } from '@/containers/ModelInfoHoverCard'
+  MODELSCOPE_SORT_OPTIONS,
+  MODELSCOPE_TASK_OPTIONS,
+  MODELSCOPE_LIBRARY_OPTIONS,
+  type ListModelScopeModelsParams,
+} from '@/services/modelscope/types'
+import HeaderPage from '@/containers/HeaderPage'
+import { Loader } from 'lucide-react'
+import { useTranslation } from '@/i18n/react-i18next-compat'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useServiceHub } from '@/hooks/useServiceHub'
-import type { CatalogModel } from '@/services/models/types'
-import HeaderPage from '@/containers/HeaderPage'
-import { ChevronsUpDown, Loader } from 'lucide-react'
-import { useTranslation } from '@/i18n/react-i18next-compat'
-import Fuse from 'fuse.js'
-import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
-import { useShallow } from 'zustand/shallow'
-import { ModelDownloadAction } from '@/containers/ModelDownloadAction'
-import { MlxModelDownloadAction } from '@/containers/MlxModelDownloadAction'
-import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
-import { Button } from '@/components/ui/button'
-import { RenderMarkdown } from '@/containers/RenderMarkdown'
+import { ModelCard } from '@/components/marketplace/ModelCard'
 
-type SearchParams = {
-  repo: string
-}
-
+// TODO: fix route type inference for marketplace.index
 export const Route = createFileRoute(route.marketplace.index as any)({
   component: MarketplaceContent,
-  validateSearch: (search: Record<string, unknown>): SearchParams => ({
-    repo: search.repo as SearchParams['repo'],
-  }),
 })
 
 function MarketplaceContent() {
-  const [isPending, startTransition] = useTransition()
-  const parentRef = useRef(null)
-  const serviceHub = useServiceHub()
-
+  const navigate = useNavigate()
   const { t } = useTranslation()
 
-  const sortOptions = [
-    { value: 'newest', name: t('hub:sortNewest') },
-    { value: 'most-downloaded', name: t('hub:sortMostDownloaded') },
-    ...(IS_MACOS
-      ? [
-          { value: 'mlx', name: 'MLX' },
-          { value: 'gguf', name: 'GGUF' },
-        ]
-      : []),
-  ]
-  const searchOptions = useMemo(
-    () => ({
-      includeScore: true,
-      keys: ['model_name', 'quants.model_id'],
-    }),
-    []
-  )
-
-  const { sources, fetchSources, loading } = useModelSources(
-    useShallow((state) => ({
-      sources: state.sources,
-      fetchSources: state.fetchSources,
-      loading: state.loading,
-    }))
-  )
+  const {
+    models,
+    totalCount,
+    loading,
+    error,
+    hasMore,
+    params,
+    token,
+    setToken,
+    updateParams,
+    loadMore,
+    resetFilters,
+  } = useModelScope()
 
   const [searchValue, setSearchValue] = useState('')
-  const [sortSelected, setSortSelected] = useState('newest')
-  const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>(
-    {}
-  )
-  const [isSearching, setIsSearching] = useState(false)
-  const [showOnlyDownloaded, setShowOnlyDownloaded] = useState(false)
-  const [modelScopeRepo, setModelScopeRepo] = useState<CatalogModel | null>(
-    null
-  )
-  const [modelSupportStatus, setModelSupportStatus] = useState<
-    Record<string, 'RED' | 'YELLOW' | 'GREEN' | 'LOADING'>
-  >({})
-  const [isInitialLoad, setIsInitialLoad] = useState(true)
-  const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  )
+  const [showFilters, setShowFilters] = useState(false)
+  const [tokenInput, setTokenInput] = useState('')
+  const [showTokenDialog, setShowTokenDialog] = useState(false)
+  const loadMoreRef = useRef<HTMLDivElement>(null)
+  const loadMoreCallbackRef = useRef(loadMore)
+  loadMoreCallbackRef.current = loadMore
 
-  const toggleModelExpansion = useCallback((modelId: string) => {
-    setExpandedModels((prev) => ({
-      ...prev,
-      [modelId]: !prev[modelId],
-    }))
-  }, [])
-
-  // Sorting functionality
-  const sortedModels = useMemo(() => {
-    let sorted = [...sources]
-
-    // Apply MLX/GGUF filter first (only on Mac)
-    if (sortSelected === 'mlx') {
-      sorted = sorted.filter((m) => m.is_mlx)
-    } else if (sortSelected === 'gguf') {
-      sorted = sorted.filter((m) => !m.is_mlx)
-    }
-
-    // Apply sorting
-    if (sortSelected === 'most-downloaded') {
-      return sorted.sort((a, b) => (b.downloads || 0) - (a.downloads || 0))
-    }
-    return sorted.sort(
-      (a, b) =>
-        new Date(b.created_at || 0).getTime() -
-        new Date(a.created_at || 0).getTime()
-    )
-  }, [sortSelected, sources])
-
-  // Filtered models (debounced search)
-  const [debouncedSearchValue, setDebouncedSearchValue] = useState(searchValue)
-
+  // Debounced search
   useEffect(() => {
     const handler = setTimeout(() => {
-      setDebouncedSearchValue(searchValue)
-    }, 300)
+      updateParams({ search: searchValue || undefined })
+    }, 400)
     return () => clearTimeout(handler)
-  }, [searchValue])
+  }, [searchValue, updateParams])
 
-  const filteredModels = useMemo(() => {
-    let filtered = sortedModels
-    // Apply search filter
-    if (debouncedSearchValue.length) {
-      const fuse = new Fuse(filtered, searchOptions)
-      // Remove domain from search value (e.g., "huggingface.co/author/model" -> "author/model")
-      const cleanedSearchValue = debouncedSearchValue.replace(
-        /^https?:\/\/[^/]+\//,
-        ''
-      )
-      filtered = fuse.search(cleanedSearchValue).map((result) => result.item)
-    }
-    // Apply downloaded filter
-    if (showOnlyDownloaded) {
-      filtered = filtered
-        ?.map((model) => ({
-          ...model,
-          quants: model.quants?.filter((variant) => {
-            // Check both direct match and with developer prefix (like DownloadButton does)
-            const isLlamaCppDownloaded = useModelProvider
-              .getState()
-              .getProviderByName('llamacpp')
-              ?.models.some(
-                (m: { id: string }) =>
-                  m.id === variant.model_id ||
-                  m.id === `${model.developer}/${sanitizeModelId(variant.model_id)}`
-              )
-
-            const isMlxDownloaded = useModelProvider
-              .getState()
-              .getProviderByName('mlx')
-              ?.models.some(
-                (m: { id: string }) =>
-                  m.id === variant.model_id ||
-                  m.id === `${model.developer}/${sanitizeModelId(variant.model_id)}`
-              )
-
-            return isLlamaCppDownloaded || isMlxDownloaded
-          }),
-        }))
-        .filter((model) => (model.quants?.length ?? 0) > 0)
-    }
-    // Add ModelScope repo at the beginning if available
-    if (modelScopeRepo) {
-      filtered = [modelScopeRepo, ...filtered]
-    }
-    return filtered
-  }, [
-    sortedModels,
-    debouncedSearchValue,
-    showOnlyDownloaded,
-    modelScopeRepo,
-    searchOptions,
-  ])
-
-  // Dynamic estimate size based on model state
-  const estimateSize = useCallback(
-    (index: number) => {
-      const model = filteredModels[index]
-      if (!model) return 100
-      // Base height + variants height if expanded
-      const baseHeight = 95
-      const variantHeight = 36
-      const expanded = expandedModels[model.model_name]
-      return expanded && (model.quants?.length ?? 0) > 1
-        ? baseHeight + (model.quants?.length ?? 0) * variantHeight
-        : baseHeight
-    },
-    [expandedModels, filteredModels]
-  )
-
-  // The virtualizer - only enable when we have models
-  const rowVirtualizer = useVirtualizer(
-    filteredModels.length > 0
-      ? {
-          count: filteredModels.length,
-          getScrollElement: () => parentRef.current,
-          estimateSize,
-          overscan: 8,
-          measureElement: (el: HTMLElement) => el.getBoundingClientRect().height,
-        }
-      : { count: 0, getScrollElement: () => null, estimateSize: () => 0 }
-  )
-
+  // Infinite scroll observer
+  // loadMore is wrapped in a ref to avoid recreating the observer on every state change.
   useEffect(() => {
-    // Use startTransition to keep UI responsive during data fetch
-    startTransition(() => {
-      fetchSources()
-    })
-  }, [fetchSources])
-
-  // Reset initial load state after data loads or on filter change
-  useEffect(() => {
-    if (!isInitialLoad) return
-
-    // Hide skeleton after a short delay to show loading state
-    const timer = setTimeout(() => setIsInitialLoad(false), 150)
-    return () => clearTimeout(timer)
-  }, [isInitialLoad, filteredModels.length])
-
-  const fetchModelScopeModel = async (searchValue: string) => {
-    if (
-      !searchValue.length ||
-      (!searchValue.includes('/') && !searchValue.startsWith('http'))
-    ) {
-      return
-    }
-
-    setIsSearching(true)
-    if (addModelSourceTimeoutRef.current) {
-      clearTimeout(addModelSourceTimeoutRef.current)
-    }
-
-    addModelSourceTimeoutRef.current = setTimeout(async () => {
-      try {
-        const repoInfo = await serviceHub
-          .models()
-          .fetchModelScopeRepo(searchValue)
-        if (repoInfo) {
-          const catalogModel = serviceHub
-            .models()
-            .convertMsRepoToCatalogModel(repoInfo)
-          if (
-            !sources.some(
-              (s) =>
-                catalogModel.model_name.trim().split('/').pop() ===
-                  s.model_name.trim() &&
-                catalogModel.developer?.trim() === s.developer?.trim()
-            )
-          ) {
-            setModelScopeRepo(catalogModel)
-          }
+    if (!loadMoreRef.current || !hasMore) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loading) {
+          loadMoreCallbackRef.current()
         }
-      } catch (error) {
-        console.error('Error fetching ModelScope repository info:', error)
-      } finally {
-        setIsSearching(false)
-      }
-    }, 500)
-  }
-
-  const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setIsSearching(false)
-    setSearchValue(e.target.value)
-    setModelScopeRepo(null) // Clear previous repo info
-
-    if (!showOnlyDownloaded) {
-      fetchModelScopeModel(e.target.value)
-    }
-  }
-
-  const navigate = useNavigate()
-
-  const isRecommendedModel = useCallback((modelId: string) => {
-    return (extractModelName(modelId)?.toLowerCase() ===
-      'jan-nano-gguf') as boolean
-  }, [])
-
-  const handleUseModel = useCallback(
-    (modelId: string) => {
-      navigate({
-        to: route.home,
-        params: {},
-        search: {
-          threadModel: {
-            id: modelId,
-            provider: 'llamacpp',
-          },
-        },
-      })
-    },
-    [navigate]
-  )
-
-  const checkModelSupport = useCallback(
-    async (variant: any) => {
-      const modelKey = variant.model_id
-
-      // Don't check again if already checking or checked
-      if (modelSupportStatus[modelKey]) {
-        return
-      }
-
-      // Set loading state
-      setModelSupportStatus((prev) => ({
-        ...prev,
-        [modelKey]: 'LOADING',
-      }))
-
-      try {
-        // Use the HuggingFace path for the model
-        const modelPath = variant.path
-        const supportStatus = await serviceHub
-          .models()
-          .isModelSupported(modelPath, 8192)
-
-        setModelSupportStatus((prev) => ({
-          ...prev,
-          [modelKey]: supportStatus,
-        }))
-      } catch (error) {
-        console.error('Error checking model support:', error)
-        setModelSupportStatus((prev) => ({
-          ...prev,
-          [modelKey]: 'RED',
-        }))
-      }
-    },
-    [modelSupportStatus, serviceHub]
-  )
-
-  // Check if we're on the last step
-  const renderFilter = () => {
-    return (
-      <>
-        {/* Sort dropdown - always visible */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm">
-              {
-                sortOptions.find((option) => option.value === sortSelected)
-                  ?.name
-              }
-              <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground ml-2" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="bottom" align="end">
-            {sortOptions.map((option) => (
-              <DropdownMenuItem
-                className={cn(
-                  'cursor-pointer my-0.5',
-                  sortSelected === option.value && 'bg-secondary'
-                )}
-                key={option.value}
-                onClick={() => {
-                  setIsInitialLoad(true)
-                  setSortSelected(option.value)
-                }}
-              >
-                {option.name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <div className="flex items-center gap-2">
-          <Switch
-            checked={showOnlyDownloaded}
-            onCheckedChange={(checked) => {
-              setIsInitialLoad(true)
-              setShowOnlyDownloaded(checked)
-              if (checked) {
-                setModelScopeRepo(null)
-              } else {
-                // Re-trigger ModelScope search when switching back to "All models"
-                fetchModelScopeModel(searchValue)
-              }
-            }}
-          />
-          <span className="text-xs text-foreground font-medium whitespace-nowrap">
-            {t('hub:downloaded')}
-          </span>
-        </div>
-      </>
+      },
+      { threshold: 0.1 }
     )
+    observer.observe(loadMoreRef.current)
+    return () => observer.disconnect()
+  }, [hasMore, loading])
+
+  const activeFilterCount =
+    (params.filter_task ? 1 : 0) +
+    (params.filter_library ? 1 : 0) +
+    (params.filter_model_type ? 1 : 0) +
+    (params.filter_custom_tag ? 1 : 0) +
+    (params.filter_license ? 1 : 0) +
+    (params.filter_deploy ? 1 : 0)
+
+  const activeFilters: {
+    key: keyof ListModelScopeModelsParams
+    label: string
+    value: string
+  }[] = []
+  if (params.filter_task) {
+    const opt = MODELSCOPE_TASK_OPTIONS.find(
+      (o) => o.value === params.filter_task
+    )
+    activeFilters.push({
+      key: 'filter_task',
+      label: '任务',
+      value: opt?.label || params.filter_task,
+    })
   }
+  if (params.filter_library) {
+    const opt = MODELSCOPE_LIBRARY_OPTIONS.find(
+      (o) => o.value === params.filter_library
+    )
+    activeFilters.push({
+      key: 'filter_library',
+      label: '框架',
+      value: opt?.label || params.filter_library,
+    })
+  }
+  if (params.filter_custom_tag) {
+    activeFilters.push({
+      key: 'filter_custom_tag',
+      label: '标签',
+      value: params.filter_custom_tag,
+    })
+  }
+  if (params.filter_license) {
+    activeFilters.push({
+      key: 'filter_license',
+      label: '许可证',
+      value: params.filter_license,
+    })
+  }
+  if (params.filter_model_type) {
+    activeFilters.push({
+      key: 'filter_model_type',
+      label: '模型类型',
+      value: params.filter_model_type,
+    })
+  }
+  if (params.filter_deploy) {
+    activeFilters.push({
+      key: 'filter_deploy',
+      label: '部署',
+      value: params.filter_deploy,
+    })
+  }
+
+  const handleRemoveFilter = useCallback(
+    (key: keyof ListModelScopeModelsParams) => {
+      const patch: Partial<ListModelScopeModelsParams> = {}
+      patch[key] = undefined
+      updateParams(patch)
+    },
+    [updateParams]
+  )
+
+  const handleTagClick = useCallback(
+    (type: 'task' | 'library' | 'license' | 'params', value: string) => {
+      if (type === 'task') {
+        updateParams({ filter_task: value })
+      } else if (type === 'library') {
+        updateParams({ filter_library: value })
+      } else if (type === 'license') {
+        updateParams({ filter_license: value })
+      }
+      setShowFilters(true)
+    },
+    [updateParams]
+  )
+
+  const handleSaveToken = useCallback(() => {
+    setToken(tokenInput)
+      .then(() => {
+        setShowTokenDialog(false)
+        setTokenInput('')
+      })
+      .catch((err) => {
+        console.error('[Marketplace] Failed to save token:', err)
+      })
+  }, [tokenInput, setToken])
+
+  const sortLabel =
+    MODELSCOPE_SORT_OPTIONS.find((o) => o.value === params.sort)?.label ??
+    t('hub:sortLabel') ?? '排序'
 
   return (
     <div className="flex flex-col h-svh w-full">
-      <div className="flex flex-col h-full w-full ">
+      <div className="flex flex-col h-full w-full">
         <HeaderPage>
-          <div className={cn("pr-3 py-3  h-10 w-full flex items-center justify-between relative z-20", !IS_MACOS && "pr-30")}>
-            <div className="flex items-center gap-2 w-full">
-              {isSearching ? (
-                <Loader className="shrink-0 size-4 animate-spin text-muted-foreground" />
-              ) : (
-                <IconSearch
-                  className="shrink-0 text-muted-foreground"
-                  size={14}
-                />
-              )}
-              <input
-                placeholder={t('hub:searchPlaceholder')}
-                value={searchValue}
-                onChange={handleSearchChange}
-                className="w-full focus:outline-none"
+          <div
+            className={cn(
+              'pr-3 py-3 min-h-10 w-full flex items-center justify-between relative z-20 flex-wrap gap-y-2',
+              !IS_MACOS && 'pr-30'
+            )}
+          >
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <IconSearch
+                className="shrink-0 text-muted-foreground"
+                size={14}
               />
+              <input
+                placeholder={
+                  t('hub:searchPlaceholder') ?? '搜索模型...'
+                }
+                value={searchValue}
+                onChange={(e) => setSearchValue(e.target.value)}
+                className="w-full min-w-0 focus:outline-none bg-transparent"
+              />
+              {searchValue && (
+                <button
+                  onClick={() => setSearchValue('')}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <IconX size={14} />
+                </button>
+              )}
             </div>
-            <div className="sm:flex items-center gap-2 shrink-0 hidden">
-              {renderFilter()}
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              {/* Token status */}
+              <button
+                onClick={() => {
+                  if (token) {
+                    setToken(null)
+                  } else {
+                    setShowTokenDialog(true)
+                  }
+                }}
+                className={cn(
+                  'text-xs px-2.5 py-1 rounded-full border',
+                  token
+                    ? 'border-green-500/30 text-green-600 bg-green-500/10'
+                    : 'border-amber-500/30 text-amber-600 bg-amber-500/10'
+                )}
+                title={
+                  token
+                    ? '已配置 ModelScope Token，点击清除'
+                    : '未配置 ModelScope Token，点击配置'
+                }
+              >
+                {token ? 'Token 已配置' : 'Token 未配置'}
+              </button>
+
+              {/* Sort dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    {sortLabel}
+                    <IconChevronDown className="ml-1 size-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {MODELSCOPE_SORT_OPTIONS.map((option) => (
+                    <DropdownMenuItem
+                      key={option.value}
+                      className={cn(
+                        'cursor-pointer',
+                        params.sort === option.value && 'bg-secondary'
+                      )}
+                      onClick={() =>
+                        updateParams({ sort: option.value })
+                      }
+                    >
+                      {option.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Filter toggle */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowFilters((p) => !p)}
+                className={cn(
+                  activeFilterCount > 0 && 'border-primary'
+                )}
+              >
+                <IconFilter className="size-3 mr-1" />
+                筛选
+                {activeFilterCount > 0 && (
+                  <span className="ml-1 text-xs bg-primary text-primary-foreground rounded-full px-1.5">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </Button>
             </div>
           </div>
         </HeaderPage>
-        <div ref={parentRef} className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto! first-step-setup-local-provider">
-          <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-full md:w-4/5 xl:w-4/6 mx-auto">
-            {/* Show skeleton immediately on navigation, then show actual content when loaded */}
-            {(isInitialLoad || (loading && !filteredModels.length)) ? (
-              // Skeleton loading state for better perceived performance
-              <div className="flex flex-col gap-3 animate-pulse">
-                {[...Array(5)].map((_, i) => (
+
+        {/* Active filters bar */}
+        {activeFilterCount > 0 && (
+          <div className="px-4 py-2 border-b border-border bg-muted/20 flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground shrink-0">
+              筛选:
+            </span>
+            {activeFilters.map((f) => (
+              <span
+                key={f.key}
+                className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground"
+              >
+                {f.value}
+                <button
+                  onClick={() => handleRemoveFilter(f.key)}
+                  className="hover:text-foreground"
+                  title="移除筛选"
+                >
+                  <IconX size={12} />
+                </button>
+              </span>
+            ))}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-xs text-muted-foreground"
+              onClick={resetFilters}
+            >
+              <IconX size={12} className="mr-1" />
+              清除筛选
+            </Button>
+          </div>
+        )}
+
+        {/* Filters panel */}
+        {showFilters && (
+          <div className="px-4 py-3 border-b border-border bg-muted/30">
+            <div className="flex flex-wrap gap-3 items-center">
+              <FilterSelect
+                label="任务"
+                value={params.filter_task}
+                options={MODELSCOPE_TASK_OPTIONS}
+                onChange={(v) => updateParams({ filter_task: v })}
+              />
+              <FilterSelect
+                label="框架"
+                value={params.filter_library}
+                options={MODELSCOPE_LIBRARY_OPTIONS}
+                onChange={(v) => updateParams({ filter_library: v })}
+              />
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  标签
+                </span>
+                <input
+                  type="text"
+                  placeholder="如: llm, gguf"
+                  value={params.filter_custom_tag ?? ''}
+                  onChange={(e) =>
+                    updateParams({
+                      filter_custom_tag:
+                        e.target.value || undefined,
+                    })
+                  }
+                  className="text-sm px-2 py-1 rounded border border-border bg-background w-28"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  许可证
+                </span>
+                <input
+                  type="text"
+                  placeholder="如: apache-2.0"
+                  value={params.filter_license ?? ''}
+                  onChange={(e) =>
+                    updateParams({
+                      filter_license:
+                        e.target.value || undefined,
+                    })
+                  }
+                  className="text-sm px-2 py-1 rounded border border-border bg-background w-32"
+                />
+              </div>
+              {activeFilterCount > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={resetFilters}
+                  className="text-muted-foreground"
+                >
+                  <IconX className="size-3 mr-1" />
+                  清除筛选
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Token dialog */}
+        {showTokenDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="bg-card border border-border rounded-lg p-6 w-[400px] max-w-[90vw]">
+              <h3 className="text-lg font-medium mb-2">
+                配置 ModelScope 访问令牌
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                配置令牌后可以查看模型详情（README、文件列表等）。
+                <br />
+                列表浏览不需要令牌。
+              </p>
+              <input
+                type="text"
+                placeholder="输入你的 ModelScope Access Token"
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value)}
+                className="w-full px-3 py-2 rounded border border-border bg-background text-sm mb-4"
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowTokenDialog(false)
+                    setTokenInput('')
+                  }}
+                >
+                  取消
+                </Button>
+                <Button size="sm" onClick={handleSaveToken}>
+                  保存
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="p-4 w-full flex-1 min-h-0 overflow-y-auto">
+          <div className="flex flex-col h-full gap-4 w-full md:w-4/5 xl:w-4/6 mx-auto">
+            {/* Stats bar */}
+            <div className="flex items-center flex-wrap min-w-0 text-xs text-muted-foreground">
+              <span className="min-w-0">
+                共 {totalCount.toLocaleString()} 个模型
+                {models.length > 0 &&
+                  ` · 已加载 ${models.length.toLocaleString()} 个`}
+                {' · '}
+                按"{sortLabel}"排序
+              </span>
+            </div>
+
+            {loading && models.length === 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-pulse">
+                {Array.from({ length: 6 }).map((_, i) => (
                   <div
                     key={i}
-                    className="bg-card border border-border rounded-lg p-4"
+                    className="bg-card border border-border rounded-lg p-4 overflow-hidden"
                   >
                     <div className="flex items-center justify-between gap-x-2">
-                      <div className="h-5 bg-muted rounded w-1/3" />
-                      <div className="flex items-center gap-3">
-                        <div className="h-4 bg-muted rounded w-20" />
-                        <div className="h-8 w-8 bg-muted rounded" />
-                      </div>
+                      <div className="h-4 bg-muted rounded w-1/3" />
+                      <div className="h-3 bg-muted rounded w-16" />
                     </div>
-                    <div className="mt-3 h-4 bg-muted rounded w-full" />
-                    <div className="mt-2 h-4 bg-muted rounded w-2/3" />
-                    <div className="flex items-center gap-4 mt-3">
-                      <div className="h-4 bg-muted rounded w-16" />
-                      <div className="h-4 bg-muted rounded w-16" />
+                    <div className="mt-3 h-3 bg-muted rounded w-full" />
+                    <div className="mt-2 h-3 bg-muted rounded w-2/3" />
+                    <div className="mt-3 flex items-center gap-2">
+                      <div className="h-3 bg-muted rounded w-12" />
+                      <div className="h-3 bg-muted rounded w-16" />
+                      <div className="ml-auto h-3 bg-muted rounded w-10" />
                     </div>
                   </div>
                 ))}
               </div>
-            ) : filteredModels.length === 0 ? (
-              <div className="flex items-center justify-center">
+            ) : error ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                  <p className="text-destructive mb-2">加载失败</p>
+                  <p className="text-sm text-muted-foreground">
+                    {error}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-4"
+                    onClick={() => updateParams({})}
+                  >
+                    重试
+                  </Button>
+                </div>
+              </div>
+            ) : models.length === 0 ? (
+              <div className="flex items-center justify-center py-12">
                 <div className="text-center text-muted-foreground">
-                  {t('hub:noModels')}
+                  {searchValue || activeFilterCount > 0
+                    ? '没有找到匹配的模型'
+                    : '暂无模型数据'}
                 </div>
               </div>
             ) : (
-              <div
-                className={cn(
-                  'flex flex-col pb-2 mb-2 transition-opacity duration-200',
-                  isPending ? 'opacity-70' : 'opacity-100'
-                )}
-              >
-                <div className="flex items-center gap-2 justify-end sm:hidden">
-                  {renderFilter()}
-                </div>
-                <div
-                  style={{
-                    height: `${rowVirtualizer.getTotalSize()}px`,
-                    width: '100%',
-                    position: 'relative',
-                  }}
-                >
-                  {rowVirtualizer.getVirtualItems().map((virtualItem) => (
-                    <div
-                      key={virtualItem.key}
-                      data-index={virtualItem.index}
-                      ref={rowVirtualizer.measureElement}
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        transform: `translateY(${virtualItem.start}px)`,
-                        paddingBottom: 8,
-                      }}
-                    >
-                      <Card
-                        header={
-                          <div className="flex items-center justify-between gap-x-2">
-                            <div
-                              className="cursor-pointer"
-                              onClick={() => {
-                                navigate({
-                                  to: route.marketplace.model,
-                                  params: {
-                                    modelId:
-                                      filteredModels[virtualItem.index]
-                                        .model_name,
-                                  },
-                                })
-                              }}
-                            >
-                              <h1
-                                className={cn(
-                                  'text-foreground font-medium text-base capitalize sm:max-w-none',
-                                  isRecommendedModel(
-                                    filteredModels[virtualItem.index]
-                                      .model_name
-                                  )
-                                    ? 'hub-model-card-step'
-                                    : ''
-                                )}
-                                title={
-                                  extractModelName(
-                                    filteredModels[virtualItem.index]
-                                      .model_name
-                                  ) || ''
-                                }
-                              >
-                                {extractModelName(
-                                  filteredModels[virtualItem.index].model_name
-                                ) || ''}
-                              </h1>
-                            </div>
-                            <div className="shrink-0 space-x-3 flex items-center">
-                              <span className="text-muted-foreground font-medium text-xs">
-                                {filteredModels[virtualItem.index].is_mlx
-                                  ? filteredModels[virtualItem.index]
-                                      .safetensors_files?.[0]?.file_size
-                                  : (
-                                      filteredModels[
-                                        virtualItem.index
-                                      ].quants?.find((m) =>
-                                        DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                          m.model_id.toLowerCase().includes(e)
-                                        )
-                                      ) ??
-                                      filteredModels[virtualItem.index]
-                                        .quants?.[0]
-                                    )?.file_size}
-                              </span>
-                              <ModelInfoHoverCard
-                                model={filteredModels[virtualItem.index]}
-                                defaultModelQuantizations={
-                                  DEFAULT_MODEL_QUANTIZATIONS
-                                }
-                                variant={
-                                  filteredModels[
-                                    virtualItem.index
-                                  ].quants?.find((m) =>
-                                    DEFAULT_MODEL_QUANTIZATIONS.some((e) =>
-                                      m.model_id.toLowerCase().includes(e)
-                                    )
-                                  ) ??
-                                  filteredModels[virtualItem.index]
-                                    .quants?.[0]
-                                }
-                                isDefaultVariant={true}
-                                modelSupportStatus={modelSupportStatus}
-                                onCheckModelSupport={checkModelSupport}
-                              />
-                              {filteredModels[virtualItem.index].is_mlx ? (
-                                <MlxModelDownloadAction
-                                  model={filteredModels[virtualItem.index]}
-                                />
-                              ) : (
-                                <DownloadButtonPlaceholder
-                                  model={filteredModels[virtualItem.index]}
-                                  handleUseModel={handleUseModel}
-                                />
-                              )}
-                            </div>
-                          </div>
-                        }
-                      >
-                        <div className="line-clamp-2 mt-3 text-muted-foreground leading-normal">
-                          <RenderMarkdown
-                            className="select-none reset-heading"
-                            components={{
-                              a: ({ ...props }) => (
-                                <a
-                                  {...props}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                />
-                              ),
-                            }}
-                            content={
-                              extractDescription(
-                                filteredModels[virtualItem.index]?.description
-                              ) || ''
-                            }
-                          />
-                        </div>
-                        <div className="flex items-center gap-2 mt-2">
-                          <span className="capitalize text-foreground">
-                            {t('hub:by')}{' '}
-                            {filteredModels[virtualItem.index]?.developer}
-                          </span>
-                          <div className="flex items-center gap-4 ml-2">
-                            <div className="flex items-center gap-1">
-                              <IconDownload
-                                size={18}
-                                className="text-muted-foreground"
-                                title={t('hub:downloads')}
-                              />
-                              <span className="text-foreground">
-                                {filteredModels[virtualItem.index]
-                                  .downloads || 0}
-                              </span>
-                            </div>
-                            {!filteredModels[virtualItem.index].is_mlx && (
-                              <div className="flex items-center gap-1">
-                                <IconFileCode
-                                  size={20}
-                                  className="text-muted-foreground"
-                                  title={t('hub:variants')}
-                                />
-                                <span className="text-foreground">
-                                  {filteredModels[virtualItem.index].quants
-                                    ?.length || 0}
-                                </span>
-                              </div>
-                            )}
-                            {filteredModels[virtualItem.index].is_mlx && (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">
-                                    MLX
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>Requires MLX engine (Apple Silicon only)</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
-                            <div className="flex gap-1.5 items-center">
-                              {(filteredModels[virtualItem.index].num_mmproj ?? 0) >
-                                0 && (
-                                <div className="flex items-center gap-1">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <div>
-                                        <IconEye
-                                          size={17}
-                                          className="text-muted-foreground"
-                                        />
-                                      </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>{t('vision')}</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </div>
-                              )}
-                              {filteredModels[virtualItem.index].tools && (
-                                <div className="flex items-center gap-1">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <div>
-                                        <IconTool
-                                          size={17}
-                                          className="text-muted-foreground"
-                                        />
-                                      </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>{t('tools')}</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          {(filteredModels[virtualItem.index].quants?.length ?? 0) >
-                            1 && (
-                            <button
-                              className="flex items-center gap-1 hub-show-variants-step ml-auto"
-                              onClick={() =>
-                                toggleModelExpansion(
-                                  filteredModels[virtualItem.index]
-                                    .model_name
-                                )
-                              }
-                            >
-                              <span className="text-foreground">
-                                {t('hub:showVariants')}
-                              </span>
-                              {expandedModels[
-                                filteredModels[virtualItem.index].model_name
-                              ] ? (
-                                <IconChevronUp
-                                  size={18}
-                                  className="text-muted-foreground"
-                                />
-                              ) : (
-                                <IconChevronDown
-                                  size={18}
-                                  className="text-muted-foreground"
-                                />
-                              )}
-                            </button>
-                          )}
-                        </div>
-                        {expandedModels[
-                          filteredModels[virtualItem.index].model_name
-                        ] &&
-                          (filteredModels[virtualItem.index].quants?.length ?? 0) >
-                            0 && (
-                            <div className="mt-5">
-                              {filteredModels[virtualItem.index].quants?.map(
-                                (variant) => (
-                                  <CardItem
-                                    key={variant.model_id}
-                                    title={
-                                      <>
-                                        <div className="flex items-center gap-1">
-                                          <span className="mr-2">
-                                            {variant.model_id}
-                                          </span>
-                                          {(filteredModels[virtualItem.index].num_mmproj ?? 0) > 0 && (
-                                            <div className="flex items-center gap-1">
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <div>
-                                                    <IconEye
-                                                      size={17}
-                                                      className="text-muted-foreground"
-                                                    />
-                                                  </div>
-                                                </TooltipTrigger>
-                                                <TooltipContent>
-                                                  <p>{t('vision')}</p>
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </div>
-                                          )}
-                                          {filteredModels[virtualItem.index]
-                                            .tools && (
-                                            <div className="flex items-center gap-1">
-                                              <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                  <div>
-                                                    <IconTool
-                                                      size={17}
-                                                      className="text-muted-foreground"
-                                                    />
-                                                  </div>
-                                                </TooltipTrigger>
-                                                <TooltipContent>
-                                                  <p>{t('tools')}</p>
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </>
-                                    }
-                                    actions={
-                                      <div className="flex items-center gap-2">
-                                        <p className="text-muted-foreground font-medium text-xs">
-                                          {variant.file_size}
-                                        </p>
-                                        <ModelInfoHoverCard
-                                          model={
-                                            filteredModels[virtualItem.index]
-                                          }
-                                          variant={variant}
-                                          defaultModelQuantizations={
-                                            DEFAULT_MODEL_QUANTIZATIONS
-                                          }
-                                          modelSupportStatus={
-                                            modelSupportStatus
-                                          }
-                                          onCheckModelSupport={
-                                            checkModelSupport
-                                          }
-                                        />
-                                        {filteredModels[virtualItem.index]
-                                          .is_mlx ? (
-                                          <MlxModelDownloadAction
-                                            model={
-                                              filteredModels[virtualItem.index]
-                                            }
-                                          />
-                                        ) : (
-                                          <ModelDownloadAction
-                                            variant={variant}
-                                            model={
-                                              filteredModels[virtualItem.index]
-                                            }
-                                          />
-                                        )}
-                                      </div>
-                                    }
-                                  />
-                                )
-                              )}
-                            </div>
-                          )}
-                      </Card>
-                    </div>
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-2">
+                  {models.map((model) => (
+                    <ModelCard
+                      key={model.id}
+                      model={model}
+                      onClick={(modelId: string) =>
+                        navigate({
+                          to: route.marketplace.model,
+                          params: { modelId },
+                          search: { repo: modelId },
+                        })
+                      }
+                      onTagClick={handleTagClick}
+                    />
                   ))}
                 </div>
-              </div>
+
+                {/* Load more trigger - placed outside grid for stable ref node */}
+                <div ref={loadMoreRef} className="py-4 flex justify-center">
+                  {loading && models.length > 0 && (
+                    <Loader className="size-5 animate-spin text-muted-foreground" />
+                  )}
+                  {!hasMore && models.length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      已加载全部 {models.length.toLocaleString()} 个模型
+                    </span>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function FilterSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value?: string
+  options: readonly { value: string; label: string }[]
+  onChange: (value: string | undefined) => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <select
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value || undefined)}
+        className="text-sm px-2 py-1 rounded border border-border bg-background"
+      >
+        <option value="">全部</option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </div>
   )
 }
