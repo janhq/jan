@@ -24,7 +24,7 @@ import type {
   CatalogModel,
   ModelValidationResult,
   ModelScopeRepo,
-  ModelScopeFileList,
+  ModelScopeFileListResult,
 } from './types'
 import {
   extractToolContextFromContent,
