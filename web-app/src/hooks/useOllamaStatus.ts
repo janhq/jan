@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
+import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { toast } from 'sonner'
 
 export interface OllamaModel {
@@ -40,12 +41,17 @@ interface OllamaStatus {
 
 const OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
 
-/** Fetch with a hard timeout (ms). Links external AbortSignal so parent cancels work too. */
+/**
+ * Wrapper around Tauri's HTTP plugin fetch with manual timeout.
+ * Uses fetchTauri (Rust-backed, bypasses WebView2 CORS/Mixed Content)
+ * but adds a JS-layer AbortController timeout since plugin-http v2.5.0
+ * does not expose a request timeout option (only connectTimeout).
+ */
 async function fetchWithTimeout(
-  input: RequestInfo | URL,
+  input: string,
   init: RequestInit & { timeout?: number } = {}
 ): Promise<Response> {
-  const { timeout = 3000, ...rest } = init
+  const { timeout = 8000, ...rest } = init
   const controller = new AbortController()
   const id = setTimeout(() => controller.abort(), timeout)
 
@@ -54,7 +60,7 @@ async function fetchWithTimeout(
   }
 
   try {
-    const response = await fetch(input, { ...rest, signal: controller.signal })
+    const response = await fetchTauri(input, { ...rest, signal: controller.signal })
     return response
   } finally {
     clearTimeout(id)
@@ -103,7 +109,8 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
     try {
       const versionRes = await fetchWithTimeout(`${OLLAMA_BASE_URL}/api/version`, {
         method: 'GET',
-        timeout: 3000,
+        timeout: 8,
+        signal: controller.signal,
         headers: { Accept: 'application/json' },
       })
 
@@ -123,7 +130,8 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
 
       const tagsRes = await fetchWithTimeout(`${OLLAMA_BASE_URL}/api/tags`, {
         method: 'GET',
-        timeout: 5000,
+        timeout: 10,
+        signal: controller.signal,
       })
 
       let models: OllamaModel[] = []
