@@ -88,15 +88,15 @@ pub struct ModelScopeDetailResult {
 /// ModelScope 单个文件信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelScopeFile {
-    #[serde(rename = "Name")]
+    #[serde(alias = "Name")]
     pub name: String,
-    #[serde(rename = "Path")]
+    #[serde(alias = "Path")]
     pub path: String,
-    #[serde(rename = "Size")]
+    #[serde(alias = "Size")]
     pub size: i64,
-    #[serde(rename = "Sha256")]
+    #[serde(alias = "Sha256")]
     pub sha256: Option<String>,
-    #[serde(rename = "IsLFS")]
+    #[serde(alias = "IsLFS")]
     pub is_lfs: bool,
 }
 
