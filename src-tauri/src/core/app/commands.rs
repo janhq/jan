@@ -322,6 +322,22 @@ pub fn app_token(state: State<'_, AppState>) -> Option<String> {
     state.app_token.clone()
 }
 
+#[tauri::command]
+pub fn get_gguf_scan_paths<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Vec<String> {
+    let config = get_app_configurations(app_handle);
+    config.gguf_scan_paths.unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn set_gguf_scan_paths<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    paths: Vec<String>,
+) -> Result<(), String> {
+    let mut config = get_app_configurations(app_handle.clone());
+    config.gguf_scan_paths = Some(paths);
+    update_app_configuration(app_handle, config)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

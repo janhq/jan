@@ -3,6 +3,7 @@
  */
 
 import { sanitizeModelId } from '@/lib/utils'
+import { invoke } from '@tauri-apps/api/core'
 import {
   AIEngine,
   EngineManager,
@@ -92,39 +93,11 @@ export class DefaultModelsService implements ModelsService {
     hfToken?: string
   ): Promise<HuggingFaceRepo | null> {
     try {
-      // Clean the repo ID to handle various input formats
-      const cleanRepoId = repoId
-        .replace(/^https?:\/\/huggingface\.co\//, '')
-        .replace(/^huggingface\.co\//, '')
-        .replace(/\/$/, '') // Remove trailing slash
-        .trim()
-
-      if (!cleanRepoId || !cleanRepoId.includes('/')) {
-        return null
-      }
-
-      const response = await fetch(
-        `https://huggingface.co/api/models/${cleanRepoId}?blobs=true&files_metadata=true`,
-        {
-          headers: hfToken
-            ? {
-                Authorization: `Bearer ${hfToken}`,
-              }
-            : {},
-        }
-      )
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          return null // Repository not found
-        }
-        throw new Error(
-          `Failed to fetch HuggingFace repository: ${response.status} ${response.statusText}`
-        )
-      }
-
-      const repoData = await response.json()
-      return repoData
+      const repoData = await invoke<unknown>('fetch_huggingface_repo', {
+        repoId,
+        hfToken: hfToken || null,
+      })
+      return repoData as HuggingFaceRepo
     } catch (error) {
       console.error('Error fetching HuggingFace repository:', error)
       return null
@@ -231,21 +204,10 @@ export class DefaultModelsService implements ModelsService {
         return null
       }
 
-      const response = await fetch(
-        `https://www.modelscope.cn/api/v1/models/${cleanModelId}`
-      )
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          return null
-        }
-        throw new Error(
-          `Failed to fetch ModelScope repository: ${response.status} ${response.statusText}`
-        )
-      }
-
-      const repoData = (await response.json()) as ModelScopeRepo
-      return repoData
+      const result = await invoke<{
+        repo: ModelScopeRepo
+      }>('get_modelscope_repo', { modelId: cleanModelId })
+      return result.repo
     } catch (error) {
       console.error('Error fetching ModelScope repository:', error)
       return null
@@ -254,13 +216,13 @@ export class DefaultModelsService implements ModelsService {
 
   async fetchModelScopeFiles(
     modelId: string
-  ): Promise<ModelScopeFileList | null> {
+  ): Promise<ModelScopeFileListResult | null> {
     try {
-      const response = await fetch(
-        `https://www.modelscope.cn/api/v1/models/${modelId}/repo/files?Recursive=true`
+      const result = await invoke<ModelScopeFileListResult>(
+        'get_modelscope_model_files',
+        { modelId }
       )
-      if (!response.ok) return null
-      return (await response.json()) as ModelScopeFileList
+      return result
     } catch (error) {
       console.error('Error fetching ModelScope files:', error)
       return null

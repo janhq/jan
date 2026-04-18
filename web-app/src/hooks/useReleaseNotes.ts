@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// stores/useReleaseStore.ts
 import { create } from 'zustand'
+import { invoke } from '@tauri-apps/api/core'
 
 type Release = {
   tag_name: string
   prerelease: boolean
   draft: boolean
+  body?: string
   [key: string]: any
 }
 
@@ -24,26 +25,28 @@ export const useReleaseNotes = create<ReleaseState>((set) => ({
   fetchLatestRelease: async (includeBeta: boolean) => {
     set({ loading: true, error: null })
     try {
-      const res = await fetch(
-        'https://api.github.com/repos/janhq/jan/releases'
-      )
-      if (!res.ok) throw new Error('Failed to fetch releases')
-      const releases = await res.json()
+      const releases = await invoke<
+        Array<{
+          tag_name: string
+          prerelease: boolean
+          draft: boolean
+          body?: string
+        }>
+      >('fetch_github_releases')
 
       const stableRelease = releases.find(
-        (release: { prerelease: boolean; draft: boolean }) =>
-          !release.prerelease && !release.draft
+        (release) => !release.prerelease && !release.draft
       )
       const betaRelease = releases.find(
-        (release: { prerelease: boolean }) => release.prerelease
+        (release) => release.prerelease
       )
 
       const selected = includeBeta
         ? (betaRelease ?? stableRelease)
         : stableRelease
-      set({ release: selected, loading: false })
+      set({ release: selected || null, loading: false })
     } catch (err: any) {
-      set({ error: err.message, loading: false })
+      set({ error: err.message || String(err), loading: false })
     }
   },
 }))

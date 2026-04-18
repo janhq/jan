@@ -3,6 +3,7 @@ pub mod app;
 pub mod cli;
 pub mod downloads;
 pub mod extensions;
+pub mod external;
 pub mod filesystem;
 pub mod mcp;
 pub mod modelscope;

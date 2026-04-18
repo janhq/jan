@@ -92,6 +92,8 @@ pub fn run() {
         core::app::commands::default_data_folder_path,
         core::app::commands::change_app_data_folder,
         core::app::commands::app_token,
+        core::app::commands::get_gguf_scan_paths,
+        core::app::commands::set_gguf_scan_paths,
         // Extension commands
         core::extensions::commands::get_jan_extensions_path,
         core::extensions::commands::install_extensions,
@@ -153,6 +155,11 @@ pub fn run() {
         // ModelScope
         core::modelscope::commands::list_modelscope_models,
         core::modelscope::commands::get_modelscope_model_detail,
+        core::modelscope::commands::get_modelscope_repo,
+        core::modelscope::commands::get_modelscope_model_files,
+        // External APIs (proxied through Rust to avoid CORS)
+        core::external::commands::fetch_github_releases,
+        core::external::commands::fetch_huggingface_repo,
         core::modelscope::commands::save_modelscope_token,
         core::modelscope::commands::get_modelscope_token,
         core::modelscope::commands::clear_modelscope_token,
@@ -196,6 +203,8 @@ pub fn run() {
         core::app::commands::default_data_folder_path,
         core::app::commands::change_app_data_folder,
         core::app::commands::app_token,
+        core::app::commands::get_gguf_scan_paths,
+        core::app::commands::set_gguf_scan_paths,
         // Extension commands
         core::extensions::commands::get_jan_extensions_path,
         core::extensions::commands::install_extensions,
@@ -258,6 +267,8 @@ pub fn run() {
         // ModelScope
         core::modelscope::commands::list_modelscope_models,
         core::modelscope::commands::get_modelscope_model_detail,
+        core::modelscope::commands::get_modelscope_repo,
+        core::modelscope::commands::get_modelscope_model_files,
         core::modelscope::commands::save_modelscope_token,
         core::modelscope::commands::get_modelscope_token,
         core::modelscope::commands::clear_modelscope_token,

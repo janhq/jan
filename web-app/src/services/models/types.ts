@@ -114,18 +114,16 @@ export interface ModelScopeRepo {
   }
 }
 
-export interface ModelScopeFileList {
-  Code: number
-  Success: boolean
-  Data: {
-    Files: Array<{
-      Name: string
-      Path: string
-      Size: number
-      Sha256: string
-      IsLFS: boolean
-    }>
-  }
+export interface ModelScopeFile {
+  name: string
+  path: string
+  size: number
+  sha256: string | null
+  is_lfs: boolean
+}
+
+export interface ModelScopeFileListResult {
+  files: ModelScopeFile[]
 }
 
 export interface GgufMetadata {
@@ -162,6 +160,9 @@ export interface ModelsService {
   fetchModelScopeRepo(
     modelId: string
   ): Promise<ModelScopeRepo | null>
+  fetchModelScopeFiles(
+    modelId: string
+  ): Promise<ModelScopeFileListResult | null>
   convertMsRepoToCatalogModel(repo: ModelScopeRepo): CatalogModel
   updateModel(modelId: string, model: Partial<CoreModel>): Promise<void>
   pullModel(

@@ -1,8 +1,6 @@
 import * as React from 'react'
 import { cn, toGigabytes } from '@/lib/utils'
 import { IconDownload, IconHeart } from '@tabler/icons-react'
-import { ModelTagStrip } from './ModelTagStrip'
-import { getModelTags } from './tagConstants'
 import type { ModelScopeModel } from '@/services/modelscope/types'
 
 export interface ModelCardProps {
@@ -14,15 +12,87 @@ export interface ModelCardProps {
   ) => void
 }
 
-export const ModelCard = React.memo(function ModelCard({
-  model,
-  onClick,
-  onTagClick,
-}: ModelCardProps) {
+function getFamilyInfo(
+  model: ModelScopeModel
+): { name: string; colorClass: string } | null {
+  const name = (model.display_name || model.id).toLowerCase()
+  if (name.includes('qwen'))
+    return {
+      name: 'Qwen',
+      colorClass:
+        'bg-cyan-500/10 text-cyan-600 border-cyan-500/20',
+    }
+  if (name.includes('llama'))
+    return {
+      name: 'Llama',
+      colorClass:
+        'bg-blue-500/10 text-blue-600 border-blue-500/20',
+    }
+  if (name.includes('gemma'))
+    return {
+      name: 'Gemma',
+      colorClass:
+        'bg-purple-500/10 text-purple-600 border-purple-500/20',
+    }
+  if (name.includes('mistral'))
+    return {
+      name: 'Mistral',
+      colorClass:
+        'bg-orange-500/10 text-orange-600 border-orange-500/20',
+    }
+  if (name.includes('deepseek'))
+    return {
+      name: 'DeepSeek',
+      colorClass:
+        'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
+    }
+  if (name.includes('phi'))
+    return {
+      name: 'Phi',
+      colorClass:
+        'bg-indigo-500/10 text-indigo-600 border-indigo-500/20',
+    }
+  return null
+}
+
+function detectFramework(model: ModelScopeModel): string | null {
+  const tags = model.tags || []
+  const id = model.id.toLowerCase()
+  if (
+    tags.some((t) => t.toLowerCase().includes('gguf')) ||
+    id.includes('gguf')
+  )
+    return 'GGUF'
+  if (
+    tags.some((t) => t.toLowerCase().includes('pytorch')) ||
+    id.includes('pytorch')
+  )
+    return 'PyTorch'
+  if (
+    tags.some((t) => t.toLowerCase().includes('safetensors')) ||
+    id.includes('safetensors')
+  )
+    return 'Safetensors'
+  if (tags.some((t) => t.toLowerCase().includes('transformers')))
+    return 'Transformers'
+  return null
+}
+
+function formatParams(params: number): string {
+  if (params >= 1000) return `${(params / 1000).toFixed(1)}T`
+  if (params >= 1) return `${params}B`
+  if (params > 0) return `${(params * 1000).toFixed(0)}M`
+  return ''
+}
+
+export const ModelCard = React.memo(function ModelCard(props: ModelCardProps) {
+  const { model, onClick } = props
   const displayName =
     model.display_name || model.id.split('/').pop() || model.id
   const namespace = model.id.split('/')[0]
-  const mobileTags = getModelTags(model)
+  const family = getFamilyInfo(model)
+  const framework = detectFramework(model)
+  const paramsText = formatParams(model.params)
 
   const handleClick = React.useCallback(() => {
     onClick?.(model.id)
@@ -31,89 +101,74 @@ export const ModelCard = React.memo(function ModelCard({
   return (
     <div
       className={cn(
-        'group flex rounded-lg border border-border bg-card shadow-sm min-h-[140px] overflow-hidden',
-        'cursor-pointer hover:-translate-y-0.5 hover:shadow-md hover:border-border/80',
-        'transition-transform transition-shadow duration-200 ease-out'
+        'group flex flex-col rounded-lg border border-border bg-card shadow-sm overflow-hidden',
+        'hover:-translate-y-0.5 hover:shadow-md hover:border-border/80',
+        'transition-all duration-200 ease-out cursor-pointer'
       )}
       onClick={handleClick}
     >
-      {/* Desktop left tag strip */}
-      <ModelTagStrip model={model} onTagClick={onTagClick} />
-
-      {/* Right content area */}
-      <div className="flex-1 min-w-0 p-4 flex flex-col">
-        {/* Mobile horizontal tag bar */}
-        <div className="flex md:hidden flex-wrap gap-1.5 mb-2">
-          {mobileTags.map((tag) => {
-            const Icon = tag.icon
-            return (
-              <button
-                key={`mobile-${tag.type}-${tag.value}`}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onTagClick?.(tag.type, tag.value)
-                }}
-                className={cn(
-                  'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm border text-[10px] font-medium transition-colors max-w-full',
-                  tag.colorClass
-                )}
-              >
-                {Icon && <Icon size={12} className="shrink-0" />}
-                <span className="truncate">{tag.label}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Title row + stats */}
-        <div className="flex items-center justify-between gap-x-2 min-w-0">
-          <h3
-            className="text-foreground font-medium text-sm truncate min-w-0 overflow-hidden"
-            title={displayName}
+      {/* Top meta bar */}
+      <div className="flex items-center gap-1.5 flex-wrap px-4 pt-3 pb-2">
+        {family && (
+          <span
+            className={cn(
+              'text-[11px] px-2 py-0.5 rounded-md border font-semibold',
+              family.colorClass
+            )}
           >
-            {displayName}
-          </h3>
-          <div className="shrink-0 flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <IconDownload size={14} />
-              {model.downloads.toLocaleString()}
-            </span>
-            <span className="flex items-center gap-1">
-              <IconHeart size={14} />
-              {model.likes.toLocaleString()}
-            </span>
-          </div>
-        </div>
+            {family.name}
+          </span>
+        )}
+        {paramsText && (
+          <span className="text-[11px] px-2 py-0.5 rounded-md bg-primary/10 text-primary font-bold border border-primary/20">
+            {paramsText}
+          </span>
+        )}
+        {framework && (
+          <span className="text-[11px] px-2 py-0.5 rounded-md border border-border text-muted-foreground">
+            {framework}
+          </span>
+        )}
+        {model.tasks?.slice(0, 1).map((task) => (
+          <span
+            key={task}
+            className="text-[11px] px-2 py-0.5 rounded-md bg-secondary text-muted-foreground"
+          >
+            {task}
+          </span>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0 px-4 pb-3 flex flex-col gap-1">
+        {/* Title */}
+        <h3 className="text-sm font-semibold text-foreground line-clamp-2 leading-tight">
+          {displayName}
+        </h3>
 
         {/* Description */}
         {model.description && (
-          <p className="mt-2 text-xs text-muted-foreground leading-relaxed line-clamp-2 break-words">
+          <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
             {model.description}
           </p>
         )}
+      </div>
 
-        {/* Bottom meta row */}
-        <div className="flex items-center flex-wrap gap-2 mt-auto pt-3 min-w-0">
-          <span className="text-[11px] text-muted-foreground truncate max-w-[140px]">
-            By {namespace}
+      {/* Bottom stats */}
+      <div className="px-4 py-2 border-t border-border/30 flex items-center justify-between bg-muted/20">
+        <span className="text-[11px] text-muted-foreground truncate max-w-[140px]">
+          By {namespace}
+        </span>
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <IconHeart size={13} />
+            {model.likes.toLocaleString()}
           </span>
-          {model.tasks?.slice(0, 2).map((task) => (
-            <span
-              key={task}
-              className="text-[11px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground truncate max-w-[100px]"
-            >
-              {task}
-            </span>
-          ))}
-          {model.license && (
-            <span className="text-[11px] px-1.5 py-0.5 rounded border border-border text-muted-foreground truncate max-w-[120px]">
-              {model.license}
-            </span>
-          )}
-          <span className="ml-auto text-xs text-muted-foreground font-mono font-medium shrink-0">
-            {toGigabytes(model.file_size)}
+          <span className="flex items-center gap-1">
+            <IconDownload size={13} />
+            {model.downloads.toLocaleString()}
           </span>
+          <span className="font-mono">{toGigabytes(model.file_size)}</span>
         </div>
       </div>
     </div>

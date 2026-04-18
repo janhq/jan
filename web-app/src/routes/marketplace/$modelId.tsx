@@ -5,14 +5,27 @@ import {
   useNavigate,
   useSearch,
 } from '@tanstack/react-router'
-import { IconArrowLeft, IconDownload, IconHeart, IconClock } from '@tabler/icons-react'
+import {
+  IconArrowLeft,
+  IconDownload,
+  IconHeart,
+  IconClock,
+  IconFile,
+  IconPlayerPlay,
+  IconLoader2,
+} from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import { useModelScopeDetail } from '@/hooks/useModelScope'
-// import { useServiceHub } from '@/hooks/useServiceHub'
-import { useEffect, useState, useCallback } from 'react'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { Loader } from 'lucide-react'
+import { sanitizeModelId, toGigabytes } from '@/lib/utils'
+import type { ModelScopeFileListResult } from '@/services/models/types'
 
 export const Route = createFileRoute('/marketplace/$modelId' as any)({
   component: MarketplaceModelDetailContent,
@@ -22,13 +35,21 @@ function MarketplaceModelDetailContent() {
   const { modelId } = useParams({ from: Route.id as any })
   const navigate = useNavigate()
   const search = useSearch({ from: Route.id as any })
-  // const serviceHub = useServiceHub()
+  const serviceHub = useServiceHub()
+
+  const { getProviderByName } = useModelProvider()
+  const llamaProvider = getProviderByName('llamacpp')
+  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
+    useDownloadStore()
 
   const [token, setTokenState] = useState<string | null>(null)
   const [tokenInput, setTokenInput] = useState('')
   const [showTokenDialog, setShowTokenDialog] = useState(false)
+  const [fileList, setFileList] = useState<ModelScopeFileListResult | null>(null)
+  const [filesLoading, setFilesLoading] = useState(false)
 
-  const { detail, loading, error, needsAuth, fetchDetail } = useModelScopeDetail()
+  const { detail, loading, error, needsAuth, fetchDetail } =
+    useModelScopeDetail()
 
   // Fetch token
   useEffect(() => {
@@ -51,9 +72,28 @@ function MarketplaceModelDetailContent() {
     }
   }, [owner, repoName, token, fetchDetail])
 
-  // Show token dialog when auth is required
+  // Fetch file list when model is available
+  const model = detail?.model
+
   useEffect(() => {
-    if (needsAuth && !showTokenDialog) {
+    if (!model) {
+      setFileList(null)
+      return
+    }
+    setFilesLoading(true)
+    serviceHub
+      .models()
+      .fetchModelScopeFiles(model.id)
+      .then((list: ModelScopeFileListResult | null) => setFileList(list))
+      .catch(() => setFileList(null))
+      .finally(() => setFilesLoading(false))
+  }, [model, serviceHub])
+
+  // Show token dialog when auth is required
+  const showTokenDialogRef = useRef(showTokenDialog)
+  showTokenDialogRef.current = showTokenDialog
+  useEffect(() => {
+    if (needsAuth && !showTokenDialogRef.current) {
       setShowTokenDialog(true)
     }
   }, [needsAuth])
@@ -61,7 +101,9 @@ function MarketplaceModelDetailContent() {
   const handleSaveToken = useCallback(() => {
     if (!tokenInput.trim()) return
     import('@tauri-apps/api/core').then(({ invoke }) => {
-      invoke('save_modelscope_token', { token: tokenInput.trim() }).then(() => {
+      invoke('save_modelscope_token', {
+        token: tokenInput.trim(),
+      }).then(() => {
         setTokenState(tokenInput.trim())
         setShowTokenDialog(false)
         setTokenInput('')
@@ -73,7 +115,89 @@ function MarketplaceModelDetailContent() {
     })
   }, [tokenInput, owner, repoName, fetchDetail])
 
-  const model = detail?.model
+  // Determine the best GGUF file to download
+  const bestFile = useMemo(() => {
+    if (!fileList?.files) return null
+    const ggufs = fileList.files.filter(
+      (f) =>
+        f.name.toLowerCase().endsWith('.gguf') &&
+        !f.name.toLowerCase().includes('mmproj')
+    )
+    if (ggufs.length === 0) return null
+    const priority = (name: string) => {
+      const lower = name.toLowerCase()
+      if (lower.includes('q4_k_m')) return 3
+      if (lower.includes('q5_k_m')) return 2
+      if (lower.includes('q8_0')) return 1
+      return 0
+    }
+    return [...ggufs].sort((a, b) => priority(b.name) - priority(a.name))[0]
+  }, [fileList])
+
+  const downloadModelId = useMemo(() => {
+    if (!bestFile || !model) return null
+    const ns = model.id.split('/')[0]
+    return `${ns}/${sanitizeModelId(bestFile.name.replace(/\.gguf$/i, ''))}`
+  }, [bestFile, model])
+
+  const downloadProcesses = useMemo(
+    () =>
+      Object.values(downloads).map((download) => ({
+        id: download.name,
+        name: download.name,
+        progress: download.progress,
+        current: download.current,
+        total: download.total,
+      })),
+    [downloads]
+  )
+
+  const isDownloading = downloadModelId
+    ? localDownloadingModels.has(downloadModelId) ||
+      downloadProcesses.some((e) => e.id === downloadModelId)
+    : false
+
+  const downloadProgress = downloadModelId
+    ? downloadProcesses.find((e) => e.id === downloadModelId)?.progress || 0
+    : 0
+
+  const isDownloaded = downloadModelId
+    ? llamaProvider?.models.some(
+        (m: { id: string }) => m.id === downloadModelId
+      ) ?? false
+    : false
+
+  const handleDownload = useCallback(() => {
+    if (!downloadModelId || !bestFile || !model) return
+    const path = `https://www.modelscope.cn/models/${model.id}/resolve/master/${bestFile.path}`
+    addLocalDownloadingModel(downloadModelId)
+    serviceHub
+      .models()
+      .pullModelWithMetadata(
+        downloadModelId,
+        path,
+        undefined,
+        undefined,
+        true
+      )
+      .catch((err: unknown) => {
+        console.error('Download failed:', err)
+      })
+  }, [downloadModelId, bestFile, model, addLocalDownloadingModel, serviceHub])
+
+  const handleUseModel = useCallback(() => {
+    if (!downloadModelId) return
+    navigate({
+      to: route.home,
+      params: {},
+      search: {
+        threadModel: {
+          id: downloadModelId,
+          provider: 'llamacpp',
+        },
+      },
+    })
+  }, [navigate, downloadModelId])
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return ''
@@ -113,7 +237,9 @@ function MarketplaceModelDetailContent() {
       {showTokenDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-card border border-border rounded-lg p-6 w-[420px] max-w-[90vw]">
-            <h3 className="text-lg font-medium mb-2">需要 ModelScope 访问令牌</h3>
+            <h3 className="text-lg font-medium mb-2">
+              需要 ModelScope 访问令牌
+            </h3>
             <p className="text-sm text-muted-foreground mb-4">
               查看此模型的详情需要 ModelScope 访问令牌。
               <br />
@@ -180,8 +306,10 @@ function MarketplaceModelDetailContent() {
               <>
                 {/* Model Header */}
                 <div className="mb-8">
-                  <h1 className="text-2xl font-semibold mb-4 capitalize wrap-break-word line-clamp-2">
-                    {model.display_name || model.id.split('/').pop() || model.id}
+                  <h1 className="text-2xl font-semibold capitalize wrap-break-word line-clamp-2 mb-4">
+                    {model.display_name ||
+                      model.id.split('/').pop() ||
+                      model.id}
                   </h1>
 
                   {/* Stats */}
@@ -231,26 +359,118 @@ function MarketplaceModelDetailContent() {
                         className="select-none reset-heading"
                         components={{
                           a: ({ ...props }: any) => (
-                            <a {...props} target="_blank" rel="noopener noreferrer" />
+                            <a
+                              {...props}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            />
                           ),
                         }}
                         content={model.description}
                       />
                     </div>
                   )}
+
+                  {/* Download Section */}
+                  <div className="rounded-lg border border-border bg-card p-4 mt-6">
+                    <h3 className="text-sm font-semibold text-foreground mb-3">
+                      模型文件
+                    </h3>
+                    {filesLoading ? (
+                      <div className="flex items-center gap-2 py-2">
+                        <IconLoader2
+                          size={16}
+                          className="animate-spin text-muted-foreground"
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          正在获取文件列表...
+                        </span>
+                      </div>
+                    ) : bestFile ? (
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                            <IconFile
+                              size={20}
+                              className="text-primary"
+                            />
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-sm font-medium text-foreground truncate">
+                              {bestFile.name}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {bestFile.size > 0
+                                ? toGigabytes(bestFile.size)
+                                : '大小未知'}
+                              {bestFile.sha256 && (
+                                <span className="ml-2 font-mono">
+                                  SHA: {bestFile.sha256.slice(0, 8)}…
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="shrink-0">
+                          {isDownloading ? (
+                            <div className="flex items-center gap-3 w-48">
+                              <Progress
+                                value={downloadProgress * 100}
+                                className="h-2 flex-1"
+                              />
+                              <span className="text-xs text-muted-foreground font-mono w-10 text-right">
+                                {Math.round(downloadProgress * 100)}%
+                              </span>
+                            </div>
+                          ) : isDownloaded ? (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="gap-1.5"
+                              onClick={handleUseModel}
+                            >
+                              <IconPlayerPlay size={14} />
+                              使用模型
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              className="gap-1.5"
+                              onClick={handleDownload}
+                            >
+                              <IconDownload size={14} />
+                              下载模型
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+                        <IconFile size={16} />
+                        <span>暂无可下载的 GGUF 模型文件</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* README */}
                 {model.readme ? (
                   <div className="mb-8">
                     <div className="flex items-center gap-2 mb-4">
-                      <h2 className="text-lg font-semibold text-foreground">README</h2>
+                      <h2 className="text-lg font-semibold text-foreground">
+                        README
+                      </h2>
                     </div>
                     <div className="prose prose-invert max-w-none">
                       <RenderMarkdown
                         components={{
                           a: ({ ...props }: any) => (
-                            <a {...props} target="_blank" rel="noopener noreferrer" />
+                            <a
+                              {...props}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            />
                           ),
                         }}
                         content={model.readme}

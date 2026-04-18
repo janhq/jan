@@ -4,6 +4,7 @@ use tauri::{AppHandle, Runtime};
 
 use super::models::{
     ListModelScopeModelsParams, ModelScopeDetailResult, ModelScopeModelsResult,
+    ModelScopeFileListResult, ModelScopeRepoResult,
 };
 use crate::core::app::commands::{get_app_configurations, update_app_configuration};
 
@@ -133,6 +134,103 @@ pub async fn get_modelscope_model_detail(
 
     Ok(ModelScopeDetailResult {
         model: api_resp.data,
+    })
+}
+
+/// 获取 ModelScope 仓库信息（通过内部 API，不受 CORS 限制）
+#[tauri::command]
+pub async fn get_modelscope_repo(
+    model_id: String,
+) -> Result<ModelScopeRepoResult, String> {
+    let client = build_reqwest_client()?;
+
+    let url = format!(
+        "https://modelscope.cn/api/v1/models/{}",
+        model_id
+    );
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let status = response.status();
+    let body_text = response.text().await.map_err(|e| e.to_string())?;
+
+    if !status.is_success() {
+        return Err(format!(
+            "ModelScope repo API error: HTTP {} - {}",
+            status,
+            &body_text[..body_text.len().min(500)]
+        ));
+    }
+
+    let api_resp: super::models::ModelScopeRepoApiResponse =
+        serde_json::from_str(&body_text).map_err(|e| {
+            format!(
+                "Failed to parse ModelScope repo response: {}. Raw: {}",
+                e,
+                &body_text[..body_text.len().min(500)]
+            )
+        })?;
+
+    if !api_resp.success {
+        return Err("ModelScope repo API returned success=false".to_string());
+    }
+
+    Ok(ModelScopeRepoResult {
+        repo: api_resp,
+    })
+}
+
+/// 获取 ModelScope 模型文件列表（通过内部 API，不受 CORS 限制）
+#[tauri::command]
+pub async fn get_modelscope_model_files(
+    model_id: String,
+) -> Result<ModelScopeFileListResult, String> {
+    let client = build_reqwest_client()?;
+
+    let url = format!(
+        "https://modelscope.cn/api/v1/models/{}/repo/files?Recursive=true",
+        model_id
+    );
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let status = response.status();
+    let body_text = response.text().await.map_err(|e| e.to_string())?;
+
+    if !status.is_success() {
+        return Err(format!(
+            "ModelScope files API error: HTTP {} - {}",
+            status,
+            &body_text[..body_text.len().min(500)]
+        ));
+    }
+
+    let api_resp: super::models::ModelScopeFileListApiResponse =
+        serde_json::from_str(&body_text).map_err(|e| {
+            format!(
+                "Failed to parse ModelScope files response: {}. Raw: {}",
+                e,
+                &body_text[..body_text.len().min(500)]
+            )
+        })?;
+
+    if !api_resp.success {
+        return Err(format!(
+            "ModelScope files API returned success=false: {}",
+            api_resp.message.unwrap_or_default()
+        ));
+    }
+
+    Ok(ModelScopeFileListResult {
+        files: api_resp.data.files,
     })
 }
 

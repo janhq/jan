@@ -6,8 +6,13 @@ import HeaderPage from '@/containers/HeaderPage'
 import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useEffect, useState } from 'react'
-import { IconExternalLink, IconTrash } from '@tabler/icons-react'
+import { useEffect, useState, useCallback } from 'react'
+import {
+  IconExternalLink,
+  IconTrash,
+  IconFolder,
+  IconPlus,
+} from '@tabler/icons-react'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute(route.settings.modelscope as any)({
@@ -20,6 +25,18 @@ function ModelScopeSettings() {
   const [savedToken, setSavedToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
+  const [scanPaths, setScanPaths] = useState<string[]>([])
+  const [pathsLoading] = useState(false)
+
+  const fetchPaths = useCallback(async () => {
+    try {
+      const paths = await invoke<string[]>('get_gguf_scan_paths')
+      setScanPaths(paths)
+    } catch (e) {
+      console.error('Failed to fetch scan paths:', e)
+    }
+  }, [])
+
   useEffect(() => {
     invoke<string | null>('get_modelscope_token')
       .then((t) => {
@@ -27,7 +44,8 @@ function ModelScopeSettings() {
         if (t) setToken(t)
       })
       .catch(() => setSavedToken(null))
-  }, [])
+    fetchPaths()
+  }, [fetchPaths])
 
   const handleSave = async () => {
     setLoading(true)
@@ -59,6 +77,37 @@ function ModelScopeSettings() {
       toast.error('清除失败: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleAddPath = async () => {
+    try {
+      const result = await invoke<string | string[] | null>('open_dialog', {
+        options: { directory: true, multiple: false, title: '选择模型文件夹' },
+      })
+      if (!result) return
+      const newPath = Array.isArray(result) ? result[0] : result
+      if (scanPaths.includes(newPath)) {
+        toast.info('该路径已存在')
+        return
+      }
+      const updated = [...scanPaths, newPath]
+      await invoke('set_gguf_scan_paths', { paths: updated })
+      setScanPaths(updated)
+      toast.success('搜索路径已添加')
+    } catch (err) {
+      toast.error('添加失败: ' + (err instanceof Error ? err.message : String(err)))
+    }
+  }
+
+  const handleRemovePath = async (path: string) => {
+    try {
+      const updated = scanPaths.filter((p) => p !== path)
+      await invoke('set_gguf_scan_paths', { paths: updated })
+      setScanPaths(updated)
+      toast.success('搜索路径已移除')
+    } catch (err) {
+      toast.error('移除失败: ' + (err instanceof Error ? err.message : String(err)))
     }
   }
 
@@ -128,6 +177,58 @@ function ModelScopeSettings() {
                     </div>
                   }
                 />
+              </Card>
+
+              <Card title="本地模型搜索路径">
+                <div className="text-sm text-muted-foreground mb-4">
+                  以下路径中的 *.gguf 模型文件将被自动扫描并显示在推理中心的"本地 GGUF 模型"中。
+                </div>
+
+                {scanPaths.length === 0 ? (
+                  <div className="text-sm text-muted-foreground py-2">
+                    暂无自定义搜索路径，默认扫描数据目录下的 llamacpp/models 文件夹。
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-border overflow-hidden mb-4">
+                    <div className="divide-y divide-border/50">
+                      {scanPaths.map((path) => (
+                        <div
+                          key={path}
+                          className="flex items-center gap-3 px-4 py-3"
+                        >
+                          <IconFolder
+                            size={16}
+                            className="text-muted-foreground shrink-0"
+                          />
+                          <span className="text-sm text-foreground flex-1 truncate font-mono">
+                            {path}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs text-destructive"
+                            onClick={() => handleRemovePath(path)}
+                          >
+                            <IconTrash size={14} className="mr-1" />
+                            移除
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddPath}
+                    disabled={pathsLoading}
+                  >
+                    <IconPlus size={14} className="mr-1" />
+                    添加路径
+                  </Button>
+                </div>
               </Card>
 
               <Card title="关于 ModelScope">
