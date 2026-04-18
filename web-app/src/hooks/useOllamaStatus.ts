@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
-import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { toast } from 'sonner'
 
 export interface OllamaModel {
@@ -39,32 +38,17 @@ interface OllamaStatus {
   installMessage: string
 }
 
-const OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
-
-/**
- * Wrapper around Tauri's HTTP plugin fetch with manual timeout.
- * Uses fetchTauri (Rust-backed, bypasses WebView2 CORS/Mixed Content)
- * but adds a JS-layer AbortController timeout since plugin-http v2.5.0
- * does not expose a request timeout option (only connectTimeout).
- */
-async function fetchWithTimeout(
-  input: string,
-  init: RequestInit & { timeout?: number } = {}
-): Promise<Response> {
-  const { timeout = 8000, ...rest } = init
-  const controller = new AbortController()
-  const id = setTimeout(() => controller.abort(), timeout)
-
-  if (rest.signal) {
-    rest.signal.addEventListener('abort', () => controller.abort(), { once: true })
-  }
-
-  try {
-    const response = await fetchTauri(input, { ...rest, signal: controller.signal })
-    return response
-  } finally {
-    clearTimeout(id)
-  }
+interface OllamaRunningStatus {
+  is_running: boolean
+  version: string | null
+  models: Array<{
+    name: string
+    model: string
+    modified_at: string
+    size: number
+    digest: string
+    details?: OllamaModel['details']
+  }>
 }
 
 export function useOllamaStatus(pollIntervalMs = 5000) {
@@ -78,7 +62,6 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
     installStatus: null,
     installMessage: '',
   })
-  const abortRef = useRef<AbortController | null>(null)
   const unlistenRef = useRef<UnlistenFn | null>(null)
   const isRunningRef = useRef(false)
 
@@ -100,57 +83,33 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
   }, [])
 
   const fetchStatus = useCallback(async () => {
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-
     setStatus((prev) => ({ ...prev, isLoading: true }))
 
     try {
-      const versionRes = await fetchWithTimeout(`${OLLAMA_BASE_URL}/api/version`, {
-        method: 'GET',
-        timeout: 8,
-        signal: controller.signal,
-        headers: { Accept: 'application/json' },
-      })
+      const result = await invoke<OllamaRunningStatus>('check_ollama_running')
 
-      if (!versionRes.ok) {
+      if (result.is_running) {
+        isRunningRef.current = true
+        setStatus((prev) => ({
+          ...prev,
+          isRunning: true,
+          version: result.version ?? undefined,
+          models: (result.models as OllamaModel[]) ?? [],
+          isLoading: false,
+          error: undefined,
+        }))
+      } else {
+        isRunningRef.current = false
         setStatus((prev) => ({
           ...prev,
           isRunning: false,
           models: [],
-          error: `Ollama 返回错误: ${versionRes.status}`,
           isLoading: false,
+          error: undefined,
         }))
-        return
       }
-
-      const versionData = await versionRes.json()
-      const version = versionData.version as string
-
-      const tagsRes = await fetchWithTimeout(`${OLLAMA_BASE_URL}/api/tags`, {
-        method: 'GET',
-        timeout: 10,
-        signal: controller.signal,
-      })
-
-      let models: OllamaModel[] = []
-      if (tagsRes.ok) {
-        const tagsData = await tagsRes.json()
-        models = (tagsData.models as OllamaModel[]) ?? []
-      }
-
-      isRunningRef.current = true
-      setStatus((prev) => ({
-        ...prev,
-        isRunning: true,
-        version,
-        models,
-        isLoading: false,
-        error: undefined,
-      }))
     } catch (error) {
-      if ((error as Error).name === 'AbortError') return
+      console.error('Failed to check Ollama status:', error)
       isRunningRef.current = false
       setStatus((prev) => ({
         ...prev,
@@ -290,7 +249,6 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
     const timer = setInterval(fetchStatus, pollIntervalMs)
     return () => {
       clearInterval(timer)
-      abortRef.current?.abort()
       if (unlistenRef.current) {
         unlistenRef.current()
         unlistenRef.current = null

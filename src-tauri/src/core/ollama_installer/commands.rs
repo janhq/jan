@@ -105,6 +105,77 @@ pub fn check_ollama_installed() -> Option<String> {
     None
 }
 
+/** Response from Ollama /api/version */
+#[derive(serde::Serialize)]
+pub struct OllamaRunningStatus {
+    pub is_running: bool,
+    pub version: Option<String>,
+    pub models: Vec<serde_json::Value>,
+}
+
+/// Checks whether Ollama is running by querying its localhost API.
+/// Uses a reqwest client with `no_proxy()` to avoid hanging on Windows
+/// when a stale proxy configuration (e.g. 127.0.0.1:7890) is present.
+#[tauri::command]
+pub async fn check_ollama_running() -> Result<OllamaRunningStatus, String> {
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(err_to_string)?;
+
+    let version_res = match client
+        .get("http://127.0.0.1:11434/api/version")
+        .send()
+        .await
+    {
+        Ok(res) => res,
+        Err(e) => {
+            log::debug!("Ollama health check failed: {}", e);
+            return Ok(OllamaRunningStatus {
+                is_running: false,
+                version: None,
+                models: vec![],
+            });
+        }
+    };
+
+    if !version_res.status().is_success() {
+        return Ok(OllamaRunningStatus {
+            is_running: false,
+            version: None,
+            models: vec![],
+        });
+    }
+
+    let version = version_res
+        .json::<serde_json::Value>()
+        .await
+        .ok()
+        .and_then(|v| v.get("version").and_then(|v| v.as_str()).map(|s| s.to_string()));
+
+    let models = match client
+        .get("http://127.0.0.1:11434/api/tags")
+        .send()
+        .await
+    {
+        Ok(res) if res.status().is_success() => res
+            .json::<serde_json::Value>()
+            .await
+            .ok()
+            .and_then(|v| v.get("models").cloned())
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default(),
+        _ => vec![],
+    };
+
+    Ok(OllamaRunningStatus {
+        is_running: true,
+        version,
+        models,
+    })
+}
+
 /// Starts the Ollama application from the given path.
 /// This spawns ollama.exe without waiting for it to complete (daemon mode).
 #[tauri::command]

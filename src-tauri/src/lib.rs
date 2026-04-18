@@ -148,6 +148,7 @@ pub fn run() {
         // Ollama installer
         core::ollama_installer::commands::install_ollama,
         core::ollama_installer::commands::check_ollama_installed,
+        core::ollama_installer::commands::check_ollama_running,
         core::ollama_installer::commands::start_ollama,
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
@@ -238,6 +239,7 @@ pub fn run() {
         // Ollama installer
         core::ollama_installer::commands::install_ollama,
         core::ollama_installer::commands::check_ollama_installed,
+        core::ollama_installer::commands::check_ollama_running,
         core::ollama_installer::commands::start_ollama,
     ]);
 
