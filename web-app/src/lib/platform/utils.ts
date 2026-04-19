@@ -11,6 +11,22 @@ export const isPlatformTauri = (): boolean => {
   if (IS_WEB_APP === true || (IS_WEB_APP as unknown as string) === 'true') {
     return false
   }
+
+  // In dev, web can be built with Tauri flags but still opened in a regular browser.
+  // Only treat as Tauri when a runtime bridge is actually present.
+  if (typeof window !== 'undefined') {
+    const w = window as Window & {
+      __TAURI__?: unknown
+      __TAURI_INTERNALS__?: unknown
+    }
+    const hasTauriBridge =
+      typeof w.__TAURI__ !== 'undefined' ||
+      typeof w.__TAURI_INTERNALS__ !== 'undefined'
+    if (!hasTauriBridge) {
+      return false
+    }
+  }
+
   return true
 }
 
