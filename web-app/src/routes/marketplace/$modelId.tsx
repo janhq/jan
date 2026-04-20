@@ -242,30 +242,44 @@ function MarketplaceModelDetailContent() {
   )
 
   const handleDownloadFile = useCallback(
-    (file: { Name: string; Path: string }) => {
+    async (file: { Name: string; Path: string }) => {
       if (!model) return
       const isGguf = file.Name.toLowerCase().endsWith('.gguf')
       const ns = model.id.split('/')[0]
       const fileModelId = `${ns}/${sanitizeModelId(file.Name.replace(/\.gguf$/i, ''))}`
-      const path = `https://www.modelscope.cn/models/${model.id}/resolve/master/${file.Path}`
 
       if (isGguf) {
         addLocalDownloadingModel(fileModelId)
-        serviceHub
-          .models()
-          .pullModelWithMetadata(
-            fileModelId,
-            path,
-            undefined,
-            undefined,
-            true
-          )
-          .catch((err: unknown) => {
-            console.error('Download failed:', err)
+        try {
+          // Use our ModelScope native download command to avoid
+          // HEAD-request 500 errors from the generic download_files path.
+          const { getJanDataFolderPath } = await import('@janhq/core')
+          const janData = await getJanDataFolderPath()
+          const saveDir = `${janData}/llamacpp/models/${fileModelId}`
+
+          const { invoke } = await import('@tauri-apps/api/core')
+          await invoke('download_modelscope_model', {
+            request: {
+              model_id: model.id,
+              file_path: file.Path,
+              save_name: 'model.gguf',
+              save_dir: saveDir,
+            },
           })
+
+          // Register the model with local path so llamacpp-extension
+          // skips its own download (and the buggy HEAD preflight).
+          await serviceHub
+            .models()
+            .pullModel(
+              fileModelId,
+              `llamacpp/models/${fileModelId}/model.gguf`
+            )
+        } catch (err) {
+          console.error('Download failed:', err)
+        }
       } else {
         // For non-GGUF files, we currently only support browsing.
-        // Generic file download without engine import would need a new backend command.
         console.warn(
           `[MarketplaceDetail] Non-GGUF file download not yet supported: ${file.Name}`
         )

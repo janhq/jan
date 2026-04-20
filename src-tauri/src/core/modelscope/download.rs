@@ -18,19 +18,29 @@ pub async fn execute_batch_download(
     let file_list = super::commands::get_modelscope_model_files(request.model_id.clone()).await?;
 
     // 2. Filter target files
-    let target_files: Vec<_> = file_list
-        .Files
-        .into_iter()
-        .filter(|f| {
-            if f.Type == "tree" {
-                return false;
-            }
-            match &request.quant_dir {
-                Some(dir) => f.Path.starts_with(&format!("{}/", dir)),
-                None => true,
-            }
-        })
-        .collect();
+    let target_files: Vec<_> = if let Some(ref file_path) = request.file_path {
+        // Single-file mode: find the exact file
+        file_list
+            .Files
+            .into_iter()
+            .filter(|f| f.Path == *file_path)
+            .collect()
+    } else {
+        // Batch mode: filter by quant_dir
+        file_list
+            .Files
+            .into_iter()
+            .filter(|f| {
+                if f.Type == "tree" {
+                    return false;
+                }
+                match &request.quant_dir {
+                    Some(dir) => f.Path.starts_with(&format!("{}/", dir)),
+                    None => true,
+                }
+            })
+            .collect()
+    };
 
     let total_count = target_files.len();
     if total_count == 0 {
@@ -47,10 +57,12 @@ pub async fn execute_batch_download(
     // 4. Download files with concurrency limit
     let completed = Arc::new(AtomicUsize::new(0));
 
+    let save_name = request.save_name.clone();
     let download_futures = target_files.into_iter().map(|file| {
         let app = app.clone();
         let save_dir = request.save_dir.clone();
         let model_id = request.model_id.clone();
+        let save_name = save_name.clone();
         let completed = completed.clone();
 
         async move {
@@ -58,7 +70,11 @@ pub async fn execute_batch_download(
                 "https://www.modelscope.cn/models/{}/resolve/master/{}",
                 model_id, file.Path
             );
-            let dest = std::path::PathBuf::from(&save_dir).join(&file.Path);
+            let dest = if let Some(save_name) = save_name {
+                std::path::PathBuf::from(&save_dir).join(save_name)
+            } else {
+                std::path::PathBuf::from(&save_dir).join(&file.Path)
+            };
 
             // Create parent directories for the destination file
             if let Some(parent) = dest.parent() {

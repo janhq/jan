@@ -157,6 +157,10 @@ pub struct ModelScopeDownloadRecord {
 pub struct ModelScopeBatchDownloadRequest {
     pub model_id: String,
     pub quant_dir: Option<String>,
+    /// 指定单个文件路径（优先于 quant_dir，用于单文件下载）
+    pub file_path: Option<String>,
+    /// 下载后重命名（仅当 file_path 指定时有效）
+    pub save_name: Option<String>,
     pub save_dir: String,
 }
 
