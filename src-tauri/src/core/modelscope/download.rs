@@ -14,8 +14,16 @@ pub async fn execute_batch_download(
     request: ModelScopeBatchDownloadRequest,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    log::info!(
+        "[modelscope] Batch download start: model_id={} file_path={:?} quant_dir={:?} save_dir={} save_name={:?}",
+        request.model_id, request.file_path, request.quant_dir, request.save_dir, request.save_name
+    );
+
     // 1. Fetch file list
-    let file_list = super::commands::get_modelscope_model_files(request.model_id.clone()).await?;
+    let file_list = super::commands::get_modelscope_model_files(request.model_id.clone()).await.map_err(|e| {
+        log::error!("[modelscope] Failed to fetch file list for {}: {}", request.model_id, e);
+        e
+    })?;
 
     // 2. Filter target files
     let target_files: Vec<_> = if let Some(ref file_path) = request.file_path {
@@ -44,10 +52,13 @@ pub async fn execute_batch_download(
 
     let total_count = target_files.len();
     if total_count == 0 {
+        log::warn!("[modelscope] No matching files for model_id={} file_path={:?} quant_dir={:?}",
+            request.model_id, request.file_path, request.quant_dir);
         return Err("No matching files to download".to_string());
     }
 
     let total_size_bytes: u64 = target_files.iter().map(|f| f.Size as u64).sum();
+    log::info!("[modelscope] {} files to download, total size={} bytes", total_count, total_size_bytes);
 
     // 3. Ensure save directory exists
     tokio::fs::create_dir_all(&request.save_dir)
@@ -109,11 +120,14 @@ pub async fn execute_batch_download(
     // 5. Error handling
     let failed_count = results.iter().filter(|r| r.is_err()).count();
     if failed_count > 0 {
-        return Err(format!(
+        let err = format!(
             "{} of {} files failed to download",
             failed_count, total_count
-        ));
+        );
+        log::error!("[modelscope] {}", err);
+        return Err(err);
     }
+    log::info!("[modelscope] All {} files downloaded successfully", total_count);
 
     // 6. Update download config (stub for now)
     let record = ModelScopeDownloadRecord {
@@ -131,34 +145,54 @@ pub async fn execute_batch_download(
 
 /// Download a single file from URL to destination using streaming.
 async fn download_single_file(url: &str, dest: &std::path::PathBuf) -> Result<(), String> {
+    log::info!("[modelscope] Starting download: url={} dest={}", url, dest.display());
+
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(600))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            log::error!("[modelscope] Failed to build HTTP client: {}", e);
+            e.to_string()
+        })?;
 
-    let response = client.get(url).send().await.map_err(|e| e.to_string())?;
+    let response = client.get(url).send().await.map_err(|e| {
+        log::error!("[modelscope] HTTP request failed for {}: {}", url, e);
+        e.to_string()
+    })?;
 
     if !response.status().is_success() {
-        return Err(format!(
+        let err = format!(
             "HTTP {} for {}",
             response.status(),
             url
-        ));
+        );
+        log::error!("[modelscope] {}", err);
+        return Err(err);
     }
 
     let mut file = tokio::fs::File::create(dest)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            log::error!("[modelscope] Failed to create file {}: {}", dest.display(), e);
+            e.to_string()
+        })?;
     let mut stream = response.bytes_stream();
 
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| e.to_string())?;
+        let chunk = chunk.map_err(|e| {
+            log::error!("[modelscope] Stream error for {}: {}", url, e);
+            e.to_string()
+        })?;
         tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| {
+                log::error!("[modelscope] Write error for {}: {}", dest.display(), e);
+                e.to_string()
+            })?;
     }
 
+    log::info!("[modelscope] Download completed: {}", dest.display());
     Ok(())
 }
 

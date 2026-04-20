@@ -37,6 +37,8 @@ import {
 } from './lib/modelFileUtils'
 import { DownloadDialog } from '@/components/marketplace/DownloadDialog'
 import { QuantSelector } from '@/components/marketplace/QuantSelector'
+import { logError } from '@/lib/logger'
+import { toast } from 'sonner'
 
 export const Route = createFileRoute('/marketplace/$modelId' as any)({
   component: MarketplaceModelDetailContent,
@@ -192,11 +194,55 @@ function MarketplaceModelDetailContent() {
             save_dir: saveDir,
           },
         })
-      } catch (err) {
+        toast.success('批量下载完成')
+        // Try to register the first .gguf file found in the downloaded quant dir
+        // so the model appears in the local model list.
+        try {
+          const { getJanDataFolderPath, readdirSync } = await import('@janhq/core')
+          const janData = await getJanDataFolderPath()
+          const searchDir = quantDir
+            ? `${janData}/llamacpp/models/${model.id}/${quantDir}`
+            : `${janData}/llamacpp/models/${model.id}`
+          const entries = await readdirSync(searchDir)
+          const firstGguf = entries.find((e: string) =>
+            e.toLowerCase().endsWith('.gguf')
+          )
+          if (firstGguf) {
+            const ggufName = firstGguf.split(/[\\/]/).pop() || ''
+            const relativePath = quantDir
+              ? `llamacpp/models/${model.id}/${quantDir}/${ggufName}`
+              : `llamacpp/models/${model.id}/${ggufName}`
+            const ggufModelId = `${model.id.split('/')[0]}/${sanitizeModelId(
+              ggufName.replace(/\.gguf$/i, '')
+            )}`
+            await serviceHub
+              .models()
+              .pullModel(
+                ggufModelId,
+                relativePath
+              )
+            toast.success(`模型 ${ggufModelId} 已注册`)
+          }
+        } catch (regErr: any) {
+          logError(`Batch download model registration failed: ${regErr.message || String(regErr)}`, {
+            modelId: model.id,
+            quantDir,
+            saveDir,
+          })
+          toast.error('下载完成但注册模型失败: ' + (regErr.message || String(regErr)))
+        }
+      } catch (err: any) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        logError(`Marketplace batch download failed: ${errMsg}`, {
+          modelId: model.id,
+          quantDir,
+          saveDir,
+        })
+        toast.error('批量下载失败: ' + errMsg)
         console.error('Batch download failed:', err)
       }
     },
-    [model]
+    [model, serviceHub]
   )
 
   const toggleDir = useCallback((path: string) => {
@@ -275,7 +321,15 @@ function MarketplaceModelDetailContent() {
               fileModelId,
               `llamacpp/models/${fileModelId}/model.gguf`
             )
-        } catch (err) {
+          toast.success(`模型 ${fileModelId} 下载完成`)
+        } catch (err: any) {
+          const errMsg = err instanceof Error ? err.message : String(err)
+          logError(`Marketplace single-file download failed: ${errMsg}`, {
+            modelId: model.id,
+            filePath: file.Path,
+            fileModelId,
+          })
+          toast.error('下载失败: ' + errMsg)
           console.error('Download failed:', err)
         }
       } else {

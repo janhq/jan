@@ -1250,6 +1250,9 @@ export default class llamacpp_extension extends AIEngine {
 
     let downloadItems: DownloadItem[] = []
 
+    // Pre-resolve Jan data folder so maybeDownload can handle relative paths
+    const janDataFolderPath = await getJanDataFolderPath()
+
     const maybeDownload = async (path: string, saveName: string) => {
       // if URL, add to downloadItems, and return local path
       if (path.startsWith('https://')) {
@@ -1266,10 +1269,19 @@ export default class llamacpp_extension extends AIEngine {
         return localPath
       }
 
-      // if local file (absolute path), check if it exists
-      // and return the path
-      if (!(await fs.existsSync(path)))
-        throw new Error(`File not found: ${path}`)
+      // if local file, check if it exists
+      // Resolve relative paths against Jan data folder because
+      // fs.existsSync treats bare relative paths as CWD-relative,
+      // not Jan-data-relative.
+      let checkPath = path
+      if (
+        !path.startsWith('/') &&
+        !/^[A-Za-z]:[\\\/]/.test(path)
+      ) {
+        checkPath = await joinPath([janDataFolderPath, path])
+      }
+      if (!(await fs.existsSync(checkPath)))
+        throw new Error(`File not found: ${path} (resolved to ${checkPath})`)
       return path
     }
 

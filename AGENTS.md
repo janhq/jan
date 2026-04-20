@@ -399,6 +399,8 @@ pub struct ModelScopeFile {
 | TypeScript `TS6133` 构建失败 | 移除未使用的 import/variable |
 | Ollama 安装失败 | 检查 `%TEMP%` 目录权限，或手动下载安装 |
 | ModelScope API 404 | 确认 model ID 格式为 `namespace/name` |
+| ModelScope 下载成功但注册模型报 `File not found` | 根因：`fs.existsSync` 的 Rust 后端 `resolve_path` 对不以 `file:/` 开头的相对路径当作**当前工作目录**处理，而非 Jan data folder。已在 `llamacpp-extension/src/index.ts` 的 `maybeDownload` 中修复：对非 URL 路径自动拼接 `getJanDataFolderPath()` 后再检查。 |
+| 批量下载后模型未出现在本地列表 | `handleBatchDownload` 现在会在下载完成后自动扫描 `saveDir` 并调用 `pullModel` 注册第一个找到的 `.gguf` 文件。 |
 
 ---
 
