@@ -456,22 +456,55 @@ function HubContent() {
         toast.error('未找到模型文件')
         return
       }
-      const ggufFile = files.Files.find((f: { Name: string }) =>
+      const ggufFiles = files.Files.filter((f: { Name: string }) =>
         f.Name.toLowerCase().endsWith('.gguf')
       )
-      if (!ggufFile) {
+      if (ggufFiles.length === 0) {
         toast.error('未找到 GGUF 文件')
         return
       }
-      const downloadUrl = `https://www.modelscope.cn/models/${model}/resolve/master/${ggufFile.Name}`
-      toast.info(`开始下载: ${ggufFile.Name}`)
-      await serviceHub.models().pullModelWithMetadata(
-        model,
-        downloadUrl,
-        undefined,
-        undefined,
-        true
-      )
+
+      const { getJanDataFolderPath } = await import('@janhq/core')
+      const janData = await getJanDataFolderPath()
+      const saveDir = `${janData}/llamacpp/models/${model}`
+      const { invoke } = await import('@tauri-apps/api/core')
+
+      const firstFile = ggufFiles[0]
+      const isMultiFile = firstFile.Path.includes('/')
+
+      if (isMultiFile) {
+        // Multi-file model: batch download the quant directory
+        const quantDir = firstFile.Path.split('/')[0]
+        toast.info(`开始下载量化版本: ${quantDir}`)
+        await invoke('download_modelscope_model', {
+          request: {
+            model_id: model,
+            quant_dir: quantDir,
+            save_dir: saveDir,
+          },
+        })
+        // Register with the first file's relative path
+        await serviceHub.models().pullModel(
+          model,
+          `llamacpp/models/${model}/${firstFile.Path}`
+        )
+      } else {
+        // Single-file model: download and rename to model.gguf
+        toast.info(`开始下载: ${firstFile.Name}`)
+        await invoke('download_modelscope_model', {
+          request: {
+            model_id: model,
+            file_path: firstFile.Path,
+            save_name: 'model.gguf',
+            save_dir: saveDir,
+          },
+        })
+        await serviceHub.models().pullModel(
+          model,
+          `llamacpp/models/${model}/model.gguf`
+        )
+      }
+
       toast.success(`模型 ${model} 下载完成`)
       refreshGguf()
       setShowPullDialog(false)
