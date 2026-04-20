@@ -317,14 +317,17 @@ pub fn run() {
             mcp_reconnect_notify: Arc::new(tokio::sync::Notify::new()),
         })
         .setup(|app| {
+            let log_dir = get_jan_data_folder_path(app.handle().clone()).join("logs");
+            crate::core::logger::rotate_if_needed(&log_dir, "app")?;
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
                     .level(log::LevelFilter::Debug)
+                    .format(crate::core::logger::JsonFormatter)
                     .targets([
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
-                            path: get_jan_data_folder_path(app.handle().clone()).join("logs"),
+                            path: log_dir,
                             file_name: Some("app".to_string()),
                         }),
                     ])

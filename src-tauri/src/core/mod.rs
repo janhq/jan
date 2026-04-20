@@ -5,6 +5,7 @@ pub mod downloads;
 pub mod extensions;
 pub mod external;
 pub mod filesystem;
+pub mod logger;
 pub mod mcp;
 pub mod modelscope;
 pub mod ollama_control_plane;
