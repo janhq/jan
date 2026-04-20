@@ -20,6 +20,10 @@ use app_lib::core::cli::{
     looks_like_hf_repo, resolve_model_by_id, resolve_model_engine, HfFileInfo,
     LlamacppConfig, MlxConfig,
 };
+use app_lib::core::modelscope::commands::{
+    get_modelscope_model_detail, get_modelscope_model_files, list_modelscope_models,
+};
+use app_lib::core::modelscope::models::ListModelScopeModelsParams;
 use std::path::PathBuf;
 
 // ── Top-level CLI ──────────────────────────────────────────────────────────
@@ -104,6 +108,12 @@ enum Commands {
         #[command(subcommand)]
         cmd: ModelsCommands,
     },
+    /// Query ModelScope model marketplace (no GUI required)
+    #[command(display_order = 20, name = "modelscope")]
+    Modelscope {
+        #[command(subcommand)]
+        cmd: ModelscopeCommands,
+    },
 }
 
 
@@ -184,6 +194,44 @@ struct ServeArgs {
 }
 
 // ── Models subcommands ─────────────────────────────────────────────────────
+
+#[derive(Subcommand)]
+enum ModelscopeCommands {
+    /// List models from ModelScope marketplace
+    List {
+        #[arg(long)]
+        search: Option<String>,
+        #[arg(long)]
+        owner: Option<String>,
+        #[arg(long, default_value = "downloads")]
+        sort: String,
+        #[arg(long, default_value_t = 1)]
+        page: i64,
+        #[arg(long, default_value_t = 20)]
+        page_size: i64,
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// Get model detail (OpenAPI) — requires token for some models
+    Detail {
+        /// Model ID: owner/name
+        model_id: String,
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// Get file list (internal API) — no token required
+    Files {
+        /// Model ID: owner/name
+        model_id: String,
+    },
+    /// Run the FULL chain: detail → files → select best GGUF
+    Full {
+        /// Model ID: owner/name
+        model_id: String,
+        #[arg(long)]
+        token: Option<String>,
+    },
+}
 
 #[derive(Subcommand)]
 enum ModelsCommands {
@@ -283,6 +331,7 @@ async fn main() {
     match cli.command {
         Commands::Threads { cmd } => handle_threads(cmd).await,
         Commands::Models { cmd } => handle_models(cmd).await,
+        Commands::Modelscope { cmd } => handle_modelscope(cmd).await,
         Commands::Serve { args } => handle_serve(args).await,
         Commands::Launch { program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size, fit, verbose, select } => {
             let program = program.unwrap_or_else(select_program_interactively);
@@ -432,6 +481,169 @@ async fn handle_models(cmd: ModelsCommands) {
             }
         }
     }
+}
+
+// ── ModelScope handlers ────────────────────────────────────────────────────
+
+async fn handle_modelscope(cmd: ModelscopeCommands) {
+    match cmd {
+        ModelscopeCommands::List {
+            search,
+            owner,
+            sort,
+            page,
+            page_size,
+            token,
+        } => {
+            let params = ListModelScopeModelsParams {
+                search,
+                owner,
+                sort: Some(sort),
+                page_number: Some(page),
+                page_size: Some(page_size),
+                filter_task: None,
+                filter_library: None,
+                filter_model_type: None,
+                filter_custom_tag: None,
+                filter_license: None,
+                filter_deploy: None,
+            };
+            match list_modelscope_models(params, token).await {
+                Ok(result) => println!("{}", serde_json::to_string_pretty(&result).unwrap()),
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ModelscopeCommands::Detail { model_id, token } => {
+            let parts: Vec<&str> = model_id.split('/').collect();
+            if parts.len() < 2 {
+                eprintln!("Error: model_id must be in format owner/name");
+                std::process::exit(1);
+            }
+            let owner = parts[0].to_string();
+            let repo_name = parts[1..].join("/");
+            match get_modelscope_model_detail(owner, repo_name, token).await {
+                Ok(result) => println!("{}", serde_json::to_string_pretty(&result).unwrap()),
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ModelscopeCommands::Files { model_id } => {
+            match get_modelscope_model_files(model_id).await {
+                Ok(result) => println!("{}", serde_json::to_string_pretty(&result).unwrap()),
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ModelscopeCommands::Full { model_id, token } => {
+            // Step 1: Detail
+            let parts: Vec<&str> = model_id.split('/').collect();
+            if parts.len() < 2 {
+                eprintln!("Error: model_id must be in format owner/name");
+                std::process::exit(1);
+            }
+            let owner = parts[0].to_string();
+            let repo_name = parts[1..].join("/");
+
+            eprintln!("━━━ ModelScope Full Chain ━━━");
+            eprintln!("model_id: {model_id}\n");
+
+            eprintln!("[1/3] Fetching model detail...");
+            let detail = match get_modelscope_model_detail(owner, repo_name, token).await {
+                Ok(d) => {
+                    eprintln!("  ✓ Detail fetched: {} (downloads: {}, likes: {})",
+                        d.model.base.id,
+                        d.model.base.downloads,
+                        d.model.base.likes
+                    );
+                    d
+                }
+                Err(e) => {
+                    eprintln!("  ✗ Detail failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+
+            // Step 2: Files
+            eprintln!("\n[2/3] Fetching file list...");
+            let files = match get_modelscope_model_files(model_id.clone()).await {
+                Ok(f) => {
+                    let gguf_count = f.Files.iter()
+                        .filter(|file| file.Name.to_lowercase().ends_with(".gguf"))
+                        .count();
+                    eprintln!("  ✓ Files fetched: {} total, {} GGUF",
+                        f.Files.len(), gguf_count
+                    );
+                    f
+                }
+                Err(e) => {
+                    eprintln!("  ✗ Files failed: {e}");
+                    std::process::exit(1);
+                }
+            };
+
+            // Step 3: Select best GGUF
+            eprintln!("\n[3/3] Selecting best GGUF...");
+            let best = select_best_gguf(&files);
+            match &best {
+                Some(b) => {
+                    eprintln!("  ✓ Best GGUF: {}", b.Name);
+                    eprintln!("    Path:  {}", b.Path);
+                    eprintln!("    Size:  {} bytes ({:.1} MB)", b.Size, b.Size as f64 / 1_000_000.0);
+                    eprintln!("    SHA:   {}", b.Sha256.as_deref().unwrap_or("N/A"));
+                    eprintln!("    LFS:   {}", b.IsLFS);
+                }
+                None => {
+                    eprintln!("  ⚠ No suitable GGUF file found");
+                }
+            }
+
+            // Output full JSON
+            let output = serde_json::json!({
+                "model": detail.model,
+                "files": files,
+                "best_file": best,
+            });
+            println!("\n{}", serde_json::to_string_pretty(&output).unwrap());
+        }
+    }
+}
+
+/// Select the best GGUF file using the same logic as the frontend.
+fn select_best_gguf(files: &app_lib::core::modelscope::models::ModelScopeFileListResult) -> Option<app_lib::core::modelscope::models::ModelScopeFile> {
+    let ggufs: Vec<_> = files.Files.iter()
+        .filter(|f| {
+            let name = f.Name.to_lowercase();
+            name.ends_with(".gguf") && !name.contains("mmproj")
+        })
+        .collect();
+
+    if ggufs.is_empty() {
+        return None;
+    }
+
+    let priority = |name: &str| -> i32 {
+        let lower = name.to_lowercase();
+        if lower.contains("q4_k_m") { return 3; }
+        if lower.contains("q5_k_m") { return 2; }
+        if lower.contains("q8_0")   { return 1; }
+        0
+    };
+
+    let best = ggufs.iter()
+        .max_by_key(|f| priority(&f.Name))
+        .copied()?;
+
+    Some(best.clone())
 }
 
 // ── Spinner / progress helpers ─────────────────────────────────────────────

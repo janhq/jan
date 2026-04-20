@@ -208,6 +208,72 @@ function MarketplaceModelDetailContent() {
     })
   }, [])
 
+  // Auto-expand directory when a quant version is selected
+  useEffect(() => {
+    if (!downloadDialogQuant || fileTree.length === 0) return
+    setExpandedDirs((prev) => {
+      const next = new Set(prev)
+      const findPath = (nodes: FileTreeNode[]): string | null => {
+        for (const n of nodes) {
+          if (n.type === 'dir' && n.name === downloadDialogQuant) return n.path
+          if (n.children) {
+            const found = findPath(n.children)
+            if (found) return found
+          }
+        }
+        return null
+      }
+      const path = findPath(fileTree)
+      if (path) next.add(path)
+      return next
+    })
+  }, [downloadDialogQuant, fileTree])
+
+  const downloadProcesses = useMemo(
+    () =>
+      Object.values(downloads).map((download) => ({
+        id: download.name,
+        name: download.name,
+        progress: download.progress,
+        current: download.current,
+        total: download.total,
+      })),
+    [downloads]
+  )
+
+  const handleDownloadFile = useCallback(
+    (file: { Name: string; Path: string }) => {
+      if (!model) return
+      const isGguf = file.Name.toLowerCase().endsWith('.gguf')
+      const ns = model.id.split('/')[0]
+      const fileModelId = `${ns}/${sanitizeModelId(file.Name.replace(/\.gguf$/i, ''))}`
+      const path = `https://www.modelscope.cn/models/${model.id}/resolve/master/${file.Path}`
+
+      if (isGguf) {
+        addLocalDownloadingModel(fileModelId)
+        serviceHub
+          .models()
+          .pullModelWithMetadata(
+            fileModelId,
+            path,
+            undefined,
+            undefined,
+            true
+          )
+          .catch((err: unknown) => {
+            console.error('Download failed:', err)
+          })
+      } else {
+        // For non-GGUF files, we currently only support browsing.
+        // Generic file download without engine import would need a new backend command.
+        console.warn(
+          `[MarketplaceDetail] Non-GGUF file download not yet supported: ${file.Name}`
+        )
+      }
+    },
+    [model, addLocalDownloadingModel, serviceHub]
+  )
+
   const renderFileTree = useCallback(
     (nodes: FileTreeNode[], depth = 0): React.ReactNode => {
       return nodes.map((node) => {
@@ -384,51 +450,6 @@ function MarketplaceModelDetailContent() {
     ]
   )
 
-  const downloadProcesses = useMemo,
-    () =>
-      Object.values(downloads).map((download) => ({
-        id: download.name,
-        name: download.name,
-        progress: download.progress,
-        current: download.current,
-        total: download.total,
-      })),
-    [downloads]
-  )
-
-  const handleDownloadFile = useCallback(
-    (file: { Name: string; Path: string }) => {
-      if (!model) return
-      const isGguf = file.Name.toLowerCase().endsWith('.gguf')
-      const ns = model.id.split('/')[0]
-      const fileModelId = `${ns}/${sanitizeModelId(file.Name.replace(/\.gguf$/i, ''))}`
-      const path = `https://www.modelscope.cn/models/${model.id}/resolve/master/${file.Path}`
-
-      if (isGguf) {
-        addLocalDownloadingModel(fileModelId)
-        serviceHub
-          .models()
-          .pullModelWithMetadata(
-            fileModelId,
-            path,
-            undefined,
-            undefined,
-            true
-          )
-          .catch((err: unknown) => {
-            console.error('Download failed:', err)
-          })
-      } else {
-        // For non-GGUF files, we currently only support browsing.
-        // Generic file download without engine import would need a new backend command.
-        console.warn(
-          `[MarketplaceDetail] Non-GGUF file download not yet supported: ${file.Name}`
-        )
-      }
-    },
-    [model, addLocalDownloadingModel, serviceHub]
-  )
-
   const formatDate = (dateString?: string) => {
     if (!dateString) return ''
     const date = new Date(dateString)
@@ -603,14 +624,30 @@ function MarketplaceModelDetailContent() {
 
                   {/* Download Section */}
                   <div className="rounded-lg border border-border bg-card p-4 mt-6">
-                    <h3 className="text-sm font-semibold text-foreground mb-3">
-                      模型文件
-                      {fileCount > 0 && (
-                        <span className="ml-2 text-xs font-normal text-muted-foreground">
-                          共 {fileCount} 个文件
-                        </span>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-foreground">
+                        模型文件
+                        {fileCount > 0 && (
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            共 {fileCount} 个文件
+                          </span>
+                        )}
+                      </h3>
+                      {quants.length > 0 && (
+                        <QuantSelector
+                          quants={quants}
+                          selected={downloadDialogQuant ?? 'all'}
+                          onSelect={(value) => {
+                            if (value === 'all') {
+                              setDownloadDialogQuant(null)
+                            } else {
+                              setDownloadDialogQuant(value)
+                            }
+                          }}
+                          onDownload={() => setDownloadDialogOpen(true)}
+                        />
                       )}
-                    </h3>
+                    </div>
                     {filesLoading ? (
                       <div className="flex items-center gap-2 py-2">
                         <IconLoader2
@@ -698,6 +735,7 @@ function MarketplaceModelDetailContent() {
                   modelName={model?.id ?? ''}
                   fileTree={fileTree}
                   defaultSaveDir={`${defaultDownloadDir}/RongxinAI/Models/${model?.id ?? ''}`}
+                  defaultQuant={downloadDialogQuant}
                   onClose={() => setDownloadDialogOpen(false)}
                   onConfirm={(quantDir, saveDir) => {
                     setDownloadDialogOpen(false)

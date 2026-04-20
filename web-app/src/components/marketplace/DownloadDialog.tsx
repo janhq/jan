@@ -19,6 +19,7 @@ interface DownloadDialogProps {
   modelName: string
   fileTree: FileTreeNode[]
   defaultSaveDir: string
+  defaultQuant?: string | null
   onClose: () => void
   onConfirm: (quantDir: string | null, saveDir: string) => void
 }
@@ -40,7 +41,7 @@ async function pickDirectory(): Promise<string | null> {
 }
 
 export function DownloadDialog(props: DownloadDialogProps) {
-  const { open, modelName, fileTree, defaultSaveDir, onClose, onConfirm } = props
+  const { open, modelName, fileTree, defaultSaveDir, defaultQuant, onClose, onConfirm } = props
 
   const quants = React.useMemo(() => extractQuantVersions(fileTree), [fileTree])
 
@@ -53,6 +54,13 @@ export function DownloadDialog(props: DownloadDialogProps) {
   React.useEffect(() => {
     setSaveDir(defaultSaveDir)
   }, [defaultSaveDir])
+
+  React.useEffect(() => {
+    if (open && defaultQuant) {
+      setMode('single')
+      setSelectedQuant(defaultQuant)
+    }
+  }, [open, defaultQuant])
 
   const totalSizeAll = React.useMemo(
     () => calcDownloadSize(fileTree, null),

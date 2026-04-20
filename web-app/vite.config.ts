@@ -52,7 +52,7 @@ export default defineConfig(({ mode }) => {
       TanStackRouterVite({
         target: 'react',
         autoCodeSplitting: true,
-        routeFileIgnorePattern: '.((test).ts)|test-page',
+        routeFileIgnorePattern: '.((test).ts)|test-page|lib',
       }),
       react(),
       tailwindcss(),
@@ -99,6 +99,12 @@ export default defineConfig(({ mode }) => {
       UPDATE_CHECK_INTERVAL_MS: JSON.stringify(
         Number(env.UPDATE_CHECK_INTERVAL_MS) || 60 * 60 * 1000
       ),
+    },
+
+    build: {
+      rollupOptions: {
+        external: ['@tauri-apps/plugin-dialog'],
+      },
     },
 
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

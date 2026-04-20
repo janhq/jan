@@ -120,6 +120,7 @@ export interface ModelScopeFile {
   Size: number
   Sha256: string | null
   IsLFS: boolean
+  Type: string
 }
 
 export interface ModelScopeFileListResult {
