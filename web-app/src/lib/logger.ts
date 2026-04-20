@@ -14,19 +14,19 @@ export function logError(msg: string, meta?: Record<string, unknown>): void {
   const payload = meta
     ? `${msg}${META_DELIMITER}${serializeMeta(meta)}`
     : msg
-  error(payload)
+  error(payload).catch(() => console.error('[logError]', payload))
 }
 
 export function logWarn(msg: string, meta?: Record<string, unknown>): void {
   const payload = meta
     ? `${msg}${META_DELIMITER}${serializeMeta(meta)}`
     : msg
-  warn(payload)
+  warn(payload).catch(() => console.warn('[logWarn]', payload))
 }
 
 export function logInfo(msg: string, meta?: Record<string, unknown>): void {
   const payload = meta
     ? `${msg}${META_DELIMITER}${serializeMeta(meta)}`
     : msg
-  info(payload)
+  info(payload).catch(() => console.info('[logInfo]', payload))
 }

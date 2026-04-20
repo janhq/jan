@@ -69,6 +69,17 @@ declare module '@tanstack/react-router' {
   }
 }
 
+// Migrate all localStorage data to file-based storage on startup
+// so users updating the app don't lose their settings.
+migrateAllLocalStorageKeys()
+
+// Initialize mobile setup
+setupMobileViewport()
+
+// Prevent files from opening when dropped
+preventDefaultFileDrop()
+
+// Async logging initialization
 ;(async () => {
   try {
     await attachConsole()
@@ -101,25 +112,15 @@ declare module '@tanstack/react-router' {
   } catch (e) {
     console.error('Failed to initialize logging:', e)
   }
-
-  // Migrate all localStorage data to file-based storage on startup
-  // so users updating the app don't lose their settings.
-  migrateAllLocalStorageKeys()
-
-  // Initialize mobile setup
-  setupMobileViewport()
-
-  // Prevent files from opening when dropped
-  preventDefaultFileDrop()
-
-  // Render the app
-  const rootElement = document.getElementById('root')!
-  if (!rootElement.innerHTML) {
-    const root = ReactDOM.createRoot(rootElement)
-    root.render(
-      <StrictMode>
-        <RouterProvider router={router} />
-      </StrictMode>
-    )
-  }
 })()
+
+// Render the app
+const rootElement = document.getElementById('root')!
+if (!rootElement.innerHTML) {
+  const root = ReactDOM.createRoot(rootElement)
+  root.render(
+    <StrictMode>
+      <RouterProvider router={router} />
+    </StrictMode>
+  )
+}

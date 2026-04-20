@@ -6,6 +6,7 @@ interface GlobalErrorProps {
 }
 
 export default function GlobalError({ error }: GlobalErrorProps) {
+  console.error('Error in root route:', error)
   logError(`Error in root route: ${error instanceof Error ? error.message : String(error)}`, {
     stack: error instanceof Error ? error.stack : undefined,
     url: typeof window !== 'undefined' ? window.location.href : undefined,
