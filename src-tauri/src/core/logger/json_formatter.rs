@@ -7,7 +7,7 @@ use tauri_plugin_log::fern::FormatCallback;
 /// Output format: `{"ts":"ISO8601","level":"LEVEL","target":"TARGET","msg":"MSG","meta":...}`
 /// If the message contains `" |META|"`, the left part becomes `msg` and the right part
 /// is parsed as JSON for the `meta` field. Otherwise `meta` is `null`.
-pub fn JsonFormatter(out: FormatCallback<'_>, message: &Arguments, record: &Record) {
+pub fn json_formatter(out: FormatCallback<'_>, message: &Arguments, record: &Record) {
     let raw_msg = message.to_string();
 
     let (msg, meta) = if let Some(idx) = raw_msg.find(" |META|") {
@@ -24,7 +24,7 @@ pub fn JsonFormatter(out: FormatCallback<'_>, message: &Arguments, record: &Reco
     let ts = chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
 
     let json = format!(
-        r#"{{"ts":"{}","level":"{:?}","target":"{}","msg":"{}","meta":{}}}"#,
+        r#"{{"ts":"{}","level":"{}","target":"{}","msg":"{}","meta":{}}}"#,
         ts,
         record.level(),
         record.target(),
