@@ -350,6 +350,69 @@ pub async fn ollama_ps() -> Result<Vec<OllamaRunningModel>, String> {
     Ok(models)
 }
 
+/// Pre-load a model into VRAM by sending an empty generate request
+/// with keep_alive=-1 (indefinite).
+#[tauri::command]
+pub async fn ollama_run_model(model: String) -> Result<(), String> {
+    log::info!("Pre-loading Ollama model into VRAM: {}", model);
+
+    let client = build_client()?;
+
+    let res = client
+        .post(format!("{}/api/generate", OLLAMA_API_BASE))
+        .json(&serde_json::json!({
+            "model": &model,
+            "prompt": "",
+            "keep_alive": -1,
+        }))
+        .send()
+        .await
+        .map_err(err_to_string)?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let body = res.text().await.unwrap_or_default();
+        return Err(format!("Ollama run failed: HTTP {} - {}", status, body));
+    }
+
+    // Consume the stream so the connection closes cleanly
+    let _ = res.text().await;
+
+    log::info!("Ollama model pre-loaded: {}", model);
+    Ok(())
+}
+
+/// Unload a model from memory by sending an empty generate request
+/// with keep_alive=0 (immediate unload).
+#[tauri::command]
+pub async fn ollama_unload_model(model: String) -> Result<(), String> {
+    log::info!("Unloading Ollama model from memory: {}", model);
+
+    let client = build_client()?;
+
+    let res = client
+        .post(format!("{}/api/generate", OLLAMA_API_BASE))
+        .json(&serde_json::json!({
+            "model": &model,
+            "prompt": "",
+            "keep_alive": 0,
+        }))
+        .send()
+        .await
+        .map_err(err_to_string)?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let body = res.text().await.unwrap_or_default();
+        return Err(format!("Ollama unload failed: HTTP {} - {}", status, body));
+    }
+
+    let _ = res.text().await;
+
+    log::info!("Ollama model unloaded: {}", model);
+    Ok(())
+}
+
 /// Stop the Ollama service.
 /// On Windows, uses `taskkill /IM ollama.exe /F`.
 /// On other platforms, falls back to `pkill -f ollama`.

@@ -32,8 +32,11 @@ import {
   IconGauge,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
+import { invoke } from '@tauri-apps/api/core'
 import type { UnlistenFn } from '@tauri-apps/api/event'
-import { OpenClawCard, type OpenClawStatus } from '@/components/hub/OpenClawCard'
+import { OpenClawCard } from '@/components/hub/OpenClawCard'
+import { useOpenClaw } from '@/hooks/useOpenClaw'
+import { OpenClawConfigDialog } from '@/components/hub/OpenClawConfigDialog'
 import {
   PullModelDialog,
   type PullProgress,
@@ -354,13 +357,20 @@ function HubContent() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [runningModels, setRunningModels] = useState<OllamaPsModel[]>([])
   const [psLoading, setPsLoading] = useState(false)
+  const [openClawDialogOpen, setOpenClawDialogOpen] = useState(false)
   const unlistenPullRef = useRef<UnlistenFn | null>(null)
 
-  /* -- openclaw state -- */
-  const [openClawStatus, setOpenClawStatus] = useState<OpenClawStatus>('not-installed')
-  const [openClawGatewayUrl, setOpenClawGatewayUrl] = useState<string>()
-  const [openClawBoundModel, setOpenClawBoundModel] = useState<string>()
-  const [isOpenClawLoading, setIsOpenClawLoading] = useState(false)
+  /* -- openclaw -- */
+  const {
+    status: openClawStatus,
+    gatewayUrl: openClawGatewayUrl,
+    isLoading: isOpenClawLoading,
+    installProgress: openClawInstallProgress,
+    installMessage: openClawInstallMessage,
+    install: installOpenClaw,
+    launch: launchOpenClaw,
+    stop: stopOpenClaw,
+  } = useOpenClaw(5000)
 
   /* -- families -- */
   const families = useMemo(() => {
@@ -413,12 +423,8 @@ function HubContent() {
     }
     setPsLoading(true)
     try {
-      // TODO: replace with real Rust command when ready:
-      // const result = await invoke<OllamaPsModel[]>('ollama_ps')
-      // setRunningModels(result)
-
-      // Placeholder: simulate empty or demo data
-      setRunningModels([])
+      const result = await invoke<OllamaPsModel[]>('ollama_ps')
+      setRunningModels(result)
     } catch (e) {
       console.error('Failed to fetch running models:', e)
       setRunningModels([])
@@ -487,35 +493,29 @@ function HubContent() {
     toast.info('拉取已取消')
   }, [])
 
-  /* -- openclaw -- */
-  const handleStartOpenClaw = useCallback(async () => {
-    setIsOpenClawLoading(true)
-    try {
-      await new Promise((r) => setTimeout(r, 1200))
-      setOpenClawStatus('running')
-      setOpenClawGatewayUrl('http://localhost:3456')
-      toast.success('OpenClaw 已启动')
-    } catch (e) {
-      toast.error('启动失败: ' + String(e))
-    } finally {
-      setIsOpenClawLoading(false)
+  const handleStartOpenClaw = useCallback(() => {
+    if (!ollamaRunning) {
+      toast.error('请先启动 Ollama')
+      return
     }
-  }, [])
+    if (ollamaModels.length === 0) {
+      toast.error('没有可用的 Ollama 模型')
+      return
+    }
+    setOpenClawDialogOpen(true)
+  }, [ollamaRunning, ollamaModels.length])
+
+  const handleConfirmOpenClawLaunch = useCallback(
+    async (model: string) => {
+      setOpenClawDialogOpen(false)
+      await launchOpenClaw(model)
+    },
+    [launchOpenClaw]
+  )
 
   const handleStopOpenClaw = useCallback(async () => {
-    setIsOpenClawLoading(true)
-    try {
-      await new Promise((r) => setTimeout(r, 600))
-      setOpenClawStatus('installed')
-      setOpenClawGatewayUrl(undefined)
-      setOpenClawBoundModel(undefined)
-      toast.success('OpenClaw 已停止')
-    } catch (e) {
-      toast.error('停止失败: ' + String(e))
-    } finally {
-      setIsOpenClawLoading(false)
-    }
-  }, [])
+    await stopOpenClaw()
+  }, [stopOpenClaw])
 
   /* -- delete model -- */
   const handleDelete = useCallback(async () => {
@@ -527,8 +527,7 @@ function HubContent() {
         await serviceHub.models().deleteModel((deleteTarget as LocalGgufModel).id, 'llamacpp')
         refreshGguf()
       } else {
-        // TODO: invoke('ollama_delete_model', { model: deleteTarget.name })
-        await new Promise((r) => setTimeout(r, 600))
+        await invoke('ollama_delete_model', { model: deleteTarget.name })
         refreshOllama()
       }
       toast.success(`模型 ${deleteTarget.name} 已删除`)
@@ -542,11 +541,16 @@ function HubContent() {
   }, [deleteTarget, deleteTargetType, refreshOllama, refreshGguf])
 
   /* -- run model -- */
-  const handleRun = useCallback((model: OllamaModel) => {
-    toast.info(`正在加载模型: ${model.name}`)
-    // TODO: invoke('ollama_run_model', { model: model.name })
-    // This will pre-load the model into VRAM via /api/generate with keep_alive
-  }, [])
+  const handleRun = useCallback(async (model: OllamaModel) => {
+    try {
+      toast.info(`正在加载模型: ${model.name}`)
+      await invoke('ollama_run_model', { model: model.name })
+      toast.success(`模型 ${model.name} 已加载到内存`)
+      fetchRunningModels()
+    } catch (e) {
+      toast.error('加载失败: ' + String(e))
+    }
+  }, [fetchRunningModels])
 
   /* -- load gguf model -- */
   const handleLoadGguf = useCallback((model: LocalGgufModel) => {
@@ -557,7 +561,7 @@ function HubContent() {
   /* -- unload model -- */
   const handleUnload = useCallback(async (name: string) => {
     try {
-      // TODO: invoke('ollama_unload_model', { model: name })
+      await invoke('ollama_unload_model', { model: name })
       toast.success(`模型 ${name} 已卸载`)
       fetchRunningModels()
     } catch (e) {
@@ -597,7 +601,10 @@ function HubContent() {
               <OpenClawCard
                 status={openClawStatus}
                 gatewayUrl={openClawGatewayUrl}
-                boundModel={openClawBoundModel}
+                boundModel={openClawStatus === 'running' ? ollamaModels[0]?.name : undefined}
+                installProgress={openClawInstallProgress}
+                installMessage={openClawInstallMessage}
+                onInstall={installOpenClaw}
                 onStart={handleStartOpenClaw}
                 onStop={handleStopOpenClaw}
                 isLoading={isOpenClawLoading}
@@ -797,6 +804,16 @@ function HubContent() {
         onCancel={handleCancelPull}
         progress={pullProgress}
         isPulling={isPulling}
+      />
+
+      {/* OpenClaw Config Dialog */}
+      <OpenClawConfigDialog
+        open={openClawDialogOpen}
+        onOpenChange={setOpenClawDialogOpen}
+        availableModels={ollamaModels.map((m) => m.name)}
+        defaultModel={ollamaModels[0]?.name}
+        onConfirm={handleConfirmOpenClawLaunch}
+        isLoading={isOpenClawLoading}
       />
 
       {/* Delete Confirmation Dialog */}

@@ -171,7 +171,15 @@ pub fn run() {
         core::ollama_control_plane::commands::ollama_copy_model,
         core::ollama_control_plane::commands::ollama_create_model,
         core::ollama_control_plane::commands::ollama_ps,
+        core::ollama_control_plane::commands::ollama_run_model,
+        core::ollama_control_plane::commands::ollama_unload_model,
         core::ollama_control_plane::commands::stop_ollama,
+        // OpenClaw launcher
+        core::openclaw_launcher::commands::check_openclaw_installed,
+        core::openclaw_launcher::commands::get_openclaw_status,
+        core::openclaw_launcher::commands::install_openclaw,
+        core::openclaw_launcher::commands::launch_openclaw_gateway,
+        core::openclaw_launcher::commands::stop_openclaw_gateway,
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
@@ -281,7 +289,15 @@ pub fn run() {
         core::ollama_control_plane::commands::ollama_copy_model,
         core::ollama_control_plane::commands::ollama_create_model,
         core::ollama_control_plane::commands::ollama_ps,
+        core::ollama_control_plane::commands::ollama_run_model,
+        core::ollama_control_plane::commands::ollama_unload_model,
         core::ollama_control_plane::commands::stop_ollama,
+        // OpenClaw launcher
+        core::openclaw_launcher::commands::check_openclaw_installed,
+        core::openclaw_launcher::commands::get_openclaw_status,
+        core::openclaw_launcher::commands::install_openclaw,
+        core::openclaw_launcher::commands::launch_openclaw_gateway,
+        core::openclaw_launcher::commands::stop_openclaw_gateway,
     ]);
 
     let app = app_builder
@@ -426,6 +442,13 @@ pub fn run() {
                         log::warn!("Failed to cleanup llama processes: {}", e);
                     } else {
                         log::info!("Llama processes cleaned up successfully");
+                    }
+
+                    // Stop OpenClaw gateway if running
+                    if let Err(e) = crate::core::openclaw_launcher::commands::stop_openclaw_gateway().await {
+                        log::warn!("Failed to stop OpenClaw gateway: {}", e);
+                    } else {
+                        log::info!("OpenClaw gateway stopped successfully");
                     }
 
                     #[cfg(feature = "mlx")]

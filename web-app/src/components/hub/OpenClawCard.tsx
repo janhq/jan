@@ -6,9 +6,11 @@ import {
   IconExternalLink,
   IconSettings,
   IconLoader2,
+  IconDownload,
 } from '@tabler/icons-react'
 
-export type OpenClawStatus = 'not-installed' | 'installed' | 'running'
+
+export type OpenClawStatus = 'not-installed' | 'installing' | 'installed' | 'running'
 
 const statusConfigMap: Record<
   OpenClawStatus,
@@ -19,10 +21,15 @@ const statusConfigMap: Record<
     title: 'OpenClaw 未安装',
     description: '需要 Node.js 环境才能运行 OpenClaw',
   },
+  installing: {
+    dotColor: 'bg-yellow-500',
+    title: '正在安装 OpenClaw',
+    description: '请稍候...',
+  },
   installed: {
     dotColor: 'bg-orange-400',
     title: 'OpenClaw 已安装',
-    description: '点击启动 Gateway',
+    description: '选择模型并启动 Gateway',
   },
   running: {
     dotColor: 'bg-green-500',
@@ -36,6 +43,9 @@ export interface OpenClawCardProps {
   version?: string
   gatewayUrl?: string
   boundModel?: string
+  installProgress?: number
+  installMessage?: string
+  onInstall?: () => void
   onStart?: () => void
   onStop?: () => void
   onOpenDashboard?: () => void
@@ -49,6 +59,9 @@ export function OpenClawCard({
   version,
   gatewayUrl,
   boundModel,
+  installProgress = 0,
+  installMessage = '',
+  onInstall,
   onStart,
   onStop,
   onOpenDashboard,
@@ -56,6 +69,7 @@ export function OpenClawCard({
   isLoading = false,
   className,
 }: OpenClawCardProps) {
+
   const baseConfig = statusConfigMap[status] ?? {
     dotColor: 'bg-gray-400',
     title: '未知状态',
@@ -66,9 +80,11 @@ export function OpenClawCard({
   const dotColor = baseConfig.dotColor
   let description = baseConfig.description
   if (status === 'installed' && version) {
-    description = `版本 ${version} · 点击启动 Gateway`
+    description = `版本 ${version} · 选择模型并启动 Gateway`
   } else if (status === 'running' && boundModel) {
     description = `绑定模型: ${boundModel}`
+  } else if (status === 'installing' && installMessage) {
+    description = installMessage
   }
 
   return (
@@ -125,6 +141,7 @@ export function OpenClawCard({
                 className="h-7 gap-1"
                 type="button"
                 onClick={onStop}
+                disabled={isLoading}
               >
                 <IconSquare size={14} />
                 停止
@@ -154,20 +171,36 @@ export function OpenClawCard({
             <Button
               variant="outline"
               size="sm"
-              className="h-7"
+              className="h-7 gap-1"
               type="button"
-              onClick={onStart}
+              onClick={onInstall}
               disabled={isLoading}
             >
               {isLoading ? (
                 <IconLoader2 size={14} className="animate-spin" />
               ) : (
-                '安装指南'
+                <IconDownload size={14} />
               )}
+              安装
             </Button>
           )}
         </div>
       </div>
+
+      {/* Install progress */}
+      {status === 'installing' && (
+        <div className="flex flex-col gap-1">
+          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all duration-300"
+              style={{ width: `${installProgress}%` }}
+            />
+          </div>
+          <span className="text-[11px] text-muted-foreground">
+            {installMessage}
+          </span>
+        </div>
+      )}
 
       {/* Running details */}
       {status === 'running' && gatewayUrl && (

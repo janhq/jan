@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { toast } from 'sonner'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { ModelCapabilities } from '@/types/models'
 
 export interface OllamaModel {
   name: string
@@ -82,6 +84,8 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
     }
   }, [])
 
+  const syncedDigestsRef = useRef<Set<string>>(new Set())
+
   const fetchStatus = useCallback(async () => {
     setStatus((prev) => ({ ...prev, isLoading: true }))
 
@@ -90,14 +94,69 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
 
       if (result.is_running) {
         isRunningRef.current = true
+        const models = (result.models as OllamaModel[]) ?? []
         setStatus((prev) => ({
           ...prev,
           isRunning: true,
           version: result.version ?? undefined,
-          models: (result.models as OllamaModel[]) ?? [],
+          models,
           isLoading: false,
           error: undefined,
         }))
+
+        // Sync Ollama models to the global provider store so they appear
+        // in the chat model dropdown.
+        const currentDigests = new Set(models.map((m) => m.digest).filter(Boolean))
+        const lastDigests = syncedDigestsRef.current
+        const hasChanged =
+          currentDigests.size !== lastDigests.size ||
+          Array.from(currentDigests).some((d) => !lastDigests.has(d))
+
+        if (hasChanged) {
+          syncedDigestsRef.current = currentDigests
+          const convertedModels: Model[] = models.map((m) => {
+            const name = m.name
+            const lower = name.toLowerCase()
+            const capabilities: string[] = [ModelCapabilities.COMPLETION]
+            if (lower.includes('embed') || lower.includes('nomic') || lower.includes('bge')) {
+              capabilities.push(ModelCapabilities.EMBEDDINGS)
+            }
+            if (
+              lower.includes('vision') ||
+              lower.includes('vl') ||
+              lower.includes('llava') ||
+              lower.includes('bakllava') ||
+              lower.includes('moondream') ||
+              lower.includes('minicpm-v')
+            ) {
+              capabilities.push(ModelCapabilities.VISION)
+            }
+            // Heuristic: most modern instruct models support tools
+            if (
+              lower.includes('qwen') ||
+              lower.includes('llama3') ||
+              lower.includes('mistral') ||
+              lower.includes('mixtral') ||
+              lower.includes('gemma') ||
+              lower.includes('command') ||
+              lower.includes('phi4') ||
+              lower.includes('phi-4')
+            ) {
+              capabilities.push(ModelCapabilities.TOOLS)
+            }
+            return {
+              id: name,
+              model: name,
+              name: name,
+              displayName: name,
+              provider: 'ollama',
+              capabilities,
+            }
+          })
+          useModelProvider.getState().updateProvider('ollama', {
+            models: convertedModels,
+          })
+        }
       } else {
         isRunningRef.current = false
         setStatus((prev) => ({
@@ -107,6 +166,10 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
           isLoading: false,
           error: undefined,
         }))
+        if (syncedDigestsRef.current.size > 0) {
+          syncedDigestsRef.current = new Set()
+          useModelProvider.getState().updateProvider('ollama', { models: [] })
+        }
       }
     } catch (error) {
       console.error('Failed to check Ollama status:', error)
