@@ -455,10 +455,15 @@ const ChatInput = memo(function ChatInput({
           : assistants.find((a) => a.id === selectedAssistantId)
 
         setCurrentAssistant(assistant)
+        const threadModelId = selectedModel?.id ?? defaultModel(selectedProvider)
+        if (!threadModelId) {
+          setMessage('Please select a model to start chatting.')
+          return
+        }
 
         const newThread = await createThread(
           {
-            id: selectedModel?.id ?? defaultModel(selectedProvider),
+            id: threadModelId,
             provider: selectedProvider,
           },
           prompt, // Use prompt as thread title
