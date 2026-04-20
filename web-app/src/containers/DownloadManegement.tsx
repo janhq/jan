@@ -483,11 +483,16 @@ export function DownloadManagement() {
                           <p className="text-xs">
                             {download.total > 0
                               ? `${Math.round(download.progress * 100)}%`
-                              : 'Initializing download...'}
+                              : download.current > 0
+                                ? 'Downloading...'
+                                : 'Initializing download...'}
                           </p>
                           <p className="text-xs">
                             {download.total > 0
-                              && `${renderGB(download.current)} / ${renderGB(download.total)} GB`}
+                              ? `${renderGB(download.current)} / ${renderGB(download.total)} GB`
+                              : download.current > 0
+                                ? `${renderGB(download.current)} GB`
+                                : ''}
                           </p>
                         </div>
                       </div>
