@@ -2703,10 +2703,19 @@ async fn start_server_internal(
         .parse()
         .map_err(|e| format!("Invalid address: {e}"))?;
 
+    // When binding to all interfaces (0.0.0.0), the user explicitly wants the server
+    // reachable from any network interface. Allow any host header so LAN clients
+    // (e.g. 192.168.x.x) are not rejected with "Invalid host header".
+    let effective_trusted_hosts = if host == "0.0.0.0" {
+        vec![vec!["*".to_string()]]
+    } else {
+        trusted_hosts
+    };
+
     let config = ProxyConfig {
         prefix,
         proxy_api_key,
-        trusted_hosts,
+        trusted_hosts: effective_trusted_hosts,
         host: host.clone(),
         port,
         enable_server_tool_execution,
