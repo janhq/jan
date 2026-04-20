@@ -375,3 +375,63 @@ fn read_text_auto(file_path: &str) -> Result<String, RagError> {
         Ok(decoded.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+    use std::path::PathBuf;
+
+    // Minimal valid single-page PDF containing the text "Hello pdf_oxide test".
+    // Byte offsets in the xref table must stay in sync with the object positions.
+    const MINIMAL_PDF: &[u8] = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n4 0 obj\n<< /Length 52 >>\nstream\nBT /F1 24 Tf 100 700 Td (Hello pdf_oxide test) Tj ET\nendstream\nendobj\n5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\nxref\n0 6\n0000000000 65535 f \n0000000015 00000 n \n0000000064 00000 n \n0000000121 00000 n \n0000000247 00000 n \n0000000349 00000 n \ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n419\n%%EOF\n";
+
+    fn write_temp_file(name: &str, contents: &[u8]) -> PathBuf {
+        let mut path = env::temp_dir();
+        path.push(format!(
+            "jan-rag-test-{}-{}",
+            std::process::id(),
+            name
+        ));
+        fs::write(&path, contents).expect("failed to write temp fixture");
+        path
+    }
+
+    #[test]
+    fn extract_with_pdf_oxide_extracts_text_from_valid_pdf() {
+        let path = write_temp_file("valid.pdf", MINIMAL_PDF);
+        let result = extract_with_pdf_oxide(path.to_str().unwrap());
+        let _ = fs::remove_file(&path);
+
+        let text = result.expect("extraction should succeed for valid PDF");
+        assert!(
+            text.contains("Hello pdf_oxide test"),
+            "extracted text should contain the fixture string, got: {:?}",
+            text
+        );
+    }
+
+    #[test]
+    fn extract_with_pdf_oxide_errors_on_missing_file() {
+        let missing = env::temp_dir().join("jan-rag-test-does-not-exist.pdf");
+        let result = extract_with_pdf_oxide(missing.to_str().unwrap());
+        assert!(
+            matches!(result, Err(RagError::ParseError(_))),
+            "missing file should return ParseError, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn extract_with_pdf_oxide_errors_on_invalid_bytes() {
+        let path = write_temp_file("invalid.pdf", b"this is not a PDF");
+        let result = extract_with_pdf_oxide(path.to_str().unwrap());
+        let _ = fs::remove_file(&path);
+
+        assert!(
+            matches!(result, Err(RagError::ParseError(_))),
+            "invalid bytes should return ParseError, got: {:?}",
+            result
+        );
+    }
+}
