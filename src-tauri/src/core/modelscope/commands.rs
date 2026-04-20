@@ -189,21 +189,35 @@ pub async fn get_modelscope_repo(
 pub async fn get_modelscope_model_files(
     model_id: String,
 ) -> Result<ModelScopeFileListResult, String> {
+    println!("[RUST:get_modelscope_model_files] called with model_id={}", model_id);
     let client = build_reqwest_client()?;
 
     let url = format!(
         "https://modelscope.cn/api/v1/models/{}/repo/files?Recursive=true",
         model_id
     );
+    println!("[RUST:get_modelscope_model_files] URL={}", url);
 
     let response = client
         .get(&url)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            println!("[RUST:get_modelscope_model_files] request error: {}", e);
+            e.to_string()
+        })?;
 
     let status = response.status();
-    let body_text = response.text().await.map_err(|e| e.to_string())?;
+    println!("[RUST:get_modelscope_model_files] HTTP status={}", status);
+
+    let body_text = response.text().await.map_err(|e| {
+        println!("[RUST:get_modelscope_model_files] read body error: {}", e);
+        e.to_string()
+    })?;
+    println!(
+        "[RUST:get_modelscope_model_files] raw response (first 800 chars): {}",
+        &body_text[..body_text.len().min(800)]
+    );
 
     if !status.is_success() {
         return Err(format!(
@@ -215,12 +229,30 @@ pub async fn get_modelscope_model_files(
 
     let api_resp: super::models::ModelScopeFileListApiResponse =
         serde_json::from_str(&body_text).map_err(|e| {
+            println!(
+                "[RUST:get_modelscope_model_files] JSON parse error: {}. Raw (first 500): {}",
+                e,
+                &body_text[..body_text.len().min(500)]
+            );
             format!(
                 "Failed to parse ModelScope files response: {}. Raw: {}",
                 e,
                 &body_text[..body_text.len().min(500)]
             )
         })?;
+
+    println!(
+        "[RUST:get_modelscope_model_files] parsed: Success={}, Code={}, Files count={}",
+        api_resp.Success,
+        api_resp.Code,
+        api_resp.Data.Files.len()
+    );
+    if let Some(first) = api_resp.Data.Files.first() {
+        println!(
+            "[RUST:get_modelscope_model_files] first file: Name={}, Path={}, Size={}",
+            first.Name, first.Path, first.Size
+        );
+    }
 
     if !api_resp.Success {
         return Err(format!(
@@ -229,9 +261,11 @@ pub async fn get_modelscope_model_files(
         ));
     }
 
-    Ok(ModelScopeFileListResult {
+    let result = ModelScopeFileListResult {
         Files: api_resp.Data.Files,
-    })
+    };
+    println!("[RUST:get_modelscope_model_files] returning {} files", result.Files.len());
+    Ok(result)
 }
 
 /// 保存 ModelScope 访问令牌到应用配置
@@ -257,4 +291,13 @@ pub fn clear_modelscope_token<R: Runtime>(app_handle: AppHandle<R>) -> Result<()
     let mut config = get_app_configurations(app_handle.clone());
     config.modelscope_token = None;
     update_app_configuration(app_handle, config)
+}
+
+/// 批量下载 ModelScope 模型文件
+#[tauri::command]
+pub async fn download_modelscope_model(
+    app: tauri::AppHandle,
+    request: super::models::ModelScopeBatchDownloadRequest,
+) -> Result<(), String> {
+    super::download::execute_batch_download(request, app).await
 }

@@ -157,6 +157,7 @@ pub fn run() {
         core::modelscope::commands::get_modelscope_model_detail,
         core::modelscope::commands::get_modelscope_repo,
         core::modelscope::commands::get_modelscope_model_files,
+        core::modelscope::commands::download_modelscope_model,
         // External APIs (proxied through Rust to avoid CORS)
         core::external::commands::fetch_github_releases,
         core::external::commands::fetch_huggingface_repo,
@@ -269,6 +270,7 @@ pub fn run() {
         core::modelscope::commands::get_modelscope_model_detail,
         core::modelscope::commands::get_modelscope_repo,
         core::modelscope::commands::get_modelscope_model_files,
+        core::modelscope::commands::download_modelscope_model,
         core::modelscope::commands::save_modelscope_token,
         core::modelscope::commands::get_modelscope_token,
         core::modelscope::commands::clear_modelscope_token,
