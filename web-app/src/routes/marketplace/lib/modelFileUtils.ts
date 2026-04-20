@@ -225,3 +225,28 @@ export function extractQuantVersions(nodes: FileTreeNode[]): string[] {
   }
   return names.sort((a, b) => a.localeCompare(b))
 }
+
+/**
+ * Calculate total download size from a file tree.
+ *
+ * @param nodes    Hierarchical file tree nodes.
+ * @param quantDir Target quant directory path (e.g. "Q4_K_M"). If null, sums all files.
+ * @returns Total size in bytes.
+ */
+export function calcDownloadSize(
+  nodes: FileTreeNode[],
+  quantDir: string | null
+): number {
+  let total = 0
+  for (const node of nodes) {
+    if (node.type === 'file') {
+      if (quantDir === null || node.path.startsWith(quantDir + '/')) {
+        total += node.size ?? 0
+      }
+    }
+    if (node.children) {
+      total += calcDownloadSize(node.children, quantDir)
+    }
+  }
+  return total
+}
