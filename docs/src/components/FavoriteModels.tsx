@@ -10,15 +10,6 @@ import QwenIcon from '@/assets/icons/Qwen.svg'
 import DeepSeekIcon from '@/assets/icons/DeepSeek.svg'
 import GemmaIcon from '@/assets/icons/Gemma.svg'
 import KimiIcon from '@/assets/icons/Kimi.svg'
-import GmailIcon from '@/assets/icons/Gmail.svg'
-import AmazonIcon from '@/assets/icons/Amazone.svg'
-import GoogleIcon from '@/assets/icons/Google.svg'
-import NotionIcon from '@/assets/icons/Notion.svg'
-import FigmaIcon from '@/assets/icons/Figma.svg'
-import YoutubeIcon from '@/assets/icons/Youtube.svg'
-import SlackIcon from '@/assets/icons/Slack.svg'
-import GoogleDriveIcon from '@/assets/icons/Google-drive.svg'
-import JiraIcon from '@/assets/icons/Jira.svg'
 import Avatar from '@/assets/landing/avatar.png'
 
 const models = [
@@ -31,22 +22,6 @@ const models = [
   { name: 'DeepSeek', icon: DeepSeekIcon, company: 'DeepSeek' },
   { name: 'Gemma', icon: GemmaIcon, company: 'Google' },
   { name: 'Kimi', icon: KimiIcon, company: 'Moonshot AI' },
-]
-
-const apps = [
-  { name: 'Gmail', icon: GmailIcon, description: 'Organize your inbox' },
-  { name: 'Amazon', icon: AmazonIcon, description: 'Shop for products' },
-  { name: 'Google', icon: GoogleIcon, description: 'Search the web' },
-  { name: 'Notion', icon: NotionIcon, description: 'Write and organize' },
-  { name: 'Figma', icon: FigmaIcon, description: 'Design with AI' },
-  { name: 'YouTube', icon: YoutubeIcon, description: 'Look for videos' },
-  { name: 'Slack', icon: SlackIcon, description: 'Read channel messages' },
-  {
-    name: 'Google Drive',
-    icon: GoogleDriveIcon,
-    description: 'Find and fetch files',
-  },
-  { name: 'Jira', icon: JiraIcon, description: 'Manage tickets' },
 ]
 
 const thingsToRemember = [
@@ -123,57 +98,7 @@ export default function FavoriteModels() {
           </div>
         </motion.div>
 
-        {/* Step 2*/}
-        <motion.div
-          className="mb-16"
-          initial={{ opacity: 0, y: 60 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.3 }}
-          transition={{ duration: 0.6, delay: 0.6 }}
-        >
-          <div className="flex items-start gap-8 flex-col lg:flex-row">
-            <div className="flex-1">
-              <div className="text-[28px] mb-8 size-12 bg-white text-black rounded-full flex items-center justify-center font-semibold shadow-[0px_4px_0px_0px_rgba(0,0,0,1)] border-2 border-black">
-                2
-              </div>
-              <h3 className="text-[28px] font-bold mb-2 max-w-sm -tracking-[0.7px]">
-                Connectors
-              </h3>
-              <p className="text-gray-700 mb-4 max-w-sm text-base -tracking-[0.4px]">
-                Connect your email, files, notes and calendar. Jan works where
-                you work.
-              </p>
-              {/* <Button
-                variant="playful-white"
-                className="!rounded-[12px] border-2 shadow-[0px_2px_0px_0px_rgba(0,0,0,1)] text-base h-[40px]"
-              >
-                Explore tools
-              </Button> */}
-            </div>
-            <div className="flex-1 w-full">
-              <div className="grid grid-cols-3">
-                {apps.map((app) => (
-                  <div
-                    key={app.name}
-                    className="flex flex-col items-center border-b py-8"
-                  >
-                    <div className="size-11 mb-2 flex items-center justify-center">
-                      <img src={app.icon.src} alt={app.name} />
-                    </div>
-                    <span className="text-lg font-medium -tracking-[0.4px]">
-                      {app.name}
-                    </span>
-                    <span className="text-sm text-gray-500 -tracking-[0.4px]">
-                      {app.description}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Step 3: Cross-platform */}
+        {/* Step 2: Memory */}
         <motion.div
           className="mb-16"
           initial={{ opacity: 0, y: 60 }}
@@ -184,7 +109,7 @@ export default function FavoriteModels() {
           <div className="flex items-start gap-8 flex-col lg:flex-row">
             <div className="flex-1">
               <div className="text-[28px] mb-8 size-12 bg-white text-black rounded-full flex items-center justify-center font-semibold shadow-[0px_4px_0px_0px_rgba(0,0,0,1)] border-2 border-black">
-                3
+                2
               </div>
               <h3 className="text-[28px] font-bold mb-2 max-w-sm -tracking-[0.7px] inline-flex items-center gap-2">
                 Memory{' '}
