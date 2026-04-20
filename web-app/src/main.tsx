@@ -8,10 +8,8 @@ import { routeTree } from './routeTree.gen'
 import './index.css'
 import './i18n'
 import { migrateAllLocalStorageKeys } from './lib/fileStorage'
-
-// Migrate all localStorage data to file-based storage on startup
-// so users updating the app don't lose their settings.
-migrateAllLocalStorageKeys()
+import { attachConsole } from '@tauri-apps/plugin-log'
+import { logError } from './lib/logger'
 
 // Mobile-specific viewport and styling setup
 const setupMobileViewport = () => {
@@ -61,12 +59,6 @@ const preventDefaultFileDrop = () => {
   })
 }
 
-// Initialize mobile setup
-setupMobileViewport()
-
-// Prevent files from opening when dropped
-preventDefaultFileDrop()
-
 // Create a new router instance
 const router = createRouter({ routeTree })
 
@@ -77,13 +69,57 @@ declare module '@tanstack/react-router' {
   }
 }
 
-// Render the app
-const rootElement = document.getElementById('root')!
-if (!rootElement.innerHTML) {
-  const root = ReactDOM.createRoot(rootElement)
-  root.render(
-    <StrictMode>
-      <RouterProvider router={router} />
-    </StrictMode>
-  )
-}
+;(async () => {
+  try {
+    await attachConsole()
+
+    window.onerror = (
+      message: string | Event,
+      source?: string,
+      lineno?: number,
+      colno?: number,
+      error?: Error
+    ) => {
+      logError(String(message), {
+        url: window.location.href,
+        stack: error?.stack,
+        filename: source,
+        line: lineno,
+        col: colno,
+      })
+      return false
+    }
+
+    window.onunhandledrejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason
+      logError(`Unhandled promise rejection: ${reason}`, {
+        url: window.location.href,
+        reason: String(reason),
+        stack: reason?.stack,
+      })
+    }
+  } catch (e) {
+    console.error('Failed to initialize logging:', e)
+  }
+
+  // Migrate all localStorage data to file-based storage on startup
+  // so users updating the app don't lose their settings.
+  migrateAllLocalStorageKeys()
+
+  // Initialize mobile setup
+  setupMobileViewport()
+
+  // Prevent files from opening when dropped
+  preventDefaultFileDrop()
+
+  // Render the app
+  const rootElement = document.getElementById('root')!
+  if (!rootElement.innerHTML) {
+    const root = ReactDOM.createRoot(rootElement)
+    root.render(
+      <StrictMode>
+        <RouterProvider router={router} />
+      </StrictMode>
+    )
+  }
+})()

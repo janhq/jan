@@ -1,11 +1,15 @@
 import { useState } from 'react'
+import { logError } from '@/lib/logger'
 
 interface GlobalErrorProps {
   error: Error | unknown
 }
 
 export default function GlobalError({ error }: GlobalErrorProps) {
-  console.error('Error in root route:', error)
+  logError(`Error in root route: ${error instanceof Error ? error.message : String(error)}`, {
+    stack: error instanceof Error ? error.stack : undefined,
+    url: typeof window !== 'undefined' ? window.location.href : undefined,
+  })
   const [showFull, setShowFull] = useState(false)
 
   return (
