@@ -178,6 +178,69 @@ Hub 页面 → Ollama 未启动 → 显示"一键安装"按钮
 - 设置页：隐藏 HuggingFace Token，替换为 ModelScope
 - 禁用自动更新：`AUTO_UPDATER_DISABLED = true`
 
+### 5. 统一错误日志系统
+
+**设计目的：** 将前端（React/TypeScript）和后端（Rust）的错误统一采集到本地 JSON Lines 日志文件，便于开发阶段 AI/人工排错。
+
+**日志文件位置：**
+```
+Windows: %APPDATA%\Jan\data\logs\app.jsonl
+macOS:   ~/Library/Application Support/Jan/data/logs/app.jsonl
+Linux:   ~/.config/Jan/data/logs/app.jsonl
+```
+
+**日志格式（JSON Lines）：**
+```json
+{"ts":"2026-04-18T18:13:19.931+08:00","level":"ERROR","target":"frontend/hub","msg":"Failed to load models","meta":{"url":"http://localhost:1420/hub","stack":"..."}}
+{"ts":"2026-04-18T18:13:20.123+08:00","level":"ERROR","target":"src-tauri/src/core/ollama_control_plane/commands.rs:45","msg":"Ollama run failed: HTTP 500","meta":null}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `ts` | ISO 8601 时间戳，带时区 |
+| `level` | `TRACE` / `DEBUG` / `INFO` / `WARN` / `ERROR` |
+| `target` | 后端为 Rust 模块路径；前端为 `frontend` 或 `frontend/<subsystem>` |
+| `msg` | 错误消息正文 |
+| `meta` | 结构化上下文（URL、stack trace、组件名、命令参数等），无则为 `null` |
+
+**前端如何记录日志：**
+```typescript
+// 新代码推荐使用 logError() 替代 console.error
+import { logError, logWarn } from '@/lib/logger'
+
+logError('Failed to load model', { url: window.location.href, modelId: 'qwen2.5' })
+```
+
+**后端如何记录日志：**
+```rust
+// 复用现有的 log 宏，自动输出 JSON Lines
+log::error!("Ollama run failed: HTTP {}", status);
+```
+
+**自动捕获的前端错误（零配置）：**
+- `window.onerror` — 同步 JS 异常
+- `window.onunhandledrejection` — 未处理的 Promise rejection
+- `GlobalError.tsx` — React 路由错误组件渲染时
+- `attachConsole()` — 所有 `console.error`/`warn`/`log` 自动桥接到日志文件
+
+**AI 排错流程（标准操作）：**
+当用户报告"手动测试时出现错误"时，AI 应执行以下步骤：
+1. 读取日志文件：`Get-Content "$env:APPDATA\Jan\data\logs\app.jsonl" -Tail 50`
+2. 筛选 ERROR 级别：`... | Where-Object { $_ -like '*"level":"ERROR"*' }`
+3. 解析 JSON 提取关键信息：时间、target、msg、meta.stack
+4. 前后端关联：如果前端 `target:"frontend/invoke"` 报错，同时检查后端对应 Rust 模块的日志
+5. 给出根因分析和修复建议
+
+**日志轮转：**
+- 单文件上限 10MB，超限时自动轮转
+- 保留 5 个历史文件：`app.jsonl` → `app.jsonl.1` → ... → `app.jsonl.5`
+
+**相关文件：**
+- `web-app/src/lib/logger.ts` — 前端日志工具（`logError`/`logWarn`/`logInfo`）
+- `web-app/src/lib/invoke-logger.ts` — Tauri invoke 包装器（自动记录命令失败）
+- `src-tauri/src/core/logger/json_formatter.rs` — 后端 JSON Lines Formatter
+- `src-tauri/src/core/logger/rotation.rs` — 按大小轮转逻辑
+
 ---
 
 ## Build & Development Commands
