@@ -21,6 +21,7 @@
     "core:window:allow-set-size",
     "core:window:allow-set-always-on-top",
     "core:window:allow-primary-monitor",
+    "core:window:allow-available-monitors",
     "core:window:allow-outer-position",
     "core:window:allow-scale-factor",
     "core:window:allow-set-ignore-cursor-events",

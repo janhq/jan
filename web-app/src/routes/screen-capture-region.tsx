@@ -7,6 +7,7 @@ import {
   writeScreenCaptureComposerDraft,
 } from '@/constants/screenCapture'
 import { getUnionOfAllMonitorsPhysicalRect } from '@/lib/screenCaptureWindows'
+import { primaryMonitor } from '@tauri-apps/api/window'
 import { route } from '@/constants/routes'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -56,12 +57,24 @@ function ScreenCaptureRegion() {
   useEffect(() => {
     const place = async () => {
       const win = getCurrentWebviewWindow()
-      const bounds = await getUnionOfAllMonitorsPhysicalRect()
-      if (bounds) {
-        await win.setPosition(bounds.position)
-        await win.setSize(bounds.size)
+      try {
+        const bounds = await getUnionOfAllMonitorsPhysicalRect()
+        if (bounds) {
+          await win.setPosition(bounds.position)
+          await win.setSize(bounds.size)
+        }
+      } catch {
+        const m = await primaryMonitor()
+        if (m) {
+          await win.setPosition(m.position)
+          await win.setSize(m.size)
+        }
       }
-      await win.setAlwaysOnTop(true)
+      try {
+        await win.setAlwaysOnTop(true)
+      } catch {
+        /* ignore */
+      }
     }
     void place()
   }, [])

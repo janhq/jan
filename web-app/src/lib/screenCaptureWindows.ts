@@ -7,15 +7,27 @@ import {
   SCREEN_CAPTURE_REGION_LABEL,
 } from '@/constants/screenCapture'
 
+async function primaryMonitorPhysicalRect(): Promise<{
+  position: PhysicalPosition
+  size: PhysicalSize
+} | null> {
+  const m = await primaryMonitor()
+  return m ? { position: m.position, size: m.size } : null
+}
+
 /** Bounding box covering every monitor so region selection works on secondary displays. */
 export async function getUnionOfAllMonitorsPhysicalRect(): Promise<{
   position: PhysicalPosition
   size: PhysicalSize
 } | null> {
-  const monitors = await availableMonitors()
+  let monitors
+  try {
+    monitors = await availableMonitors()
+  } catch {
+    return primaryMonitorPhysicalRect()
+  }
   if (monitors.length === 0) {
-    const m = await primaryMonitor()
-    return m ? { position: m.position, size: m.size } : null
+    return primaryMonitorPhysicalRect()
   }
   let minX = Infinity
   let minY = Infinity
@@ -142,10 +154,18 @@ export async function openScreenCaptureRegionWindow(): Promise<void> {
 
   await waitForWebviewWindowReady(w)
 
-  const bounds = await getUnionOfAllMonitorsPhysicalRect()
-  if (bounds) {
-    await w.setPosition(bounds.position)
-    await w.setSize(bounds.size)
+  try {
+    const bounds = await getUnionOfAllMonitorsPhysicalRect()
+    if (bounds) {
+      await w.setPosition(bounds.position)
+      await w.setSize(bounds.size)
+    }
+  } catch {
+    const m = await primaryMonitor()
+    if (m) {
+      await w.setPosition(m.position)
+      await w.setSize(m.size)
+    }
   }
   await w.setAlwaysOnTop(true)
   await w.show()
