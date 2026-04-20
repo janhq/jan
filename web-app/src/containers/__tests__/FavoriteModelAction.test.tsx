@@ -12,7 +12,7 @@ vi.mock('@/hooks/useFavoriteModel', () => ({
 
 import { FavoriteModelAction } from '../FavoriteModelAction'
 
-const model = { id: 'test-model' } as Model
+const model: Model = { id: 'test-model' }
 
 describe('FavoriteModelAction', () => {
   it('renders toggle button', () => {

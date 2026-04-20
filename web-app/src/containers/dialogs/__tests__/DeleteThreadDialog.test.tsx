@@ -25,6 +25,7 @@ const mockThread: Thread = {
   id: 'thread-1',
   title: 'Test Thread',
   updated: Date.now(),
+  order: 0,
 }
 
 describe('DeleteThreadDialog', () => {

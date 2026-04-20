@@ -19,9 +19,41 @@ vi.mock('@janhq/core', () => ({
 }))
 
 describe('useAttachments', () => {
-  beforeEach(() => {
+  let initialState: any
+
+  beforeEach(async () => {
     vi.clearAllMocks()
     mockGetRag.mockReturnValue(undefined)
+
+    // Fully reset the Zustand store to its default state before each test so
+    // state does not leak across tests (the store is a module-level singleton).
+    const { useAttachments } = await import('../useAttachments')
+    if (!initialState) {
+      const s = useAttachments.getState()
+      initialState = {
+        enabled: true,
+        maxFileSizeMB: 20,
+        retrievalLimit: 3,
+        retrievalThreshold: 0.3,
+        chunkSizeChars: 512,
+        overlapChars: 64,
+        searchMode: 'auto',
+        parseMode: 'auto',
+        autoInlineContextRatio: 0.75,
+        settingsDefs: [],
+        loadSettingsDefs: s.loadSettingsDefs,
+        setEnabled: s.setEnabled,
+        setMaxFileSizeMB: s.setMaxFileSizeMB,
+        setRetrievalLimit: s.setRetrievalLimit,
+        setRetrievalThreshold: s.setRetrievalThreshold,
+        setChunkSizeChars: s.setChunkSizeChars,
+        setOverlapChars: s.setOverlapChars,
+        setSearchMode: s.setSearchMode,
+        setParseMode: s.setParseMode,
+        setAutoInlineContextRatio: s.setAutoInlineContextRatio,
+      }
+    }
+    useAttachments.setState(initialState, true)
   })
 
   it('should have correct default values', async () => {

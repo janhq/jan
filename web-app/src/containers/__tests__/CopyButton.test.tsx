@@ -1,11 +1,27 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 
-Object.assign(navigator, {
-  clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+import { CopyButton } from '../CopyButton'
+
+// Preserve original clipboard so this suite does not leak to other tests.
+const originalClipboard = navigator.clipboard
+
+beforeEach(() => {
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    writable: true,
+    configurable: true,
+  })
 })
 
-import { CopyButton } from '../CopyButton'
+afterEach(() => {
+  Object.defineProperty(navigator, 'clipboard', {
+    value: originalClipboard,
+    writable: true,
+    configurable: true,
+  })
+  vi.clearAllMocks()
+})
 
 describe('CopyButton', () => {
   it('renders copy button', () => {

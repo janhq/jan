@@ -30,11 +30,4 @@ describe('TokenSpeedIndicator', () => {
     expect(screen.getByText('30 tokens/sec')).toBeDefined()
   })
 
-  it('returns null when speed is 0 and not streaming', () => {
-    vi.resetModules()
-    // Re-import won't work easily, test with metadata that yields 0
-    const { container } = render(<TokenSpeedIndicator metadata={{}} />)
-    // The streaming mock returns 42, so it will show. This tests the branch.
-    expect(container).toBeDefined()
-  })
 })

@@ -40,12 +40,4 @@ describe('PromptJanModel', () => {
     expect(screen.getByText('Later')).toBeInTheDocument()
   })
 
-  it('renders null when loading', () => {
-    vi.doMock('@/hooks/useLatestJanModel', () => ({
-      useLatestJanModel: () => ({ model: null, loading: true }),
-    }))
-    // Since vi.doMock doesn't work without resetModules, just test existing render
-    render(<PromptJanModel />)
-    expect(screen.getByText('Download')).toBeInTheDocument()
-  })
 })

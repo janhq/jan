@@ -6,18 +6,6 @@ vi.mock('@/hooks/useLeftPanel', () => ({
   useLeftPanel: vi.fn(() => ({ open: true })),
 }))
 
-vi.mock('./NavMain', () => ({
-  NavMain: () => <div data-testid="nav-main" />,
-}))
-
-vi.mock('./NavChats', () => ({
-  NavChats: () => <div data-testid="nav-chats" />,
-}))
-
-vi.mock('./NavProjects', () => ({
-  NavProjects: () => <div data-testid="nav-projects" />,
-}))
-
 vi.mock('../NavMain', () => ({
   NavMain: () => <div data-testid="nav-main" />,
 }))
