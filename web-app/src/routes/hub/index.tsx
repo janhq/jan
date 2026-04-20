@@ -9,6 +9,7 @@ import { useOllamaStatus, type OllamaModel } from '@/hooks/useOllamaStatus'
 import { useLocalGgufModels, type LocalGgufModel } from '@/hooks/useLocalGgufModels'
 import { GgufModelCard } from '@/components/hub/GgufModelCard'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { logError } from '@/lib/logger'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Input } from '@/components/ui/input'
@@ -509,7 +510,12 @@ function HubContent() {
       refreshGguf()
       setShowPullDialog(false)
     } catch (e) {
-      toast.error('下载失败: ' + String(e))
+      const errMsg = String(e)
+      logError(`Hub pull model failed: ${errMsg}`, {
+        model,
+        url: typeof window !== 'undefined' ? window.location.href : undefined,
+      })
+      toast.error('下载失败: ' + errMsg)
     } finally {
       setIsPulling(false)
       setPullProgress(null)
