@@ -98,13 +98,14 @@ pub struct ModelScopeDetailResult {
 // ============================================================
 
 /// ModelScope 单个文件信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModelScopeFile {
     pub Name: String,
     pub Path: String,
     pub Size: i64,
     pub Sha256: Option<String>,
     pub IsLFS: bool,
+    pub Type: String,
 }
 
 /// ModelScope 文件列表数据
@@ -126,6 +127,37 @@ pub struct ModelScopeFileListApiResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelScopeFileListResult {
     pub Files: Vec<ModelScopeFile>,
+}
+
+// ============================================================
+// 下载配置类型（model_catalog.json / download_config.json）
+// ============================================================
+
+/// ModelScope 下载配置（轻量 JSON，模型市场写，推理中心读）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModelScopeDownloadConfig {
+    /// 用户配置的下载目录列表
+    pub download_dirs: Vec<String>,
+    /// 下载历史记录
+    pub downloads: Vec<ModelScopeDownloadRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelScopeDownloadRecord {
+    pub model_id: String,
+    pub quant_dir: Option<String>,
+    pub save_dir: String,
+    pub downloaded_at: String, // ISO 8601
+    pub files_count: usize,
+    pub total_size_bytes: u64,
+}
+
+/// 批量下载请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelScopeBatchDownloadRequest {
+    pub model_id: String,
+    pub quant_dir: Option<String>,
+    pub save_dir: String,
 }
 
 /// ModelScope 仓库单个 GGUF 文件信息
@@ -192,4 +224,189 @@ pub struct ModelScopeRepoApiResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelScopeRepoResult {
     pub Repo: ModelScopeRepoApiResponse,
+}
+
+// ============================================================
+// Tests - based on real ModelScope API responses
+// ============================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Real response from:
+    // GET https://modelscope.cn/api/v1/models/qwen/Qwen2.5-0.5B-Instruct-GGUF/repo/files?Recursive=true
+    const REAL_QWEN_RESPONSE: &str = r#"
+    {
+      "Code": 200,
+      "Success": true,
+      "Data": {
+        "Files": [
+          {
+            "CommitMessage": "merge main",
+            "CommittedDate": 1726842501,
+            "CommitterName": "ai-modelscope",
+            "InCheck": false,
+            "IsLFS": false,
+            "Mode": "33188",
+            "Name": ".gitattributes",
+            "Path": ".gitattributes",
+            "Revision": "cbee0850956aeb6fd9ac074a0270da820788ada7",
+            "Sha256": "c04fe798248680304f09bdd123b107f87a982ab46bb8a4286864c465adf7f486",
+            "Size": 1630,
+            "Type": "blob"
+          },
+          {
+            "CommitMessage": "upload weights",
+            "CommittedDate": 1726665606,
+            "CommitterName": "ai-modelscope",
+            "InCheck": false,
+            "IsLFS": true,
+            "Mode": "33188",
+            "Name": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+            "Path": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+            "Revision": "2e50b77b0eee3083842019e257b74854323d880a",
+            "Sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
+            "Size": 491400032,
+            "Type": "blob"
+          }
+        ]
+      },
+      "Message": "success",
+      "RequestId": "test-request-id"
+    }
+    "#;
+
+    #[test]
+    fn test_parse_real_qwen_response() {
+        let resp: ModelScopeFileListApiResponse = serde_json::from_str(REAL_QWEN_RESPONSE)
+            .expect("should parse real qwen response");
+
+        assert!(resp.Success);
+        assert_eq!(resp.Code, 200);
+        assert_eq!(resp.Data.Files.len(), 2);
+
+        // First file: .gitattributes
+        let first = &resp.Data.Files[0];
+        assert_eq!(first.Name, ".gitattributes");
+        assert_eq!(first.Path, ".gitattributes");
+        assert_eq!(first.Size, 1630);
+        assert_eq!(
+            first.Sha256,
+            Some("c04fe798248680304f09bdd123b107f87a982ab46bb8a4286864c465adf7f486".to_string())
+        );
+        assert!(!first.IsLFS);
+
+        // Second file: q4_k_m GGUF
+        let second = &resp.Data.Files[1];
+        assert_eq!(second.Name, "qwen2.5-0.5b-instruct-q4_k_m.gguf");
+        assert_eq!(second.Size, 491400032);
+        assert!(second.IsLFS);
+    }
+
+    #[test]
+    fn test_parse_response_with_extra_fields() {
+        // ModelScope API returns many extra fields (CommitMessage, Revision, Type, etc.)
+        // serde should ignore them by default
+        let json = r#"{
+            "Code": 200,
+            "Success": true,
+            "Data": {
+                "Files": [
+                    {
+                        "Name": "test.gguf",
+                        "Path": "test.gguf",
+                        "Size": 123,
+                        "Sha256": "abc",
+                        "IsLFS": true,
+                        "ExtraField": "should be ignored",
+                        "NestedExtra": { "foo": 1 }
+                    }
+                ],
+                "ExtraData": "ignored"
+            },
+            "Message": "success",
+            "ExtraTopLevel": 42
+        }"#;
+
+        let resp: ModelScopeFileListApiResponse = serde_json::from_str(json)
+            .expect("should ignore extra fields");
+
+        assert_eq!(resp.Data.Files.len(), 1);
+        assert_eq!(resp.Data.Files[0].Name, "test.gguf");
+    }
+
+    #[test]
+    fn test_parse_empty_files_array() {
+        let json = r#"{"Code":200,"Success":true,"Data":{"Files":[]},"Message":"success"}"#;
+        let resp: ModelScopeFileListApiResponse = serde_json::from_str(json)
+            .expect("should parse empty files");
+
+        assert_eq!(resp.Data.Files.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_error_response() {
+        let json = r#"{"Code":404,"Success":false,"Data":{"Files":[]},"Message":"Model not found"}"#;
+        let resp: ModelScopeFileListApiResponse = serde_json::from_str(json)
+            .expect("should parse error response");
+
+        assert!(!resp.Success);
+        assert_eq!(resp.Code, 404);
+        assert_eq!(resp.Message, Some("Model not found".to_string()));
+    }
+
+    #[test]
+    fn test_serialize_file_list_result() {
+        let result = ModelScopeFileListResult {
+            Files: vec![
+                ModelScopeFile {
+                    Name: "model-q4_k_m.gguf".to_string(),
+                    Path: "model-q4_k_m.gguf".to_string(),
+                    Size: 491400032,
+                    Sha256: Some("abc123".to_string()),
+                    IsLFS: true,
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&result).expect("should serialize");
+        assert!(json.contains("\"Files\""));
+        assert!(json.contains("\"Name\":\"model-q4_k_m.gguf\""));
+        assert!(json.contains("\"Size\":491400032"));
+    }
+
+    #[test]
+    fn test_model_scope_file_list_result_json_shape() {
+        // ModelScopeFileListResult only derives Serialize (not Deserialize).
+        // This test verifies the exact JSON shape that the frontend receives via Tauri IPC.
+        let original = ModelScopeFileListResult {
+            Files: vec![
+                ModelScopeFile {
+                    Name: "test.gguf".to_string(),
+                    Path: "dir/test.gguf".to_string(),
+                    Size: 1234567890,
+                    Sha256: Some("deadbeef".to_string()),
+                    IsLFS: true,
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&original).expect("serialize");
+        let value: serde_json::Value = serde_json::from_str(&json).expect("parse as value");
+
+        // Verify PascalCase field names (matching frontend TypeScript types)
+        let files = value.get("Files").expect("has Files field").as_array().expect("Files is array");
+        assert_eq!(files.len(), 1);
+
+        let file = &files[0];
+        assert_eq!(file.get("Name").expect("has Name").as_str().expect("Name is string"), "test.gguf");
+        assert_eq!(file.get("Path").expect("has Path").as_str().expect("Path is string"), "dir/test.gguf");
+        assert_eq!(file.get("Size").expect("has Size").as_i64().expect("Size is number"), 1234567890);
+        assert_eq!(
+            file.get("Sha256").expect("has Sha256").as_str().expect("Sha256 is string"),
+            "deadbeef"
+        );
+        assert!(file.get("IsLFS").expect("has IsLFS").as_bool().expect("IsLFS is bool"));
+    }
 }
