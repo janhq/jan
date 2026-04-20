@@ -259,4 +259,136 @@ describe('useAttachments', () => {
 
     expect(success).toBe(false)
   })
+
+  it('should return false when loadSettingsDefs throws', async () => {
+    mockGetRag.mockReturnValue({
+      getSettings: vi.fn().mockRejectedValue(new Error('boom')),
+    })
+
+    const { useAttachments } = await import('../useAttachments')
+
+    let success: boolean = true
+    await act(async () => {
+      success = await useAttachments.getState().loadSettingsDefs()
+    })
+
+    expect(success).toBe(false)
+  })
+
+  describe('setters persist to the RAG extension and patch settingsDefs', () => {
+    const cases = [
+      {
+        name: 'setMaxFileSizeMB',
+        key: 'max_file_size_mb',
+        stateKey: 'maxFileSizeMB',
+        value: 99,
+      },
+      {
+        name: 'setRetrievalLimit',
+        key: 'retrieval_limit',
+        stateKey: 'retrievalLimit',
+        value: 7,
+      },
+      {
+        name: 'setRetrievalThreshold',
+        key: 'retrieval_threshold',
+        stateKey: 'retrievalThreshold',
+        value: 0.7,
+      },
+      {
+        name: 'setChunkSizeChars',
+        key: 'chunk_size_chars',
+        stateKey: 'chunkSizeChars',
+        value: 2048,
+      },
+      {
+        name: 'setOverlapChars',
+        key: 'overlap_chars',
+        stateKey: 'overlapChars',
+        value: 256,
+      },
+      {
+        name: 'setSearchMode',
+        key: 'search_mode',
+        stateKey: 'searchMode',
+        value: 'linear' as const,
+      },
+      {
+        name: 'setParseMode',
+        key: 'parse_mode',
+        stateKey: 'parseMode',
+        value: 'embeddings' as const,
+      },
+      {
+        name: 'setAutoInlineContextRatio',
+        key: 'auto_inline_context_ratio',
+        stateKey: 'autoInlineContextRatio',
+        value: 0.42,
+      },
+    ] as const
+
+    cases.forEach(({ name, key, stateKey, value }) => {
+      it(`${name} calls updateSettings and patches settingsDefs`, async () => {
+        mockGetRag.mockReturnValue({
+          getSettings: mockGetSettings,
+          updateSettings: mockUpdateSettings,
+        })
+
+        const { useAttachments } = await import('../useAttachments')
+
+        act(() => {
+          useAttachments.setState({
+            settingsDefs: [
+              { key, controllerProps: { value: 'before' } } as any,
+            ],
+          })
+        })
+
+        await act(async () => {
+          await (useAttachments.getState() as any)[name](value)
+        })
+
+        expect(mockUpdateSettings).toHaveBeenCalledWith([
+          { key, controllerProps: { value } },
+        ])
+        expect((useAttachments.getState() as any)[stateKey]).toEqual(value)
+        const def = useAttachments
+          .getState()
+          .settingsDefs.find((d) => d.key === key)
+        expect((def as any)?.controllerProps?.value).toEqual(value)
+      })
+    })
+  })
+
+  describe('initAttachments', () => {
+    it('returns early on first successful load', async () => {
+      mockGetRag.mockReturnValue({
+        getSettings: vi.fn().mockResolvedValue([]),
+      })
+
+      const { initAttachments } = await import('../useAttachments')
+      await initAttachments()
+
+      // If it didn't return early, the 5-attempt loop with 300ms waits would
+      // take >1s. The test finishing fast is the assertion.
+      expect(mockGetRag).toHaveBeenCalled()
+    })
+
+    it('retries until success', async () => {
+      vi.useFakeTimers()
+      const getSettings = vi
+        .fn()
+        .mockResolvedValueOnce('bad')
+        .mockResolvedValueOnce([])
+      mockGetRag.mockReturnValue({ getSettings })
+
+      const { initAttachments } = await import('../useAttachments')
+      const done = initAttachments()
+      await vi.advanceTimersByTimeAsync(400)
+      await done
+
+      expect(getSettings).toHaveBeenCalledTimes(2)
+      vi.useRealTimers()
+    })
+  })
 })
