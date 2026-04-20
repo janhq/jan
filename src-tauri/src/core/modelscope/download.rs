@@ -1,0 +1,156 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
+use futures::stream::{self, StreamExt};
+use tauri::Emitter;
+
+use super::models::{ModelScopeBatchDownloadRequest, ModelScopeDownloadRecord};
+
+const MAX_CONCURRENT: usize = 3;
+
+/// Execute a batch download of ModelScope model files.
+pub async fn execute_batch_download(
+    request: ModelScopeBatchDownloadRequest,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    // 1. Fetch file list
+    let file_list = super::commands::get_modelscope_model_files(request.model_id.clone()).await?;
+
+    // 2. Filter target files
+    let target_files: Vec<_> = file_list
+        .Files
+        .into_iter()
+        .filter(|f| {
+            if f.Type == "tree" {
+                return false;
+            }
+            match &request.quant_dir {
+                Some(dir) => f.Path.starts_with(&format!("{}/", dir)),
+                None => true,
+            }
+        })
+        .collect();
+
+    let total_count = target_files.len();
+    if total_count == 0 {
+        return Err("No matching files to download".to_string());
+    }
+
+    let total_size_bytes: u64 = target_files.iter().map(|f| f.Size as u64).sum();
+
+    // 3. Ensure save directory exists
+    tokio::fs::create_dir_all(&request.save_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 4. Download files with concurrency limit
+    let completed = Arc::new(AtomicUsize::new(0));
+
+    let download_futures = target_files.into_iter().map(|file| {
+        let app = app.clone();
+        let save_dir = request.save_dir.clone();
+        let model_id = request.model_id.clone();
+        let completed = completed.clone();
+
+        async move {
+            let url = format!(
+                "https://www.modelscope.cn/models/{}/resolve/master/{}",
+                model_id, file.Path
+            );
+            let dest = std::path::PathBuf::from(&save_dir).join(&file.Path);
+
+            // Create parent directories for the destination file
+            if let Some(parent) = dest.parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+
+            download_single_file(&url, &dest).await?;
+
+            // Emit progress event after each file completes
+            let count = completed.fetch_add(1, Ordering::SeqCst) + 1;
+            app.emit(
+                "modelscope-download-progress",
+                serde_json::json!({
+                    "completed": count,
+                    "total": total_count,
+                    "current_file": file.Name,
+                }),
+            )
+            .ok();
+
+            Ok::<(), String>(())
+        }
+    });
+
+    let results: Vec<Result<(), String>> = stream::iter(download_futures)
+        .buffer_unordered(MAX_CONCURRENT)
+        .collect()
+        .await;
+
+    // 5. Error handling
+    let failed_count = results.iter().filter(|r| r.is_err()).count();
+    if failed_count > 0 {
+        return Err(format!(
+            "{} of {} files failed to download",
+            failed_count, total_count
+        ));
+    }
+
+    // 6. Update download config (stub for now)
+    let record = ModelScopeDownloadRecord {
+        model_id: request.model_id,
+        quant_dir: request.quant_dir,
+        save_dir: request.save_dir,
+        downloaded_at: chrono::Utc::now().to_rfc3339(),
+        files_count: total_count,
+        total_size_bytes,
+    };
+    update_download_config(app, record).await?;
+
+    Ok(())
+}
+
+/// Download a single file from URL to destination using streaming.
+async fn download_single_file(url: &str, dest: &std::path::PathBuf) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(600))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let response = client.get(url).send().await.map_err(|e| e.to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "HTTP {} for {}",
+            response.status(),
+            url
+        ));
+    }
+
+    let mut file = tokio::fs::File::create(dest)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut stream = response.bytes_stream();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| e.to_string())?;
+        tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+/// Update download config with a new record.
+/// Currently a stub; full persistence will be implemented later.
+async fn update_download_config(
+    _app: tauri::AppHandle,
+    _record: ModelScopeDownloadRecord,
+) -> Result<(), String> {
+    Ok(())
+}
