@@ -314,6 +314,17 @@ mod tests {
     }
 
     #[test]
+    fn adds_empty_properties_for_object_without_properties() {
+        let mut schema = json!({
+            "type": "object"
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(schema["properties"], json!({}));
+    }
+
+    #[test]
     fn normalizes_nested_object_and_array_leaves() {
         let mut schema = json!({
             "type": "object",
@@ -326,10 +337,13 @@ mod tests {
                         }
                     }
                 },
+                "filters": {
+                    "type": "object"
+                },
                 "items": {
                     "type": "array",
                     "items": {
-                        "description": "Array item schema"
+                        "type": "object"
                     }
                 }
             }
@@ -338,7 +352,8 @@ mod tests {
         proxy::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema["properties"]["payload"]["properties"]["title"]["type"], json!("string"));
-        assert_eq!(schema["properties"]["items"]["items"]["type"], json!("string"));
+        assert_eq!(schema["properties"]["filters"]["properties"], json!({}));
+        assert_eq!(schema["properties"]["items"]["items"]["properties"], json!({}));
     }
 
     #[test]
@@ -369,5 +384,85 @@ mod tests {
             schema["properties"]["container"]["properties"]["child"]["type"],
             json!("string"),
         );
+    }
+
+    #[test]
+    fn leaves_existing_valid_object_schema_unchanged() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "payload": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string"
+                        }
+                    },
+                    "required": ["name"]
+                }
+            }
+        });
+
+        let original = schema.clone();
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(schema, original);
+    }
+
+    #[test]
+    fn normalizes_mixed_schema_without_altering_valid_fields() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "title": {
+                    "description": "A title"
+                },
+                "metadata": {
+                    "type": "object",
+                    "description": "Optional metadata"
+                }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(schema["properties"]["count"]["type"], json!("integer"));
+        assert_eq!(schema["properties"]["title"]["type"], json!("string"));
+        assert_eq!(schema["properties"]["metadata"]["description"], json!("Optional metadata"));
+        assert_eq!(schema["properties"]["metadata"]["properties"], json!({}));
+    }
+
+    #[test]
+    fn normalizes_combinator_members_recursively() {
+        let mut schema = json!({
+            "anyOf": [
+                {
+                    "type": "object"
+                },
+                {
+                    "description": "fallback string"
+                }
+            ],
+            "oneOf": [
+                {
+                    "type": "object"
+                }
+            ],
+            "allOf": [
+                {
+                    "description": "merged leaf"
+                }
+            ]
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(schema["anyOf"][0]["properties"], json!({}));
+        assert_eq!(schema["anyOf"][1]["type"], json!("string"));
+        assert_eq!(schema["oneOf"][0]["properties"], json!({}));
+        assert_eq!(schema["allOf"][0]["type"], json!("string"));
     }
 }

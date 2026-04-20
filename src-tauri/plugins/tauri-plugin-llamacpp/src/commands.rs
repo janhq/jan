@@ -23,7 +23,7 @@ use crate::process::{
 use crate::state::{LLamaBackendSession, LlamacppState, SessionInfo};
 use jan_utils::{
     add_cuda_paths, add_hip_paths, binary_requires_cuda, binary_requires_hip,
-    setup_library_path, setup_windows_process_flags,
+    find_cuda_paths, setup_library_path, setup_windows_process_flags,
 };
 
 #[cfg(unix)]
@@ -124,7 +124,10 @@ pub async fn load_llama_model_impl(
     setup_windows_process_flags(&mut command);
 
     // Try to add CUDA paths (works on both Windows and Linux)
+    let cuda = find_cuda_paths();
     let cuda_found = add_cuda_paths(&mut command);
+
+    // Optionally check if binary needs CUDA
     if !cuda_found && binary_requires_cuda(&bin_path) {
         log::warn!(
             "llama.cpp backend appears to require CUDA, but CUDA not found. \
@@ -141,9 +144,7 @@ pub async fn load_llama_model_impl(
              Please install ROCm (https://rocm.docs.amd.com/) and try again!"
         );
     }
-
-    // Add the binary's directory to library path
-    setup_library_path(bin_path.parent(), &mut command);
+    setup_library_path(bin_path.parent(), &cuda, &mut command);
 
     // Spawn the child process
     let mut child = command.spawn().map_err(ServerError::Io)?;

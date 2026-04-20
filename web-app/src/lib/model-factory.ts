@@ -53,6 +53,7 @@ import {
   OpenAICompatibleChatLanguageModel,
 } from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createXai } from '@ai-sdk/xai'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
@@ -301,6 +302,33 @@ function createFoundationModelsFetch(
 }
 
 /**
+ * Map of model keywords to their respective reasoning tags.
+ * Used for models that use tags other than the default 'think'.
+ */
+const REASONING_TAG_MAP: Record<string, string> = {
+  gemma: 'thought',
+}
+
+/**
+ * The default tag used for reasoning extraction if no specific override is found.
+ */
+const DEFAULT_REASONING_TAG = 'think'
+
+/**
+ * Determines the reasoning tag name based on the model ID.
+ * Defaults to 'think' if no specific override is found in the map.
+ */
+function getReasoningTagName(modelId: string): string {
+  const lowerId = modelId.toLowerCase()
+  for (const [keyword, tag] of Object.entries(REASONING_TAG_MAP)) {
+    if (lowerId.includes(keyword)) {
+      return tag
+    }
+  }
+  return DEFAULT_REASONING_TAG
+}
+
+/**
  * Factory for creating language models based on provider type.
  * Supports native AI SDK providers (Anthropic, Google) and OpenAI-compatible providers.
  */
@@ -332,6 +360,7 @@ export class ModelFactory {
         return this.createOpenAIModel(modelId, provider, parameters)
       case 'google':
       case 'gemini':
+        return this.createGoogleModel(modelId, provider, parameters)
       case 'azure':
       case 'groq':
       case 'together':
@@ -407,7 +436,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model,
       middleware: extractReasoningMiddleware({
-        tagName: 'think',
+        tagName: getReasoningTagName(modelId),
         separator: '\n',
       }),
     })
@@ -497,7 +526,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model: model,
       middleware: extractReasoningMiddleware({
-        tagName: 'think',
+        tagName: getReasoningTagName(modelId),
         separator: '\n',
       }),
     })
@@ -571,7 +600,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model,
       middleware: extractReasoningMiddleware({
-        tagName: 'think',
+        tagName: getReasoningTagName(modelId),
         separator: '\n',
       }),
     })
@@ -613,6 +642,44 @@ export class ModelFactory {
     })
 
     return anthropic(modelId)
+  }
+
+  /**
+   * Create a Google/Gemini model using the official AI SDK
+   */
+  private static createGoogleModel(
+    modelId: string,
+    provider: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): LanguageModel {
+    const headers: Record<string, string> = {}
+
+    // Add custom headers if specified
+    if (provider.custom_header) {
+      provider.custom_header.forEach((customHeader) => {
+        headers[customHeader.header] = customHeader.value
+      })
+    }
+
+    const keyChain = providerRemoteApiKeyChain(provider)
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            parameters,
+            'x-api-key'
+          )
+        : createCustomFetch(getRuntimeFetch(), parameters)
+
+    const google = createGoogleGenerativeAI({
+      apiKey: keyChain[0] ?? provider.api_key ?? '',
+      baseURL: provider.base_url,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+      fetch: fetchImpl,
+    })
+
+    return google(modelId)
   }
 
   /**
@@ -731,6 +798,14 @@ export class ModelFactory {
       fetch: fetchImpl,
     })
 
-    return openAICompatible.languageModel(modelId)
+    const model = openAICompatible.languageModel(modelId)
+
+    return wrapLanguageModel({
+      model,
+      middleware: extractReasoningMiddleware({
+        tagName: getReasoningTagName(modelId),
+        separator: '\n',
+      }),
+    })
   }
 }
