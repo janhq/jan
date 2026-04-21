@@ -82,3 +82,10 @@ docs/marketplace-rust-api-review.md
 docs/phase1-context-snapshot.md
 docs/windows-compat-review.md
 docs/
+
+## Temporary debug files
+REFLECTION.md
+fetch_fixtures.py
+test_modelscope_files_debug.py
+verify_rust_tests.rs
+verify_serde/

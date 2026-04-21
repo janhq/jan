@@ -398,5 +398,7 @@
     }
   },
   "inferenceCenter": "推理中心",
-  "modelMarketplace": "模型市场"
+  "modelMarketplace": "模型市场",
+  "localModels": "本地模型管理",
+  "openclaw": "OpenClaw 实例管理"
 }

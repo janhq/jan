@@ -30,6 +30,7 @@ export function useModelScope() {
     sort: 'downloads',
     page_number: 1,
     page_size: PAGE_SIZE,
+    filter_library: 'gguf',
   })
 
   const [token, setTokenState] = useState<string | null>(null)
@@ -148,6 +149,7 @@ export function useModelScope() {
       sort: 'downloads',
       page_number: 1,
       page_size: PAGE_SIZE,
+      filter_library: 'gguf',
     })
   }, [])
 

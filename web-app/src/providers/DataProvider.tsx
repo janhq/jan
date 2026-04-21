@@ -311,10 +311,9 @@ export function DataProvider() {
       const resource = params.slice(1).join('/')
       // return { action, provider, resource }
       navigate({
-        to: route.hub.model,
-        search: {
-          repo: resource,
-        },
+        to: route.marketplace.model,
+        params: { modelId: resource },
+        search: { repo: resource },
       })
     }
   }

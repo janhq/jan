@@ -42,6 +42,10 @@ pub async fn execute_batch_download(
                 if f.Type == "tree" {
                     return false;
                 }
+                // Only download GGUF artifacts; skip README, imatrix, etc.
+                if !f.Path.to_lowercase().ends_with(".gguf") {
+                    return false;
+                }
                 match &request.quant_dir {
                     Some(dir) => f.Path.starts_with(&format!("{}/", dir)),
                     None => true,

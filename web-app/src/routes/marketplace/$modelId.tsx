@@ -40,8 +40,15 @@ import { QuantSelector } from '@/components/marketplace/QuantSelector'
 import { logError } from '@/lib/logger'
 import { toast } from 'sonner'
 
+type SearchParams = {
+  repo?: string
+}
+
 export const Route = createFileRoute('/marketplace/$modelId' as any)({
   component: MarketplaceModelDetailContent,
+  validateSearch: (search: Record<string, unknown>): SearchParams => ({
+    repo: search.repo as SearchParams['repo'],
+  }),
 })
 
 function MarketplaceModelDetailContent() {
@@ -52,8 +59,12 @@ function MarketplaceModelDetailContent() {
 
   const { getProviderByName } = useModelProvider()
   const llamaProvider = getProviderByName('llamacpp')
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore()
+  const {
+    downloads,
+    localDownloadingModels,
+    addLocalDownloadingModel,
+    removeLocalDownloadingModel,
+  } = useDownloadStore()
 
   const [token, setTokenState] = useState<string | null>(null)
   const [tokenInput, setTokenInput] = useState('')
@@ -185,6 +196,8 @@ function MarketplaceModelDetailContent() {
   const handleBatchDownload = useCallback(
     async (quantDir: string | null, saveDir: string) => {
       if (!model) return
+      const batchModelId = `${model.id}${quantDir ? `-${quantDir}` : ''}`
+      addLocalDownloadingModel(batchModelId)
       try {
         const { invoke } = await import('@tauri-apps/api/core')
         await invoke('download_modelscope_model', {
@@ -198,12 +211,14 @@ function MarketplaceModelDetailContent() {
         // Try to register the first .gguf file found in the downloaded quant dir
         // so the model appears in the local model list.
         try {
-          const { getJanDataFolderPath, readdirSync } = await import('@janhq/core')
+          const { getJanDataFolderPath } = await import('@janhq/core')
           const janData = await getJanDataFolderPath()
           const searchDir = quantDir
             ? `${janData}/llamacpp/models/${model.id}/${quantDir}`
             : `${janData}/llamacpp/models/${model.id}`
-          const entries = await readdirSync(searchDir)
+          const entries = await invoke<string[]>('readdir_sync', {
+            args: [searchDir],
+          })
           const firstGguf = entries.find((e: string) =>
             e.toLowerCase().endsWith('.gguf')
           )
@@ -240,9 +255,11 @@ function MarketplaceModelDetailContent() {
         })
         toast.error('批量下载失败: ' + errMsg)
         console.error('Batch download failed:', err)
+      } finally {
+        removeLocalDownloadingModel(batchModelId)
       }
     },
-    [model, serviceHub]
+    [model, serviceHub, addLocalDownloadingModel, removeLocalDownloadingModel]
   )
 
   const toggleDir = useCallback((path: string) => {
@@ -331,6 +348,8 @@ function MarketplaceModelDetailContent() {
           })
           toast.error('下载失败: ' + errMsg)
           console.error('Download failed:', err)
+        } finally {
+          removeLocalDownloadingModel(fileModelId)
         }
       } else {
         // For non-GGUF files, we currently only support browsing.
@@ -339,7 +358,7 @@ function MarketplaceModelDetailContent() {
         )
       }
     },
-    [model, addLocalDownloadingModel, serviceHub]
+    [model, addLocalDownloadingModel, removeLocalDownloadingModel, serviceHub]
   )
 
   const renderFileTree = useCallback(

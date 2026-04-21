@@ -79,8 +79,9 @@ setupMobileViewport()
 // Prevent files from opening when dropped
 preventDefaultFileDrop()
 
-// Async logging initialization
-;(async () => {
+// Async logging initialization — must complete before React mount
+// so startup exceptions are captured in app.jsonl.
+async function initializeLogging() {
   try {
     await attachConsole()
 
@@ -112,15 +113,23 @@ preventDefaultFileDrop()
   } catch (e) {
     console.error('Failed to initialize logging:', e)
   }
-})()
-
-// Render the app
-const rootElement = document.getElementById('root')!
-if (!rootElement.innerHTML) {
-  const root = ReactDOM.createRoot(rootElement)
-  root.render(
-    <StrictMode>
-      <RouterProvider router={router} />
-    </StrictMode>
-  )
 }
+
+function renderApp() {
+  const rootElement = document.getElementById('root')!
+  if (!rootElement.innerHTML) {
+    const root = ReactDOM.createRoot(rootElement)
+    root.render(
+      <StrictMode>
+        <RouterProvider router={router} />
+      </StrictMode>
+    )
+  }
+}
+
+// Render the app after logging is ready; fall back on failure so the
+// UI never blocks on a broken logging pipe.
+initializeLogging().then(renderApp).catch((err) => {
+  console.error('Logging init failed, rendering anyway:', err)
+  renderApp()
+})

@@ -326,10 +326,13 @@ pub fn run() {
                     .targets([
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
-                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
-                            path: log_dir,
-                            file_name: Some("app".to_string()),
-                        }),
+                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Dispatch(
+                            tauri_plugin_log::fern::Dispatch::new()
+                                .chain(
+                                    tauri_plugin_log::fern::log_file(&log_dir.join("app.jsonl"))
+                                        .map_err(|e| e.to_string())?,
+                                ),
+                        )),
                     ])
                     .build(),
             )?;

@@ -1,47 +1,21 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { cn, toGigabytes } from '@/lib/utils'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useOllamaStatus, type OllamaModel } from '@/hooks/useOllamaStatus'
-import { useLocalGgufModels, type LocalGgufModel } from '@/hooks/useLocalGgufModels'
-import { GgufModelCard } from '@/components/hub/GgufModelCard'
-import { getServiceHub } from '@/hooks/useServiceHub'
-import { logError } from '@/lib/logger'
+import { useOllamaStatus } from '@/hooks/useOllamaStatus'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
-import { Input } from '@/components/ui/input'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import {
   IconRefresh,
-  IconSearch,
-  IconPlayerPlay,
-  IconTrash,
-  IconPlus,
   IconSettings,
-  IconCube,
   IconCpu,
   IconGauge,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
-import type { UnlistenFn } from '@tauri-apps/api/event'
-import { OpenClawCard } from '@/components/hub/OpenClawCard'
-import { useOpenClaw } from '@/hooks/useOpenClaw'
-import { OpenClawConfigDialog } from '@/components/hub/OpenClawConfigDialog'
-import {
-  PullModelDialog,
-  type PullProgress,
-} from '@/components/hub/PullModelDialog'
 
 export const Route = createFileRoute(route.hub.index as any)({
   component: HubContent,
@@ -50,36 +24,6 @@ export const Route = createFileRoute(route.hub.index as any)({
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
-
-function formatFamily(name?: string): string {
-  if (!name) return 'Other'
-  const lower = name.toLowerCase()
-  if (lower.includes('qwen')) return 'Qwen'
-  if (lower.includes('llama')) return 'Llama'
-  if (lower.includes('gemma')) return 'Gemma'
-  if (lower.includes('mistral')) return 'Mistral'
-  if (lower.includes('embed')) return 'Embedding'
-  if (lower.includes('deepseek')) return 'DeepSeek'
-  if (lower.includes('phi')) return 'Phi'
-  return name.charAt(0).toUpperCase() + name.slice(1)
-}
-
-function getFamilies(models: OllamaModel[]): string[] {
-  const set = new Set<string>()
-  models.forEach((m) => {
-    const fam = m.details?.family || 'Other'
-    set.add(formatFamily(fam))
-  })
-  return Array.from(set).sort()
-}
-
-function getGgufFamilies(models: LocalGgufModel[]): string[] {
-  const set = new Set<string>()
-  models.forEach((m) => {
-    set.add(m.family || 'Other')
-  })
-  return Array.from(set).sort()
-}
 
 function timeLeftLabel(expiresAt?: string): string {
   if (!expiresAt) return ''
@@ -99,7 +43,7 @@ function processorLabel(ps: OllamaPsModel): string {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Types (local + placeholder for future Rust commands)              */
+/*  Types                                                             */
 /* ------------------------------------------------------------------ */
 
 interface OllamaPsModel {
@@ -108,7 +52,11 @@ interface OllamaPsModel {
   size: number
   size_vram: number
   digest: string
-  details?: OllamaModel['details']
+  details?: {
+    family?: string
+    parameter_size?: string
+    quantization_level?: string
+  }
   expires_at: string
 }
 
@@ -218,78 +166,6 @@ function OllamaStatusCard() {
   )
 }
 
-function ModelCardItem({
-  model,
-  onRun,
-  onDelete,
-}: {
-  model: OllamaModel
-  onRun: (m: OllamaModel) => void
-  onDelete: (m: OllamaModel) => void
-}) {
-  const family = formatFamily(model.details?.family)
-  const params = model.details?.parameter_size || ''
-  const quant = model.details?.quantization_level || ''
-
-  return (
-    <div className="group flex flex-col rounded-lg border border-border bg-card shadow-sm hover:-translate-y-0.5 hover:shadow-md hover:border-border/80 transition-all duration-200 ease-out p-4 gap-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex flex-col min-w-0">
-          <h3
-            className="text-sm font-medium text-foreground truncate"
-            title={model.name}
-          >
-            {model.name}
-          </h3>
-          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            <span className="text-[11px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">
-              {family}
-            </span>
-            {params && (
-              <span className="text-[11px] px-1.5 py-0.5 rounded border border-border text-muted-foreground">
-                {params}
-              </span>
-            )}
-            {quant && (
-              <span className="text-[11px] px-1.5 py-0.5 rounded border border-border text-muted-foreground">
-                {quant}
-              </span>
-            )}
-          </div>
-        </div>
-        <IconCube
-          size={18}
-          className="text-muted-foreground shrink-0 mt-0.5"
-        />
-      </div>
-
-      <div className="text-xs text-muted-foreground font-mono">
-        {toGigabytes(model.size)}
-      </div>
-
-      <div className="flex items-center gap-2 mt-auto pt-1">
-        <Button
-          variant="default"
-          size="sm"
-          className="h-7 text-xs flex-1"
-          onClick={() => onRun(model)}
-        >
-          <IconPlayerPlay size={14} className="mr-1" />
-          Run
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-          onClick={() => onDelete(model)}
-        >
-          <IconTrash size={14} />
-        </Button>
-      </div>
-    </div>
-  )
-}
-
 function RunningModelRow({
   ps,
   onUnload,
@@ -333,88 +209,10 @@ function RunningModelRow({
 
 function HubContent() {
   const { t } = useTranslation()
-  const {
-    isRunning: ollamaRunning,
-    models: ollamaModels,
-    refresh: refreshOllama,
-  } = useOllamaStatus(10000)
+  const { isRunning: ollamaRunning } = useOllamaStatus(10000)
 
-  const {
-    models: ggufModels,
-    loading: ggufLoading,
-    refresh: refreshGguf,
-  } = useLocalGgufModels()
-
-  /* -- local state -- */
-  const [view, setView] = useState<'ollama' | 'gguf'>('ollama')
-  const [search, setSearch] = useState('')
-  const [activeFamily, setActiveFamily] = useState<string>('全部')
-  const [showPullDialog, setShowPullDialog] = useState(false)
-  const [pullProgress, setPullProgress] = useState<PullProgress | null>(null)
-  const [isPulling, setIsPulling] = useState(false)
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<OllamaModel | LocalGgufModel | null>(null)
-  const [deleteTargetType, setDeleteTargetType] = useState<'ollama' | 'gguf'>('ollama')
-  const [isDeleting, setIsDeleting] = useState(false)
   const [runningModels, setRunningModels] = useState<OllamaPsModel[]>([])
   const [psLoading, setPsLoading] = useState(false)
-  const [openClawDialogOpen, setOpenClawDialogOpen] = useState(false)
-  const unlistenPullRef = useRef<UnlistenFn | null>(null)
-
-  /* -- openclaw -- */
-  const {
-    status: openClawStatus,
-    gatewayUrl: openClawGatewayUrl,
-    isLoading: isOpenClawLoading,
-    installProgress: openClawInstallProgress,
-    installMessage: openClawInstallMessage,
-    install: installOpenClaw,
-    launch: launchOpenClaw,
-    stop: stopOpenClaw,
-  } = useOpenClaw(5000)
-
-  /* -- families -- */
-  const families = useMemo(() => {
-    const fams = view === 'ollama'
-      ? getFamilies(ollamaModels)
-      : getGgufFamilies(ggufModels)
-    // Ensure common families exist as options even if empty
-    const common = ['Llama', 'Qwen', 'Gemma', 'Embedding']
-    const all = new Set(['全部', ...common, ...fams])
-    return Array.from(all)
-  }, [view, ollamaModels, ggufModels])
-
-  /* -- filtered ollama models -- */
-  const filteredOllamaModels = useMemo(() => {
-    let list = ollamaModels
-    if (activeFamily !== '全部') {
-      list = list.filter((m) => {
-        const fam = formatFamily(m.details?.family)
-        return fam === activeFamily
-      })
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      list = list.filter((m) => m.name.toLowerCase().includes(q))
-    }
-    return list
-  }, [ollamaModels, activeFamily, search])
-
-  /* -- filtered gguf models -- */
-  const filteredGgufModels = useMemo(() => {
-    let list = ggufModels
-    if (activeFamily !== '全部') {
-      list = list.filter((m) => {
-        const fam = m.family || 'Other'
-        return fam === activeFamily
-      })
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      list = list.filter((m) => m.name.toLowerCase().includes(q))
-    }
-    return list
-  }, [ggufModels, activeFamily, search])
 
   /* -- fetch running models (/api/ps) -- */
   const fetchRunningModels = useCallback(async () => {
@@ -440,176 +238,25 @@ function HubContent() {
     return () => clearInterval(timer)
   }, [fetchRunningModels])
 
-  /* -- pull model -- */
-  const handlePullModel = useCallback(async (model: string) => {
-    if (!model) {
-      toast.error('请输入模型名称')
-      return
-    }
-    setIsPulling(true)
-    setPullProgress(null)
-
-    try {
-      const serviceHub = getServiceHub()
-      toast.info(`正在获取 ModelScope 模型文件列表: ${model}`)
-      const files = await serviceHub.models().fetchModelScopeFiles(model)
-      if (!files || !files.Files || files.Files.length === 0) {
-        toast.error('未找到模型文件')
-        return
+  /* -- unload model -- */
+  const handleUnload = useCallback(
+    async (name: string) => {
+      try {
+        await invoke('ollama_unload_model', { model: name })
+        toast.success(`模型 ${name} 已卸载`)
+        fetchRunningModels()
+      } catch (e) {
+        toast.error('卸载失败: ' + String(e))
       }
-      const ggufFiles = files.Files.filter((f: { Name: string }) =>
-        f.Name.toLowerCase().endsWith('.gguf')
-      )
-      if (ggufFiles.length === 0) {
-        toast.error('未找到 GGUF 文件')
-        return
-      }
-
-      const { getJanDataFolderPath } = await import('@janhq/core')
-      const janData = await getJanDataFolderPath()
-      const saveDir = `${janData}/llamacpp/models/${model}`
-      const { invoke } = await import('@tauri-apps/api/core')
-
-      const firstFile = ggufFiles[0]
-      const isMultiFile = firstFile.Path.includes('/')
-
-      if (isMultiFile) {
-        // Multi-file model: batch download the quant directory
-        const quantDir = firstFile.Path.split('/')[0]
-        toast.info(`开始下载量化版本: ${quantDir}`)
-        await invoke('download_modelscope_model', {
-          request: {
-            model_id: model,
-            quant_dir: quantDir,
-            save_dir: saveDir,
-          },
-        })
-        // Register with the first file's relative path
-        await serviceHub.models().pullModel(
-          model,
-          `llamacpp/models/${model}/${firstFile.Path}`
-        )
-      } else {
-        // Single-file model: download and rename to model.gguf
-        toast.info(`开始下载: ${firstFile.Name}`)
-        await invoke('download_modelscope_model', {
-          request: {
-            model_id: model,
-            file_path: firstFile.Path,
-            save_name: 'model.gguf',
-            save_dir: saveDir,
-          },
-        })
-        await serviceHub.models().pullModel(
-          model,
-          `llamacpp/models/${model}/model.gguf`
-        )
-      }
-
-      toast.success(`模型 ${model} 下载完成`)
-      refreshGguf()
-      setShowPullDialog(false)
-    } catch (e) {
-      const errMsg = String(e)
-      logError(`Hub pull model failed: ${errMsg}`, {
-        model,
-        url: typeof window !== 'undefined' ? window.location.href : undefined,
-      })
-      toast.error('下载失败: ' + errMsg)
-    } finally {
-      setIsPulling(false)
-      setPullProgress(null)
-    }
-  }, [refreshGguf])
-
-  const handleCancelPull = useCallback(() => {
-    setIsPulling(false)
-    setPullProgress(null)
-    if (unlistenPullRef.current) {
-      unlistenPullRef.current()
-      unlistenPullRef.current = null
-    }
-    toast.info('拉取已取消')
-  }, [])
-
-  const handleStartOpenClaw = useCallback(() => {
-    if (!ollamaRunning) {
-      toast.error('请先启动 Ollama')
-      return
-    }
-    if (ollamaModels.length === 0) {
-      toast.error('没有可用的 Ollama 模型')
-      return
-    }
-    setOpenClawDialogOpen(true)
-  }, [ollamaRunning, ollamaModels.length])
-
-  const handleConfirmOpenClawLaunch = useCallback(
-    async (model: string) => {
-      setOpenClawDialogOpen(false)
-      await launchOpenClaw(model)
     },
-    [launchOpenClaw]
+    [fetchRunningModels]
   )
 
-  const handleStopOpenClaw = useCallback(async () => {
-    await stopOpenClaw()
-  }, [stopOpenClaw])
-
-  /* -- delete model -- */
-  const handleDelete = useCallback(async () => {
-    if (!deleteTarget) return
-    setIsDeleting(true)
-    try {
-      if (deleteTargetType === 'gguf' && deleteTarget) {
-        const serviceHub = getServiceHub()
-        await serviceHub.models().deleteModel((deleteTarget as LocalGgufModel).id, 'llamacpp')
-        refreshGguf()
-      } else {
-        await invoke('ollama_delete_model', { model: deleteTarget.name })
-        refreshOllama()
-      }
-      toast.success(`模型 ${deleteTarget.name} 已删除`)
-      setDeleteOpen(false)
-      setDeleteTarget(null)
-    } catch (e) {
-      toast.error('删除失败: ' + String(e))
-    } finally {
-      setIsDeleting(false)
-    }
-  }, [deleteTarget, deleteTargetType, refreshOllama, refreshGguf])
-
-  /* -- run model -- */
-  const handleRun = useCallback(async (model: OllamaModel) => {
-    try {
-      toast.info(`正在加载模型: ${model.name}`)
-      await invoke('ollama_run_model', { model: model.name })
-      toast.success(`模型 ${model.name} 已加载到内存`)
-      fetchRunningModels()
-    } catch (e) {
-      toast.error('加载失败: ' + String(e))
-    }
-  }, [fetchRunningModels])
-
-  /* -- load gguf model -- */
-  const handleLoadGguf = useCallback((model: LocalGgufModel) => {
-    toast.info(`正在加载模型: ${model.name}`)
-    // TODO: invoke llamacpp load command
-  }, [])
-
-  /* -- unload model -- */
-  const handleUnload = useCallback(async (name: string) => {
-    try {
-      await invoke('ollama_unload_model', { model: name })
-      toast.success(`模型 ${name} 已卸载`)
-      fetchRunningModels()
-    } catch (e) {
-      toast.error('卸载失败: ' + String(e))
-    }
-  }, [fetchRunningModels])
-
   /* -- derived stats -- */
-  const totalVram = runningModels.reduce((sum, m) => sum + (m.size_vram || 0), 0)
+  const totalVram = runningModels.reduce(
+    (sum, m) => sum + (m.size_vram || 0),
+    0
+  )
 
   return (
     <div className="flex flex-col h-svh w-full">
@@ -634,166 +281,24 @@ function HubContent() {
 
         <div className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto">
           <div className="flex flex-col gap-5 w-full md:w-4/5 xl:w-4/6 mx-auto">
-            {/* Status Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <OllamaStatusCard />
-              <OpenClawCard
-                status={openClawStatus}
-                gatewayUrl={openClawGatewayUrl}
-                boundModel={openClawStatus === 'running' ? ollamaModels[0]?.name : undefined}
-                installProgress={openClawInstallProgress}
-                installMessage={openClawInstallMessage}
-                onInstall={installOpenClaw}
-                onStart={handleStartOpenClaw}
-                onStop={handleStopOpenClaw}
-                isLoading={isOpenClawLoading}
-              />
-            </div>
+            {/* Status Card */}
+            <OllamaStatusCard />
 
-            {/* Search + Pull */}
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <IconSearch
-                    size={16}
-                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-                  />
-                  <Input
-                    placeholder="搜索本地模型..."
-                    className="pl-8 h-9 text-sm"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-                {view === 'ollama' && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 gap-1 shrink-0"
-                    onClick={() => setShowPullDialog(true)}
-                    disabled={!ollamaRunning}
-                  >
-                    <IconPlus size={16} />
-                    拉取模型
-                  </Button>
-                )}
-              </div>
-
-              {/* Family filters */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {families.map((fam) => (
-                  <button
-                    key={fam}
-                    onClick={() => setActiveFamily(fam)}
-                    className={cn(
-                      'px-2.5 py-1 rounded-md text-xs font-medium transition-colors border',
-                      activeFamily === fam
-                        ? 'bg-primary text-primary-foreground border-primary'
-                        : 'bg-card text-muted-foreground border-border hover:bg-muted'
-                    )}
-                  >
-                    {fam}
-                  </button>
-                ))}
-              </div>
-
-              {/* View toggle */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <button
-                  onClick={() => setView('ollama')}
-                  className={cn(
-                    'px-2.5 py-1 rounded-md text-xs font-medium transition-colors border',
-                    view === 'ollama'
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-card text-muted-foreground border-border hover:bg-muted'
-                  )}
-                >
-                  Ollama 模型
-                </button>
-                <button
-                  onClick={() => setView('gguf')}
-                  className={cn(
-                    'px-2.5 py-1 rounded-md text-xs font-medium transition-colors border',
-                    view === 'gguf'
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-card text-muted-foreground border-border hover:bg-muted'
-                  )}
-                >
-                  本地 GGUF 模型
-                </button>
-              </div>
-            </div>
-
-            {/* Model Grid */}
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  {view === 'ollama'
-                    ? `本地模型 (${filteredOllamaModels.length})`
-                    : `本地 GGUF 模型 (${filteredGgufModels.length})`}
+            {/* Local Models Link */}
+            <Link
+              to={route.localModels.index as any}
+              className="bg-card border border-border rounded-lg p-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
+            >
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-foreground">
+                  管理本地模型
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  查看、运行和删除已安装的 Ollama 与 GGUF 模型
                 </span>
               </div>
-              {view === 'ollama' ? (
-                filteredOllamaModels.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground border border-dashed border-border rounded-lg">
-                    <IconCube size={28} className="opacity-50" />
-                    <span className="text-sm">暂无模型</span>
-                    <span className="text-xs">
-                      {ollamaRunning
-                        ? '点击"拉取模型"添加你的第一个模型'
-                        : '请先启动 Ollama'}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {filteredOllamaModels.map((model) => (
-                      <ModelCardItem
-                        key={model.digest || model.name}
-                        model={model}
-                        onRun={handleRun}
-                        onDelete={(m) => {
-                          setDeleteTarget(m)
-                          setDeleteTargetType('ollama')
-                          setDeleteOpen(true)
-                        }}
-                      />
-                    ))}
-                  </div>
-                )
-              ) : (
-                <>
-                  {ggufLoading ? (
-                    <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground border border-dashed border-border rounded-lg">
-                      <IconCube size={28} className="opacity-50 animate-pulse" />
-                      <span className="text-sm">正在扫描本地 GGUF 模型...</span>
-                    </div>
-                  ) : filteredGgufModels.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground border border-dashed border-border rounded-lg">
-                      <IconCube size={28} className="opacity-50" />
-                      <span className="text-sm">暂无 GGUF 模型</span>
-                      <span className="text-xs">
-                        切换到 Ollama 模型或从 ModelScope 下载
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {filteredGgufModels.map((model) => (
-                        <GgufModelCard
-                          key={model.id}
-                          model={model}
-                          onLoad={handleLoadGguf}
-                          onDelete={(m) => {
-                            setDeleteTarget(m)
-                            setDeleteTargetType('gguf')
-                            setDeleteOpen(true)
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+              <IconGauge size={18} className="text-muted-foreground" />
+            </Link>
 
             {/* Running Models */}
             <div className="flex flex-col gap-2">
@@ -816,7 +321,7 @@ function HubContent() {
                   <IconCpu size={24} className="opacity-50" />
                   <span className="text-sm">没有运行中的模型</span>
                   <span className="text-xs">
-                    点击模型卡片的 Run 按钮加载模型到内存
+                    前往本地模型页面加载模型到内存
                   </span>
                 </div>
               ) : (
@@ -834,59 +339,6 @@ function HubContent() {
           </div>
         </div>
       </div>
-
-      {/* Pull Model Dialog */}
-      <PullModelDialog
-        open={showPullDialog}
-        onOpenChange={setShowPullDialog}
-        onPull={handlePullModel}
-        onCancel={handleCancelPull}
-        progress={pullProgress}
-        isPulling={isPulling}
-      />
-
-      {/* OpenClaw Config Dialog */}
-      <OpenClawConfigDialog
-        open={openClawDialogOpen}
-        onOpenChange={setOpenClawDialogOpen}
-        availableModels={ollamaModels.map((m) => m.name)}
-        defaultModel={ollamaModels[0]?.name}
-        onConfirm={handleConfirmOpenClawLaunch}
-        isLoading={isOpenClawLoading}
-      />
-
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>确认删除</DialogTitle>
-            <DialogDescription>
-              确定要删除模型 <strong>{deleteTarget?.name}</strong> 吗？
-              <br />
-              此操作不可撤销。
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDeleteOpen(false)
-                setDeleteTarget(null)
-              }}
-              disabled={isDeleting}
-            >
-              取消
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={isDeleting}
-            >
-              {isDeleting ? '删除中...' : '删除'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

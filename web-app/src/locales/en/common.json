@@ -470,5 +470,7 @@
     "chunksCount": "{{count}} chunks"
   },
   "inferenceCenter": "推理中心",
-  "modelMarketplace": "Model Marketplace"
+  "modelMarketplace": "Model Marketplace",
+  "localModels": "Local Models",
+  "openclaw": "OpenClaw"
 }
