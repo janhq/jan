@@ -89,3 +89,4 @@ fetch_fixtures.py
 test_modelscope_files_debug.py
 verify_rust_tests.rs
 verify_serde/
+.worktrees/
