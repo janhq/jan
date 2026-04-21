@@ -39,7 +39,6 @@ import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useSearchDialog } from '@/hooks/useSearchDialog'
 import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useAgentMode } from '@/hooks/useAgentMode'
-import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { PlatformShortcuts, ShortcutAction } from '@/lib/shortcuts'
 
@@ -62,7 +61,6 @@ type NavMainItem = {
     } & React.RefAttributes<AnimatedIconHandle>
   >
   isActive?: boolean
-  disabled?: boolean
   shortcut?: React.ReactNode
   onClick?: () => void
 }
@@ -71,13 +69,11 @@ const getNavMainItems = (
   onNewProject: () => void,
   onSearch: () => void,
   onNewChat: () => void,
-  onJanClaw: () => void,
-  isEngineDownloading: boolean
+  onJanClaw: () => void
 ): NavMainItem[] => [
   {
     title: 'common:newChat',
     animatedIcon: MessageCircleIcon,
-    disabled: isEngineDownloading,
     onClick: onNewChat,
     shortcut: (
       <KbdGroup className="ml-auto scale-90 gap-0">
@@ -91,7 +87,6 @@ const getNavMainItems = (
   {
     title: 'common:newAgentChat',
     animatedIcon: BotIcon,
-    disabled: isEngineDownloading,
     onClick: onJanClaw,
     shortcut: (
       <KbdGroup className="ml-auto scale-90 gap-0">
@@ -163,10 +158,9 @@ function NavMainItemWithAnimatedIcon({
       <SidebarMenuButton
         asChild={!!item.url}
         isActive={item.isActive}
-        disabled={item.disabled}
-        onMouseEnter={() => !item.disabled && iconRef.current?.startAnimation()}
+        onMouseEnter={() => iconRef.current?.startAnimation()}
         onMouseLeave={() => iconRef.current?.stopAnimation()}
-        onClick={item.disabled ? undefined : item.onClick}
+        onClick={item.onClick}
       >
         {item.url ? <Link to={item.url}>{content}</Link> : content}
       </SidebarMenuButton>
@@ -181,9 +175,6 @@ export function NavMain() {
   const { open: searchOpen, setOpen: setSearchOpen } = useSearchDialog()
   const { open: projectDialogOpen, setOpen: setProjectDialogOpen } =
     useProjectDialog()
-  const isEngineDownloading = useDownloadStore(
-    (s) => s.engineDownloads.size > 0
-  )
   const navMainItems = getNavMainItems(
     () => setProjectDialogOpen(true),
     () => setSearchOpen(true),
@@ -194,8 +185,7 @@ export function NavMain() {
     () => {
       useAgentMode.getState().setAgentMode(TEMPORARY_CHAT_ID, true)
       navigate({ to: route.home })
-    },
-    isEngineDownloading
+    }
   ).filter((item) => item.title !== 'common:newAgentChat')
 
   const handleCreateProject = async (name: string, assistantId?: string) => {
