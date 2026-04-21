@@ -95,8 +95,7 @@ describe('SecurityConfigDialog', () => {
       ],
     })
     render(<SecurityConfigDialog isOpen={true} onClose={vi.fn()} />)
-    await screen.findByText('Security Settings')
-    fireEvent.click(screen.getByText('Devices'))
+    fireEvent.click(await screen.findByRole('button', { name: /Devices/i }))
     await waitFor(() =>
       expect(hoisted.invoke).toHaveBeenCalledWith('security_get_devices')
     )
@@ -109,8 +108,7 @@ describe('SecurityConfigDialog', () => {
       security_get_logs: [],
     })
     render(<SecurityConfigDialog isOpen={true} onClose={vi.fn()} />)
-    await screen.findByText('Security Settings')
-    fireEvent.click(screen.getByText('Logs'))
+    fireEvent.click(await screen.findByRole('button', { name: /Logs/i }))
     await waitFor(() =>
       expect(hoisted.invoke).toHaveBeenCalledWith('security_get_logs', {
         limit: 100,
@@ -186,8 +184,7 @@ describe('SecurityConfigDialog', () => {
       security_set_require_pairing: undefined,
     })
     render(<SecurityConfigDialog isOpen={true} onClose={vi.fn()} />)
-    await screen.findByText('Security Settings')
-    fireEvent.click(screen.getByText('Devices'))
+    fireEvent.click(await screen.findByRole('button', { name: /Devices/i }))
     await screen.findByText('Require Device Pairing')
     // Radix Switch exposes role="switch"
     const sw = screen.getByRole('switch')
