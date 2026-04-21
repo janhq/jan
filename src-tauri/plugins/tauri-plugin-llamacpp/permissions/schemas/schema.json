@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the build_backend_download_items command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-build-backend-download-items",
+          "markdownDescription": "Enables the build_backend_download_items command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the build_backend_download_items command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-build-backend-download-items",
+          "markdownDescription": "Denies the build_backend_download_items command without any pre-configured scope."
+        },
+        {
           "description": "Enables the check_backend_for_updates command without any pre-configured scope.",
           "type": "string",
           "const": "allow-check-backend-for-updates",
@@ -305,6 +317,18 @@
           "type": "string",
           "const": "deny-check-backend-for-updates",
           "markdownDescription": "Denies the check_backend_for_updates command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the check_backend_installed command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-check-backend-installed",
+          "markdownDescription": "Enables the check_backend_installed command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the check_backend_installed command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-check-backend-installed",
+          "markdownDescription": "Denies the check_backend_installed command without any pre-configured scope."
         },
         {
           "description": "Enables the cleanup_llama_processes command without any pre-configured scope.",
@@ -355,6 +379,18 @@
           "markdownDescription": "Denies the estimate_kv_cache_size command without any pre-configured scope."
         },
         {
+          "description": "Enables the fetch_remote_supported_backends command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-fetch-remote-supported-backends",
+          "markdownDescription": "Enables the fetch_remote_supported_backends command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the fetch_remote_supported_backends command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-fetch-remote-supported-backends",
+          "markdownDescription": "Denies the fetch_remote_supported_backends command without any pre-configured scope."
+        },
+        {
           "description": "Enables the find_latest_version_for_backend command without any pre-configured scope.",
           "type": "string",
           "const": "allow-find-latest-version-for-backend",
@@ -401,6 +437,30 @@
           "type": "string",
           "const": "deny-get-all-sessions",
           "markdownDescription": "Denies the get_all_sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_backend_dir command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-backend-dir",
+          "markdownDescription": "Enables the get_backend_dir command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_backend_dir command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-backend-dir",
+          "markdownDescription": "Denies the get_backend_dir command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_backend_exe_path command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-backend-exe-path",
+          "markdownDescription": "Enables the get_backend_exe_path command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_backend_exe_path command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-backend-exe-path",
+          "markdownDescription": "Denies the get_backend_exe_path command without any pre-configured scope."
         },
         {
           "description": "Enables the get_devices command without any pre-configured scope.",
@@ -763,10 +823,10 @@
           "markdownDescription": "Denies the validate_backend_string command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-ensure-session-ready`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`\n- `allow-estimate-kv-cache-size`\n- `allow-get-model-size`\n- `allow-is-model-supported`\n- `allow-plan-model-load`\n- `allow-map-old-backend-to-new`\n- `allow-get-local-installed-backends`\n- `allow-list-supported-backends`\n- `allow-determine-supported-backends`\n- `allow-get-supported-features`\n- `allow-is-cuda-installed`\n- `allow-find-latest-version-for-backend`\n- `allow-prioritize-backends`\n- `allow-parse-backend-version`\n- `allow-check-backend-for-updates`\n- `allow-remove-old-backend-versions`\n- `allow-validate-backend-string`\n- `allow-should-migrate-backend`\n- `allow-handle-setting-update`",
+          "description": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-ensure-session-ready`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`\n- `allow-estimate-kv-cache-size`\n- `allow-get-model-size`\n- `allow-is-model-supported`\n- `allow-plan-model-load`\n- `allow-map-old-backend-to-new`\n- `allow-get-local-installed-backends`\n- `allow-list-supported-backends`\n- `allow-determine-supported-backends`\n- `allow-get-supported-features`\n- `allow-is-cuda-installed`\n- `allow-find-latest-version-for-backend`\n- `allow-prioritize-backends`\n- `allow-parse-backend-version`\n- `allow-check-backend-for-updates`\n- `allow-remove-old-backend-versions`\n- `allow-validate-backend-string`\n- `allow-should-migrate-backend`\n- `allow-handle-setting-update`\n- `allow-get-backend-dir`\n- `allow-get-backend-exe-path`\n- `allow-check-backend-installed`\n- `allow-fetch-remote-supported-backends`\n- `allow-build-backend-download-items`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-ensure-session-ready`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`\n- `allow-estimate-kv-cache-size`\n- `allow-get-model-size`\n- `allow-is-model-supported`\n- `allow-plan-model-load`\n- `allow-map-old-backend-to-new`\n- `allow-get-local-installed-backends`\n- `allow-list-supported-backends`\n- `allow-determine-supported-backends`\n- `allow-get-supported-features`\n- `allow-is-cuda-installed`\n- `allow-find-latest-version-for-backend`\n- `allow-prioritize-backends`\n- `allow-parse-backend-version`\n- `allow-check-backend-for-updates`\n- `allow-remove-old-backend-versions`\n- `allow-validate-backend-string`\n- `allow-should-migrate-backend`\n- `allow-handle-setting-update`"
+          "markdownDescription": "Default permissions for the llamacpp plugin\n#### This default permission set includes:\n\n- `allow-cleanup-llama-processes`\n- `allow-load-llama-model`\n- `allow-unload-llama-model`\n- `allow-get-devices`\n- `allow-generate-api-key`\n- `allow-is-process-running`\n- `allow-ensure-session-ready`\n- `allow-get-random-port`\n- `allow-find-session-by-model`\n- `allow-get-loaded-models`\n- `allow-get-all-sessions`\n- `allow-get-session-by-model`\n- `allow-read-gguf-metadata`\n- `allow-estimate-kv-cache-size`\n- `allow-get-model-size`\n- `allow-is-model-supported`\n- `allow-plan-model-load`\n- `allow-map-old-backend-to-new`\n- `allow-get-local-installed-backends`\n- `allow-list-supported-backends`\n- `allow-determine-supported-backends`\n- `allow-get-supported-features`\n- `allow-is-cuda-installed`\n- `allow-find-latest-version-for-backend`\n- `allow-prioritize-backends`\n- `allow-parse-backend-version`\n- `allow-check-backend-for-updates`\n- `allow-remove-old-backend-versions`\n- `allow-validate-backend-string`\n- `allow-should-migrate-backend`\n- `allow-handle-setting-update`\n- `allow-get-backend-dir`\n- `allow-get-backend-exe-path`\n- `allow-check-backend-installed`\n- `allow-fetch-remote-supported-backends`\n- `allow-build-backend-download-items`"
         }
       ]
     }
