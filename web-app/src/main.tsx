@@ -115,8 +115,7 @@ async function initializeLogging() {
   }
 }
 
-// Render the app after logging is ready
-initializeLogging().then(() => {
+function renderApp() {
   const rootElement = document.getElementById('root')!
   if (!rootElement.innerHTML) {
     const root = ReactDOM.createRoot(rootElement)
@@ -126,4 +125,11 @@ initializeLogging().then(() => {
       </StrictMode>
     )
   }
+}
+
+// Render the app after logging is ready; fall back on failure so the
+// UI never blocks on a broken logging pipe.
+initializeLogging().then(renderApp).catch((err) => {
+  console.error('Logging init failed, rendering anyway:', err)
+  renderApp()
 })
