@@ -71,10 +71,10 @@ export default class RagExtension extends RAGExtension {
     )
   }
 
-  private getVectorDBExtension(): VectorDBExtension {
+  private getVectorDBExtension(): VectorDBExtension | undefined {
     return window.core?.extensionManager.get(
       ExtensionTypeEnum.VectorDB
-    ) as unknown as VectorDBExtension
+    ) as VectorDBExtension | undefined
   }
 
   async checkANNAvailability() {
@@ -391,7 +391,7 @@ export default class RagExtension extends RAGExtension {
       }
 
       const fileName = f.name || f.path.split(/[\\/]/).pop()
-      const info = await (vec as VectorDBExtension).ingestFileForProject(
+      const info = await vec!.ingestFileForProject(
         projectId,
         { path: f.path, name: fileName, type: f.type, size: f.size },
         { chunkSize: chunkSize ?? 512, chunkOverlap: chunkOverlap ?? 64 }
@@ -455,7 +455,7 @@ export default class RagExtension extends RAGExtension {
         )
         continue
       }
-      const info = await (vec as VectorDBExtension).ingestFile(
+      const info = await vec!.ingestFile(
         threadId,
         { path: f.path, name: fileName, type: f.type, size: f.size },
         { chunkSize: chunkSize ?? 512, chunkOverlap: chunkOverlap ?? 64 }
