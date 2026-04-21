@@ -1,6 +1,7 @@
 use super::helpers::*;
 use super::models::*;
 use crate::core::filesystem::helpers::resolve_path_within_jan_data_folder;
+use jan_utils::err_to_string;
 use reqwest::header::HeaderMap;
 use std::collections::HashMap;
 

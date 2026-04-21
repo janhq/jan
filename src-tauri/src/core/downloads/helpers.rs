@@ -4,6 +4,7 @@ use crate::core::filesystem::helpers::resolve_path_within_jan_data_folder;
 use crate::core::updater::hmac_client::SignedRequestHeaders;
 use crate::core::updater::session::get_session_id;
 use futures_util::StreamExt;
+use jan_utils::err_to_string;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::path::Path;
@@ -49,10 +50,6 @@ const SECRET_KEY: &str = match option_env!("JAN_SIGNING_KEY") {
 };
 
 // ===== UTILITY FUNCTIONS =====
-
-pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
-    format!("Error: {e}")
-}
 
 /// Converts a URL to Jan mirror URL if applicable
 /// e.g., https://huggingface.co/... -> https://apps.jan.ai/huggingface.co/...
