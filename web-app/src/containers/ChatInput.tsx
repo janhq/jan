@@ -88,6 +88,7 @@ import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { AssistantsMenu } from '@/components/AssistantsMenu'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 
 type ChatInputProps = {
   className?: string
@@ -282,6 +283,7 @@ const ChatInput = memo(function ChatInput({
     (a) => a.type === 'document' && a.processing
   )
   const ingestingAny = attachments.some((a) => a.processing)
+  const isEngineDownloading = useDownloadStore((s) => s.engineDownloads.size > 0)
 
   const [, setFileIngestProgress] = useState<{
     completed: number
@@ -1566,6 +1568,7 @@ const ChatInput = memo(function ChatInput({
               rows={1}
               maxRows={10}
               value={prompt}
+              disabled={isEngineDownloading}
               data-testid={'chat-input'}
               onChange={(e) => {
                 setPrompt(e.target.value)
@@ -1581,7 +1584,7 @@ const ChatInput = memo(function ChatInput({
                   e.preventDefault()
                   // Submit prompt when Enter is pressed without Shift and prompt is not empty.
                   // If streaming, handleSendMessage will queue the message automatically.
-                  if (prompt.trim() && !ingestingAny) {
+                  if (prompt.trim() && !ingestingAny && !isEngineDownloading) {
                     handleSendMessage(prompt)
                   }
                   // When Shift+Enter is pressed, a new line is added (default behavior)
@@ -2013,7 +2016,7 @@ const ChatInput = memo(function ChatInput({
                 <Button
                   variant="default"
                   size="icon-sm"
-                  disabled={!prompt.trim() || ingestingAny}
+                  disabled={!prompt.trim() || ingestingAny || isEngineDownloading}
                   data-test-id="send-message-button"
                   onClick={() => handleSendMessage(prompt)}
                   className="rounded-full mr-1 mb-1"

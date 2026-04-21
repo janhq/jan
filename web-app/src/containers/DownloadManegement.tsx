@@ -28,6 +28,8 @@ export function DownloadManagement() {
     localDownloadingModels,
     removeDownload,
     removeLocalDownloadingModel,
+    addEngineDownload,
+    removeEngineDownload,
   } = useDownloadStore()
   const { updateState } = useAppUpdater()
 
@@ -152,8 +154,12 @@ export function DownloadManagement() {
         state.size?.transferred,
         state.size?.total
       )
+      const extState = state as unknown as { downloadType?: string }
+      if (extState.downloadType === 'Engine') {
+        addEngineDownload(state.modelId)
+      }
     },
-    [updateProgress]
+    [updateProgress, addEngineDownload]
   )
 
   const onFileDownloadError = useCallback(
@@ -161,6 +167,7 @@ export function DownloadManagement() {
       console.debug('onFileDownloadError', state)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
+      removeEngineDownload(state.modelId)
 
       const anyState = state as unknown as { error?: string }
       const err = anyState?.error || ''
@@ -207,7 +214,7 @@ export function DownloadManagement() {
         }),
       })
     },
-    [removeDownload, removeLocalDownloadingModel, t, navigate]
+    [removeDownload, removeLocalDownloadingModel, removeEngineDownload, t, navigate]
   )
 
   const onModelValidationStarted = useCallback(
@@ -252,8 +259,9 @@ export function DownloadManagement() {
       console.debug('onFileDownloadStopped', state)
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
+      removeEngineDownload(state.modelId)
     },
-    [removeDownload, removeLocalDownloadingModel]
+    [removeDownload, removeLocalDownloadingModel, removeEngineDownload]
   )
 
   const onFileDownloadSuccess = useCallback(
@@ -265,6 +273,7 @@ export function DownloadManagement() {
 
       removeDownload(state.modelId)
       removeLocalDownloadingModel(state.modelId)
+      removeEngineDownload(state.modelId)
       toast.success(t('common:toast.downloadComplete.title'), {
         id: 'download-complete',
         description: t('common:toast.downloadComplete.description', {
@@ -272,7 +281,7 @@ export function DownloadManagement() {
         }),
       })
     },
-    [removeDownload, removeLocalDownloadingModel, t]
+    [removeDownload, removeLocalDownloadingModel, removeEngineDownload, t]
   )
 
   const onFileDownloadAndVerificationSuccess = useCallback(
