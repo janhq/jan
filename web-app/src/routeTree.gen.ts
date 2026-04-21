@@ -12,7 +12,9 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SystemMonitorRouteImport } from './routes/system-monitor'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as OpenclawIndexRouteImport } from './routes/openclaw/index'
 import { Route as MarketplaceIndexRouteImport } from './routes/marketplace/index'
+import { Route as LocalModelsIndexRouteImport } from './routes/local-models/index'
 import { Route as HubIndexRouteImport } from './routes/hub/index'
 import { Route as ThreadsThreadIdRouteImport } from './routes/threads/$threadId'
 import { Route as SettingsShortcutsRouteImport } from './routes/settings/shortcuts'
@@ -50,9 +52,19 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OpenclawIndexRoute = OpenclawIndexRouteImport.update({
+  id: '/openclaw/',
+  path: '/openclaw/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MarketplaceIndexRoute = MarketplaceIndexRouteImport.update({
   id: '/marketplace/',
   path: '/marketplace/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LocalModelsIndexRoute = LocalModelsIndexRouteImport.update({
+  id: '/local-models/',
+  path: '/local-models/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HubIndexRoute = HubIndexRouteImport.update({
@@ -185,7 +197,9 @@ export interface FileRoutesByFullPath {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub/': typeof HubIndexRoute
+  '/local-models/': typeof LocalModelsIndexRoute
   '/marketplace/': typeof MarketplaceIndexRoute
+  '/openclaw/': typeof OpenclawIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers/': typeof SettingsProvidersIndexRoute
 }
@@ -212,7 +226,9 @@ export interface FileRoutesByTo {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub': typeof HubIndexRoute
+  '/local-models': typeof LocalModelsIndexRoute
   '/marketplace': typeof MarketplaceIndexRoute
+  '/openclaw': typeof OpenclawIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers': typeof SettingsProvidersIndexRoute
 }
@@ -240,7 +256,9 @@ export interface FileRoutesById {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/hub/': typeof HubIndexRoute
+  '/local-models/': typeof LocalModelsIndexRoute
   '/marketplace/': typeof MarketplaceIndexRoute
+  '/openclaw/': typeof OpenclawIndexRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
   '/settings/providers/': typeof SettingsProvidersIndexRoute
 }
@@ -269,7 +287,9 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub/'
+    | '/local-models/'
     | '/marketplace/'
+    | '/openclaw/'
     | '/settings/providers/$providerName'
     | '/settings/providers/'
   fileRoutesByTo: FileRoutesByTo
@@ -296,7 +316,9 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub'
+    | '/local-models'
     | '/marketplace'
+    | '/openclaw'
     | '/settings/providers/$providerName'
     | '/settings/providers'
   id:
@@ -323,7 +345,9 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/hub/'
+    | '/local-models/'
     | '/marketplace/'
+    | '/openclaw/'
     | '/settings/providers/$providerName'
     | '/settings/providers/'
   fileRoutesById: FileRoutesById
@@ -351,7 +375,9 @@ export interface RootRouteChildren {
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   HubIndexRoute: typeof HubIndexRoute
+  LocalModelsIndexRoute: typeof LocalModelsIndexRoute
   MarketplaceIndexRoute: typeof MarketplaceIndexRoute
+  OpenclawIndexRoute: typeof OpenclawIndexRoute
   SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
   SettingsProvidersIndexRoute: typeof SettingsProvidersIndexRoute
 }
@@ -379,11 +405,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/openclaw/': {
+      id: '/openclaw/'
+      path: '/openclaw'
+      fullPath: '/openclaw/'
+      preLoaderRoute: typeof OpenclawIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/marketplace/': {
       id: '/marketplace/'
       path: '/marketplace'
       fullPath: '/marketplace/'
       preLoaderRoute: typeof MarketplaceIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/local-models/': {
+      id: '/local-models/'
+      path: '/local-models'
+      fullPath: '/local-models/'
+      preLoaderRoute: typeof LocalModelsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hub/': {
@@ -559,7 +599,9 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   HubIndexRoute: HubIndexRoute,
+  LocalModelsIndexRoute: LocalModelsIndexRoute,
   MarketplaceIndexRoute: MarketplaceIndexRoute,
+  OpenclawIndexRoute: OpenclawIndexRoute,
   SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,
   SettingsProvidersIndexRoute: SettingsProvidersIndexRoute,
 }

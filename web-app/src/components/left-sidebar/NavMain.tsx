@@ -1,4 +1,4 @@
-import { LucideIcon, Store } from 'lucide-react'
+import { Database, LucideIcon, Store, Zap } from 'lucide-react'
 import { route } from '@/constants/routes'
 
 import {
@@ -132,6 +132,16 @@ const getNavMainItems = (
     title: 'common:modelMarketplace',
     url: route.marketplace.index,
     icon: Store,
+  },
+  {
+    title: 'common:localModels',
+    url: route.localModels.index,
+    icon: Database,
+  },
+  {
+    title: 'common:openclaw',
+    url: route.openclaw.index,
+    icon: Zap,
   },
   {
     title: 'common:settings',

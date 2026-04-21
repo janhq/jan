@@ -26,9 +26,15 @@ export const route = {
     index: '/hub/',
     model: '/hub/$modelId',
   },
+  localModels: {
+    index: '/local-models/',
+  },
   marketplace: {
     index: '/marketplace/',
     model: '/marketplace/$modelId',
+  },
+  openclaw: {
+    index: '/openclaw/',
   },
   localApiServerlogs: '/local-api-server/logs',
   systemMonitor: '/system-monitor',
