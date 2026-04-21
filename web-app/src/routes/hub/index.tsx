@@ -286,7 +286,7 @@ function HubContent() {
 
             {/* Local Models Link */}
             <Link
-              to="/local-models/"
+              to={route.localModels.index as any}
               className="bg-card border border-border rounded-lg p-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
             >
               <div className="flex flex-col">

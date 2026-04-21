@@ -40,8 +40,15 @@ import { QuantSelector } from '@/components/marketplace/QuantSelector'
 import { logError } from '@/lib/logger'
 import { toast } from 'sonner'
 
+type SearchParams = {
+  repo?: string
+}
+
 export const Route = createFileRoute('/marketplace/$modelId' as any)({
   component: MarketplaceModelDetailContent,
+  validateSearch: (search: Record<string, unknown>): SearchParams => ({
+    repo: search.repo as SearchParams['repo'],
+  }),
 })
 
 function MarketplaceModelDetailContent() {
@@ -204,12 +211,14 @@ function MarketplaceModelDetailContent() {
         // Try to register the first .gguf file found in the downloaded quant dir
         // so the model appears in the local model list.
         try {
-          const { getJanDataFolderPath, readdirSync } = await import('@janhq/core')
+          const { getJanDataFolderPath } = await import('@janhq/core')
           const janData = await getJanDataFolderPath()
           const searchDir = quantDir
             ? `${janData}/llamacpp/models/${model.id}/${quantDir}`
             : `${janData}/llamacpp/models/${model.id}`
-          const entries = await readdirSync(searchDir)
+          const entries = await invoke<string[]>('readdir_sync', {
+            args: [searchDir],
+          })
           const firstGguf = entries.find((e: string) =>
             e.toLowerCase().endsWith('.gguf')
           )
