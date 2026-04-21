@@ -193,11 +193,11 @@ function MarketplaceContent() {
         <HeaderPage>
           <div
             className={cn(
-              'pr-3 py-3 min-h-10 w-full flex items-center justify-between relative z-20 flex-wrap gap-y-2',
+              'pr-3 py-3 min-h-10 w-full flex items-center justify-between flex-wrap gap-y-2',
               !IS_MACOS && 'pr-30'
             )}
           >
-            <div className="flex items-center gap-2 flex-1 min-w-0">
+            <div className="relative z-20 flex items-center gap-2 flex-1 min-w-0">
               <IconSearch
                 className="shrink-0 text-muted-foreground"
                 size={14}
@@ -219,7 +219,7 @@ function MarketplaceContent() {
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <div className="relative z-20 flex items-center gap-2 shrink-0 flex-wrap">
               {/* Token status */}
               <button
                 onClick={() => {

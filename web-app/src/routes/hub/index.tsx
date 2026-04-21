@@ -294,14 +294,14 @@ export function HubContent() {
         <HeaderPage>
           <div
             className={cn(
-              'pr-3 py-3 h-10 w-full flex items-center justify-between relative z-20',
+              'pr-3 py-3 h-10 w-full flex items-center justify-between',
               !IS_MACOS && 'pr-30'
             )}
           >
             <span className="text-sm font-medium text-foreground">
               {t('common:inferenceCenter')}
             </span>
-            <Link to={route.settings.index}>
+            <Link to={route.settings.index} className="relative z-20">
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
                 <IconSettings size={16} className="text-muted-foreground" />
               </Button>
