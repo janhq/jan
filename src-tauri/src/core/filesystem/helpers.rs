@@ -105,6 +105,91 @@ pub fn resolve_path_within_jan_data_folder(
     Ok((canonical_data, canonical_path))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn relative_path_resolves_inside_data_folder() {
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().to_path_buf();
+        fs::create_dir_all(data.join("threads")).unwrap();
+
+        let (root, resolved) =
+            resolve_path_within_jan_data_folder(&data, "threads").expect("resolves");
+        assert!(resolved.starts_with(&root));
+        assert!(resolved.ends_with("threads"));
+    }
+
+    #[test]
+    fn file_uri_resolves_relative_to_data_folder() {
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().to_path_buf();
+        fs::create_dir_all(data.join("models")).unwrap();
+        fs::write(data.join("models/info.json"), "{}").unwrap();
+
+        let (root, resolved) =
+            resolve_path_within_jan_data_folder(&data, "file://models/info.json")
+                .expect("resolves");
+        assert!(resolved.starts_with(&root));
+        assert!(resolved.ends_with("info.json"));
+    }
+
+    #[test]
+    fn rejects_parent_traversal_escaping_data_folder() {
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().join("data");
+        let outside = tmp.path().join("outside");
+        fs::create_dir_all(&data).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("secret.txt"), "x").unwrap();
+
+        let result = resolve_path_within_jan_data_folder(&data, "../outside/secret.txt");
+        assert!(result.is_err(), "expected escape to be rejected, got {result:?}");
+    }
+
+    #[test]
+    fn absolute_path_inside_data_folder_is_allowed() {
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().to_path_buf();
+        let inner = data.join("sub");
+        fs::create_dir_all(&inner).unwrap();
+        let absolute = inner.to_string_lossy().to_string();
+
+        let (root, resolved) =
+            resolve_path_within_jan_data_folder(&data, &absolute).expect("resolves");
+        assert!(resolved.starts_with(&root));
+    }
+
+    #[test]
+    fn absolute_path_outside_data_folder_is_rejected() {
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().join("data");
+        let elsewhere = tmp.path().join("elsewhere");
+        fs::create_dir_all(&data).unwrap();
+        fs::create_dir_all(&elsewhere).unwrap();
+
+        let result =
+            resolve_path_within_jan_data_folder(&data, &elsewhere.to_string_lossy());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolves_nonexistent_child_paths_under_data_folder() {
+        // Used when creating new files; canonicalize must not fail.
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().to_path_buf();
+
+        let (root, resolved) =
+            resolve_path_within_jan_data_folder(&data, "new/nested/file.txt")
+                .expect("resolves nonexistent child");
+        assert!(resolved.starts_with(&root));
+        assert!(resolved.ends_with("file.txt"));
+    }
+}
+
 pub fn resolve_app_path_within_jan_data_folder<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     path: &str,
