@@ -254,6 +254,8 @@ type ModelComboboxProps = {
   disabled?: boolean
   className?: string
   onOpenChange?: (open: boolean) => void
+  inputId?: string
+  inputAriaLabel?: string
 }
 
 export function ModelCombobox({
@@ -267,6 +269,8 @@ export function ModelCombobox({
   disabled = false,
   className,
   onOpenChange,
+  inputId,
+  inputAriaLabel,
 }: ModelComboboxProps) {
   const [open, setOpen] = useState(false)
   const [inputValue, setInputValue] = useState(value)
@@ -399,6 +403,8 @@ export function ModelCombobox({
       <div className="relative">
         <Input
           ref={inputRef}
+          id={inputId}
+          aria-label={inputAriaLabel}
           value={inputValue}
           onChange={(e) => handleInputChange(e.target.value)}
           onKeyDown={handleKeyDown}

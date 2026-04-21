@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { cn, toGigabytes } from '@/lib/utils'
@@ -8,6 +8,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useOllamaStatus } from '@/hooks/useOllamaStatus'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
+import { OllamaRunPanel } from '@/components/hub/OllamaRunPanel'
 import {
   IconRefresh,
   IconSettings,
@@ -21,19 +22,18 @@ export const Route = createFileRoute(route.hub.index as any)({
   component: HubContent,
 })
 
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                           */
-/* ------------------------------------------------------------------ */
-
 function timeLeftLabel(expiresAt?: string): string {
   if (!expiresAt) return ''
+
   const diff = new Date(expiresAt).getTime() - Date.now()
   if (diff <= 0) return '即将卸载'
-  const mins = Math.ceil(diff / 60000)
-  if (mins < 60) return `${mins}min left`
-  const hrs = Math.floor(mins / 60)
-  const rem = mins % 60
-  return `${hrs}h ${rem}min left`
+
+  const minutes = Math.ceil(diff / 60000)
+  if (minutes < 60) return `${minutes} 分钟后卸载`
+
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  return `${hours} 小时 ${remainingMinutes} 分钟后卸载`
 }
 
 function processorLabel(ps: OllamaPsModel): string {
@@ -41,10 +41,6 @@ function processorLabel(ps: OllamaPsModel): string {
   if (ps.size_vram >= ps.size) return 'GPU'
   return 'Mixed'
 }
-
-/* ------------------------------------------------------------------ */
-/*  Types                                                             */
-/* ------------------------------------------------------------------ */
 
 interface OllamaPsModel {
   name: string
@@ -60,10 +56,6 @@ interface OllamaPsModel {
   expires_at: string
 }
 
-/* ------------------------------------------------------------------ */
-/*  Sub-components                                                    */
-/* ------------------------------------------------------------------ */
-
 function StatusDot({
   color,
 }: {
@@ -76,23 +68,35 @@ function StatusDot({
     red: 'bg-red-500',
     gray: 'bg-gray-400',
   }
+
   return <div className={cn('w-2.5 h-2.5 rounded-full shrink-0', map[color])} />
 }
 
-function OllamaStatusCard() {
-  const {
-    isRunning,
-    isInstalled,
-    version,
-    models,
-    refresh,
-    isInstalling,
-    installProgress,
-    installMessage,
-    installOllama,
-    startOllama,
-  } = useOllamaStatus(5000)
+type OllamaStatusCardProps = {
+  isRunning: boolean
+  isInstalled: boolean
+  version?: string
+  models: Array<{ name: string }>
+  refresh: () => void | Promise<void>
+  isInstalling: boolean
+  installProgress: number
+  installMessage: string
+  installOllama: () => void | Promise<void>
+  startOllama: () => void | Promise<void>
+}
 
+function OllamaStatusCard({
+  isRunning,
+  isInstalled,
+  version,
+  models,
+  refresh,
+  isInstalling,
+  installProgress,
+  installMessage,
+  installOllama,
+  startOllama,
+}: OllamaStatusCardProps) {
   const statusColor: 'green' | 'yellow' | 'orange' | 'red' = isRunning
     ? 'green'
     : isInstalling
@@ -125,7 +129,7 @@ function OllamaStatusCard() {
             )}
             {!isRunning && !isInstalling && isInstalled && (
               <span className="text-xs text-muted-foreground">
-                点击"启动 Ollama"按钮即可运行
+                点击“启动 Ollama”即可运行
               </span>
             )}
             {!isRunning && !isInstalling && !isInstalled && (
@@ -134,9 +138,7 @@ function OllamaStatusCard() {
               </span>
             )}
             {isInstalling && (
-              <span className="text-xs text-muted-foreground">
-                {installMessage}
-              </span>
+              <span className="text-xs text-muted-foreground">{installMessage}</span>
             )}
           </div>
         </div>
@@ -174,7 +176,7 @@ function RunningModelRow({
   onUnload: (name: string) => void
 }) {
   const proc = processorLabel(ps)
-  const vramText = toGigabytes(ps.size_vram, { hideUnit: true }) + 'GB VRAM'
+  const vramText = `${toGigabytes(ps.size_vram, { hideUnit: true })}GB VRAM`
   const timeLeft = timeLeftLabel(ps.expires_at)
 
   return (
@@ -197,37 +199,54 @@ function RunningModelRow({
         className="h-7 text-xs shrink-0"
         onClick={() => onUnload(ps.name)}
       >
-        Unload
+        卸载
       </Button>
     </div>
   )
 }
 
-/* ------------------------------------------------------------------ */
-/*  Main Page                                                         */
-/* ------------------------------------------------------------------ */
-
-function HubContent() {
+export function HubContent() {
   const { t } = useTranslation()
-  const { isRunning: ollamaRunning } = useOllamaStatus(10000)
+  const {
+    isRunning: ollamaRunning,
+    isInstalled: ollamaInstalled,
+    version: ollamaVersion,
+    models: ollamaModels,
+    refresh: refreshOllamaStatus,
+    isInstalling,
+    installProgress,
+    installMessage,
+    installOllama,
+    startOllama,
+  } = useOllamaStatus(10000)
 
   const [runningModels, setRunningModels] = useState<OllamaPsModel[]>([])
   const [psLoading, setPsLoading] = useState(false)
+  const [isSubmittingRun, setIsSubmittingRun] = useState(false)
+  const fetchSequenceRef = useRef(0)
 
-  /* -- fetch running models (/api/ps) -- */
   const fetchRunningModels = useCallback(async () => {
+    const sequence = ++fetchSequenceRef.current
+
     if (!ollamaRunning) {
-      setRunningModels([])
+      if (sequence === fetchSequenceRef.current) {
+        setRunningModels([])
+        setPsLoading(false)
+      }
       return
     }
+
     setPsLoading(true)
     try {
       const result = await invoke<OllamaPsModel[]>('ollama_ps')
+      if (sequence !== fetchSequenceRef.current) return
       setRunningModels(result)
-    } catch (e) {
-      console.error('Failed to fetch running models:', e)
+    } catch (error) {
+      if (sequence !== fetchSequenceRef.current) return
+      console.error('Failed to fetch running models:', error)
       setRunningModels([])
     } finally {
+      if (sequence !== fetchSequenceRef.current) return
       setPsLoading(false)
     }
   }, [ollamaRunning])
@@ -238,25 +257,36 @@ function HubContent() {
     return () => clearInterval(timer)
   }, [fetchRunningModels])
 
-  /* -- unload model -- */
-  const handleUnload = useCallback(
-    async (name: string) => {
+  const handleRunModel = useCallback(
+    async (request: Record<string, unknown>) => {
+      setIsSubmittingRun(true)
       try {
-        await invoke('ollama_unload_model', { model: name })
-        toast.success(`模型 ${name} 已卸载`)
-        fetchRunningModels()
-      } catch (e) {
-        toast.error('卸载失败: ' + String(e))
+        await invoke('ollama_run_model', { request })
+        toast.success('启动请求已发送')
+        await fetchRunningModels()
+      } catch (error) {
+        toast.error(String(error))
+      } finally {
+        setIsSubmittingRun(false)
       }
     },
     [fetchRunningModels]
   )
 
-  /* -- derived stats -- */
-  const totalVram = runningModels.reduce(
-    (sum, m) => sum + (m.size_vram || 0),
-    0
+  const handleUnload = useCallback(
+    async (name: string) => {
+      try {
+        await invoke('ollama_unload_model', { model: name })
+        toast.success(`模型 ${name} 已卸载`)
+        await fetchRunningModels()
+      } catch (error) {
+        toast.error(`卸载失败: ${String(error)}`)
+      }
+    },
+    [fetchRunningModels]
   )
+
+  const totalVram = runningModels.reduce((sum, model) => sum + (model.size_vram || 0), 0)
 
   return (
     <div className="flex flex-col h-svh w-full">
@@ -281,26 +311,25 @@ function HubContent() {
 
         <div className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto">
           <div className="flex flex-col gap-5 w-full md:w-4/5 xl:w-4/6 mx-auto">
-            {/* Status Card */}
-            <OllamaStatusCard />
+            <OllamaStatusCard
+              isRunning={ollamaRunning}
+              isInstalled={ollamaInstalled}
+              version={ollamaVersion}
+              models={ollamaModels}
+              refresh={refreshOllamaStatus}
+              isInstalling={isInstalling}
+              installProgress={installProgress}
+              installMessage={installMessage}
+              installOllama={installOllama}
+              startOllama={startOllama}
+            />
 
-            {/* Local Models Link */}
-            <Link
-              to={route.localModels.index as any}
-              className="bg-card border border-border rounded-lg p-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
-            >
-              <div className="flex flex-col">
-                <span className="text-sm font-medium text-foreground">
-                  管理本地模型
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  查看、运行和删除已安装的 Ollama 与 GGUF 模型
-                </span>
-              </div>
-              <IconGauge size={18} className="text-muted-foreground" />
-            </Link>
+            <OllamaRunPanel
+              models={ollamaModels.map((model) => model.name)}
+              isSubmitting={isSubmittingRun}
+              onSubmit={handleRunModel}
+            />
 
-            {/* Running Models */}
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -312,6 +341,7 @@ function HubContent() {
                   </span>
                 )}
               </div>
+
               {psLoading && runningModels.length === 0 ? (
                 <div className="py-4 text-center text-xs text-muted-foreground">
                   正在获取运行状态...
@@ -319,10 +349,8 @@ function HubContent() {
               ) : runningModels.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-6 gap-2 text-muted-foreground border border-dashed border-border rounded-lg">
                   <IconCpu size={24} className="opacity-50" />
-                  <span className="text-sm">没有运行中的模型</span>
-                  <span className="text-xs">
-                    前往本地模型页面加载模型到内存
-                  </span>
+                  <span className="text-sm">暂无运行中的模型</span>
+                  <span className="text-xs">使用上方运行面板选择模型并启动</span>
                 </div>
               ) : (
                 <div className="flex flex-col gap-2">

@@ -2,7 +2,10 @@ use futures_util::StreamExt;
 use std::time::Duration;
 use tauri::{Emitter, Runtime};
 
-use super::models::{OllamaModelDetail, OllamaRunningModel, PullProgress};
+use super::models::{
+    OllamaModelDetail, OllamaRunModelKeepAliveRequest, OllamaRunModelRequest,
+    OllamaRunModelThinkRequest, OllamaRunningModel, PullProgress,
+};
 
 const OLLAMA_API_BASE: &str = "http://127.0.0.1:11434";
 const PULL_PROGRESS_EVENT: &str = "ollama-pull-progress";
@@ -10,6 +13,147 @@ const CREATE_PROGRESS_EVENT: &str = "ollama-create-progress";
 
 fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {e}")
+}
+
+fn build_ollama_run_payload(
+    request: OllamaRunModelRequest,
+) -> serde_json::Map<String, serde_json::Value> {
+    let OllamaRunModelRequest {
+        model,
+        keep_alive,
+        suffix,
+        system,
+        template,
+        context,
+        raw,
+        format,
+        think,
+        truncate,
+        shift,
+        logprobs,
+        top_logprobs,
+        _debug_render_only,
+        options,
+    } = request;
+
+    let mut payload = serde_json::Map::new();
+    payload.insert(
+        "model".to_string(),
+        serde_json::Value::String(model.clone()),
+    );
+    payload.insert(
+        "prompt".to_string(),
+        serde_json::Value::String(String::new()),
+    );
+    payload.insert("stream".to_string(), serde_json::Value::Bool(false));
+
+    match keep_alive {
+        None => {
+            payload.insert("keep_alive".to_string(), serde_json::json!(-1));
+        }
+        Some(keep_alive) => match keep_alive {
+            OllamaRunModelKeepAliveRequest::Number(value) => {
+                payload.insert("keep_alive".to_string(), serde_json::json!(value));
+            }
+            OllamaRunModelKeepAliveRequest::Text(value) => {
+                if !value.is_empty() {
+                    payload.insert("keep_alive".to_string(), serde_json::Value::String(value));
+                }
+            }
+        },
+    }
+    if let Some(suffix) = suffix {
+        if !suffix.is_empty() {
+            payload.insert("suffix".to_string(), serde_json::Value::String(suffix));
+        }
+    }
+    if let Some(system) = system {
+        if !system.is_empty() {
+            payload.insert("system".to_string(), serde_json::Value::String(system));
+        }
+    }
+    if let Some(template) = template {
+        if !template.is_empty() {
+            payload.insert("template".to_string(), serde_json::Value::String(template));
+        }
+    }
+    let context_present = context.is_some();
+    let context_len = context.as_ref().map_or(0, Vec::len);
+    if let Some(context) = context {
+        if !context.is_empty() {
+            payload.insert("context".to_string(), serde_json::json!(context));
+        }
+    }
+    if let Some(raw) = raw {
+        payload.insert("raw".to_string(), serde_json::Value::Bool(raw));
+    }
+    if let Some(format) = format {
+        if !format.is_null() {
+            let should_insert = match &format {
+                serde_json::Value::String(v) => !v.is_empty(),
+                _ => true,
+            };
+            if should_insert {
+                payload.insert("format".to_string(), format);
+            }
+        }
+    }
+    if let Some(think) = think {
+        match think {
+            OllamaRunModelThinkRequest::Boolean(value) => {
+                payload.insert("think".to_string(), serde_json::Value::Bool(value));
+            }
+            OllamaRunModelThinkRequest::Level(value) => {
+                if !value.is_empty() {
+                    payload.insert("think".to_string(), serde_json::Value::String(value));
+                }
+            }
+        }
+    }
+    if let Some(truncate) = truncate {
+        payload.insert("truncate".to_string(), serde_json::Value::Bool(truncate));
+    }
+    if let Some(shift) = shift {
+        payload.insert("shift".to_string(), serde_json::Value::Bool(shift));
+    }
+    if let Some(logprobs) = logprobs {
+        payload.insert("logprobs".to_string(), serde_json::Value::Bool(logprobs));
+    }
+    if let Some(top_logprobs) = top_logprobs {
+        payload.insert("top_logprobs".to_string(), serde_json::json!(top_logprobs));
+    }
+    if let Some(debug_render_only) = _debug_render_only {
+        payload.insert(
+            "_debug_render_only".to_string(),
+            serde_json::Value::Bool(debug_render_only),
+        );
+    }
+    if let Some(options) = options {
+        match serde_json::to_value(options) {
+            Ok(serde_json::Value::Object(options_map)) => {
+                if !options_map.is_empty() {
+                    payload.insert(
+                        "options".to_string(),
+                        serde_json::Value::Object(options_map),
+                    );
+                }
+            }
+            Ok(other) => {
+                log::warn!(
+                    "Failed to serialize Ollama run options as object (model={}, context_present={}, context_len={}): {}",
+                    model, context_present, context_len, other
+                );
+            }
+            Err(err) => {
+                log::warn!(
+                    "Failed to serialize Ollama run options (model={}, context_present={}, context_len={}): {}",
+                    model, context_present, context_len, err
+                );
+            }
+        }
+    }
+
+    payload
 }
 
 /// Builds a reqwest client with `no_proxy()` to prevent Windows proxy
@@ -66,7 +210,11 @@ fn emit_progress_lines<R: Runtime>(
                 app.emit(event_name, &progress).ok();
             }
             Err(e) => {
-                log::warn!("Failed to parse Ollama progress line: {}. Error: {}", line_str, e);
+                log::warn!(
+                    "Failed to parse Ollama progress line: {}. Error: {}",
+                    line_str,
+                    e
+                );
             }
         }
     }
@@ -163,7 +311,10 @@ pub async fn ollama_show_model(model: String) -> Result<OllamaModelDetail, Strin
         size,
         digest,
         modified_at,
-        details: show_json.get("details").cloned().unwrap_or(serde_json::Value::Null),
+        details: show_json
+            .get("details")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
         modelfile: show_json
             .get("modelfile")
             .and_then(|v| v.as_str())
@@ -353,32 +504,36 @@ pub async fn ollama_ps() -> Result<Vec<OllamaRunningModel>, String> {
 /// Pre-load a model into VRAM by sending an empty generate request
 /// with keep_alive=-1 (indefinite).
 #[tauri::command]
-pub async fn ollama_run_model(model: String) -> Result<(), String> {
-    log::info!("Pre-loading Ollama model into VRAM: {}", model);
+pub async fn ollama_run_model(request: OllamaRunModelRequest) -> Result<(), String> {
+    log::info!(
+        "Running Ollama generate request for model: {}",
+        request.model
+    );
 
-    let client = build_client()?;
+    let client = build_streaming_client()?;
+    let payload = build_ollama_run_payload(request);
 
     let res = client
         .post(format!("{}/api/generate", OLLAMA_API_BASE))
-        .json(&serde_json::json!({
-            "model": &model,
-            "prompt": "",
-            "keep_alive": -1,
-        }))
+        .json(&payload)
         .send()
         .await
         .map_err(err_to_string)?;
 
     if !res.status().is_success() {
         let status = res.status();
-        let body = res.text().await.unwrap_or_default();
-        return Err(format!("Ollama run failed: HTTP {} - {}", status, body));
+        let body_bytes = res.bytes().await.unwrap_or_default();
+        return Err(if body_bytes.is_empty() {
+            format!("Ollama run failed: HTTP {}", status)
+        } else {
+            String::from_utf8_lossy(&body_bytes).to_string()
+        });
     }
 
     // Consume the stream so the connection closes cleanly
     let _ = res.text().await;
 
-    log::info!("Ollama model pre-loaded: {}", model);
+    log::info!("Ollama run request completed");
     Ok(())
 }
 
@@ -459,11 +614,293 @@ pub async fn stop_ollama() -> Result<(), String> {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            log::warn!("pkill ollama returned error (process may not be running): {}", stderr);
+            log::warn!(
+                "pkill ollama returned error (process may not be running): {}",
+                stderr
+            );
         } else {
             log::info!("Ollama stopped successfully via pkill");
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_ollama_run_payload;
+    use crate::core::ollama_control_plane::models::{
+        OllamaRunModelKeepAliveRequest, OllamaRunModelOptionsRequest, OllamaRunModelRequest,
+        OllamaRunModelThinkRequest,
+    };
+
+    #[test]
+    fn ollama_run_payload_keeps_top_level_and_options_separate() {
+        let request = OllamaRunModelRequest {
+            model: "qwen3:8b".to_string(),
+            keep_alive: Some(OllamaRunModelKeepAliveRequest::Number(-1)),
+            suffix: Some("suffix".to_string()),
+            system: Some("system".to_string()),
+            template: Some("template".to_string()),
+            context: Some(vec![1, 2, 3]),
+            raw: Some(true),
+            format: Some(serde_json::json!("json")),
+            think: Some(OllamaRunModelThinkRequest::Boolean(true)),
+            truncate: Some(true),
+            shift: Some(false),
+            logprobs: Some(true),
+            top_logprobs: Some(5),
+            _debug_render_only: Some(true),
+            options: Some(OllamaRunModelOptionsRequest {
+                num_ctx: Some(8192),
+                num_batch: Some(512),
+                num_gpu: Some(1),
+                main_gpu: Some(0),
+                use_mmap: Some(true),
+                num_thread: Some(8),
+                num_keep: Some(16),
+                seed: Some(42),
+                num_predict: Some(256),
+                top_k: Some(40),
+                top_p: Some(0.9),
+                min_p: Some(0.05),
+                typical_p: Some(0.9),
+                repeat_last_n: Some(64),
+                temperature: Some(0.7),
+                repeat_penalty: Some(1.1),
+                presence_penalty: Some(0.3),
+                frequency_penalty: Some(0.2),
+                stop: Some(vec!["</s>".to_string()]),
+            }),
+        };
+
+        let payload = build_ollama_run_payload(request);
+
+        assert_eq!(payload.get("model"), Some(&serde_json::json!("qwen3:8b")));
+        assert_eq!(payload.get("keep_alive"), Some(&serde_json::json!(-1)));
+        assert_eq!(payload.get("suffix"), Some(&serde_json::json!("suffix")));
+        assert_eq!(payload.get("system"), Some(&serde_json::json!("system")));
+        assert_eq!(
+            payload.get("template"),
+            Some(&serde_json::json!("template"))
+        );
+        assert_eq!(payload.get("context"), Some(&serde_json::json!([1, 2, 3])));
+        assert_eq!(payload.get("format"), Some(&serde_json::json!("json")));
+        assert_eq!(payload.get("raw"), Some(&serde_json::json!(true)));
+        assert_eq!(payload.get("logprobs"), Some(&serde_json::json!(true)));
+        assert_eq!(payload.get("top_logprobs"), Some(&serde_json::json!(5)));
+        assert_eq!(
+            payload.get("_debug_render_only"),
+            Some(&serde_json::json!(true))
+        );
+        assert_eq!(payload.get("truncate"), Some(&serde_json::json!(true)));
+        assert_eq!(payload.get("shift"), Some(&serde_json::json!(false)));
+        assert_eq!(payload.get("prompt"), Some(&serde_json::json!("")));
+        assert_eq!(payload.get("stream"), Some(&serde_json::json!(false)));
+
+        assert_eq!(payload.get("num_ctx"), None);
+        assert_eq!(payload.get("temperature"), None);
+
+        let options = payload.get("options").unwrap();
+        assert_eq!(options.get("suffix"), None);
+        assert_eq!(options.get("system"), None);
+        assert_eq!(options.get("template"), None);
+        assert_eq!(options.get("context"), None);
+        assert_eq!(options.get("format"), None);
+        assert_eq!(options.get("logprobs"), None);
+        assert_eq!(options.get("top_logprobs"), None);
+        assert_eq!(options.get("truncate"), None);
+        assert_eq!(options.get("shift"), None);
+        assert_eq!(options.get("num_ctx"), Some(&serde_json::json!(8192)));
+        assert_eq!(options.get("temperature"), Some(&serde_json::json!(0.7)));
+        assert_eq!(options.get("stop"), Some(&serde_json::json!(["</s>"])));
+    }
+
+    #[test]
+    fn ollama_run_payload_omits_empty_and_unset_fields() {
+        let request = OllamaRunModelRequest {
+            model: "qwen3:8b".to_string(),
+            keep_alive: None,
+            suffix: Some(String::new()),
+            system: Some("".to_string()),
+            template: None,
+            context: Some(vec![]),
+            raw: None,
+            format: None,
+            think: None,
+            truncate: None,
+            shift: None,
+            logprobs: None,
+            top_logprobs: None,
+            _debug_render_only: None,
+            options: Some(OllamaRunModelOptionsRequest {
+                num_ctx: None,
+                num_batch: None,
+                num_gpu: None,
+                main_gpu: None,
+                use_mmap: None,
+                num_thread: None,
+                num_keep: None,
+                seed: None,
+                num_predict: None,
+                top_k: None,
+                top_p: None,
+                min_p: None,
+                typical_p: None,
+                repeat_last_n: None,
+                temperature: None,
+                repeat_penalty: None,
+                presence_penalty: None,
+                frequency_penalty: None,
+                stop: Some(vec![]),
+            }),
+        };
+
+        let payload = build_ollama_run_payload(request);
+
+        assert_eq!(payload.get("model"), Some(&serde_json::json!("qwen3:8b")));
+        assert_eq!(payload.get("keep_alive"), Some(&serde_json::json!(-1)));
+        assert_eq!(payload.get("prompt"), Some(&serde_json::json!("")));
+        assert_eq!(payload.get("stream"), Some(&serde_json::json!(false)));
+
+        assert_eq!(payload.get("suffix"), None);
+        assert_eq!(payload.get("system"), None);
+        assert_eq!(payload.get("context"), None);
+        assert_eq!(payload.get("options"), None);
+    }
+
+    #[test]
+    fn ollama_run_payload_supports_string_think() {
+        let request = OllamaRunModelRequest {
+            model: "qwen3:8b".to_string(),
+            keep_alive: None,
+            suffix: None,
+            system: None,
+            template: None,
+            context: None,
+            raw: None,
+            format: None,
+            think: Some(OllamaRunModelThinkRequest::Level("high".to_string())),
+            truncate: None,
+            shift: None,
+            logprobs: None,
+            top_logprobs: None,
+            _debug_render_only: None,
+            options: None,
+        };
+
+        let payload = build_ollama_run_payload(request);
+        assert_eq!(payload.get("think"), Some(&serde_json::json!("high")));
+    }
+
+    #[test]
+    fn ollama_run_payload_supports_non_empty_keep_alive_string() {
+        let request = OllamaRunModelRequest {
+            model: "qwen3:8b".to_string(),
+            keep_alive: Some(OllamaRunModelKeepAliveRequest::Text("5m".to_string())),
+            suffix: None,
+            system: None,
+            template: None,
+            context: None,
+            raw: None,
+            format: None,
+            think: None,
+            truncate: None,
+            shift: None,
+            logprobs: None,
+            top_logprobs: None,
+            _debug_render_only: None,
+            options: None,
+        };
+
+        let payload = build_ollama_run_payload(request);
+        assert_eq!(payload.get("keep_alive"), Some(&serde_json::json!("5m")));
+    }
+
+    #[test]
+    fn ollama_run_payload_defaults_keep_alive_to_minus_one_when_absent() {
+        let request = OllamaRunModelRequest {
+            model: "qwen3:8b".to_string(),
+            keep_alive: None,
+            suffix: None,
+            system: None,
+            template: None,
+            context: None,
+            raw: None,
+            format: None,
+            think: None,
+            truncate: None,
+            shift: None,
+            logprobs: None,
+            top_logprobs: None,
+            _debug_render_only: None,
+            options: None,
+        };
+
+        let payload = build_ollama_run_payload(request);
+        assert_eq!(payload.get("keep_alive"), Some(&serde_json::json!(-1)));
+    }
+
+    #[test]
+    fn ollama_run_payload_explicit_numeric_keep_alive_wins() {
+        let request = OllamaRunModelRequest {
+            model: "qwen3:8b".to_string(),
+            keep_alive: Some(OllamaRunModelKeepAliveRequest::Number(30)),
+            suffix: None,
+            system: None,
+            template: None,
+            context: None,
+            raw: None,
+            format: None,
+            think: None,
+            truncate: None,
+            shift: None,
+            logprobs: None,
+            top_logprobs: None,
+            _debug_render_only: None,
+            options: None,
+        };
+
+        let payload = build_ollama_run_payload(request);
+        assert_eq!(payload.get("keep_alive"), Some(&serde_json::json!(30)));
+    }
+
+    #[test]
+    fn ollama_run_payload_omits_empty_keep_alive_think_and_format_strings() {
+        let request = OllamaRunModelRequest {
+            model: "qwen3:8b".to_string(),
+            keep_alive: Some(OllamaRunModelKeepAliveRequest::Text(String::new())),
+            suffix: None,
+            system: None,
+            template: None,
+            context: None,
+            raw: None,
+            format: Some(serde_json::json!("")),
+            think: Some(OllamaRunModelThinkRequest::Level(String::new())),
+            truncate: None,
+            shift: None,
+            logprobs: None,
+            top_logprobs: None,
+            _debug_render_only: None,
+            options: None,
+        };
+
+        let payload = build_ollama_run_payload(request);
+        assert_eq!(payload.get("keep_alive"), None);
+        assert_eq!(payload.get("think"), None);
+        assert_eq!(payload.get("format"), None);
+    }
+
+    #[test]
+    fn ollama_run_request_deserializes_null_truncate_and_shift_to_none() {
+        let request: OllamaRunModelRequest = serde_json::from_value(serde_json::json!({
+            "model": "qwen3:8b",
+            "truncate": null,
+            "shift": null
+        }))
+        .expect("request should deserialize");
+
+        assert_eq!(request.truncate, None);
+        assert_eq!(request.shift, None);
+    }
 }

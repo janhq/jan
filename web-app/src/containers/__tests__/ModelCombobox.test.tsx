@@ -88,6 +88,21 @@ describe('ModelCombobox', () => {
     expect(input).toHaveAttribute('placeholder', 'Choose a model')
   })
 
+  it('passes accessibility props through to the input element', () => {
+    act(() => {
+      render(
+        <ModelCombobox
+          {...defaultProps}
+          inputId="run-model"
+          inputAriaLabel="model"
+        />
+      )
+    })
+
+    const input = screen.getByRole('textbox', { name: 'model' })
+    expect(input).toHaveAttribute('id', 'run-model')
+  })
+
   it('renders dropdown trigger button', () => {
     act(() => {
       render(<ModelCombobox {...defaultProps} />)
