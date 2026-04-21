@@ -57,6 +57,7 @@
   "clearRecent": "Clear",
   "name": "Name",
   "cancel": "Cancel",
+  "dismiss": "Dismiss",
   "create": "Create",
   "save": "Save",
   "edit": "Edit",
@@ -265,6 +266,11 @@
   "errorDialog": {
     "titleFallback": "Something went wrong",
     "details": "Details"
+  },
+  "missingDependenciesDialog": {
+    "title": "Missing System Libraries",
+    "description": "The backend \"{{backend}}\" was installed but some required system libraries could not be found. The backend may not run correctly.",
+    "missingLibraries": "Missing libraries:"
   },
   "projects": {
     "title": "Projects",

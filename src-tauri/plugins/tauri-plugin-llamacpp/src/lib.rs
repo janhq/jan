@@ -60,6 +60,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             backend::get_backend_dir,
             backend::get_backend_exe_path,
             backend::check_backend_installed,
+            backend::verify_backend_installation,
             backend::fetch_remote_supported_backends,
             backend::build_backend_download_items
         ])

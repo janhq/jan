@@ -853,6 +853,82 @@ pub fn check_backend_installed(
     exe_path.exists()
 }
 
+/// Result of a backend dependency tree verification.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BackendVerificationResult {
+    pub verified: bool,
+    pub missing_libraries: Vec<String>,
+    pub resolved_libraries: Vec<String>,
+}
+
+/// Walk the dynamic library dependency tree of `exe_path` and report any
+/// unresolved libraries. The backend's own `build/bin` directory is added as
+/// an extra search path so that co-located CUDA / Vulkan DLLs are found.
+fn verify_backend_dependencies(
+    exe_path: &PathBuf,
+) -> Result<BackendVerificationResult, crate::error::LlamacppError> {
+    use lddtree::DependencyAnalyzer;
+
+    // Explicitly add the binary's directory as an extra search path.
+    // - PE: lddtree already adds the app dir automatically, so this is a no-op on Windows.
+    // - Mach-O: @loader_path / @executable_path rpaths are expanded automatically; this
+    //   covers any lib that lacks an @rpath entry.
+    // - ELF: $ORIGIN rpaths are expanded automatically, but some builds omit $ORIGIN and
+    //   rely on LD_LIBRARY_PATH being set at launch. add_library_path is the static
+    //   equivalent of running `LD_LIBRARY_PATH=<dir> ./llama-server`.
+    let mut analyzer = DependencyAnalyzer::default();
+    if let Some(parent) = exe_path.parent() {
+        analyzer = analyzer.add_library_path(parent.to_path_buf());
+    }
+
+    let tree = analyzer.analyze(exe_path).map_err(|e| {
+        crate::error::LlamacppError::new(
+            crate::error::ErrorCode::BinaryNotFound,
+            "Failed to parse backend binary for dependency analysis".into(),
+            Some(e.to_string()),
+        )
+    })?;
+
+    let mut missing = Vec::new();
+    let mut resolved = Vec::new();
+
+    for (name, lib) in &tree.libraries {
+        if lib.found() {
+            resolved.push(name.clone());
+        } else {
+            missing.push(name.clone());
+        }
+    }
+
+    missing.sort();
+    resolved.sort();
+
+    Ok(BackendVerificationResult {
+        verified: missing.is_empty(),
+        missing_libraries: missing,
+        resolved_libraries: resolved,
+    })
+}
+
+#[tauri::command]
+pub fn verify_backend_installation(
+    backend: String,
+    version: String,
+    jan_data_folder: String,
+    is_windows: bool,
+) -> Result<BackendVerificationResult, crate::error::LlamacppError> {
+    let exe_path =
+        PathBuf::from(get_backend_exe_path(backend, version, jan_data_folder, is_windows));
+    if !exe_path.exists() {
+        return Err(crate::error::LlamacppError::new(
+            crate::error::ErrorCode::BinaryNotFound,
+            "Backend executable not found".into(),
+            Some(exe_path.to_string_lossy().to_string()),
+        ));
+    }
+    verify_backend_dependencies(&exe_path)
+}
+
 // ============================================================================
 // Remote Backend Fetching
 // ============================================================================
@@ -945,12 +1021,7 @@ pub struct BackendDownloadItem {
 /// Internal helper: check if a CUDA runtime library is present at the new
 /// location (`backend_dir/build/bin/{libname}`) without performing any
 /// migration side-effects.
-async fn check_cuda_installed_internal(
-    backend_dir: &str,
-    cuda_version: &str,
-    os_type: &str,
-    _jan_data_folder: &str,
-) -> bool {
+fn check_cuda_installed_internal(backend_dir: &str, cuda_version: &str, os_type: &str) -> bool {
     let libname: &str = match (os_type, cuda_version) {
         ("windows", "11.7") => "cudart64_110.dll",
         ("windows", "12.0") => "cudart64_12.dll",
@@ -969,7 +1040,7 @@ async fn check_cuda_installed_internal(
 }
 
 #[tauri::command]
-pub async fn build_backend_download_items(
+pub fn build_backend_download_items(
     backend: String,
     version: String,
     source: String,
@@ -1003,7 +1074,7 @@ pub async fn build_backend_download_items(
     // CUDA runtime items
     if backend.contains("cu11.7") || backend.contains("cuda-11") {
         let already_installed =
-            check_cuda_installed_internal(&backend_dir, "11.7", &os_type, &jan_data_folder).await;
+            check_cuda_installed_internal(&backend_dir, "11.7", &os_type);
         if !already_installed {
             let cuda_url = match source.as_str() {
                 "github" => format!(
@@ -1018,12 +1089,12 @@ pub async fn build_backend_download_items(
             items.push(BackendDownloadItem {
                 url: cuda_url,
                 save_path: format!("{}/build/bin/cuda11.tar.gz", backend_dir),
-                model_id: format!("{}-cuda11", task_id),
+                model_id: task_id.clone(),
             });
         }
     } else if backend.contains("cu12.0") || backend.contains("cuda-12") {
         let already_installed =
-            check_cuda_installed_internal(&backend_dir, "12.0", &os_type, &jan_data_folder).await;
+            check_cuda_installed_internal(&backend_dir, "12.0", &os_type);
         if !already_installed {
             let cuda_url = match source.as_str() {
                 "github" => format!(
@@ -1038,12 +1109,12 @@ pub async fn build_backend_download_items(
             items.push(BackendDownloadItem {
                 url: cuda_url,
                 save_path: format!("{}/build/bin/cuda12.tar.gz", backend_dir),
-                model_id: format!("{}-cuda12", task_id),
+                model_id: task_id.clone(),
             });
         }
     } else if backend.contains("cuda-13") {
         let already_installed =
-            check_cuda_installed_internal(&backend_dir, "13.0", &os_type, &jan_data_folder).await;
+            check_cuda_installed_internal(&backend_dir, "13.0", &os_type);
         if !already_installed {
             let cuda_url = match source.as_str() {
                 "github" => format!(
@@ -1058,7 +1129,7 @@ pub async fn build_backend_download_items(
             items.push(BackendDownloadItem {
                 url: cuda_url,
                 save_path: format!("{}/build/bin/cuda13.tar.gz", backend_dir),
-                model_id: format!("{}-cuda13", task_id),
+                model_id: task_id.clone(),
             });
         }
     }
@@ -1716,11 +1787,81 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
+    // Tests for verify_backend_installation
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_verify_backend_installation_returns_err_when_exe_missing() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let jan_data = temp_dir.path().to_string_lossy().to_string();
+
+        let result = verify_backend_installation(
+            "linux-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            jan_data,
+            false,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err.code, crate::error::ErrorCode::BinaryNotFound));
+    }
+
+    #[test]
+    fn test_verify_backend_dependencies_returns_err_on_unparseable_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Write a file that is not a valid ELF/Mach-O/PE binary
+        let fake_exe = temp_dir.path().join("llama-server");
+        fs::write(&fake_exe, b"not a real binary").unwrap();
+
+        let result = verify_backend_dependencies(&fake_exe);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err.code, crate::error::ErrorCode::BinaryNotFound));
+    }
+
+    #[test]
+    fn test_verify_backend_installation_finds_exe_in_build_bin() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let jan_data = temp_dir.path().to_string_lossy().to_string();
+
+        // Place a non-binary stub in build/bin — enough to confirm the path
+        // resolution logic; actual ELF parsing is tested separately.
+        let build_bin = PathBuf::from(&jan_data)
+            .join("llamacpp")
+            .join("backends")
+            .join("b7523")
+            .join("linux-common_cpus-x64")
+            .join("build")
+            .join("bin");
+        fs::create_dir_all(&build_bin).unwrap();
+        fs::write(build_bin.join("llama-server"), b"not a real binary").unwrap();
+
+        // Should reach lddtree (and fail to parse), not the BinaryNotFound path
+        let result = verify_backend_installation(
+            "linux-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            jan_data,
+            false,
+        );
+
+        // The file exists so we get past the existence check; lddtree returns
+        // BinaryNotFound (parse error) rather than a "file not found" error.
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err.code, crate::error::ErrorCode::BinaryNotFound));
+        // The error detail must mention the binary path, not just "not found"
+        assert!(err.details.as_deref().unwrap_or("").len() > 0);
+    }
+
+    // -------------------------------------------------------------------------
     // Tests for build_backend_download_items
     // -------------------------------------------------------------------------
 
-    #[tokio::test]
-    async fn test_build_backend_download_items_non_cuda_returns_one_item() {
+    #[test]
+    fn test_build_backend_download_items_non_cuda_returns_one_item() {
         let temp_dir = tempfile::tempdir().unwrap();
         let jan_data = temp_dir.path().to_string_lossy().to_string();
 
@@ -1731,7 +1872,6 @@ mod tests {
             jan_data,
             "linux".to_string(),
         )
-        .await
         .unwrap();
 
         assert_eq!(items.len(), 1);
@@ -1739,8 +1879,8 @@ mod tests {
         assert!(items[0].url.contains("github.com"));
     }
 
-    #[tokio::test]
-    async fn test_build_backend_download_items_cuda12_returns_two_items() {
+    #[test]
+    fn test_build_backend_download_items_cuda12_returns_two_items() {
         let temp_dir = tempfile::tempdir().unwrap();
         let jan_data = temp_dir.path().to_string_lossy().to_string();
 
@@ -1751,16 +1891,17 @@ mod tests {
             jan_data,
             "linux".to_string(),
         )
-        .await
         .unwrap();
 
         assert_eq!(items.len(), 2);
         assert!(items[1].url.contains("cu12.0"));
         assert!(items[1].save_path.ends_with("cuda12.tar.gz"));
+        // All items must share the same model_id for unified progress tracking
+        assert_eq!(items[0].model_id, items[1].model_id);
     }
 
-    #[tokio::test]
-    async fn test_build_backend_download_items_cu11_returns_two_items() {
+    #[test]
+    fn test_build_backend_download_items_cu11_returns_two_items() {
         let temp_dir = tempfile::tempdir().unwrap();
         let jan_data = temp_dir.path().to_string_lossy().to_string();
 
@@ -1771,16 +1912,17 @@ mod tests {
             jan_data,
             "linux".to_string(),
         )
-        .await
         .unwrap();
 
         assert_eq!(items.len(), 2);
         assert!(items[1].url.contains("cu11.7"));
         assert!(items[1].save_path.ends_with("cuda11.tar.gz"));
+        // All items must share the same model_id for unified progress tracking
+        assert_eq!(items[0].model_id, items[1].model_id);
     }
 
-    #[tokio::test]
-    async fn test_build_backend_download_items_github_vs_cdn_urls() {
+    #[test]
+    fn test_build_backend_download_items_github_vs_cdn_urls() {
         let temp_dir = tempfile::tempdir().unwrap();
         let jan_data = temp_dir.path().to_string_lossy().to_string();
 
@@ -1791,7 +1933,6 @@ mod tests {
             jan_data.clone(),
             "linux".to_string(),
         )
-        .await
         .unwrap();
 
         let cdn_items = build_backend_download_items(
@@ -1801,7 +1942,6 @@ mod tests {
             jan_data,
             "linux".to_string(),
         )
-        .await
         .unwrap();
 
         assert!(github_items[0].url.contains("github.com"));

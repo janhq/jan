@@ -37,6 +37,7 @@ const COMMANDS: &[&str] = &[
     "get_backend_dir",
     "get_backend_exe_path",
     "check_backend_installed",
+    "verify_backend_installation",
     "fetch_remote_supported_backends",
     "build_backend_download_items",
 ];

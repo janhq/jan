@@ -4,6 +4,7 @@ import {
   getBackendExePath,
   isBackendInstalled,
   downloadBackend,
+  verifyBackendInstallation,
 } from '../backend'
 import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 import { fs, getJanDataFolderPath, events } from '@janhq/core'
@@ -195,6 +196,82 @@ describe('Backend functions', () => {
       const result = await isBackendInstalled('win-avx2-x64', 'v1.0.0')
 
       expect(result).toBe(false)
+    })
+  })
+
+  describe('verifyBackendInstallation', () => {
+    it('should invoke verify_backend_installation with correct params on Linux', async () => {
+      vi.stubGlobal('IS_WINDOWS', false)
+      const mockResult = {
+        verified: true,
+        missing_libraries: [],
+        resolved_libraries: ['libvulkan.so.1', 'libstdc++.so.6'],
+      }
+      vi.mocked(invoke).mockResolvedValueOnce(mockResult)
+
+      const result = await verifyBackendInstallation(
+        'linux-vulkan-common_cpus-x64',
+        'b8795'
+      )
+
+      expect(invoke).toHaveBeenCalledWith(
+        'plugin:llamacpp|verify_backend_installation',
+        {
+          backend: 'linux-vulkan-common_cpus-x64',
+          version: 'b8795',
+          janDataFolder: MOCK_JAN_PATH_STRING,
+          isWindows: false,
+        }
+      )
+      expect(result.verified).toBe(true)
+      expect(result.missing_libraries).toHaveLength(0)
+      expect(result.resolved_libraries).toHaveLength(2)
+    })
+
+    it('should return verified=false with missing library list when deps are absent', async () => {
+      vi.stubGlobal('IS_WINDOWS', false)
+      const mockResult = {
+        verified: false,
+        missing_libraries: ['libvulkan.so.1', 'libcuda.so.1'],
+        resolved_libraries: ['libstdc++.so.6'],
+      }
+      vi.mocked(invoke).mockResolvedValueOnce(mockResult)
+
+      const result = await verifyBackendInstallation(
+        'linux-vulkan-common_cpus-x64',
+        'b8795'
+      )
+
+      expect(result.verified).toBe(false)
+      expect(result.missing_libraries).toEqual(['libvulkan.so.1', 'libcuda.so.1'])
+    })
+
+    it('should pass isWindows=true on Windows', async () => {
+      vi.stubGlobal('IS_WINDOWS', true)
+      const mockResult = {
+        verified: true,
+        missing_libraries: [],
+        resolved_libraries: ['KERNEL32.dll'],
+      }
+      vi.mocked(invoke).mockResolvedValueOnce(mockResult)
+
+      await verifyBackendInstallation('win-common_cpus-x64', 'b8795')
+
+      expect(invoke).toHaveBeenCalledWith(
+        'plugin:llamacpp|verify_backend_installation',
+        expect.objectContaining({ isWindows: true })
+      )
+    })
+
+    it('should propagate invoke errors', async () => {
+      vi.stubGlobal('IS_WINDOWS', false)
+      vi.mocked(invoke).mockRejectedValueOnce(
+        new Error('BINARY_NOT_FOUND')
+      )
+
+      await expect(
+        verifyBackendInstallation('linux-common_cpus-x64', 'b8795')
+      ).rejects.toThrow('BINARY_NOT_FOUND')
     })
   })
 

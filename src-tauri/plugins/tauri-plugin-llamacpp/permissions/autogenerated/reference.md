@@ -38,6 +38,7 @@ Default permissions for the llamacpp plugin
 - `allow-get-backend-dir`
 - `allow-get-backend-exe-path`
 - `allow-check-backend-installed`
+- `allow-verify-backend-installation`
 - `allow-fetch-remote-supported-backends`
 - `allow-build-backend-download-items`
 
@@ -1190,6 +1191,32 @@ Enables the validate_backend_string command without any pre-configured scope.
 <td>
 
 Denies the validate_backend_string command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-verify-backend-installation`
+
+</td>
+<td>
+
+Enables the verify_backend_installation command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-verify-backend-installation`
+
+</td>
+<td>
+
+Denies the verify_backend_installation command without any pre-configured scope.
 
 </td>
 </tr>

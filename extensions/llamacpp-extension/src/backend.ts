@@ -106,6 +106,28 @@ export async function isBackendInstalled(
   })
 }
 
+export type BackendVerificationResult = {
+  verified: boolean
+  missing_libraries: string[]
+  resolved_libraries: string[]
+}
+
+export async function verifyBackendInstallation(
+  backend: string,
+  version: string
+): Promise<BackendVerificationResult> {
+  const janDataFolder = await getJanDataFolderPath()
+  return invoke<BackendVerificationResult>(
+    'plugin:llamacpp|verify_backend_installation',
+    {
+      backend,
+      version,
+      janDataFolder,
+      isWindows: IS_WINDOWS,
+    }
+  )
+}
+
 export async function downloadBackend(
   backend: string,
   version: string,

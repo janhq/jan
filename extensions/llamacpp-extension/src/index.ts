@@ -30,6 +30,7 @@ import {
   listSupportedBackends,
   downloadBackend,
   isBackendInstalled,
+  verifyBackendInstallation,
   getBackendExePath,
   getBackendDir,
 } from './backend'
@@ -1715,6 +1716,29 @@ export default class llamacpp_extension extends AIEngine {
     return `${this.provider}/${cleanModelId}`
   }
 
+  private async verifyBackendDeps(backend: string, version: string): Promise<void> {
+    const backendKey = `${version}/${backend}`
+    try {
+      const verification = await verifyBackendInstallation(backend, version)
+      if (verification.verified) {
+        logger.info(
+          `Backend ${backendKey} dependency verification passed (${verification.resolved_libraries.length} libraries resolved)`
+        )
+      } else {
+        logger.warn(
+          `Backend ${backendKey} is missing libraries: ${verification.missing_libraries.join(', ')}`
+        )
+        events.emit(AppEvent.onBackendVerificationFailed, {
+          backend,
+          version,
+          missingLibraries: verification.missing_libraries,
+        })
+      }
+    } catch (verifyErr) {
+      logger.warn(`Backend ${backendKey} dependency verification failed: ${verifyErr}`)
+    }
+  }
+
   private async ensureBackendReady(
     backend: string,
     version: string
@@ -1724,6 +1748,7 @@ export default class llamacpp_extension extends AIEngine {
     // Check if backend is already installed
     const isInstalled = await isBackendInstalled(backend, version)
     if (isInstalled) {
+      await this.verifyBackendDeps(backend, version)
       return
     }
 
@@ -1745,6 +1770,8 @@ export default class llamacpp_extension extends AIEngine {
     this.pendingDownloads.set(backendKey, downloadPromise)
     await downloadPromise
     logger.info(`Backend ${backendKey} download completed`)
+
+    await this.verifyBackendDeps(backend, version)
   }
 
   private async *handleStreamingResponse(
