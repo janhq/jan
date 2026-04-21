@@ -52,8 +52,12 @@ function MarketplaceModelDetailContent() {
 
   const { getProviderByName } = useModelProvider()
   const llamaProvider = getProviderByName('llamacpp')
-  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
-    useDownloadStore()
+  const {
+    downloads,
+    localDownloadingModels,
+    addLocalDownloadingModel,
+    removeLocalDownloadingModel,
+  } = useDownloadStore()
 
   const [token, setTokenState] = useState<string | null>(null)
   const [tokenInput, setTokenInput] = useState('')
@@ -185,6 +189,8 @@ function MarketplaceModelDetailContent() {
   const handleBatchDownload = useCallback(
     async (quantDir: string | null, saveDir: string) => {
       if (!model) return
+      const batchModelId = `${model.id}${quantDir ? `-${quantDir}` : ''}`
+      addLocalDownloadingModel(batchModelId)
       try {
         const { invoke } = await import('@tauri-apps/api/core')
         await invoke('download_modelscope_model', {
@@ -240,9 +246,11 @@ function MarketplaceModelDetailContent() {
         })
         toast.error('批量下载失败: ' + errMsg)
         console.error('Batch download failed:', err)
+      } finally {
+        removeLocalDownloadingModel(batchModelId)
       }
     },
-    [model, serviceHub]
+    [model, serviceHub, addLocalDownloadingModel, removeLocalDownloadingModel]
   )
 
   const toggleDir = useCallback((path: string) => {
@@ -331,6 +339,8 @@ function MarketplaceModelDetailContent() {
           })
           toast.error('下载失败: ' + errMsg)
           console.error('Download failed:', err)
+        } finally {
+          removeLocalDownloadingModel(fileModelId)
         }
       } else {
         // For non-GGUF files, we currently only support browsing.
@@ -339,7 +349,7 @@ function MarketplaceModelDetailContent() {
         )
       }
     },
-    [model, addLocalDownloadingModel, serviceHub]
+    [model, addLocalDownloadingModel, removeLocalDownloadingModel, serviceHub]
   )
 
   const renderFileTree = useCallback(
