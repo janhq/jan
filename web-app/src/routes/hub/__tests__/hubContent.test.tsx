@@ -429,11 +429,33 @@ describe('HubContent', () => {
 
   it('clears the selected instance when the opened item disappears from the running list', async () => {
     const user = userEvent.setup()
-    let includeInstance = true
+    const statusState = {
+      isRunning: true,
+      isInstalled: true,
+      version: '0.11.4',
+      models: [
+        {
+          name: 'qwen2.5:7b',
+          model: 'qwen2.5:7b',
+          modified_at: '2026-04-21T00:00:00Z',
+          size: 1,
+          digest: 'digest-1',
+        },
+      ],
+      refresh: mockRefresh,
+      isLoading: false,
+      isInstalling: false,
+      installProgress: 0,
+      installStatus: null,
+      installMessage: '',
+      installOllama: mockInstallOllama,
+      startOllama: mockStartOllama,
+    }
 
+    mockUseOllamaStatus.mockImplementation(() => statusState)
     mockInvoke.mockImplementation(async (command: string) => {
       if (command === 'ollama_ps') {
-        return includeInstance
+        return statusState.isRunning
           ? [
               {
                 name: 'qwen2.5:7b',
@@ -450,7 +472,7 @@ describe('HubContent', () => {
     })
 
     const Component = Route.component as React.ComponentType
-    render(<Component />)
+    const { rerender } = render(<Component />)
 
     await user.click(await screen.findByRole('button', { name: '查看详情' }))
 
@@ -458,8 +480,9 @@ describe('HubContent', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
 
-    includeInstance = false
-    await user.click(screen.getByRole('button', { name: /鍒锋柊|刷新/ }))
+    statusState.isRunning = false
+    statusState.models = []
+    rerender(<Component />)
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
