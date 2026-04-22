@@ -25,6 +25,7 @@ import {
   OllamaRunFormState,
   buildOllamaRunPayload,
 } from './ollamaRunSchema'
+import { toast } from 'sonner'
 
 type OllamaRunPanelProps = {
   models: string[]
@@ -58,7 +59,7 @@ const getFieldLayoutClassName = (field: keyof typeof OLLAMA_RUN_FIELD_UI) => {
 const FieldLabel = ({ field, id }: { field: keyof typeof OLLAMA_RUN_FIELD_UI; id: string }) => (
   <div className="mb-2 flex items-center gap-2">
     <label htmlFor={id} className="text-[12px] font-medium text-foreground">
-      {field}
+      {field === 'model' ? `${field} *` : field}
     </label>
     <Tooltip>
       <TooltipTrigger asChild>
@@ -277,7 +278,18 @@ export function OllamaRunPanel({
           <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             常用参数
           </div>
-          <div className="text-[11px] text-muted-foreground">短参数高密度混排</div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-full px-3 text-xs"
+              onClick={() => toast.info('智能填写参数即将支持自动计算，本轮先提供 UI 入口')}
+            >
+              智能填写参数
+            </Button>
+            <div className="text-[11px] text-muted-foreground">短参数高密度混排</div>
+          </div>
         </div>
         <div
           data-testid="ollama-run-common-grid"

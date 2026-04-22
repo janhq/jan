@@ -146,7 +146,7 @@ describe('OllamaRunPanel', () => {
 
     expect(screen.getByLabelText('model')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('输入或选择模型...')).toBeInTheDocument()
-    expect(screen.getByText('model')).toBeInTheDocument()
+    expect(screen.getByText('model *')).toBeInTheDocument()
     expect(screen.getByLabelText('temperature')).toBeInTheDocument()
     expect(screen.getByText('请选择 model')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '启动' })).toBeDisabled()
@@ -274,5 +274,19 @@ describe('OllamaRunPanel', () => {
     await user.click(screen.getByRole('button', { name: '高级' }))
 
     expect(screen.getByTestId('ollama-run-advanced-grid')).toBeInTheDocument()
+  })
+
+  it('marks required fields and shows the smart-fill UI entry without changing submit behavior', () => {
+    render(
+      <OllamaRunPanel
+        models={['qwen2.5:7b']}
+        isSubmitting={false}
+        onSubmit={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('model *')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '智能填写参数' })).toBeInTheDocument()
+    expect(screen.getByText('请选择 model')).toBeInTheDocument()
   })
 })
