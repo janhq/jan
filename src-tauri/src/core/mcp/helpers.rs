@@ -263,10 +263,19 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
         let base_delay_ms = settings.base_restart_delay_ms;
         let max_delay_ms = settings.max_restart_delay_ms;
         let multiplier = settings.backoff_multiplier;
-        let delay_ms = (base_delay_ms as f64
-            * multiplier.powi((consecutive_failures - 1) as i32))
-            as u64;
-        let capped_delay_ms = delay_ms.min(max_delay_ms);
+        let safe_multiplier = if multiplier.is_finite() && multiplier >= 1.0 {
+            multiplier
+        } else {
+            1.0
+        };
+        let raw_delay =
+            base_delay_ms as f64 * safe_multiplier.powi((consecutive_failures - 1) as i32);
+        let delay_ms = if raw_delay.is_finite() {
+            raw_delay as u64
+        } else {
+            max_delay_ms
+        };
+        let capped_delay_ms = delay_ms.min(max_delay_ms).max(base_delay_ms);
 
         log::info!(
             "MCP server {name} reconnect attempt {} in {}ms",
