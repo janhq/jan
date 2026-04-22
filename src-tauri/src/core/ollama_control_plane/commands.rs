@@ -660,6 +660,12 @@ pub async fn stop_ollama() -> Result<(), String> {
                 continue;
             }
 
+            log::error!(
+                "taskkill failed for {}. stdout: {} stderr: {}",
+                target.image_name,
+                stdout,
+                stderr
+            );
             return Err(format!(
                 "taskkill failed for {}: {}{}",
                 target.image_name, stdout, stderr
@@ -673,30 +679,6 @@ pub async fn stop_ollama() -> Result<(), String> {
         }
         wait_for_ollama_shutdown().await?;
         return Ok(());
-
-        let output = tokio::process::Command::new("taskkill")
-            .args(["/IM", "ollama.exe", "/F"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-            .await
-            .map_err(|e| format!("Failed to execute taskkill: {e}"))?;
-
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if !output.status.success() {
-            // Ollama may not be running — treat "not found" as success
-            let stderr_lower = stderr.to_lowercase();
-            if stderr_lower.contains("not found")
-                || stderr_lower.contains("找不到")
-                || stderr_lower.contains("no running instances")
-                || stderr_lower.contains("没有运行")
-            {
-                log::info!("Ollama process was not running");
-                return Ok(());
-            }
-            return Err(format!("taskkill failed: {}", stderr));
-        }
-
-        log::info!("Ollama stopped successfully via taskkill");
     }
 
     #[cfg(not(target_os = "windows"))]
