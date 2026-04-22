@@ -172,7 +172,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
-          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
+          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY != '' && secrets.JAN_SIGNING_KEY || 'local-dev-test-key-not-for-production' }}
           TAURI_TRAY: libappindicator3
       # Publish app
 

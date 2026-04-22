@@ -243,7 +243,7 @@ jobs:
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
+          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY != '' && secrets.JAN_SIGNING_KEY || 'local-dev-test-key-not-for-production' }}
 
       - name: Upload NSIS Installer Artifact
         uses: actions/upload-artifact@v4
