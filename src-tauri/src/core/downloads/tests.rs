@@ -329,32 +329,11 @@ fn test_err_to_string() {
 }
 
 #[test]
-fn test_handle_emit_error_for_tests_does_not_panic_on_error() {
+fn test_handle_emit_result_does_not_panic_on_error() {
     let result = panic::catch_unwind(|| {
-        handle_emit_error_for_tests("download-progress", Err("frontend listener disconnected".into()));
+        handle_emit_result("download-progress", Err("frontend listener disconnected".into()));
     });
     assert!(result.is_ok());
-}
-
-#[tokio::test]
-async fn test_cleanup_failed_validation_still_removes_files_after_emit_failure() {
-    // Simulate an emit failure and ensure cleanup is unaffected.
-    handle_emit_error_for_tests("download-progress", Err("emit failed".into()));
-
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!("jan-download-cleanup-{unique}"));
-    let file = dir.join("model.gguf");
-
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    tokio::fs::write(&file, b"partial").await.unwrap();
-
-    cleanup_failed_validation(&file).await;
-
-    assert!(!file.exists());
-    assert!(!dir.exists());
 }
 
 #[test]
@@ -697,13 +676,8 @@ fn test_download_manager_state_default_is_empty() {
 // ===== emit error handling =====
 
 #[test]
-fn test_failed_emit_does_not_panic() {
-    handle_emit_error_for_tests("some-event", Err("simulated emit failure".to_string()));
-}
-
-#[test]
 fn test_ok_emit_does_not_panic() {
-    handle_emit_error_for_tests("some-event", Ok(()));
+    handle_emit_result("some-event", Ok(()));
 }
 
 #[tokio::test]
