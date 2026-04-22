@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
 import {
@@ -76,6 +76,8 @@ export function SecurityConfigDialog({
 }: SecurityConfigDialogProps) {
   // Tab state
   const [activeTab, setActiveTab] = useState<TabType>('auth')
+  const activeTabRef = useRef<TabType>(activeTab)
+  activeTabRef.current = activeTab
 
   // Security status state
   const [status, setStatus] = useState<SecurityStatus | null>(null)
@@ -158,7 +160,7 @@ export function SecurityConfigDialog({
     }
   }, [])
 
-  // Load data when dialog opens
+  // Load data when dialog opens; if user left the dialog on Devices/Logs, refresh that list
   useEffect(() => {
     if (isOpen) {
       fetchStatus()
@@ -167,17 +169,14 @@ export function SecurityConfigDialog({
       setConfirmPassword('')
       setShowToken(false)
       setShowPassword(false)
+      const tab = activeTabRef.current
+      if (tab === 'devices') {
+        void fetchDevices()
+      } else if (tab === 'logs') {
+        void fetchLogs()
+      }
     }
-  }, [isOpen, fetchStatus])
-
-  // Load tab-specific data
-  useEffect(() => {
-    if (isOpen && activeTab === 'devices') {
-      fetchDevices()
-    } else if (isOpen && activeTab === 'logs') {
-      fetchLogs()
-    }
-  }, [isOpen, activeTab, fetchDevices, fetchLogs])
+  }, [isOpen, fetchStatus, fetchDevices, fetchLogs])
 
   // Handle auth mode change
   const handleAuthModeChange = async (newMode: AuthMode) => {
@@ -360,6 +359,7 @@ export function SecurityConfigDialog({
         onClick={() => {
           if (tabsDisabled) return
           setActiveTab('devices')
+          void fetchDevices()
         }}
         className={cn(
           'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
@@ -378,6 +378,7 @@ export function SecurityConfigDialog({
         onClick={() => {
           if (tabsDisabled) return
           setActiveTab('logs')
+          void fetchLogs()
         }}
         className={cn(
           'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
