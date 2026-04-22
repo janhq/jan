@@ -968,7 +968,7 @@ fn verify_backend_dependencies(
 }
 
 #[tauri::command]
-pub fn verify_backend_installation(
+pub async fn verify_backend_installation(
     backend: String,
     version: String,
     jan_data_folder: String,
@@ -983,9 +983,17 @@ pub fn verify_backend_installation(
             Some(exe_path.to_string_lossy().to_string()),
         ));
     }
-    // Scan from the backend root so all co-located DLLs/SOs are included.
+    // Directory walk + lddtree parsing is CPU-bound and can be slow on Windows
+    // with many DLLs. Run on the blocking thread pool to avoid stalling the
+    // Tauri async runtime.
     let backend_dir = PathBuf::from(get_backend_dir(backend, version, jan_data_folder));
-    verify_backend_dependencies(&backend_dir)
+    tokio::task::spawn_blocking(move || verify_backend_dependencies(&backend_dir))
+        .await
+        .map_err(|e| crate::error::LlamacppError::new(
+            crate::error::ErrorCode::InternalError,
+            "Dependency verification task panicked".into(),
+            Some(e.to_string()),
+        ))?
 }
 
 // ============================================================================
@@ -1849,8 +1857,8 @@ mod tests {
     // Tests for verify_backend_installation
     // -------------------------------------------------------------------------
 
-    #[test]
-    fn test_verify_backend_installation_returns_err_when_exe_missing() {
+    #[tokio::test]
+    async fn test_verify_backend_installation_returns_err_when_exe_missing() {
         let temp_dir = tempfile::tempdir().unwrap();
         let jan_data = temp_dir.path().to_string_lossy().to_string();
 
@@ -1859,7 +1867,8 @@ mod tests {
             "b7523".to_string(),
             jan_data,
             false,
-        );
+        )
+        .await;
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -1894,8 +1903,8 @@ mod tests {
         assert!(r.missing_libraries.is_empty());
     }
 
-    #[test]
-    fn test_verify_backend_installation_scans_whole_backend_dir() {
+    #[tokio::test]
+    async fn test_verify_backend_installation_scans_whole_backend_dir() {
         let temp_dir = tempfile::tempdir().unwrap();
         let jan_data = temp_dir.path().to_string_lossy().to_string();
 
@@ -1917,7 +1926,8 @@ mod tests {
             "b7523".to_string(),
             jan_data,
             false,
-        );
+        )
+        .await;
         assert!(result.is_ok());
         let r = result.unwrap();
         assert!(r.verified);
