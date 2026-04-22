@@ -10,6 +10,7 @@ export interface OllamaInstanceItem {
   modelName: string
   port: string
   parameterSummary: string
+  unloadKey: string
 }
 
 interface OllamaInstanceListProps {
@@ -17,6 +18,7 @@ interface OllamaInstanceListProps {
   isLoading: boolean
   totalVram: number
   onViewDetails: (item: OllamaInstanceItem) => void
+  onUnload: (item: OllamaInstanceItem) => void
 }
 
 const STATUS_LABELS: Record<OllamaInstanceStatus, string> = {
@@ -38,6 +40,7 @@ export function OllamaInstanceList({
   isLoading,
   totalVram,
   onViewDetails,
+  onUnload,
 }: OllamaInstanceListProps) {
   return (
     <section className="flex flex-col gap-2">
@@ -86,14 +89,24 @@ export function OllamaInstanceList({
                   </div>
                 </div>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() => onViewDetails(item)}
-                >
-                  查看详情
-                </Button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => onViewDetails(item)}
+                  >
+                    查看详情
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => onUnload(item)}
+                  >
+                    卸载
+                  </Button>
+                </div>
               </div>
 
               {item.parameterSummary && (

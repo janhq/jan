@@ -152,6 +152,19 @@ export function HubContent() {
     [fetchRunningModels]
   )
 
+  const handleUnload = useCallback(
+    async (item: OllamaInstanceItem) => {
+      try {
+        await invoke('ollama_unload_model', { model: item.unloadKey })
+        toast.success(`模型 ${item.modelName} 已卸载`)
+        await fetchRunningModels()
+      } catch (error) {
+        toast.error(`卸载失败: ${String(error)}`)
+      }
+    },
+    [fetchRunningModels]
+  )
+
   const handleStopOllama = useCallback(async () => {
     try {
       await invoke('stop_ollama')
@@ -190,6 +203,7 @@ export function HubContent() {
     modelName: model.name,
     port: servicePortLabel,
     parameterSummary: buildParameterSummary(model),
+    unloadKey: model.name,
   }))
 
   const selectedInstance =
@@ -240,6 +254,7 @@ export function HubContent() {
               isLoading={psLoading}
               totalVram={totalVram}
               onViewDetails={handleViewInstanceDetails}
+              onUnload={handleUnload}
             />
 
             <OllamaLifecycleDialog
