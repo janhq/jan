@@ -4044,6 +4044,15 @@ mod tests {
         assert!(into.is_empty());
     }
 
+    #[test]
+    fn copy_optional_chat_params_non_object_source_is_noop() {
+        for non_obj in [json!(null), json!(42), json!("string"), json!([1, 2, 3])] {
+            let mut into = serde_json::Map::new();
+            copy_optional_chat_params(&non_obj, &mut into);
+            assert!(into.is_empty(), "expected no-op for non-object source: {non_obj}");
+        }
+    }
+
     // -------------------------------------------------------------------------
     // sse_event
     // -------------------------------------------------------------------------

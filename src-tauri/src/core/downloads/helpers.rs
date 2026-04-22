@@ -55,7 +55,7 @@ pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {e}")
 }
 
-fn handle_emit_result(event_name: &str, result: Result<(), String>) {
+pub(crate) fn handle_emit_result(event_name: &str, result: Result<(), String>) {
     if let Err(err) = result {
         log::warn!("Failed to emit event '{event_name}': {err}");
     }
@@ -79,11 +79,6 @@ pub(crate) async fn cleanup_failed_validation(save_path: &Path) {
     }
 }
 
-// `emit_event_safe` is generic over `Runtime` and requires a live Tauri app, so it cannot be
-// called directly from unit tests. This thin wrapper exposes `handle_emit_result` for test use.
-pub(crate) fn handle_emit_error_for_tests(event_name: &str, result: Result<(), String>) {
-    handle_emit_result(event_name, result);
-}
 
 /// Converts a URL to Jan mirror URL if applicable
 /// e.g., https://huggingface.co/... -> https://apps.jan.ai/huggingface.co/...
