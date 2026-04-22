@@ -62,7 +62,7 @@ function getInstallRecommendations(
   const recommendations: InstallRecommendation[] = []
   const coveredLibs = new Set<string>()
 
-  // CUDA / NCCL libs
+  // CUDA runtime/compute libs (excluding NCCL which has its own package)
   const cudaLibs = missingLibs.filter((lib) => {
     const l = lib.toLowerCase()
     return (
@@ -73,7 +73,6 @@ function getInstallRecommendations(
       l.includes('cufft') ||
       l.includes('cusolver') ||
       l.includes('cusparse') ||
-      l.includes('nccl') ||
       l.includes('cudart') ||
       l.startsWith('nvcuda') ||
       l === 'cuda.dll'
@@ -83,16 +82,27 @@ function getInstallRecommendations(
   if (cudaLibs.length > 0) {
     cudaLibs.forEach((l) => coveredLibs.add(l))
     const versionSuffix = cudaVersion ? ` ${cudaVersion}` : ''
-    const cudaUrl = isWindows
-      ? 'https://developer.nvidia.com/cuda-downloads'
-      : 'https://developer.nvidia.com/cuda-downloads'
     recommendations.push({
       label: `NVIDIA CUDA Toolkit${versionSuffix}`,
       description: isWindows
         ? `Install the CUDA Toolkit${versionSuffix} from NVIDIA. During installation, select "CUDA" components.`
         : `Install the CUDA Toolkit${versionSuffix} from NVIDIA. On Debian/Ubuntu: sudo apt install cuda-toolkit-${cudaVersion ?? '12'}. On RHEL/Fedora: use the NVIDIA repo.`,
-      url: cudaUrl,
+      url: 'https://developer.nvidia.com/cuda-downloads',
       libs: cudaLibs,
+    })
+  }
+
+  // NCCL — separate from CUDA Toolkit, distributed via NVIDIA Deep Learning repo
+  const ncclLibs = missingLibs.filter((lib) => lib.toLowerCase().includes('nccl'))
+  if (ncclLibs.length > 0) {
+    ncclLibs.forEach((l) => coveredLibs.add(l))
+    recommendations.push({
+      label: 'NVIDIA NCCL',
+      description: isWindows
+        ? 'Install NCCL from the NVIDIA Developer site. NCCL is used for multi-GPU collective communications.'
+        : 'Install NCCL via the NVIDIA package repository. On Debian/Ubuntu: sudo apt install libnccl2 libnccl-dev. See the NVIDIA NCCL install guide for your distro.',
+      url: 'https://developer.nvidia.com/nccl/nccl-download',
+      libs: ncclLibs,
     })
   }
 
