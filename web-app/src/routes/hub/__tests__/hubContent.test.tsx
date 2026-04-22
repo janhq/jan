@@ -144,6 +144,20 @@ describe('HubContent', () => {
     })
   })
 
+  it('renders a compact ollama process status bar with a management entry instead of the old large card', async () => {
+    const Component = Route.component as React.ComponentType
+    render(<Component />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Ollama 进程')).toBeInTheDocument()
+    })
+    expect(screen.getByText('版本 0.11.4')).toBeInTheDocument()
+    expect(screen.getByText('端口 11434')).toBeInTheDocument()
+    expect(screen.getByText('实例 0')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '管理' })).toBeInTheDocument()
+    expect(screen.queryByText('点击“启动 Ollama”即可运行')).not.toBeInTheDocument()
+  })
+
   it('keeps the newest running-model response when older requests resolve later', async () => {
     const user = userEvent.setup()
     const firstPs = createDeferred<

@@ -7,14 +7,10 @@ import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useOllamaStatus } from '@/hooks/useOllamaStatus'
 import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
 import { OllamaRunPanel } from '@/components/hub/OllamaRunPanel'
-import {
-  IconRefresh,
-  IconSettings,
-  IconCpu,
-  IconGauge,
-} from '@tabler/icons-react'
+import { OllamaServiceStatusBar } from '@/components/hub/OllamaServiceStatusBar'
+import { OllamaLifecycleDialog } from '@/components/hub/OllamaLifecycleDialog'
+import { IconSettings, IconCpu, IconGauge } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -54,118 +50,6 @@ interface OllamaPsModel {
     quantization_level?: string
   }
   expires_at: string
-}
-
-function StatusDot({
-  color,
-}: {
-  color: 'green' | 'yellow' | 'orange' | 'red' | 'gray'
-}) {
-  const map = {
-    green: 'bg-green-500',
-    yellow: 'bg-yellow-500',
-    orange: 'bg-orange-400',
-    red: 'bg-red-500',
-    gray: 'bg-gray-400',
-  }
-
-  return <div className={cn('w-2.5 h-2.5 rounded-full shrink-0', map[color])} />
-}
-
-type OllamaStatusCardProps = {
-  isRunning: boolean
-  isInstalled: boolean
-  version?: string
-  models: Array<{ name: string }>
-  refresh: () => void | Promise<void>
-  isInstalling: boolean
-  installProgress: number
-  installMessage: string
-  installOllama: () => void | Promise<void>
-  startOllama: () => void | Promise<void>
-}
-
-function OllamaStatusCard({
-  isRunning,
-  isInstalled,
-  version,
-  models,
-  refresh,
-  isInstalling,
-  installProgress,
-  installMessage,
-  installOllama,
-  startOllama,
-}: OllamaStatusCardProps) {
-  const statusColor: 'green' | 'yellow' | 'orange' | 'red' = isRunning
-    ? 'green'
-    : isInstalling
-      ? 'yellow'
-      : isInstalled
-        ? 'orange'
-        : 'red'
-
-  const statusText = isRunning
-    ? 'Ollama 运行中'
-    : isInstalling
-      ? '正在安装 Ollama...'
-      : isInstalled
-        ? 'Ollama 已安装但未启动'
-        : 'Ollama 未安装'
-
-  return (
-    <div className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <StatusDot color={statusColor} />
-          <div className="flex flex-col min-w-0">
-            <span className="text-sm font-medium text-foreground truncate">
-              {statusText}
-            </span>
-            {isRunning && (
-              <span className="text-xs text-muted-foreground">
-                版本 {version} · 已安装 {models.length} 个模型
-              </span>
-            )}
-            {!isRunning && !isInstalling && isInstalled && (
-              <span className="text-xs text-muted-foreground">
-                点击“启动 Ollama”即可运行
-              </span>
-            )}
-            {!isRunning && !isInstalling && !isInstalled && (
-              <span className="text-xs text-muted-foreground">
-                需要 Ollama 才能使用本地模型
-              </span>
-            )}
-            {isInstalling && (
-              <span className="text-xs text-muted-foreground">{installMessage}</span>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {!isRunning && !isInstalling && isInstalled && (
-            <Button variant="default" size="sm" onClick={startOllama}>
-              启动 Ollama
-            </Button>
-          )}
-          {!isRunning && !isInstalling && !isInstalled && (
-            <Button variant="default" size="sm" onClick={installOllama}>
-              一键安装
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={refresh}
-            disabled={isInstalling}
-          >
-            <IconRefresh size={16} className="text-muted-foreground" />
-          </Button>
-        </div>
-      </div>
-      {isInstalling && <Progress value={installProgress} className="h-1.5" />}
-    </div>
-  )
 }
 
 function RunningModelRow({
@@ -212,9 +96,9 @@ export function HubContent() {
     isInstalled: ollamaInstalled,
     version: ollamaVersion,
     models: ollamaModels,
+    installPath: ollamaInstallPath,
     refresh: refreshOllamaStatus,
     isInstalling,
-    installProgress,
     installMessage,
     installOllama,
     startOllama,
@@ -223,6 +107,7 @@ export function HubContent() {
   const [runningModels, setRunningModels] = useState<OllamaPsModel[]>([])
   const [psLoading, setPsLoading] = useState(false)
   const [isSubmittingRun, setIsSubmittingRun] = useState(false)
+  const [lifecycleDialogOpen, setLifecycleDialogOpen] = useState(false)
   const fetchSequenceRef = useRef(0)
 
   const fetchRunningModels = useCallback(async () => {
@@ -286,7 +171,22 @@ export function HubContent() {
     [fetchRunningModels]
   )
 
-  const totalVram = runningModels.reduce((sum, model) => sum + (model.size_vram || 0), 0)
+  const handleStopOllama = useCallback(async () => {
+    try {
+      await invoke('stop_ollama')
+      toast.success('Ollama 已停止')
+      await refreshOllamaStatus()
+      await fetchRunningModels()
+    } catch (error) {
+      toast.error(`停止失败: ${String(error)}`)
+    }
+  }, [fetchRunningModels, refreshOllamaStatus])
+
+  const totalVram = runningModels.reduce(
+    (sum, model) => sum + (model.size_vram || 0),
+    0
+  )
+  const servicePortLabel = '11434'
 
   return (
     <div className="flex flex-col h-svh w-full">
@@ -311,17 +211,15 @@ export function HubContent() {
 
         <div className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto">
           <div className="flex flex-col gap-5 w-full md:w-4/5 xl:w-4/6 mx-auto">
-            <OllamaStatusCard
-              isRunning={ollamaRunning}
+            <OllamaServiceStatusBar
               isInstalled={ollamaInstalled}
-              version={ollamaVersion}
-              models={ollamaModels}
-              refresh={refreshOllamaStatus}
+              isRunning={ollamaRunning}
               isInstalling={isInstalling}
-              installProgress={installProgress}
-              installMessage={installMessage}
-              installOllama={installOllama}
-              startOllama={startOllama}
+              version={ollamaVersion}
+              portLabel={servicePortLabel}
+              instanceCount={runningModels.length}
+              onManage={() => setLifecycleDialogOpen(true)}
+              onRefresh={refreshOllamaStatus}
             />
 
             <OllamaRunPanel
@@ -355,15 +253,27 @@ export function HubContent() {
               ) : (
                 <div className="flex flex-col gap-2">
                   {runningModels.map((ps) => (
-                    <RunningModelRow
-                      key={ps.name}
-                      ps={ps}
-                      onUnload={handleUnload}
-                    />
+                    <RunningModelRow key={ps.name} ps={ps} onUnload={handleUnload} />
                   ))}
                 </div>
               )}
             </div>
+
+            <OllamaLifecycleDialog
+              open={lifecycleDialogOpen}
+              onOpenChange={setLifecycleDialogOpen}
+              isInstalled={ollamaInstalled}
+              isRunning={ollamaRunning}
+              version={ollamaVersion}
+              installPath={ollamaInstallPath}
+              portLabel={servicePortLabel}
+              instanceCount={runningModels.length}
+              isInstalling={isInstalling}
+              installMessage={installMessage}
+              onInstall={installOllama}
+              onStart={startOllama}
+              onStop={handleStopOllama}
+            />
           </div>
         </div>
       </div>
