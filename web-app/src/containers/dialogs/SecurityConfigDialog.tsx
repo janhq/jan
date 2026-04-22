@@ -332,19 +332,23 @@ export function SecurityConfigDialog({
     return token.slice(0, 4) + '*'.repeat(token.length - 8) + token.slice(-4)
   }
 
-  // Render tab buttons (visible while initial status loads so layout/tests are stable; switch disabled until ready)
+  // While loading, avoid native disabled on tab buttons: getByRole('button', …) excludes disabled
+  // controls by default. Use aria-disabled + click guard so labels stay queryable.
   const renderTabs = (tabsDisabled: boolean) => (
     <div className="flex gap-1 p-1 bg-secondary/50 rounded-lg mb-4">
       <button
         type="button"
-        onClick={() => setActiveTab('auth')}
-        disabled={tabsDisabled}
+        aria-disabled={tabsDisabled}
+        onClick={() => {
+          if (tabsDisabled) return
+          setActiveTab('auth')
+        }}
         className={cn(
           'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
           activeTab === 'auth'
             ? 'bg-background text-foreground shadow-sm'
             : 'text-muted-foreground hover:text-foreground',
-          tabsDisabled && 'opacity-60 cursor-not-allowed'
+          tabsDisabled && 'cursor-not-allowed opacity-60'
         )}
       >
         <IconKey size={16} />
@@ -352,14 +356,17 @@ export function SecurityConfigDialog({
       </button>
       <button
         type="button"
-        onClick={() => setActiveTab('devices')}
-        disabled={tabsDisabled}
+        aria-disabled={tabsDisabled}
+        onClick={() => {
+          if (tabsDisabled) return
+          setActiveTab('devices')
+        }}
         className={cn(
           'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
           activeTab === 'devices'
             ? 'bg-background text-foreground shadow-sm'
             : 'text-muted-foreground hover:text-foreground',
-          tabsDisabled && 'opacity-60 cursor-not-allowed'
+          tabsDisabled && 'cursor-not-allowed opacity-60'
         )}
       >
         <IconDevices size={16} />
@@ -367,14 +374,17 @@ export function SecurityConfigDialog({
       </button>
       <button
         type="button"
-        onClick={() => setActiveTab('logs')}
-        disabled={tabsDisabled}
+        aria-disabled={tabsDisabled}
+        onClick={() => {
+          if (tabsDisabled) return
+          setActiveTab('logs')
+        }}
         className={cn(
           'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
           activeTab === 'logs'
             ? 'bg-background text-foreground shadow-sm'
             : 'text-muted-foreground hover:text-foreground',
-          tabsDisabled && 'opacity-60 cursor-not-allowed'
+          tabsDisabled && 'cursor-not-allowed opacity-60'
         )}
       >
         <IconHistory size={16} />
