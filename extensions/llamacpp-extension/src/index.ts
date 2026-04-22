@@ -490,6 +490,16 @@ export default class llamacpp_extension extends AIEngine {
       if (!backendWasDownloaded && effectiveBackendString) {
         await this.ensureFinalBackendInstallation(effectiveBackendString)
       }
+
+      // Run dependency verification once after the backend is confirmed
+      // installed. This covers both fresh downloads and pre-existing installs,
+      // and runs only once per app startup via the isConfiguringBackends guard.
+      if (effectiveBackendString) {
+        const [version, backend] = effectiveBackendString.split('/')
+        if (version && backend) {
+          await this.verifyBackendDeps(backend, version)
+        }
+      }
     } finally {
       this.isConfiguringBackends = false
     }
@@ -1748,7 +1758,6 @@ export default class llamacpp_extension extends AIEngine {
     // Check if backend is already installed
     const isInstalled = await isBackendInstalled(backend, version)
     if (isInstalled) {
-      await this.verifyBackendDeps(backend, version)
       return
     }
 
@@ -1770,8 +1779,6 @@ export default class llamacpp_extension extends AIEngine {
     this.pendingDownloads.set(backendKey, downloadPromise)
     await downloadPromise
     logger.info(`Backend ${backendKey} download completed`)
-
-    await this.verifyBackendDeps(backend, version)
   }
 
   private async *handleStreamingResponse(

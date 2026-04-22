@@ -871,12 +871,31 @@ fn is_virtual_windows_dll(name: &str) -> bool {
     lower.starts_with("api-ms-win-") || lower.starts_with("ext-ms-win-")
 }
 
-/// Walk the dynamic library dependency tree of `exe_path` and report any
-/// unresolved libraries. The backend's own `build/bin` directory is added as
-/// an extra search path so that co-located CUDA / Vulkan DLLs are found.
-fn verify_backend_dependencies(
-    exe_path: &PathBuf,
-) -> Result<BackendVerificationResult, crate::error::LlamacppError> {
+/// Returns true for files that are likely native binaries worth analyzing.
+/// lddtree reads the file header to determine format, so this is just a
+/// cheap pre-filter to skip obviously non-binary files.
+fn looks_like_binary(path: &PathBuf) -> bool {
+    match path.extension().and_then(|e| e.to_str()) {
+        // Windows
+        Some("exe") | Some("dll") => true,
+        // macOS
+        Some("dylib") => true,
+        // Linux shared libs, including versioned names like libfoo.so.1.2
+        Some(ext) if ext == "so" || ext.starts_with("so.") => true,
+        // No extension: may be an ELF executable (llama-server on Linux/macOS)
+        None => true,
+        _ => false,
+    }
+}
+
+/// Analyze a single binary and accumulate its missing/resolved libraries into
+/// the provided sets. Silently skips files that are not valid binaries.
+fn analyze_binary(
+    path: &PathBuf,
+    bin_dir: &PathBuf,
+    missing: &mut std::collections::HashSet<String>,
+    resolved: &mut std::collections::HashSet<String>,
+) {
     use lddtree::DependencyAnalyzer;
 
     // Explicitly add the binary's directory as an extra search path.
@@ -886,37 +905,65 @@ fn verify_backend_dependencies(
     // - ELF: $ORIGIN rpaths are expanded automatically, but some builds omit $ORIGIN and
     //   rely on LD_LIBRARY_PATH being set at launch. add_library_path is the static
     //   equivalent of running `LD_LIBRARY_PATH=<dir> ./llama-server`.
-    let mut analyzer = DependencyAnalyzer::default();
-    if let Some(parent) = exe_path.parent() {
-        analyzer = analyzer.add_library_path(parent.to_path_buf());
-    }
+    let analyzer = DependencyAnalyzer::default().add_library_path(bin_dir.clone());
 
-    let tree = analyzer.analyze(exe_path).map_err(|e| {
-        crate::error::LlamacppError::new(
-            crate::error::ErrorCode::BinaryNotFound,
-            "Failed to parse backend binary for dependency analysis".into(),
-            Some(e.to_string()),
-        )
-    })?;
-
-    let mut missing = Vec::new();
-    let mut resolved = Vec::new();
+    let tree = match analyzer.analyze(path) {
+        Ok(t) => t,
+        Err(_) => return, // not a binary we can parse — skip silently
+    };
 
     for (name, lib) in &tree.libraries {
         if lib.found() {
-            resolved.push(name.clone());
+            resolved.insert(name.clone());
         } else if !is_virtual_windows_dll(name) {
-            missing.push(name.clone());
+            missing.insert(name.clone());
+        }
+    }
+}
+
+/// Walk every binary in `bin_dir` recursively and union their dependency trees.
+/// Returns a `BackendVerificationResult` with all unresolved libraries across
+/// the entire backend installation, not just the main executable.
+fn verify_backend_dependencies(
+    bin_dir: &PathBuf,
+) -> Result<BackendVerificationResult, crate::error::LlamacppError> {
+    if !bin_dir.exists() {
+        return Err(crate::error::LlamacppError::new(
+            crate::error::ErrorCode::BinaryNotFound,
+            "Backend directory not found".into(),
+            Some(bin_dir.to_string_lossy().to_string()),
+        ));
+    }
+
+    let mut missing = std::collections::HashSet::new();
+    let mut resolved = std::collections::HashSet::new();
+
+    // Walk the directory recursively so nested layouts (build/bin/) are covered.
+    let walker = walkdir::WalkDir::new(bin_dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file());
+
+    for entry in walker {
+        let path = entry.path().to_path_buf();
+        if looks_like_binary(&path) {
+            analyze_binary(&path, bin_dir, &mut missing, &mut resolved);
         }
     }
 
-    missing.sort();
-    resolved.sort();
+    // A library may appear as resolved by one binary even if it is missing for
+    // another. Only keep libraries that are genuinely unresolved everywhere.
+    let truly_missing: Vec<String> = missing.difference(&resolved).cloned().collect();
+    let mut truly_missing = truly_missing;
+    let mut resolved_vec: Vec<String> = resolved.into_iter().collect();
+    truly_missing.sort();
+    resolved_vec.sort();
 
     Ok(BackendVerificationResult {
-        verified: missing.is_empty(),
-        missing_libraries: missing,
-        resolved_libraries: resolved,
+        verified: truly_missing.is_empty(),
+        missing_libraries: truly_missing,
+        resolved_libraries: resolved_vec,
     })
 }
 
@@ -928,7 +975,7 @@ pub fn verify_backend_installation(
     is_windows: bool,
 ) -> Result<BackendVerificationResult, crate::error::LlamacppError> {
     let exe_path =
-        PathBuf::from(get_backend_exe_path(backend, version, jan_data_folder, is_windows));
+        PathBuf::from(get_backend_exe_path(backend.clone(), version.clone(), jan_data_folder.clone(), is_windows));
     if !exe_path.exists() {
         return Err(crate::error::LlamacppError::new(
             crate::error::ErrorCode::BinaryNotFound,
@@ -936,7 +983,9 @@ pub fn verify_backend_installation(
             Some(exe_path.to_string_lossy().to_string()),
         ));
     }
-    verify_backend_dependencies(&exe_path)
+    // Scan from the backend root so all co-located DLLs/SOs are included.
+    let backend_dir = PathBuf::from(get_backend_dir(backend, version, jan_data_folder));
+    verify_backend_dependencies(&backend_dir)
 }
 
 // ============================================================================
@@ -1818,14 +1867,11 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_backend_dependencies_returns_err_on_unparseable_file() {
+    fn test_verify_backend_dependencies_returns_err_on_missing_dir() {
         let temp_dir = tempfile::tempdir().unwrap();
+        let nonexistent = temp_dir.path().join("does-not-exist");
 
-        // Write a file that is not a valid ELF/Mach-O/PE binary
-        let fake_exe = temp_dir.path().join("llama-server");
-        fs::write(&fake_exe, b"not a real binary").unwrap();
-
-        let result = verify_backend_dependencies(&fake_exe);
+        let result = verify_backend_dependencies(&nonexistent);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -1833,37 +1879,48 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_backend_installation_finds_exe_in_build_bin() {
+    fn test_verify_backend_dependencies_skips_unparseable_files() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        // An unparseable file in the dir should be silently skipped, not error.
+        fs::write(temp_dir.path().join("llama-server"), b"not a real binary").unwrap();
+        fs::write(temp_dir.path().join("libggml.so"), b"not a real binary").unwrap();
+
+        let result = verify_backend_dependencies(&temp_dir.path().to_path_buf());
+
+        // Succeeds with an empty result — nothing parseable, nothing missing.
+        assert!(result.is_ok());
+        let r = result.unwrap();
+        assert!(r.verified);
+        assert!(r.missing_libraries.is_empty());
+    }
+
+    #[test]
+    fn test_verify_backend_installation_scans_whole_backend_dir() {
         let temp_dir = tempfile::tempdir().unwrap();
         let jan_data = temp_dir.path().to_string_lossy().to_string();
 
-        // Place a non-binary stub in build/bin — enough to confirm the path
-        // resolution logic; actual ELF parsing is tested separately.
-        let build_bin = PathBuf::from(&jan_data)
+        // Create the backend dir with a stub exe and a stub DLL beside it.
+        let backend_dir = PathBuf::from(&jan_data)
             .join("llamacpp")
             .join("backends")
             .join("b7523")
-            .join("linux-common_cpus-x64")
-            .join("build")
-            .join("bin");
-        fs::create_dir_all(&build_bin).unwrap();
-        fs::write(build_bin.join("llama-server"), b"not a real binary").unwrap();
+            .join("linux-common_cpus-x64");
+        fs::create_dir_all(&backend_dir).unwrap();
+        fs::write(backend_dir.join("llama-server"), b"not a real binary").unwrap();
+        fs::write(backend_dir.join("libggml.so"), b"not a real binary").unwrap();
 
-        // Should reach lddtree (and fail to parse), not the BinaryNotFound path
+        // Both files are unparseable stubs — verify_backend_installation must
+        // return Ok (nothing missing) rather than Err, confirming it walks the
+        // whole directory and skips non-binaries rather than hard-failing.
         let result = verify_backend_installation(
             "linux-common_cpus-x64".to_string(),
             "b7523".to_string(),
             jan_data,
             false,
         );
-
-        // The file exists so we get past the existence check; lddtree returns
-        // BinaryNotFound (parse error) rather than a "file not found" error.
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(matches!(err.code, crate::error::ErrorCode::BinaryNotFound));
-        // The error detail must mention the binary path, not just "not found"
-        assert!(err.details.as_deref().unwrap_or("").len() > 0);
+        assert!(result.is_ok());
+        let r = result.unwrap();
+        assert!(r.verified);
     }
 
     #[test]
