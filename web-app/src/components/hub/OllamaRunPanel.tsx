@@ -1,9 +1,15 @@
-import { FormEvent, useState } from 'react'
+import { type FormEvent, type ReactNode, useState } from 'react'
 import { ModelCombobox } from '@/containers/ModelCombobox'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
+import { cn } from '@/lib/utils'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import {
   Collapsible,
   CollapsibleContent,
@@ -14,6 +20,7 @@ import {
   OLLAMA_RUN_ADVANCED_REQUEST_FIELDS,
   OLLAMA_RUN_COMMON_FIELDS,
   OLLAMA_RUN_FIELD_KIND_MAP,
+  OLLAMA_RUN_FIELD_UI,
   OLLAMA_RUN_THINK_VALUES,
   OllamaRunFormState,
   buildOllamaRunPayload,
@@ -39,6 +46,56 @@ const parseNullableBooleanValue = (value: string): boolean | null => {
   if (value === 'false') return false
   return null
 }
+
+const getFieldLayoutClassName = (field: keyof typeof OLLAMA_RUN_FIELD_UI) => {
+  const layout = OLLAMA_RUN_FIELD_UI[field].layout
+
+  if (layout === 'wide') return 'md:col-span-2 xl:col-span-2'
+  if (layout === 'full') return 'md:col-span-2 xl:col-span-4'
+  return 'col-span-1'
+}
+
+const FieldLabel = ({ field, id }: { field: keyof typeof OLLAMA_RUN_FIELD_UI; id: string }) => (
+  <div className="mb-2 flex items-center gap-2">
+    <label htmlFor={id} className="text-[12px] font-medium text-foreground">
+      {field}
+    </label>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={`查看 ${field} 参数说明`}
+          className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border/70 bg-background/60 text-[10px] font-semibold leading-none text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+        >
+          ?
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-72 text-left leading-5">
+        {OLLAMA_RUN_FIELD_UI[field].help}
+      </TooltipContent>
+    </Tooltip>
+  </div>
+)
+
+const FieldShell = ({
+  field,
+  children,
+  className,
+}: {
+  field: keyof typeof OLLAMA_RUN_FIELD_UI
+  children: ReactNode
+  className?: string
+}) => (
+  <div
+    className={cn(
+      'rounded-xl border border-border/60 bg-background/60 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]',
+      getFieldLayoutClassName(field),
+      className
+    )}
+  >
+    {children}
+  </div>
+)
 
 export function OllamaRunPanel({
   models,
@@ -89,28 +146,29 @@ export function OllamaRunPanel({
     const value = form[field as keyof OllamaRunFormState]
     const id = `ollama-run-${field}`
     const kind = OLLAMA_RUN_FIELD_KIND_MAP[field as keyof typeof OLLAMA_RUN_FIELD_KIND_MAP]
+    const uiField = field as keyof typeof OLLAMA_RUN_FIELD_UI
 
     if (kind === 'boolean') {
       return (
-        <div key={field} className="flex items-center justify-between gap-3">
-          <label htmlFor={id} className="text-sm text-foreground">
-            {field}
-          </label>
-          <Switch
-            id={id}
-            checked={Boolean(value)}
-            onCheckedChange={(checked) => handleFieldChange(field, checked)}
-          />
-        </div>
+        <FieldShell key={field} field={uiField} className="min-h-[86px]">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <FieldLabel field={uiField} id={id} />
+            </div>
+            <Switch
+              id={id}
+              checked={Boolean(value)}
+              onCheckedChange={(checked) => handleFieldChange(field, checked)}
+            />
+          </div>
+        </FieldShell>
       )
     }
 
     if (kind === 'nullable-boolean') {
       return (
-        <div key={field} className="grid gap-1.5">
-          <label htmlFor={id} className="text-sm text-foreground">
-            {field}
-          </label>
+        <FieldShell key={field} field={uiField}>
+          <FieldLabel field={uiField} id={id} />
           <select
             id={id}
             aria-label={field}
@@ -124,16 +182,14 @@ export function OllamaRunPanel({
             <option value="true">true</option>
             <option value="false">false</option>
           </select>
-        </div>
+        </FieldShell>
       )
     }
 
     if (kind === 'think') {
       return (
-        <div key={field} className="grid gap-1.5">
-          <label htmlFor={id} className="text-sm text-foreground">
-            {field}
-          </label>
+        <FieldShell key={field} field={uiField}>
+          <FieldLabel field={uiField} id={id} />
           <select
             id={id}
             aria-label={field}
@@ -147,31 +203,31 @@ export function OllamaRunPanel({
               </option>
             ))}
           </select>
-        </div>
+        </FieldShell>
       )
     }
 
     if (kind === 'textarea' || kind === 'json' || kind === 'string-list') {
       return (
-        <div key={field} className="grid gap-1.5">
-          <label htmlFor={id} className="text-sm text-foreground">
-            {field}
-          </label>
+        <FieldShell key={field} field={uiField}>
+          <FieldLabel field={uiField} id={id} />
           <Textarea
             id={id}
             aria-label={field}
+            className={cn(
+              'min-h-[88px] resize-y',
+              (kind === 'json' || kind === 'string-list') && 'min-h-[104px]'
+            )}
             value={typeof value === 'string' ? value : ''}
             onChange={(event) => handleFieldChange(field, event.target.value)}
           />
-        </div>
+        </FieldShell>
       )
     }
 
     return (
-      <div key={field} className="grid gap-1.5">
-        <label htmlFor={id} className="text-sm text-foreground">
-          {field}
-        </label>
+      <FieldShell key={field} field={uiField}>
+        <FieldLabel field={uiField} id={id} />
         <Input
           id={id}
           aria-label={field}
@@ -179,48 +235,94 @@ export function OllamaRunPanel({
           value={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
           onChange={(event) => handleFieldChange(field, event.target.value)}
         />
-      </div>
+      </FieldShell>
     )
   }
 
   return (
-    <form className="grid gap-4" onSubmit={handleSubmit}>
-      <div className="grid gap-1.5">
-        <label htmlFor={modelInputId} className="text-sm text-foreground">
-          model
-        </label>
-        <ModelCombobox
-          value={model}
-          onChange={handleModelChange}
-          models={models}
-          placeholder="输入或选择模型..."
-          inputId={modelInputId}
-          inputAriaLabel="model"
-        />
-        {modelHint && <p className="text-xs text-muted-foreground">{modelHint}</p>}
+    <form
+      className="grid gap-4 rounded-[22px] border border-border/60 bg-card/95 p-4 shadow-sm md:p-5"
+      onSubmit={handleSubmit}
+    >
+      <div className="flex flex-col gap-3 border-b border-border/60 pb-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-1">
+          <div className="text-base font-semibold text-foreground">运行面板</div>
+          <p className="text-xs leading-5 text-muted-foreground">
+            从本地已下载模型中选择后，直接配置本次启动参数并运行
+          </p>
+        </div>
+        <div className="inline-flex w-fit items-center rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] text-muted-foreground">
+          本次启动临时生效
+        </div>
       </div>
 
-      <div className="grid gap-3">
-        {commonFields.map((field) => renderField(field))}
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.7fr)_220px]">
+        <FieldShell field="model" className="min-h-[94px]">
+          <FieldLabel field="model" id={modelInputId} />
+          <ModelCombobox
+            value={model}
+            onChange={handleModelChange}
+            models={models}
+            placeholder="输入或选择模型..."
+            inputId={modelInputId}
+            inputAriaLabel="model"
+          />
+          {modelHint && <p className="mt-2 text-xs text-muted-foreground">{modelHint}</p>}
+        </FieldShell>
+        {renderField('keep_alive')}
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            常用参数
+          </div>
+          <div className="text-[11px] text-muted-foreground">短参数高密度混排</div>
+        </div>
+        <div
+          data-testid="ollama-run-common-grid"
+          className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
+        >
+          {commonFields.map((field) => renderField(field))}
+        </div>
       </div>
 
       <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-        <CollapsibleTrigger asChild>
-          <Button type="button" variant="outline" size="sm" className="w-fit">
-            高级
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent className="mt-3 grid gap-4">
-          <div className="grid gap-3">
-            {OLLAMA_RUN_ADVANCED_REQUEST_FIELDS.map((field) => renderField(field))}
+        <div className="flex items-center justify-between gap-3">
+          <CollapsibleTrigger asChild>
+            <Button type="button" variant="outline" size="sm" className="rounded-full px-3">
+              高级
+            </Button>
+          </CollapsibleTrigger>
+          <div className="text-[11px] text-muted-foreground">展开后显示全部 Ollama 启动参数</div>
+        </div>
+        <CollapsibleContent className="mt-4 space-y-4">
+          <div className="space-y-2">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Request
+            </div>
+            <div
+              data-testid="ollama-run-advanced-grid"
+              className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
+            >
+              {OLLAMA_RUN_ADVANCED_REQUEST_FIELDS.map((field) => renderField(field))}
+            </div>
           </div>
-          <div className="grid gap-3">
-            {OLLAMA_RUN_ADVANCED_OPTION_FIELDS.map((field) => renderField(field))}
+          <div className="space-y-2">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Options
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {OLLAMA_RUN_ADVANCED_OPTION_FIELDS.map((field) => renderField(field))}
+            </div>
           </div>
         </CollapsibleContent>
       </Collapsible>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-3 border-t border-border/60 pt-4 md:flex-row md:items-center md:justify-between">
+        <p className="text-xs text-muted-foreground">
+          未选模型时，参数区保持显示，仅启动按钮不可用。
+        </p>
         <Button type="submit" disabled={!modelAvailable || isSubmitting}>
           {isSubmitting ? '启动中...' : '启动'}
         </Button>

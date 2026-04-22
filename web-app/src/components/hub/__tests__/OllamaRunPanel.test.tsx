@@ -3,6 +3,45 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { OllamaRunPanel } from '../OllamaRunPanel'
 
+vi.mock('@/components/ui/tooltip', async () => {
+  const React = await import('react')
+
+  return {
+    TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    TooltipTrigger: React.forwardRef(
+      (
+        {
+          children,
+          asChild,
+          ...props
+        }: {
+          children: React.ReactNode
+          asChild?: boolean
+          [key: string]: unknown
+        },
+        ref: React.ForwardedRef<HTMLElement>
+      ) => {
+        if (asChild && children && typeof children === 'object' && 'type' in children) {
+          return React.cloneElement(children as React.ReactElement, {
+            ...props,
+            ref,
+          })
+        }
+
+        return (
+          <button ref={ref as React.ForwardedRef<HTMLButtonElement>} {...props}>
+            {children}
+          </button>
+        )
+      }
+    ),
+    TooltipContent: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="tooltip-content">{children}</div>
+    ),
+  }
+})
+
 vi.mock('@/components/ui/collapsible', async () => {
   const React = await import('react')
   const OpenContext = React.createContext(false)
@@ -212,5 +251,28 @@ describe('OllamaRunPanel', () => {
 
     expect(handleSubmit).not.toHaveBeenCalled()
     expect(screen.getByText('context 需要有效的 JSON')).toBeInTheDocument()
+  })
+
+  it('renders console-style grouped fields with inline help affordances', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <OllamaRunPanel
+        models={['qwen2.5:7b']}
+        isSubmitting={false}
+        onSubmit={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('运行面板')).toBeInTheDocument()
+    expect(screen.getByText('从本地已下载模型中选择后，直接配置本次启动参数并运行')).toBeInTheDocument()
+    expect(screen.getByText('本次启动临时生效')).toBeInTheDocument()
+    expect(screen.getByTestId('ollama-run-common-grid')).toBeInTheDocument()
+    expect(screen.getAllByLabelText(/查看 .* 参数说明/).length).toBeGreaterThan(3)
+    expect(screen.getAllByTestId('tooltip-content').length).toBeGreaterThan(3)
+
+    await user.click(screen.getByRole('button', { name: '高级' }))
+
+    expect(screen.getByTestId('ollama-run-advanced-grid')).toBeInTheDocument()
   })
 })
