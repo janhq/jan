@@ -7,7 +7,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
 import { CatalogModel } from '@/services/models/types'
-import { cn } from '@/lib/utils'
+import { cn, sanitizeModelId } from '@/lib/utils'
 import { DownloadEvent, EngineManager, events } from '@janhq/core'
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -203,8 +203,3 @@ export const MlxModelDownloadAction = memo(({ model }: { model: CatalogModel }) 
     </div>
   )
 })
-
-// Helper function to sanitize model ID
-function sanitizeModelId(id: string): string {
-  return id.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
-}
