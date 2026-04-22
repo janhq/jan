@@ -7,6 +7,7 @@ import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
 import { createFileRoute, Link, useParams } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Capabilities from '@/containers/Capabilities'
+import { detectModelCapabilities } from '@/lib/model-capabilities-detector'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { DialogEditModel } from '@/containers/dialogs/EditModel'
@@ -1040,6 +1041,17 @@ function ProviderDetail() {
                 {provider?.models.length ? (
                   provider?.models.map((model, modelIndex) => {
                     const capabilities = model.capabilities || []
+                    const userConfigured = (model as Model & { _userConfiguredCapabilities?: boolean })._userConfiguredCapabilities
+                    const displayCapabilities = userConfigured
+                      ? capabilities
+                      : (() => {
+                          const detected = detectModelCapabilities(model.id)
+                          const merged = [...capabilities]
+                          if (detected.reasoning && !merged.includes('reasoning')) merged.push('reasoning')
+                          if (detected.web_search && !merged.includes('web_search')) merged.push('web_search')
+                          if (detected.embeddings && !merged.includes('embeddings')) merged.push('embeddings')
+                          return merged
+                        })()
                     return (
                       <CardItem
                         key={modelIndex}
@@ -1051,7 +1063,7 @@ function ProviderDetail() {
                             >
                               {getModelDisplayName(model)}
                             </h1>
-                            <Capabilities capabilities={capabilities} />
+                            <Capabilities capabilities={displayCapabilities} />
                           </div>
                         }
                         actions={
