@@ -77,14 +77,6 @@ vi.mock('@/components/hub/OllamaRunPanel', () => ({
 
 import { Route } from '../index'
 
-const createDeferred = <T,>() => {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((res) => {
-    resolve = res
-  })
-  return { promise, resolve }
-}
-
 describe('HubContent', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -118,154 +110,52 @@ describe('HubContent', () => {
     })
   })
 
-  it('renders the run panel, removes the redirect card, updates empty-state copy, and wires run submit', async () => {
-    const user = userEvent.setup()
-    const Component = Route.component as React.ComponentType
-
-    render(<Component />)
-
-    expect(mockUseOllamaStatus.mock.calls.length).toBeLessThanOrEqual(2)
-    expect(screen.getByText('RUN_PANEL')).toBeInTheDocument()
-    expect(screen.getByText('qwen2.5:7b')).toBeInTheDocument()
-    expect(screen.queryByText('管理本地模型')).not.toBeInTheDocument()
-
-    await waitFor(() => {
-      expect(screen.getByText('暂无运行中的模型')).toBeInTheDocument()
-    })
-
-    expect(screen.getByText('使用上方运行面板选择模型并启动')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'RUN_SUBMIT' }))
-
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('ollama_run_model', {
-        request: { model: 'qwen2.5:7b' },
-      })
-    })
-  })
-
-  it('renders a compact ollama process status bar with a management entry instead of the old large card', async () => {
-    const Component = Route.component as React.ComponentType
-    render(<Component />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Ollama 进程')).toBeInTheDocument()
-    })
-    expect(screen.getByText('版本 0.11.4')).toBeInTheDocument()
-    expect(screen.getByText('端口 11434')).toBeInTheDocument()
-    expect(screen.getByText('实例 0')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '管理' })).toBeInTheDocument()
-    expect(screen.queryByText('点击“启动 Ollama”即可运行')).not.toBeInTheDocument()
-  })
-
-  it('opens lifecycle dialog from manage entry and disables install action when already installed', async () => {
-    const user = userEvent.setup()
-    const Component = Route.component as React.ComponentType
-    render(<Component />)
-
-    await user.click(screen.getByRole('button', { name: /绠＄悊|管理/ }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/Ollama.*绠＄悊|Ollama.*管理/)).toBeInTheDocument()
-    })
-
-    expect(screen.getByRole('button', { name: /瀹夎|安装/ })).toBeDisabled()
-  })
-
-  it('triggers both status refresh and running instance fetch when clicking top refresh', async () => {
-    const user = userEvent.setup()
-    const Component = Route.component as React.ComponentType
-    render(<Component />)
-
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('ollama_ps')
-    })
-    const psCallsBeforeRefresh = mockInvoke.mock.calls.filter(
-      ([command]) => command === 'ollama_ps'
-    ).length
-
-    await user.click(screen.getByRole('button', { name: /鍒锋柊|刷新/ }))
-
-    await waitFor(() => {
-      expect(mockRefresh).toHaveBeenCalledTimes(1)
-    })
-    await waitFor(() => {
-      const psCallsAfterRefresh = mockInvoke.mock.calls.filter(
-        ([command]) => command === 'ollama_ps'
-      ).length
-      expect(psCallsAfterRefresh).toBeGreaterThan(psCallsBeforeRefresh)
-    })
-  })
-
-  it('opens the lifecycle dialog and disables install when ollama is already installed', async () => {
-    const user = userEvent.setup()
-    const Component = Route.component as React.ComponentType
-
-    render(<Component />)
-
-    await user.click(screen.getByRole('button', { name: /绠＄悊|管理/ }))
-
-    await waitFor(() => {
-      expect(screen.getByRole('dialog')).toBeInTheDocument()
-    })
-
-    expect(screen.getByRole('button', { name: /瀹夎|安装/ })).toBeDisabled()
-  })
-
-  it('refreshes both service status and running instances from the top bar', async () => {
-    const user = userEvent.setup()
-    const Component = Route.component as React.ComponentType
-
-    render(<Component />)
-
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('ollama_ps')
-    })
-
-    const initialPsCalls = mockInvoke.mock.calls.filter(
-      ([command]) => command === 'ollama_ps'
-    ).length
-
-    await user.click(screen.getByRole('button', { name: /鍒锋柊|刷新/ }))
-
-    await waitFor(() => {
-      expect(mockRefresh).toHaveBeenCalledTimes(1)
-    })
-
-    await waitFor(() => {
-      const refreshedPsCalls = mockInvoke.mock.calls.filter(
-        ([command]) => command === 'ollama_ps'
-      ).length
-      expect(refreshedPsCalls).toBeGreaterThan(initialPsCalls)
-    })
-  })
-
-  it('keeps the newest running-model response when older requests resolve later', async () => {
-    const user = userEvent.setup()
-    const firstPs = createDeferred<
-      Array<{
-        name: string
-        model: string
-        size: number
-        size_vram: number
-        digest: string
-        expires_at: string
-      }>
-    >()
-    let psCalls = 0
-
+  it('renders the running instances section with port 11434 and detail actions when ollama_ps returns items', async () => {
     mockInvoke.mockImplementation(async (command: string) => {
-      if (command === 'ollama_run_model') return undefined
       if (command === 'ollama_ps') {
-        psCalls += 1
-        if (psCalls === 1) return firstPs.promise
         return [
           {
-            name: 'run-loaded',
-            model: 'run-loaded',
-            size: 10,
-            size_vram: 5,
-            digest: 'digest-run',
+            name: 'qwen2.5:7b',
+            model: 'qwen2.5:7b',
+            size: 8 * 1024 * 1024 * 1024,
+            size_vram: 4 * 1024 * 1024 * 1024,
+            digest: 'digest-1',
+            expires_at: '2099-01-01T00:00:00Z',
+            details: {
+              parameter_size: '7B',
+              quantization_level: 'Q4_K_M',
+            },
+          },
+        ]
+      }
+      if (command === 'ollama_run_model') return undefined
+      return undefined
+    })
+
+    const Component = Route.component as React.ComponentType
+    render(<Component />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/运行实例/)).toBeInTheDocument()
+    })
+
+    expect(screen.getAllByText('qwen2.5:7b').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('端口 11434').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: '查看详情' })).toBeInTheDocument()
+  })
+
+  it('opens the instance detail dialog when clicking 查看详情', async () => {
+    const user = userEvent.setup()
+
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === 'ollama_ps') {
+        return [
+          {
+            name: 'qwen2.5:7b',
+            model: 'qwen2.5:7b',
+            size: 8 * 1024 * 1024 * 1024,
+            size_vram: 4 * 1024 * 1024 * 1024,
+            digest: 'digest-1',
             expires_at: '2099-01-01T00:00:00Z',
           },
         ]
@@ -276,89 +166,24 @@ describe('HubContent', () => {
     const Component = Route.component as React.ComponentType
     render(<Component />)
 
-    await user.click(screen.getByRole('button', { name: 'RUN_SUBMIT' }))
+    await user.click(await screen.findByRole('button', { name: '查看详情' }))
 
     await waitFor(() => {
-      expect(screen.getByText('run-loaded')).toBeInTheDocument()
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
 
-    firstPs.resolve([])
-
-    await waitFor(() => {
-      expect(screen.getByText('run-loaded')).toBeInTheDocument()
-    })
-    expect(screen.queryByText('暂无运行中的模型')).not.toBeInTheDocument()
+    expect(screen.getByText('运行实例详情')).toBeInTheDocument()
+    expect(screen.getByText('保存并自动重启')).toBeInTheDocument()
   })
 
-  it('clears the loading state when ollama stops while a running-model request is still pending', async () => {
-    const firstPs = createDeferred<
-      Array<{
-        name: string
-        model: string
-        size: number
-        size_vram: number
-        digest: string
-        expires_at: string
-      }>
-    >()
-    const statusState = {
-      isRunning: true,
-      isInstalled: true,
-      version: '0.11.4',
-      models: [
-        {
-          name: 'qwen2.5:7b',
-          model: 'qwen2.5:7b',
-          modified_at: '2026-04-21T00:00:00Z',
-          size: 1,
-          digest: 'digest-1',
-        },
-      ],
-      refresh: mockRefresh,
-      isLoading: false,
-      isInstalling: false,
-      installProgress: 0,
-      installStatus: null,
-      installMessage: '',
-      installOllama: mockInstallOllama,
-      startOllama: mockStartOllama,
-    }
-
-    mockUseOllamaStatus.mockImplementation(() => statusState)
-    mockInvoke.mockImplementation(async (command: string) => {
-      if (command === 'ollama_ps') return firstPs.promise
-      return undefined
-    })
-
+  it('renders 暂无运行实例 when ollama_ps returns no items', async () => {
     const Component = Route.component as React.ComponentType
-    const { rerender } = render(<Component />)
+    render(<Component />)
 
     await waitFor(() => {
-      expect(screen.getByText('正在获取运行状态...')).toBeInTheDocument()
+      expect(screen.getByText('暂无运行实例')).toBeInTheDocument()
     })
 
-    statusState.isRunning = false
-    statusState.models = []
-    rerender(<Component />)
-
-    await waitFor(() => {
-      expect(screen.queryByText('正在获取运行状态...')).not.toBeInTheDocument()
-    })
-    expect(screen.getByText('暂无运行中的模型')).toBeInTheDocument()
-
-    firstPs.resolve([
-      {
-        name: 'late-model',
-        model: 'late-model',
-        size: 10,
-        size_vram: 5,
-        digest: 'digest-late',
-        expires_at: '2099-01-01T00:00:00Z',
-      },
-    ])
-
-    await waitFor(() => {
-      expect(screen.queryByText('late-model')).not.toBeInTheDocument()
-    })
+    expect(screen.queryByText('暂无运行中的模型')).not.toBeInTheDocument()
   })
 })

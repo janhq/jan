@@ -1,22 +1,41 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { route } from '@/constants/routes'
-import { cn, toGigabytes } from '@/lib/utils'
+import { IconSettings } from '@tabler/icons-react'
+import { invoke } from '@tauri-apps/api/core'
+import { toast } from 'sonner'
 import HeaderPage from '@/containers/HeaderPage'
-import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useOllamaStatus } from '@/hooks/useOllamaStatus'
-import { Button } from '@/components/ui/button'
+import { OllamaInstanceDetailDialog } from '@/components/hub/OllamaInstanceDetailDialog'
+import {
+  OllamaInstanceList,
+  type OllamaInstanceItem,
+} from '@/components/hub/OllamaInstanceList'
+import { OllamaLifecycleDialog } from '@/components/hub/OllamaLifecycleDialog'
 import { OllamaRunPanel } from '@/components/hub/OllamaRunPanel'
 import { OllamaServiceStatusBar } from '@/components/hub/OllamaServiceStatusBar'
-import { OllamaLifecycleDialog } from '@/components/hub/OllamaLifecycleDialog'
-import { IconSettings, IconCpu, IconGauge } from '@tabler/icons-react'
-import { toast } from 'sonner'
-import { invoke } from '@tauri-apps/api/core'
+import { Button } from '@/components/ui/button'
+import { route } from '@/constants/routes'
+import { useOllamaStatus } from '@/hooks/useOllamaStatus'
+import { useTranslation } from '@/i18n/react-i18next-compat'
+import { cn, toGigabytes } from '@/lib/utils'
 
 export const Route = createFileRoute(route.hub.index as any)({
   component: HubContent,
 })
+
+interface OllamaPsModel {
+  name: string
+  model: string
+  size: number
+  size_vram: number
+  digest: string
+  details?: {
+    family?: string
+    parameter_size?: string
+    quantization_level?: string
+  }
+  expires_at: string
+}
 
 function timeLeftLabel(expiresAt?: string): string {
   if (!expiresAt) return ''
@@ -38,55 +57,27 @@ function processorLabel(ps: OllamaPsModel): string {
   return 'Mixed'
 }
 
-interface OllamaPsModel {
-  name: string
-  model: string
-  size: number
-  size_vram: number
-  digest: string
-  details?: {
-    family?: string
-    parameter_size?: string
-    quantization_level?: string
+function buildParameterSummary(ps: OllamaPsModel): string {
+  const parts = [processorLabel(ps)]
+
+  if (ps.details?.parameter_size) {
+    parts.push(ps.details.parameter_size)
   }
-  expires_at: string
-}
 
-function RunningModelRow({
-  ps,
-  onUnload,
-}: {
-  ps: OllamaPsModel
-  onUnload: (name: string) => void
-}) {
-  const proc = processorLabel(ps)
-  const vramText = `${toGigabytes(ps.size_vram, { hideUnit: true })}GB VRAM`
+  if (ps.details?.quantization_level) {
+    parts.push(ps.details.quantization_level)
+  }
+
+  if (ps.size_vram > 0) {
+    parts.push(`${toGigabytes(ps.size_vram)} VRAM`)
+  }
+
   const timeLeft = timeLeftLabel(ps.expires_at)
+  if (timeLeft) {
+    parts.push(timeLeft)
+  }
 
-  return (
-    <div className="flex items-center justify-between gap-3 py-2 px-3 rounded-md bg-muted/40 border border-border/50">
-      <div className="flex items-center gap-3 min-w-0">
-        <IconGauge size={16} className="text-muted-foreground shrink-0" />
-        <div className="flex flex-col min-w-0">
-          <span className="text-sm font-medium text-foreground truncate">
-            {ps.name}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {proc} · {vramText}
-            {timeLeft ? ` · ${timeLeft}` : ''}
-          </span>
-        </div>
-      </div>
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-7 text-xs shrink-0"
-        onClick={() => onUnload(ps.name)}
-      >
-        卸载
-      </Button>
-    </div>
-  )
+  return parts.join(' · ')
 }
 
 export function HubContent() {
@@ -108,6 +99,9 @@ export function HubContent() {
   const [psLoading, setPsLoading] = useState(false)
   const [isSubmittingRun, setIsSubmittingRun] = useState(false)
   const [lifecycleDialogOpen, setLifecycleDialogOpen] = useState(false)
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(
+    null
+  )
   const fetchSequenceRef = useRef(0)
 
   const fetchRunningModels = useCallback(async () => {
@@ -158,19 +152,6 @@ export function HubContent() {
     [fetchRunningModels]
   )
 
-  const handleUnload = useCallback(
-    async (name: string) => {
-      try {
-        await invoke('ollama_unload_model', { model: name })
-        toast.success(`模型 ${name} 已卸载`)
-        await fetchRunningModels()
-      } catch (error) {
-        toast.error(`卸载失败: ${String(error)}`)
-      }
-    },
-    [fetchRunningModels]
-  )
-
   const handleStopOllama = useCallback(async () => {
     try {
       await invoke('stop_ollama')
@@ -187,15 +168,36 @@ export function HubContent() {
     await fetchRunningModels()
   }, [fetchRunningModels, refreshOllamaStatus])
 
+  const handleViewInstanceDetails = useCallback((item: OllamaInstanceItem) => {
+    setSelectedInstanceId(item.id)
+  }, [])
+
+  const handleDetailDialogChange = useCallback((open: boolean) => {
+    if (!open) {
+      setSelectedInstanceId(null)
+    }
+  }, [])
+
   const totalVram = runningModels.reduce(
     (sum, model) => sum + (model.size_vram || 0),
     0
   )
   const servicePortLabel = '11434'
 
+  const instanceItems: OllamaInstanceItem[] = runningModels.map((model) => ({
+    id: `${model.name}:${model.digest}`,
+    status: 'running',
+    modelName: model.name,
+    port: servicePortLabel,
+    parameterSummary: buildParameterSummary(model),
+  }))
+
+  const selectedInstance =
+    instanceItems.find((item) => item.id === selectedInstanceId) ?? null
+
   return (
-    <div className="flex flex-col h-svh w-full">
-      <div className="flex flex-col h-full w-full">
+    <div className="flex h-svh w-full flex-col">
+      <div className="flex h-full w-full flex-col">
         <HeaderPage>
           <div
             className={cn(
@@ -214,8 +216,8 @@ export function HubContent() {
           </div>
         </HeaderPage>
 
-        <div className="p-4 w-full h-[calc(100%-60px)] overflow-y-auto">
-          <div className="flex flex-col gap-5 w-full md:w-4/5 xl:w-4/6 mx-auto">
+        <div className="h-[calc(100%-60px)] w-full overflow-y-auto p-4">
+          <div className="mx-auto flex w-full flex-col gap-5 md:w-4/5 xl:w-4/6">
             <OllamaServiceStatusBar
               isInstalled={ollamaInstalled}
               isRunning={ollamaRunning}
@@ -233,36 +235,12 @@ export function HubContent() {
               onSubmit={handleRunModel}
             />
 
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  运行中模型 ({runningModels.length})
-                </span>
-                {totalVram > 0 && (
-                  <span className="text-xs text-muted-foreground">
-                    总 VRAM: {toGigabytes(totalVram)}
-                  </span>
-                )}
-              </div>
-
-              {psLoading && runningModels.length === 0 ? (
-                <div className="py-4 text-center text-xs text-muted-foreground">
-                  正在获取运行状态...
-                </div>
-              ) : runningModels.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-6 gap-2 text-muted-foreground border border-dashed border-border rounded-lg">
-                  <IconCpu size={24} className="opacity-50" />
-                  <span className="text-sm">暂无运行中的模型</span>
-                  <span className="text-xs">使用上方运行面板选择模型并启动</span>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {runningModels.map((ps) => (
-                    <RunningModelRow key={ps.name} ps={ps} onUnload={handleUnload} />
-                  ))}
-                </div>
-              )}
-            </div>
+            <OllamaInstanceList
+              items={instanceItems}
+              isLoading={psLoading}
+              totalVram={totalVram}
+              onViewDetails={handleViewInstanceDetails}
+            />
 
             <OllamaLifecycleDialog
               open={lifecycleDialogOpen}
@@ -278,6 +256,12 @@ export function HubContent() {
               onInstall={installOllama}
               onStart={startOllama}
               onStop={handleStopOllama}
+            />
+
+            <OllamaInstanceDetailDialog
+              open={selectedInstance !== null}
+              onOpenChange={handleDetailDialogChange}
+              instance={selectedInstance}
             />
           </div>
         </div>
