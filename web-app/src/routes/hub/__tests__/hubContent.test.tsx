@@ -197,6 +197,49 @@ describe('HubContent', () => {
     })
   })
 
+  it('opens the lifecycle dialog and disables install when ollama is already installed', async () => {
+    const user = userEvent.setup()
+    const Component = Route.component as React.ComponentType
+
+    render(<Component />)
+
+    await user.click(screen.getByRole('button', { name: /绠＄悊|管理/ }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    expect(screen.getByRole('button', { name: /瀹夎|安装/ })).toBeDisabled()
+  })
+
+  it('refreshes both service status and running instances from the top bar', async () => {
+    const user = userEvent.setup()
+    const Component = Route.component as React.ComponentType
+
+    render(<Component />)
+
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('ollama_ps')
+    })
+
+    const initialPsCalls = mockInvoke.mock.calls.filter(
+      ([command]) => command === 'ollama_ps'
+    ).length
+
+    await user.click(screen.getByRole('button', { name: /鍒锋柊|刷新/ }))
+
+    await waitFor(() => {
+      expect(mockRefresh).toHaveBeenCalledTimes(1)
+    })
+
+    await waitFor(() => {
+      const refreshedPsCalls = mockInvoke.mock.calls.filter(
+        ([command]) => command === 'ollama_ps'
+      ).length
+      expect(refreshedPsCalls).toBeGreaterThan(initialPsCalls)
+    })
+  })
+
   it('keeps the newest running-model response when older requests resolve later', async () => {
     const user = userEvent.setup()
     const firstPs = createDeferred<
