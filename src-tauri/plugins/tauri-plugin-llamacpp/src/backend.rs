@@ -861,6 +861,16 @@ pub struct BackendVerificationResult {
     pub resolved_libraries: Vec<String>,
 }
 
+/// Windows API set DLLs (e.g. `api-ms-win-*`, `ext-ms-win-*`) are virtual —
+/// they never exist as real files on disk and are resolved by the Windows
+/// kernel at load time via an internal API set schema. lddtree records them
+/// as not-found because static analysis cannot locate them, but they are not
+/// genuinely missing and must not be reported as such.
+fn is_virtual_windows_dll(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.starts_with("api-ms-win-") || lower.starts_with("ext-ms-win-")
+}
+
 /// Walk the dynamic library dependency tree of `exe_path` and report any
 /// unresolved libraries. The backend's own `build/bin` directory is added as
 /// an extra search path so that co-located CUDA / Vulkan DLLs are found.
@@ -895,7 +905,7 @@ fn verify_backend_dependencies(
     for (name, lib) in &tree.libraries {
         if lib.found() {
             resolved.push(name.clone());
-        } else {
+        } else if !is_virtual_windows_dll(name) {
             missing.push(name.clone());
         }
     }
@@ -1854,6 +1864,16 @@ mod tests {
         assert!(matches!(err.code, crate::error::ErrorCode::BinaryNotFound));
         // The error detail must mention the binary path, not just "not found"
         assert!(err.details.as_deref().unwrap_or("").len() > 0);
+    }
+
+    #[test]
+    fn test_is_virtual_windows_dll() {
+        assert!(is_virtual_windows_dll("api-ms-win-core-memory-l1-1-0.dll"));
+        assert!(is_virtual_windows_dll("API-MS-WIN-CORE-LIBRARYLOADER-L1-2-0.DLL"));
+        assert!(is_virtual_windows_dll("ext-ms-win-ntuser-draw-l1-1-0.dll"));
+        assert!(!is_virtual_windows_dll("KERNEL32.dll"));
+        assert!(!is_virtual_windows_dll("libcuda.so.1"));
+        assert!(!is_virtual_windows_dll("libvulkan.so.1"));
     }
 
     // -------------------------------------------------------------------------
