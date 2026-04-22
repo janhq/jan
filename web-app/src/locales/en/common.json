@@ -269,8 +269,12 @@
   },
   "missingDependenciesDialog": {
     "title": "Missing System Libraries",
-    "description": "The backend \"{{backend}}\" was installed but some required system libraries could not be found. The backend may not run correctly.",
-    "missingLibraries": "Missing libraries:"
+    "description": "The {{backend}} was installed but some required system libraries could not be found. It may fall back to CPU or not run correctly.",
+    "installLabel": "To fix this, install the following:",
+    "download": "Download",
+    "additionalLibraries": "Additional missing libraries:",
+    "missingLibraries": "Missing libraries:",
+    "showRawLibraries": "Show {{count}} missing library names"
   },
   "projects": {
     "title": "Projects",
