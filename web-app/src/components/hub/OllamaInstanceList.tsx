@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button'
-import { IconCpu } from '@tabler/icons-react'
 import { toGigabytes } from '@/lib/utils'
+import { IconCpu } from '@tabler/icons-react'
 
 export type OllamaInstanceStatus = 'running' | 'warning' | 'error'
 
@@ -45,7 +45,7 @@ export function OllamaInstanceList({
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           运行实例 ({items.length})
         </span>
         {totalVram > 0 && (

@@ -4,7 +4,6 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { IconSettings } from '@tabler/icons-react'
 import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
-import HeaderPage from '@/containers/HeaderPage'
 import { OllamaInstanceDetailDialog } from '@/components/hub/OllamaInstanceDetailDialog'
 import {
   OllamaInstanceList,
@@ -14,6 +13,7 @@ import { OllamaLifecycleDialog } from '@/components/hub/OllamaLifecycleDialog'
 import { OllamaRunPanel } from '@/components/hub/OllamaRunPanel'
 import { OllamaServiceStatusBar } from '@/components/hub/OllamaServiceStatusBar'
 import { Button } from '@/components/ui/button'
+import HeaderPage from '@/containers/HeaderPage'
 import { route } from '@/constants/routes'
 import { useOllamaStatus } from '@/hooks/useOllamaStatus'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -208,6 +208,12 @@ export function HubContent() {
 
   const selectedInstance =
     instanceItems.find((item) => item.id === selectedInstanceId) ?? null
+
+  useEffect(() => {
+    if (selectedInstanceId && !selectedInstance) {
+      setSelectedInstanceId(null)
+    }
+  }, [selectedInstance, selectedInstanceId])
 
   return (
     <div className="flex h-svh w-full flex-col">

@@ -90,7 +90,9 @@ export function OllamaInstanceDetailDialog({
               本轮先提供详情与编辑壳子，后续会在这里接入配置编辑与自动重启流程。
             </div>
 
-            <Button variant="outline">修改配置</Button>
+            <Button variant="outline" disabled>
+              修改配置
+            </Button>
             <Button disabled>保存并自动重启</Button>
           </div>
         </div>

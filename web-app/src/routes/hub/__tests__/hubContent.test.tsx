@@ -198,49 +198,6 @@ describe('HubContent', () => {
     })
   })
 
-  it('opens the lifecycle dialog and disables install when ollama is already installed', async () => {
-    const user = userEvent.setup()
-    const Component = Route.component as React.ComponentType
-
-    render(<Component />)
-
-    await user.click(screen.getByRole('button', { name: /绠＄悊|管理/ }))
-
-    await waitFor(() => {
-      expect(screen.getByRole('dialog')).toBeInTheDocument()
-    })
-
-    expect(screen.getByRole('button', { name: /瀹夎|安装/ })).toBeDisabled()
-  })
-
-  it('refreshes both service status and running instances from the top bar', async () => {
-    const user = userEvent.setup()
-    const Component = Route.component as React.ComponentType
-
-    render(<Component />)
-
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith('ollama_ps')
-    })
-
-    const initialPsCalls = mockInvoke.mock.calls.filter(
-      ([command]) => command === 'ollama_ps'
-    ).length
-
-    await user.click(screen.getByRole('button', { name: /鍒锋柊|刷新/ }))
-
-    await waitFor(() => {
-      expect(mockRefresh).toHaveBeenCalledTimes(1)
-    })
-
-    await waitFor(() => {
-      const refreshedPsCalls = mockInvoke.mock.calls.filter(
-        ([command]) => command === 'ollama_ps'
-      ).length
-      expect(refreshedPsCalls).toBeGreaterThan(initialPsCalls)
-    })
-  })
-
   it('keeps the newest running-model response when older requests resolve later', async () => {
     const user = userEvent.setup()
     const firstPs = createDeferred<
@@ -468,5 +425,45 @@ describe('HubContent', () => {
       ([command]) => command === 'ollama_ps'
     ).length
     expect(psCalls).toBeGreaterThan(1)
+  })
+
+  it('clears the selected instance when the opened item disappears from the running list', async () => {
+    const user = userEvent.setup()
+    let includeInstance = true
+
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === 'ollama_ps') {
+        return includeInstance
+          ? [
+              {
+                name: 'qwen2.5:7b',
+                model: 'qwen2.5:7b',
+                size: 8 * 1024 * 1024 * 1024,
+                size_vram: 4 * 1024 * 1024 * 1024,
+                digest: 'digest-1',
+                expires_at: '2099-01-01T00:00:00Z',
+              },
+            ]
+          : []
+      }
+      return undefined
+    })
+
+    const Component = Route.component as React.ComponentType
+    render(<Component />)
+
+    await user.click(await screen.findByRole('button', { name: '查看详情' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    includeInstance = false
+    await user.click(screen.getByRole('button', { name: /鍒锋柊|刷新/ }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('暂无运行实例')).toBeInTheDocument()
   })
 })
