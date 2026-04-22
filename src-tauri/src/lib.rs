@@ -21,6 +21,94 @@ use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 
 #[cfg(not(feature = "cli"))]
+macro_rules! invoke_commands_with_extras {
+    ($($extra:path),* $(,)?) => {
+        tauri::generate_handler![
+        // FS commands - Deperecate soon
+        core::filesystem::commands::join_path,
+        core::filesystem::commands::mkdir,
+        core::filesystem::commands::exists_sync,
+        core::filesystem::commands::readdir_sync,
+        core::filesystem::commands::read_file_sync,
+        core::filesystem::commands::rm,
+        core::filesystem::commands::mv,
+        core::filesystem::commands::file_stat,
+        core::filesystem::commands::write_file_sync,
+        core::filesystem::commands::write_yaml,
+        core::filesystem::commands::read_yaml,
+        core::filesystem::commands::decompress,
+        core::filesystem::commands::open_dialog,
+        core::filesystem::commands::save_dialog,
+        // App configuration commands
+        core::app::commands::get_app_configurations,
+        core::app::commands::get_user_home_path,
+        core::app::commands::update_app_configuration,
+        core::app::commands::get_jan_data_folder_path,
+        core::app::commands::get_configuration_file_path,
+        core::app::commands::default_data_folder_path,
+        core::app::commands::change_app_data_folder,
+        core::app::commands::app_token,
+        // Extension commands
+        core::extensions::commands::get_jan_extensions_path,
+        core::extensions::commands::install_extensions,
+        core::extensions::commands::get_active_extensions,
+        // System commands
+        core::system::commands::relaunch,
+        core::system::commands::open_app_directory,
+        core::system::commands::open_file_explorer,
+        core::system::commands::factory_reset,
+        core::system::commands::read_logs,
+        core::system::commands::is_library_available,
+        core::system::commands::launch_claude_code_with_config,
+        core::system::commands::check_jan_cli_installed,
+        core::system::commands::install_jan_cli,
+        core::system::commands::uninstall_jan_cli,
+        core::system::commands::clear_claude_code_env,
+        // Server commands
+        core::server::commands::start_server,
+        core::server::commands::stop_server,
+        core::server::commands::get_server_status,
+        // Remote provider commands
+        core::server::remote_provider_commands::register_provider_config,
+        core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::get_provider_config,
+        core::server::remote_provider_commands::list_provider_configs,
+        // MCP commands
+        core::mcp::commands::get_tools,
+        core::mcp::commands::get_tools_for_servers,
+        core::mcp::commands::get_server_summaries,
+        core::mcp::commands::call_tool,
+        core::mcp::commands::cancel_tool_call,
+        core::mcp::commands::restart_mcp_servers,
+        core::mcp::commands::get_connected_servers,
+        core::mcp::commands::save_mcp_configs,
+        core::mcp::commands::get_mcp_configs,
+        core::mcp::commands::activate_mcp_server,
+        core::mcp::commands::deactivate_mcp_server,
+        core::mcp::commands::check_jan_browser_extension_connected,
+        // Threads
+        core::threads::commands::list_threads,
+        core::threads::commands::create_thread,
+        core::threads::commands::modify_thread,
+        core::threads::commands::delete_thread,
+        core::threads::commands::list_messages,
+        core::threads::commands::create_message,
+        core::threads::commands::modify_message,
+        core::threads::commands::delete_message,
+        core::threads::commands::get_thread_assistant,
+        core::threads::commands::create_thread_assistant,
+        core::threads::commands::modify_thread_assistant,
+        // Download
+        core::downloads::commands::download_files,
+        core::downloads::commands::cancel_download_task,
+        $(
+            $extra,
+        )*
+    ]
+    };
+}
+
+#[cfg(not(feature = "cli"))]
 #[cfg_attr(
     all(mobile, any(target_os = "android", target_os = "ios")),
     tauri::mobile_entry_point
@@ -67,84 +155,7 @@ pub fn run() {
 
     // Desktop: include updater commands
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    let app_builder = app_builder.invoke_handler(tauri::generate_handler![
-        // FS commands - Deperecate soon
-        core::filesystem::commands::join_path,
-        core::filesystem::commands::mkdir,
-        core::filesystem::commands::exists_sync,
-        core::filesystem::commands::readdir_sync,
-        core::filesystem::commands::read_file_sync,
-        core::filesystem::commands::rm,
-        core::filesystem::commands::mv,
-        core::filesystem::commands::file_stat,
-        core::filesystem::commands::write_file_sync,
-        core::filesystem::commands::write_yaml,
-        core::filesystem::commands::read_yaml,
-        core::filesystem::commands::decompress,
-        core::filesystem::commands::open_dialog,
-        core::filesystem::commands::save_dialog,
-        // App configuration commands
-        core::app::commands::get_app_configurations,
-        core::app::commands::get_user_home_path,
-        core::app::commands::update_app_configuration,
-        core::app::commands::get_jan_data_folder_path,
-        core::app::commands::get_configuration_file_path,
-        core::app::commands::default_data_folder_path,
-        core::app::commands::change_app_data_folder,
-        core::app::commands::app_token,
-        // Extension commands
-        core::extensions::commands::get_jan_extensions_path,
-        core::extensions::commands::install_extensions,
-        core::extensions::commands::get_active_extensions,
-        // System commands
-        core::system::commands::relaunch,
-        core::system::commands::open_app_directory,
-        core::system::commands::open_file_explorer,
-        core::system::commands::factory_reset,
-        core::system::commands::read_logs,
-        core::system::commands::is_library_available,
-        core::system::commands::launch_claude_code_with_config,
-        core::system::commands::check_jan_cli_installed,
-        core::system::commands::install_jan_cli,
-        core::system::commands::uninstall_jan_cli,
-        core::system::commands::clear_claude_code_env,
-        // Server commands
-        core::server::commands::start_server,
-        core::server::commands::stop_server,
-        core::server::commands::get_server_status,
-        // Remote provider commands
-        core::server::remote_provider_commands::register_provider_config,
-        core::server::remote_provider_commands::unregister_provider_config,
-        core::server::remote_provider_commands::get_provider_config,
-        core::server::remote_provider_commands::list_provider_configs,
-        // MCP commands
-        core::mcp::commands::get_tools,
-        core::mcp::commands::get_tools_for_servers,
-        core::mcp::commands::get_server_summaries,
-        core::mcp::commands::call_tool,
-        core::mcp::commands::cancel_tool_call,
-        core::mcp::commands::restart_mcp_servers,
-        core::mcp::commands::get_connected_servers,
-        core::mcp::commands::save_mcp_configs,
-        core::mcp::commands::get_mcp_configs,
-        core::mcp::commands::activate_mcp_server,
-        core::mcp::commands::deactivate_mcp_server,
-        core::mcp::commands::check_jan_browser_extension_connected,
-        // Threads
-        core::threads::commands::list_threads,
-        core::threads::commands::create_thread,
-        core::threads::commands::modify_thread,
-        core::threads::commands::delete_thread,
-        core::threads::commands::list_messages,
-        core::threads::commands::create_message,
-        core::threads::commands::modify_message,
-        core::threads::commands::delete_message,
-        core::threads::commands::get_thread_assistant,
-        core::threads::commands::create_thread_assistant,
-        core::threads::commands::modify_thread_assistant,
-        // Download
-        core::downloads::commands::download_files,
-        core::downloads::commands::cancel_download_task,
+    let app_builder = app_builder.invoke_handler(invoke_commands_with_extras![
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
@@ -152,85 +163,9 @@ pub fn run() {
 
     // Mobile: no updater commands
     #[cfg(any(target_os = "android", target_os = "ios"))]
-    let app_builder = app_builder.invoke_handler(tauri::generate_handler![
-        // FS commands - Deperecate soon
-        core::filesystem::commands::join_path,
-        core::filesystem::commands::mkdir,
-        core::filesystem::commands::exists_sync,
-        core::filesystem::commands::readdir_sync,
-        core::filesystem::commands::read_file_sync,
-        core::filesystem::commands::rm,
-        core::filesystem::commands::mv,
-        core::filesystem::commands::file_stat,
-        core::filesystem::commands::write_file_sync,
-        core::filesystem::commands::write_yaml,
-        core::filesystem::commands::read_yaml,
-        core::filesystem::commands::decompress,
-        core::filesystem::commands::open_dialog,
-        core::filesystem::commands::save_dialog,
-        // App configuration commands
-        core::app::commands::get_app_configurations,
-        core::app::commands::get_user_home_path,
-        core::app::commands::update_app_configuration,
-        core::app::commands::get_jan_data_folder_path,
-        core::app::commands::get_configuration_file_path,
-        core::app::commands::default_data_folder_path,
-        core::app::commands::change_app_data_folder,
-        core::app::commands::app_token,
-        // Extension commands
-        core::extensions::commands::get_jan_extensions_path,
-        core::extensions::commands::install_extensions,
-        core::extensions::commands::get_active_extensions,
-        // System commands
-        core::system::commands::relaunch,
-        core::system::commands::open_app_directory,
-        core::system::commands::open_file_explorer,
-        core::system::commands::factory_reset,
-        core::system::commands::read_logs,
-        core::system::commands::is_library_available,
-        core::system::commands::launch_claude_code_with_config,
-        core::system::commands::check_jan_cli_installed,
-        core::system::commands::install_jan_cli,
-        core::system::commands::uninstall_jan_cli,
-        core::system::commands::clear_claude_code_env,
-        // Server commands
-        core::server::commands::start_server,
-        core::server::commands::stop_server,
-        core::server::commands::get_server_status,
-        // Remote provider commands
-        core::server::remote_provider_commands::register_provider_config,
-        core::server::remote_provider_commands::unregister_provider_config,
-        core::server::remote_provider_commands::get_provider_config,
-        core::server::remote_provider_commands::list_provider_configs,
+    let app_builder = app_builder.invoke_handler(invoke_commands_with_extras![
+        // Mobile-specific remote provider commands
         core::server::remote_provider_commands::abort_remote_stream,
-        // MCP commands
-        core::mcp::commands::get_tools,
-        core::mcp::commands::get_tools_for_servers,
-        core::mcp::commands::get_server_summaries,
-        core::mcp::commands::call_tool,
-        core::mcp::commands::cancel_tool_call,
-        core::mcp::commands::restart_mcp_servers,
-        core::mcp::commands::get_connected_servers,
-        core::mcp::commands::save_mcp_configs,
-        core::mcp::commands::get_mcp_configs,
-        core::mcp::commands::activate_mcp_server,
-        core::mcp::commands::deactivate_mcp_server,
-        core::mcp::commands::check_jan_browser_extension_connected,
-        // Threads
-        core::threads::commands::list_threads,
-        core::threads::commands::create_thread,
-        core::threads::commands::modify_thread,
-        core::threads::commands::delete_thread,
-        core::threads::commands::list_messages,
-        core::threads::commands::create_message,
-        core::threads::commands::modify_message,
-        core::threads::commands::delete_message,
-        core::threads::commands::get_thread_assistant,
-        core::threads::commands::create_thread_assistant,
-        core::threads::commands::modify_thread_assistant,
-        // Download
-        core::downloads::commands::download_files,
-        core::downloads::commands::cancel_download_task,
     ]);
 
     let app = app_builder

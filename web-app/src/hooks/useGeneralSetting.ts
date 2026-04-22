@@ -42,6 +42,9 @@ export const useGeneralSetting = create<GeneralSettingState>()(
                 ?.updateSettings(newSettings)
             }
           })
+          .catch((err) => {
+            console.warn('Failed to persist huggingface token:', err)
+          })
       },
     }),
     {
