@@ -67,7 +67,7 @@ export function OllamaLifecycleDialog({
 
           <div className="rounded-lg border border-border bg-card p-4 flex flex-col gap-2">
             <div className="text-sm font-medium text-foreground">生命周期操作</div>
-            <Button onClick={onInstall} disabled={isInstalling}>
+            <Button onClick={onInstall} disabled={isInstalling || isInstalled}>
               安装
             </Button>
             <Button

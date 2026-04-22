@@ -182,6 +182,11 @@ export function HubContent() {
     }
   }, [fetchRunningModels, refreshOllamaStatus])
 
+  const handleRefreshService = useCallback(async () => {
+    await refreshOllamaStatus()
+    await fetchRunningModels()
+  }, [fetchRunningModels, refreshOllamaStatus])
+
   const totalVram = runningModels.reduce(
     (sum, model) => sum + (model.size_vram || 0),
     0
@@ -219,7 +224,7 @@ export function HubContent() {
               portLabel={servicePortLabel}
               instanceCount={runningModels.length}
               onManage={() => setLifecycleDialogOpen(true)}
-              onRefresh={refreshOllamaStatus}
+              onRefresh={handleRefreshService}
             />
 
             <OllamaRunPanel
