@@ -11,8 +11,38 @@ const OLLAMA_API_BASE: &str = "http://127.0.0.1:11434";
 const PULL_PROGRESS_EVENT: &str = "ollama-pull-progress";
 const CREATE_PROGRESS_EVENT: &str = "ollama-create-progress";
 
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WindowsStopTarget {
+    image_name: &'static str,
+    kill_tree: bool,
+}
+
+#[cfg(target_os = "windows")]
+fn windows_stop_targets() -> [WindowsStopTarget; 2] {
+    [
+        WindowsStopTarget {
+            image_name: "ollama app.exe",
+            kill_tree: true,
+        },
+        WindowsStopTarget {
+            image_name: "ollama.exe",
+            kill_tree: false,
+        },
+    ]
+}
+
 fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {e}")
+}
+
+#[cfg(target_os = "windows")]
+fn is_taskkill_not_running(message: &str) -> bool {
+    let message = message.to_lowercase();
+    message.contains("not found")
+        || message.contains("鎵句笉鍒?")
+        || message.contains("no running instances")
+        || message.contains("娌℃湁杩愯")
 }
 
 fn build_ollama_run_payload(
@@ -165,6 +195,27 @@ fn build_client() -> Result<reqwest::Client, String> {
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(err_to_string)
+}
+
+async fn wait_for_ollama_shutdown() -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .map_err(err_to_string)?;
+
+    for _ in 0..10 {
+        match client
+            .get(format!("{}/api/version", OLLAMA_API_BASE))
+            .send()
+            .await
+        {
+            Ok(_) => tokio::time::sleep(Duration::from_millis(300)).await,
+            Err(_) => return Ok(()),
+        }
+    }
+
+    Err("Timed out waiting for Ollama to stop".to_string())
 }
 
 /// Builds a streaming reqwest client without a global request timeout.
@@ -569,7 +620,7 @@ pub async fn ollama_unload_model(model: String) -> Result<(), String> {
 }
 
 /// Stop the Ollama service.
-/// On Windows, uses `taskkill /IM ollama.exe /F`.
+/// On Windows, stops the tray app tree first and then any remaining `ollama.exe`.
 /// On other platforms, falls back to `pkill -f ollama`.
 #[tauri::command]
 pub async fn stop_ollama() -> Result<(), String> {
@@ -578,6 +629,50 @@ pub async fn stop_ollama() -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let mut stopped_any = false;
+
+        for target in windows_stop_targets() {
+            let mut command = tokio::process::Command::new("taskkill");
+            command.args(["/IM", target.image_name, "/F"]);
+            if target.kill_tree {
+                command.arg("/T");
+            }
+
+            let output = command
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+                .await
+                .map_err(|e| {
+                    format!("Failed to execute taskkill for {}: {e}", target.image_name)
+                })?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+
+            if output.status.success() {
+                stopped_any = true;
+                log::info!("Stopped Ollama target via taskkill: {}", target.image_name);
+                continue;
+            }
+
+            if is_taskkill_not_running(&stdout) || is_taskkill_not_running(&stderr) {
+                log::info!("Ollama target was not running: {}", target.image_name);
+                continue;
+            }
+
+            return Err(format!(
+                "taskkill failed for {}: {}{}",
+                target.image_name, stdout, stderr
+            ));
+        }
+
+        if stopped_any {
+            log::info!("Ollama stopped successfully via taskkill");
+        } else {
+            log::info!("Ollama was not running");
+        }
+        wait_for_ollama_shutdown().await?;
+        return Ok(());
 
         let output = tokio::process::Command::new("taskkill")
             .args(["/IM", "ollama.exe", "/F"])
@@ -629,10 +724,35 @@ pub async fn stop_ollama() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::build_ollama_run_payload;
+    #[cfg(target_os = "windows")]
+    use super::is_taskkill_not_running;
+    #[cfg(target_os = "windows")]
+    use super::windows_stop_targets;
     use crate::core::ollama_control_plane::models::{
         OllamaRunModelKeepAliveRequest, OllamaRunModelOptionsRequest, OllamaRunModelRequest,
         OllamaRunModelThinkRequest,
     };
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_stop_targets_cover_app_and_serve_processes() {
+        let targets = windows_stop_targets();
+
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].image_name, "ollama app.exe");
+        assert!(targets[0].kill_tree);
+        assert_eq!(targets[1].image_name, "ollama.exe");
+        assert!(!targets[1].kill_tree);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn taskkill_not_running_detection_matches_common_messages() {
+        assert!(is_taskkill_not_running(
+            "ERROR: The process \"ollama.exe\" not found."
+        ));
+        assert!(is_taskkill_not_running("INFO: no running instances"));
+    }
 
     #[test]
     fn ollama_run_payload_keeps_top_level_and_options_separate() {
