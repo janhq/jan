@@ -684,6 +684,65 @@ async fn schedule_mcp_start_task<R: Runtime>(
             return Err(format!("MCP server {name} quit immediately after starting"));
         }
 
+        // Verify tools/list is reachable before emitting the ready event.
+        // Stdio servers (especially via npx mcp-remote) may need extra time
+        // after serve() completes before the transport is ready for JSON-RPC.
+        const MAX_TOOL_VERIFY_ATTEMPTS: u32 = 3;
+        const TOOL_VERIFY_TIMEOUT_SECS: u64 = 2;
+        const TOOL_VERIFY_BACKOFF_MS: u64 = 1000;
+
+        for attempt in 1..=MAX_TOOL_VERIFY_ATTEMPTS {
+            let verify_result = {
+                let servers_map = servers.lock().await;
+                if let Some(service) = servers_map.get(&name) {
+                    Some(
+                        timeout(
+                            Duration::from_secs(TOOL_VERIFY_TIMEOUT_SECS),
+                            service.list_all_tools(),
+                        )
+                        .await,
+                    )
+                } else {
+                    log::info!(
+                        "MCP server {name} was removed during tools/list verification; skipping"
+                    );
+                    None
+                }
+            };
+
+            match verify_result {
+                None => {
+                    // Server was removed from state (e.g., user toggled it off).
+                    // Skip emitting the event entirely — this is intentional.
+                    return Ok(());
+                }
+                Some(Ok(Ok(_tools))) => {
+                    log::info!(
+                        "MCP server {name} tools/list verified on attempt {attempt}"
+                    );
+                    break;
+                }
+                Some(Ok(Err(e))) => {
+                    log::warn!(
+                        "MCP server {name} tools/list failed on attempt {attempt}/{MAX_TOOL_VERIFY_ATTEMPTS}: {e}"
+                    );
+                    if attempt < MAX_TOOL_VERIFY_ATTEMPTS {
+                        sleep(Duration::from_millis(TOOL_VERIFY_BACKOFF_MS)).await;
+                    }
+                }
+                Some(Err(_)) => {
+                    log::warn!(
+                        "MCP server {name} tools/list timed out on attempt {attempt}/{MAX_TOOL_VERIFY_ATTEMPTS}"
+                    );
+                    if attempt < MAX_TOOL_VERIFY_ATTEMPTS {
+                        sleep(Duration::from_millis(TOOL_VERIFY_BACKOFF_MS)).await;
+                    }
+                }
+            }
+        }
+        // If all attempts failed, we still proceed to emit the event.
+        // The health monitor will handle ongoing reconnection.
+
         // Create lock file for Jan Browser MCP
         if name == "Jan Browser MCP" {
             if let Some(port_str) = config_params.envs.get("BRIDGE_PORT") {
