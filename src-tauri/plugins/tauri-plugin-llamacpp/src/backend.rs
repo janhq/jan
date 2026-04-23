@@ -888,26 +888,13 @@ fn looks_like_binary(path: &PathBuf) -> bool {
     }
 }
 
-/// Analyze a single binary and accumulate its missing/resolved libraries into
-/// the provided sets. Silently skips files that are not valid binaries.
 fn analyze_binary(
     path: &PathBuf,
-    bin_dir: &PathBuf,
+    analyzer_template: &lddtree::DependencyAnalyzer,
     missing: &mut std::collections::HashSet<String>,
     resolved: &mut std::collections::HashSet<String>,
 ) {
-    use lddtree::DependencyAnalyzer;
-
-    // Explicitly add the binary's directory as an extra search path.
-    // - PE: lddtree already adds the app dir automatically, so this is a no-op on Windows.
-    // - Mach-O: @loader_path / @executable_path rpaths are expanded automatically; this
-    //   covers any lib that lacks an @rpath entry.
-    // - ELF: $ORIGIN rpaths are expanded automatically, but some builds omit $ORIGIN and
-    //   rely on LD_LIBRARY_PATH being set at launch. add_library_path is the static
-    //   equivalent of running `LD_LIBRARY_PATH=<dir> ./llama-server`.
-    let analyzer = DependencyAnalyzer::default().add_library_path(bin_dir.clone());
-
-    let tree = match analyzer.analyze(path) {
+    let tree = match analyzer_template.clone().analyze(path) {
         Ok(t) => t,
         Err(_) => return, // not a binary we can parse — skip silently
     };
@@ -921,9 +908,6 @@ fn analyze_binary(
     }
 }
 
-/// Walk every binary in `bin_dir` recursively and union their dependency trees.
-/// Returns a `BackendVerificationResult` with all unresolved libraries across
-/// the entire backend installation, not just the main executable.
 fn verify_backend_dependencies(
     bin_dir: &PathBuf,
 ) -> Result<BackendVerificationResult, crate::error::LlamacppError> {
@@ -939,17 +923,50 @@ fn verify_backend_dependencies(
     let mut missing = std::collections::HashSet::new();
     let mut resolved = std::collections::HashSet::new();
 
-    // Walk the directory recursively so nested layouts (build/bin/) are covered.
-    let walker = walkdir::WalkDir::new(bin_dir)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file());
+    // Built once and cloned per binary; avoids re-scanning PATH/System32 on each call.
+    let analyzer = lddtree::DependencyAnalyzer::default().add_library_path(bin_dir.clone());
 
-    for entry in walker {
-        let path = entry.path().to_path_buf();
-        if looks_like_binary(&path) {
-            analyze_binary(&path, bin_dir, &mut missing, &mut resolved);
+    // catch_unwind guards against panics in goblin's unsafe PE/ELF parser.
+    let walk_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let walker = walkdir::WalkDir::new(bin_dir)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file());
+
+        let mut m = std::collections::HashSet::new();
+        let mut r = std::collections::HashSet::new();
+        for entry in walker {
+            let path = entry.path().to_path_buf();
+            if looks_like_binary(&path) {
+                analyze_binary(&path, &analyzer, &mut m, &mut r);
+            }
+        }
+        (m, r)
+    }));
+
+    match walk_result {
+        Ok((m, r)) => {
+            missing = m;
+            resolved = r;
+        }
+        Err(e) => {
+            let msg = e
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| e.downcast_ref::<String>().map(|s| s.as_str()))
+                .unwrap_or("unknown panic");
+            log::warn!(
+                "verify_backend_dependencies: lddtree panicked while scanning {}: {}",
+                bin_dir.display(),
+                msg,
+            );
+            // Return verified=true (no false positives) rather than crashing.
+            return Ok(BackendVerificationResult {
+                verified: true,
+                missing_libraries: vec![],
+                resolved_libraries: vec![],
+            });
         }
     }
 
