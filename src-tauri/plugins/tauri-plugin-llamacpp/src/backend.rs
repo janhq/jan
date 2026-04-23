@@ -910,6 +910,7 @@ fn analyze_binary(
 
 fn verify_backend_dependencies(
     bin_dir: &PathBuf,
+    exe_path: &PathBuf,
 ) -> Result<BackendVerificationResult, crate::error::LlamacppError> {
     if !bin_dir.exists() {
         return Err(crate::error::LlamacppError::new(
@@ -928,19 +929,29 @@ fn verify_backend_dependencies(
 
     // catch_unwind guards against panics in goblin's unsafe PE/ELF parser.
     let walk_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let walker = walkdir::WalkDir::new(bin_dir)
-            .follow_links(false)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file());
+        // On Windows, PE import resolution is fully transitive: analyzing the
+        // main exe covers the entire dependency tree. Parsing every DLL
+        // individually causes goblin to crash on deleted/partial files because
+        // the memory-mapped region becomes invalid mid-read.
+        // On Linux/macOS, ELF shared libs may have their own external deps not
+        // visible from the exe alone, so we walk the full directory there.
+        let paths: Vec<PathBuf> = if cfg!(target_os = "windows") {
+            vec![exe_path.clone()]
+        } else {
+            walkdir::WalkDir::new(bin_dir)
+                .follow_links(false)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file())
+                .map(|e| e.path().to_path_buf())
+                .filter(|p| looks_like_binary(p))
+                .collect()
+        };
 
         let mut m = std::collections::HashSet::new();
         let mut r = std::collections::HashSet::new();
-        for entry in walker {
-            let path = entry.path().to_path_buf();
-            if looks_like_binary(&path) {
-                analyze_binary(&path, &analyzer, &mut m, &mut r);
-            }
+        for path in paths {
+            analyze_binary(&path, &analyzer, &mut m, &mut r);
         }
         (m, r)
     }));
@@ -1014,7 +1025,7 @@ pub async fn verify_backend_installation(
     // with many DLLs. Run on the blocking thread pool to avoid stalling the
     // Tauri async runtime.
     let backend_dir = PathBuf::from(get_backend_dir(backend, version, jan_data_folder));
-    tokio::task::spawn_blocking(move || verify_backend_dependencies(&backend_dir))
+    tokio::task::spawn_blocking(move || verify_backend_dependencies(&backend_dir, &exe_path))
         .await
         .map_err(|e| crate::error::LlamacppError::new(
             crate::error::ErrorCode::InternalError,
@@ -1907,7 +1918,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let nonexistent = temp_dir.path().join("does-not-exist");
 
-        let result = verify_backend_dependencies(&nonexistent);
+        let exe = nonexistent.join("llama-server");
+        let result = verify_backend_dependencies(&nonexistent, &exe);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -1921,7 +1933,9 @@ mod tests {
         fs::write(temp_dir.path().join("llama-server"), b"not a real binary").unwrap();
         fs::write(temp_dir.path().join("libggml.so"), b"not a real binary").unwrap();
 
-        let result = verify_backend_dependencies(&temp_dir.path().to_path_buf());
+        let dir = temp_dir.path().to_path_buf();
+        let exe = dir.join("llama-server");
+        let result = verify_backend_dependencies(&dir, &exe);
 
         // Succeeds with an empty result — nothing parseable, nothing missing.
         assert!(result.is_ok());
