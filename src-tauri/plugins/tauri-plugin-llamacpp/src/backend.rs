@@ -888,6 +888,24 @@ fn looks_like_binary(path: &PathBuf) -> bool {
     }
 }
 
+fn find_gpu_backend_lib(bin_dir: &PathBuf) -> Option<PathBuf> {
+    walkdir::WalkDir::new(bin_dir)
+        .max_depth(1)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .map(|e| e.path().to_path_buf())
+        .find(|p| {
+            let name = p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            looks_like_binary(p) && (name.contains("cuda") || name.contains("vulkan"))
+        })
+}
+
 fn analyze_binary(
     path: &PathBuf,
     analyzer_template: &lddtree::DependencyAnalyzer,
@@ -929,29 +947,16 @@ fn verify_backend_dependencies(
 
     // catch_unwind guards against panics in goblin's unsafe PE/ELF parser.
     let walk_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        // On Windows, PE import resolution is fully transitive: analyzing the
-        // main exe covers the entire dependency tree. Parsing every DLL
-        // individually causes goblin to crash on deleted/partial files because
-        // the memory-mapped region becomes invalid mid-read.
-        // On Linux/macOS, ELF shared libs may have their own external deps not
-        // visible from the exe alone, so we walk the full directory there.
-        // On Windows and macOS, lddtree resolves PE imports and Mach-O
-        // @rpath chains transitively from the main exe — walking every
-        // dylib/DLL individually is redundant and risks goblin crashing
-        // on deleted or partial files. Linux ELF libs can carry their own
-        // NEEDED entries not visible from the exe, so the full walk is
-        // kept there.
-        let paths: Vec<PathBuf> = if cfg!(any(target_os = "windows", target_os = "macos")) {
+        // macOS: exe only (Mach-O @rpath is fully transitive).
+        // Windows/Linux: exe + GPU lib (dlopen'd, not in exe's import chain).
+        let paths: Vec<PathBuf> = if cfg!(target_os = "macos") {
             vec![exe_path.clone()]
         } else {
-            walkdir::WalkDir::new(bin_dir)
-                .follow_links(false)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().is_file())
-                .map(|e| e.path().to_path_buf())
-                .filter(|p| looks_like_binary(p))
-                .collect()
+            let mut p = vec![exe_path.clone()];
+            if let Some(gpu_lib) = find_gpu_backend_lib(bin_dir) {
+                p.push(gpu_lib);
+            }
+            p
         };
 
         let mut m = std::collections::HashSet::new();
