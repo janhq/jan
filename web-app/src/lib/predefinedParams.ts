@@ -60,6 +60,6 @@ export const paramsSettings = {
     value: 480,
     title: 'Thinking Budget',
     description:
-      'Limits thinking to the specified number of tokens. Either -1 (unconstrained thought), 0  (no thinking) or the number of tokens to limit to. Llama.cpp environment variable must not be set.',
+      'Limits thinking to the specified number of tokens. Either -1 (unconstrained thought), 0 (no thinking) or the number of tokens to limit to.'
   },
 }
