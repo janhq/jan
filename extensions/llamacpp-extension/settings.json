@@ -23,6 +23,18 @@
     }
   },
   {
+    "key": "reasoning_budget_message",
+    "title": "Reasoning budget message",
+    "description": "An instruction to tell the model to stop thinking and reply",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "\\n\\nWait, thinking budget exceeded I must reply now.\\n",
+      "placeholder": "Eg. \\n\\nWait, thinking budget exceeded I must reply now.\\n",
+      "type": "text",
+      "textAlign": "right"
+    }
+  },
+  {
     "key": "auto_update_engine",
     "title": "Auto update engine",
     "description": "Automatically update llamacpp engine to latest version",

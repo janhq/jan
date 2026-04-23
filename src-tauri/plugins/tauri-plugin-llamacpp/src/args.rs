@@ -38,6 +38,7 @@ pub struct LlamacppConfig {
     pub cache_type_k: String,
     pub cache_type_v: String,
     pub defrag_thold: f32,
+    pub reasoning_budget_message: String,
     pub rope_scaling: String,
     pub rope_scale: f32,
     pub rope_freq_base: f32,
@@ -348,6 +349,12 @@ impl ArgumentBuilder {
             self.args.push(self.config.defrag_thold.to_string());
         }
 
+        if !self.config.reasoning_budget_message.is_empty() {
+            let processed_message = self.config.reasoning_budget_message.replace("\\n", "\n");
+            self.args.push("--reasoning-budget-message".to_string());
+            self.args.push(processed_message);
+        }
+
         self.add_rope_settings();
     }
 
@@ -434,6 +441,7 @@ mod tests {
             cache_type_k: "f16".to_string(),
             cache_type_v: "f16".to_string(),
             defrag_thold: 0.1,
+            reasoning_budget_message: "\\n\\Stop!\\n".to_string(),
             rope_scaling: "none".to_string(),
             rope_scale: 1.0,
             rope_freq_base: 0.0,
