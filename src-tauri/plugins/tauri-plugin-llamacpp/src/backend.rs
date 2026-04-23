@@ -935,7 +935,13 @@ fn verify_backend_dependencies(
         // the memory-mapped region becomes invalid mid-read.
         // On Linux/macOS, ELF shared libs may have their own external deps not
         // visible from the exe alone, so we walk the full directory there.
-        let paths: Vec<PathBuf> = if cfg!(target_os = "windows") {
+        // On Windows and macOS, lddtree resolves PE imports and Mach-O
+        // @rpath chains transitively from the main exe — walking every
+        // dylib/DLL individually is redundant and risks goblin crashing
+        // on deleted or partial files. Linux ELF libs can carry their own
+        // NEEDED entries not visible from the exe, so the full walk is
+        // kept there.
+        let paths: Vec<PathBuf> = if cfg!(any(target_os = "windows", target_os = "macos")) {
             vec![exe_path.clone()]
         } else {
             walkdir::WalkDir::new(bin_dir)
