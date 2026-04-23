@@ -853,7 +853,6 @@ pub fn check_backend_installed(
     exe_path.exists()
 }
 
-/// Result of a backend dependency tree verification.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BackendVerificationResult {
     pub verified: bool,
@@ -861,36 +860,6 @@ pub struct BackendVerificationResult {
     pub resolved_libraries: Vec<String>,
 }
 
-/// Windows API set DLLs (e.g. `api-ms-win-*`, `ext-ms-win-*`) are virtual —
-/// they never exist as real files on disk and are resolved by the Windows
-/// kernel at load time via an internal API set schema. lddtree records them
-/// as not-found because static analysis cannot locate them, but they are not
-/// genuinely missing and must not be reported as such.
-fn is_virtual_windows_dll(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    lower.starts_with("api-ms-win-") || lower.starts_with("ext-ms-win-")
-}
-
-/// Returns true for files that are likely native binaries worth analyzing.
-/// lddtree reads the file header to determine format, so this is just a
-/// cheap pre-filter to skip obviously non-binary files.
-fn looks_like_binary(path: &PathBuf) -> bool {
-    match path.extension().and_then(|e| e.to_str()) {
-        // Windows
-        Some("exe") | Some("dll") => true,
-        // macOS
-        Some("dylib") => true,
-        // Linux shared libs, including versioned names like libfoo.so.1.2
-        Some(ext) if ext == "so" || ext.starts_with("so.") => true,
-        // No extension: may be an ELF executable (llama-server on Linux/macOS)
-        None => true,
-        _ => false,
-    }
-}
-
-/// Return the expected GPU backend lib filename for this backend, if any.
-/// CPU backends don't have a single required lib (CPU variants are loaded
-/// optionally based on detected features).
 fn expected_gpu_lib_name(backend: &str) -> Option<&'static str> {
     let b = backend.to_lowercase();
     let is_windows = cfg!(target_os = "windows");
@@ -900,26 +869,6 @@ fn expected_gpu_lib_name(backend: &str) -> Option<&'static str> {
         Some(if is_windows { "ggml-vulkan.dll" } else { "libggml-vulkan.so" })
     } else {
         None
-    }
-}
-
-fn analyze_binary(
-    path: &PathBuf,
-    analyzer_template: &lddtree::DependencyAnalyzer,
-    missing: &mut std::collections::HashSet<String>,
-    resolved: &mut std::collections::HashSet<String>,
-) {
-    let tree = match analyzer_template.clone().analyze(path) {
-        Ok(t) => t,
-        Err(_) => return, // not a binary we can parse — skip silently
-    };
-
-    for (name, lib) in &tree.libraries {
-        if lib.found() {
-            resolved.insert(name.clone());
-        } else if !is_virtual_windows_dll(name) {
-            missing.insert(name.clone());
-        }
     }
 }
 
@@ -937,11 +886,10 @@ fn verify_backend_dependencies(
     }
 
     let start = std::time::Instant::now();
-    let mut missing = std::collections::HashSet::new();
-    let mut resolved = std::collections::HashSet::new();
+    let mut missing: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    // Existence check for the expected GPU backend lib runs BEFORE any parsing —
-    // if the file is deleted we catch it here and never hand a bad path to goblin.
+    // Existence check runs before parsing so a deleted lib is caught without
+    // handing a bad path to goblin.
     let gpu_lib_path: Option<PathBuf> = if cfg!(target_os = "macos") {
         None
     } else {
@@ -956,59 +904,24 @@ fn verify_backend_dependencies(
         })
     };
 
-    // Built once and cloned per binary; avoids re-scanning PATH/System32 on each call.
-    let analyzer = lddtree::DependencyAnalyzer::default().add_library_path(bin_dir.clone());
-
-    // catch_unwind guards against panics in goblin's unsafe PE/ELF parser.
-    let walk_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        // Analyze the exe always, plus the GPU backend lib when present.
-        // CPU variants (ggml-cpu-haswell, etc.) are optionally loaded at runtime
-        // based on detected CPU features — parsing them would false-flag deps
-        // the user's CPU doesn't need.
-        let mut paths: Vec<PathBuf> = vec![exe_path.clone()];
-        if let Some(p) = &gpu_lib_path {
-            paths.push(p.clone());
-        }
-
-        let mut m = std::collections::HashSet::new();
-        let mut r = std::collections::HashSet::new();
-        for path in paths {
-            analyze_binary(&path, &analyzer, &mut m, &mut r);
-        }
-        (m, r)
-    }));
-
-    match walk_result {
-        Ok((m, r)) => {
-            missing.extend(m);
-            resolved.extend(r);
-        }
-        Err(e) => {
-            let msg = e
-                .downcast_ref::<&str>()
-                .copied()
-                .or_else(|| e.downcast_ref::<String>().map(|s| s.as_str()))
-                .unwrap_or("unknown panic");
-            log::warn!(
-                "verify_backend_dependencies: lddtree panicked while scanning {}: {}",
-                bin_dir.display(),
-                msg,
-            );
-            // Preserve any existence-check results; skip lddtree output.
-            let mut miss: Vec<String> = missing.into_iter().collect();
-            miss.sort();
-            return Ok(BackendVerificationResult {
-                verified: miss.is_empty(),
-                missing_libraries: miss,
-                resolved_libraries: vec![],
-            });
-        }
+    // Skip CPU variants (ggml-cpu-haswell, etc.) — they're loaded only when
+    // the host's detected features match, so parsing them false-flags deps.
+    let mut paths: Vec<PathBuf> = vec![exe_path.clone()];
+    if let Some(p) = gpu_lib_path {
+        paths.push(p);
     }
 
-    // A library may appear as resolved by one binary even if it is missing for
-    // another. Only keep libraries that are genuinely unresolved everywhere.
-    let truly_missing: Vec<String> = missing.difference(&resolved).cloned().collect();
-    let mut truly_missing = truly_missing;
+    let analysis = crate::deps_analyzer::analyze_out_of_process(bin_dir, &paths);
+
+    let resolved: std::collections::HashSet<String> = analysis.resolved.into_iter().collect();
+    for name in analysis.missing {
+        missing.insert(name);
+    }
+
+    // A lib may be resolved by one binary but missing for another — keep only
+    // libs that no binary resolved.
+    let mut truly_missing: Vec<String> =
+        missing.difference(&resolved).cloned().collect();
     let mut resolved_vec: Vec<String> = resolved.into_iter().collect();
     truly_missing.sort();
     resolved_vec.sort();
@@ -1045,10 +958,7 @@ pub async fn verify_backend_installation(
             Some(exe_path.to_string_lossy().to_string()),
         ));
     }
-    // Directory walk + lddtree parsing is CPU-bound and can be slow on Windows
-    // with many DLLs. Run on the blocking thread pool to avoid stalling the
-    // Tauri async runtime.
-    // Libs sit next to the exe (build/bin/ when present); backend_dir alone is too high.
+    // Libs sit next to the exe (build/bin/ when present); backend_dir is too high.
     let bin_dir = exe_path
         .parent()
         .map(PathBuf::from)
@@ -2004,12 +1914,12 @@ mod tests {
 
     #[test]
     fn test_is_virtual_windows_dll() {
-        assert!(is_virtual_windows_dll("api-ms-win-core-memory-l1-1-0.dll"));
-        assert!(is_virtual_windows_dll("API-MS-WIN-CORE-LIBRARYLOADER-L1-2-0.DLL"));
-        assert!(is_virtual_windows_dll("ext-ms-win-ntuser-draw-l1-1-0.dll"));
-        assert!(!is_virtual_windows_dll("KERNEL32.dll"));
-        assert!(!is_virtual_windows_dll("libcuda.so.1"));
-        assert!(!is_virtual_windows_dll("libvulkan.so.1"));
+        assert!(crate::deps_analyzer::is_virtual_windows_dll("api-ms-win-core-memory-l1-1-0.dll"));
+        assert!(crate::deps_analyzer::is_virtual_windows_dll("API-MS-WIN-CORE-LIBRARYLOADER-L1-2-0.DLL"));
+        assert!(crate::deps_analyzer::is_virtual_windows_dll("ext-ms-win-ntuser-draw-l1-1-0.dll"));
+        assert!(!crate::deps_analyzer::is_virtual_windows_dll("KERNEL32.dll"));
+        assert!(!crate::deps_analyzer::is_virtual_windows_dll("libcuda.so.1"));
+        assert!(!crate::deps_analyzer::is_virtual_windows_dll("libvulkan.so.1"));
     }
 
     // -------------------------------------------------------------------------

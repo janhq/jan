@@ -6,6 +6,7 @@ use tauri::{
 mod args;
 mod backend;
 pub mod cleanup;
+pub mod deps_analyzer;
 mod commands;
 mod device;
 mod error;

@@ -2,8 +2,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    let _ = fix_path_env::fix();
+    // Exits early if invoked as the out-of-process lddtree helper.
+    tauri_plugin_llamacpp::deps_analyzer::run_deps_analyzer_if_requested();
 
-    // Normal Tauri app startup
+    let _ = fix_path_env::fix();
     app_lib::run();
 }
