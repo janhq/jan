@@ -91,40 +91,6 @@ export const newUserThreadContent = (
 }
 
 /**
- * @fileoverview Helper functions for creating thread content.
- * These functions are used to create thread content objects
- * for different types of content, such as text and image.
- * The functions return objects that conform to the `ThreadContent` type.
- * @param content - The content of the thread
- * @returns
- */
-export const newAssistantThreadContent = (
-  threadId: string,
-  content: string,
-  metadata: Record<string, unknown> = {},
-  id?: string,
-): ThreadMessage => ({
-  type: 'text',
-  role: ChatCompletionRole.Assistant,
-  content: [
-    {
-      type: ContentType.Text,
-      text: {
-        value: content,
-        annotations: [],
-      },
-    },
-  ],
-  id: id ?? ulid(),
-  object: 'thread.message',
-  thread_id: threadId,
-  status: MessageStatus.Ready,
-  created_at: 0,
-  completed_at: 0,
-  metadata,
-})
-
-/**
  * Empty thread content object.
  * @returns
  */
