@@ -75,6 +75,7 @@
   "noThreadsYetDesc": "Inicie uma nova conversa para ver seu histórico de conversas aqui.",
   "downloads": "Downloads",
   "downloading": "Baixando",
+  "uploadingAttachments": "Enviando anexos…",
   "cancelDownload": "Cancelar download",
   "downloadCancelled": "Download Cancelado",
   "downloadComplete": "Download Concluído",
@@ -296,7 +297,12 @@
     "update": "Atualizar",
     "searchProjects": "Buscar projetos...",
     "noProjectsFound": "Nenhum projeto encontrado",
-    "tryDifferentSearch": "Tente um termo de busca diferente"
+    "tryDifferentSearch": "Tente um termo de busca diferente",
+    "uploadingFiles": "Enviando arquivos…"
+  },
+  "errorDialog": {
+    "titleFallback": "Algo deu errado",
+    "details": "Detalhes"
   },
   "toast": {
     "allThreadsUnfavorited": {
@@ -314,6 +320,14 @@
     "deleteThread": {
       "title": "Remover Conversa",
       "description": "Esta conversa foi removida permanentemente."
+    },
+    "errorCopied": {
+      "title": "Cópia realizada com sucesso",
+      "description": "As informações do erro foram copiadas para a área de transferência"
+    },
+    "errorCopyFailed": {
+      "title": "Falha ao copiar",
+      "description": "Não foi possível copiar as informações do erro para a área de transferência"
     },
     "editMessage": {
       "title": "Editar Mensagem",

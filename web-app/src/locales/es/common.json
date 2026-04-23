@@ -88,6 +88,7 @@
   "noThreadsYetDesc": "Inicia una nueva conversación para ver tu historial de hilos aquí.",
   "downloads": "Descargas",
   "downloading": "Descargando",
+  "uploadingAttachments": "Subiendo archivos adjuntos…",
   "cancelDownload": "Cancelar descarga",
   "downloadCancelled": "Descarga cancelada",
   "downloadComplete": "Descarga completa",
@@ -283,6 +284,7 @@
     "noAssistantAssigned": "No hay asistente asignado a este proyecto",
     "files": "Archivos",
     "filesDescription": "Agrega PDFs, documentos u otros textos para usar como referencia en este proyecto.",
+    "uploadingFiles": "Subiendo archivos…",
     "deleteProjectDialog": {
       "title": "Eliminar proyecto",
       "permanentDelete": "Esto eliminará permanentemente todos los hilos.",
@@ -340,6 +342,10 @@
   "attachmentEmbeddedIndicator": "Embebido para RAG",
   "viewInjectedContent": "Ver contenido inyectado",
   "injectedContentTitle": "Contenido del archivo inyectado",
+  "errorDialog": {
+    "titleFallback": "Algo salió mal",
+    "details": "Detalles"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "Todos los hilos sin estrella",
@@ -356,6 +362,14 @@
     "deleteThread": {
       "title": "Eliminar hilo",
       "description": "Este hilo ha sido eliminado permanentemente."
+    },
+    "errorCopied": {
+      "title": "Copia realizada con éxito",
+      "description": "La información del error se copió al portapapeles"
+    },
+    "errorCopyFailed": {
+      "title": "Error al copiar",
+      "description": "No se pudo copiar la información del error al portapapeles"
     },
     "editMessage": {
       "title": "Editar mensaje",
