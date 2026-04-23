@@ -110,7 +110,7 @@ describe('SecurityConfigDialog', () => {
     })
     render(<SecurityConfigDialog isOpen={true} onClose={vi.fn()} />)
     await screen.findByText('Security Settings')
-    fireEvent.click(screen.getByText('Logs'))
+    fireEvent.click(await screen.findByRole('button', { name: /logs/i }))
     await waitFor(() =>
       expect(hoisted.invoke).toHaveBeenCalledWith('security_get_logs', {
         limit: 100,
