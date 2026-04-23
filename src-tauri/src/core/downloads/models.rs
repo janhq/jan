@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -37,15 +38,15 @@ pub struct DownloadEvent {
 #[derive(Clone)]
 pub struct ProgressTracker {
     file_progress: Arc<Mutex<HashMap<String, u64>>>,
-    total_size: u64,
+    total_size: Arc<AtomicU64>,
 }
 
 impl ProgressTracker {
     pub fn new(_items: &[DownloadItem], sizes: HashMap<String, u64>) -> Self {
-        let total_size = sizes.values().sum();
+        let total_size: u64 = sizes.values().sum();
         ProgressTracker {
             file_progress: Arc::new(Mutex::new(HashMap::new())),
-            total_size,
+            total_size: Arc::new(AtomicU64::new(total_size)),
         }
     }
 
@@ -54,9 +55,16 @@ impl ProgressTracker {
         progress.insert(file_id.to_string(), transferred);
     }
 
+    /// Add `additional` bytes to the running total. Used when the true size is
+    /// only known after the GET response (HEAD may have reported 0 or been
+    /// blocked).
+    pub fn add_to_total(&self, additional: u64) {
+        self.total_size.fetch_add(additional, Ordering::Relaxed);
+    }
+
     pub async fn get_total_progress(&self) -> (u64, u64) {
         let progress = self.file_progress.lock().await;
         let total_transferred: u64 = progress.values().sum();
-        (total_transferred, self.total_size)
+        (total_transferred, self.total_size.load(Ordering::Relaxed))
     }
 }

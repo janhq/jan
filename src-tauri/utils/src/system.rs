@@ -1,5 +1,10 @@
 use std::path::Path;
 
+/// Returns true when the current process is running inside a Flatpak sandbox
+pub fn is_flatpak() -> bool {
+    Path::new("/.flatpak-info").exists()
+}
+
 /// Checks if npx can be overridden with bun binary
 pub fn can_override_npx(bun_path: String) -> bool {
     // We need to check the CPU for the AVX2 instruction support if we are running under MacOS
@@ -40,40 +45,81 @@ pub fn can_override_uvx(uv_path: String) -> bool {
     true // by default, we can override uvx with uv binary
 }
 
-/// Setup library paths for different operating systems
-pub fn setup_library_path(library_path: Option<&Path>, command: &mut tokio::process::Command) {
-    if let Some(lib_path) = library_path {
-        if cfg!(target_os = "linux") {
-            let lib_str = lib_path.to_string_lossy();
-            let new_lib_path = match std::env::var("LD_LIBRARY_PATH") {
-                Ok(path) => format!("{}:{}", lib_str, path),
-                Err(_) => lib_str.to_string(),
-            };
-            command.env("LD_LIBRARY_PATH", new_lib_path);
+#[derive(Default)]
+pub struct CudaPaths {
+    pub lib_paths: Vec<String>,
+    pub bin_paths: Vec<String>,
+}
 
-            #[cfg(feature = "logging")]
-            log::info!("Added to LD_LIBRARY_PATH: {}", lib_str);
-        } else if cfg!(target_os = "windows") {
-            let lib_str = lib_path.to_string_lossy();
+/// Merges binary lib dir + CUDA paths into a single `command.env()` call per variable.
+pub fn setup_library_path(
+    library_path: Option<&Path>,
+    cuda: &CudaPaths,
+    command: &mut tokio::process::Command,
+) {
+    if cfg!(target_os = "linux") {
+        let mut all_lib_dirs: Vec<String> = Vec::new();
+        if let Some(lib_path) = library_path {
+            all_lib_dirs.push(lib_path.to_string_lossy().to_string());
+        }
+        all_lib_dirs.extend(cuda.lib_paths.iter().cloned());
 
-            // Normalize UNC prefix
-            let normalized_str = if lib_str.starts_with(r"\\?\") {
-                &lib_str[4..]
+        if !all_lib_dirs.is_empty() {
+            let current = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+            let current = current.trim_end_matches(':');
+            let new_val = if current.is_empty() {
+                all_lib_dirs.join(":")
             } else {
-                lib_str.as_ref()
+                format!("{}:{}", all_lib_dirs.join(":"), current)
             };
-
-            let new_path = match std::env::var("PATH") {
-                Ok(path) => format!("{};{}", normalized_str, path),
-                Err(_) => normalized_str.to_string(),
-            };
-            command.env("PATH", &new_path);
+            command.env("LD_LIBRARY_PATH", &new_val);
 
             #[cfg(feature = "logging")]
-            log::info!("Added to PATH: {}", normalized_str);
+            log::info!("LD_LIBRARY_PATH set to: {}", new_val);
+        }
 
+        if !cuda.bin_paths.is_empty() {
+            let current = std::env::var("PATH").unwrap_or_default();
+            let current = current.trim_end_matches(':');
+            let new_val = if current.is_empty() {
+                cuda.bin_paths.join(":")
+            } else {
+                format!("{}:{}", cuda.bin_paths.join(":"), current)
+            };
+            command.env("PATH", &new_val);
+
+            #[cfg(feature = "logging")]
+            log::info!("PATH set to: {}", new_val);
+        }
+    } else if cfg!(target_os = "windows") {
+        let mut all_dirs: Vec<String> = Vec::new();
+        if let Some(lib_path) = library_path {
+            let lib_str = lib_path.to_string_lossy();
+            let normalized = if lib_str.starts_with(r"\\?\") {
+                lib_str[4..].to_string()
+            } else {
+                lib_str.to_string()
+            };
+            all_dirs.push(normalized);
+        }
+        all_dirs.extend(cuda.lib_paths.iter().cloned());
+        all_dirs.extend(cuda.bin_paths.iter().cloned());
+
+        if !all_dirs.is_empty() {
+            let current = std::env::var("PATH").unwrap_or_default();
+            let current = current.trim_end_matches(';');
+            let new_val = format!("{};{}", all_dirs.join(";"), current);
+            command.env("PATH", &new_val);
+
+            #[cfg(feature = "logging")]
+            log::info!("PATH set to: {}", new_val);
+        }
+
+        if let Some(lib_path) = library_path {
             command.current_dir(lib_path);
-        } else if cfg!(target_os = "macos") {
+        }
+    } else if cfg!(target_os = "macos") {
+        if let Some(lib_path) = library_path {
             let lib_str = lib_path.to_string_lossy();
             let new_lib_path = match std::env::var("DYLD_LIBRARY_PATH") {
                 Ok(path) => format!("{}:{}", lib_str, path),
@@ -83,10 +129,10 @@ pub fn setup_library_path(library_path: Option<&Path>, command: &mut tokio::proc
 
             #[cfg(feature = "logging")]
             log::info!("Added to DYLD_LIBRARY_PATH: {}", lib_str);
-        } else {
-            #[cfg(feature = "logging")]
-            log::warn!("Library path setup not supported on this OS");
         }
+    } else {
+        #[cfg(feature = "logging")]
+        log::warn!("Library path setup not supported on this OS");
     }
 }
 
@@ -103,8 +149,6 @@ pub fn binary_requires_cuda(_bin_path: &Path) -> bool {
 
 #[cfg(target_os = "windows")]
 fn binary_requires_cuda_windows(bin_path: &Path) -> bool {
-    // Check if the binary imports CUDA DLLs
-    // This is a simplified check - looks for common CUDA DLL names in the binary
     if let Ok(contents) = std::fs::read(bin_path) {
         let contents_str = String::from_utf8_lossy(&contents);
         return contents_str.contains("cudart")
@@ -120,8 +164,6 @@ fn binary_requires_cuda_windows(bin_path: &Path) -> bool {
 
 #[cfg(target_os = "linux")]
 fn binary_requires_cuda_linux(bin_path: &Path) -> bool {
-    // Use 'ldd' to check for CUDA library dependencies
-    // This is more reliable than string searching
     if let Ok(output) = std::process::Command::new("ldd").arg(bin_path).output() {
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -135,7 +177,7 @@ fn binary_requires_cuda_linux(bin_path: &Path) -> bool {
         }
     }
 
-    // Fallback: simple string search in binary (less reliable on Linux)
+    // Fallback: string search if ldd fails
     if let Ok(contents) = std::fs::read(bin_path) {
         let contents_str = String::from_utf8_lossy(&contents);
         return contents_str.contains("libcudart")
@@ -146,48 +188,52 @@ fn binary_requires_cuda_linux(bin_path: &Path) -> bool {
     false
 }
 
-/// Adds CUDA paths to the command's environment based on the OS.
-pub fn add_cuda_paths(_command: &mut tokio::process::Command) -> bool {
+pub fn find_cuda_paths() -> CudaPaths {
     #[cfg(target_os = "windows")]
-    return add_cuda_paths_windows(_command);
+    return find_cuda_paths_windows();
 
     #[cfg(target_os = "linux")]
-    return add_cuda_paths_linux(_command);
+    return find_cuda_paths_linux();
 
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         #[cfg(feature = "logging")]
         log::debug!("CUDA path detection not implemented for this OS");
-        false
+        CudaPaths::default()
     }
 }
 
+/// Backward-compat wrapper. Prefer `find_cuda_paths()` + `setup_library_path()`.
+pub fn add_cuda_paths(command: &mut tokio::process::Command) -> bool {
+    let cuda = find_cuda_paths();
+    let found = !cuda.lib_paths.is_empty() || !cuda.bin_paths.is_empty();
+    setup_library_path(None, &cuda, command);
+    found
+}
+
 #[cfg(target_os = "windows")]
-pub fn add_cuda_paths_windows(command: &mut tokio::process::Command) -> bool {
+fn find_cuda_paths_windows() -> CudaPaths {
     use std::collections::HashSet;
     use std::path::Path;
 
-    let mut cuda_paths = HashSet::new();
+    let mut cuda_bin_paths = HashSet::new();
 
-    // Check CUDA_PATH env var
     if let Ok(cuda_path) = std::env::var("CUDA_PATH") {
         let bin_path = format!(r"{}\bin", cuda_path);
         if Path::new(&bin_path).exists() {
-            cuda_paths.insert(bin_path);
+            cuda_bin_paths.insert(bin_path);
         }
     }
 
-    // Check versioned CUDA_PATH_Vxx_x env vars
     for (key, value) in std::env::vars() {
         if key.starts_with("CUDA_PATH_V") {
             let bin_path = format!(r"{}\bin", value);
             if Path::new(&bin_path).exists() {
-                cuda_paths.insert(bin_path);
+                cuda_bin_paths.insert(bin_path);
             }
         }
     }
 
-    // Check common installation directories
     let program_files =
         std::env::var("ProgramFiles").unwrap_or_else(|_| r"C:\Program Files".to_string());
     let cuda_toolkit_base = format!(r"{}\NVIDIA GPU Computing Toolkit\CUDA", program_files);
@@ -197,43 +243,38 @@ pub fn add_cuda_paths_windows(command: &mut tokio::process::Command) -> bool {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 let bin_path = entry.path().join("bin");
                 if bin_path.exists() {
-                    cuda_paths.insert(bin_path.to_string_lossy().to_string());
+                    cuda_bin_paths.insert(bin_path.to_string_lossy().to_string());
                 }
             }
         }
     }
 
-    // Update PATH if we found CUDA
-    if !cuda_paths.is_empty() {
-        let mut paths: Vec<_> = cuda_paths.into_iter().collect();
-        paths.sort();
-
-        let current_path = std::env::var("PATH").unwrap_or_default();
-        let current_path = current_path.trim_end_matches(';');
-        let new_path = format!("{};{}", paths.join(";"), current_path);
-
-        command.env("PATH", new_path);
-
-        #[cfg(feature = "logging")]
-        log::info!("Added CUDA paths to PATH: {}", paths.join(", "));
-
-        true
-    } else {
+    if cuda_bin_paths.is_empty() {
         #[cfg(feature = "logging")]
         log::debug!("CUDA not found on Windows system");
-        false
+        return CudaPaths::default();
+    }
+
+    let mut bins: Vec<_> = cuda_bin_paths.into_iter().collect();
+    bins.sort();
+
+    #[cfg(feature = "logging")]
+    log::info!("Found CUDA bin paths: {}", bins.join(", "));
+
+    CudaPaths {
+        lib_paths: Vec::new(),
+        bin_paths: bins,
     }
 }
 
 #[cfg(target_os = "linux")]
-pub fn add_cuda_paths_linux(command: &mut tokio::process::Command) -> bool {
+fn find_cuda_paths_linux() -> CudaPaths {
     use std::collections::HashSet;
     use std::path::Path;
 
     let mut cuda_lib_paths = HashSet::new();
     let mut cuda_bin_paths = HashSet::new();
 
-    // Check CUDA_HOME or CUDA_PATH environment variables
     if let Ok(cuda_path) = std::env::var("CUDA_HOME").or_else(|_| std::env::var("CUDA_PATH")) {
         let lib64_path = format!("{}/lib64", cuda_path);
         let lib_path = format!("{}/lib", cuda_path);
@@ -250,7 +291,6 @@ pub fn add_cuda_paths_linux(command: &mut tokio::process::Command) -> bool {
         }
     }
 
-    // Common CUDA directories
     let common_paths = [
         "/usr/local/cuda/lib64",
         "/usr/local/cuda/lib",
@@ -268,7 +308,10 @@ pub fn add_cuda_paths_linux(command: &mut tokio::process::Command) -> bool {
         }
     }
 
-    // Version-specific installs like /usr/local/cuda-12.2
+    if is_flatpak() {
+        collect_flatpak_gl_paths(&mut cuda_lib_paths);
+    }
+
     if let Ok(entries) = std::fs::read_dir("/usr/local") {
         for entry in entries.flatten() {
             if let Some(name) = entry.file_name().to_str() {
@@ -290,56 +333,70 @@ pub fn add_cuda_paths_linux(command: &mut tokio::process::Command) -> bool {
         }
     }
 
-    // Merge and inject paths
-    let mut modified = false;
+    let mut libs: Vec<_> = cuda_lib_paths.into_iter().collect();
+    libs.sort();
+    let mut bins: Vec<_> = cuda_bin_paths.into_iter().collect();
+    bins.sort();
 
-    if !cuda_lib_paths.is_empty() {
-        let mut libs: Vec<_> = cuda_lib_paths.into_iter().collect();
-        libs.sort();
-
-        let current_ld_path = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
-        let current_ld_path = current_ld_path.trim_end_matches(':');
-        let new_ld_path = if current_ld_path.is_empty() {
-            libs.join(":")
-        } else {
-            format!("{}:{}", libs.join(":"), current_ld_path)
-        };
-
-        command.env("LD_LIBRARY_PATH", new_ld_path);
-        modified = true;
-
-        #[cfg(feature = "logging")]
-        log::info!("Added CUDA libs to LD_LIBRARY_PATH: {}", libs.join(", "));
-    }
-
-    if !cuda_bin_paths.is_empty() {
-        let mut bins: Vec<_> = cuda_bin_paths.into_iter().collect();
-        bins.sort();
-
-        let current_path = std::env::var("PATH").unwrap_or_default();
-        let current_path = current_path.trim_end_matches(':');
-        let new_path = if current_path.is_empty() {
-            bins.join(":")
-        } else {
-            format!("{}:{}", bins.join(":"), current_path)
-        };
-
-        command.env("PATH", new_path);
-        modified = true;
-
-        #[cfg(feature = "logging")]
-        log::info!("Added CUDA bins to PATH: {}", bins.join(", "));
-    }
-
-    if !modified {
+    if libs.is_empty() && bins.is_empty() {
         #[cfg(feature = "logging")]
         log::debug!("CUDA not found on Linux system");
+    } else {
+        #[cfg(feature = "logging")]
+        {
+            if !libs.is_empty() {
+                log::info!("Found CUDA lib paths: {}", libs.join(", "));
+            }
+            if !bins.is_empty() {
+                log::info!("Found CUDA bin paths: {}", bins.join(", "));
+            }
+        }
     }
 
-    modified
+    CudaPaths {
+        lib_paths: libs,
+        bin_paths: bins,
+    }
 }
 
-/// Setup Windows-specific process creation flags
+#[cfg(target_os = "linux")]
+fn collect_flatpak_gl_paths(cuda_lib_paths: &mut std::collections::HashSet<String>) {
+    let flatpak_gl_paths = [
+        "/usr/lib/extensions/vulkan/nvidia/lib",
+        "/usr/lib/extensions/cuda/lib",
+        "/usr/lib/GL/lib",
+        "/usr/lib/GL",
+        "/app/lib/GL",
+    ];
+
+    for path in &flatpak_gl_paths {
+        if Path::new(path).exists() {
+            cuda_lib_paths.insert(path.to_string());
+        }
+    }
+
+    for base_dir in ["/usr/lib/extensions", "/usr/lib/GL/lib"] {
+        if let Ok(entries) = std::fs::read_dir(base_dir) {
+            for entry in entries.flatten() {
+                let entry_path = entry.path();
+                if !entry_path.is_dir() {
+                    continue;
+                }
+
+                let lib_sub = entry_path.join("lib");
+                if lib_sub.exists() {
+                    cuda_lib_paths.insert(lib_sub.to_string_lossy().to_string());
+                } else {
+                    cuda_lib_paths.insert(entry_path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "logging")]
+    log::info!("Searched Flatpak GL extension paths for NVIDIA libraries");
+}
+
 pub fn setup_windows_process_flags(command: &mut tokio::process::Command) {
     #[cfg(all(windows, target_arch = "x86_64"))]
     {
@@ -350,5 +407,176 @@ pub fn setup_windows_process_flags(command: &mut tokio::process::Command) {
     #[cfg(not(all(windows, target_arch = "x86_64")))]
     {
         let _ = command; // Silence unused parameter warning on non-Windows platforms
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Spawns a child to read env vars since Command doesn't expose a getter.
+    async fn read_env_from_child(command: &mut tokio::process::Command, var: &str) -> String {
+        use std::process::Stdio;
+        #[cfg(target_os = "linux")]
+        command.args(["-c", &format!("printenv {} || true", var)]);
+        #[cfg(target_os = "windows")]
+        command.args(["/C", &format!("echo %{}%", var)]);
+
+        let output = command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .await
+            .expect("failed to spawn helper process");
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    fn new_shell_command() -> tokio::process::Command {
+        #[cfg(target_os = "linux")]
+        return tokio::process::Command::new("sh");
+        #[cfg(target_os = "windows")]
+        return tokio::process::Command::new("cmd");
+        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        return tokio::process::Command::new("sh");
+    }
+
+    #[test]
+    fn cuda_paths_default_is_empty() {
+        let cp = CudaPaths::default();
+        assert!(cp.lib_paths.is_empty());
+        assert!(cp.bin_paths.is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn setup_library_path_merges_binary_dir_and_cuda_libs() {
+        let cuda = CudaPaths {
+            lib_paths: vec!["/fake/cuda/lib64".into()],
+            bin_paths: vec!["/fake/cuda/bin".into()],
+        };
+        let bin_dir = Path::new("/fake/bin_dir");
+
+        let mut cmd = new_shell_command();
+        setup_library_path(Some(bin_dir), &cuda, &mut cmd);
+
+        let ld = read_env_from_child(&mut cmd, "LD_LIBRARY_PATH").await;
+        assert!(
+            ld.contains("/fake/bin_dir"),
+            "LD_LIBRARY_PATH should contain binary dir, got: {}",
+            ld
+        );
+        assert!(
+            ld.contains("/fake/cuda/lib64"),
+            "LD_LIBRARY_PATH should contain CUDA lib dir, got: {}",
+            ld
+        );
+
+        let mut cmd2 = new_shell_command();
+        setup_library_path(Some(bin_dir), &cuda, &mut cmd2);
+        let path = read_env_from_child(&mut cmd2, "PATH").await;
+        assert!(
+            path.contains("/fake/cuda/bin"),
+            "PATH should contain CUDA bin dir, got: {}",
+            path
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn setup_library_path_no_cuda_still_sets_binary_dir() {
+        let cuda = CudaPaths::default();
+        let bin_dir = Path::new("/fake/bin_dir");
+
+        let mut cmd = new_shell_command();
+        setup_library_path(Some(bin_dir), &cuda, &mut cmd);
+
+        let ld = read_env_from_child(&mut cmd, "LD_LIBRARY_PATH").await;
+        assert!(
+            ld.contains("/fake/bin_dir"),
+            "LD_LIBRARY_PATH should contain binary dir even without CUDA, got: {}",
+            ld
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn setup_library_path_no_binary_dir_still_sets_cuda() {
+        let cuda = CudaPaths {
+            lib_paths: vec!["/fake/cuda/lib64".into()],
+            bin_paths: vec![],
+        };
+
+        let mut cmd = new_shell_command();
+        setup_library_path(None, &cuda, &mut cmd);
+
+        let ld = read_env_from_child(&mut cmd, "LD_LIBRARY_PATH").await;
+        assert!(
+            ld.contains("/fake/cuda/lib64"),
+            "LD_LIBRARY_PATH should contain CUDA lib dir, got: {}",
+            ld
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn setup_library_path_empty_inputs_does_not_set_env() {
+        let cuda = CudaPaths::default();
+        let mut cmd = new_shell_command();
+
+        cmd.env_remove("LD_LIBRARY_PATH");
+        setup_library_path(None, &cuda, &mut cmd);
+
+        let ld = read_env_from_child(&mut cmd, "LD_LIBRARY_PATH").await;
+        assert!(
+            ld.is_empty(),
+            "LD_LIBRARY_PATH should not be set when both inputs are empty, got: {}",
+            ld
+        );
+    }
+
+    #[test]
+    fn binary_requires_cuda_returns_false_for_nonexistent_file() {
+        assert!(!binary_requires_cuda(Path::new("/nonexistent/binary")));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn binary_requires_cuda_returns_false_for_non_cuda_binary() {
+        assert!(!binary_requires_cuda(Path::new("/bin/sh")));
+    }
+
+    #[test]
+    fn find_cuda_paths_returns_valid_struct() {
+        let cp = find_cuda_paths();
+        for p in &cp.lib_paths {
+            assert!(
+                Path::new(p).exists(),
+                "Returned lib path should exist: {}",
+                p
+            );
+        }
+        for p in &cp.bin_paths {
+            assert!(
+                Path::new(p).exists(),
+                "Returned bin path should exist: {}",
+                p
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn add_cuda_paths_compat_wrapper_does_not_panic() {
+        let mut cmd = new_shell_command();
+        let _found = add_cuda_paths(&mut cmd);
+    }
+
+    #[test]
+    fn is_flatpak_returns_bool() {
+        let result = is_flatpak();
+        if Path::new("/.flatpak-info").exists() {
+            assert!(result);
+        } else {
+            assert!(!result);
+        }
     }
 }

@@ -76,6 +76,7 @@
   "noThreadsYetDesc": "Bắt đầu một cuộc trò chuyện mới để xem lịch sử chủ đề của bạn ở đây.",
   "downloads": "Tải xuống",
   "downloading": "Đang tải xuống",
+  "uploadingAttachments": "Đang tải lên tệp đính kèm…",
   "cancelDownload": "Hủy tải xuống",
   "downloadCancelled": "Đã hủy tải xuống",
   "downloadComplete": "Tải xuống hoàn tất",
@@ -253,6 +254,7 @@
     "searchProjects": "Tìm kiếm dự án...",
     "noProjectsFound": "Không tìm thấy dự án nào",
     "tryDifferentSearch": "Thử từ khóa tìm kiếm khác",
+    "uploadingFiles": "Đang tải lên tệp…",
     "deleteProjectDialog": {
       "title": "Xóa dự án",
       "permanentDelete": "Điều này sẽ xóa vĩnh viễn tất cả các chủ đề.",
@@ -301,6 +303,10 @@
       "title": "Siêu dữ liệu tin nhắn"
     }
   },
+  "errorDialog": {
+    "titleFallback": "Đã xảy ra lỗi",
+    "details": "Chi tiết"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "Tất cả các chủ đề đã được bỏ yêu thích",
@@ -317,6 +323,14 @@
     "deleteThread": {
       "title": "Xóa chủ đề",
       "description": "Chủ đề này đã bị xóa vĩnh viễn."
+    },
+    "errorCopied": {
+      "title": "Sao chép thành công",
+      "description": "Thông tin lỗi đã được sao chép vào bộ nhớ tạm"
+    },
+    "errorCopyFailed": {
+      "title": "Không thể sao chép",
+      "description": "Không thể sao chép thông tin lỗi vào bộ nhớ tạm"
     },
     "editMessage": {
       "title": "Chỉnh sửa tin nhắn",

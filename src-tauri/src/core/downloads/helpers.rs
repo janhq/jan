@@ -1,9 +1,9 @@
 use super::models::{DownloadEvent, DownloadItem, ProgressTracker, ProxyConfig};
 use crate::core::app::commands::get_jan_data_folder_path;
-use crate::core::updater::session::get_session_id;
+use crate::core::filesystem::helpers::resolve_path_within_jan_data_folder;
 use crate::core::updater::hmac_client::SignedRequestHeaders;
+use crate::core::updater::session::get_session_id;
 use futures_util::StreamExt;
-use jan_utils::normalize_path;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::path::Path;
@@ -60,9 +60,12 @@ pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
 pub fn convert_to_mirror_url(url: &str) -> Option<String> {
     let parsed = Url::parse(url).ok()?;
     let host = parsed.host_str()?;
-    
+
     // Check if the domain should use mirror
-    if MIRROR_DOMAINS.iter().any(|domain| host == *domain || host.ends_with(&format!(".{}", domain))) {
+    if MIRROR_DOMAINS
+        .iter()
+        .any(|domain| host == *domain || host.ends_with(&format!(".{}", domain)))
+    {
         // Remove the scheme (https://) and prepend mirror prefix
         let url_without_scheme = url
             .strip_prefix("https://")
@@ -342,25 +345,40 @@ pub fn _convert_headers(
     Ok(header_map)
 }
 
-pub async fn _get_file_size(
-    client: &reqwest::Client,
-    url: &str,
-) -> Result<u64, Box<dyn std::error::Error>> {
-    let resp = client.head(url).send().await?;
-    if !resp.status().is_success() {
-        return Err(format!("Failed to get file size: HTTP status {}", resp.status()).into());
-    }
-    // this is buggy, always return 0 for HEAD request
-    // Ok(resp.content_length().unwrap_or(0))
+/// Best-effort file size probe via HEAD. Returns 0 when the server blocks HEAD,
+/// times out, omits Content-Length, or otherwise misbehaves — the actual GET
+/// request will surface any real URL/auth errors.
+pub async fn _get_file_size(client: &reqwest::Client, url: &str) -> u64 {
+    const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
 
-    match resp.headers().get("content-length") {
-        Some(value) => {
-            let value_str = value.to_str()?;
-            let value_u64: u64 = value_str.parse()?;
-            Ok(value_u64)
+    let resp = match tokio::time::timeout(HEAD_TIMEOUT, client.head(url).send()).await {
+        Ok(Ok(resp)) => resp,
+        Ok(Err(e)) => {
+            log::warn!("HEAD {url} failed ({e}); proceeding without known size");
+            return 0;
         }
-        None => Ok(0),
+        Err(_) => {
+            log::warn!(
+                "HEAD {url} timed out after {}s; proceeding without known size",
+                HEAD_TIMEOUT.as_secs()
+            );
+            return 0;
+        }
+    };
+
+    if !resp.status().is_success() {
+        log::warn!(
+            "HEAD {url} returned HTTP {}; proceeding without known size",
+            resp.status()
+        );
+        return 0;
     }
+
+    resp.headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0)
 }
 
 // ===== MAIN DOWNLOAD FUNCTIONS =====
@@ -391,9 +409,7 @@ pub async fn _download_files_internal(
     let mut file_sizes: HashMap<String, u64> = HashMap::new();
     for item in items.iter() {
         let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
-        let size = _get_file_size(&client, &item.url)
-            .await
-            .map_err(err_to_string)?;
+        let size = _get_file_size(&client, &item.url).await;
         file_sizes.insert(item.url.clone(), size);
     }
 
@@ -412,16 +428,8 @@ pub async fn _download_files_internal(
     let mut download_tasks = Vec::new();
 
     for (index, item) in items.iter().enumerate() {
-        let save_path = jan_data_folder.join(&item.save_path);
-        let save_path = normalize_path(&save_path);
-
-        if !save_path.starts_with(&jan_data_folder) {
-            return Err(format!(
-                "Path {} is outside of Jan data folder {}",
-                save_path.display(),
-                jan_data_folder.display()
-            ));
-        }
+        let (canonical_data, save_path) =
+            resolve_path_within_jan_data_folder(&jan_data_folder, &item.save_path)?;
 
         // Spawn download task for each file
         let item_clone = item.clone();
@@ -438,6 +446,11 @@ pub async fn _download_files_internal(
         };
 
         let task = tokio::spawn(async move {
+            log::debug!(
+                "Downloading {} into Jan data folder {}",
+                item_clone.url,
+                canonical_data.display()
+            );
             download_single_file(app_clone, &item_clone, &save_path, file_id, file_size, ctx).await
         });
 
@@ -534,7 +547,7 @@ async fn download_single_file(
     item: &DownloadItem,
     save_path: &std::path::Path,
     file_id: String,
-    _file_size: u64,
+    file_size: u64,
     ctx: DownloadCtx,
 ) -> Result<std::path::PathBuf, String> {
     let DownloadCtx {
@@ -622,12 +635,20 @@ async fn download_single_file(
         // Use mirror fallback for new downloads
         _get_maybe_resume_with_fallback(&client, &item.url, 0).await?
     };
-    
+
     // Log which URL is being used for download
     if actual_url != item.url {
         log::info!("Downloading via Jan mirror: {}", actual_url);
     }
-    
+
+    // If HEAD gave us no size, refine the running total from the GET response
+    // so the UI can progress past "Initializing" and show a real percentage.
+    if file_size == 0 {
+        if let Some(content_length) = resp.content_length() {
+            progress_tracker.add_to_total(initial_progress + content_length);
+        }
+    }
+
     let mut stream = resp.bytes_stream();
 
     let file = if should_resume {
@@ -731,11 +752,14 @@ pub async fn _get_maybe_resume_with_fallback(
                 return Ok((resp, mirror_url));
             }
             Err(e) => {
-                log::warn!("Jan mirror download failed: {}. Falling back to original URL...", e);
+                log::warn!(
+                    "Jan mirror download failed: {}. Falling back to original URL...",
+                    e
+                );
             }
         }
     }
-    
+
     // Fallback to original URL (no HMAC headers needed)
     log::info!("Downloading from original URL: {}", url);
     let resp = _get_maybe_resume_internal(client, url, start_bytes).await?;
@@ -752,7 +776,7 @@ async fn _get_maybe_resume_with_hmac(
     let nonce_seed = get_download_nonce_seed();
     let app_version = get_app_version();
     let signed_headers = SignedRequestHeaders::new(SECRET_KEY, &nonce_seed, app_version);
-    
+
     let mut request = if start_bytes > 0 {
         client
             .get(url)
@@ -760,14 +784,14 @@ async fn _get_maybe_resume_with_hmac(
     } else {
         client.get(url)
     };
-    
+
     // Add HMAC headers
     for (key, value) in signed_headers.to_header_pairs() {
         request = request.header(key, value);
     }
-    
+
     let resp = request.send().await.map_err(err_to_string)?;
-    
+
     if start_bytes > 0 {
         if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
             return Err(format!(
@@ -783,7 +807,7 @@ async fn _get_maybe_resume_with_hmac(
             resp.text().await.unwrap_or_default()
         ));
     }
-    
+
     Ok(resp)
 }
 

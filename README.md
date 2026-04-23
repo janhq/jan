@@ -3,6 +3,12 @@
 <img width="2048" height="280" alt="github jan banner" src="https://github.com/user-attachments/assets/f3f87889-c133-433b-b250-236218150d3f" />
 
 <p align="center">
+  <strong>English</strong> ·
+  <a href="README.zh.md">中文</a> ·
+  <a href="README.ja.md">日本語</a>
+</p>
+
+<p align="center">
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
   <img alt="GitHub commit activity" src="https://img.shields.io/github/commit-activity/m/janhq/jan"/>
   <img alt="Github Last Commit" src="https://img.shields.io/github/last-commit/janhq/jan"/>

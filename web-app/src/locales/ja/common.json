@@ -76,6 +76,7 @@
   "noThreadsYetDesc": "新しい会話を始めると、ここにスレッドの履歴が表示されます。",
   "downloads": "ダウンロード",
   "downloading": "ダウンロード中",
+  "uploadingAttachments": "添付ファイルをアップロードしています…",
   "cancelDownload": "ダウンロードをキャンセル",
   "downloadCancelled": "ダウンロードがキャンセルされました",
   "downloadComplete": "ダウンロード完了",
@@ -290,7 +291,12 @@
     "updated": "更新日時:",
     "collapseThreads": "スレッドを折りたたむ",
     "expandThreads": "スレッドを展開する",
-    "update": "更新"
+    "update": "更新",
+    "uploadingFiles": "ファイルをアップロードしています…"
+  },
+  "errorDialog": {
+    "titleFallback": "問題が発生しました",
+    "details": "詳細"
   },
   "toast": {
     "allThreadsUnfavorited": {
@@ -308,6 +314,14 @@
     "deleteThread": {
       "title": "スレッドを削除",
       "description": "このスレッドは完全に削除されました。"
+    },
+    "errorCopied": {
+      "title": "コピーしました",
+      "description": "エラー情報をクリップボードにコピーしました"
+    },
+    "errorCopyFailed": {
+      "title": "コピーに失敗しました",
+      "description": "エラー情報をクリップボードにコピーできませんでした"
     },
     "editMessage": {
       "title": "メッセージを編集",
