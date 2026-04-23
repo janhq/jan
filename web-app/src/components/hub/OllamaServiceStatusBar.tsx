@@ -1,16 +1,23 @@
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { IconRefresh } from '@tabler/icons-react'
 
 type StatusColor = 'green' | 'yellow' | 'orange' | 'red'
+type LifecyclePhase = 'stopped' | 'starting' | 'running' | 'stopping' | 'error'
 
 export interface OllamaServiceStatusBarProps {
   isInstalled: boolean
   isRunning: boolean
   isInstalling: boolean
+  phase: LifecyclePhase
+  switchChecked: boolean
+  switchDisabled: boolean
   version?: string
   portLabel: string
   instanceCount: number
+  message?: string
+  onToggleDesiredRunning: (checked: boolean) => void
   onManage: () => void
   onRefresh: () => void | Promise<void>
 }
@@ -37,9 +44,14 @@ export function OllamaServiceStatusBar({
   isInstalled,
   isRunning,
   isInstalling,
+  phase,
+  switchChecked,
+  switchDisabled,
   version,
   portLabel,
   instanceCount,
+  message,
+  onToggleDesiredRunning,
   onManage,
   onRefresh,
 }: OllamaServiceStatusBarProps) {
@@ -63,7 +75,25 @@ export function OllamaServiceStatusBar({
         <span className="text-xs text-muted-foreground">{`端口 ${portLabel}`}</span>
         <span className="text-xs text-muted-foreground">{`实例 ${instanceCount}`}</span>
       </div>
-      <div className="flex items-center gap-1 shrink-0">
+      <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        <div className="flex items-center gap-2 rounded-full border border-border px-2.5 py-1">
+          <Switch
+            aria-label="期望运行 Ollama"
+            checked={switchChecked}
+            disabled={switchDisabled || !isInstalled}
+            loading={phase === 'starting' || phase === 'stopping'}
+            onCheckedChange={onToggleDesiredRunning}
+          />
+          <span className="text-xs text-muted-foreground">
+            {phase === 'starting' || phase === 'stopping'
+              ? '正在调整到期望状态'
+              : phase === 'error'
+                ? message ?? '未达到期望状态'
+                : switchChecked
+                  ? '期望运行'
+                  : '期望停止'}
+          </span>
+        </div>
         <Button size="sm" variant="outline" onClick={onManage}>
           管理
         </Button>

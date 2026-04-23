@@ -15,6 +15,7 @@ import { OllamaServiceStatusBar } from '@/components/hub/OllamaServiceStatusBar'
 import { Button } from '@/components/ui/button'
 import HeaderPage from '@/containers/HeaderPage'
 import { route } from '@/constants/routes'
+import { useOllamaLifecycleController } from '@/hooks/useOllamaLifecycleController'
 import { useOllamaStatus } from '@/hooks/useOllamaStatus'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn, toGigabytes } from '@/lib/utils'
@@ -92,7 +93,6 @@ export function HubContent() {
     isInstalling,
     installMessage,
     installOllama,
-    startOllama,
   } = useOllamaStatus(10000)
 
   const [runningModels, setRunningModels] = useState<OllamaPsModel[]>([])
@@ -136,6 +136,15 @@ export function HubContent() {
     return () => clearInterval(timer)
   }, [fetchRunningModels])
 
+  const lifecycle = useOllamaLifecycleController({
+    isInstalled: ollamaInstalled,
+    isRunning: ollamaRunning,
+    refresh: async () => {
+      await refreshOllamaStatus()
+      await fetchRunningModels()
+    },
+  })
+
   const handleRunModel = useCallback(
     async (request: Record<string, unknown>) => {
       setIsSubmittingRun(true)
@@ -164,17 +173,6 @@ export function HubContent() {
     },
     [fetchRunningModels]
   )
-
-  const handleStopOllama = useCallback(async () => {
-    try {
-      await invoke('stop_ollama')
-      toast.success('Ollama 已停止')
-      await refreshOllamaStatus()
-      await fetchRunningModels()
-    } catch (error) {
-      toast.error(`停止失败: ${String(error)}`)
-    }
-  }, [fetchRunningModels, refreshOllamaStatus])
 
   const handleRefreshService = useCallback(async () => {
     await refreshOllamaStatus()
@@ -242,9 +240,14 @@ export function HubContent() {
               isInstalled={ollamaInstalled}
               isRunning={ollamaRunning}
               isInstalling={isInstalling}
+              phase={lifecycle.phase}
+              switchChecked={lifecycle.switchChecked}
+              switchDisabled={lifecycle.switchDisabled}
               version={ollamaVersion}
               portLabel={servicePortLabel}
               instanceCount={runningModels.length}
+              message={lifecycle.errorMessage}
+              onToggleDesiredRunning={lifecycle.setDesiredRunning}
               onManage={() => setLifecycleDialogOpen(true)}
               onRefresh={handleRefreshService}
             />
@@ -268,15 +271,18 @@ export function HubContent() {
               onOpenChange={setLifecycleDialogOpen}
               isInstalled={ollamaInstalled}
               isRunning={ollamaRunning}
+              phase={lifecycle.phase}
+              switchChecked={lifecycle.switchChecked}
+              switchDisabled={lifecycle.switchDisabled}
               version={ollamaVersion}
               installPath={ollamaInstallPath}
               portLabel={servicePortLabel}
               instanceCount={runningModels.length}
               isInstalling={isInstalling}
               installMessage={installMessage}
+              errorMessage={lifecycle.errorMessage}
               onInstall={installOllama}
-              onStart={startOllama}
-              onStop={handleStopOllama}
+              onToggleDesiredRunning={lifecycle.setDesiredRunning}
             />
 
             <OllamaInstanceDetailDialog

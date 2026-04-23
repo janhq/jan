@@ -14,6 +14,26 @@ fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {e}")
 }
 
+#[cfg(target_os = "windows")]
+fn windows_ollama_launch_command(path: &std::path::Path) -> (PathBuf, Vec<String>) {
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_ascii_lowercase());
+
+    if file_name.as_deref() == Some("ollama app.exe") {
+        return (path.to_path_buf(), Vec::new());
+    }
+
+    if let Some(parent) = path.parent() {
+        let app_path = parent.join("ollama app.exe");
+        if app_path.exists() {
+            return (app_path, Vec::new());
+        }
+    }
+
+    (path.to_path_buf(), vec!["serve".to_string()])
+}
+
 /// Common Windows installation paths for Ollama, ordered by likelihood.
 fn ollama_install_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
@@ -189,21 +209,41 @@ pub async fn start_ollama(ollama_path: String) -> Result<(), String> {
         return Err(format!("Ollama executable not found at: {}", ollama_path));
     }
 
-    log::info!("Starting Ollama from: {}", path.display());
-
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let (launch_path, launch_args) = windows_ollama_launch_command(&path);
+
+        log::info!(
+            "Starting Ollama from: {} (requested path: {}, args: {:?})",
+            launch_path.display(),
+            path.display(),
+            launch_args
+        );
 
         // Spawn ollama.exe without a console window.
         // .spawn() returns immediately; the process runs independently.
-        let result = std::process::Command::new(&path)
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|e| format!("Failed to start Ollama: {e}"))?;
+        let mut command = std::process::Command::new(&launch_path);
+        command.creation_flags(CREATE_NO_WINDOW);
+        if !launch_args.is_empty() {
+            command.args(&launch_args);
+        }
 
-        log::info!("Ollama started with PID: {}", result.id());
+        let result = command
+            .spawn()
+            .map_err(|e| {
+                format!(
+                    "Failed to start Ollama from {}: {e}",
+                    launch_path.display()
+                )
+            })?;
+
+        log::info!(
+            "Ollama start command launched with PID: {} from {}",
+            result.id(),
+            launch_path.display()
+        );
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -212,6 +252,49 @@ pub async fn start_ollama(ollama_path: String) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(target_os = "windows")]
+    use super::windows_ollama_launch_command;
+    #[cfg(target_os = "windows")]
+    use std::path::PathBuf;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_launch_command_prefers_tray_app_when_present() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cli_path = temp.path().join("ollama.exe");
+        let app_path = temp.path().join("ollama app.exe");
+        std::fs::write(&cli_path, b"").expect("write cli");
+        std::fs::write(&app_path, b"").expect("write app");
+
+        let (program, args) = windows_ollama_launch_command(&cli_path);
+        assert_eq!(program, app_path);
+        assert!(args.is_empty());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_launch_command_falls_back_to_serve_for_cli_only() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cli_path = temp.path().join("ollama.exe");
+        std::fs::write(&cli_path, b"").expect("write cli");
+
+        let (program, args) = windows_ollama_launch_command(&cli_path);
+        assert_eq!(program, cli_path);
+        assert_eq!(args, vec!["serve".to_string()]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_launch_command_keeps_tray_app_path_unchanged() {
+        let app_path = PathBuf::from(r"C:\Ollama\ollama app.exe");
+        let (program, args) = windows_ollama_launch_command(&app_path);
+        assert_eq!(program, app_path);
+        assert!(args.is_empty());
+    }
 }
 
 /// Downloads the Ollama installer to the system temp directory and runs it silently.

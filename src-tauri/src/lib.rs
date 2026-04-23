@@ -174,6 +174,9 @@ pub fn run() {
         core::ollama_control_plane::commands::ollama_run_model,
         core::ollama_control_plane::commands::ollama_unload_model,
         core::ollama_control_plane::commands::stop_ollama,
+        // Ollama lifecycle
+        core::ollama_lifecycle::commands::ensure_ollama_running,
+        core::ollama_lifecycle::commands::ensure_ollama_stopped,
         // OpenClaw launcher
         core::openclaw_launcher::commands::check_openclaw_installed,
         core::openclaw_launcher::commands::get_openclaw_status,
@@ -292,6 +295,9 @@ pub fn run() {
         core::ollama_control_plane::commands::ollama_run_model,
         core::ollama_control_plane::commands::ollama_unload_model,
         core::ollama_control_plane::commands::stop_ollama,
+        // Ollama lifecycle
+        core::ollama_lifecycle::commands::ensure_ollama_running,
+        core::ollama_lifecycle::commands::ensure_ollama_stopped,
         // OpenClaw launcher
         core::openclaw_launcher::commands::check_openclaw_installed,
         core::openclaw_launcher::commands::get_openclaw_status,

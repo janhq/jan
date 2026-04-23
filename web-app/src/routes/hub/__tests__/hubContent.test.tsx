@@ -7,16 +7,20 @@ const {
   mockRefresh,
   mockInstallOllama,
   mockStartOllama,
+  mockSetDesiredRunning,
   mockToastSuccess,
   mockToastError,
+  mockUseOllamaLifecycleController,
   mockUseOllamaStatus,
 } = vi.hoisted(() => ({
   mockInvoke: vi.fn(),
   mockRefresh: vi.fn(),
   mockInstallOllama: vi.fn(),
   mockStartOllama: vi.fn(),
+  mockSetDesiredRunning: vi.fn(),
   mockToastSuccess: vi.fn(),
   mockToastError: vi.fn(),
+  mockUseOllamaLifecycleController: vi.fn(),
   mockUseOllamaStatus: vi.fn(),
 }))
 
@@ -43,6 +47,10 @@ vi.mock('@/containers/HeaderPage', () => ({
 
 vi.mock('@/hooks/useOllamaStatus', () => ({
   useOllamaStatus: mockUseOllamaStatus,
+}))
+
+vi.mock('@/hooks/useOllamaLifecycleController', () => ({
+  useOllamaLifecycleController: mockUseOllamaLifecycleController,
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -111,6 +119,15 @@ describe('HubContent', () => {
       installOllama: mockInstallOllama,
       startOllama: mockStartOllama,
     })
+    mockUseOllamaLifecycleController.mockReturnValue({
+      phase: 'running',
+      desiredRunning: true,
+      errorMessage: undefined,
+      isReconciling: false,
+      switchChecked: true,
+      switchDisabled: false,
+      setDesiredRunning: mockSetDesiredRunning,
+    })
     mockInvoke.mockImplementation(async (command: string) => {
       if (command === 'ollama_ps') return []
       if (command === 'ollama_run_model') return undefined
@@ -145,7 +162,7 @@ describe('HubContent', () => {
     })
   })
 
-  it('renders a compact ollama process status bar with a management entry instead of the old large card', async () => {
+  it('renders a compact ollama process status bar with a declarative lifecycle switch', async () => {
     const Component = Route.component as React.ComponentType
     render(<Component />)
 
@@ -155,11 +172,14 @@ describe('HubContent', () => {
     expect(screen.getByText('版本 0.11.4')).toBeInTheDocument()
     expect(screen.getByText('端口 11434')).toBeInTheDocument()
     expect(screen.getByText('实例 0')).toBeInTheDocument()
+    expect(
+      screen.getByRole('switch', { name: '期望运行 Ollama' })
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '管理' })).toBeInTheDocument()
     expect(screen.queryByText('点击“启动 Ollama”即可运行')).not.toBeInTheDocument()
   })
 
-  it('opens lifecycle dialog from manage entry and disables install action when already installed', async () => {
+  it('opens lifecycle dialog from manage entry and no longer exposes raw start and stop buttons', async () => {
     const user = userEvent.setup()
     const Component = Route.component as React.ComponentType
     render(<Component />)
@@ -170,7 +190,11 @@ describe('HubContent', () => {
       expect(screen.getByText(/Ollama.*绠＄悊|Ollama.*管理/)).toBeInTheDocument()
     })
 
-    expect(screen.getByRole('button', { name: /瀹夎|安装/ })).toBeDisabled()
+    expect(
+      screen.getByRole('switch', { name: '期望运行 Ollama（管理面板）' })
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '启动' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '停止' })).not.toBeInTheDocument()
   })
 
   it('triggers both status refresh and running instance fetch when clicking top refresh', async () => {

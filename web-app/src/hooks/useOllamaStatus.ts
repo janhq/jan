@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { toast } from 'sonner'
+import { logError } from '@/lib/logger'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { ModelCapabilities } from '@/types/models'
 
@@ -237,7 +238,11 @@ export function useOllamaStatus(pollIntervalMs = 5000) {
       toast.warning('Ollama 启动时间较长，请检查服务状态', { id: toastId })
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
-      console.error('Failed to start Ollama:', msg)
+      logError(`Failed to start Ollama: ${msg}`, {
+        action: 'start_ollama',
+        installPath: path,
+        url: window.location.href,
+      })
       toast.error(`启动失败: ${msg}`, { id: toastId })
       setStatus((prev) => ({
         ...prev,

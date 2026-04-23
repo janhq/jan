@@ -9,6 +9,7 @@ pub mod logger;
 pub mod mcp;
 pub mod modelscope;
 pub mod ollama_control_plane;
+pub mod ollama_lifecycle;
 pub mod ollama_installer;
 pub mod openclaw_launcher;
 pub mod server;

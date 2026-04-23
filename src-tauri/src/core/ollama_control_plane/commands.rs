@@ -45,6 +45,23 @@ fn is_taskkill_not_running(message: &str) -> bool {
         || message.contains("娌℃湁杩愯")
 }
 
+#[cfg(target_os = "windows")]
+fn is_taskkill_access_denied(message: &str) -> bool {
+    let message = message.to_lowercase();
+    message.contains("access is denied")
+        || message.contains("拒绝访问")
+        || message.contains("锟杰撅拷")
+}
+
+#[cfg(target_os = "windows")]
+fn build_windows_stop_permission_denied_error(taskkill_errors: &[String], shutdown_err: &str) -> String {
+    format!(
+        "Failed to stop Ollama because Windows denied terminating one or more Ollama processes. This usually means Ollama is running with higher privileges than RongxinAI/Jan. Restart RongxinAI as administrator or restart Ollama without administrator privileges. taskkill issues: {}. shutdown check: {}",
+        taskkill_errors.join(" | "),
+        shutdown_err
+    )
+}
+
 fn build_ollama_run_payload(
     request: OllamaRunModelRequest,
 ) -> serde_json::Map<String, serde_json::Value> {
@@ -216,6 +233,43 @@ async fn wait_for_ollama_shutdown() -> Result<(), String> {
     }
 
     Err("Timed out waiting for Ollama to stop".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn finalize_windows_stop(
+    taskkill_errors: Vec<String>,
+    shutdown_result: Result<(), String>,
+) -> Result<(), String> {
+    match shutdown_result {
+        Ok(()) => {
+            if !taskkill_errors.is_empty() {
+                log::warn!(
+                    "Ollama stopped after taskkill reported intermediate issues: {}",
+                    taskkill_errors.join(" | ")
+                );
+            }
+            Ok(())
+        }
+        Err(shutdown_err) => {
+            if taskkill_errors.is_empty() {
+                Err(shutdown_err)
+            } else if taskkill_errors
+                .iter()
+                .any(|error| is_taskkill_access_denied(error))
+            {
+                Err(build_windows_stop_permission_denied_error(
+                    &taskkill_errors,
+                    &shutdown_err,
+                ))
+            } else {
+                Err(format!(
+                    "Failed to stop Ollama. taskkill issues: {}. shutdown check: {}",
+                    taskkill_errors.join(" | "),
+                    shutdown_err
+                ))
+            }
+        }
+    }
 }
 
 /// Builds a streaming reqwest client without a global request timeout.
@@ -630,6 +684,7 @@ pub async fn stop_ollama() -> Result<(), String> {
     {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let mut stopped_any = false;
+        let mut taskkill_errors = Vec::new();
 
         for target in windows_stop_targets() {
             let mut command = tokio::process::Command::new("taskkill");
@@ -661,24 +716,32 @@ pub async fn stop_ollama() -> Result<(), String> {
             }
 
             log::error!(
-                "taskkill failed for {}. stdout: {} stderr: {}",
+                "taskkill returned non-zero for {} (code={:?}). stdout: {} stderr: {}",
                 target.image_name,
+                output.status.code(),
                 stdout,
                 stderr
             );
-            return Err(format!(
-                "taskkill failed for {}: {}{}",
-                target.image_name, stdout, stderr
+            taskkill_errors.push(format!(
+                "{} (code={:?}) stdout={} stderr={}",
+                target.image_name,
+                output.status.code(),
+                stdout.trim(),
+                stderr.trim()
             ));
         }
 
         if stopped_any {
             log::info!("Ollama stopped successfully via taskkill");
-        } else {
+        } else if taskkill_errors.is_empty() {
             log::info!("Ollama was not running");
+        } else {
+            log::warn!(
+                "Ollama taskkill did not terminate any process targets: {}",
+                taskkill_errors.join(" | ")
+            );
         }
-        wait_for_ollama_shutdown().await?;
-        return Ok(());
+        return finalize_windows_stop(taskkill_errors, wait_for_ollama_shutdown().await);
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -698,14 +761,18 @@ pub async fn stop_ollama() -> Result<(), String> {
         } else {
             log::info!("Ollama stopped successfully via pkill");
         }
-    }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::build_ollama_run_payload;
+    #[cfg(target_os = "windows")]
+    use super::finalize_windows_stop;
+    #[cfg(target_os = "windows")]
+    use super::is_taskkill_access_denied;
     #[cfg(target_os = "windows")]
     use super::is_taskkill_not_running;
     #[cfg(target_os = "windows")]
@@ -734,6 +801,42 @@ mod tests {
             "ERROR: The process \"ollama.exe\" not found."
         ));
         assert!(is_taskkill_not_running("INFO: no running instances"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn taskkill_access_denied_detection_matches_common_messages() {
+        assert!(is_taskkill_access_denied("ERROR: Access is denied."));
+        assert!(is_taskkill_access_denied(
+            "原锟斤拷: 锟杰撅拷锟斤拷锟绞★拷"
+        ));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn finalize_windows_stop_prefers_actual_shutdown_result() {
+        assert!(finalize_windows_stop(vec!["partial taskkill issue".to_string()], Ok(())).is_ok());
+
+        let err = finalize_windows_stop(
+            vec!["partial taskkill issue".to_string()],
+            Err("Timed out waiting for Ollama to stop".to_string()),
+        )
+        .expect_err("should surface failure when Ollama is still running");
+        assert!(err.contains("partial taskkill issue"));
+        assert!(err.contains("Timed out waiting for Ollama to stop"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn finalize_windows_stop_surfaces_permission_hint_for_access_denied() {
+        let err = finalize_windows_stop(
+            vec!["ollama.exe stderr=ERROR: Access is denied.".to_string()],
+            Err("Timed out waiting for Ollama to stop".to_string()),
+        )
+        .expect_err("should surface permission hint");
+
+        assert!(err.contains("higher privileges"));
+        assert!(err.contains("Access is denied"));
     }
 
     #[test]
