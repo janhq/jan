@@ -1105,8 +1105,16 @@ export default class llamacpp_extension extends AIEngine {
     // - k_llama-main-b4314-09c61e1-bin-win-cuda-12.8-x64-avx2.zip
     // - ik_llama-main-b4314-09c61e1-cudart-llama-bin-win-cuda-12.8-x64-avx512.zip
     // - llama-b7037-bin-win-cuda-12.4-x64.zip (legacy format)
-    const re =
+    const llamaRe =
       /^(.+?[-_])?llama(?:-main)?-(b\d+(?:-[a-f0-9]+)?)(?:-cudart-llama)?-bin-(.+?)\.(?:tar\.gz|zip)$/
+
+    // Turboquant-plus archives
+    // Examples:
+    // - turboquant-plus-<version>-macos-arm64-metal.tar.gz
+    // - turboquant-plus-<version>-windows-x64-cuda12.4.zip
+    // - turboquant-plus-<version>-linux-x64-cuda12.4.tar.gz
+    const turboquantRe =
+      /^turboquant-plus-(.+?)-((?:macos|windows|linux)-[A-Za-z0-9_.+-]+)\.(?:tar\.gz|zip)$/
 
     const archiveName = await basename(path)
     logger.info(`Installing backend from path: ${path}`)
@@ -1119,15 +1127,24 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error(`Invalid path or file ${path}`)
     }
 
-    const match = re.exec(archiveName)
+    let prefix: string | undefined
+    let version: string | undefined
+    let backend: string | undefined
 
-    if (!match) {
+    const llamaMatch = llamaRe.exec(archiveName)
+    const turboquantMatch = turboquantRe.exec(archiveName)
+
+    if (llamaMatch) {
+      ;[, prefix, version, backend] = llamaMatch
+    } else if (turboquantMatch) {
+      prefix = 'turboquant-plus-'
+      version = turboquantMatch[1]
+      backend = turboquantMatch[2]
+    } else {
       throw new Error(
-        `Failed to parse archive name: ${archiveName}. Expected format: [Optional prefix-]llama-<version>-bin-<backend>.(tar.gz|zip)`
+        `Failed to parse archive name: ${archiveName}. Expected format: [prefix-]llama-<version>-bin-<backend>.(tar.gz|zip) or turboquant-plus-<version>-<platform>-<backend>.(tar.gz|zip)`
       )
     }
-
-    const [, prefix, version, backend] = match
 
     if (!version || !backend) {
       throw new Error(`Invalid backend archive name: ${archiveName}`)
@@ -1149,12 +1166,22 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error(`Failed to decompress archive: ${String(e)}`)
     }
 
-    const binPath =
-      platformName === 'win'
-        ? await joinPath([backendDir, 'build', 'bin', 'llama-server.exe'])
-        : await joinPath([backendDir, 'build', 'bin', 'llama-server'])
+    const exeName =
+      platformName === 'win' ? 'llama-server.exe' : 'llama-server'
+    const candidateBinPaths = [
+      await joinPath([backendDir, 'build', 'bin', exeName]),
+      await joinPath([backendDir, exeName]),
+    ]
 
-    if (!fs.existsSync(binPath)) {
+    let binFound = false
+    for (const candidate of candidateBinPaths) {
+      if (await fs.existsSync(candidate)) {
+        binFound = true
+        break
+      }
+    }
+
+    if (!binFound) {
       await fs.rm(backendDir)
       throw new Error(
         'Not a supported backend archive! Missing llama-server binary.'

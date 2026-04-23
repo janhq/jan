@@ -331,20 +331,31 @@ impl ArgumentBuilder {
             self.args.push(self.config.n_predict.to_string());
         }
 
-        if !self.config.cache_type_k.is_empty() && self.config.cache_type_k != "f16" {
-            self.args.push("--cache-type-k".to_string());
-            self.args.push(self.config.cache_type_k.clone());
-        }
+        // turboquant-plus backends only support the custom `turbo3` KV cache
+        // type; ignore user-selected cache_type_k/v to avoid crashes.
+        let is_turboquant_plus = self.backend.starts_with("turboquant-plus-");
 
-        // cache_type_v only if flash_attn is not 'off' and value is not f16/f32
-        // cache_type_v needs divisibility check but since users want to tinker around it, should allow them to do so
-        if self.config.flash_attn != "off"
-            && !self.config.cache_type_v.is_empty()
-            && self.config.cache_type_v != "f16"
-            && self.config.cache_type_v != "f32"
-        {
+        if is_turboquant_plus {
+            self.args.push("--cache-type-k".to_string());
+            self.args.push("turbo3".to_string());
             self.args.push("--cache-type-v".to_string());
-            self.args.push(self.config.cache_type_v.clone());
+            self.args.push("turbo3".to_string());
+        } else {
+            if !self.config.cache_type_k.is_empty() && self.config.cache_type_k != "f16" {
+                self.args.push("--cache-type-k".to_string());
+                self.args.push(self.config.cache_type_k.clone());
+            }
+
+            // cache_type_v only if flash_attn is not 'off' and value is not f16/f32
+            // cache_type_v needs divisibility check but since users want to tinker around it, should allow them to do so
+            if self.config.flash_attn != "off"
+                && !self.config.cache_type_v.is_empty()
+                && self.config.cache_type_v != "f16"
+                && self.config.cache_type_v != "f32"
+            {
+                self.args.push("--cache-type-v".to_string());
+                self.args.push(self.config.cache_type_v.clone());
+            }
         }
 
         if (self.config.defrag_thold - 0.1).abs() > f32::EPSILON {
