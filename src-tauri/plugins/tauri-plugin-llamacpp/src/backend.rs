@@ -888,22 +888,19 @@ fn looks_like_binary(path: &PathBuf) -> bool {
     }
 }
 
-fn find_gpu_backend_lib(bin_dir: &PathBuf) -> Option<PathBuf> {
-    walkdir::WalkDir::new(bin_dir)
-        .max_depth(1)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .map(|e| e.path().to_path_buf())
-        .find(|p| {
-            let name = p
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            looks_like_binary(p) && (name.contains("cuda") || name.contains("vulkan"))
-        })
+/// Return the expected GPU backend lib filename for this backend, if any.
+/// CPU backends don't have a single required lib (CPU variants are loaded
+/// optionally based on detected features).
+fn expected_gpu_lib_name(backend: &str) -> Option<&'static str> {
+    let b = backend.to_lowercase();
+    let is_windows = cfg!(target_os = "windows");
+    if b.contains("cuda") {
+        Some(if is_windows { "ggml-cuda.dll" } else { "libggml-cuda.so" })
+    } else if b.contains("vulkan") {
+        Some(if is_windows { "ggml-vulkan.dll" } else { "libggml-vulkan.so" })
+    } else {
+        None
+    }
 }
 
 fn analyze_binary(
@@ -929,6 +926,7 @@ fn analyze_binary(
 fn verify_backend_dependencies(
     bin_dir: &PathBuf,
     exe_path: &PathBuf,
+    backend: &str,
 ) -> Result<BackendVerificationResult, crate::error::LlamacppError> {
     if !bin_dir.exists() {
         return Err(crate::error::LlamacppError::new(
@@ -942,22 +940,35 @@ fn verify_backend_dependencies(
     let mut missing = std::collections::HashSet::new();
     let mut resolved = std::collections::HashSet::new();
 
+    // Existence check for the expected GPU backend lib runs BEFORE any parsing —
+    // if the file is deleted we catch it here and never hand a bad path to goblin.
+    let gpu_lib_path: Option<PathBuf> = if cfg!(target_os = "macos") {
+        None
+    } else {
+        expected_gpu_lib_name(backend).and_then(|name| {
+            let path = bin_dir.join(name);
+            if path.exists() {
+                Some(path)
+            } else {
+                missing.insert(name.to_string());
+                None
+            }
+        })
+    };
+
     // Built once and cloned per binary; avoids re-scanning PATH/System32 on each call.
     let analyzer = lddtree::DependencyAnalyzer::default().add_library_path(bin_dir.clone());
 
     // catch_unwind guards against panics in goblin's unsafe PE/ELF parser.
     let walk_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        // macOS: exe only (Mach-O @rpath is fully transitive).
-        // Windows/Linux: exe + GPU lib (dlopen'd, not in exe's import chain).
-        let paths: Vec<PathBuf> = if cfg!(target_os = "macos") {
-            vec![exe_path.clone()]
-        } else {
-            let mut p = vec![exe_path.clone()];
-            if let Some(gpu_lib) = find_gpu_backend_lib(bin_dir) {
-                p.push(gpu_lib);
-            }
-            p
-        };
+        // Analyze the exe always, plus the GPU backend lib when present.
+        // CPU variants (ggml-cpu-haswell, etc.) are optionally loaded at runtime
+        // based on detected CPU features — parsing them would false-flag deps
+        // the user's CPU doesn't need.
+        let mut paths: Vec<PathBuf> = vec![exe_path.clone()];
+        if let Some(p) = &gpu_lib_path {
+            paths.push(p.clone());
+        }
 
         let mut m = std::collections::HashSet::new();
         let mut r = std::collections::HashSet::new();
@@ -969,8 +980,8 @@ fn verify_backend_dependencies(
 
     match walk_result {
         Ok((m, r)) => {
-            missing = m;
-            resolved = r;
+            missing.extend(m);
+            resolved.extend(r);
         }
         Err(e) => {
             let msg = e
@@ -983,10 +994,12 @@ fn verify_backend_dependencies(
                 bin_dir.display(),
                 msg,
             );
-            // Return verified=true (no false positives) rather than crashing.
+            // Preserve any existence-check results; skip lddtree output.
+            let mut miss: Vec<String> = missing.into_iter().collect();
+            miss.sort();
             return Ok(BackendVerificationResult {
-                verified: true,
-                missing_libraries: vec![],
+                verified: miss.is_empty(),
+                missing_libraries: miss,
                 resolved_libraries: vec![],
             });
         }
@@ -1035,8 +1048,8 @@ pub async fn verify_backend_installation(
     // Directory walk + lddtree parsing is CPU-bound and can be slow on Windows
     // with many DLLs. Run on the blocking thread pool to avoid stalling the
     // Tauri async runtime.
-    let backend_dir = PathBuf::from(get_backend_dir(backend, version, jan_data_folder));
-    tokio::task::spawn_blocking(move || verify_backend_dependencies(&backend_dir, &exe_path))
+    let backend_dir = PathBuf::from(get_backend_dir(backend.clone(), version, jan_data_folder));
+    tokio::task::spawn_blocking(move || verify_backend_dependencies(&backend_dir, &exe_path, &backend))
         .await
         .map_err(|e| crate::error::LlamacppError::new(
             crate::error::ErrorCode::InternalError,
@@ -1930,7 +1943,7 @@ mod tests {
         let nonexistent = temp_dir.path().join("does-not-exist");
 
         let exe = nonexistent.join("llama-server");
-        let result = verify_backend_dependencies(&nonexistent, &exe);
+        let result = verify_backend_dependencies(&nonexistent, &exe, "linux-common_cpus-x64");
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -1946,7 +1959,7 @@ mod tests {
 
         let dir = temp_dir.path().to_path_buf();
         let exe = dir.join("llama-server");
-        let result = verify_backend_dependencies(&dir, &exe);
+        let result = verify_backend_dependencies(&dir, &exe, "linux-common_cpus-x64");
 
         // Succeeds with an empty result — nothing parseable, nothing missing.
         assert!(result.is_ok());
