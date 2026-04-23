@@ -1048,8 +1048,12 @@ pub async fn verify_backend_installation(
     // Directory walk + lddtree parsing is CPU-bound and can be slow on Windows
     // with many DLLs. Run on the blocking thread pool to avoid stalling the
     // Tauri async runtime.
-    let backend_dir = PathBuf::from(get_backend_dir(backend.clone(), version, jan_data_folder));
-    tokio::task::spawn_blocking(move || verify_backend_dependencies(&backend_dir, &exe_path, &backend))
+    // Libs sit next to the exe (build/bin/ when present); backend_dir alone is too high.
+    let bin_dir = exe_path
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(get_backend_dir(backend.clone(), version, jan_data_folder)));
+    tokio::task::spawn_blocking(move || verify_backend_dependencies(&bin_dir, &exe_path, &backend))
         .await
         .map_err(|e| crate::error::LlamacppError::new(
             crate::error::ErrorCode::InternalError,
