@@ -8,10 +8,12 @@ type GeneralSettingState = {
   spellCheckChatInput: boolean
   tokenCounterCompact: boolean
   huggingfaceToken?: string
+  setupCompleted: boolean
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
   setTokenCounterCompact: (value: boolean) => void
   setCurrentLanguage: (value: Language) => void
+  setSetupCompleted: (value: boolean) => void
 }
 
 export const useGeneralSetting = create<GeneralSettingState>()(
@@ -21,9 +23,11 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       spellCheckChatInput: true,
       tokenCounterCompact: true,
       huggingfaceToken: undefined,
+      setupCompleted: false,
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setCurrentLanguage: (value) => set({ currentLanguage: value }),
+      setSetupCompleted: (value) => set({ setupCompleted: value }),
       setHuggingfaceToken: (token) => {
         set({ huggingfaceToken: token })
         ExtensionManager.getInstance()
@@ -50,6 +54,18 @@ export const useGeneralSetting = create<GeneralSettingState>()(
     {
       name: localStorageKey.settingGeneral,
       storage: createJSONStorage(() => fileStorage),
+      version: 1,
+      migrate: (persistedState: unknown, version: number) => {
+        const state = persistedState as Partial<GeneralSettingState>
+        if (version < 1) {
+          // Existing users already have persisted data, so they must have
+          // completed setup. Without this migration they would rehydrate
+          // with the default (false) and lose the ability to delete the
+          // "What is Jan?" thread.
+          state.setupCompleted = true
+        }
+        return state as GeneralSettingState
+      },
     }
   )
 )

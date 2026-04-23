@@ -51,7 +51,7 @@ import {
   SESSION_STORAGE_KEY,
   SESSION_STORAGE_PREFIX,
 } from '@/constants/chat'
-import { localStorageKey } from '@/constants/localStorage'
+import { useLastUsedModel } from '@/hooks/useLastUsedModel'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
@@ -1225,14 +1225,7 @@ const ChatInput = memo(function ChatInput({
     (modelId: string) => {
       setShowVisionModelPrompt(false)
 
-      try {
-        localStorage.setItem(
-          localStorageKey.lastUsedModel,
-          JSON.stringify({ provider: 'llamacpp', model: modelId })
-        )
-      } catch {
-        // Ignore localStorage errors
-      }
+      useLastUsedModel.getState().setLastUsedModel('llamacpp', modelId)
 
       setTimeout(() => {
         const provider = getProviderByName('llamacpp')
