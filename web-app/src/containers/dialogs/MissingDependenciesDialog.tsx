@@ -62,8 +62,27 @@ function getInstallRecommendations(
   const recommendations: InstallRecommendation[] = []
   const coveredLibs = new Set<string>()
 
-  // CUDA runtime/compute libs (excluding NCCL which has its own package)
+  // Bundled backend libs must be checked FIRST so that names like
+  // libggml-cuda.so are claimed here rather than by the CUDA filter below.
+  // These are shipped inside the backend archive — missing means corrupted download.
+  const bundledLibs = missingLibs.filter((lib) => {
+    const l = lib.toLowerCase()
+    return l.includes('ggml') || l.includes('llama')
+  })
+  if (bundledLibs.length > 0) {
+    bundledLibs.forEach((l) => coveredLibs.add(l))
+    recommendations.push({
+      label: 'Re-download the backend',
+      description:
+        'Some core backend files are missing or corrupted — this usually means the download was interrupted or the archive was only partially extracted. Delete the backend and re-download it from Jan settings.',
+      libs: bundledLibs,
+    })
+  }
+
+  // CUDA runtime/compute libs. Filters against coveredLibs so that bundled
+  // libs like libggml-cuda.so are not double-counted here.
   const cudaLibs = missingLibs.filter((lib) => {
+    if (coveredLibs.has(lib)) return false
     const l = lib.toLowerCase()
     return (
       l.startsWith('libcuda') ||
@@ -78,7 +97,6 @@ function getInstallRecommendations(
       l === 'cuda.dll'
     )
   })
-
   if (cudaLibs.length > 0) {
     cudaLibs.forEach((l) => coveredLibs.add(l))
     const versionSuffix = cudaVersion ? ` ${cudaVersion}` : ''
@@ -92,11 +110,10 @@ function getInstallRecommendations(
     })
   }
 
-  // NCCL — separate from CUDA Toolkit, only relevant on CUDA backends.
-  // Guard on cudaVersion to avoid a false card on CPU/Vulkan backends where
-  // a coincidentally-named lib might match.
+  // NCCL — only relevant on CUDA backends; guard on cudaVersion to avoid
+  // false positives on CPU/Vulkan backends.
   const ncclLibs = cudaVersion !== null
-    ? missingLibs.filter((lib) => lib.toLowerCase().includes('nccl'))
+    ? missingLibs.filter((lib) => !coveredLibs.has(lib) && lib.toLowerCase().includes('nccl'))
     : []
   if (ncclLibs.length > 0) {
     ncclLibs.forEach((l) => coveredLibs.add(l))
@@ -111,7 +128,7 @@ function getInstallRecommendations(
   }
 
   // cuDNN libs
-  const cudnnLibs = missingLibs.filter((lib) => lib.toLowerCase().includes('cudnn'))
+  const cudnnLibs = missingLibs.filter((lib) => !coveredLibs.has(lib) && lib.toLowerCase().includes('cudnn'))
   if (cudnnLibs.length > 0) {
     cudnnLibs.forEach((l) => coveredLibs.add(l))
     recommendations.push({
@@ -126,6 +143,7 @@ function getInstallRecommendations(
 
   // Vulkan libs
   const vulkanLibs = missingLibs.filter((lib) => {
+    if (coveredLibs.has(lib)) return false
     const l = lib.toLowerCase()
     return l.includes('vulkan') || l === 'libvulkan.so' || l === 'libvulkan.so.1' || l === 'vulkan-1.dll'
   })
@@ -143,22 +161,6 @@ function getInstallRecommendations(
         : 'Install the Vulkan loader: on Ubuntu/Debian: sudo apt install libvulkan1. On Arch: sudo pacman -S vulkan-icd-loader. On RHEL/Fedora: sudo dnf install vulkan-loader.',
       url: vulkanUrl,
       libs: vulkanLibs,
-    })
-  }
-
-  // Bundled backend libs — shipped inside the backend archive itself.
-  // If these are missing the download was corrupted or incomplete.
-  const bundledLibs = missingLibs.filter((lib) => {
-    const l = lib.toLowerCase()
-    return l.includes('ggml') || l.includes('llama')
-  })
-  if (bundledLibs.length > 0) {
-    bundledLibs.forEach((l) => coveredLibs.add(l))
-    recommendations.unshift({
-      label: 'Re-download the backend',
-      description:
-        'Some core backend files are missing or corrupted — this usually means the download was interrupted or the archive was only partially extracted. Delete the backend and re-download it from Jan settings.',
-      libs: bundledLibs,
     })
   }
 
