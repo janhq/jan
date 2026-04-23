@@ -92,8 +92,12 @@ function getInstallRecommendations(
     })
   }
 
-  // NCCL — separate from CUDA Toolkit, distributed via NVIDIA Deep Learning repo
-  const ncclLibs = missingLibs.filter((lib) => lib.toLowerCase().includes('nccl'))
+  // NCCL — separate from CUDA Toolkit, only relevant on CUDA backends.
+  // Guard on cudaVersion to avoid a false card on CPU/Vulkan backends where
+  // a coincidentally-named lib might match.
+  const ncclLibs = cudaVersion !== null
+    ? missingLibs.filter((lib) => lib.toLowerCase().includes('nccl'))
+    : []
   if (ncclLibs.length > 0) {
     ncclLibs.forEach((l) => coveredLibs.add(l))
     recommendations.push({

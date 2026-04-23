@@ -1745,6 +1745,9 @@ export default class llamacpp_extension extends AIEngine {
         })
       }
     } catch (verifyErr) {
+      // Intentionally non-fatal: verification is advisory only. A BinaryNotFound
+      // error here means the exe disappeared between install and startup — the
+      // backend will fail naturally when first used, which is surfaced elsewhere.
       logger.warn(`Backend ${backendKey} dependency verification failed: ${verifyErr}`)
     }
   }

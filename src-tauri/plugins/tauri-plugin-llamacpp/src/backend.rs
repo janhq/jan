@@ -935,6 +935,7 @@ fn verify_backend_dependencies(
         ));
     }
 
+    let start = std::time::Instant::now();
     let mut missing = std::collections::HashSet::new();
     let mut resolved = std::collections::HashSet::new();
 
@@ -959,6 +960,15 @@ fn verify_backend_dependencies(
     let mut resolved_vec: Vec<String> = resolved.into_iter().collect();
     truly_missing.sort();
     resolved_vec.sort();
+
+    let elapsed = start.elapsed();
+    log::info!(
+        "verify_backend_dependencies: scanned {} in {:.2}s ({} resolved, {} missing)",
+        bin_dir.display(),
+        elapsed.as_secs_f64(),
+        resolved_vec.len(),
+        truly_missing.len(),
+    );
 
     Ok(BackendVerificationResult {
         verified: truly_missing.is_empty(),
