@@ -1297,13 +1297,6 @@ export default class llamacpp_extension extends AIEngine {
           this.createDownloadTaskId(modelId),
           onProgress
         )
-
-        // If we reach here, download completed successfully (including validation)
-        // The downloadFiles function only returns successfully if all files downloaded AND validated
-        events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
-          modelId,
-          downloadType: 'Model',
-        })
       } catch (error) {
         logger.error('Error downloading model:', modelId, opts, error)
         const errorMessage =
@@ -1436,6 +1429,13 @@ export default class llamacpp_extension extends AIEngine {
       mmproj_size_bytes: opts.mmprojSize,
       embedding: isEmbedding,
     })
+
+    if (downloadItems.length > 0) {
+      events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
+        modelId,
+        downloadType: 'Model',
+      })
+    }
   }
 
   /**
