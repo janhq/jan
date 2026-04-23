@@ -34,7 +34,7 @@ function getBackendDisplayName(backend: string): string {
 type InstallRecommendation = {
   label: string
   description: string
-  url: string
+  url?: string
   /** Raw lib names that triggered this recommendation */
   libs: string[]
 }
@@ -142,6 +142,22 @@ function getInstallRecommendations(
     })
   }
 
+  // Bundled backend libs — shipped inside the backend archive itself.
+  // If these are missing the download was corrupted or incomplete.
+  const bundledLibs = missingLibs.filter((lib) => {
+    const l = lib.toLowerCase()
+    return l.includes('ggml') || l.includes('llama')
+  })
+  if (bundledLibs.length > 0) {
+    bundledLibs.forEach((l) => coveredLibs.add(l))
+    recommendations.unshift({
+      label: 'Re-download the backend',
+      description:
+        'Some core backend files are missing or corrupted — this usually means the download was interrupted or the archive was only partially extracted. Delete the backend and re-download it from Jan settings.',
+      libs: bundledLibs,
+    })
+  }
+
   const uncovered = missingLibs.filter((lib) => !coveredLibs.has(lib))
   return { recommendations, uncovered }
 }
@@ -208,15 +224,17 @@ export default function MissingDependenciesDialog() {
                       <span className="text-sm font-medium text-main-view-fg">
                         {rec.label}
                       </span>
-                      <a
-                        href={rec.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 shrink-0"
-                      >
-                        {t('common:missingDependenciesDialog.download')}
-                        <ExternalLink className="size-3" />
-                      </a>
+                      {rec.url && (
+                        <a
+                          href={rec.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 shrink-0"
+                        >
+                          {t('common:missingDependenciesDialog.download')}
+                          <ExternalLink className="size-3" />
+                        </a>
+                      )}
                     </div>
                     <p className="text-xs text-main-view-fg/60 leading-relaxed">
                       {rec.description}
