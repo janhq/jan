@@ -445,7 +445,7 @@ mod tests {
             cache_type_k: "f16".to_string(),
             cache_type_v: "f16".to_string(),
             defrag_thold: 0.1,
-            reasoning_budget_message: "\\n\\Stop!\\n".to_string(),
+            reasoning_budget_message: "\\n\\nStop!\\n".to_string(),
             rope_scaling: "none".to_string(),
             rope_scale: 1.0,
             rope_freq_base: 0.0,
