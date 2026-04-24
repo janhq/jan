@@ -22,7 +22,8 @@ use crate::process::{
 };
 use crate::state::{LLamaBackendSession, LlamacppState, SessionInfo};
 use jan_utils::{
-    binary_requires_cuda, find_cuda_paths, setup_library_path, setup_windows_process_flags,
+    add_cuda_paths, add_hip_paths, binary_requires_cuda, binary_requires_hip,
+    find_cuda_paths, setup_library_path, setup_windows_process_flags,
 };
 
 #[cfg(unix)]
@@ -122,10 +123,25 @@ pub async fn load_llama_model_impl(
     command.stderr(Stdio::piped());
     setup_windows_process_flags(&mut command);
 
+    // Try to add CUDA paths (works on both Windows and Linux)
     let cuda = find_cuda_paths();
-    if cuda.lib_paths.is_empty() && cuda.bin_paths.is_empty() && binary_requires_cuda(&bin_path) {
+    let cuda_found = add_cuda_paths(&mut command);
+
+    // Optionally check if binary needs CUDA
+    if !cuda_found && binary_requires_cuda(&bin_path) {
         log::warn!(
-            "llama.cpp backend appears to require CUDA, but CUDA not found. Process may fail to start. Please install cuda runtime and try again!"
+            "llama.cpp backend appears to require CUDA, but CUDA not found. \
+             Process may fail to start. Please install the CUDA runtime and try again!"
+        );
+    }
+
+    // Try to add ROCm/HIP paths
+    let hip_found = add_hip_paths(&mut command);
+    if !hip_found && binary_requires_hip(&bin_path) {
+        log::warn!(
+            "llama.cpp backend appears to require ROCm/HIP, but the ROCm runtime \
+             was not found. Process may fail to start. \
+             Please install ROCm (https://rocm.docs.amd.com/) and try again!"
         );
     }
     setup_library_path(bin_path.parent(), &cuda, &mut command);

@@ -54,6 +54,7 @@ import {
   DeviceList,
   SystemMemory,
   mapOldBackendToNew,
+  normalizeUpstreamBackend,
   findLatestVersionForBackend,
   prioritizeBackends,
   checkBackendForUpdates,
@@ -1105,6 +1106,7 @@ export default class llamacpp_extension extends AIEngine {
     // - k_llama-main-b4314-09c61e1-bin-win-cuda-12.8-x64-avx2.zip
     // - ik_llama-main-b4314-09c61e1-cudart-llama-bin-win-cuda-12.8-x64-avx512.zip
     // - llama-b7037-bin-win-cuda-12.4-x64.zip (legacy format)
+    // - llama-b8361-bin-ubuntu-rocm-7.2-x64.tar.gz (upstream HIP/ROCm)
     const re =
       /^(.+?[-_])?llama(?:-main)?-(b\d+(?:-[a-f0-9]+)?)(?:-cudart-llama)?-bin-(.+?)\.(?:tar\.gz|zip)$/
 
@@ -1134,10 +1136,15 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Include prefix in the backend identifier if present
-    const backendIdentifier = prefix ? `${prefix}${backend}` : backend
+    const rawBackend = prefix ? `${prefix}${backend}` : backend
+
+    // Normalize upstream naming (e.g. "ubuntu-rocm-7.2-x64") to Jan
+    // conventions (e.g. "linux-hip-x64") so the folder name matches what
+    // the backend discovery and dropdown logic expects.
+    const backendIdentifier = await normalizeUpstreamBackend(rawBackend)
 
     logger.info(
-      `Detected prefix: ${prefix || 'none'}, version: ${version}, backend: ${backendIdentifier}`
+      `Detected prefix: ${prefix || 'none'}, version: ${version}, backend: ${rawBackend} -> ${backendIdentifier}`
     )
 
     const backendDir = await getBackendDir(backendIdentifier, version)

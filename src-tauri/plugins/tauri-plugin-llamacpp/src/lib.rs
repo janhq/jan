@@ -42,6 +42,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             gguf::commands::get_model_size,
             gguf::commands::is_model_supported,
             // Backend management
+            backend::normalize_upstream_backend,
             backend::map_old_backend_to_new,
             backend::get_local_installed_backends,
             backend::list_supported_backends,

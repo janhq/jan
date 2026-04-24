@@ -55,7 +55,8 @@ impl LlamacppError {
             || lower_stderr.contains("insufficient memory")
             || lower_stderr.contains("erroroutofdevicememory") // vulkan specific
             || lower_stderr.contains("kiogpucommandbuffercallbackerroroutofmemory") // Metal-specific error code
-            || lower_stderr.contains("cuda_error_out_of_memory"); // CUDA-specific
+            || lower_stderr.contains("cuda_error_out_of_memory") // CUDA-specific
+            || lower_stderr.contains("hiperroroutofmemory"); // HIP/ROCm-specific
 
         if is_out_of_memory {
             return Self::new(
