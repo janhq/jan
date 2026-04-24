@@ -1,40 +1,6 @@
 import { Model, SettingComponentProps } from '../types'
 import { ModelManager } from './models'
 
-/**
- * Pluggable async storage used by BaseExtension to persist its settings.
- * The host app (web-app) injects a file-backed implementation via
- * `setExtensionStorage` so extension settings share the same file store
- * as Zustand-persisted app state. Defaults to a localStorage adapter for
- * environments without an injection (tests, browser fallback).
- */
-export interface ExtensionStorage {
-  getItem(key: string): Promise<string | null>
-  setItem(key: string, value: string): Promise<void>
-  removeItem(key: string): Promise<void>
-}
-
-const localStorageAdapter: ExtensionStorage = {
-  getItem: async (key) =>
-    typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null,
-  setItem: async (key, value) => {
-    if (typeof localStorage !== 'undefined') localStorage.setItem(key, value)
-  },
-  removeItem: async (key) => {
-    if (typeof localStorage !== 'undefined') localStorage.removeItem(key)
-  },
-}
-
-let extensionStorage: ExtensionStorage = localStorageAdapter
-
-/**
- * Inject the storage backend used by BaseExtension. Call once at app
- * startup, before any extension's onLoad runs.
- */
-export function setExtensionStorage(storage: ExtensionStorage): void {
-  extensionStorage = storage
-}
-
 export enum ExtensionTypeEnum {
   Assistant = 'assistant',
   Conversational = 'conversational',
@@ -155,7 +121,7 @@ export abstract class BaseExtension implements ExtensionType {
       setting.extensionName = this.name
     })
     try {
-      const oldSettingsJson = await extensionStorage.getItem(this.name)
+      const oldSettingsJson = localStorage.getItem(this.name)
       // Persists new settings
       if (oldSettingsJson) {
         const oldSettings = JSON.parse(oldSettingsJson)
@@ -182,7 +148,7 @@ export abstract class BaseExtension implements ExtensionType {
           }
         })
       }
-      await extensionStorage.setItem(this.name, JSON.stringify(settings))
+      localStorage.setItem(this.name, JSON.stringify(settings))
     } catch (err) {
       console.error(err)
     }
@@ -222,7 +188,7 @@ export abstract class BaseExtension implements ExtensionType {
     if (!this.name) return []
 
     try {
-      const settingsString = await extensionStorage.getItem(this.name)
+      const settingsString = localStorage.getItem(this.name)
       if (!settingsString) return []
       const settings: SettingComponentProps[] = JSON.parse(settingsString)
       return settings
@@ -254,7 +220,7 @@ export abstract class BaseExtension implements ExtensionType {
 
     if (!updatedSettings.length) updatedSettings = componentProps as SettingComponentProps[]
 
-    await extensionStorage.setItem(this.name, JSON.stringify(updatedSettings))
+    localStorage.setItem(this.name, JSON.stringify(updatedSettings))
 
     updatedSettings.forEach((setting) => {
       this.onSettingUpdate<typeof setting.controllerProps.value>(

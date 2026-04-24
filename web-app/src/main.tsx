@@ -7,20 +7,7 @@ import { routeTree } from './routeTree.gen'
 
 import './index.css'
 import './i18n'
-import { fileStorage, migrateAllLocalStorageKeys } from './lib/fileStorage'
-import { setExtensionStorage } from '@janhq/core'
-
-// Route BaseExtension persistence through the same file-backed store that
-// Zustand uses, so extension settings (e.g. llamacpp `auto_update_engine`)
-// aren't split across localStorage and settings.json. Must run before any
-// extension's onLoad fires.
-setExtensionStorage({
-  getItem: (key) => fileStorage.getItem(key) as Promise<string | null>,
-  setItem: (key, value) =>
-    Promise.resolve(fileStorage.setItem(key, value)).then(() => undefined),
-  removeItem: (key) =>
-    Promise.resolve(fileStorage.removeItem(key)).then(() => undefined),
-})
+import { migrateAllLocalStorageKeys } from './lib/fileStorage'
 
 // Migrate all localStorage data to file-based storage on startup
 // so users updating the app don't lose their settings.
