@@ -101,6 +101,7 @@
   "tools": "Tools",
   "webSearch": "Web Search",
   "reasoning": "Reasoning",
+  "active": "Active",
   "proactive": "Proactive",
   "selectAModel": "Select a model",
   "noToolsAvailable": "No tools available",

@@ -162,6 +162,8 @@ export const DialogEditModel = ({
         modelUpdate.capabilities = Object.entries(capabilities)
           .filter(([, isEnabled]) => isEnabled)
           .map(([capName]) => capName)
+        // Marks that the user has explicitly set capabilities; suppresses
+        // auto-detection from model name in both EditModel and the model list.
         modelUpdate._userConfiguredCapabilities = true
       }
 
