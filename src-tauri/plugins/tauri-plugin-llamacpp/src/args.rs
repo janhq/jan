@@ -927,6 +927,25 @@ mod tests {
     }
 
     #[test]
+    fn test_reasoning_budget_is_empty() {
+        let mut config = default_config();
+        config.reasoning_budget_message = "".to_string();
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--reasoning-budget-message");
+    }
+
+    #[test]
+    fn test_reasoning_budget_standard_value() {
+        let config = default_config();
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--reasoning-budget-message", "\n\nStop!\n");
+    }
+
+    #[test]
     fn test_defrag_thold_default_not_added() {
         let config = default_config();
         let builder = ArgumentBuilder::new(config, false).unwrap();
