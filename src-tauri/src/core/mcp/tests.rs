@@ -494,3 +494,473 @@ fn test_extension_connected_response_detection() {
         );
     }
 }
+
+// ============================================================================
+// constants.rs Tests
+// ============================================================================
+
+#[test]
+fn test_default_constants_values() {
+    use super::constants::*;
+    assert_eq!(DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECS, 30);
+    assert_eq!(DEFAULT_MCP_BASE_RESTART_DELAY_MS, 1000);
+    assert_eq!(DEFAULT_MCP_MAX_RESTART_DELAY_MS, 30000);
+    assert!((DEFAULT_MCP_BACKOFF_MULTIPLIER - 2.0).abs() < f64::EPSILON);
+    assert!(DEFAULT_MCP_BASE_RESTART_DELAY_MS < DEFAULT_MCP_MAX_RESTART_DELAY_MS);
+}
+
+#[test]
+fn test_default_mcp_config_parses_as_valid_json() {
+    use super::constants::DEFAULT_MCP_CONFIG;
+    let value: serde_json::Value =
+        serde_json::from_str(DEFAULT_MCP_CONFIG).expect("DEFAULT_MCP_CONFIG must be valid JSON");
+    assert!(value["mcpServers"].is_object());
+    assert!(value["mcpSettings"].is_object());
+    // Spot-check known servers
+    assert!(value["mcpServers"]["fetch"].is_object());
+    assert_eq!(value["mcpServers"]["fetch"]["command"], "uvx");
+    assert_eq!(value["mcpServers"]["exa"]["type"], "http");
+    assert_eq!(
+        value["mcpSettings"]["toolCallTimeoutSeconds"],
+        super::constants::DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECS
+    );
+}
+
+#[test]
+fn test_default_mcp_config_servers_have_required_fields() {
+    use super::constants::DEFAULT_MCP_CONFIG;
+    let value: serde_json::Value = serde_json::from_str(DEFAULT_MCP_CONFIG).unwrap();
+    let servers = value["mcpServers"].as_object().unwrap();
+    for (name, cfg) in servers {
+        assert!(cfg.get("command").is_some(), "{name} missing command");
+        assert!(cfg.get("args").is_some(), "{name} missing args");
+        assert!(
+            cfg.get("active").and_then(|v| v.as_bool()).is_some(),
+            "{name} missing active bool"
+        );
+    }
+}
+
+// ============================================================================
+// models.rs Tests
+// ============================================================================
+
+#[test]
+fn test_mcp_settings_default_matches_constants() {
+    use super::constants;
+    use super::models::McpSettings;
+    let s = McpSettings::default();
+    assert_eq!(
+        s.tool_call_timeout_seconds,
+        constants::DEFAULT_MCP_TOOL_CALL_TIMEOUT_SECS
+    );
+    assert_eq!(
+        s.base_restart_delay_ms,
+        constants::DEFAULT_MCP_BASE_RESTART_DELAY_MS
+    );
+    assert_eq!(
+        s.max_restart_delay_ms,
+        constants::DEFAULT_MCP_MAX_RESTART_DELAY_MS
+    );
+    assert!((s.backoff_multiplier - constants::DEFAULT_MCP_BACKOFF_MULTIPLIER).abs() < f64::EPSILON);
+    assert!(s.enable_smart_tool_routing);
+    assert!(!s.use_lightweight_router_model);
+    assert!(s.router_model_provider.is_empty());
+    assert!(s.router_model_id.is_empty());
+}
+
+#[test]
+fn test_mcp_settings_tool_call_timeout_duration_enforces_minimum() {
+    use super::models::McpSettings;
+    let mut s = McpSettings::default();
+    s.tool_call_timeout_seconds = 0;
+    assert_eq!(s.tool_call_timeout_duration(), Duration::from_secs(1));
+    s.tool_call_timeout_seconds = 5;
+    assert_eq!(s.tool_call_timeout_duration(), Duration::from_secs(5));
+    s.tool_call_timeout_seconds = 600;
+    assert_eq!(s.tool_call_timeout_duration(), Duration::from_secs(600));
+}
+
+#[test]
+fn test_mcp_settings_deserialize_uses_defaults_for_missing_fields() {
+    use super::models::McpSettings;
+    let s: McpSettings = serde_json::from_str("{}").unwrap();
+    assert_eq!(s, McpSettings::default_for_eq());
+}
+
+// helper trait-like for equality (we don't derive PartialEq on the public type)
+impl super::models::McpSettings {
+    fn default_for_eq() -> Self {
+        Self::default()
+    }
+}
+
+// Compare individual fields since McpSettings doesn't derive PartialEq
+impl PartialEq for super::models::McpSettings {
+    fn eq(&self, other: &Self) -> bool {
+        self.tool_call_timeout_seconds == other.tool_call_timeout_seconds
+            && self.base_restart_delay_ms == other.base_restart_delay_ms
+            && self.max_restart_delay_ms == other.max_restart_delay_ms
+            && (self.backoff_multiplier - other.backoff_multiplier).abs() < f64::EPSILON
+            && self.enable_smart_tool_routing == other.enable_smart_tool_routing
+            && self.use_lightweight_router_model == other.use_lightweight_router_model
+            && self.router_model_provider == other.router_model_provider
+            && self.router_model_id == other.router_model_id
+    }
+}
+
+#[test]
+fn test_mcp_settings_round_trip_camel_case() {
+    use super::models::McpSettings;
+    let mut s = McpSettings::default();
+    s.tool_call_timeout_seconds = 42;
+    s.router_model_provider = "openai".into();
+    s.router_model_id = "gpt-4".into();
+    s.use_lightweight_router_model = true;
+    let json = serde_json::to_string(&s).unwrap();
+    assert!(json.contains("\"toolCallTimeoutSeconds\":42"));
+    assert!(json.contains("\"routerModelProvider\":\"openai\""));
+    assert!(json.contains("\"useLightweightRouterModel\":true"));
+    let parsed: McpSettings = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed, s);
+}
+
+#[test]
+fn test_mcp_settings_partial_deserialize_preserves_provided_values() {
+    use super::models::McpSettings;
+    let json = r#"{"toolCallTimeoutSeconds": 90, "backoffMultiplier": 3.5}"#;
+    let s: McpSettings = serde_json::from_str(json).unwrap();
+    assert_eq!(s.tool_call_timeout_seconds, 90);
+    assert!((s.backoff_multiplier - 3.5).abs() < f64::EPSILON);
+    // Other fields must fall back to defaults
+    let d = McpSettings::default();
+    assert_eq!(s.base_restart_delay_ms, d.base_restart_delay_ms);
+    assert_eq!(s.enable_smart_tool_routing, d.enable_smart_tool_routing);
+}
+
+#[test]
+fn test_tool_with_server_serialization_uses_input_schema_camel_case() {
+    use super::models::ToolWithServer;
+    let t = ToolWithServer {
+        name: "search".into(),
+        description: Some("d".into()),
+        input_schema: serde_json::json!({"type": "object"}),
+        server: "srv".into(),
+    };
+    let json = serde_json::to_string(&t).unwrap();
+    assert!(json.contains("\"inputSchema\":"));
+    assert!(!json.contains("\"input_schema\""));
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(v["name"], "search");
+    assert_eq!(v["server"], "srv");
+}
+
+#[test]
+fn test_server_summary_round_trip() {
+    use super::models::ServerSummary;
+    let s = ServerSummary {
+        name: "fs".into(),
+        capabilities: vec!["filesystem".into(), "files".into()],
+        description: "Read files".into(),
+    };
+    let json = serde_json::to_string(&s).unwrap();
+    let parsed: ServerSummary = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.name, "fs");
+    assert_eq!(parsed.capabilities, vec!["filesystem", "files"]);
+    assert_eq!(parsed.description, "Read files");
+}
+
+// ============================================================================
+// helpers.rs pure-function tests: extract_command_args / extract_active_status
+// ============================================================================
+
+#[test]
+fn test_extract_command_args_minimal_config() {
+    use super::helpers::extract_command_args;
+    let cfg = serde_json::json!({
+        "command": "npx",
+        "args": ["-y", "server"]
+    });
+    let parsed = extract_command_args(&cfg).expect("should parse");
+    assert_eq!(parsed.command, "npx");
+    assert_eq!(parsed.args.len(), 2);
+    assert_eq!(parsed.args[0], "-y");
+    assert!(parsed.url.is_none());
+    assert!(parsed.transport_type.is_none());
+    assert!(parsed.timeout.is_none());
+    assert!(parsed.envs.is_empty());
+    assert!(parsed.headers.is_empty());
+}
+
+#[test]
+fn test_extract_command_args_full_config() {
+    use super::helpers::extract_command_args;
+    let cfg = serde_json::json!({
+        "command": "",
+        "args": [],
+        "type": "http",
+        "url": "https://mcp.example.com/mcp",
+        "timeout": 45,
+        "env": {"API_KEY": "abc", "DEBUG": "1"},
+        "headers": {"Authorization": "Bearer xyz"}
+    });
+    let parsed = extract_command_args(&cfg).expect("should parse");
+    assert_eq!(parsed.command, "");
+    assert_eq!(parsed.transport_type.as_deref(), Some("http"));
+    assert_eq!(parsed.url.as_deref(), Some("https://mcp.example.com/mcp"));
+    assert_eq!(parsed.timeout, Some(Duration::from_secs(45)));
+    assert_eq!(parsed.envs.get("API_KEY").and_then(|v| v.as_str()), Some("abc"));
+    assert_eq!(parsed.envs.get("DEBUG").and_then(|v| v.as_str()), Some("1"));
+    assert_eq!(
+        parsed.headers.get("Authorization").and_then(|v| v.as_str()),
+        Some("Bearer xyz")
+    );
+}
+
+#[test]
+fn test_extract_command_args_returns_none_when_required_fields_missing() {
+    use super::helpers::extract_command_args;
+    // Missing command
+    let cfg = serde_json::json!({"args": []});
+    assert!(extract_command_args(&cfg).is_none());
+    // Missing args
+    let cfg = serde_json::json!({"command": "npx"});
+    assert!(extract_command_args(&cfg).is_none());
+    // Not an object
+    let cfg = serde_json::json!(["a", "b"]);
+    assert!(extract_command_args(&cfg).is_none());
+    // command not a string
+    let cfg = serde_json::json!({"command": 123, "args": []});
+    assert!(extract_command_args(&cfg).is_none());
+    // args not an array
+    let cfg = serde_json::json!({"command": "npx", "args": "oops"});
+    assert!(extract_command_args(&cfg).is_none());
+}
+
+#[test]
+fn test_extract_command_args_parses_default_mcp_config_servers() {
+    use super::constants::DEFAULT_MCP_CONFIG;
+    use super::helpers::extract_command_args;
+    let value: serde_json::Value = serde_json::from_str(DEFAULT_MCP_CONFIG).unwrap();
+    for (name, cfg) in value["mcpServers"].as_object().unwrap() {
+        let parsed = extract_command_args(cfg)
+            .unwrap_or_else(|| panic!("default config server '{name}' should parse"));
+        // command may be empty for HTTP transports
+        if name == "exa" {
+            assert_eq!(parsed.transport_type.as_deref(), Some("http"));
+            assert!(parsed.url.is_some());
+        } else {
+            assert!(!parsed.command.is_empty(), "{name} should have a command");
+        }
+    }
+}
+
+#[test]
+fn test_extract_active_status_variants() {
+    use super::helpers::extract_active_status;
+    assert_eq!(
+        extract_active_status(&serde_json::json!({"active": true})),
+        Some(true)
+    );
+    assert_eq!(
+        extract_active_status(&serde_json::json!({"active": false})),
+        Some(false)
+    );
+    // Missing
+    assert_eq!(extract_active_status(&serde_json::json!({})), None);
+    // Wrong type
+    assert_eq!(
+        extract_active_status(&serde_json::json!({"active": "yes"})),
+        None
+    );
+    // Not an object
+    assert_eq!(extract_active_status(&serde_json::json!(true)), None);
+}
+
+// ============================================================================
+// lockfile.rs Tests
+// ============================================================================
+
+#[test]
+fn test_mcp_lock_file_serde_round_trip() {
+    use super::lockfile::McpLockFile;
+    let lock = McpLockFile {
+        pid: 4242,
+        port: 17389,
+        server_name: "Jan Browser MCP".to_string(),
+        created_at: "2026-01-01T00:00:00+00:00".to_string(),
+        hostname: "test-host".to_string(),
+    };
+    let json = serde_json::to_string_pretty(&lock).unwrap();
+    let parsed: McpLockFile = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.pid, 4242);
+    assert_eq!(parsed.port, 17389);
+    assert_eq!(parsed.server_name, "Jan Browser MCP");
+    assert_eq!(parsed.created_at, "2026-01-01T00:00:00+00:00");
+    assert_eq!(parsed.hostname, "test-host");
+}
+
+#[test]
+fn test_mcp_lock_file_rejects_malformed_json() {
+    use super::lockfile::McpLockFile;
+    assert!(serde_json::from_str::<McpLockFile>("{").is_err());
+    // Missing required fields
+    assert!(serde_json::from_str::<McpLockFile>(r#"{"pid": 1}"#).is_err());
+}
+
+#[test]
+fn test_is_process_alive_for_current_process() {
+    use super::lockfile::is_process_alive;
+    let me = std::process::id();
+    assert!(is_process_alive(me), "current process must be alive");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_is_process_alive_for_almost_certainly_dead_pid() {
+    use super::lockfile::is_process_alive;
+    // PID 0 is the scheduler / not a real signalable process on Linux/macOS
+    // and PID 999999 is extremely unlikely to exist
+    // (i32::MAX as u32) exceeds Linux pid_max → kernel returns ESRCH/EINVAL
+    assert!(!is_process_alive((i32::MAX as u32)));
+}
+
+#[test]
+fn test_create_read_delete_lock_file_round_trip() {
+    use super::lockfile::{create_lock_file, delete_lock_file, read_lock_file};
+    let app = mock_app();
+    // Use an unusual port to avoid colliding with other tests
+    let port: u16 = 53_111;
+    // Ensure clean slate
+    let _ = delete_lock_file(app.handle(), port);
+
+    create_lock_file(app.handle(), port, "test-server").expect("create_lock_file");
+    let lock = read_lock_file(app.handle(), port).expect("read_lock_file");
+    assert_eq!(lock.port, port);
+    assert_eq!(lock.server_name, "test-server");
+    assert_eq!(lock.pid, std::process::id());
+    assert!(!lock.created_at.is_empty());
+    assert!(!lock.hostname.is_empty());
+
+    delete_lock_file(app.handle(), port).expect("delete_lock_file");
+    assert!(read_lock_file(app.handle(), port).is_none());
+}
+
+#[test]
+fn test_read_lock_file_returns_none_for_missing_port() {
+    use super::lockfile::{delete_lock_file, read_lock_file};
+    let app = mock_app();
+    let port: u16 = 53_112;
+    // Make sure it does not exist
+    let _ = delete_lock_file(app.handle(), port);
+    assert!(read_lock_file(app.handle(), port).is_none());
+}
+
+#[test]
+fn test_delete_lock_file_is_idempotent_when_missing() {
+    use super::lockfile::delete_lock_file;
+    let app = mock_app();
+    let port: u16 = 53_113;
+    // Calling delete on a non-existent file should still return Ok(())
+    assert!(delete_lock_file(app.handle(), port).is_ok());
+    assert!(delete_lock_file(app.handle(), port).is_ok());
+}
+
+#[tokio::test]
+async fn test_check_and_cleanup_stale_lock_no_lock_returns_false() {
+    use super::lockfile::{check_and_cleanup_stale_lock, delete_lock_file};
+    let app = mock_app();
+    let port: u16 = 53_114;
+    let _ = delete_lock_file(app.handle(), port);
+    let cleaned = check_and_cleanup_stale_lock(app.handle(), port).await.unwrap();
+    assert!(!cleaned);
+}
+
+#[tokio::test]
+async fn test_check_and_cleanup_stale_lock_keeps_live_lock() {
+    use super::lockfile::{check_and_cleanup_stale_lock, create_lock_file, delete_lock_file, read_lock_file};
+    let app = mock_app();
+    let port: u16 = 53_115;
+    let _ = delete_lock_file(app.handle(), port);
+    create_lock_file(app.handle(), port, "live").unwrap();
+    // Lock points at the current PID, which is alive → must NOT be removed
+    let cleaned = check_and_cleanup_stale_lock(app.handle(), port).await.unwrap();
+    assert!(!cleaned);
+    assert!(read_lock_file(app.handle(), port).is_some());
+    let _ = delete_lock_file(app.handle(), port);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn test_check_and_cleanup_stale_lock_removes_dead_pid_lock() {
+    use super::lockfile::{check_and_cleanup_stale_lock, read_lock_file, McpLockFile};
+    use tauri::Manager;
+    let app = mock_app();
+    let port: u16 = 53_116;
+    // Use the SAME directory the lockfile module uses
+    let app_data_dir = app.handle().path().app_data_dir().expect("app data dir");
+    std::fs::create_dir_all(&app_data_dir).ok();
+    let lock_path = app_data_dir.join(format!("mcp_lock_{}.json", port));
+
+    // PID above pid_max guarantees ESRCH/EINVAL on Unix → reported as not alive
+    let dead_pid: u32 = (i32::MAX as u32);
+    let lock = McpLockFile {
+        pid: dead_pid,
+        port,
+        server_name: "ghost".to_string(),
+        created_at: "2020-01-01T00:00:00+00:00".to_string(),
+        hostname: "x".to_string(),
+    };
+    std::fs::write(&lock_path, serde_json::to_string(&lock).unwrap()).unwrap();
+    assert!(read_lock_file(app.handle(), port).is_some(), "seed lock readable");
+
+    let cleaned = check_and_cleanup_stale_lock(app.handle(), port)
+        .await
+        .unwrap();
+    assert!(cleaned, "stale lock for dead PID must be cleaned");
+    assert!(read_lock_file(app.handle(), port).is_none());
+}
+
+#[test]
+fn test_cleanup_own_locks_removes_only_current_pid_locks() {
+    use super::lockfile::{
+        cleanup_own_locks, create_lock_file, delete_lock_file, read_lock_file, McpLockFile,
+    };
+    use tauri::Manager;
+    let app = mock_app();
+    let own_port: u16 = 53_117;
+    let other_port: u16 = 53_118;
+    let _ = delete_lock_file(app.handle(), own_port);
+    let _ = delete_lock_file(app.handle(), other_port);
+
+    // Lock owned by us
+    create_lock_file(app.handle(), own_port, "ours").unwrap();
+
+    // Lock owned by some other PID — write directly into the SAME dir lockfile uses
+    let app_data_dir = app.handle().path().app_data_dir().expect("app data dir");
+    std::fs::create_dir_all(&app_data_dir).ok();
+    let other_path = app_data_dir.join(format!("mcp_lock_{}.json", other_port));
+    // Pick a PID that is definitely not us (and survives wrap)
+    let foreign_pid = if std::process::id() == 1 { 2 } else { 1 };
+    let foreign = McpLockFile {
+        pid: foreign_pid,
+        port: other_port,
+        server_name: "theirs".into(),
+        created_at: "2020-01-01T00:00:00+00:00".into(),
+        hostname: "x".into(),
+    };
+    std::fs::write(&other_path, serde_json::to_string(&foreign).unwrap()).unwrap();
+    assert!(read_lock_file(app.handle(), other_port).is_some());
+
+    cleanup_own_locks(app.handle()).expect("cleanup_own_locks");
+
+    // Our lock removed, foreign lock untouched
+    assert!(read_lock_file(app.handle(), own_port).is_none());
+    assert!(
+        read_lock_file(app.handle(), other_port).is_some(),
+        "foreign-PID lock must be preserved"
+    );
+
+    // Cleanup
+    let _ = std::fs::remove_file(&other_path);
+}
