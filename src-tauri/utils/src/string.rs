@@ -12,16 +12,6 @@ pub fn parse_uuid(bytes: &[u8; 16]) -> String {
     )
 }
 
-/// Safely converts C string buffer to Rust String
-pub fn parse_c_string(buf: &[i8]) -> String {
-    let bytes: Vec<u8> = buf
-        .iter()
-        .take_while(|&&c| c != 0)
-        .map(|&c| c as u8)
-        .collect();
-    String::from_utf8_lossy(&bytes).into_owned()
-}
-
 /// Formats any Display error to "Error: {}" string
 pub fn err_to_string<E: std::fmt::Display>(e: E) -> String {
     format!("Error: {}", e)
@@ -101,37 +91,6 @@ mod tests {
         let max_bytes = [0xff; 16];
         let uuid_string = parse_uuid(&max_bytes);
         assert_eq!(uuid_string, "ffffffff-ffff-ffff-ffff-ffffffffffff");
-    }
-
-    #[test]
-    fn test_parse_c_string() {
-        let c_string = [b'H' as i8, b'e' as i8, b'l' as i8, b'l' as i8, b'o' as i8, 0, b'W' as i8];
-        let result = parse_c_string(&c_string);
-        assert_eq!(result, "Hello");
-    }
-
-    #[test]
-    fn test_parse_c_string_empty() {
-        let empty_c_string = [0];
-        let result = parse_c_string(&empty_c_string);
-        assert_eq!(result, "");
-    }
-
-    #[test]
-    fn test_parse_c_string_no_null_terminator() {
-        let no_null = [b'T' as i8, b'e' as i8, b's' as i8, b't' as i8];
-        let result = parse_c_string(&no_null);
-        assert_eq!(result, "Test");
-    }
-
-    #[test]
-    fn test_parse_c_string_with_negative_values() {
-        let with_negative = [-1, b'A' as i8, b'B' as i8, 0];
-        let result = parse_c_string(&with_negative);
-        // Should convert negative to unsigned byte
-        assert!(result.len() > 0);
-        assert!(result.contains('A'));
-        assert!(result.contains('B'));
     }
 
     #[test]
