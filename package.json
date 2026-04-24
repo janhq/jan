@@ -43,7 +43,7 @@
     "build:icon": "tauri icon ./src-tauri/icons/icon.png",
     "build:core": "cd core && yarn build && yarn pack",
     "build:web": "yarn workspace @janhq/web-app build",
-    "build:extensions": "rimraf ./pre-install/*.tgz || true && yarn build:core && find extensions -path '*/node_modules/@janhq/core' -prune -exec rm -rf {} + && cd extensions && yarn install && cd .. && run-script-os",
+    "build:extensions": "rimraf ./pre-install/*.tgz || true && yarn build:core && rimraf extensions/node_modules/@janhq/core extensions/*/node_modules/@janhq/core && cd extensions && yarn install && cd .. && run-script-os",
     "build:extensions:darwin": "cd extensions && yarn workspaces foreach -Apt run build:publish",
     "build:extensions:win32": "cd extensions && yarn workspaces foreach -Apt --exclude @janhq/mlx-extension --exclude @janhq/foundation-models-extension run build:publish",
     "build:extensions:linux": "cd extensions && yarn workspaces foreach -Apt --exclude @janhq/mlx-extension --exclude @janhq/foundation-models-extension run build:publish",
