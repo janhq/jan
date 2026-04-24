@@ -54,6 +54,19 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
   },
 })
 
+function mergeDetectedCapabilities(model: Model): string[] {
+  const stored = model.capabilities || []
+  if ((model as Model & { _userConfiguredCapabilities?: boolean })._userConfiguredCapabilities) {
+    return stored
+  }
+  const detected = detectModelCapabilities(model.id)
+  const merged = [...stored]
+  if (detected.reasoning && !merged.includes('reasoning')) merged.push('reasoning')
+  if (detected.web_search && !merged.includes('web_search')) merged.push('web_search')
+  if (detected.embeddings && !merged.includes('embeddings')) merged.push('embeddings')
+  return merged
+}
+
 function ProviderDetail() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -1040,18 +1053,7 @@ function ProviderDetail() {
               >
                 {provider?.models.length ? (
                   provider?.models.map((model, modelIndex) => {
-                    const capabilities = model.capabilities || []
-                    const userConfigured = (model as Model & { _userConfiguredCapabilities?: boolean })._userConfiguredCapabilities
-                    const displayCapabilities = userConfigured
-                      ? capabilities
-                      : (() => {
-                          const detected = detectModelCapabilities(model.id)
-                          const merged = [...capabilities]
-                          if (detected.reasoning && !merged.includes('reasoning')) merged.push('reasoning')
-                          if (detected.web_search && !merged.includes('web_search')) merged.push('web_search')
-                          if (detected.embeddings && !merged.includes('embeddings')) merged.push('embeddings')
-                          return merged
-                        })()
+                    const displayCapabilities = mergeDetectedCapabilities(model)
                     return (
                       <CardItem
                         key={modelIndex}

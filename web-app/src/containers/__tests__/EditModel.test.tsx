@@ -86,7 +86,6 @@ vi.mock('@tabler/icons-react', () => ({
   IconAtom: () => <div data-testid="atom-icon" />,
   IconWorld: () => <div data-testid="world-icon" />,
   IconCodeCircle2: () => <div data-testid="code-circle-icon" />,
-  IconSparkles: () => <div data-testid="sparkles-icon" />,
   IconInfoCircle: () => <div data-testid="info-circle-icon" />,
 }))
 
