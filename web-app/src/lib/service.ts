@@ -3,7 +3,7 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { isPlatformTauri } from '@/lib/platform'
 import type { InvokeArgs } from '@/services/core/types'
 
-export const AppRoutes = [
+const AppRoutes = [
   'installExtensions',
   'getTools',
   'callTool',
@@ -27,7 +27,7 @@ export const AppRoutes = [
   'changeAppDataFolder',
 ]
 // Define API routes based on different route types
-export const Routes = [...CoreRoutes, ...APIRoutes, ...AppRoutes].map((r) => ({
+const Routes = [...CoreRoutes, ...APIRoutes, ...AppRoutes].map((r) => ({
   path: `app`,
   route: r,
 }))
