@@ -41,6 +41,7 @@ fn configure_jan_signing_key() {
     let profile = std::env::var("PROFILE").unwrap_or_default();
     let signing_key = std::env::var("JAN_SIGNING_KEY")
         .ok()
+        .map(|k| k.trim().to_string())
         .filter(|k| !k.is_empty())
         .unwrap_or_else(|| {
             if profile == "release" {
