@@ -18,8 +18,7 @@
     "controllerProps": {
       "value": "",
       "placeholder": "Eg. GGML_VK_VISIBLE_DEVICES=0,1",
-      "type": "text",
-      "textAlign": "right"
+      "type": "text"
     }
   },
   {
@@ -30,8 +29,7 @@
     "controllerProps": {
       "value": "\\n\\nWait, thinking budget exceeded I must reply now.\\n",
       "placeholder": "Eg. \\n\\nWait, thinking budget exceeded I must reply now..\\n",
-      "type": "text",
-      "textAlign": "right"
+      "type": "text"
     }
   },
   {
