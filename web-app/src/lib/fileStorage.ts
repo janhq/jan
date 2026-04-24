@@ -54,15 +54,16 @@ async function ensureStore(): Promise<void> {
 }
 
 /**
- * Persist in-memory state to disk. Called after every write so behaviour
- * matches localStorage (which persists synchronously). The save itself
- * is fire-and-forget — the in-memory state is already up-to-date, and
- * a failed flush will be overwritten by the next successful one.
+ * Persist in-memory state to disk. Awaited by setItem/removeItem so callers
+ * can rely on durability — a quick toggle-then-quit must not drop the write.
  */
-function persistToDisk(): void {
-  store?.save().catch((e) => {
+async function persistToDisk(): Promise<void> {
+  if (!store) return
+  try {
+    await store.save()
+  } catch (e) {
     console.warn('Failed to persist settings to disk:', e)
-  })
+  }
 }
 
 /**
@@ -201,7 +202,7 @@ export const fileStorage: StateStorage = {
     }
 
     await store.set(name, value)
-    persistToDisk()
+    await persistToDisk()
   },
 
   removeItem: async (name: string): Promise<void> => {
@@ -217,6 +218,6 @@ export const fileStorage: StateStorage = {
     }
 
     await store.delete(name)
-    persistToDisk()
+    await persistToDisk()
   },
 }
