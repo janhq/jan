@@ -1170,6 +1170,8 @@ export default class llamacpp_extension extends AIEngine {
     // top-level wrapper directory; flatten it when that happens.
     const exeName = platformName === 'win' ? 'llama-server.exe' : 'llama-server'
 
+    // fs.existsSync routes through globalThis.core.api and returns a Promise
+    // despite the "Sync" suffix — await is required, not just harmless.
     const hasBinaryAt = async (dir: string): Promise<boolean> =>
       (await fs.existsSync(await joinPath([dir, 'build', 'bin', exeName]))) ||
       (await fs.existsSync(await joinPath([dir, exeName])))

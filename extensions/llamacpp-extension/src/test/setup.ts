@@ -35,6 +35,14 @@ vi.mock('@janhq/tauri-plugin-hardware-api', () => ({
   getSystemInfo: vi.fn(),
 }));
 
+vi.mock('@tauri-apps/plugin-log', () => ({
+  error: vi.fn(),
+  warn: vi.fn(),
+  info: vi.fn(),
+  debug: vi.fn(),
+  trace: vi.fn(),
+}))
+
 // Mock Tauri invoke function
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -56,6 +64,7 @@ vi.mock('@janhq/core', () => ({
     readdirSync: vi.fn(),
     fileStat: vi.fn(),
     mkdir: vi.fn(),
+    mv: vi.fn(),
     rm: vi.fn(),
   },
   joinPath: vi.fn(),

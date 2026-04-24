@@ -50,7 +50,10 @@ pub fn mv<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Res
         return Err("mv error: Invalid argument - source and destination required".to_string());
     }
 
-    // Use resolve_path_base (no canonicalize) so symlinks are moved as-is.
+    // Both paths use resolve_path_base (no canonicalize) intentionally: symlinks
+    // are moved as-is rather than dereferenced. Callers must therefore pass
+    // already-resolved destination paths — this command does not canonicalize
+    // the destination before renaming.
     let source = resolve_path_base(app_handle.clone(), &args[0]);
     let destination = resolve_path_base(app_handle, &args[1]);
 
@@ -186,6 +189,10 @@ pub fn decompress<R: Runtime>(
     // The input path is user-selected via the OS file dialog and may live
     // anywhere (e.g. ~/Downloads). Only the extraction *destination* is
     // constrained — the archive is read-only from the caller's perspective.
+    // SECURITY ASSUMPTION: this command is invoked only from the trusted Jan
+    // UI (install-backend flow). If it is ever exposed to untrusted callers
+    // (e.g. via a plugin API or IPC from a renderer that loads external
+    // content), the input path MUST be validated against an allowlist.
     let (_jan_data_folder, output_dir_buf) =
         resolve_app_path_within_jan_data_folder(app.clone(), output_dir)?;
     let path_buf = resolve_path(app, path);
