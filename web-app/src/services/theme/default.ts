@@ -2,18 +2,16 @@
  * Default Theme Service - Generic implementation with minimal returns
  */
 
-import type { ThemeService, ThemeMode } from './types'
+import type { ThemeService } from './types'
 
 export class DefaultThemeService implements ThemeService {
-  async setTheme(theme: ThemeMode): Promise<void> {
-    console.log('setTheme called with theme:', theme)
+  async setTheme(): Promise<void> {
     // No-op - not implemented in default service
   }
 
   getCurrentWindow() {
     return {
-      setTheme: (theme: ThemeMode): Promise<void> => {
-        console.log('window.setTheme called with theme:', theme)
+      setTheme: (): Promise<void> => {
         return Promise.resolve()
       }
     }
