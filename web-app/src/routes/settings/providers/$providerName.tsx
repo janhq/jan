@@ -666,12 +666,29 @@ function ProviderDetail() {
                                 }
                               }
 
+                              // Persist ONLY the keys that actually changed on this
+                              // tick, not the full settings array. The extension
+                              // merges per-key into its own storage, so passing the
+                              // full array would rewrite every key using this UI's
+                              // in-memory snapshot — which may be stale relative to
+                              // writes done elsewhere (startup migrations, second
+                              // registerSettings in configureBackends, other tabs)
+                              // and silently clobber them. See
+                              // core/src/browser/extension.ts updateSettings.
+                              const changedSettings = [newSettings[settingIndex]]
+                              if (
+                                settingKey === 'version_backend' &&
+                                newSettings.some((s) => s.key === 'device')
+                              ) {
+                                const deviceSetting = newSettings.find(
+                                  (s) => s.key === 'device'
+                                )
+                                if (deviceSetting) changedSettings.push(deviceSetting)
+                              }
+
                               serviceHub
                                 .providers()
-                                .updateSettings(
-                                  providerName,
-                                  updateObj.settings ?? []
-                                )
+                                .updateSettings(providerName, changedSettings)
                               updateProvider(providerName, {
                                 ...provider,
                                 ...updateObj,
