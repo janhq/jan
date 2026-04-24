@@ -495,6 +495,8 @@ export default class llamacpp_extension extends AIEngine {
       // installed. This covers both fresh downloads and pre-existing installs,
       // and runs only once per app startup via the isConfiguringBackends guard.
       if (effectiveBackendString) {
+        // effectiveBackendString is expected to be "<version>/<backend>" (e.g.
+        // "b4589/linux-cuda-12"). Any other shape silently skips verification.
         const [version, backend] = effectiveBackendString.split('/')
         if (version && backend) {
           await this.verifyBackendDeps(backend, version)

@@ -53,7 +53,7 @@ export async function listSupportedBackends(): Promise<BackendVersion[]> {
   try {
     remoteBackendVersions = await invoke(
       'plugin:llamacpp|fetch_remote_supported_backends',
-      { supportedBackends }
+      { supportedBackends, proxy: getProxyConfig() }
     )
   } catch (e) {
     console.debug(
@@ -184,7 +184,7 @@ export async function downloadBackend(
       return
     }
 
-    for (const { save_path } of downloadItems) {
+    for (const { save_path } of itemsWithProxy) {
       if (save_path.endsWith('.tar.gz')) {
         const parentDir = await dirname(save_path)
         await invoke('decompress', { path: save_path, outputDir: parentDir })

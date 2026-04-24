@@ -987,14 +987,47 @@ struct GithubAsset {
     name: String,
 }
 
+/// Subset of the app's ProxyConfig needed to build a reqwest proxy. Kept local
+/// to avoid a cross-crate dependency on the app crate. Shape must stay in sync
+/// with the TS `getProxyConfig()` payload and the app's `ProxyConfig` struct.
+#[derive(Deserialize, Clone, Debug)]
+pub struct ProxyConfig {
+    pub url: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub ignore_ssl: Option<bool>,
+}
+
+fn build_http_client(proxy: Option<&ProxyConfig>) -> Result<reqwest::Client, String> {
+    let mut builder = reqwest::Client::builder().user_agent("jan-app");
+
+    if let Some(cfg) = proxy {
+        if !cfg.url.trim().is_empty() {
+            let mut p = reqwest::Proxy::all(&cfg.url)
+                .map_err(|e| format!("Invalid proxy URL: {}", e))?;
+            if let (Some(u), Some(pw)) = (&cfg.username, &cfg.password) {
+                if !u.is_empty() {
+                    p = p.basic_auth(u, pw);
+                }
+            }
+            builder = builder.proxy(p);
+            if cfg.ignore_ssl.unwrap_or(false) {
+                builder = builder.danger_accept_invalid_certs(true);
+            }
+        }
+    }
+
+    builder
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))
+}
+
 #[tauri::command]
 pub async fn fetch_remote_supported_backends(
     supported_backends: Vec<String>,
+    proxy: Option<ProxyConfig>,
 ) -> Result<Vec<BackendInfo>, String> {
-    let client = reqwest::Client::builder()
-        .user_agent("jan-app")
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let client = build_http_client(proxy.as_ref())?;
 
     let releases: Vec<GithubRelease> = {
         let primary = client
