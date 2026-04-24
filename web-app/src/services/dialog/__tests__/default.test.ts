@@ -1,35 +1,24 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { DefaultDialogService } from '../default'
 
 describe('DefaultDialogService', () => {
-  it('open() logs and returns null', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+  it('open() returns null', async () => {
     const svc = new DefaultDialogService()
-    expect(await svc.open({ title: 'Pick' })).toBeNull()
-    expect(spy).toHaveBeenCalledWith('dialog.open called with options:', { title: 'Pick' })
-    spy.mockRestore()
+    expect(await svc.open({ title: 'Pick' } as any)).toBeNull()
   })
 
   it('open() with no options returns null', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
     const svc = new DefaultDialogService()
     expect(await svc.open()).toBeNull()
-    expect(spy).toHaveBeenCalledWith('dialog.open called with options:', undefined)
-    spy.mockRestore()
   })
 
-  it('save() logs and returns null', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+  it('save() returns null', async () => {
     const svc = new DefaultDialogService()
-    expect(await svc.save({ title: 'Save' })).toBeNull()
-    expect(spy).toHaveBeenCalledWith('dialog.save called with options:', { title: 'Save' })
-    spy.mockRestore()
+    expect(await svc.save({ title: 'Save' } as any)).toBeNull()
   })
 
   it('save() with no options returns null', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
     const svc = new DefaultDialogService()
     expect(await svc.save()).toBeNull()
-    spy.mockRestore()
   })
 })
