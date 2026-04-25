@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 import { useAssistant } from '@/hooks/useAssistant'
 
@@ -30,18 +30,20 @@ export const Route = createFileRoute(route.settings.assistant as any)({
 
 function AssistantContent() {
   const { t } = useTranslation()
-  const { 
+  const {
     assistants,
     addAssistant,
     updateAssistant,
     deleteAssistant,
     defaultAssistantId,
-    setDefaultAssistant
+    setDefaultAssistant,
+    refreshAssistants
   } = useAssistant()
   const [open, setOpen] = useState(false)
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [editingAssistant, setEditingAssistant] = useState<Assistant | null>(null)
 
   const handleDelete = (id: string) => {
     setDeletingId(id)
@@ -66,8 +68,26 @@ function AssistantContent() {
     setEditingKey(null)
   }
 
+  const handleEditClick = (assistantId: string) => {
+    // Before opening the edit dialog, refresh the assistants to get the latest data
+    refreshAssistants().then(() => {
+      setEditingKey(assistantId)
+      setOpen(true)
+    })
+  }
+
   const sortedAssistants = assistants.slice().sort((a, b) => a.created_at - b.created_at)
   const defaultAssistant = sortedAssistants.find((a) => a.id === defaultAssistantId)
+
+  // When editingKey changes, we need to get the latest assistant data
+  useEffect(() => {
+    if (editingKey) {
+      const assistant = assistants.find(a => a.id === editingKey)
+      setEditingAssistant(assistant || null)
+    } else {
+      setEditingAssistant(null)
+    }
+  }, [editingKey, assistants])
 
   return (
     <div className="flex flex-col h-svh w-full">
@@ -174,10 +194,7 @@ function AssistantContent() {
                       variant="ghost"
                       size="icon-xs"
                       title={t('assistants:editAssistant')}
-                      onClick={() => {
-                        setEditingKey(assistant.id)
-                        setOpen(true)
-                      }}
+                      onClick={() => handleEditClick(assistant.id)}
                     >
                       <IconPencil className="text-muted-foreground size-4" />
                     </Button>
@@ -198,11 +215,7 @@ function AssistantContent() {
             open={open}
             onOpenChange={setOpen}
             editingKey={editingKey}
-            initialData={
-              editingKey
-                ? assistants.find((a) => a.id === editingKey)
-                : undefined
-            }
+            initialData={editingAssistant || undefined}
             onSave={handleSave}
           />
           <DeleteAssistantDialog

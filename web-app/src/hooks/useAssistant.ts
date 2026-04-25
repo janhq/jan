@@ -17,6 +17,7 @@ interface AssistantState {
   ) => void
   setDefaultAssistant: (id: string) => void
   setAssistants: (assistants: Assistant[] | null) => void
+  refreshAssistants: () => Promise<void>
 }
 
 const setLastUsedAssistantId = (assistantId: string) => {
@@ -212,6 +213,21 @@ export const useAssistant = create<AssistantState>((set, get) => ({
         loading: false
       })
     } else {
+      set({ loading: false })
+    }
+  },
+  refreshAssistants: async () => {
+    try {
+      const assistants = await getServiceHub().assistants().getAssistants()
+      if (assistants) {
+        // Update the state with fresh assistants
+        set({
+          assistants,
+          loading: false
+        })
+      }
+    } catch (error) {
+      console.error('Failed to refresh assistants:', error)
       set({ loading: false })
     }
   },
