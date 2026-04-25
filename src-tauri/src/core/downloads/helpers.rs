@@ -597,11 +597,6 @@ async fn download_single_file(
     let mut download_delta = 0u64;
     let mut total_transferred = 0u64;
 
-    // Retry constants for network error recovery
-    const MAX_RETRIES: u32 = 10;
-    const INITIAL_RETRY_DELAY_SECS: u64 = 2;
-    const MAX_RETRY_DELAY_SECS: u64 = 60;
-
     // --- Initial connection ---
     let (initial_resp, actual_url) = if should_resume {
         let downloaded_size = tmp_save_path.metadata().map_err(err_to_string)?.len();
@@ -669,13 +664,11 @@ async fn download_single_file(
     };
     let mut writer = tokio::io::BufWriter::new(file);
     let mut stream = initial_resp.bytes_stream();
-    let mut retries = 0u32;
 
     // Download loop with automatic retry on network errors
     loop {
         match stream.next().await {
             Some(Ok(chunk)) => {
-                retries = 0; // reset on successful chunk
                 writer.write_all(&chunk).await.map_err(err_to_string)?;
                 download_delta += chunk.len() as u64;
                 total_transferred += chunk.len() as u64;
@@ -698,83 +691,26 @@ async fn download_single_file(
                 }
             }
             Some(Err(e)) => {
-                // Network error — flush, wait, and retry with Range header
-                writer.flush().await.ok();
+                // Best-effort flush before retry. If it fails, unflushed bytes
+                // would make `total_transferred` overcount what's on disk and the
+                // next Range request would skip data — log so it's diagnosable.
+                if let Err(flush_err) = writer.flush().await {
+                    log::warn!(
+                        "Flush failed during error recovery for {}: {}",
+                        item.url,
+                        flush_err
+                    );
+                }
 
                 if cancel_token.is_cancelled() {
                     log::info!("Download cancelled (resumable): {}", item.url);
                     return Err("Download cancelled".to_string());
                 }
 
-                retries += 1;
-                if retries > MAX_RETRIES {
-                    log::error!(
-                        "Download failed after {} retries: {} - {}",
-                        MAX_RETRIES,
-                        item.url,
-                        e
-                    );
-                    return Err(format!("Download failed after {MAX_RETRIES} retries: {e}"));
-                }
-
-                log::warn!(
-                    "Download interrupted (attempt {}/{}): {} - {}",
-                    retries,
-                    MAX_RETRIES,
-                    item.url,
-                    e
-                );
-
-                // Retry loop: keep trying to reconnect until success, max retries, or cancel
-                loop {
-                    let delay = std::cmp::min(
-                        INITIAL_RETRY_DELAY_SECS * 2u64.saturating_pow(retries - 1),
-                        MAX_RETRY_DELAY_SECS,
-                    );
-                    log::info!("Retrying in {}s...", delay);
-
-                    tokio::select! {
-                        _ = tokio::time::sleep(Duration::from_secs(delay)) => {}
-                        _ = cancel_token.cancelled() => {
-                            log::info!("Download cancelled during retry wait: {}", item.url);
-                            return Err("Download cancelled".to_string());
-                        }
-                    }
-
-                    match _get_maybe_resume_with_fallback(&client, &item.url, total_transferred).await {
-                        Ok((new_resp, _)) => {
-                            log::info!(
-                                "Resumed download from {} bytes: {}",
-                                total_transferred,
-                                item.url
-                            );
-                            stream = new_resp.bytes_stream();
-                            break; // break inner retry loop, continue outer download loop
-                        }
-                        Err(reconnect_err) => {
-                            retries += 1;
-                            if retries > MAX_RETRIES {
-                                log::error!(
-                                    "Download failed after {} retries: {} - {}",
-                                    MAX_RETRIES,
-                                    item.url,
-                                    reconnect_err
-                                );
-                                return Err(format!(
-                                    "Download failed after {MAX_RETRIES} retries: {reconnect_err}"
-                                ));
-                            }
-                            log::warn!(
-                                "Reconnect failed (attempt {}/{}): {} - {}",
-                                retries,
-                                MAX_RETRIES,
-                                item.url,
-                                reconnect_err
-                            );
-                            // loop back — delay is recomputed at top with updated retries
-                        }
-                    }
-                }
+                log::warn!("Download interrupted, reconnecting: {} - {}", item.url, e);
+                stream = reconnect_with_backoff(&client, &item.url, total_transferred, &cancel_token)
+                    .await?
+                    .bytes_stream();
             }
             None => {
                 // Stream ended — download complete
@@ -821,6 +757,48 @@ async fn download_single_file(
 }
 
 // ===== HTTP CLIENT HELPER FUNCTIONS =====
+
+/// Reconnect a broken download with exponential backoff. Each call has its own
+/// retry budget (`MAX_RETRIES`), so a chunk error followed by failed reconnects
+/// no longer drains a shared counter — only consecutive reconnect failures
+/// within a single interruption do. Cancellation is honored during every wait.
+async fn reconnect_with_backoff(
+    client: &reqwest::Client,
+    url: &str,
+    total_transferred: u64,
+    cancel_token: &CancellationToken,
+) -> Result<reqwest::Response, String> {
+    const MAX_RETRIES: u32 = 10;
+    const INITIAL_RETRY_DELAY_SECS: u64 = 2;
+    const MAX_RETRY_DELAY_SECS: u64 = 60;
+
+    for attempt in 1..=MAX_RETRIES {
+        let delay = std::cmp::min(
+            INITIAL_RETRY_DELAY_SECS * 2u64.saturating_pow(attempt - 1),
+            MAX_RETRY_DELAY_SECS,
+        );
+        log::info!("Reconnect attempt {attempt}/{MAX_RETRIES} in {delay}s: {url}");
+
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(delay)) => {}
+            _ = cancel_token.cancelled() => {
+                return Err("Download cancelled".to_string());
+            }
+        }
+
+        match _get_maybe_resume_with_fallback(client, url, total_transferred).await {
+            Ok((resp, _)) => {
+                log::info!("Resumed from {total_transferred} bytes: {url}");
+                return Ok(resp);
+            }
+            Err(e) => {
+                log::warn!("Reconnect attempt {attempt}/{MAX_RETRIES} failed: {url} - {e}");
+            }
+        }
+    }
+
+    Err(format!("Download failed after {MAX_RETRIES} reconnect attempts"))
+}
 
 /// Attempts to download from mirror URL first, falls back to original URL if mirror fails
 /// When using mirror URL, adds HMAC headers for request authentication
