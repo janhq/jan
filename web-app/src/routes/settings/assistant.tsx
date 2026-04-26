@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { useState, useEffect } from 'react'
+import { useState, useCallback, useRef } from 'react'
 
 import { useAssistant } from '@/hooks/useAssistant'
 
@@ -43,7 +43,7 @@ function AssistantContent() {
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [editingAssistant, setEditingAssistant] = useState<Assistant | null>(null)
+  const refreshRequestRef = useRef(0)
 
   const handleDelete = (id: string) => {
     setDeletingId(id)
@@ -68,26 +68,19 @@ function AssistantContent() {
     setEditingKey(null)
   }
 
-  const handleEditClick = (assistantId: string) => {
+  const handleEditClick = useCallback((assistantId: string) => {
     // Before opening the edit dialog, refresh the assistants to get the latest data
-    refreshAssistants().then(() => {
-      setEditingKey(assistantId)
-      setOpen(true)
-    })
-  }
+    const requestId = ++refreshRequestRef.current
+    refreshAssistants()
+      .then(() => {
+        if (refreshRequestRef.current !== requestId) return
+        setEditingKey(assistantId)
+        setOpen(true)
+      })
+  }, [])
 
   const sortedAssistants = assistants.slice().sort((a, b) => a.created_at - b.created_at)
   const defaultAssistant = sortedAssistants.find((a) => a.id === defaultAssistantId)
-
-  // When editingKey changes, we need to get the latest assistant data
-  useEffect(() => {
-    if (editingKey) {
-      const assistant = assistants.find(a => a.id === editingKey)
-      setEditingAssistant(assistant || null)
-    } else {
-      setEditingAssistant(null)
-    }
-  }, [editingKey, assistants])
 
   return (
     <div className="flex flex-col h-svh w-full">
@@ -215,7 +208,7 @@ function AssistantContent() {
             open={open}
             onOpenChange={setOpen}
             editingKey={editingKey}
-            initialData={editingAssistant || undefined}
+            initialData={editingKey ? assistants.find(a => a.id === editingKey) : undefined}
             onSave={handleSave}
           />
           <DeleteAssistantDialog

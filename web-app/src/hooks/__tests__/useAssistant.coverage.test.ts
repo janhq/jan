@@ -1,15 +1,24 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useAssistant, defaultAssistant } from '../useAssistant'
 
+const mockToast = vi.fn()
+vi.mock('sonner', () => ({
+  toast: {
+    error: mockToast,
+  },
+}))
+
 const mockCreateAssistant = vi.fn().mockResolvedValue(undefined)
 const mockDeleteAssistant = vi.fn().mockResolvedValue(undefined)
+const mockGetAssistants = vi.fn().mockResolvedValue([defaultAssistant])
 
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({
     assistants: () => ({
       createAssistant: mockCreateAssistant,
       deleteAssistant: mockDeleteAssistant,
+      getAssistants: mockGetAssistants,
     }),
   }),
 }))
@@ -218,5 +227,52 @@ describe('useAssistant - coverage', () => {
 
     // currentAssistant should still be jan
     expect(result.current.currentAssistant?.id).toBe('jan')
+  })
+
+  it('refreshAssistants should fetch fresh data and update state', async () => {
+    const freshAssistants = [
+      { ...defaultAssistant, name: 'Fresh Jan' },
+      { id: 'a2', name: 'A2', avatar: '', description: '', instructions: '', created_at: 2, parameters: {} },
+    ]
+    mockGetAssistants.mockResolvedValue(freshAssistants as any)
+
+    const { result } = renderHook(() => useAssistant())
+
+    expect(result.current.loading).toBe(true)
+
+    await act(async () => {
+      await result.current.refreshAssistants()
+    })
+
+    expect(result.current.assistants).toEqual(freshAssistants)
+    expect(result.current.loading).toBe(false)
+  })
+
+  it('refreshAssistants should set loading:true before fetch starts', async () => {
+    const deferred = vi.fn().mockReturnValue(new Promise((resolve) => setTimeout(resolve, 100)))
+    mockGetAssistants.mockReturnValue(deferred())
+
+    const { result } = renderHook(() => useAssistant())
+
+    expect(result.current.loading).toBe(true)
+  })
+
+  it('refreshAssistants should show toast error on failure', async () => {
+    mockGetAssistants.mockRejectedValue(new Error('Network error'))
+
+    const { result } = renderHook(() => useAssistant())
+
+    await act(async () => {
+      await result.current.refreshAssistants()
+    })
+
+    expect(mockToast).toHaveBeenCalledWith('Failed to refresh assistants', {
+      description: 'Network error',
+    })
+    expect(result.current.loading).toBe(false)
+  })
+
+  afterEach(() => {
+    mockToast.mockClear()
   })
 })
