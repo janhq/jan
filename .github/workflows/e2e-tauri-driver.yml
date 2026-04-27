@@ -8,6 +8,15 @@ name: E2E (tauri-driver + WebdriverIO)
 #                ~5 min with rust-cache warm). Useful for PRs.
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'web-app/**'
+      - 'core/**'
+      - 'extensions/**'
+      - 'src-tauri/**'
+      - 'e2e/**'
+      - '.github/workflows/e2e-tauri-driver.yml'
   workflow_dispatch:
     inputs:
       mode:
@@ -56,6 +65,13 @@ jobs:
     timeout-minutes: 60
     env:
       DEFAULT_JAN_APP_URL: 'https://delta.jan.ai/nightly/Jan-nightly_0.6.4-728_amd64.deb'
+      # On push: main, no inputs are provided — build from source so we
+      # actually test the code that just landed. workflow_dispatch /
+      # workflow_call honor their explicit inputs.
+      MODE: ${{ inputs.mode || 'build' }}
+      JAN_APP_URL: ${{ inputs.jan_app_url || '' }}
+      IS_NIGHTLY: ${{ inputs.is_nightly && 'true' || 'false' }}
+      SPEC: ${{ inputs.spec || 'specs/smoke.e2e.ts' }}
 
     steps:
       - name: Checkout
@@ -90,26 +106,26 @@ jobs:
 
       # ── Obtain Jan binary ─────────────────────────────────────────
       - name: Download Jan .deb (mode=download)
-        if: inputs.mode == 'download'
+        if: env.MODE == 'download'
         run: |
-          URL="${{ inputs.jan_app_url }}"
+          URL="$JAN_APP_URL"
           if [ -z "$URL" ]; then URL="$DEFAULT_JAN_APP_URL"; fi
           echo "Downloading $URL"
           wget -q "$URL" -O /tmp/jan-installer.deb
           ls -lh /tmp/jan-installer.deb
 
       - name: Install Jan .deb (mode=download)
-        if: inputs.mode == 'download'
+        if: env.MODE == 'download'
         run: |
           sudo apt-get install -y /tmp/jan-installer.deb
-          if [ "${{ inputs.is_nightly }}" = "true" ]; then
+          if [ "$IS_NIGHTLY" = "true" ]; then
             echo "JAN_BINARY=/usr/bin/Jan-nightly" >> "$GITHUB_ENV"
           else
             echo "JAN_BINARY=/usr/bin/Jan" >> "$GITHUB_ENV"
           fi
 
       - name: Build Jan from source (mode=build)
-        if: inputs.mode == 'build'
+        if: env.MODE == 'build'
         run: |
           corepack enable
           corepack prepare yarn@4.5.3 --activate
@@ -139,7 +155,7 @@ jobs:
           echo "Using JAN_BINARY=$JAN_BINARY"
           test -x "$JAN_BINARY" || { echo "Jan binary not executable"; exit 1; }
           xvfb-run -a --server-args='-screen 0 1280x1024x24' \
-            yarn test --spec "${{ inputs.spec }}"
+            yarn test --spec "$SPEC"
 
       # ── Diagnostics ───────────────────────────────────────────────
       - name: Upload WDIO logs
