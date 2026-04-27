@@ -1,0 +1,155 @@
+name: E2E (tauri-driver + WebdriverIO)
+
+# Runs WebdriverIO specs against a built Jan binary on Ubuntu via tauri-driver.
+# Two modes:
+#   - download:  install a pre-built .deb (default: latest nightly URL).
+#                Mirrors autoqa-reliability.yml. Fast (~5 min total).
+#   - build:     build the current ref from source. Slow (~25 min cold,
+#                ~5 min with rust-cache warm). Useful for PRs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'How to obtain the Jan binary'
+        required: true
+        type: choice
+        options: [download, build]
+        default: download
+      jan_app_url:
+        description: '.deb URL (used when mode=download). Default: latest nightly.'
+        required: false
+        type: string
+        default: 'https://delta.jan.ai/nightly/Jan-nightly_0.6.4-728_amd64.deb'
+      is_nightly:
+        description: 'Is the .deb a nightly build? Affects binary path / process name.'
+        required: true
+        type: boolean
+        default: true
+      spec:
+        description: 'Glob of specs to run (relative to e2e/). Empty = all.'
+        required: false
+        type: string
+        default: 'specs/smoke.e2e.ts'
+  workflow_call:
+    inputs:
+      mode:
+        required: false
+        type: string
+        default: download
+      jan_app_url:
+        required: false
+        type: string
+        default: ''
+      is_nightly:
+        required: false
+        type: boolean
+        default: true
+      spec:
+        required: false
+        type: string
+        default: 'specs/smoke.e2e.ts'
+
+jobs:
+  e2e-linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      DEFAULT_JAN_APP_URL: 'https://delta.jan.ai/nightly/Jan-nightly_0.6.4-728_amd64.deb'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── System deps ───────────────────────────────────────────────
+      - name: Install Tauri + WebDriver runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev \
+            libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 \
+            libappindicator3-dev \
+            webkit2gtk-driver xvfb wget
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo (for tauri-driver + optional source build)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: e2e-tauri-driver
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+
+      # ── Obtain Jan binary ─────────────────────────────────────────
+      - name: Download Jan .deb (mode=download)
+        if: inputs.mode == 'download'
+        run: |
+          URL="${{ inputs.jan_app_url }}"
+          if [ -z "$URL" ]; then URL="$DEFAULT_JAN_APP_URL"; fi
+          echo "Downloading $URL"
+          wget -q "$URL" -O /tmp/jan-installer.deb
+          ls -lh /tmp/jan-installer.deb
+
+      - name: Install Jan .deb (mode=download)
+        if: inputs.mode == 'download'
+        run: |
+          sudo apt-get install -y /tmp/jan-installer.deb
+          if [ "${{ inputs.is_nightly }}" = "true" ]; then
+            echo "JAN_BINARY=/usr/bin/Jan-nightly" >> "$GITHUB_ENV"
+          else
+            echo "JAN_BINARY=/usr/bin/Jan" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build Jan from source (mode=build)
+        if: inputs.mode == 'build'
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn config set -H enableImmutableInstalls false
+          yarn install
+          yarn build:extensions
+          # Skip mlx + signing — only need a runnable Linux binary.
+          yarn download:bin
+          yarn build:cli
+          yarn tauri build --bundles deb
+          DEB=$(ls src-tauri/target/release/bundle/deb/*.deb | head -1)
+          echo "Built $DEB"
+          sudo apt-get install -y "$DEB"
+          echo "JAN_BINARY=/usr/bin/Jan" >> "$GITHUB_ENV"
+
+      # ── E2E ───────────────────────────────────────────────────────
+      - name: Install e2e deps
+        working-directory: e2e
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate || true
+          yarn install --no-immutable
+
+      - name: Run WebdriverIO specs under xvfb
+        working-directory: e2e
+        run: |
+          echo "Using JAN_BINARY=$JAN_BINARY"
+          test -x "$JAN_BINARY" || { echo "Jan binary not executable"; exit 1; }
+          xvfb-run -a --server-args='-screen 0 1280x1024x24' \
+            yarn test --spec "${{ inputs.spec }}"
+
+      # ── Diagnostics ───────────────────────────────────────────────
+      - name: Upload WDIO logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: wdio-logs-${{ github.run_number }}
+          path: |
+            e2e/logs/
+            e2e/.wdio-logs/
+            e2e/wdio-*.log
+          if-no-files-found: ignore
