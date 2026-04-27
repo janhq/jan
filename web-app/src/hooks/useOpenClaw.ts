@@ -148,10 +148,23 @@ export function useOpenClaw(pollIntervalMs = 5000) {
       const nextStatus = await invoke<OpenClawBackendStatus>('get_openclaw_status')
       setVersion(nextStatus.version)
       setStatus((current) => {
-        if (current === 'installing' || current === 'starting' || current === 'stopping') {
+        if (current === 'installing') {
           return current
         }
-        return toUiStatus(nextStatus)
+        const next = toUiStatus(nextStatus)
+        // Allow transition out of starting/stopping when the backend reflects
+        // the actual outcome (declarative reconciliation).
+        if (current === 'starting' && next !== 'installed') {
+          return next
+        }
+        if (
+          current === 'stopping' &&
+          next !== 'running' &&
+          next !== 'degraded'
+        ) {
+          return next
+        }
+        return current
       })
       setGatewayUrl(nextStatus.gateway_url)
       setDiagnostics(toDiagnostics(nextStatus))
@@ -215,8 +228,8 @@ export function useOpenClaw(pollIntervalMs = 5000) {
       try {
         toast.info(
           model
-            ? `正在启动 OpenClaw Gateway，并注入本地模型 ${model}...`
-            : '正在按当前 OpenClaw 配置启动 Gateway...'
+            ? `已发送启动请求，将注入本地模型 ${model}`
+            : '已发送启动请求，将按当前配置启动 Gateway'
         )
         const result = await invoke<{ gateway_url: string }>('launch_openclaw_gateway', {
           model: model ?? null,
@@ -227,8 +240,7 @@ export function useOpenClaw(pollIntervalMs = 5000) {
           launchMode: model ? 'local-ollama-injected' : 'existing-config',
           selectedModel: model,
         })
-        await refresh()
-        toast.success('OpenClaw Gateway 已启动')
+        toast.success('启动命令已发送，正在等待 Gateway 就绪...')
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         setErrorMessage(message)
@@ -238,7 +250,7 @@ export function useOpenClaw(pollIntervalMs = 5000) {
         setIsLoading(false)
       }
     },
-    [refresh]
+    []
   )
 
   const stop = useCallback(async () => {
@@ -248,8 +260,7 @@ export function useOpenClaw(pollIntervalMs = 5000) {
     try {
       await invoke('stop_openclaw_gateway')
       setGatewayUrl(undefined)
-      await refresh()
-      toast.success('OpenClaw Gateway 已停止')
+      toast.success('停止命令已发送')
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setErrorMessage(message)
@@ -258,7 +269,7 @@ export function useOpenClaw(pollIntervalMs = 5000) {
     } finally {
       setIsLoading(false)
     }
-  }, [refresh])
+  }, [])
 
   const saveConfig = useCallback((config: OpenClawRuntimeConfig) => {
     setRuntimeSummary(toRuntimeSummary(config))

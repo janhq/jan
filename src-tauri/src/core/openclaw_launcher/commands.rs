@@ -346,10 +346,14 @@ async fn run_openclaw_command(
         command.envs(envs.iter().cloned());
     }
     apply_no_window(&mut command);
-    command
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run openclaw {}: {e}", args.join(" ")))
+    let output = tokio::time::timeout(
+        Duration::from_secs(20),
+        command.output(),
+    )
+    .await
+    .map_err(|_| format!("Timed out after 20s running openclaw {}", args.join(" ")))?
+    .map_err(|e| format!("Failed to run openclaw {}: {e}", args.join(" ")))?;
+    Ok(output)
 }
 
 fn command_error(output: &std::process::Output) -> String {
@@ -365,7 +369,9 @@ async fn get_openclaw_status_inner() -> Result<OpenClawStatus, String> {
         return Ok(openclaw_not_installed_status());
     };
 
-    let version = openclaw_version(&bin).await;
+    let version = tokio::time::timeout(Duration::from_secs(10), openclaw_version(&bin))
+        .await
+        .unwrap_or(None);
     let output = run_openclaw_command(&bin, &["gateway", "status", "--json"], None).await?;
     if !output.status.success() {
         let detail = command_error(&output);
@@ -635,9 +641,34 @@ async fn spawn_gateway_foreground(bin: &str, inject_local_model: bool) -> Result
     command.envs(openclaw_env(inject_local_model));
     apply_no_window(&mut command);
     command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = command
         .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("Failed to start OpenClaw gateway: {e}"))
+        .map_err(|e| format!("Failed to start OpenClaw gateway: {e}"))?;
+
+    if let Some(stdout) = child.stdout.take() {
+        tokio::spawn(async move {
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                log::info!("[openclaw gateway stdout] {}", line);
+            }
+        });
+    }
+
+    if let Some(stderr) = child.stderr.take() {
+        tokio::spawn(async move {
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                log::warn!("[openclaw gateway stderr] {}", line);
+            }
+        });
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -661,6 +692,7 @@ pub async fn launch_openclaw_gateway<R: Runtime>(
     }
 
     let current_status = get_openclaw_status_inner().await?;
+    let expected_port = current_status.gateway_port;
     if current_status.service_loaded {
         let action = if current_status.rpc_ok
             || is_runtime_running(current_status.service_runtime_status.as_deref())
@@ -698,19 +730,35 @@ pub async fn launch_openclaw_gateway<R: Runtime>(
         spawn_gateway_foreground(&bin, inject_local_model).await?;
     }
 
-    let final_status = wait_for_openclaw_status(120, |status| status.rpc_ok).await?;
-    let gateway_url = final_status
-        .gateway_url
-        .clone()
-        .unwrap_or_else(|| gateway_url("127.0.0.1", final_status.gateway_port));
+    // Wait for gateway readiness in background — don't block the command.
+    // The frontend observes progress via get_openclaw_status polling and
+    // the openclaw-gateway-ready event.
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        match wait_for_openclaw_status(60, |status| status.rpc_ok).await {
+            Ok(final_status) => {
+                let ready_url = final_status
+                    .gateway_url
+                    .clone()
+                    .unwrap_or_else(|| gateway_url("127.0.0.1", expected_port));
+                app_handle
+                    .emit(
+                        GATEWAY_READY_EVENT,
+                        serde_json::json!({ "gateway_url": &ready_url }),
+                    )
+                    .ok();
+                log::info!("OpenClaw gateway ready at {}", ready_url);
+            }
+            Err(e) => {
+                log::warn!("OpenClaw gateway failed to become ready: {}", e);
+            }
+        }
+    });
 
-    app.emit(
-        GATEWAY_READY_EVENT,
-        serde_json::json!({ "gateway_url": &gateway_url }),
-    )
-    .ok();
-
-    Ok(OpenClawLaunchResult { gateway_url })
+    // Return immediately with the expected gateway URL.
+    Ok(OpenClawLaunchResult {
+        gateway_url: gateway_url("127.0.0.1", expected_port),
+    })
 }
 
 #[derive(serde::Serialize)]
@@ -774,14 +822,20 @@ pub async fn stop_openclaw_gateway() -> Result<(), String> {
         kill_gateway_port_listener().await;
     }
 
-    let _ = wait_for_openclaw_status(40, |status| {
-        !status.rpc_ok
-            && !is_runtime_running(status.service_runtime_status.as_deref())
-            && !is_port_busy(status.port_status.as_deref())
-    })
-    .await?;
+    // Verify stop asynchronously — don't block the command.
+    tokio::spawn(async move {
+        match wait_for_openclaw_status(40, |status| {
+            !status.rpc_ok
+                && !is_runtime_running(status.service_runtime_status.as_deref())
+                && !is_port_busy(status.port_status.as_deref())
+        })
+        .await
+        {
+            Ok(_) => log::info!("OpenClaw gateway stopped successfully"),
+            Err(e) => log::warn!("OpenClaw gateway stop verification timeout: {}", e),
+        }
+    });
 
-    log::info!("OpenClaw gateway stopped successfully");
     Ok(())
 }
 
