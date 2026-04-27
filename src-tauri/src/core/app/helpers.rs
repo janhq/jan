@@ -22,8 +22,7 @@ pub fn copy_dir_recursive(
             }
         }
 
-        let is_dir = file_type.is_dir()
-            || (file_type.is_symlink() && src_path.is_dir());
+        let is_dir = file_type.is_dir() || (file_type.is_symlink() && src_path.is_dir());
 
         if is_dir {
             copy_dir_recursive(&src_path, &dst_path, exclude_dirs)?;

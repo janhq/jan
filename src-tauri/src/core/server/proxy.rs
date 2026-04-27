@@ -656,7 +656,10 @@ async fn resolve_upstream_for_model(
 
     // Fall back to local sessions.
     let sessions_guard = sessions.lock().await;
-    if let Some(session) = sessions_guard.values().find(|s| s.info.model_id == model_id) {
+    if let Some(session) = sessions_guard
+        .values()
+        .find(|s| s.info.model_id == model_id)
+    {
         let target_port = session.info.port;
         return Ok((
             format!("http://127.0.0.1:{target_port}/v1{destination_path}"),
@@ -677,7 +680,10 @@ async fn resolve_upstream_for_model(
     Err(format!("No upstream session found for model '{model_id}'"))
 }
 
-fn copy_optional_chat_params(from: &serde_json::Value, into: &mut serde_json::Map<String, serde_json::Value>) {
+fn copy_optional_chat_params(
+    from: &serde_json::Value,
+    into: &mut serde_json::Map<String, serde_json::Value>,
+) {
     for key in [
         "temperature",
         "top_p",
@@ -762,7 +768,11 @@ async fn execute_mcp_tool_calls(
     let mut results = Vec::with_capacity(tool_calls.len());
 
     for tc in tool_calls {
-        let tool_call_id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let tool_call_id = tc
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let tool_name = tc
             .get("function")
             .and_then(|f| f.get("name"))
@@ -776,14 +786,15 @@ async fn execute_mcp_tool_calls(
             .and_then(|v| v.as_str())
             .unwrap_or("{}");
 
-        let args_value: serde_json::Value = serde_json::from_str(args_str)
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let args_value: serde_json::Value =
+            serde_json::from_str(args_str).unwrap_or_else(|_| serde_json::json!({}));
 
-        let args_map: serde_json::Map<String, serde_json::Value> = if let Some(obj) = args_value.as_object() {
-            obj.clone()
-        } else {
-            serde_json::Map::new()
-        };
+        let args_map: serde_json::Map<String, serde_json::Value> =
+            if let Some(obj) = args_value.as_object() {
+                obj.clone()
+            } else {
+                serde_json::Map::new()
+            };
 
         let server_name = tool_to_server
             .get(&tool_name)
@@ -850,16 +861,13 @@ async fn call_openai_chat_completions(
         let text = resp.text().await.map_err(|e| e.to_string())?;
 
         if status.is_success() {
-            return serde_json::from_str::<serde_json::Value>(&text).map_err(|e| {
-                format!("Failed to parse upstream JSON: {e}. Body: {text}")
-            });
+            return serde_json::from_str::<serde_json::Value>(&text)
+                .map_err(|e| format!("Failed to parse upstream JSON: {e}. Body: {text}"));
         }
 
         last_err = format!("Upstream returned HTTP {status}: {text}");
         if http_status_indicates_api_key_retry(status) && i + 1 < attempts.len() {
-            log::warn!(
-                "OpenAI completion: HTTP {status} with API key index {i}, trying next key"
-            );
+            log::warn!("OpenAI completion: HTTP {status} with API key index {i}, trying next key");
             continue;
         }
 
@@ -912,7 +920,10 @@ async fn run_server_side_openai_orchestration(
     }
     if model_id.is_none() {
         let sessions_guard = sessions.lock().await;
-        model_id = sessions_guard.values().next().map(|s| s.info.model_id.clone());
+        model_id = sessions_guard
+            .values()
+            .next()
+            .map(|s| s.info.model_id.clone());
         drop(sessions_guard);
     }
     if model_id.is_none() {
@@ -960,13 +971,9 @@ async fn run_server_side_openai_orchestration(
         copy_optional_chat_params(json_body, &mut completion_map);
         let request_value = serde_json::Value::Object(completion_map);
 
-        let completion = call_openai_chat_completions(
-            client,
-            &upstream_url,
-            &session_api_keys,
-            &request_value,
-        )
-        .await?;
+        let completion =
+            call_openai_chat_completions(client, &upstream_url, &session_api_keys, &request_value)
+                .await?;
 
         let tool_calls = extract_tool_calls(&completion);
         last_response = Some(completion.clone());
@@ -993,13 +1000,9 @@ async fn run_server_side_openai_orchestration(
             }));
         }
 
-        let tool_results = execute_mcp_tool_calls(
-            &tool_calls,
-            &tool_to_server,
-            &mcp_servers,
-            &mcp_settings,
-        )
-        .await?;
+        let tool_results =
+            execute_mcp_tool_calls(&tool_calls, &tool_to_server, &mcp_servers, &mcp_settings)
+                .await?;
 
         for (tool_call_id, result_text) in tool_results {
             conversation_messages.push(serde_json::json!({
@@ -1170,7 +1173,9 @@ async fn proxy_request(
                     .header("Access-Control-Allow-Origin", origin)
                     .header("Access-Control-Allow-Credentials", "true");
             } else {
-                log::warn!("CORS preflight: Origin '{origin}' is not trusted, not reflecting origin");
+                log::warn!(
+                    "CORS preflight: Origin '{origin}' is not trusted, not reflecting origin"
+                );
             }
         }
 
@@ -1498,7 +1503,9 @@ async fn proxy_request(
             // - Ask the model for tool_calls
             // - Execute MCP tools server-side
             // - Feed tool results back and continue until completion
-            log::info!("Handling POST request to {destination_path} for assistant tool orchestration");
+            log::info!(
+                "Handling POST request to {destination_path} for assistant tool orchestration"
+            );
 
             let body_bytes = match hyper::body::to_bytes(body).await {
                 Ok(bytes) => bytes,
@@ -1511,15 +1518,16 @@ async fn proxy_request(
                         &origin_header,
                         &config.trusted_hosts,
                     );
-                    return Ok(error_response.body(Body::from("Failed to read request body")).unwrap());
+                    return Ok(error_response
+                        .body(Body::from("Failed to read request body"))
+                        .unwrap());
                 }
             };
 
             let json_body: serde_json::Value = match serde_json::from_slice(&body_bytes) {
                 Ok(v) => v,
                 Err(e) => {
-                    let mut error_response = Response::builder()
-                        .status(StatusCode::BAD_REQUEST);
+                    let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
                     error_response = add_cors_headers_with_host_and_origin(
                         error_response,
                         &host_header,
@@ -1539,24 +1547,29 @@ async fn proxy_request(
                 .filter(|v| !v.is_empty())
                 .map(|v| v.to_string());
 
-            let stream = json_body.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
+            let stream = json_body
+                .get("stream")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             if stream {
-                let mut error_response = Response::builder()
-                    .status(StatusCode::BAD_REQUEST);
+                let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
                 error_response = add_cors_headers_with_host_and_origin(
                     error_response,
                     &host_header,
                     &origin_header,
                     &config.trusted_hosts,
                 );
-                return Ok(error_response.body(Body::from("stream=true is not supported for /orchestrations")).unwrap());
+                return Ok(error_response
+                    .body(Body::from(
+                        "stream=true is not supported for /orchestrations",
+                    ))
+                    .unwrap());
             }
 
             let messages_value = match json_body.get("messages") {
                 Some(v) => v,
                 None => {
-                    let mut error_response = Response::builder()
-                        .status(StatusCode::BAD_REQUEST);
+                    let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
                     error_response = add_cors_headers_with_host_and_origin(
                         error_response,
                         &host_header,
@@ -1572,8 +1585,7 @@ async fn proxy_request(
             let mut conversation_messages = match parse_openai_messages(messages_value) {
                 Ok(msgs) => msgs,
                 Err(e) => {
-                    let mut error_response = Response::builder()
-                        .status(StatusCode::BAD_REQUEST);
+                    let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
                     error_response = add_cors_headers_with_host_and_origin(
                         error_response,
                         &host_header,
@@ -1585,24 +1597,25 @@ async fn proxy_request(
             };
 
             // Load assistant config for system prompt + model hint when assistant_id is provided.
-            let (assistant_instructions, assistant_model_hint) = if let Some(assistant_id) = assistant_id.as_deref() {
-                match load_assistant_config(&jan_data_folder, assistant_id) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        let mut error_response =
-                            Response::builder().status(StatusCode::BAD_REQUEST);
-                        error_response = add_cors_headers_with_host_and_origin(
-                            error_response,
-                            &host_header,
-                            &origin_header,
-                            &config.trusted_hosts,
-                        );
-                        return Ok(error_response.body(Body::from(e)).unwrap());
+            let (assistant_instructions, assistant_model_hint) =
+                if let Some(assistant_id) = assistant_id.as_deref() {
+                    match load_assistant_config(&jan_data_folder, assistant_id) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            let mut error_response =
+                                Response::builder().status(StatusCode::BAD_REQUEST);
+                            error_response = add_cors_headers_with_host_and_origin(
+                                error_response,
+                                &host_header,
+                                &origin_header,
+                                &config.trusted_hosts,
+                            );
+                            return Ok(error_response.body(Body::from(e)).unwrap());
+                        }
                     }
-                }
-            } else {
-                (None, None)
-            };
+                } else {
+                    (None, None)
+                };
 
             if let Some(sys) = assistant_instructions {
                 set_system_prompt(&mut conversation_messages, &sys);
@@ -1648,8 +1661,8 @@ async fn proxy_request(
             let model_id = match model_id {
                 Some(v) => v,
                 None => {
-                    let mut error_response = Response::builder()
-                        .status(StatusCode::SERVICE_UNAVAILABLE);
+                    let mut error_response =
+                        Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
                     error_response = add_cors_headers_with_host_and_origin(
                         error_response,
                         &host_header,
@@ -1689,8 +1702,7 @@ async fn proxy_request(
             {
                 Ok(v) => v,
                 Err(e) => {
-                    let mut error_response =
-                        Response::builder().status(StatusCode::NOT_FOUND);
+                    let mut error_response = Response::builder().status(StatusCode::NOT_FOUND);
                     error_response = add_cors_headers_with_host_and_origin(
                         error_response,
                         &host_header,
@@ -1721,7 +1733,10 @@ async fn proxy_request(
                 completion_map.insert("tool_choice".to_string(), serde_json::json!("auto"));
 
                 if !openai_tools.is_empty() {
-                    completion_map.insert("tools".to_string(), serde_json::Value::Array(openai_tools.clone()));
+                    completion_map.insert(
+                        "tools".to_string(),
+                        serde_json::Value::Array(openai_tools.clone()),
+                    );
                 }
 
                 copy_optional_chat_params(&json_body, &mut completion_map);
@@ -1754,7 +1769,8 @@ async fn proxy_request(
                 last_response = Some(completion.clone());
 
                 if tool_calls.is_empty() {
-                    let body_str = serde_json::to_string(&completion).unwrap_or_else(|_| "{}".to_string());
+                    let body_str =
+                        serde_json::to_string(&completion).unwrap_or_else(|_| "{}".to_string());
                     let mut response_builder = Response::builder()
                         .status(StatusCode::OK)
                         .header(hyper::header::CONTENT_TYPE, "application/json");
@@ -2332,7 +2348,9 @@ async fn proxy_request(
     let body_bytes_for_proxy = match buffered_body.clone() {
         Some(b) => b,
         None => {
-            log::error!("Internal logic error: Request reached proxy stage without a buffered body.");
+            log::error!(
+                "Internal logic error: Request reached proxy stage without a buffered body."
+            );
             let mut error_response = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,
@@ -2373,41 +2391,41 @@ async fn proxy_request(
         let outbound_req_with_body = outbound_req.body(body_bytes_for_proxy.clone());
 
         match outbound_req_with_body.send().await {
-        Ok(response) => {
-            let status = response.status();
+            Ok(response) => {
+                let status = response.status();
 
-            let is_error = !status.is_success();
+                let is_error = !status.is_success();
 
-            if is_error
-                && http_status_indicates_api_key_retry(status)
-                && key_idx + 1 < key_attempts.len()
-            {
-                let _ = response.text().await;
-                log::warn!("Upstream {status} for API key index {key_idx}, trying next key");
-                continue;
-            }
+                if is_error
+                    && http_status_indicates_api_key_retry(status)
+                    && key_idx + 1 < key_attempts.len()
+                {
+                    let _ = response.text().await;
+                    log::warn!("Upstream {status} for API key index {key_idx}, trying next key");
+                    continue;
+                }
 
-            // For Anthropic /messages requests with errors, try /chat/completions
-            if is_error && is_anthropic_messages {
-                log::warn!("Request failed for /messages with status {status}, trying /chat/completions...");
+                // For Anthropic /messages requests with errors, try /chat/completions
+                if is_error && is_anthropic_messages {
+                    log::warn!("Request failed for /messages with status {status}, trying /chat/completions...");
 
-                // Read the error body to return to client if fallback fails
-                let error_body = response
-                    .text()
-                    .await
-                    .unwrap_or_else(|e| format!("Failed to read error body: {}", e));
+                    // Read the error body to return to client if fallback fails
+                    let error_body = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|e| format!("Failed to read error body: {}", e));
 
-                // Clone what we need for the fallback request
-                let fallback_url = target_base_url.clone().map(|url| {
-                    url.trim_end_matches("/messages")
-                        .trim_end_matches('/')
-                        .to_string()
-                });
-                let fallback_api_key = key_opt.clone();
-                let fallback_body = Some(body_bytes_for_proxy.clone());
+                    // Clone what we need for the fallback request
+                    let fallback_url = target_base_url.clone().map(|url| {
+                        url.trim_end_matches("/messages")
+                            .trim_end_matches('/')
+                            .to_string()
+                    });
+                    let fallback_api_key = key_opt.clone();
+                    let fallback_body = Some(body_bytes_for_proxy.clone());
 
-                // Transform body to OpenAI format for fallback
-                if let Some((url, openai_body)) = fallback_url.zip(fallback_body).and_then(|(url, body)| {
+                    // Transform body to OpenAI format for fallback
+                    if let Some((url, openai_body)) = fallback_url.zip(fallback_body).and_then(|(url, body)| {
                     let json_body = serde_json::from_slice::<serde_json::Value>(&body).ok()?;
                     match transform_anthropic_to_openai(&json_body) {
                         Some(transformed) => Some((url, transformed)),
@@ -2511,86 +2529,86 @@ async fn proxy_request(
                     }
                 }
 
-                // If fallback failed or wasn't attempted, return error to client
-                let mut error_response = Response::builder().status(status);
-                error_response = add_cors_headers_with_host_and_origin(
-                    error_response,
-                    &host_header,
-                    &origin_header,
-                    &config.trusted_hosts,
-                );
-                return Ok(error_response.body(Body::from(error_body)).unwrap());
-            } else if is_error {
-                // Non-/messages error - return error response with body
-                let error_body = response
-                    .text()
-                    .await
-                    .unwrap_or_else(|e| format!("Failed to read error body: {}", e));
+                    // If fallback failed or wasn't attempted, return error to client
+                    let mut error_response = Response::builder().status(status);
+                    error_response = add_cors_headers_with_host_and_origin(
+                        error_response,
+                        &host_header,
+                        &origin_header,
+                        &config.trusted_hosts,
+                    );
+                    return Ok(error_response.body(Body::from(error_body)).unwrap());
+                } else if is_error {
+                    // Non-/messages error - return error response with body
+                    let error_body = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|e| format!("Failed to read error body: {}", e));
 
-                let mut error_response = Response::builder().status(status);
-                error_response = add_cors_headers_with_host_and_origin(
-                    error_response,
-                    &host_header,
-                    &origin_header,
-                    &config.trusted_hosts,
-                );
-                return Ok(error_response.body(Body::from(error_body)).unwrap());
-            }
-
-            // Success case - stream the response
-            let mut builder = Response::builder().status(status);
-
-            for (name, value) in response.headers() {
-                if !is_cors_header(name.as_str()) && name != hyper::header::CONTENT_LENGTH {
-                    builder = builder.header(name, value);
+                    let mut error_response = Response::builder().status(status);
+                    error_response = add_cors_headers_with_host_and_origin(
+                        error_response,
+                        &host_header,
+                        &origin_header,
+                        &config.trusted_hosts,
+                    );
+                    return Ok(error_response.body(Body::from(error_body)).unwrap());
                 }
-            }
 
-            builder = add_cors_headers_with_host_and_origin(
-                builder,
-                &host_header,
-                &origin_header,
-                &config.trusted_hosts,
-            );
+                // Success case - stream the response
+                let mut builder = Response::builder().status(status);
 
-            let mut stream = response.bytes_stream();
-            let (mut sender, body) = hyper::Body::channel();
+                for (name, value) in response.headers() {
+                    if !is_cors_header(name.as_str()) && name != hyper::header::CONTENT_LENGTH {
+                        builder = builder.header(name, value);
+                    }
+                }
 
-            tokio::spawn(async move {
-                // Regular passthrough - when /messages succeeds directly,
-                // the response is already in the correct format
-                while let Some(chunk_result) = stream.next().await {
-                    match chunk_result {
-                        Ok(chunk) => {
-                            if sender.send_data(chunk).await.is_err() {
-                                log::debug!("Client disconnected during streaming");
+                builder = add_cors_headers_with_host_and_origin(
+                    builder,
+                    &host_header,
+                    &origin_header,
+                    &config.trusted_hosts,
+                );
+
+                let mut stream = response.bytes_stream();
+                let (mut sender, body) = hyper::Body::channel();
+
+                tokio::spawn(async move {
+                    // Regular passthrough - when /messages succeeds directly,
+                    // the response is already in the correct format
+                    while let Some(chunk_result) = stream.next().await {
+                        match chunk_result {
+                            Ok(chunk) => {
+                                if sender.send_data(chunk).await.is_err() {
+                                    log::debug!("Client disconnected during streaming");
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Stream error: {e}");
                                 break;
                             }
                         }
-                        Err(e) => {
-                            log::error!("Stream error: {e}");
-                            break;
-                        }
                     }
-                }
-                log::debug!("Streaming complete to client");
-            });
+                    log::debug!("Streaming complete to client");
+                });
 
-            return Ok(builder.body(body).unwrap());
+                return Ok(builder.body(body).unwrap());
+            }
+            Err(e) => {
+                let error_msg = format!("Proxy request to model failed: {e}");
+                log::error!("{error_msg}");
+                let mut error_response = Response::builder().status(StatusCode::BAD_GATEWAY);
+                error_response = add_cors_headers_with_host_and_origin(
+                    error_response,
+                    &host_header,
+                    &origin_header,
+                    &config.trusted_hosts,
+                );
+                return Ok(error_response.body(Body::from(error_msg)).unwrap());
+            }
         }
-        Err(e) => {
-            let error_msg = format!("Proxy request to model failed: {e}");
-            log::error!("{error_msg}");
-            let mut error_response = Response::builder().status(StatusCode::BAD_GATEWAY);
-            error_response = add_cors_headers_with_host_and_origin(
-                error_response,
-                &host_header,
-                &origin_header,
-                &config.trusted_hosts,
-            );
-            return Ok(error_response.body(Body::from(error_msg)).unwrap());
-        }
-    }
     }
 
     log::error!("Internal error: proxy key loop exited without a response");
@@ -2631,7 +2649,10 @@ fn add_cors_headers_with_host_and_origin(
             .header("Access-Control-Allow-Origin", origin)
             .header("Access-Control-Allow-Credentials", "true");
     } else {
-        log::warn!("CORS: Origin '{}' is not trusted, not reflecting origin", origin);
+        log::warn!(
+            "CORS: Origin '{}' is not trusted, not reflecting origin",
+            origin
+        );
     }
 
     builder

@@ -54,7 +54,10 @@ fn is_taskkill_access_denied(message: &str) -> bool {
 }
 
 #[cfg(target_os = "windows")]
-fn build_windows_stop_permission_denied_error(taskkill_errors: &[String], shutdown_err: &str) -> String {
+fn build_windows_stop_permission_denied_error(
+    taskkill_errors: &[String],
+    shutdown_err: &str,
+) -> String {
     format!(
         "Failed to stop Ollama because Windows denied terminating one or more Ollama processes. This usually means Ollama is running with higher privileges than RongxinAI/Jan. Restart RongxinAI as administrator or restart Ollama without administrator privileges. taskkill issues: {}. shutdown check: {}",
         taskkill_errors.join(" | "),
@@ -807,9 +810,7 @@ mod tests {
     #[test]
     fn taskkill_access_denied_detection_matches_common_messages() {
         assert!(is_taskkill_access_denied("ERROR: Access is denied."));
-        assert!(is_taskkill_access_denied(
-            "原锟斤拷: 锟杰撅拷锟斤拷锟绞★拷"
-        ));
+        assert!(is_taskkill_access_denied("原锟斤拷: 锟杰撅拷锟斤拷锟绞★拷"));
     }
 
     #[cfg(target_os = "windows")]

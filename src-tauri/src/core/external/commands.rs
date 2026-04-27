@@ -47,14 +47,13 @@ pub async fn fetch_github_releases() -> Result<Vec<GitHubRelease>, String> {
         ));
     }
 
-    let releases: Vec<GitHubRelease> =
-        serde_json::from_str(&body_text).map_err(|e| {
-            format!(
-                "Failed to parse GitHub releases: {}. Raw: {}",
-                e,
-                &body_text[..body_text.len().min(500)]
-            )
-        })?;
+    let releases: Vec<GitHubRelease> = serde_json::from_str(&body_text).map_err(|e| {
+        format!(
+            "Failed to parse GitHub releases: {}. Raw: {}",
+            e,
+            &body_text[..body_text.len().min(500)]
+        )
+    })?;
 
     Ok(releases)
 }
@@ -82,11 +81,10 @@ pub async fn fetch_huggingface_repo(
         return Err("Invalid HuggingFace repo ID format".to_string());
     }
 
-    let mut request = client
-        .get(format!(
-            "https://huggingface.co/api/models/{}?blobs=true&files_metadata=true",
-            clean_repo_id
-        ));
+    let mut request = client.get(format!(
+        "https://huggingface.co/api/models/{}?blobs=true&files_metadata=true",
+        clean_repo_id
+    ));
 
     if let Some(token) = hf_token {
         request = request.header("Authorization", format!("Bearer {}", token));
@@ -105,14 +103,13 @@ pub async fn fetch_huggingface_repo(
         ));
     }
 
-    let repo_data: serde_json::Value =
-        serde_json::from_str(&body_text).map_err(|e| {
-            format!(
-                "Failed to parse HuggingFace response: {}. Raw: {}",
-                e,
-                &body_text[..body_text.len().min(500)]
-            )
-        })?;
+    let repo_data: serde_json::Value = serde_json::from_str(&body_text).map_err(|e| {
+        format!(
+            "Failed to parse HuggingFace response: {}. Raw: {}",
+            e,
+            &body_text[..body_text.len().min(500)]
+        )
+    })?;
 
     Ok(repo_data)
 }

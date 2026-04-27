@@ -75,19 +75,22 @@ fn legacy_app_config_candidate_paths(app_data_dir: &Path) -> Vec<PathBuf> {
 
 fn app_data_dir_with_fallback<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> PathBuf {
     let package_name = env!("CARGO_PKG_NAME");
-    app_handle.path().data_dir().unwrap_or_else(|err| {
-        log::error!("Failed to get data directory: {err}. Using home directory instead.");
+    app_handle
+        .path()
+        .data_dir()
+        .unwrap_or_else(|err| {
+            log::error!("Failed to get data directory: {err}. Using home directory instead.");
 
-        let home_dir = std::env::var(if cfg!(target_os = "windows") {
-            "USERPROFILE"
-        } else {
-            "HOME"
+            let home_dir = std::env::var(if cfg!(target_os = "windows") {
+                "USERPROFILE"
+            } else {
+                "HOME"
+            })
+            .expect("Failed to determine the home directory");
+
+            PathBuf::from(home_dir)
         })
-        .expect("Failed to determine the home directory");
-
-        PathBuf::from(home_dir)
-    })
-    .join(package_name)
+        .join(package_name)
 }
 
 /// Resolve the Jan config file path without an AppHandle (for CLI use).

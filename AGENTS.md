@@ -17,6 +17,7 @@
 RongxinAI是一款 **Tauri v2** 桌面应用（当前主要支持 Windows，macOS/Linux 待扩展）。核心定制包括：
 - **Ollama 默认集成**：开箱即用，自动检测/安装 Ollama 本地推理引擎
 - **ModelScope 模型市场**：替代 HuggingFace，解决国内访问问题
+- **OpenClaw 实例管理**：提供 OpenClaw 安装、启动、停止、重启、配置对话框和控制台跳转
 - **中文本地化**：默认简体中文界面，针对中文模型（Qwen 系列）优化
 - **Ollama 自动安装**：Hub 页面一键下载安装 Ollama（带进度条）
 - **禁用自动更新**：移除 Tauri updater，避免干扰
@@ -45,6 +46,7 @@ RongxinAI是一款 **Tauri v2** 桌面应用（当前主要支持 Windows，macO
 - **Custom Modules**:
   - `core::downloads` — 文件下载（断点续传、进度事件、取消、SHA256 校验）
   - `core::ollama_installer` — Ollama 自动下载安装（新增）
+  - `core::openclaw_launcher` — OpenClaw 安装 / 状态检测 / Gateway 生命周期管理
   - `core::mcp` — MCP (Model Context Protocol) 集成
   - `core::server` — 本地 API 代理服务器
   - `core::threads` — 对话持久化
@@ -84,6 +86,9 @@ jan/
 │   │   │   ├── hub/          # 推理中心（模型市场）
 │   │   │   │   ├── index.tsx           # Hub 首页（搜索 + Ollama 状态卡）
 │   │   │   │   └── $modelId.tsx        # 模型详情页
+│   │   │   ├── marketplace/  # 模型市场（ModelScope）
+│   │   │   ├── local-models/ # 本地模型管理
+│   │   │   ├── openclaw/     # OpenClaw 实例管理
 │   │   │   └── settings/     # 设置页
 │   │   ├── services/         # Business logic
 │   │   │   └── models/
@@ -109,6 +114,7 @@ jan/
 │   │       ├── ollama_installer/       # Ollama 自动安装（新增）
 │   │       │   ├── mod.rs
 │   │       │   └── commands.rs         # install_ollama command
+│   │       ├── openclaw_launcher/      # OpenClaw 启动器与 Gateway 生命周期
 │   │       ├── mcp/
 │   │       ├── server/
 │   │       └── ...
@@ -240,6 +246,27 @@ log::error!("Ollama run failed: HTTP {}", status);
 - `web-app/src/lib/invoke-logger.ts` — Tauri invoke 包装器（自动记录命令失败）
 - `src-tauri/src/core/logger/json_formatter.rs` — 后端 JSON Lines Formatter
 - `src-tauri/src/core/logger/rotation.rs` — 按大小轮转逻辑
+
+### 6. OpenClaw 集成
+
+**后端能力：**
+- `src-tauri/src/core/openclaw_launcher/commands.rs` — `check_openclaw_installed`、`get_openclaw_status`、`install_openclaw`、`launch_openclaw_gateway`、`stop_openclaw_gateway`
+- 当前默认 Gateway 端口为 `18789`
+- 支持“本次启动临时注入本地 Ollama 模型”；底层通过写入 `~/.openclaw/openclaw.json` 并清理远程 Provider 环境变量实现
+
+**前端结构：**
+- `web-app/src/hooks/useOpenClaw.ts` — OpenClaw 生命周期状态、会话级运行配置、控制台跳转
+- `web-app/src/routes/openclaw/index.tsx` — OpenClaw 实例管理页
+- `web-app/src/components/hub/OpenClawCard.tsx` — 实例主卡片（状态 + 操作 + 关键运行信息）
+- `web-app/src/components/hub/OpenClawConfigDialog.tsx` — 启动 / 管理共用配置对话框
+- `web-app/src/components/hub/OpenClawConfigSummary.tsx` — 本次运行配置摘要
+
+**当前页面分工约束：**
+- OpenClaw 页面使用“**一个实例主卡片 + 一个配置摘要卡片**”的结构；不要再拆成顶部状态条和中间状态卡两套重复容器
+- 主卡片负责：实例状态、生命周期操作、运行中地址、临时状态提示
+- 配置摘要负责：本次运行方式、Gateway 端口、注入的本地模型
+- 高级管理不在主页面内展开，统一通过“打开 OpenClaw 控制台”跳转到 OpenClaw 自带管理页
+- 当前 `saveConfig` 是**前端会话级 / 面板级配置**，不是持久化到模型预设的默认启动配置
 
 ---
 

@@ -283,8 +283,8 @@ mod tests {
 
     #[test]
     fn test_parse_real_qwen_response() {
-        let resp: ModelScopeFileListApiResponse = serde_json::from_str(REAL_QWEN_RESPONSE)
-            .expect("should parse real qwen response");
+        let resp: ModelScopeFileListApiResponse =
+            serde_json::from_str(REAL_QWEN_RESPONSE).expect("should parse real qwen response");
 
         assert!(resp.Success);
         assert_eq!(resp.Code, 200);
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn test_parse_response_with_extra_fields() {
-        // ModelScope API returns many extra fields (CommitMessage, Revision, Type, etc.)
+        // ModelScope API returns many extra fields (CommitMessage, Revision, etc.)
         // serde should ignore them by default
         let json = r#"{
             "Code": 200,
@@ -323,6 +323,7 @@ mod tests {
                         "Size": 123,
                         "Sha256": "abc",
                         "IsLFS": true,
+                        "Type": "blob",
                         "ExtraField": "should be ignored",
                         "NestedExtra": { "foo": 1 }
                     }
@@ -333,8 +334,8 @@ mod tests {
             "ExtraTopLevel": 42
         }"#;
 
-        let resp: ModelScopeFileListApiResponse = serde_json::from_str(json)
-            .expect("should ignore extra fields");
+        let resp: ModelScopeFileListApiResponse =
+            serde_json::from_str(json).expect("should ignore extra fields");
 
         assert_eq!(resp.Data.Files.len(), 1);
         assert_eq!(resp.Data.Files[0].Name, "test.gguf");
@@ -343,17 +344,18 @@ mod tests {
     #[test]
     fn test_parse_empty_files_array() {
         let json = r#"{"Code":200,"Success":true,"Data":{"Files":[]},"Message":"success"}"#;
-        let resp: ModelScopeFileListApiResponse = serde_json::from_str(json)
-            .expect("should parse empty files");
+        let resp: ModelScopeFileListApiResponse =
+            serde_json::from_str(json).expect("should parse empty files");
 
         assert_eq!(resp.Data.Files.len(), 0);
     }
 
     #[test]
     fn test_parse_error_response() {
-        let json = r#"{"Code":404,"Success":false,"Data":{"Files":[]},"Message":"Model not found"}"#;
-        let resp: ModelScopeFileListApiResponse = serde_json::from_str(json)
-            .expect("should parse error response");
+        let json =
+            r#"{"Code":404,"Success":false,"Data":{"Files":[]},"Message":"Model not found"}"#;
+        let resp: ModelScopeFileListApiResponse =
+            serde_json::from_str(json).expect("should parse error response");
 
         assert!(!resp.Success);
         assert_eq!(resp.Code, 404);
@@ -363,15 +365,14 @@ mod tests {
     #[test]
     fn test_serialize_file_list_result() {
         let result = ModelScopeFileListResult {
-            Files: vec![
-                ModelScopeFile {
-                    Name: "model-q4_k_m.gguf".to_string(),
-                    Path: "model-q4_k_m.gguf".to_string(),
-                    Size: 491400032,
-                    Sha256: Some("abc123".to_string()),
-                    IsLFS: true,
-                },
-            ],
+            Files: vec![ModelScopeFile {
+                Name: "model-q4_k_m.gguf".to_string(),
+                Path: "model-q4_k_m.gguf".to_string(),
+                Size: 491400032,
+                Sha256: Some("abc123".to_string()),
+                IsLFS: true,
+                Type: "blob".to_string(),
+            }],
         };
 
         let json = serde_json::to_string(&result).expect("should serialize");
@@ -385,32 +386,60 @@ mod tests {
         // ModelScopeFileListResult only derives Serialize (not Deserialize).
         // This test verifies the exact JSON shape that the frontend receives via Tauri IPC.
         let original = ModelScopeFileListResult {
-            Files: vec![
-                ModelScopeFile {
-                    Name: "test.gguf".to_string(),
-                    Path: "dir/test.gguf".to_string(),
-                    Size: 1234567890,
-                    Sha256: Some("deadbeef".to_string()),
-                    IsLFS: true,
-                },
-            ],
+            Files: vec![ModelScopeFile {
+                Name: "test.gguf".to_string(),
+                Path: "dir/test.gguf".to_string(),
+                Size: 1234567890,
+                Sha256: Some("deadbeef".to_string()),
+                IsLFS: true,
+                Type: "blob".to_string(),
+            }],
         };
 
         let json = serde_json::to_string(&original).expect("serialize");
         let value: serde_json::Value = serde_json::from_str(&json).expect("parse as value");
 
         // Verify PascalCase field names (matching frontend TypeScript types)
-        let files = value.get("Files").expect("has Files field").as_array().expect("Files is array");
+        let files = value
+            .get("Files")
+            .expect("has Files field")
+            .as_array()
+            .expect("Files is array");
         assert_eq!(files.len(), 1);
 
         let file = &files[0];
-        assert_eq!(file.get("Name").expect("has Name").as_str().expect("Name is string"), "test.gguf");
-        assert_eq!(file.get("Path").expect("has Path").as_str().expect("Path is string"), "dir/test.gguf");
-        assert_eq!(file.get("Size").expect("has Size").as_i64().expect("Size is number"), 1234567890);
         assert_eq!(
-            file.get("Sha256").expect("has Sha256").as_str().expect("Sha256 is string"),
+            file.get("Name")
+                .expect("has Name")
+                .as_str()
+                .expect("Name is string"),
+            "test.gguf"
+        );
+        assert_eq!(
+            file.get("Path")
+                .expect("has Path")
+                .as_str()
+                .expect("Path is string"),
+            "dir/test.gguf"
+        );
+        assert_eq!(
+            file.get("Size")
+                .expect("has Size")
+                .as_i64()
+                .expect("Size is number"),
+            1234567890
+        );
+        assert_eq!(
+            file.get("Sha256")
+                .expect("has Sha256")
+                .as_str()
+                .expect("Sha256 is string"),
             "deadbeef"
         );
-        assert!(file.get("IsLFS").expect("has IsLFS").as_bool().expect("IsLFS is bool"));
+        assert!(file
+            .get("IsLFS")
+            .expect("has IsLFS")
+            .as_bool()
+            .expect("IsLFS is bool"));
     }
 }

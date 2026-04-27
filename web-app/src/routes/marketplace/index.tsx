@@ -31,6 +31,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ModelCard } from '@/components/marketplace/ModelCard'
+import { ModelScopeTokenDialog } from '@/components/marketplace/ModelScopeTokenDialog'
 
 // TODO: fix route type inference for marketplace.index
 export const Route = createFileRoute(route.marketplace.index as any)({
@@ -57,7 +58,6 @@ function MarketplaceContent() {
 
   const [searchValue, setSearchValue] = useState('')
   const [showFilters, setShowFilters] = useState(false)
-  const [tokenInput, setTokenInput] = useState('')
   const [showTokenDialog, setShowTokenDialog] = useState(false)
   const loadMoreRef = useRef<HTMLDivElement>(null)
   const loadMoreCallbackRef = useRef(loadMore)
@@ -172,16 +172,33 @@ function MarketplaceContent() {
     [updateParams]
   )
 
-  const handleSaveToken = useCallback(() => {
-    setToken(tokenInput)
+  const handleSaveToken = useCallback((nextToken: string) => {
+    setToken(nextToken)
       .then(() => {
         setShowTokenDialog(false)
-        setTokenInput('')
       })
       .catch((err) => {
         console.error('[Marketplace] Failed to save token:', err)
       })
-  }, [tokenInput, setToken])
+  }, [setToken])
+
+  const openTokenDialog = useCallback(() => {
+    setShowTokenDialog(true)
+  }, [])
+
+  const closeTokenDialog = useCallback((open: boolean) => {
+    setShowTokenDialog(open)
+  }, [])
+
+  const handleClearToken = useCallback(() => {
+    setToken(null)
+      .then(() => {
+        setShowTokenDialog(false)
+      })
+      .catch((err) => {
+        console.error('[Marketplace] Failed to clear token:', err)
+      })
+  }, [setToken])
 
   const sortLabel =
     MODELSCOPE_SORT_OPTIONS.find((o) => o.value === params.sort)?.label ??
@@ -222,13 +239,7 @@ function MarketplaceContent() {
             <div className="relative z-20 flex items-center gap-2 shrink-0 flex-wrap">
               {/* Token status */}
               <button
-                onClick={() => {
-                  if (token) {
-                    setToken(null)
-                  } else {
-                    setShowTokenDialog(true)
-                  }
-                }}
+                onClick={openTokenDialog}
                 className={cn(
                   'text-xs px-2.5 py-1 rounded-full border',
                   token
@@ -237,11 +248,11 @@ function MarketplaceContent() {
                 )}
                 title={
                   token
-                    ? '已配置 ModelScope Token，点击清除'
-                    : '未配置 ModelScope Token，点击配置'
+                    ? '管理 ModelScope Token'
+                    : '配置 ModelScope Token'
                 }
               >
-                {token ? 'Token 已配置' : 'Token 未配置'}
+                {token ? 'ModelScope Token：已配置' : 'ModelScope Token：未配置'}
               </button>
 
               {/* Sort dropdown */}
@@ -390,42 +401,16 @@ function MarketplaceContent() {
         )}
 
         {/* Token dialog */}
-        {showTokenDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="bg-card border border-border rounded-lg p-6 w-[400px] max-w-[90vw]">
-              <h3 className="text-lg font-medium mb-2">
-                配置 ModelScope 访问令牌
-              </h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                配置令牌后可以查看模型详情（README、文件列表等）。
-                <br />
-                列表浏览不需要令牌。
-              </p>
-              <input
-                type="text"
-                placeholder="输入你的 ModelScope Access Token"
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-                className="w-full px-3 py-2 rounded border border-border bg-background text-sm mb-4"
-              />
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setShowTokenDialog(false)
-                    setTokenInput('')
-                  }}
-                >
-                  取消
-                </Button>
-                <Button size="sm" onClick={handleSaveToken}>
-                  保存
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
+        <ModelScopeTokenDialog
+          open={showTokenDialog}
+          onOpenChange={closeTokenDialog}
+          token={token}
+          onSave={handleSaveToken}
+          onClear={handleClearToken}
+          inputId="modelscope-token-input"
+          description="配置 Token 后可以查看需要鉴权的 ModelScope 模型详情，例如 README 和文件列表。列表浏览本身不依赖 Token。"
+          emptyStateMessage="当前未配置 ModelScope Token。你仍然可以浏览模型列表，但部分详情接口需要鉴权。"
+        />
 
         <div className="p-4 w-full flex-1 min-h-0 overflow-y-auto">
           <div className="flex flex-col h-full gap-4 w-full md:w-4/5 xl:w-4/6 mx-auto">

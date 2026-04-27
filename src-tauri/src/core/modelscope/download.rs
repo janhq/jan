@@ -20,10 +20,16 @@ pub async fn execute_batch_download(
     );
 
     // 1. Fetch file list
-    let file_list = super::commands::get_modelscope_model_files(request.model_id.clone()).await.map_err(|e| {
-        log::error!("[modelscope] Failed to fetch file list for {}: {}", request.model_id, e);
-        e
-    })?;
+    let file_list = super::commands::get_modelscope_model_files(request.model_id.clone())
+        .await
+        .map_err(|e| {
+            log::error!(
+                "[modelscope] Failed to fetch file list for {}: {}",
+                request.model_id,
+                e
+            );
+            e
+        })?;
 
     // 2. Filter target files
     let target_files: Vec<_> = if let Some(ref file_path) = request.file_path {
@@ -56,13 +62,21 @@ pub async fn execute_batch_download(
 
     let total_count = target_files.len();
     if total_count == 0 {
-        log::warn!("[modelscope] No matching files for model_id={} file_path={:?} quant_dir={:?}",
-            request.model_id, request.file_path, request.quant_dir);
+        log::warn!(
+            "[modelscope] No matching files for model_id={} file_path={:?} quant_dir={:?}",
+            request.model_id,
+            request.file_path,
+            request.quant_dir
+        );
         return Err("No matching files to download".to_string());
     }
 
     let total_size_bytes: u64 = target_files.iter().map(|f| f.Size as u64).sum();
-    log::info!("[modelscope] {} files to download, total size={} bytes", total_count, total_size_bytes);
+    log::info!(
+        "[modelscope] {} files to download, total size={} bytes",
+        total_count,
+        total_size_bytes
+    );
 
     // 3. Ensure save directory exists
     tokio::fs::create_dir_all(&request.save_dir)
@@ -131,7 +145,10 @@ pub async fn execute_batch_download(
         log::error!("[modelscope] {}", err);
         return Err(err);
     }
-    log::info!("[modelscope] All {} files downloaded successfully", total_count);
+    log::info!(
+        "[modelscope] All {} files downloaded successfully",
+        total_count
+    );
 
     // 6. Update download config (stub for now)
     let record = ModelScopeDownloadRecord {
@@ -149,7 +166,11 @@ pub async fn execute_batch_download(
 
 /// Download a single file from URL to destination using streaming.
 async fn download_single_file(url: &str, dest: &std::path::PathBuf) -> Result<(), String> {
-    log::info!("[modelscope] Starting download: url={} dest={}", url, dest.display());
+    log::info!(
+        "[modelscope] Starting download: url={} dest={}",
+        url,
+        dest.display()
+    );
 
     let client = reqwest::Client::builder()
         .no_proxy()
@@ -166,21 +187,19 @@ async fn download_single_file(url: &str, dest: &std::path::PathBuf) -> Result<()
     })?;
 
     if !response.status().is_success() {
-        let err = format!(
-            "HTTP {} for {}",
-            response.status(),
-            url
-        );
+        let err = format!("HTTP {} for {}", response.status(), url);
         log::error!("[modelscope] {}", err);
         return Err(err);
     }
 
-    let mut file = tokio::fs::File::create(dest)
-        .await
-        .map_err(|e| {
-            log::error!("[modelscope] Failed to create file {}: {}", dest.display(), e);
-            e.to_string()
-        })?;
+    let mut file = tokio::fs::File::create(dest).await.map_err(|e| {
+        log::error!(
+            "[modelscope] Failed to create file {}: {}",
+            dest.display(),
+            e
+        );
+        e.to_string()
+    })?;
     let mut stream = response.bytes_stream();
 
     while let Some(chunk) = stream.next().await {

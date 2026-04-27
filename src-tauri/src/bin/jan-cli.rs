@@ -13,12 +13,11 @@ use indicatif::{ProgressBar, ProgressStyle};
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::{
-    cli_delete_thread, cli_get_data_folder, cli_get_thread,
-    cli_list_messages, cli_list_threads, discover_llamacpp_binary,
-    discover_mlx_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
-    init_mlx_state, list_models, load_llama_model_impl, load_mlx_model_impl,
-    looks_like_hf_repo, resolve_model_by_id, resolve_model_engine, HfFileInfo,
-    LlamacppConfig, MlxConfig,
+    cli_delete_thread, cli_get_data_folder, cli_get_thread, cli_list_messages, cli_list_threads,
+    discover_llamacpp_binary, discover_mlx_binary, download_hf_model, fetch_hf_gguf_files,
+    init_llamacpp_state, init_mlx_state, list_models, load_llama_model_impl, load_mlx_model_impl,
+    looks_like_hf_repo, resolve_model_by_id, resolve_model_engine, HfFileInfo, LlamacppConfig,
+    MlxConfig,
 };
 use app_lib::core::modelscope::commands::{
     get_modelscope_model_detail, get_modelscope_model_files, list_modelscope_models,
@@ -115,7 +114,6 @@ enum Commands {
         cmd: ModelscopeCommands,
     },
 }
-
 
 // ── Threads subcommands ────────────────────────────────────────────────────
 
@@ -315,9 +313,11 @@ async fn main() {
     // Pre-scan raw args for --verbose / -v before full parse so we can set
     // the log level before any logging happens.
     let verbose = std::env::args().any(|a| a == "--verbose" || a == "-v");
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or(if verbose { "info" } else { "warn" }),
-    )
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(if verbose {
+        "info"
+    } else {
+        "warn"
+    }))
     .init();
 
     // Inject the logo at runtime so we can use ANSI styling.
@@ -333,14 +333,39 @@ async fn main() {
         Commands::Models { cmd } => handle_models(cmd).await,
         Commands::Modelscope { cmd } => handle_modelscope(cmd).await,
         Commands::Serve { args } => handle_serve(args).await,
-        Commands::Launch { program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size, fit, verbose, select } => {
+        Commands::Launch {
+            program,
+            program_args,
+            model,
+            bin,
+            port,
+            api_key,
+            n_gpu_layers,
+            ctx_size,
+            fit,
+            verbose,
+            select,
+        } => {
             let program = program.unwrap_or_else(select_program_interactively);
             let ctx_size_val = ctx_size.unwrap_or(32768);
-            handle_launch(program, program_args, model, bin, port, api_key, n_gpu_layers, ctx_size_val, fit, ctx_size.is_none(), verbose, select).await
+            handle_launch(
+                program,
+                program_args,
+                model,
+                bin,
+                port,
+                api_key,
+                n_gpu_layers,
+                ctx_size_val,
+                fit,
+                ctx_size.is_none(),
+                verbose,
+                select,
+            )
+            .await
         }
     }
 }
-
 
 // ── Threads handlers ───────────────────────────────────────────────────────
 
@@ -473,8 +498,7 @@ async fn handle_models(cmd: ModelsCommands) {
                 Err(e) => {
                     eprintln!(
                         "Error loading MLX model:\n{}",
-                        serde_json::to_string_pretty(&e)
-                            .unwrap_or_else(|_| format!("{e:?}"))
+                        serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}"))
                     );
                     std::process::exit(1);
                 }
@@ -560,10 +584,9 @@ async fn handle_modelscope(cmd: ModelscopeCommands) {
             eprintln!("[1/3] Fetching model detail...");
             let detail = match get_modelscope_model_detail(owner, repo_name, token).await {
                 Ok(d) => {
-                    eprintln!("  ✓ Detail fetched: {} (downloads: {}, likes: {})",
-                        d.model.base.id,
-                        d.model.base.downloads,
-                        d.model.base.likes
+                    eprintln!(
+                        "  ✓ Detail fetched: {} (downloads: {}, likes: {})",
+                        d.model.base.id, d.model.base.downloads, d.model.base.likes
                     );
                     d
                 }
@@ -577,11 +600,15 @@ async fn handle_modelscope(cmd: ModelscopeCommands) {
             eprintln!("\n[2/3] Fetching file list...");
             let files = match get_modelscope_model_files(model_id.clone()).await {
                 Ok(f) => {
-                    let gguf_count = f.Files.iter()
+                    let gguf_count = f
+                        .Files
+                        .iter()
                         .filter(|file| file.Name.to_lowercase().ends_with(".gguf"))
                         .count();
-                    eprintln!("  ✓ Files fetched: {} total, {} GGUF",
-                        f.Files.len(), gguf_count
+                    eprintln!(
+                        "  ✓ Files fetched: {} total, {} GGUF",
+                        f.Files.len(),
+                        gguf_count
                     );
                     f
                 }
@@ -598,7 +625,11 @@ async fn handle_modelscope(cmd: ModelscopeCommands) {
                 Some(b) => {
                     eprintln!("  ✓ Best GGUF: {}", b.Name);
                     eprintln!("    Path:  {}", b.Path);
-                    eprintln!("    Size:  {} bytes ({:.1} MB)", b.Size, b.Size as f64 / 1_000_000.0);
+                    eprintln!(
+                        "    Size:  {} bytes ({:.1} MB)",
+                        b.Size,
+                        b.Size as f64 / 1_000_000.0
+                    );
                     eprintln!("    SHA:   {}", b.Sha256.as_deref().unwrap_or("N/A"));
                     eprintln!("    LFS:   {}", b.IsLFS);
                 }
@@ -619,8 +650,12 @@ async fn handle_modelscope(cmd: ModelscopeCommands) {
 }
 
 /// Select the best GGUF file using the same logic as the frontend.
-fn select_best_gguf(files: &app_lib::core::modelscope::models::ModelScopeFileListResult) -> Option<app_lib::core::modelscope::models::ModelScopeFile> {
-    let ggufs: Vec<_> = files.Files.iter()
+fn select_best_gguf(
+    files: &app_lib::core::modelscope::models::ModelScopeFileListResult,
+) -> Option<app_lib::core::modelscope::models::ModelScopeFile> {
+    let ggufs: Vec<_> = files
+        .Files
+        .iter()
         .filter(|f| {
             let name = f.Name.to_lowercase();
             name.ends_with(".gguf") && !name.contains("mmproj")
@@ -633,15 +668,19 @@ fn select_best_gguf(files: &app_lib::core::modelscope::models::ModelScopeFileLis
 
     let priority = |name: &str| -> i32 {
         let lower = name.to_lowercase();
-        if lower.contains("q4_k_m") { return 3; }
-        if lower.contains("q5_k_m") { return 2; }
-        if lower.contains("q8_0")   { return 1; }
+        if lower.contains("q4_k_m") {
+            return 3;
+        }
+        if lower.contains("q5_k_m") {
+            return 2;
+        }
+        if lower.contains("q8_0") {
+            return 1;
+        }
         0
     };
 
-    let best = ggufs.iter()
-        .max_by_key(|f| priority(&f.Name))
-        .copied()?;
+    let best = ggufs.iter().max_by_key(|f| priority(&f.Name)).copied()?;
 
     Some(best.clone())
 }
@@ -737,7 +776,9 @@ async fn auto_download_hf_model(repo_id: &str, select_quantization: bool) -> Str
 
     // Fetch available GGUF files from the HF API
     eprintln!();
-    let fetch_pb = make_spinner(format!("Fetching file list for '{repo_id}' from HuggingFace…"));
+    let fetch_pb = make_spinner(format!(
+        "Fetching file list for '{repo_id}' from HuggingFace…"
+    ));
     let files = fetch_hf_gguf_files(repo_id, tok_ref)
         .await
         .unwrap_or_else(|e| {
@@ -753,9 +794,7 @@ async fn auto_download_hf_model(repo_id: &str, select_quantization: bool) -> Str
         files
             .iter()
             .find(|f| f.filename.contains("Q4_K_XL"))
-            .unwrap_or_else(|| {
-                files.iter().max_by_key(|f| f.size).unwrap()
-            })
+            .unwrap_or_else(|| files.iter().max_by_key(|f| f.size).unwrap())
     };
     eprintln!("  Downloading  {}", chosen.filename);
     eprintln!("  Size         {}", fmt_bytes(chosen.size));
@@ -765,9 +804,7 @@ async fn auto_download_hf_model(repo_id: &str, select_quantization: bool) -> Str
     let dl_pb = ProgressBar::new(chosen.size);
     dl_pb.set_style(
         ProgressStyle::default_bar()
-            .template(
-                "  {bar:45.yellow/dim}  {bytes:>9}/{total_bytes}  {bytes_per_sec}  eta {eta}",
-            )
+            .template("  {bar:45.yellow/dim}  {bytes:>9}/{total_bytes}  {bytes_per_sec}  eta {eta}")
             .unwrap()
             .progress_chars("█▉▊▋▌▍▎▏  "),
     );
@@ -793,7 +830,7 @@ async fn auto_download_hf_model(repo_id: &str, select_quantization: bool) -> Str
 /// Present an interactive menu for the supported AI agents.
 fn select_program_interactively() -> String {
     const CHOICES: &[(&str, &str)] = &[
-        ("claude",   "Claude Code  — Anthropic's AI coding agent"),
+        ("claude", "Claude Code  — Anthropic's AI coding agent"),
         ("openclaw", "OpenClaw     — Open-source autonomous AI agent"),
     ];
 
@@ -823,7 +860,11 @@ fn select_program_interactively() -> String {
             if ok {
                 desc.to_string()
             } else {
-                format!("{} {}", Style::new().dim().apply_to(desc), Style::new().dim().apply_to("[not installed]"))
+                format!(
+                    "{} {}",
+                    Style::new().dim().apply_to(desc),
+                    Style::new().dim().apply_to("[not installed]")
+                )
             }
         })
         .collect();
@@ -841,7 +882,10 @@ fn select_program_interactively() -> String {
             return CHOICES[idx].0.to_string();
         }
 
-        eprintln!("  {} is not installed. Please choose an installed agent.", CHOICES[idx].1);
+        eprintln!(
+            "  {} is not installed. Please choose an installed agent.",
+            CHOICES[idx].1
+        );
     }
 }
 
@@ -856,12 +900,16 @@ async fn select_model_interactively(select_quantization: bool) -> String {
     if all.is_empty() {
         let default_model = "janhq/Jan-v3-4B-base-instruct-gguf";
         println!();
-        let msg = Style::new().yellow().apply_to(
-            "No models found. Downloading default model..."
-        );
+        let msg = Style::new()
+            .yellow()
+            .apply_to("No models found. Downloading default model...");
         println!("{}", msg);
         println!();
-        println!("  {} {}", Style::new().dim().apply_to("Model:"), default_model);
+        println!(
+            "  {} {}",
+            Style::new().dim().apply_to("Model:"),
+            default_model
+        );
         println!();
 
         // Auto-download the default model
@@ -907,7 +955,10 @@ async fn select_model_interactively(select_quantization: bool) -> String {
         return all[selection_items[0].0].0.clone();
     }
 
-    let labels: Vec<String> = selection_items.iter().map(|(_, label)| label.clone()).collect();
+    let labels: Vec<String> = selection_items
+        .iter()
+        .map(|(_, label)| label.clone())
+        .collect();
 
     let selection = dialoguer::Select::new()
         .with_prompt("Choose a model")
@@ -929,21 +980,37 @@ fn spawn_detached(model_id: &str, args: &ServeArgs) {
     // Use --flag=value format throughout to avoid negative numbers being
     // misinterpreted as short flags (e.g. --n-gpu-layers -1 → -1 looks like a flag).
     let mut argv: Vec<String> = vec!["serve".into(), model_id.to_string()];
-    if let Some(p) = &args.model_path { argv.push(format!("--model-path={p}")); }
-    if let Some(b) = &args.bin        { argv.push(format!("--bin={b}")); }
+    if let Some(p) = &args.model_path {
+        argv.push(format!("--model-path={p}"));
+    }
+    if let Some(b) = &args.bin {
+        argv.push(format!("--bin={b}"));
+    }
     argv.push(format!("--port={}", args.port));
-    if let Some(m) = &args.mmproj     { argv.push(format!("--mmproj={m}")); }
-    if args.embedding                  { argv.push("--embedding".into()); }
-    argv.push(format!("--timeout={}",      args.timeout));
+    if let Some(m) = &args.mmproj {
+        argv.push(format!("--mmproj={m}"));
+    }
+    if args.embedding {
+        argv.push("--embedding".into());
+    }
+    argv.push(format!("--timeout={}", args.timeout));
     argv.push(format!("--n-gpu-layers={}", args.n_gpu_layers));
-    argv.push(format!("--ctx-size={}",     args.ctx_size));
-    argv.push(format!("--threads={}",      args.threads));
-    if !args.api_key.is_empty()        { argv.push(format!("--api-key={}", args.api_key)); }
-    if args.fit                        { argv.push("--fit".into()); }
-    if args.verbose                    { argv.push("--verbose".into()); }
+    argv.push(format!("--ctx-size={}", args.ctx_size));
+    argv.push(format!("--threads={}", args.threads));
+    if !args.api_key.is_empty() {
+        argv.push(format!("--api-key={}", args.api_key));
+    }
+    if args.fit {
+        argv.push("--fit".into());
+    }
+    if args.verbose {
+        argv.push("--verbose".into());
+    }
 
     // Resolve log file path
-    let log_path: PathBuf = args.log.as_deref()
+    let log_path: PathBuf = args
+        .log
+        .as_deref()
         .map(PathBuf::from)
         .unwrap_or_else(|| cli_get_data_folder().join("logs").join("serve.log"));
 
@@ -952,8 +1019,13 @@ fn spawn_detached(model_id: &str, args: &ServeArgs) {
     }
 
     let log_file = std::fs::OpenOptions::new()
-        .create(true).append(true).open(&log_path)
-        .unwrap_or_else(|e| { eprintln!("Cannot open log file {}: {e}", log_path.display()); std::process::exit(1); });
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .unwrap_or_else(|e| {
+            eprintln!("Cannot open log file {}: {e}", log_path.display());
+            std::process::exit(1);
+        });
     let log_out = log_file.try_clone().expect("clone log file");
 
     let mut cmd = std::process::Command::new(&exe);
@@ -980,11 +1052,15 @@ fn spawn_detached(model_id: &str, args: &ServeArgs) {
         std::process::exit(1);
     });
 
-    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-        "pid":      child.id(),
-        "model_id": model_id,
-        "log":      log_path.display().to_string(),
-    })).unwrap());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "pid":      child.id(),
+            "model_id": model_id,
+            "log":      log_path.display().to_string(),
+        }))
+        .unwrap()
+    );
 }
 
 // ── Serve handler (shared by `models load` and top-level `serve`) ──────────
@@ -1040,37 +1116,36 @@ async fn handle_serve(args: ServeArgs) {
     // Auto-detect engine from data folder.
     // If the model isn't found locally and the ID looks like a HuggingFace repo,
     // offer to download it automatically before proceeding.
-    let (engine, resolved_model_path, resolved_mmproj) =
-        match resolve_model_engine(&model_id) {
-            Ok((eng, mp, mmp)) => (
-                eng,
-                model_path.unwrap_or_else(|| mp.to_string_lossy().into_owned()),
-                mmproj.or_else(|| mmp.map(|p| p.to_string_lossy().into_owned())),
-            ),
-            Err(_) if model_path.is_some() => {
-                // Explicit --model-path provided: skip engine detection entirely.
-                ("llamacpp".to_string(), model_path.unwrap(), mmproj)
-            }
-            Err(_) if looks_like_hf_repo(&model_id) => {
-                // Looks like a HuggingFace repo ID — download then resolve.
-                auto_download_hf_model(&model_id, args.select).await;
-                match resolve_model_engine(&model_id) {
-                    Ok((eng, mp, mmp)) => (
-                        eng,
-                        mp.to_string_lossy().into_owned(),
-                        mmp.map(|p| p.to_string_lossy().into_owned()),
-                    ),
-                    Err(e) => {
-                        eprintln!("Error after download: {e}");
-                        std::process::exit(1);
-                    }
+    let (engine, resolved_model_path, resolved_mmproj) = match resolve_model_engine(&model_id) {
+        Ok((eng, mp, mmp)) => (
+            eng,
+            model_path.unwrap_or_else(|| mp.to_string_lossy().into_owned()),
+            mmproj.or_else(|| mmp.map(|p| p.to_string_lossy().into_owned())),
+        ),
+        Err(_) if model_path.is_some() => {
+            // Explicit --model-path provided: skip engine detection entirely.
+            ("llamacpp".to_string(), model_path.unwrap(), mmproj)
+        }
+        Err(_) if looks_like_hf_repo(&model_id) => {
+            // Looks like a HuggingFace repo ID — download then resolve.
+            auto_download_hf_model(&model_id, args.select).await;
+            match resolve_model_engine(&model_id) {
+                Ok((eng, mp, mmp)) => (
+                    eng,
+                    mp.to_string_lossy().into_owned(),
+                    mmp.map(|p| p.to_string_lossy().into_owned()),
+                ),
+                Err(e) => {
+                    eprintln!("Error after download: {e}");
+                    std::process::exit(1);
                 }
             }
-            Err(e) => {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
-        };
+        }
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
 
     let pb = start_progress(verbose, format!("Loading {} ({engine})…", model_id));
 
@@ -1244,7 +1319,7 @@ async fn handle_launch(
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(&program);
-    let is_claude   = prog_name.contains("claude");
+    let is_claude = prog_name.contains("claude");
     let is_openclaw = prog_name.contains("openclaw");
 
     // --fit defaults to true when launching claude, but only if --ctx-size was
@@ -1253,7 +1328,17 @@ async fn handle_launch(
     let effective_fit = fit.unwrap_or(is_claude && ctx_size_is_default);
 
     // Start the model server inline (same process, no detach).
-    let (pid, actual_port) = start_model_server(&model_id, bin, port, api_key.clone(), n_gpu_layers, ctx_size, effective_fit, verbose).await;
+    let (pid, actual_port) = start_model_server(
+        &model_id,
+        bin,
+        port,
+        api_key.clone(),
+        n_gpu_layers,
+        ctx_size,
+        effective_fit,
+        verbose,
+    )
+    .await;
 
     // Model is ready — silence server request/response logs so they don't
     // flood the launched program's terminal (e.g. Claude Code's shell).
@@ -1262,7 +1347,7 @@ async fn handle_launch(
     }
 
     let base_url = format!("http://127.0.0.1:{actual_port}");
-    let v1_url   = format!("{base_url}/v1");
+    let v1_url = format!("{base_url}/v1");
 
     // openclaw is configured via ~/.openclaw/openclaw.json, not env vars.
     // Write the jan provider entry and set the default model, then launch `openclaw tui`.
@@ -1277,7 +1362,11 @@ async fn handle_launch(
         eprintln!("  ~/.openclaw/openclaw.json → jan provider configured");
         eprintln!("  agents.defaults.model.primary = jan/{model_id}");
     } else {
-        let anthropic_key_var = if is_claude { "ANTHROPIC_AUTH_TOKEN" } else { "ANTHROPIC_API_KEY" };
+        let anthropic_key_var = if is_claude {
+            "ANTHROPIC_AUTH_TOKEN"
+        } else {
+            "ANTHROPIC_API_KEY"
+        };
         eprintln!();
         eprintln!("  OPENAI_BASE_URL={v1_url}");
         eprintln!("  OPENAI_API_KEY={api_key}");
@@ -1315,23 +1404,33 @@ async fn handle_launch(
     if is_openclaw {
         // Clear any provider API keys that could override openclaw's config
         for var in &[
-            "OPENAI_API_KEY", "OPENAI_BASE_URL",
-            "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN",
-            "GEMINI_API_KEY", "MISTRAL_API_KEY", "GROQ_API_KEY",
-            "XAI_API_KEY", "OPENROUTER_API_KEY",
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_OAUTH_TOKEN",
+            "GEMINI_API_KEY",
+            "MISTRAL_API_KEY",
+            "GROQ_API_KEY",
+            "XAI_API_KEY",
+            "OPENROUTER_API_KEY",
         ] {
             cmd.env_remove(var);
         }
     } else {
-        let anthropic_key_var = if is_claude { "ANTHROPIC_AUTH_TOKEN" } else { "ANTHROPIC_API_KEY" };
+        let anthropic_key_var = if is_claude {
+            "ANTHROPIC_AUTH_TOKEN"
+        } else {
+            "ANTHROPIC_API_KEY"
+        };
         cmd.env("OPENAI_BASE_URL", &v1_url)
-            .env("OPENAI_API_KEY",  &api_key)
-            .env("OPENAI_MODEL",    &model_id)
+            .env("OPENAI_API_KEY", &api_key)
+            .env("OPENAI_MODEL", &model_id)
             .env("ANTHROPIC_BASE_URL", &base_url)
-            .env(anthropic_key_var,    &api_key)
-            .env("ANTHROPIC_DEFAULT_OPUS_MODEL",   &model_id)
+            .env(anthropic_key_var, &api_key)
+            .env("ANTHROPIC_DEFAULT_OPUS_MODEL", &model_id)
             .env("ANTHROPIC_DEFAULT_SONNET_MODEL", &model_id)
-            .env("ANTHROPIC_DEFAULT_HAIKU_MODEL",  &model_id);
+            .env("ANTHROPIC_DEFAULT_HAIKU_MODEL", &model_id);
     }
     let status = cmd.status();
 
@@ -1384,8 +1483,7 @@ fn configure_openclaw(v1_url: &str, api_key: &str, model_id: &str) {
     });
 
     // Set jan/<model_id> as the primary default model.
-    config["agents"]["defaults"]["model"]["primary"] =
-        serde_json::json!(format!("jan/{model_id}"));
+    config["agents"]["defaults"]["model"]["primary"] = serde_json::json!(format!("jan/{model_id}"));
 
     if let Some(parent) = config_path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -1424,10 +1522,16 @@ async fn start_model_server(
             auto_download_hf_model(model_id, false).await;
             match resolve_model_engine(model_id) {
                 Ok(r) => r,
-                Err(e) => { eprintln!("Error after download: {e}"); std::process::exit(1); }
+                Err(e) => {
+                    eprintln!("Error after download: {e}");
+                    std::process::exit(1);
+                }
             }
         }
-        Err(e) => { eprintln!("Error: {e}"); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
     };
     let model_path = model_path.to_string_lossy().into_owned();
 
@@ -1435,17 +1539,20 @@ async fn start_model_server(
 
     if engine == "mlx" {
         use std::path::Path;
-        let bin_path = match bin.or_else(|| discover_mlx_binary().map(|p| p.to_string_lossy().into_owned())) {
-            Some(p) => p,
-            None => {
-                finish_progress(pb, "✗ mlx-server binary not found");
-                eprintln!("Install Jan from https://jan.ai or pass --bin <path>.");
-                std::process::exit(1);
-            }
-        };
+        let bin_path =
+            match bin.or_else(|| discover_mlx_binary().map(|p| p.to_string_lossy().into_owned())) {
+                Some(p) => p,
+                None => {
+                    finish_progress(pb, "✗ mlx-server binary not found");
+                    eprintln!("Install Jan from https://jan.ai or pass --bin <path>.");
+                    std::process::exit(1);
+                }
+            };
         let mlx_state = Arc::new(init_mlx_state());
         let mut envs: HashMap<String, String> = HashMap::new();
-        if !api_key.is_empty() { envs.insert("MLX_API_KEY".to_string(), api_key.clone()); }
+        if !api_key.is_empty() {
+            envs.insert("MLX_API_KEY".to_string(), api_key.clone());
+        }
         let effective_ctx_size = if fit { 0 } else { ctx_size };
         let info = match load_mlx_model_impl(
             mlx_state.mlx_server_process.clone(),
@@ -1453,15 +1560,22 @@ async fn start_model_server(
             model_id.to_string(),
             model_path,
             port,
-            MlxConfig { ctx_size: effective_ctx_size },
+            MlxConfig {
+                ctx_size: effective_ctx_size,
+            },
             envs,
             false,
             120,
-        ).await {
+        )
+        .await
+        {
             Ok(info) => info,
             Err(e) => {
                 finish_progress(pb, format!("✗ Failed to load {model_id}"));
-                eprintln!("{}", serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}")));
+                eprintln!(
+                    "{}",
+                    serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}"))
+                );
                 std::process::exit(1);
             }
         };
@@ -1469,7 +1583,9 @@ async fn start_model_server(
         finish_progress(pb, format!("✓ {model_id} ready · {url}"));
         (info.pid, info.port as u16)
     } else {
-        let bin_path = match bin.or_else(|| discover_llamacpp_binary().map(|p| p.to_string_lossy().into_owned())) {
+        let bin_path = match bin
+            .or_else(|| discover_llamacpp_binary().map(|p| p.to_string_lossy().into_owned()))
+        {
             Some(p) => p,
             None => {
                 finish_progress(pb, "✗ llama-server binary not found");
@@ -1479,7 +1595,9 @@ async fn start_model_server(
         };
         let llama_state = Arc::new(init_llamacpp_state());
         let mut envs: HashMap<String, String> = HashMap::new();
-        if !api_key.is_empty() { envs.insert("LLAMA_API_KEY".to_string(), api_key.clone()); }
+        if !api_key.is_empty() {
+            envs.insert("LLAMA_API_KEY".to_string(), api_key.clone());
+        }
         // When fit is on, let llama.cpp decide the context size automatically.
         let effective_ctx_size = if fit { 0 } else { ctx_size };
         let config = build_llamacpp_config(n_gpu_layers, effective_ctx_size, 120, fit, 0);
@@ -1494,11 +1612,16 @@ async fn start_model_server(
             mmproj.map(|p| p.to_string_lossy().into_owned()),
             false,
             120,
-        ).await {
+        )
+        .await
+        {
             Ok(info) => info,
             Err(e) => {
                 finish_progress(pb, format!("✗ Failed to load {model_id}"));
-                eprintln!("{}", serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}")));
+                eprintln!(
+                    "{}",
+                    serde_json::to_string_pretty(&e).unwrap_or_else(|_| format!("{e:?}"))
+                );
                 std::process::exit(1);
             }
         };
@@ -1512,7 +1635,13 @@ async fn start_model_server(
 
 /// Build a `LlamacppConfig` with the values the CLI controls; everything else
 /// stays at a sensible default.
-fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bool, threads: i32) -> LlamacppConfig {
+fn build_llamacpp_config(
+    n_gpu_layers: i32,
+    ctx_size: i32,
+    timeout: i32,
+    fit: bool,
+    threads: i32,
+) -> LlamacppConfig {
     LlamacppConfig {
         version_backend: "cli/llama-server".to_string(),
         auto_update_engine: false,
@@ -1551,6 +1680,6 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         rope_freq_base: 0.0,
         rope_freq_scale: 0.0,
         ctx_shift: false,
-        parallel: 1
+        parallel: 1,
     }
 }

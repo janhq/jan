@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { IconSettings } from '@tabler/icons-react'
+import { createFileRoute } from '@tanstack/react-router'
 import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
 import { OllamaInstanceDetailDialog } from '@/components/hub/OllamaInstanceDetailDialog'
@@ -12,7 +11,6 @@ import {
 import { OllamaLifecycleDialog } from '@/components/hub/OllamaLifecycleDialog'
 import { OllamaRunPanel } from '@/components/hub/OllamaRunPanel'
 import { OllamaServiceStatusBar } from '@/components/hub/OllamaServiceStatusBar'
-import { Button } from '@/components/ui/button'
 import HeaderPage from '@/containers/HeaderPage'
 import { route } from '@/constants/routes'
 import { useOllamaLifecycleController } from '@/hooks/useOllamaLifecycleController'
@@ -226,11 +224,6 @@ export function HubContent() {
             <span className="text-sm font-medium text-foreground">
               {t('common:inferenceCenter')}
             </span>
-            <Link to={route.settings.index} className="relative z-20">
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                <IconSettings size={16} className="text-muted-foreground" />
-              </Button>
-            </Link>
           </div>
         </HeaderPage>
 

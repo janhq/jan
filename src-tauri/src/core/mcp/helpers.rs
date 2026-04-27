@@ -263,9 +263,8 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
         let base_delay_ms = settings.base_restart_delay_ms;
         let max_delay_ms = settings.max_restart_delay_ms;
         let multiplier = settings.backoff_multiplier;
-        let delay_ms = (base_delay_ms as f64
-            * multiplier.powi((consecutive_failures - 1) as i32))
-            as u64;
+        let delay_ms =
+            (base_delay_ms as f64 * multiplier.powi((consecutive_failures - 1) as i32)) as u64;
         let capped_delay_ms = delay_ms.min(max_delay_ms);
 
         log::info!(
@@ -312,7 +311,9 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
                 emit_mcp_update_event(&app, &name);
             }
             Err(e) => {
-                log::error!("MCP server {name} reconnect attempt {consecutive_failures} failed: {e}");
+                log::error!(
+                    "MCP server {name} reconnect attempt {consecutive_failures} failed: {e}"
+                );
                 // Loop continues — will retry with increased backoff
             }
         }
@@ -717,9 +718,7 @@ async fn schedule_mcp_start_task<R: Runtime>(
                     return Ok(());
                 }
                 Some(Ok(Ok(_tools))) => {
-                    log::info!(
-                        "MCP server {name} tools/list verified on attempt {attempt}"
-                    );
+                    log::info!("MCP server {name} tools/list verified on attempt {attempt}");
                     break;
                 }
                 Some(Ok(Err(e))) => {

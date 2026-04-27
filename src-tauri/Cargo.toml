@@ -22,7 +22,6 @@ required-features = ["cli"]
 [features]
 default = [
     "tauri/wry",
-    "tauri/common-controls-v6",
     "tauri/x11",
     "tauri/protocol-asset",
     "tauri/macos-private-api",

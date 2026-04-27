@@ -256,10 +256,7 @@ pub async fn get_connected_servers(
 }
 
 /// Remove an MCP server entry and cancel its running service (used when list-tools fails).
-async fn remove_mcp_server_entry(
-    mcp_servers: &SharedMcpServers,
-    server_name: &str,
-) -> bool {
+async fn remove_mcp_server_entry(mcp_servers: &SharedMcpServers, server_name: &str) -> bool {
     let mut servers = mcp_servers.lock().await;
     if let Some(service) = servers.remove(server_name) {
         log::warn!("Removing MCP server {server_name} from connected servers");
@@ -415,7 +412,9 @@ pub async fn call_tool(
         if let Some(server) = server_name {
             return Err(format!("Server '{server}' not found"));
         }
-        return Err(format!("Tool {tool_name} not found — no MCP servers connected"));
+        return Err(format!(
+            "Tool {tool_name} not found — no MCP servers connected"
+        ));
     }
 
     let mut transport_error_servers: Vec<String> = Vec::new();
@@ -428,7 +427,8 @@ pub async fn call_tool(
                 let err_str = e.to_string();
                 log::warn!(
                     "MCP server {} failed to list tools during call_tool: {}",
-                    srv_name, err_str
+                    srv_name,
+                    err_str
                 );
                 if is_transport_error(&err_str) {
                     transport_error_servers.push(srv_name.to_string());
@@ -480,7 +480,8 @@ pub async fn call_tool(
             if is_transport_error(e) {
                 log::warn!(
                     "MCP server {} transport error during tool call: {}",
-                    srv_name, e
+                    srv_name,
+                    e
                 );
                 state.mcp_reconnect_notify.notify_waiters();
             }

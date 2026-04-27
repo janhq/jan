@@ -38,7 +38,10 @@ pub fn rotate_if_needed(log_dir: &Path, file_name: &str) -> io::Result<()> {
     }
 
     // Move current file to .1
-    fs::rename(&current_file, log_dir.join(format!("{}.jsonl.1", file_name)))?;
+    fs::rename(
+        &current_file,
+        log_dir.join(format!("{}.jsonl.1", file_name)),
+    )?;
 
     Ok(())
 }

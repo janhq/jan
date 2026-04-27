@@ -1,6 +1,5 @@
 pub mod core;
 
-
 #[cfg(not(feature = "cli"))]
 use core::{
     app::commands::get_jan_data_folder_path,
@@ -333,11 +332,10 @@ pub fn run() {
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Dispatch(
-                            tauri_plugin_log::fern::Dispatch::new()
-                                .chain(
-                                    tauri_plugin_log::fern::log_file(&log_dir.join("app.jsonl"))
-                                        .map_err(|e| e.to_string())?,
-                                ),
+                            tauri_plugin_log::fern::Dispatch::new().chain(
+                                tauri_plugin_log::fern::log_file(&log_dir.join("app.jsonl"))
+                                    .map_err(|e| e.to_string())?,
+                            ),
                         )),
                     ])
                     .build(),
@@ -457,7 +455,9 @@ pub fn run() {
                     }
 
                     // Stop OpenClaw gateway if running
-                    if let Err(e) = crate::core::openclaw_launcher::commands::stop_openclaw_gateway().await {
+                    if let Err(e) =
+                        crate::core::openclaw_launcher::commands::stop_openclaw_gateway().await
+                    {
                         log::warn!("Failed to stop OpenClaw gateway: {}", e);
                     } else {
                         log::info!("OpenClaw gateway stopped successfully");
@@ -472,7 +472,6 @@ pub fn run() {
                             log::info!("MLX processes cleaned up successfully");
                         }
                     }
-
 
                     #[cfg(feature = "foundation-models")]
                     {

@@ -1,13 +1,16 @@
-import { useState, useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { route } from '@/constants/routes'
-import { cn } from '@/lib/utils'
+import { OpenClawCard } from '@/components/hub/OpenClawCard'
+import {
+  OpenClawConfigDialog,
+  type OpenClawDialogConfig,
+} from '@/components/hub/OpenClawConfigDialog'
+import { OpenClawConfigSummary } from '@/components/hub/OpenClawConfigSummary'
 import HeaderPage from '@/containers/HeaderPage'
+import { route } from '@/constants/routes'
 import { useOllamaStatus } from '@/hooks/useOllamaStatus'
 import { useOpenClaw } from '@/hooks/useOpenClaw'
-import { OpenClawCard } from '@/components/hub/OpenClawCard'
-import { OpenClawConfigDialog } from '@/components/hub/OpenClawConfigDialog'
-import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.openclaw.index as any)({
@@ -15,35 +18,58 @@ export const Route = createFileRoute(route.openclaw.index as any)({
 })
 
 function OpenClawContent() {
-  const { isRunning: ollamaRunning, models: ollamaModels } = useOllamaStatus(10000)
-
+  const { models: ollamaModels } = useOllamaStatus(10000)
   const {
     status: openClawStatus,
     gatewayUrl: openClawGatewayUrl,
+    version: openClawVersion,
+    runtimeSummary,
+    diagnostics,
     isLoading: isOpenClawLoading,
     installProgress: openClawInstallProgress,
     installMessage: openClawInstallMessage,
+    errorMessage: openClawErrorMessage,
     install: installOpenClaw,
     launch: launchOpenClaw,
     stop: stopOpenClaw,
+    restart: restartOpenClaw,
+    saveConfig: saveOpenClawConfig,
+    openDashboard: openOpenClawDashboard,
+    refresh: refreshOpenClaw,
   } = useOpenClaw(5000)
 
   const [openClawDialogOpen, setOpenClawDialogOpen] = useState(false)
+  const [dialogMode, setDialogMode] = useState<'launch' | 'manage'>('launch')
+
+  const fallbackModel = runtimeSummary.selectedModel ?? ollamaModels[0]?.name
+  const injectLocalModel = runtimeSummary.launchMode === 'local-ollama-injected'
+  const isTransitioning = openClawStatus === 'starting' || openClawStatus === 'stopping'
+  const serviceStatus = diagnostics.serviceLoaded
+    ? diagnostics.serviceRuntimeStatus || 'unknown'
+    : 'service missing'
+  const rpcStatus = diagnostics.rpcOk
+    ? 'ready'
+    : diagnostics.rpcError
+      ? `down: ${diagnostics.rpcError}`
+      : 'down'
+  const configStatus = diagnostics.configValid
+    ? diagnostics.cliConfigExists || diagnostics.daemonConfigExists
+      ? 'valid'
+      : 'missing'
+    : 'invalid'
 
   const handleStartOpenClaw = useCallback(() => {
-    if (!ollamaRunning) {
-      toast.error('请先启动 Ollama')
-      return
-    }
-    if (ollamaModels.length === 0) {
-      toast.error('没有可用的 Ollama 模型')
-      return
-    }
+    setDialogMode('launch')
     setOpenClawDialogOpen(true)
-  }, [ollamaRunning, ollamaModels.length])
+  }, [])
+
+  const handleManageOpenClaw = useCallback(() => {
+    setDialogMode('manage')
+    setOpenClawDialogOpen(true)
+  }, [])
 
   const handleConfirmOpenClawLaunch = useCallback(
-    async (model: string) => {
+    async (model?: string) => {
       setOpenClawDialogOpen(false)
       await launchOpenClaw(model)
     },
@@ -53,6 +79,25 @@ function OpenClawContent() {
   const handleStopOpenClaw = useCallback(async () => {
     await stopOpenClaw()
   }, [stopOpenClaw])
+
+  const handleRestartOpenClaw = useCallback(async () => {
+    await restartOpenClaw()
+  }, [restartOpenClaw])
+
+  const handleSaveOpenClawConfig = useCallback(
+    (config: OpenClawDialogConfig) => {
+      saveOpenClawConfig(config)
+    },
+    [saveOpenClawConfig]
+  )
+
+  const handleSaveAndRestartOpenClaw = useCallback(
+    async (config: OpenClawDialogConfig) => {
+      saveOpenClawConfig(config)
+      await restartOpenClaw(config)
+    },
+    [restartOpenClaw, saveOpenClawConfig]
+  )
 
   return (
     <div className="flex flex-col h-svh w-full">
@@ -64,9 +109,7 @@ function OpenClawContent() {
               !IS_MACOS && 'pr-30'
             )}
           >
-            <span className="text-sm font-medium text-foreground">
-              OpenClaw 实例管理
-            </span>
+            <span className="text-sm font-medium text-foreground">OpenClaw 实例管理</span>
           </div>
         </HeaderPage>
 
@@ -74,16 +117,29 @@ function OpenClawContent() {
           <div className="flex flex-col gap-5 w-full md:w-4/5 xl:w-4/6 mx-auto">
             <OpenClawCard
               status={openClawStatus}
+              version={openClawVersion}
               gatewayUrl={openClawGatewayUrl}
-              boundModel={
-                openClawStatus === 'running' ? ollamaModels[0]?.name : undefined
-              }
               installProgress={openClawInstallProgress}
-              installMessage={openClawInstallMessage}
+              installMessage={openClawErrorMessage ?? openClawInstallMessage}
+              serviceStatus={serviceStatus}
+              rpcStatus={rpcStatus}
+              configStatus={configStatus}
               onInstall={installOpenClaw}
               onStart={handleStartOpenClaw}
               onStop={handleStopOpenClaw}
+              onRestart={handleRestartOpenClaw}
+              onOpenDashboard={openOpenClawDashboard}
+              onConfigure={handleManageOpenClaw}
+              onRefresh={refreshOpenClaw}
               isLoading={isOpenClawLoading}
+            />
+
+            <OpenClawConfigSummary
+              launchMode={runtimeSummary.launchMode}
+              selectedModel={runtimeSummary.selectedModel}
+              gatewayPort={runtimeSummary.gatewayPort}
+              onOpenDashboard={openOpenClawDashboard}
+              isActionDisabled={isTransitioning}
             />
           </div>
         </div>
@@ -92,9 +148,15 @@ function OpenClawContent() {
       <OpenClawConfigDialog
         open={openClawDialogOpen}
         onOpenChange={setOpenClawDialogOpen}
-        availableModels={ollamaModels.map((m) => m.name)}
-        defaultModel={ollamaModels[0]?.name}
+        availableModels={ollamaModels.map((model) => model.name)}
+        defaultModel={fallbackModel}
+        mode={dialogMode}
+        gatewayPort={runtimeSummary.gatewayPort}
+        initialInjectLocalModel={injectLocalModel}
         onConfirm={handleConfirmOpenClawLaunch}
+        onSave={handleSaveOpenClawConfig}
+        onSaveAndRestart={handleSaveAndRestartOpenClaw}
+        onOpenDashboard={openOpenClawDashboard}
         isLoading={isOpenClawLoading}
       />
     </div>

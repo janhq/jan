@@ -3,8 +3,8 @@ use std::time::Duration;
 use tauri::{AppHandle, Runtime};
 
 use super::models::{
-    ListModelScopeModelsParams, ModelScopeDetailResult, ModelScopeModelsResult,
-    ModelScopeFileListResult, ModelScopeRepoResult,
+    ListModelScopeModelsParams, ModelScopeDetailResult, ModelScopeFileListResult,
+    ModelScopeModelsResult, ModelScopeRepoResult,
 };
 use crate::core::app::commands::{get_app_configurations, update_app_configuration};
 
@@ -73,12 +73,19 @@ pub async fn list_modelscope_models(
     let body_text = response.text().await.map_err(|e| e.to_string())?;
 
     if !status.is_success() {
-        return Err(format!("ModelScope API error: HTTP {} - {}", status, body_text));
+        return Err(format!(
+            "ModelScope API error: HTTP {} - {}",
+            status, body_text
+        ));
     }
 
-    let api_resp: super::models::ModelScopeListApiResponse =
-        serde_json::from_str(&body_text).map_err(|e| {
-            format!("Failed to parse ModelScope response: {}. Raw: {}", e, &body_text[..body_text.len().min(500)])
+    let api_resp: super::models::ModelScopeListApiResponse = serde_json::from_str(&body_text)
+        .map_err(|e| {
+            format!(
+                "Failed to parse ModelScope response: {}. Raw: {}",
+                e,
+                &body_text[..body_text.len().min(500)]
+            )
         })?;
 
     if !api_resp.success {
@@ -102,7 +109,10 @@ pub async fn get_modelscope_model_detail(
 ) -> Result<ModelScopeDetailResult, String> {
     let client = build_reqwest_client()?;
 
-    let mut request = client.get(format!("{}/models/{}/{}", MODELSCOPE_API_BASE, owner, repo_name));
+    let mut request = client.get(format!(
+        "{}/models/{}/{}",
+        MODELSCOPE_API_BASE, owner, repo_name
+    ));
 
     if let Some(t) = &token {
         request = request.header("Authorization", format!("Bearer {}", t));
@@ -120,12 +130,19 @@ pub async fn get_modelscope_model_detail(
         return Err("NOT_FOUND".to_string());
     }
     if !status.is_success() {
-        return Err(format!("ModelScope API error: HTTP {} - {}", status, body_text));
+        return Err(format!(
+            "ModelScope API error: HTTP {} - {}",
+            status, body_text
+        ));
     }
 
-    let api_resp: super::models::ModelScopeDetailApiResponse =
-        serde_json::from_str(&body_text).map_err(|e| {
-            format!("Failed to parse ModelScope detail response: {}. Raw: {}", e, &body_text[..body_text.len().min(500)])
+    let api_resp: super::models::ModelScopeDetailApiResponse = serde_json::from_str(&body_text)
+        .map_err(|e| {
+            format!(
+                "Failed to parse ModelScope detail response: {}. Raw: {}",
+                e,
+                &body_text[..body_text.len().min(500)]
+            )
         })?;
 
     if !api_resp.success {
@@ -139,21 +156,12 @@ pub async fn get_modelscope_model_detail(
 
 /// 获取 ModelScope 仓库信息（通过内部 API，不受 CORS 限制）
 #[tauri::command]
-pub async fn get_modelscope_repo(
-    model_id: String,
-) -> Result<ModelScopeRepoResult, String> {
+pub async fn get_modelscope_repo(model_id: String) -> Result<ModelScopeRepoResult, String> {
     let client = build_reqwest_client()?;
 
-    let url = format!(
-        "https://modelscope.cn/api/v1/models/{}",
-        model_id
-    );
+    let url = format!("https://modelscope.cn/api/v1/models/{}", model_id);
 
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let response = client.get(&url).send().await.map_err(|e| e.to_string())?;
 
     let status = response.status();
     let body_text = response.text().await.map_err(|e| e.to_string())?;
@@ -166,8 +174,8 @@ pub async fn get_modelscope_repo(
         ));
     }
 
-    let api_resp: super::models::ModelScopeRepoApiResponse =
-        serde_json::from_str(&body_text).map_err(|e| {
+    let api_resp: super::models::ModelScopeRepoApiResponse = serde_json::from_str(&body_text)
+        .map_err(|e| {
             format!(
                 "Failed to parse ModelScope repo response: {}. Raw: {}",
                 e,
@@ -179,9 +187,7 @@ pub async fn get_modelscope_repo(
         return Err("ModelScope repo API returned success=false".to_string());
     }
 
-    Ok(ModelScopeRepoResult {
-        Repo: api_resp,
-    })
+    Ok(ModelScopeRepoResult { Repo: api_resp })
 }
 
 /// 获取 ModelScope 模型文件列表（通过内部 API，不受 CORS 限制）
@@ -189,7 +195,10 @@ pub async fn get_modelscope_repo(
 pub async fn get_modelscope_model_files(
     model_id: String,
 ) -> Result<ModelScopeFileListResult, String> {
-    log::debug!("[RUST:get_modelscope_model_files] called with model_id={}", model_id);
+    log::debug!(
+        "[RUST:get_modelscope_model_files] called with model_id={}",
+        model_id
+    );
     let client = build_reqwest_client()?;
 
     let url = format!(
@@ -198,14 +207,10 @@ pub async fn get_modelscope_model_files(
     );
     log::debug!("[RUST:get_modelscope_model_files] URL={}", url);
 
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| {
-            log::debug!("[RUST:get_modelscope_model_files] request error: {}", e);
-            e.to_string()
-        })?;
+    let response = client.get(&url).send().await.map_err(|e| {
+        log::debug!("[RUST:get_modelscope_model_files] request error: {}", e);
+        e.to_string()
+    })?;
 
     let status = response.status();
     log::debug!("[RUST:get_modelscope_model_files] HTTP status={}", status);
@@ -227,19 +232,19 @@ pub async fn get_modelscope_model_files(
         ));
     }
 
-    let api_resp: super::models::ModelScopeFileListApiResponse =
-        serde_json::from_str(&body_text).map_err(|e| {
-            log::debug!(
-                "[RUST:get_modelscope_model_files] JSON parse error: {}. Raw (first 500): {}",
-                e,
-                &body_text[..body_text.len().min(500)]
-            );
-            format!(
-                "Failed to parse ModelScope files response: {}. Raw: {}",
-                e,
-                &body_text[..body_text.len().min(500)]
-            )
-        })?;
+    let api_resp: super::models::ModelScopeFileListApiResponse = serde_json::from_str(&body_text)
+        .map_err(|e| {
+        log::debug!(
+            "[RUST:get_modelscope_model_files] JSON parse error: {}. Raw (first 500): {}",
+            e,
+            &body_text[..body_text.len().min(500)]
+        );
+        format!(
+            "Failed to parse ModelScope files response: {}. Raw: {}",
+            e,
+            &body_text[..body_text.len().min(500)]
+        )
+    })?;
 
     log::debug!(
         "[RUST:get_modelscope_model_files] parsed: Success={}, Code={}, Files count={}",
@@ -250,7 +255,9 @@ pub async fn get_modelscope_model_files(
     if let Some(first) = api_resp.Data.Files.first() {
         log::debug!(
             "[RUST:get_modelscope_model_files] first file: Name={}, Path={}, Size={}",
-            first.Name, first.Path, first.Size
+            first.Name,
+            first.Path,
+            first.Size
         );
     }
 
@@ -264,7 +271,10 @@ pub async fn get_modelscope_model_files(
     let result = ModelScopeFileListResult {
         Files: api_resp.Data.Files,
     };
-    log::debug!("[RUST:get_modelscope_model_files] returning {} files", result.Files.len());
+    log::debug!(
+        "[RUST:get_modelscope_model_files] returning {} files",
+        result.Files.len()
+    );
     Ok(result)
 }
 

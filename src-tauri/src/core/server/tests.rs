@@ -351,9 +351,15 @@ mod tests {
 
         proxy::normalize_openai_tool_parameters_schema(&mut schema);
 
-        assert_eq!(schema["properties"]["payload"]["properties"]["title"]["type"], json!("string"));
+        assert_eq!(
+            schema["properties"]["payload"]["properties"]["title"]["type"],
+            json!("string")
+        );
         assert_eq!(schema["properties"]["filters"]["properties"], json!({}));
-        assert_eq!(schema["properties"]["items"]["items"]["properties"], json!({}));
+        assert_eq!(
+            schema["properties"]["items"]["items"]["properties"],
+            json!({})
+        );
     }
 
     #[test]
@@ -431,7 +437,10 @@ mod tests {
 
         assert_eq!(schema["properties"]["count"]["type"], json!("integer"));
         assert_eq!(schema["properties"]["title"]["type"], json!("string"));
-        assert_eq!(schema["properties"]["metadata"]["description"], json!("Optional metadata"));
+        assert_eq!(
+            schema["properties"]["metadata"]["description"],
+            json!("Optional metadata")
+        );
         assert_eq!(schema["properties"]["metadata"]["properties"], json!({}));
     }
 

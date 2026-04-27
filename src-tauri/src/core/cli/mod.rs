@@ -18,8 +18,8 @@ use tauri_plugin_mlx::state::MlxState;
 
 // Re-export impl functions and config types so the binary can call them directly
 pub use tauri_plugin_llamacpp::{load_llama_model_impl, LlamacppConfig};
-pub use tauri_plugin_mlx::{load_mlx_model_impl, MlxConfig};
 pub use tauri_plugin_mlx::state::SessionInfo;
+pub use tauri_plugin_mlx::{load_mlx_model_impl, MlxConfig};
 
 // ── State constructors ─────────────────────────────────────────────────────
 
@@ -205,9 +205,7 @@ pub fn list_models(engine: &str) -> Vec<ModelEntry> {
 /// Detect which engine owns `model_id` by probing the data folder, and
 /// resolve its paths.  Tries `llamacpp` first, then `mlx`.
 /// Returns `(engine, model_path, mmproj_path)`.
-pub fn resolve_model_engine(
-    model_id: &str,
-) -> Result<(String, PathBuf, Option<PathBuf>), String> {
+pub fn resolve_model_engine(model_id: &str) -> Result<(String, PathBuf, Option<PathBuf>), String> {
     let data_folder = resolve_jan_data_folder();
     for engine in &["llamacpp", "mlx"] {
         let yml_path = data_folder
@@ -290,7 +288,11 @@ pub fn discover_llamacpp_binary() -> Option<PathBuf> {
         return None;
     }
 
-    let exe = if cfg!(windows) { "llama-server.exe" } else { "llama-server" };
+    let exe = if cfg!(windows) {
+        "llama-server.exe"
+    } else {
+        "llama-server"
+    };
 
     // Collect version directories, sorted descending so we prefer the latest.
     let mut version_entries: Vec<_> = fs::read_dir(&backends_dir)
@@ -347,7 +349,9 @@ pub fn discover_mlx_binary() -> Option<PathBuf> {
     }
 
     // 2. Next to the current executable (useful for dev builds / custom installs)
-    if let Ok(exe_dir) = std::env::current_exe().map(|p| p.parent().map(|d| d.to_path_buf()).unwrap_or_default()) {
+    if let Ok(exe_dir) =
+        std::env::current_exe().map(|p| p.parent().map(|d| d.to_path_buf()).unwrap_or_default())
+    {
         let next_to_bin = exe_dir.join("mlx-server");
         if next_to_bin.exists() {
             return Some(next_to_bin);
@@ -445,10 +449,7 @@ pub async fn fetch_hf_gguf_files(
                 .or_else(|| s["size"].as_u64())
                 .unwrap_or(0);
             let sha256 = s["lfs"]["sha256"].as_str().map(str::to_owned);
-            let download_url = format!(
-                "https://huggingface.co/{}/resolve/main/{}",
-                repo_id, name
-            );
+            let download_url = format!("https://huggingface.co/{}/resolve/main/{}", repo_id, name);
             Some(HfFileInfo {
                 filename: name.to_owned(),
                 size,
@@ -487,10 +488,7 @@ pub async fn download_hf_model(
     use tokio::io::AsyncWriteExt;
 
     let data_folder = resolve_jan_data_folder();
-    let model_dir = data_folder
-        .join("llamacpp")
-        .join("models")
-        .join(repo_id);
+    let model_dir = data_folder.join("llamacpp").join("models").join(repo_id);
     tokio::fs::create_dir_all(&model_dir)
         .await
         .map_err(|e| e.to_string())?;
@@ -528,10 +526,7 @@ pub async fn download_hf_model(
 
     // ── Write model.yml ───────────────────────────────────────────────────
     // model_path is relative to the Jan data folder
-    let rel_path = format!(
-        "llamacpp/models/{}/{}",
-        repo_id, file.filename
-    );
+    let rel_path = format!("llamacpp/models/{}/{}", repo_id, file.filename);
     let display_name = repo_id.split('/').last().unwrap_or(repo_id);
 
     let mut yml = format!(

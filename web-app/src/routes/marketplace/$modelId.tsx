@@ -37,6 +37,7 @@ import {
 } from './lib/modelFileUtils'
 import { DownloadDialog } from '@/components/marketplace/DownloadDialog'
 import { QuantSelector } from '@/components/marketplace/QuantSelector'
+import { ModelScopeTokenDialog } from '@/components/marketplace/ModelScopeTokenDialog'
 import { logError } from '@/lib/logger'
 import { toast } from 'sonner'
 
@@ -67,7 +68,6 @@ function MarketplaceModelDetailContent() {
   } = useDownloadStore()
 
   const [token, setTokenState] = useState<string | null>(null)
-  const [tokenInput, setTokenInput] = useState('')
   const [showTokenDialog, setShowTokenDialog] = useState(false)
   const [fileList, setFileList] = useState<ModelScopeFileListResult | null>(null)
   const [filesLoading, setFilesLoading] = useState(false)
@@ -144,28 +144,46 @@ function MarketplaceModelDetailContent() {
   // Show token dialog when auth is required
   const showTokenDialogRef = useRef(showTokenDialog)
   showTokenDialogRef.current = showTokenDialog
+  const openTokenDialog = useCallback(() => {
+    setShowTokenDialog(true)
+  }, [])
+
+  const closeTokenDialog = useCallback((open: boolean) => {
+    setShowTokenDialog(open)
+  }, [])
+
   useEffect(() => {
     if (needsAuth && !showTokenDialogRef.current) {
-      setShowTokenDialog(true)
+      openTokenDialog()
     }
-  }, [needsAuth])
+  }, [needsAuth, openTokenDialog])
 
-  const handleSaveToken = useCallback(() => {
-    if (!tokenInput.trim()) return
+  const handleSaveToken = useCallback((nextToken: string) => {
     import('@tauri-apps/api/core').then(({ invoke }) => {
       invoke('save_modelscope_token', {
-        token: tokenInput.trim(),
+        token: nextToken,
       }).then(() => {
-        setTokenState(tokenInput.trim())
+        setTokenState(nextToken)
         setShowTokenDialog(false)
-        setTokenInput('')
         // Re-fetch detail with new token
         if (owner && repoName) {
-          fetchDetail(owner, repoName, tokenInput.trim())
+          fetchDetail(owner, repoName, nextToken)
         }
       })
     })
-  }, [tokenInput, owner, repoName, fetchDetail])
+  }, [owner, repoName, fetchDetail])
+
+  const handleClearToken = useCallback(() => {
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('clear_modelscope_token').then(() => {
+        setTokenState(null)
+        setShowTokenDialog(false)
+        if (owner && repoName) {
+          fetchDetail(owner, repoName, null)
+        }
+      })
+    })
+  }, [owner, repoName, fetchDetail])
 
   // Determine the best GGUF file to download
   const bestFile = useMemo(() => {
@@ -563,60 +581,48 @@ function MarketplaceModelDetailContent() {
             <IconArrowLeft size={18} className="text-muted-foreground" />
             <span className="text-foreground">返回模型市场</span>
           </Button>
-          {token && (
-            <span className="text-xs px-2 py-0.5 rounded border border-green-500/30 text-green-600 bg-green-500/10">
-              Token 已配置
-            </span>
-          )}
+          <button
+            onClick={openTokenDialog}
+            className={cn(
+              'text-xs px-2.5 py-1 rounded-full border',
+              token
+                ? 'border-green-500/30 text-green-600 bg-green-500/10'
+                : 'border-amber-500/30 text-amber-600 bg-amber-500/10'
+            )}
+            title={token ? '管理 ModelScope Token' : '配置 ModelScope Token'}
+          >
+            {token ? 'ModelScope Token：已配置' : 'ModelScope Token：未配置'}
+          </button>
         </div>
       </HeaderPage>
 
       {/* Token dialog */}
-      {showTokenDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-card border border-border rounded-lg p-6 w-[420px] max-w-[90vw]">
-            <h3 className="text-lg font-medium mb-2">
-              需要 ModelScope 访问令牌
-            </h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              查看此模型的详情需要 ModelScope 访问令牌。
-              <br />
-              你可以前往{' '}
-              <a
-                href="https://www.modelscope.cn/my/myaccesstoken"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary underline"
-              >
-                魔搭控制台
-              </a>{' '}
-              获取令牌。
-            </p>
-            <input
-              type="text"
-              placeholder="输入 ModelScope Access Token"
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              className="w-full px-3 py-2 rounded border border-border bg-background text-sm mb-4"
-            />
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setShowTokenDialog(false)
-                  setTokenInput('')
-                }}
-              >
-                暂不配置
-              </Button>
-              <Button size="sm" onClick={handleSaveToken}>
-                保存并查看
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ModelScopeTokenDialog
+        open={showTokenDialog}
+        onOpenChange={closeTokenDialog}
+        token={token}
+        onSave={handleSaveToken}
+        onClear={handleClearToken}
+        inputId="modelscope-detail-token-input"
+        description={
+          <>
+            配置 Token 后可以查看需要鉴权的 ModelScope 模型详情，例如 README 和文件列表。
+            你也可以前往{' '}
+            <a
+              href="https://www.modelscope.cn/my/myaccesstoken"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary underline"
+            >
+              魔搭控制台
+            </a>{' '}
+            获取新的访问令牌。
+          </>
+        }
+        emptyStateMessage="当前未配置 ModelScope Token。你仍然可以浏览模型信息，但部分详情接口需要鉴权。"
+        cancelLabel={needsAuth ? '暂不配置' : '取消'}
+        saveLabelWhenEmpty="保存并查看"
+      />
 
       <div className="flex-1 overflow-y-auto">
         <div className="md:w-4/5 mx-auto">
@@ -634,7 +640,7 @@ function MarketplaceModelDetailContent() {
                     variant="outline"
                     size="sm"
                     className="mt-4"
-                    onClick={() => setShowTokenDialog(true)}
+                    onClick={openTokenDialog}
                   >
                     配置访问令牌
                   </Button>
@@ -796,7 +802,7 @@ function MarketplaceModelDetailContent() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setShowTokenDialog(true)}
+                          onClick={openTokenDialog}
                         >
                           配置令牌查看完整信息
                         </Button>

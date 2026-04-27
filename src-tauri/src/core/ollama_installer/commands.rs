@@ -40,22 +40,42 @@ fn ollama_install_candidates() -> Vec<PathBuf> {
 
     // 1. User-level install (most common on modern Windows)
     if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-        candidates.push(PathBuf::from(local_app_data).join("Programs").join("Ollama").join("ollama.exe"));
+        candidates.push(
+            PathBuf::from(local_app_data)
+                .join("Programs")
+                .join("Ollama")
+                .join("ollama.exe"),
+        );
     }
 
     // 2. System-level install (64-bit)
     if let Ok(program_files) = std::env::var("PROGRAMFILES") {
-        candidates.push(PathBuf::from(program_files).join("Ollama").join("ollama.exe"));
+        candidates.push(
+            PathBuf::from(program_files)
+                .join("Ollama")
+                .join("ollama.exe"),
+        );
     }
 
     // 3. System-level install (32-bit)
     if let Ok(program_files_x86) = std::env::var("PROGRAMFILES(x86)") {
-        candidates.push(PathBuf::from(program_files_x86).join("Ollama").join("ollama.exe"));
+        candidates.push(
+            PathBuf::from(program_files_x86)
+                .join("Ollama")
+                .join("ollama.exe"),
+        );
     }
 
     // 4. Fallback: user's home directory (rare but possible)
     if let Ok(user_profile) = std::env::var("USERPROFILE") {
-        candidates.push(PathBuf::from(user_profile).join("AppData").join("Local").join("Programs").join("Ollama").join("ollama.exe"));
+        candidates.push(
+            PathBuf::from(user_profile)
+                .join("AppData")
+                .join("Local")
+                .join("Programs")
+                .join("Ollama")
+                .join("ollama.exe"),
+        );
     }
 
     candidates
@@ -176,13 +196,13 @@ pub async fn check_ollama_running() -> Result<OllamaRunningStatus, String> {
         .json::<serde_json::Value>()
         .await
         .ok()
-        .and_then(|v| v.get("version").and_then(|v| v.as_str()).map(|s| s.to_string()));
+        .and_then(|v| {
+            v.get("version")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        });
 
-    let models = match client
-        .get("http://127.0.0.1:11434/api/tags")
-        .send()
-        .await
-    {
+    let models = match client.get("http://127.0.0.1:11434/api/tags").send().await {
         Ok(res) if res.status().is_success() => res
             .json::<serde_json::Value>()
             .await
@@ -232,12 +252,7 @@ pub async fn start_ollama(ollama_path: String) -> Result<(), String> {
 
         let result = command
             .spawn()
-            .map_err(|e| {
-                format!(
-                    "Failed to start Ollama from {}: {e}",
-                    launch_path.display()
-                )
-            })?;
+            .map_err(|e| format!("Failed to start Ollama from {}: {e}", launch_path.display()))?;
 
         log::info!(
             "Ollama start command launched with PID: {} from {}",
