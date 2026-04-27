@@ -50,6 +50,11 @@ const BackendUpdater = () => {
     return null
   }
 
+  // Don't show if auto-update is enabled — the engine updates silently
+  if (updateState.autoUpdateEnabled) {
+    return null
+  }
+
   // Don't show if user clicked remind me later
   if (backendUpdateState.remindMeLater) {
     console.log('BackendUpdater: Not showing notification due to:', {
