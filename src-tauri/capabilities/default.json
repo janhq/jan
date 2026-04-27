@@ -1,16 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "desktop main window permissions without core:default (avoids missing app_hide.toml in dev)",
+  "description": "enables the default permissions",
   "windows": ["main"],
   "remote": {
     "urls": ["http://*"]
   },
   "permissions": [
+    "core:default",
     "core:webview:allow-set-webview-zoom",
-    "core:path:default",
-    "core:resources:default",
-    "core:image:default",
     "core:window:allow-start-dragging",
     "core:window:allow-set-theme",
     "core:window:allow-minimize",
@@ -20,9 +18,6 @@
     "shell:allow-open",
     "core:app:allow-set-app-theme",
     "core:window:allow-set-focus",
-    "core:event:allow-listen",
-    "core:event:allow-emit",
-    "core:event:allow-emit-to",
     "os:default",
     "opener:default",
     "log:default",

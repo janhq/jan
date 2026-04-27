@@ -36,6 +36,12 @@ Default permissions for the llamacpp plugin
 - `allow-validate-backend-string`
 - `allow-should-migrate-backend`
 - `allow-handle-setting-update`
+- `allow-get-backend-dir`
+- `allow-get-backend-exe-path`
+- `allow-check-backend-installed`
+- `allow-verify-backend-installation`
+- `allow-fetch-remote-supported-backends`
+- `allow-build-backend-download-items`
 
 ## Permission Table
 
@@ -45,6 +51,32 @@ Default permissions for the llamacpp plugin
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`llamacpp:allow-build-backend-download-items`
+
+</td>
+<td>
+
+Enables the build_backend_download_items command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-build-backend-download-items`
+
+</td>
+<td>
+
+Denies the build_backend_download_items command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>
@@ -68,6 +100,32 @@ Enables the check_backend_for_updates command without any pre-configured scope.
 <td>
 
 Denies the check_backend_for_updates command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-check-backend-installed`
+
+</td>
+<td>
+
+Enables the check_backend_installed command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-check-backend-installed`
+
+</td>
+<td>
+
+Denies the check_backend_installed command without any pre-configured scope.
 
 </td>
 </tr>
@@ -179,6 +237,32 @@ Denies the estimate_kv_cache_size command without any pre-configured scope.
 <tr>
 <td>
 
+`llamacpp:allow-fetch-remote-supported-backends`
+
+</td>
+<td>
+
+Enables the fetch_remote_supported_backends command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-fetch-remote-supported-backends`
+
+</td>
+<td>
+
+Denies the fetch_remote_supported_backends command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `llamacpp:allow-find-latest-version-for-backend`
 
 </td>
@@ -276,6 +360,58 @@ Enables the get_all_sessions command without any pre-configured scope.
 <td>
 
 Denies the get_all_sessions command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-get-backend-dir`
+
+</td>
+<td>
+
+Enables the get_backend_dir command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-get-backend-dir`
+
+</td>
+<td>
+
+Denies the get_backend_dir command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-get-backend-exe-path`
+
+</td>
+<td>
+
+Enables the get_backend_exe_path command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-get-backend-exe-path`
+
+</td>
+<td>
+
+Denies the get_backend_exe_path command without any pre-configured scope.
 
 </td>
 </tr>
@@ -874,6 +1010,32 @@ Enables the validate_backend_string command without any pre-configured scope.
 <td>
 
 Denies the validate_backend_string command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-verify-backend-installation`
+
+</td>
+<td>
+
+Enables the verify_backend_installation command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-verify-backend-installation`
+
+</td>
+<td>
+
+Denies the verify_backend_installation command without any pre-configured scope.
 
 </td>
 </tr>

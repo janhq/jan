@@ -39,5 +39,13 @@ permissions = [
     "allow-remove-old-backend-versions",
     "allow-validate-backend-string",
     "allow-should-migrate-backend",
-    "allow-handle-setting-update"
+    "allow-handle-setting-update",
+
+    # Backend path & download commands
+    "allow-get-backend-dir",
+    "allow-get-backend-exe-path",
+    "allow-check-backend-installed",
+    "allow-verify-backend-installation",
+    "allow-fetch-remote-supported-backends",
+    "allow-build-backend-download-items"
 ]

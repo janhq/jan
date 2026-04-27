@@ -313,6 +313,10 @@
   "attachmentEmbeddedIndicator": "Эмбеддинг для RAG",
   "viewInjectedContent": "Просмотреть вставленный контент",
   "injectedContentTitle": "Содержимое файла",
+  "errorDialog": {
+    "titleFallback": "Что-то пошло не так",
+    "details": "Подробности"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "Все обсуждения удалены из избранного",
@@ -329,6 +333,14 @@
     "deleteThread": {
       "title": "Удаление обсуждения",
       "description": "Это обсуждение было удалено безвозвратно."
+    },
+    "errorCopied": {
+      "title": "Скопировано успешно",
+      "description": "Информация об ошибке скопирована в буфер обмена"
+    },
+    "errorCopyFailed": {
+      "title": "Не удалось скопировать",
+      "description": "Не удалось скопировать информацию об ошибке в буфер обмена"
     },
     "editMessage": {
       "title": "Редактирование сообщения",
