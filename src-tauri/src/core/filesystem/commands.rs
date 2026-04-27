@@ -4,7 +4,6 @@ use super::helpers::{resolve_app_path_within_jan_data_folder, resolve_path, reso
 use super::models::{DialogOpenOptions, FileStat};
 use rfd::AsyncFileDialog;
 use std::fs;
-use std::path::PathBuf;
 use tauri::Runtime;
 
 #[tauri::command]
