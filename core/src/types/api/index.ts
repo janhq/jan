@@ -65,6 +65,8 @@ export enum AppEvent {
 
   onDeepLink = 'onDeepLink',
   onMainViewStateChange = 'onMainViewStateChange',
+
+  onBackendVerificationFailed = 'onBackendVerificationFailed',
 }
 
 export enum DownloadEvent {
