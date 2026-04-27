@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
-import { fileStorage } from '@/lib/fileStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { modelSettings } from '@/lib/predefined'
 
@@ -240,7 +239,7 @@ export const useModelProvider = create<ModelProviderState>()(
     }),
     {
       name: localStorageKey.modelProvider,
-      storage: createJSONStorage(() => fileStorage),
+      storage: createJSONStorage(() => localStorage),
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as ModelProviderState & {
           providers: Array<
