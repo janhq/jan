@@ -2,16 +2,22 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useAssistant, defaultAssistant } from '../useAssistant'
 
-const mockToast = vi.fn()
+const mocks = vi.hoisted(() => ({
+  mockToast: vi.fn(),
+  mockCreateAssistant: vi.fn().mockResolvedValue(undefined),
+  mockDeleteAssistant: vi.fn().mockResolvedValue(undefined),
+  mockGetAssistants: vi.fn().mockResolvedValue([]),
+}))
 vi.mock('sonner', () => ({
   toast: {
-    error: mockToast,
+    error: mocks.mockToast,
   },
 }))
 
-const mockCreateAssistant = vi.fn().mockResolvedValue(undefined)
-const mockDeleteAssistant = vi.fn().mockResolvedValue(undefined)
-const mockGetAssistants = vi.fn().mockResolvedValue([defaultAssistant])
+const mockCreateAssistant = mocks.mockCreateAssistant
+const mockDeleteAssistant = mocks.mockDeleteAssistant
+const mockGetAssistants = mocks.mockGetAssistants
+const mockToast = mocks.mockToast
 
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({
@@ -33,6 +39,7 @@ vi.mock('@/constants/localStorage', () => ({
 describe('useAssistant - coverage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.mockGetAssistants.mockResolvedValue([defaultAssistant])
     localStorage.clear()
     act(() => {
       useAssistant.setState({
