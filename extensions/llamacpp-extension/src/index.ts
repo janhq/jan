@@ -30,6 +30,7 @@ import {
   listSupportedBackends,
   downloadBackend,
   isBackendInstalled,
+  verifyBackendInstallation,
   getBackendExePath,
   getBackendDir,
 } from './backend'
@@ -488,6 +489,18 @@ export default class llamacpp_extension extends AIEngine {
 
       if (!backendWasDownloaded && effectiveBackendString) {
         await this.ensureFinalBackendInstallation(effectiveBackendString)
+      }
+
+      // Run dependency verification once after the backend is confirmed
+      // installed. This covers both fresh downloads and pre-existing installs,
+      // and runs only once per app startup via the isConfiguringBackends guard.
+      if (effectiveBackendString) {
+        // effectiveBackendString is expected to be "<version>/<backend>" (e.g.
+        // "b4589/linux-cuda-12"). Any other shape silently skips verification.
+        const [version, backend] = effectiveBackendString.split('/')
+        if (version && backend) {
+          await this.verifyBackendDeps(backend, version)
+        }
       }
     } finally {
       this.isConfiguringBackends = false
@@ -1713,6 +1726,32 @@ export default class llamacpp_extension extends AIEngine {
       ? modelId.slice(0, modelId.indexOf('.'))
       : modelId
     return `${this.provider}/${cleanModelId}`
+  }
+
+  private async verifyBackendDeps(backend: string, version: string): Promise<void> {
+    const backendKey = `${version}/${backend}`
+    try {
+      const verification = await verifyBackendInstallation(backend, version)
+      if (verification.verified) {
+        logger.info(
+          `Backend ${backendKey} dependency verification passed (${verification.resolved_libraries.length} libraries resolved)`
+        )
+      } else {
+        logger.warn(
+          `Backend ${backendKey} is missing libraries: ${verification.missing_libraries.join(', ')}`
+        )
+        events.emit(AppEvent.onBackendVerificationFailed, {
+          backend,
+          version,
+          missingLibraries: verification.missing_libraries,
+        })
+      }
+    } catch (verifyErr) {
+      // Intentionally non-fatal: verification is advisory only. A BinaryNotFound
+      // error here means the exe disappeared between install and startup — the
+      // backend will fail naturally when first used, which is surfaced elsewhere.
+      logger.warn(`Backend ${backendKey} dependency verification failed: ${verifyErr}`)
+    }
   }
 
   private async ensureBackendReady(
