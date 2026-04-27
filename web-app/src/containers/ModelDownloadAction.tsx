@@ -107,6 +107,7 @@ export const ModelDownloadAction = ({
         size="sm"
         onClick={() => handleUseModel(variant.model_id)}
         title={t('hub:useModel')}
+        data-testid="hub-use-button"
       >
         {t('hub:newChat')}
       </Button>
@@ -118,6 +119,7 @@ export const ModelDownloadAction = ({
       className="size-6 cursor-pointer flex items-center justify-center rounded transition-all duration-200 ease-in-out"
       title={t('hub:downloadModel')}
       onClick={handleDownloadModel}
+      data-testid="hub-download-button"
     >
       <IconDownload size={16} className="text-muted-foreground" />
     </div>

@@ -1,0 +1,19 @@
+{
+  "name": "jan-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "wdio run wdio.conf.ts"
+  },
+  "devDependencies": {
+    "@wdio/cli": "^9.2.0",
+    "@wdio/local-runner": "^9.2.0",
+    "@wdio/mocha-framework": "^9.2.0",
+    "@wdio/spec-reporter": "^9.2.0",
+    "@types/mocha": "^10.0.6",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "webdriverio": "^9.2.0"
+  }
+}

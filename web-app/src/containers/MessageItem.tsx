@@ -447,7 +447,13 @@ export const MessageItem = memo(
     }, [message.parts, isStreaming, isReasoningAtBottom])
 
     return (
-      <div className="w-full mb-4">
+      <div
+        className="w-full mb-4"
+        data-testid={
+          message.role === 'assistant' ? 'assistant-message' : 'user-message'
+        }
+        data-streaming={isStreaming ? 'true' : 'false'}
+      >
 
         {/* Render message parts */}
         {renderedParts}
