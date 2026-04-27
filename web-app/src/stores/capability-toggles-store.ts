@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
-import { fileStorage } from '@/lib/fileStorage'
 
 export type CapabilityToggles = {
   webSearch: boolean
@@ -61,7 +60,7 @@ export const useCapabilityToggles = create<CapabilityTogglesState>()(
     }),
     {
       name: localStorageKey.capabilityToggles,
-      storage: createJSONStorage(() => fileStorage),
+      storage: createJSONStorage(() => localStorage),
     }
   )
 )
