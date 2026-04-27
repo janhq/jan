@@ -180,6 +180,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private continueFromContent: string | null = null
   /** Latest user message text — used by the MCP orchestrator for tool routing. */
   private lastUserMessage = ''
+  /**
+   * Model/provider locked for the current conversation chain (user turn + tool follow-ups).
+   * Set when a new user turn starts; reused for all MCP tool-chain follow-ups so that
+   * switching the model selector in another chat tab cannot alter an in-flight request.
+   */
+  private _chainModelId: string | null = null
+  private _chainProviderId: string | null = null
 
   constructor(systemMessage?: string, threadId?: string) {
     this.systemMessage = systemMessage
@@ -245,7 +252,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       return disabledToolKeys.includes(toolKey)
     }
 
-    const selectedModel = useModelProvider.getState().selectedModel
+    const selectedModel = this._chainModelId && this._chainProviderId
+      ? useModelProvider.getState().getProviderByName(this._chainProviderId)?.models.find(
+          (m) => m.id === this._chainModelId
+        ) ?? useModelProvider.getState().selectedModel
+      : useModelProvider.getState().selectedModel
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
 
     // Only load tools if model supports them
@@ -436,13 +447,36 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       messageId: string | undefined
     } & ChatRequestOptions
   ): Promise<ReadableStream<UIMessageChunk>> {
+    // Determine whether this call is a continuation of an existing MCP tool chain
+    // or the start of a new user turn.  When the model finishes a step with tool
+    // calls, the AI SDK appends an assistant message whose parts include
+    // tool-invocation entries; it then calls sendMessages again to send the tool
+    // results back to the model.  In that case the last message in the array is
+    // the assistant message with completed tool invocations.
+    //
+    // We lock the model/provider for the entire chain so that changing the model
+    // selector in a different chat tab cannot affect an in-flight request.
+    const lastMsg = options.messages.length > 0
+      ? options.messages[options.messages.length - 1]
+      : null
+    const isToolChainContinuation =
+      lastMsg?.role === 'assistant' &&
+      Array.isArray(lastMsg.parts) &&
+      lastMsg.parts.some((p) => (p as { type: string }).type === 'tool-invocation')
+
+    if (!isToolChainContinuation || !this._chainModelId) {
+      // New user turn (or no chain active): snapshot the currently selected model.
+      this._chainModelId = useModelProvider.getState().selectedModel?.id ?? null
+      this._chainProviderId = useModelProvider.getState().selectedProvider ?? null
+    }
+
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
     // model, even if the user switches provider mid-request.
-    const modelId = useModelProvider.getState().selectedModel?.id
-    const providerId = useModelProvider.getState().selectedProvider
+    const modelId = this._chainModelId ?? useModelProvider.getState().selectedModel?.id
+    const providerId = this._chainProviderId ?? useModelProvider.getState().selectedProvider
     const effectiveProviderName = providerId
-    const provider = useModelProvider.getState().getProviderByName(providerId)
+    const provider = useModelProvider.getState().getProviderByName(providerId ?? '')
     if (!this.serviceHub || !modelId || !provider) {
       throw new Error('ServiceHub not initialized or model/provider missing.')
     }
@@ -452,7 +486,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     try {
       const updatedProvider = useModelProvider
         .getState()
-        .getProviderByName(providerId)
+        .getProviderByName(providerId ?? '')
 
       const currentAssistant = useAssistant.getState().currentAssistant
       const inferenceParams = currentAssistant?.parameters
@@ -524,7 +558,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const inferenceParams = useAssistant.getState().currentAssistant?.parameters ?? {}
 
-    const selectedModel = useModelProvider.getState().selectedModel
+    // Use the chain-locked model object so that capabilities/settings reflect the
+    // model that was selected when the user submitted this turn, not whatever is
+    // currently selected globally (which may have changed in another chat tab).
+    const chainProvider = useModelProvider.getState().getProviderByName(providerId ?? '')
+    const selectedModel = chainProvider?.models.find((m) => m.id === modelId)
+      ?? useModelProvider.getState().selectedModel
 
     const maxOutputTokens: number | undefined = (() => {
       const raw = inferenceParams.max_output_tokens ?? inferenceParams.max_tokens
