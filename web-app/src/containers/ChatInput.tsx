@@ -23,7 +23,7 @@ import {
   IconPhoto,
   IconAtom,
   IconTool,
-  IconCodeCircle2,
+  IconCircles,
   IconPlayerStopFilled,
   IconX,
   IconPaperclip,
@@ -1819,7 +1819,7 @@ const ChatInput = memo(function ChatInput({
                           variant="ghost"
                           size="icon-xs"
                         >
-                        <IconCodeCircle2
+                        <IconCircles
                           size={18}
                           className="text-muted-foreground"
                         />
