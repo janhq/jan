@@ -396,5 +396,8 @@
       "title": "Chủ đề đã được xóa",
       "description": "Chủ đề đã được xóa khỏi \"{{projectName}}\" thành công"
     }
+  },
+  "errors": {
+    "selectModelToStartChatting": "Please select a model to start chatting."
   }
 }

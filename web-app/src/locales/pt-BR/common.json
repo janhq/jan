@@ -397,5 +397,8 @@
   "attachmentInjectedIndicator": "Injetado no chat",
   "attachmentEmbeddedIndicator": "Incorporado para RAG",
   "viewInjectedContent": "Ver conteúdo injetado",
-  "injectedContentTitle": "Conteúdo de arquivo injetado"
+  "injectedContentTitle": "Conteúdo de arquivo injetado",
+  "errors": {
+    "selectModelToStartChatting": "Please select a model to start chatting."
+  }
 }

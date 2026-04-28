@@ -387,5 +387,8 @@
       "title": "スレッドが削除されました",
       "description": "スレッドは「{{projectName}}」から正常に削除されました"
     }
+  },
+  "errors": {
+    "selectModelToStartChatting": "Please select a model to start chatting."
   }
 }

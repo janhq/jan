@@ -406,5 +406,8 @@
       "title": "Обсуждение удалено",
       "description": "Обсуждение успешно удалено из проекта \"{{projectName}}\""
     }
+  },
+  "errors": {
+    "selectModelToStartChatting": "Please select a model to start chatting."
   }
 }

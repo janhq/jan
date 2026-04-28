@@ -396,5 +396,8 @@
       "title": "Download abgeschlossen",
       "description": "Modell \"{{item}}\" erfolgreich heruntergeladen und verifiziert"
     }
+  },
+  "errors": {
+    "selectModelToStartChatting": "Please select a model to start chatting."
   }
 }

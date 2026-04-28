@@ -396,5 +396,8 @@
   "conversationNotAvailable": "Rozmowa niedostępna",
   "conversationNotAvailableDescription": "Rozmowa, do której próbujesz uzyskać dostęp, nie jest dostępna lub została usunięta.",
   "temporaryChat": "Tymczasowy Czat",
-  "temporaryChatTooltip": "Tymczasowy czat nie pojawi się w Twojej historii"
+  "temporaryChatTooltip": "Tymczasowy czat nie pojawi się w Twojej historii",
+  "errors": {
+    "selectModelToStartChatting": "Please select a model to start chatting."
+  }
 }

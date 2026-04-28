@@ -462,7 +462,8 @@
   },
   "errors": {
     "fileTooLarge": "Archivo demasiado grande",
-    "fileTooLargeDescription": "{{fileName}} excede el límite de {{maxFileSizeMB}}MB"
+    "fileTooLargeDescription": "{{fileName}} excede el límite de {{maxFileSizeMB}}MB",
+    "selectModelToStartChatting": "Please select a model to start chatting."
   },
   "files": {
     "chunksCount": "{{count}} fragmentos"

@@ -396,5 +396,8 @@
       "title": "執行緒已移除",
       "description": "執行緒已成功從「{{projectName}}」中移除"
     }
+  },
+  "errors": {
+    "selectModelToStartChatting": "Please select a model to start chatting."
   }
 }
