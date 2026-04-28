@@ -4,11 +4,6 @@ import { toast } from 'sonner'
 
 type AttachmentProcessingStatus = 'processing' | 'done' | 'error' | 'clear_all'
 
-export type AttachmentIngestProgress = {
-  completed: number
-  total: number
-}
-
 type AttachmentProcessingOptions = {
   attachments: Attachment[]
   threadId: string
@@ -25,8 +20,6 @@ type AttachmentProcessingOptions = {
     status: AttachmentProcessingStatus,
     updatedAttachment?: Partial<Attachment>
   ) => void
-  /** Fired when attachment ingestion advances (multi-file uploads). */
-  onIngestProgress?: (state: AttachmentIngestProgress) => void
 }
 
 export type AttachmentProcessingResult = {
@@ -89,33 +82,10 @@ export const processAttachmentsForSend = async (
     autoFallbackMode,
     perFileChoices,
     updateAttachmentProcessing,
-    onIngestProgress,
   } = options
 
   const processedAttachments: Attachment[] = []
   let hasEmbeddedDocuments = false
-
-  const imagesToProcess = attachments.filter(
-    (img) => img.type === 'image' && !(img.processed && img.id)
-  )
-  const documentsToProcess = attachments.filter(
-    (doc) =>
-      doc.type === 'document' &&
-      !(doc.processed && (doc.id || doc.injectionMode === 'inline'))
-  )
-  const ingestTotal = imagesToProcess.length + documentsToProcess.length
-  let ingestCompleted = 0
-  const bumpIngest = () => {
-    if (!onIngestProgress || ingestTotal <= 0) return
-    ingestCompleted += 1
-    onIngestProgress({
-      completed: Math.min(ingestCompleted, ingestTotal),
-      total: ingestTotal,
-    })
-  }
-  if (onIngestProgress && ingestTotal > 0) {
-    onIngestProgress({ completed: 0, total: ingestTotal })
-  }
   const effectiveContextThreshold =
     typeof contextThreshold === 'number' &&
     Number.isFinite(contextThreshold) &&
@@ -152,7 +122,6 @@ export const processAttachmentsForSend = async (
           processed: true,
           processing: false,
         })
-        bumpIngest()
       } catch (err) {
         console.error(`Failed to ingest image ${img.name}:`, err)
         notifyUpdate(img.name, 'error')
@@ -256,13 +225,10 @@ export const processAttachmentsForSend = async (
           inlineContent: parsedContent,
           injectionMode: 'inline',
         })
-        bumpIngest()
         continue
       }
 
-      // Default: ingest as embeddings.
-      // Also reached when targetMode is 'inline' but parsedContent is absent
-      // (i.e. parsing failed above) — intentional: embeddings is the safe fallback.
+      // Default: ingest as embeddings
       notifyUpdate(doc.name, 'processing')
 
       const res = projectId
@@ -288,7 +254,6 @@ export const processAttachmentsForSend = async (
         processed: true,
         injectionMode: 'embeddings',
       })
-      bumpIngest()
     } catch (err) {
       console.error(`Failed to ingest ${doc.name}:`, err)
       notifyUpdate(doc.name, 'error')

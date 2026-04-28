@@ -23,10 +23,6 @@ import type {
   CatalogModel,
   ModelValidationResult,
 } from './types'
-import {
-  extractToolContextFromContent,
-  extractToolContextFromMetadata,
-} from './tokenCountToolContext'
 
 // TODO: Replace this with the actual provider later
 const defaultProvider = 'llamacpp'
@@ -673,28 +669,6 @@ export class DefaultModelsService implements ModelsService {
                   .map((content) => content.text?.value || '')
 
                 content = textContents.join(' ')
-              }
-            }
-
-            const toolContextFromContent = extractToolContextFromContent(message)
-            const toolContextFromMetadata =
-              toolContextFromContent.length > 0
-                ? ''
-                : extractToolContextFromMetadata(message)
-            const toolContext = [toolContextFromContent, toolContextFromMetadata]
-              .filter((entry) => entry.length > 0)
-              .join('\n\n')
-            if (toolContext.length > 0) {
-              if (typeof content === 'string') {
-                content = content ? `${content}\n\n${toolContext}` : toolContext
-              } else if (Array.isArray(content)) {
-                content = [
-                  ...content,
-                  {
-                    type: 'text',
-                    text: toolContext,
-                  },
-                ]
               }
             }
 

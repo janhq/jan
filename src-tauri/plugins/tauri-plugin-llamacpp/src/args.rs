@@ -184,10 +184,6 @@ impl ArgumentBuilder {
         if let Some(path) = mmproj_path.filter(|p| !p.is_empty()) {
             self.args.push("--mmproj".to_string());
             self.args.push(path);
-
-            if !self.config.offload_mmproj {
-                self.args.push("--no-mmproj-offload".to_string());
-            }
         }
     }
 
@@ -706,41 +702,6 @@ mod tests {
         let args = builder.build("test", "/path", 8080, Some(String::new()));
 
         assert_no_flag(&args, "--mmproj");
-        assert_no_flag(&args, "--no-mmproj-offload");
-    }
-
-    #[test]
-    fn test_mmproj_offload_disabled_adds_no_mmproj_offload_flag() {
-        let mut config = default_config();
-        config.offload_mmproj = false;
-
-        let builder = ArgumentBuilder::new(config, false).unwrap();
-        let args = builder.build("test", "/path", 8080, Some("/path/to/mmproj".to_string()));
-
-        assert_arg_pair(&args, "--mmproj", "/path/to/mmproj");
-        assert_has_flag(&args, "--no-mmproj-offload");
-    }
-
-    #[test]
-    fn test_mmproj_offload_enabled_does_not_add_no_mmproj_offload_flag() {
-        let config = default_config();
-        let builder = ArgumentBuilder::new(config, false).unwrap();
-        let args = builder.build("test", "/path", 8080, Some("/path/to/mmproj".to_string()));
-
-        assert_arg_pair(&args, "--mmproj", "/path/to/mmproj");
-        assert_no_flag(&args, "--no-mmproj-offload");
-    }
-
-    #[test]
-    fn test_mmproj_offload_disabled_without_mmproj_does_not_add_flag() {
-        let mut config = default_config();
-        config.offload_mmproj = false;
-
-        let builder = ArgumentBuilder::new(config, false).unwrap();
-        let args = builder.build("test", "/path", 8080, None);
-
-        assert_no_flag(&args, "--mmproj");
-        assert_no_flag(&args, "--no-mmproj-offload");
     }
 
     #[test]

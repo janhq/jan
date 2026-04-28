@@ -76,7 +76,6 @@
   "noThreadsYetDesc": "新しい会話を始めると、ここにスレッドの履歴が表示されます。",
   "downloads": "ダウンロード",
   "downloading": "ダウンロード中",
-  "uploadingAttachments": "添付ファイルをアップロードしています…",
   "cancelDownload": "ダウンロードをキャンセル",
   "downloadCancelled": "ダウンロードがキャンセルされました",
   "downloadComplete": "ダウンロード完了",
@@ -291,8 +290,7 @@
     "updated": "更新日時:",
     "collapseThreads": "スレッドを折りたたむ",
     "expandThreads": "スレッドを展開する",
-    "update": "更新",
-    "uploadingFiles": "ファイルをアップロードしています…"
+    "update": "更新"
   },
   "toast": {
     "allThreadsUnfavorited": {

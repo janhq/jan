@@ -76,7 +76,6 @@
   "noThreadsYetDesc": "Rozpocznij nową rozmowę aby zobaczyć tutaj historię wątków.",
   "downloads": "Pobrane",
   "downloading": "Pobieranie",
-  "uploadingAttachments": "Przesyłanie załączników…",
   "cancelDownload": "Anuluj Pobieranie",
   "downloadCancelled": "Pobieranie anulowane",
   "downloadComplete": "Pobieranie zakończone",
@@ -294,8 +293,7 @@
     "update": "Aktualizuj",
     "searchProjects": "Szukaj projektów...",
     "noProjectsFound": "Nie znaleziono projektów",
-    "tryDifferentSearch": "Spróbuj innego wyszukiwania",
-    "uploadingFiles": "Przesyłanie plików…"
+    "tryDifferentSearch": "Spróbuj innego wyszukiwania"
   },
   "toast": {
     "allThreadsUnfavorited": {

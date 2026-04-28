@@ -1,10 +1,5 @@
 use std::path::Path;
 
-/// Returns true when the current process is running inside a Flatpak sandbox
-pub fn is_flatpak() -> bool {
-    Path::new("/.flatpak-info").exists()
-}
-
 /// Checks if npx can be overridden with bun binary
 pub fn can_override_npx(bun_path: String) -> bool {
     // We need to check the CPU for the AVX2 instruction support if we are running under MacOS
@@ -273,11 +268,6 @@ pub fn add_cuda_paths_linux(command: &mut tokio::process::Command) -> bool {
         }
     }
 
-    // Inside Flatpak, NVIDIA drivers are mounted via GL extensions at different paths
-    if is_flatpak() {
-        collect_flatpak_gl_paths(&mut cuda_lib_paths);
-    }
-
     // Version-specific installs like /usr/local/cuda-12.2
     if let Ok(entries) = std::fs::read_dir("/usr/local") {
         for entry in entries.flatten() {
@@ -347,47 +337,6 @@ pub fn add_cuda_paths_linux(command: &mut tokio::process::Command) -> bool {
     }
 
     modified
-}
-
-/// Collects NVIDIA library paths from Flatpak GL extension mount points
-#[cfg(target_os = "linux")]
-fn collect_flatpak_gl_paths(cuda_lib_paths: &mut std::collections::HashSet<String>) {
-    let flatpak_gl_paths = [
-        "/usr/lib/extensions/vulkan/nvidia/lib",
-        "/usr/lib/extensions/cuda/lib",
-        "/usr/lib/GL/lib",
-        "/usr/lib/GL",
-        "/app/lib/GL",
-    ];
-
-    for path in &flatpak_gl_paths {
-        if Path::new(path).exists() {
-            cuda_lib_paths.insert(path.to_string());
-        }
-    }
-
-    // Flatpak GL extensions can have versioned subdirectories
-    for base_dir in ["/usr/lib/extensions", "/usr/lib/GL/lib"] {
-        if let Ok(entries) = std::fs::read_dir(base_dir) {
-            for entry in entries.flatten() {
-                let entry_path = entry.path();
-                if !entry_path.is_dir() {
-                    continue;
-                }
-
-                // Prefer the lib subdirectory, fall back to the directory itself
-                let lib_sub = entry_path.join("lib");
-                if lib_sub.exists() {
-                    cuda_lib_paths.insert(lib_sub.to_string_lossy().to_string());
-                } else {
-                    cuda_lib_paths.insert(entry_path.to_string_lossy().to_string());
-                }
-            }
-        }
-    }
-
-    #[cfg(feature = "logging")]
-    log::info!("Searched Flatpak GL extension paths for NVIDIA libraries");
 }
 
 /// Setup Windows-specific process creation flags

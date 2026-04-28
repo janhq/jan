@@ -76,7 +76,6 @@
   "noThreadsYetDesc": "开始新的对话以在此处查看您的会话历史记录。",
   "downloads": "下载",
   "downloading": "下载中",
-  "uploadingAttachments": "正在上传附件…",
   "cancelDownload": "取消下载",
   "downloadCancelled": "下载已取消",
   "downloadComplete": "下载完成",
@@ -253,7 +252,6 @@
     "searchProjects": "搜索项目...",
     "noProjectsFound": "未找到项目",
     "tryDifferentSearch": "尝试不同的搜索词",
-    "uploadingFiles": "正在上传文件…",
     "createNewProject": "创建新项目",
     "deleteProjectDialog": {
       "title": "删除项目",

@@ -57,7 +57,24 @@ export class TauriWindowService extends DefaultWindowService {
       // Setup theme listener for this window
       this.setupThemeListenerForWindow(webviewWindow)
 
-      return this.toWindowInstance(config.label, webviewWindow)
+      return {
+        label: config.label,
+        async close() {
+          await webviewWindow.close()
+        },
+        async show() {
+          await webviewWindow.show()
+        },
+        async hide() {
+          await webviewWindow.hide()
+        },
+        async focus() {
+          await webviewWindow.setFocus()
+        },
+        async setTitle(title: string) {
+          await webviewWindow.setTitle(title)
+        },
+      }
     } catch (error) {
       console.error('Error creating Tauri window:', error)
       throw error
@@ -71,7 +88,24 @@ export class TauriWindowService extends DefaultWindowService {
       const existingWindow = await WebviewWindow.getByLabel(label)
 
       if (existingWindow) {
-        return this.toWindowInstance(label, existingWindow)
+        return {
+          label: label,
+          async close() {
+            await existingWindow.close()
+          },
+          async show() {
+            await existingWindow.show()
+          },
+          async hide() {
+            await existingWindow.hide()
+          },
+          async focus() {
+            await existingWindow.setFocus()
+          },
+          async setTitle(title: string) {
+            await existingWindow.setTitle(title)
+          },
+        }
       }
 
       return null
@@ -143,30 +177,6 @@ export class TauriWindowService extends DefaultWindowService {
         error
       )
       throw error
-    }
-  }
-
-  private toWindowInstance(
-    label: string,
-    webviewWindow: WebviewWindow
-  ): WebviewWindowInstance {
-    return {
-      label,
-      async close() {
-        await webviewWindow.close()
-      },
-      async show() {
-        await webviewWindow.show()
-      },
-      async hide() {
-        await webviewWindow.hide()
-      },
-      async focus() {
-        await webviewWindow.setFocus()
-      },
-      async setTitle(title: string) {
-        await webviewWindow.setTitle(title)
-      },
     }
   }
 

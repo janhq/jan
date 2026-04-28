@@ -76,7 +76,6 @@
   "noThreadsYetDesc": "Mulai percakapan baru untuk melihat riwayat utas Anda di sini.",
   "downloads": "Unduhan",
   "downloading": "Mengunduh",
-  "uploadingAttachments": "Mengunggah lampiran…",
   "cancelDownload": "Batalkan unduhan",
   "downloadCancelled": "Unduhan Dibatalkan",
   "downloadComplete": "Unduhan Selesai",
@@ -382,7 +381,6 @@
     "update": "Perbarui",
     "searchProjects": "Cari proyek...",
     "noProjectsFound": "Tidak ada proyek ditemukan",
-    "tryDifferentSearch": "Coba kata kunci pencarian lain",
-    "uploadingFiles": "Mengunggah file…"
+    "tryDifferentSearch": "Coba kata kunci pencarian lain"
   }
 }

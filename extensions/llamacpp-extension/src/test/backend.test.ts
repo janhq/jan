@@ -9,7 +9,6 @@ import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
 import { fs, getJanDataFolderPath, events } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { dirname } from '@tauri-apps/api/path'
-import { isCudaInstalledFromRust } from '@janhq/tauri-plugin-llamacpp-api'
 
 // Mock constants: Hardcode path string directly inside the mock to avoid hoisting issues
 const MOCK_JAN_PATH_STRING = '/path/to/jan'
@@ -42,16 +41,6 @@ vi.mock('@tauri-apps/api/path', () => ({
   dirname: vi.fn(async (path) => path.split('/').slice(0, -1).join('/')),
   basename: vi.fn(async (path) => path.split('/').pop()),
 }))
-vi.mock('@janhq/tauri-plugin-llamacpp-api', async () => {
-  const actual = await vi.importActual<
-    typeof import('@janhq/tauri-plugin-llamacpp-api')
-  >('@janhq/tauri-plugin-llamacpp-api')
-
-  return {
-    ...actual,
-    isCudaInstalledFromRust: vi.fn().mockResolvedValue(false),
-  }
-})
 
 // Mock the global fetch function
 global.fetch = vi.fn()
@@ -102,7 +91,6 @@ describe('Backend functions', () => {
       mockDownloadManager
     )
     vi.mocked(mockDownloadManager.downloadFiles).mockClear()
-    vi.mocked(isCudaInstalledFromRust).mockResolvedValue(false)
   })
 
   afterEach(() => {
@@ -218,14 +206,8 @@ describe('Backend functions', () => {
       expect(downloadItems[0].url).toContain(
         'win-cuda-12-common_cpus-x64.tar.gz'
       )
-      expect(downloadItems[0].save_path).toBe(
-        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-cuda-12-common_cpus-x64/backend.tar.gz`
-      )
       expect(downloadItems[1].url).toContain(
         'cudart-llama-bin-win-cu12.0-x64.tar.gz'
-      )
-      expect(downloadItems[1].save_path).toBe(
-        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/win-cuda-12-common_cpus-x64/build/bin/cuda12.tar.gz`
       )
     })
 
@@ -251,14 +233,8 @@ describe('Backend functions', () => {
       expect(downloadItems[0].url).toContain(
         'linux-avx2-cuda-cu11.7-x64.tar.gz'
       )
-      expect(downloadItems[0].save_path).toBe(
-        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/linux-avx2-cuda-cu11.7-x64/backend.tar.gz`
-      )
       expect(downloadItems[1].url).toContain(
         'cudart-llama-bin-linux-cu11.7-x64.tar.gz'
-      )
-      expect(downloadItems[1].save_path).toBe(
-        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/linux-avx2-cuda-cu11.7-x64/build/bin/cuda11.tar.gz`
       )
     })
 

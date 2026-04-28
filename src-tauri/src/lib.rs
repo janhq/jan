@@ -296,7 +296,7 @@ pub fn run() {
             store.save().expect("Failed to save store");
             // Migration completed
 
-            #[cfg(feature = "desktop")]
+            #[cfg(desktop)]
             if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
                 log::info!("Enabling system tray icon");
                 let _ = setup::setup_tray(app);

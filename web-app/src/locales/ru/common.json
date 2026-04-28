@@ -76,7 +76,6 @@
   "noThreadsYetDesc": "Начните новый диалог, чтобы увидеть историю ваших обсуждений.",
   "downloads": "Загрузки",
   "downloading": "Загрузка",
-  "uploadingAttachments": "Загрузка вложений…",
   "cancelDownload": "Отменить загрузку",
   "downloadCancelled": "Загрузка отменена",
   "downloadComplete": "Загрузка завершена",
@@ -300,8 +299,7 @@
     "update": "Обновить",
     "searchProjects": "Поиск проектов...",
     "noProjectsFound": "Проекты не найдены",
-    "tryDifferentSearch": "Попробуйте другой поисковый запрос",
-    "uploadingFiles": "Загрузка файлов…"
+    "tryDifferentSearch": "Попробуйте другой поисковый запрос"
   },
   "attachmentsIngestion": {
     "title": "Выберите способ обработки вложений",

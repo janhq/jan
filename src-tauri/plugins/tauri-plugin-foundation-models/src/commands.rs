@@ -1,23 +1,15 @@
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use serde::{Deserialize, Serialize};
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use std::sync::Arc;
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use tauri::{Emitter, Manager, Runtime, State};
-#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-use tauri::{Manager, Runtime, State};
 
 use crate::error::FoundationModelsError;
 use crate::state::FoundationModelsState;
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 const MODEL_ID: &str = "apple/on-device";
 
-// ─── OpenAI-compatible types (macOS only) ──────────────────────────────────
+// ─── OpenAI-compatible types ────────────────────────────────────────────────
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[derive(Debug, Deserialize)]
 struct ChatCompletionRequest {
     #[allow(dead_code)]
@@ -33,14 +25,12 @@ struct ChatCompletionRequest {
     stop: Option<Vec<String>>,
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[derive(Debug, Deserialize)]
 struct ChatMessage {
     role: String,
     content: Option<String>,
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[derive(Debug, Serialize)]
 struct ChatCompletionResponse {
     id: String,
@@ -51,7 +41,6 @@ struct ChatCompletionResponse {
     usage: UsageInfo,
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[derive(Debug, Serialize)]
 struct ChatCompletionChoice {
     index: u32,
@@ -59,14 +48,12 @@ struct ChatCompletionChoice {
     finish_reason: String,
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[derive(Debug, Serialize)]
 struct ChatResponseMessage {
     role: String,
     content: String,
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[derive(Debug, Serialize)]
 struct UsageInfo {
     prompt_tokens: u32,
@@ -74,7 +61,6 @@ struct UsageInfo {
     total_tokens: u32,
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[derive(Debug, Serialize)]
 struct ChatCompletionChunk {
     id: String,
@@ -84,7 +70,6 @@ struct ChatCompletionChunk {
     choices: Vec<ChunkChoice>,
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[derive(Debug, Serialize)]
 struct ChunkChoice {
     index: u32,
@@ -92,14 +77,12 @@ struct ChunkChoice {
     finish_reason: Option<String>,
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[derive(Debug, Serialize)]
 struct DeltaContent {
     role: Option<String>,
     content: Option<String>,
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn current_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -107,7 +90,6 @@ fn current_timestamp() -> u64 {
         .as_secs()
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 /// Build session instructions from the OpenAI message list.
 ///
 /// System messages become the instruction text. Prior user/assistant turns
@@ -153,7 +135,6 @@ fn build_instructions(messages: &[ChatMessage]) -> String {
     instructions
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn extract_last_user_message(messages: &[ChatMessage]) -> String {
     messages
         .iter()
@@ -336,7 +317,6 @@ pub async fn foundation_models_chat_completion<R: Runtime>(
 
     #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
     {
-        let _ = &body;
         Err(FoundationModelsError::unavailable(
             "Foundation Models are only available on macOS 26+ with Apple Silicon".into(),
         ))

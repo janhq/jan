@@ -63,8 +63,11 @@ import { useMessages } from '@/hooks/useMessages'
 import { useShallow } from 'zustand/react/shallow'
 import { McpExtensionToolLoader } from './McpExtensionToolLoader'
 import {
+  ContentType,
   ExtensionTypeEnum,
   MCPExtension,
+  MessageStatus,
+  ThreadMessage,
   fs,
   VectorDBExtension,
 } from '@janhq/core'
@@ -72,7 +75,9 @@ import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
 import { toast } from 'sonner'
 import { isPlatformTauri } from '@/lib/platform/utils'
+import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { useAttachmentIngestionPrompt } from '@/hooks/useAttachmentIngestionPrompt'
+import { useToolApproval } from '@/hooks/useToolApproval'
 import {
   NEW_THREAD_ATTACHMENT_KEY,
   useChatAttachments,
@@ -116,8 +121,10 @@ const ChatInput = memo(function ChatInput({
   const [rows, setRows] = useState(1)
   const serviceHub = useServiceHub()
   const abortControllers = useAppState((state) => state.abortControllers)
+  const updateLoadingModel = useAppState((state) => state.updateLoadingModel)
   const tools = useAppState((state) => state.tools)
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
+  const setActiveModels = useAppState((state) => state.setActiveModels)
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   const addToHistory = usePrompt((state) => state.addToHistory)
@@ -208,26 +215,6 @@ const ChatInput = memo(function ChatInput({
 
   const assistantCount = assistants?.length || 0
 
-  // Tool schemas sent to the model are not part of ThreadMessage[]; add them here only.
-  // Do not include system instructions — they are already present in messages and counted by useTokensCount.
-  const tokenCounterAdditionalContext = useMemo(() => {
-    const toolsText = tools
-      .map((tool) => {
-        const schema = (() => {
-          try {
-            return JSON.stringify(tool.inputSchema ?? {})
-          } catch {
-            return '{}'
-          }
-        })()
-        return `Tool ${tool.server}::${tool.name}\nDescription: ${tool.description}\nSchema: ${schema}`
-      })
-      .join('\n\n')
-
-    if (!toolsText) return ''
-    return `Available tools:\n${toolsText}`
-  }, [tools])
-
   // No auto-selection: let the user explicitly pick an assistant
 
   // Jan Browser Extension hook
@@ -258,6 +245,7 @@ const ChatInput = memo(function ChatInput({
   const attachmentsEnabled = useAttachments((s) => s.enabled)
   const parsePreference = useAttachments((s) => s.parseMode)
   const maxFileSizeMB = useAttachments((s) => s.maxFileSizeMB)
+  const autoInlineContextRatio = useAttachments((s) => s.autoInlineContextRatio)
 
   // Derived: any document currently processing (ingestion in progress)
   const attachmentsKey = currentThreadId ?? NEW_THREAD_ATTACHMENT_KEY
@@ -267,6 +255,7 @@ const ChatInput = memo(function ChatInput({
       [attachmentsKey]
     )
   )
+  const attachmentsKeyRef = useRef(attachmentsKey)
   const setAttachmentsForThread = useChatAttachments(
     (state) => state.setAttachments
   )
@@ -278,15 +267,14 @@ const ChatInput = memo(function ChatInput({
   )
   const getProviderByName = useModelProvider((state) => state.getProviderByName)
 
+  useEffect(() => {
+    attachmentsKeyRef.current = attachmentsKey
+  }, [attachmentsKey])
+
   const ingestingDocs = attachments.some(
     (a) => a.type === 'document' && a.processing
   )
   const ingestingAny = attachments.some((a) => a.processing)
-
-  const [, setFileIngestProgress] = useState<{
-    completed: number
-    total: number
-  } | null>(null)
 
   // Queued messages for this thread (shown as chips in the input area)
   const queuedMessages = useMessageQueue(
@@ -312,6 +300,51 @@ const ChatInput = memo(function ChatInput({
       lastTransferredThreadId.current = currentThreadId
     }
   }, [currentThreadId, transferAttachments])
+
+  const updateAttachmentProcessing = useCallback(
+    (
+      fileName: string,
+      status: 'processing' | 'done' | 'error' | 'clear_all',
+      updatedAttachment?: Partial<Attachment>
+    ) => {
+      const targetKey = attachmentsKeyRef.current
+      const storeState = useChatAttachments.getState()
+
+      // Find all keys that have this attachment (including NEW_THREAD_ATTACHMENT_KEY)
+      const allMatchingKeys = Object.entries(storeState.attachmentsByThread)
+        .filter(([, list]) => list?.some((att) => att.name === fileName))
+        .map(([key]) => key)
+
+      // Always include targetKey and all matching keys
+      const keysToUpdate = new Set([targetKey, ...allMatchingKeys])
+
+      const applyUpdate = (key: string) => {
+        if (status === 'clear_all') {
+          clearAttachmentsForThread(key)
+          return
+        }
+
+        setAttachmentsForThread(key, (prev) =>
+          prev.map((att) =>
+            att.name === fileName
+              ? {
+                  ...att,
+                  ...updatedAttachment,
+                  processing: status === 'processing',
+                  processed:
+                    status === 'done'
+                      ? true
+                      : (updatedAttachment?.processed ?? att.processed),
+                }
+              : att
+          )
+        )
+      }
+
+      keysToUpdate.forEach((key) => applyUpdate(key as string))
+    },
+    [clearAttachmentsForThread, setAttachmentsForThread]
+  )
 
   // Check for mmproj existence or vision capability when model changes
   useEffect(() => {
@@ -485,11 +518,7 @@ const ChatInput = memo(function ChatInput({
       }
 
       setPrompt('')
-      // Don't clear attachments here — document attachments stored under
-      // NEW_THREAD_ATTACHMENT_KEY need to survive until the thread detail
-      // page transfers and processes them.  The thread detail page's
-      // processAndSendMessage already calls clearAttachmentsForThread after
-      // processing is complete.
+      clearAttachmentsForThread(attachmentsKey)
     }
   }
 
@@ -562,19 +591,76 @@ const ChatInput = memo(function ChatInput({
 
   const processNewDocumentAttachments = useCallback(
     async (docs: Attachment[]) => {
-      if (!docs.length) return
+      if (!docs.length || !currentThreadId) return
 
-      // Only collect the user's inline-vs-embeddings preference via the
-      // dialog.  Actual ingestion is always deferred to send time
-      // (processAttachmentsForSend inside processAndSendMessage).
+      const modelReady = await (async () => {
+        if (!selectedModel?.id) return false
+        if (activeModels.includes(selectedModel.id)) return true
+        const provider = getProviderByName(selectedProvider)
+        if (!provider) return false
+        try {
+          updateLoadingModel(true)
+          await serviceHub.models().startModel(provider, selectedModel.id)
+          const active = await serviceHub.models().getActiveModels()
+          setActiveModels(active || [])
+          return active?.includes(selectedModel.id) ?? false
+        } catch (err) {
+          console.warn(
+            'Failed to start model before attachment validation',
+            err
+          )
+          return false
+        } finally {
+          updateLoadingModel(false)
+        }
+      })()
+
+      const modelContextLength = (() => {
+        const ctx = selectedModel?.settings?.ctx_len?.controller_props?.value
+        if (typeof ctx === 'number') return ctx
+        if (typeof ctx === 'string') {
+          const parsed = parseInt(ctx, 10)
+          return Number.isFinite(parsed) ? parsed : undefined
+        }
+        return undefined
+      })()
+
+      const rawContextThreshold =
+        typeof modelContextLength === 'number' && modelContextLength > 0
+          ? Math.floor(
+              modelContextLength *
+                (typeof autoInlineContextRatio === 'number'
+                  ? autoInlineContextRatio
+                  : 0.75)
+            )
+          : undefined
+
+      const contextThreshold =
+        typeof rawContextThreshold === 'number' &&
+        Number.isFinite(rawContextThreshold) &&
+        rawContextThreshold > 0
+          ? rawContextThreshold
+          : undefined
+
+      const hasContextEstimate =
+        modelReady &&
+        typeof contextThreshold === 'number' &&
+        Number.isFinite(contextThreshold) &&
+        contextThreshold > 0
       const docsNeedingPrompt = docs.filter((doc) => {
         if (doc.processed || doc.injectionMode) return false
         const preference = doc.parseMode ?? parsePreference
-        return preference === 'prompt' || preference === 'auto'
+        return (
+          preference === 'prompt' ||
+          (preference === 'auto' && !hasContextEstimate)
+        )
       })
 
+      // Map to store individual choices for each document
+      const docChoices = new Map<string, 'inline' | 'embeddings'>()
+
       if (docsNeedingPrompt.length > 0) {
-        const choices = new Map<string, 'inline' | 'embeddings'>()
+        // Ask for each file individually
         for (let i = 0; i < docsNeedingPrompt.length; i++) {
           const doc = docsNeedingPrompt[i]
           const choice = await useAttachmentIngestionPrompt
@@ -587,40 +673,118 @@ const ChatInput = memo(function ChatInput({
             )
 
           if (!choice) {
-            // User cancelled — remove all pending docs
+            // User cancelled - remove all pending docs
             setAttachmentsForThread(attachmentsKey, (prev) =>
               prev.filter(
                 (att) =>
                   !docsNeedingPrompt.some(
-                    (d) => d.path && att.path && d.path === att.path
+                    (doc) => doc.path && att.path && doc.path === att.path
                   )
               )
             )
             return
           }
 
+          // Store the choice for this specific document
           if (doc.path) {
-            choices.set(doc.path, choice)
+            docChoices.set(doc.path, choice)
           }
         }
+      }
 
-        // Persist each document's chosen mode so processAttachmentsForSend
-        // can pick it up at send time.
-        if (choices.size > 0) {
+      const estimateTokens = async (
+        text: string
+      ): Promise<number | undefined> => {
+        try {
+          if (!selectedModel?.id || !modelReady) return undefined
+          const tokenCount = await serviceHub
+            .models()
+            .getTokensCount(selectedModel.id, [
+              {
+                id: 'inline-attachment',
+                object: 'thread.message',
+                thread_id: currentThreadId,
+                role: 'user',
+                content: [
+                  {
+                    type: ContentType.Text,
+                    text: { value: text, annotations: [] },
+                  },
+                ],
+                status: MessageStatus.Ready,
+                created_at: Date.now(),
+                completed_at: Date.now(),
+              } as ThreadMessage,
+            ])
+          if (
+            typeof tokenCount !== 'number' ||
+            !Number.isFinite(tokenCount) ||
+            tokenCount <= 0
+          ) {
+            return undefined
+          }
+          return tokenCount
+        } catch (e) {
+          console.debug('Failed to estimate tokens for attachment content', e)
+          return undefined
+        }
+      }
+
+      try {
+        const { processedAttachments, hasEmbeddedDocuments } =
+          await processAttachmentsForSend({
+            attachments: docs,
+            threadId: currentThreadId,
+            serviceHub,
+            selectedProvider,
+            contextThreshold,
+            estimateTokens,
+            parsePreference,
+            perFileChoices: docChoices.size > 0 ? docChoices : undefined,
+            updateAttachmentProcessing,
+          })
+
+        if (processedAttachments.length > 0) {
           setAttachmentsForThread(attachmentsKey, (prev) =>
             prev.map((att) => {
-              const mode = att.path ? choices.get(att.path) : undefined
-              return mode ? { ...att, parseMode: mode } : att
+              const match = processedAttachments.find(
+                (p) => p.path && att.path && p.path === att.path
+              )
+              return match ? { ...att, ...match } : att
             })
           )
         }
+
+        if (hasEmbeddedDocuments) {
+          const toolApproval = useToolApproval.getState()
+          const ragTools = useAppState.getState().ragToolNames
+          for (const toolName of ragTools) {
+            toolApproval.approveToolForThread(currentThreadId, toolName)
+          }
+          useThreads.getState().updateThread(currentThreadId, {
+            metadata: { hasDocuments: true },
+          })
+        }
+      } catch (e) {
+        console.error('Failed to process attachments:', e)
       }
     },
     [
       ATTACHMENT_AUTO_INLINE_FALLBACK_BYTES,
       attachmentsKey,
+      autoInlineContextRatio,
+      activeModels,
+      currentThreadId,
+      getProviderByName,
       parsePreference,
+      selectedModel?.id,
+      selectedModel?.settings?.ctx_len?.controller_props?.value,
+      selectedProvider,
+      serviceHub,
+      setActiveModels,
       setAttachmentsForThread,
+      updateAttachmentProcessing,
+      updateLoadingModel,
     ]
   )
 
@@ -1037,61 +1201,50 @@ const ChatInput = memo(function ChatInput({
     )
 
     if (currentThreadId && newFiles.length > 0) {
-      const ingestTotal = newFiles.length
       void (async () => {
-        setFileIngestProgress({ completed: 0, total: ingestTotal })
-        try {
-          for (let i = 0; i < newFiles.length; i++) {
-            const img = newFiles[i]
-            const matchImg = (a: Attachment) =>
-              a.type === 'image' &&
-              (img.contentHash
-                ? a.contentHash === img.contentHash
-                : a.name === img.name)
+        for (const img of newFiles) {
+          const matchImg = (a: Attachment) =>
+            a.type === 'image' &&
+            (img.contentHash ? a.contentHash === img.contentHash : a.name === img.name)
 
-            try {
+          try {
+            // Mark as processing
+            setAttachmentsForThread(attachmentsKey, (prev) =>
+              prev.map((a) => (matchImg(a) ? { ...a, processing: true } : a))
+            )
+
+            const result = await serviceHub
+              .uploads()
+              .ingestImage(currentThreadId, img)
+
+            if (result?.id) {
+              // Mark as processed with ID
               setAttachmentsForThread(attachmentsKey, (prev) =>
-                prev.map((a) => (matchImg(a) ? { ...a, processing: true } : a))
-              )
-
-              const result = await serviceHub
-                .uploads()
-                .ingestImage(currentThreadId, img)
-
-              if (result?.id) {
-                setAttachmentsForThread(attachmentsKey, (prev) =>
-                  prev.map((a) =>
-                    matchImg(a)
-                      ? {
-                          ...a,
-                          processing: false,
-                          processed: true,
-                          id: result.id,
-                        }
-                      : a
-                  )
+                prev.map((a) =>
+                  matchImg(a)
+                    ? {
+                        ...a,
+                        processing: false,
+                        processed: true,
+                        id: result.id,
+                      }
+                    : a
                 )
-              } else {
-                throw new Error('No ID returned from image ingestion')
-              }
-            } catch (error) {
-              console.error('Failed to ingest image:', error)
-              setAttachmentsForThread(attachmentsKey, (prev) =>
-                prev.filter((a) => !matchImg(a))
               )
-              toast.error(`Failed to ingest ${img.name}`, {
-                description:
-                  error instanceof Error ? error.message : String(error),
-              })
-            } finally {
-              setFileIngestProgress({
-                completed: i + 1,
-                total: ingestTotal,
-              })
+            } else {
+              throw new Error('No ID returned from image ingestion')
             }
+          } catch (error) {
+            console.error('Failed to ingest image:', error)
+            // Remove failed image
+            setAttachmentsForThread(attachmentsKey, (prev) =>
+              prev.filter((a) => !matchImg(a))
+            )
+            toast.error(`Failed to ingest ${img.name}`, {
+              description:
+                error instanceof Error ? error.message : String(error),
+            })
           }
-        } finally {
-          setFileIngestProgress(null)
         }
       })()
     }
@@ -1971,7 +2124,6 @@ const ChatInput = memo(function ChatInput({
                     <TokenCounter
                       messages={threadMessages || []}
                       compact={true}
-                      additionalContextText={tokenCounterAdditionalContext}
                       uploadedFiles={attachments
                         .filter((a) => a.type === 'image' && a.dataUrl)
                         .map((a) => ({
@@ -2053,7 +2205,6 @@ const ChatInput = memo(function ChatInput({
           <div className="flex-1 w-full flex justify-start px-2">
             <TokenCounter
               messages={threadMessages || []}
-              additionalContextText={tokenCounterAdditionalContext}
               uploadedFiles={attachments
                 .filter((a) => a.type === 'image' && a.dataUrl)
                 .map((a) => ({

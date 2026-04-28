@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { FileText, Trash2, UploadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
 import {
   Tooltip,
   TooltipContent,
@@ -238,10 +237,6 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState<{
-    current: number
-    total: number
-  } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
 
   const loadProjectFiles = useCallback(async () => {
@@ -349,19 +344,15 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
       if (newAttachments.length === 0) return
 
-      const total = newAttachments.length
       setUploading(true)
-      setUploadProgress({ current: 0, total })
       try {
-        for (let i = 0; i < newAttachments.length; i++) {
-          const att = newAttachments[i]
+        for (const att of newAttachments) {
           const result = await serviceHub
             .uploads()
             .ingestFileAttachmentForProject(projectId, att)
           if (!result.id) {
             throw new Error('Failed to ingest file')
           }
-          setUploadProgress({ current: i + 1, total })
         }
         toast.success(
           t('common:toast.fileUploaded.title') ?? 'File uploaded successfully'
@@ -377,7 +368,6 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           }
         )
       } finally {
-        setUploadProgress(null)
         setUploading(false)
       }
     },
@@ -524,22 +514,6 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           <span>Upload</span>
         </Button>
       </div>
-
-      {uploadProgress && uploadProgress.total > 0 && (
-        <div className="mb-3 space-y-1.5">
-          <div className="flex justify-between gap-2 text-xs text-muted-foreground">
-            <span>
-              {t('common:projects.uploadingFiles')}
-            </span>
-            <span className="tabular-nums shrink-0">
-              {uploadProgress.current} / {uploadProgress.total}
-            </span>
-          </div>
-          <Progress
-            value={(uploadProgress.current / uploadProgress.total) * 100}
-          />
-        </div>
-      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-8">

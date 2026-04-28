@@ -48,8 +48,7 @@ export const useTokensCount = (
     size: number
     base64: string
     dataUrl: string
-  }>,
-  additionalContextText?: string
+  }>
 ) => {
   const [tokenData, setTokenData] = useState<TokenCountData>({
     tokenCount: 0,
@@ -102,22 +101,6 @@ export const useTokensCount = (
         } as ThreadMessage)
       }
     }
-
-    if (additionalContextText?.trim()) {
-      result.push({
-        id: 'temp-runtime-context',
-        thread_id: '',
-        role: 'system',
-        content: [
-          {
-            type: ContentType.Text,
-            text: { value: additionalContextText.trim() },
-          },
-        ],
-        created_at: Date.now(),
-      } as ThreadMessage)
-    }
-
     return result.map((e) => {
       // Pull inline file contents stored on the message metadata
       const inlineFileContents = getInlineFileContents(e.metadata)
@@ -146,7 +129,7 @@ export const useTokensCount = (
         })),
       }
     })
-  }, [messages, prompt, uploadedFiles, additionalContextText])
+  }, [messages, prompt, uploadedFiles])
 
   // Debounced calculation that includes current prompt
   const runTokenCalculation = useCallback(async () => {

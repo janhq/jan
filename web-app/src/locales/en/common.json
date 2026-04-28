@@ -86,7 +86,6 @@
   "noThreadsYetDesc": "Start a new conversation to see your thread history here.",
   "downloads": "Downloads",
   "downloading": "Downloading",
-  "uploadingAttachments": "Uploading attachments…",
   "cancelDownload": "Cancel download",
   "downloadCancelled": "Download Cancelled",
   "downloadComplete": "Download Complete",
@@ -282,7 +281,6 @@
     "noAssistantAssigned": "No assistant assigned to this project",
     "files": "Files",
     "filesDescription": "Add PDFs, documents, or other text to reference in this project.",
-    "uploadingFiles": "Uploading files…",
     "deleteProjectDialog": {
       "title": "Delete Project",
       "permanentDelete": "This will permanently delete all threads.",

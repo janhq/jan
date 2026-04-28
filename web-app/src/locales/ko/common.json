@@ -86,7 +86,6 @@
   "noThreadsYetDesc": "새 대화를 시작하면 여기에 스레드 기록이 표시됩니다.",
   "downloads": "다운로드",
   "downloading": "다운로드 중",
-  "uploadingAttachments": "첨부 파일 업로드 중…",
   "cancelDownload": "다운로드 취소",
   "downloadCancelled": "다운로드 취소됨",
   "downloadComplete": "다운로드 완료",
@@ -282,7 +281,6 @@
     "noAssistantAssigned": "이 프로젝트에 할당된 어시스턴트가 없습니다",
     "files": "파일",
     "filesDescription": "이 프로젝트에서 참조할 PDF, 문서 또는 기타 텍스트를 추가하세요.",
-    "uploadingFiles": "파일 업로드 중…",
     "deleteProjectDialog": {
       "title": "프로젝트 삭제",
       "permanentDelete": "모든 스레드가 영구적으로 삭제됩니다.",

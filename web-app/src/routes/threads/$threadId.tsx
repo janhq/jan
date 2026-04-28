@@ -162,7 +162,6 @@ function ThreadDetail() {
     autoIncreaseAttempts > 0 &&
     autoIncreaseAttempts < MAX_AUTO_INCREASE_ATTEMPTS
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
-  const [processingEmbeddings, setProcessingEmbeddings] = useState(false)
 
   // Refs so onFinish (captured in closure) always calls the latest callbacks
   const handleContextSizeIncreaseRef = useRef<(() => void) | null>(null)
@@ -592,41 +591,10 @@ function ThreadDetail() {
         ...allAttachments.filter((a) => a.type === 'document'),
       ]
 
-      const messageId = generateId()
-      const hasDocuments = combinedAttachments.some(
-        (a) => a.type === 'document' && !a.processed
-      )
-      const hasEmbeddingDocuments = combinedAttachments.some(
-        (a) =>
-          a.type === 'document' &&
-          !a.processed &&
-          a.parseMode !== 'inline'
-      )
-
-      // When there are unprocessed documents (e.g. first-message flow),
-      // show the user message in the conversation immediately so the UI
-      // doesn't hang while embeddings are generated.
-      if (hasDocuments) {
-        const previewMessage = newUserThreadContent(
-          threadId,
-          text,
-          combinedAttachments,
-          messageId
-        )
-        const previewUI =
-          convertThreadMessagesToUIMessages([previewMessage])
-        setChatMessages((prev) => [...prev, ...previewUI])
-      }
-
-      // Clear attachment chips from the input — they are now either
-      // about to be sent or visible in the preview message above.
-      clearAttachmentsForThread(attachmentsKey)
-
       // Process attachments (ingest images, parse/index documents)
       let processedAttachments = combinedAttachments
       const projectId = thread?.metadata?.project?.id
       if (combinedAttachments.length > 0) {
-        if (hasEmbeddingDocuments) setProcessingEmbeddings(true)
         try {
           const parsePreference = useAttachments.getState().parseMode
           const result = await processAttachmentsForSend({
@@ -652,25 +620,13 @@ function ThreadDetail() {
           }
         } catch (error) {
           console.error('Failed to process attachments:', error)
-          // Remove the preview message on failure
-          if (hasDocuments) {
-            setChatMessages((prev) =>
-              prev.filter((m) => m.id !== messageId)
-            )
-          }
+          // Don't send message if attachment processing failed
           return
-        } finally {
-          setProcessingEmbeddings(false)
         }
       }
 
-      // Remove the preview before sendMessage adds the real user message
-      // with the same id — this prevents duplicates.
-      if (hasDocuments) {
-        setChatMessages((prev) => prev.filter((m) => m.id !== messageId))
-      }
-
-      // Persist the final message to backend
+      const messageId = generateId()
+      // Create and persist the user message to the backend with all processed attachments
       const userMessage = newUserThreadContent(
         threadId,
         text,
@@ -705,6 +661,9 @@ function ThreadDetail() {
         id: messageId,
         metadata: { ...userMessage.metadata, createdAt: new Date() },
       })
+
+      // Clear attachments after sending
+      clearAttachmentsForThread(attachmentsKey)
     },
     [
       sendMessage,
@@ -713,7 +672,6 @@ function ThreadDetail() {
       addMessage,
       getAttachments,
       attachmentsKey,
-      setChatMessages,
       clearAttachmentsForThread,
       serviceHub,
       selectedProvider,
@@ -1102,11 +1060,6 @@ function ThreadDetail() {
                   hideActions
                   isAnimating={false}
                 />
-              )}
-              {processingEmbeddings && (
-                <div className="flex flex-row items-center gap-2">
-                  <Shimmer duration={1}>Processing embeddings...</Shimmer>
-                </div>
               )}
               {(status === CHAT_STATUS.SUBMITTED ||
                 isAutoIncreasingContext) && (

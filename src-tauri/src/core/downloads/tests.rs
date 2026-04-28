@@ -1,6 +1,5 @@
 use super::helpers::*;
 use super::models::*;
-use crate::core::filesystem::helpers::resolve_path_within_jan_data_folder;
 use reqwest::header::HeaderMap;
 use std::collections::HashMap;
 
@@ -270,42 +269,6 @@ fn test_download_item_creation() {
 
     assert_eq!(item.url, "https://example.com/file.tar.gz");
     assert_eq!(item.save_path, "models/test.tar.gz");
-}
-
-#[cfg(unix)]
-#[test]
-fn test_download_scope_accepts_absolute_path_inside_canonical_root() {
-    use std::fs;
-    use std::os::unix::fs::symlink;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let base_dir = std::env::temp_dir().join(format!("jan-download-scope-{unique}"));
-    let configured_root = base_dir.join("home").join("user").join("jan-data");
-    let canonical_root = base_dir
-        .join("var")
-        .join("home")
-        .join("user")
-        .join("jan-data");
-    fs::create_dir_all(&canonical_root).unwrap();
-    fs::create_dir_all(configured_root.parent().unwrap()).unwrap();
-    symlink(&canonical_root, &configured_root).unwrap();
-
-    let candidate = canonical_root.join("llamacpp/backends/v1/backend.tar.gz");
-    let (_, resolved_path) =
-        resolve_path_within_jan_data_folder(&configured_root, candidate.to_string_lossy().as_ref())
-            .unwrap();
-
-    let expected_path = canonical_root
-        .canonicalize()
-        .unwrap()
-        .join("llamacpp/backends/v1/backend.tar.gz");
-    assert_eq!(resolved_path, expected_path);
-
-    let _ = fs::remove_dir_all(&base_dir);
 }
 
 #[test]
