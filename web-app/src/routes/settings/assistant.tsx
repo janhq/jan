@@ -37,7 +37,6 @@ function AssistantContent() {
     deleteAssistant,
     defaultAssistantId,
     setDefaultAssistant,
-    refreshAssistants
   } = useAssistant()
   const [open, setOpen] = useState(false)
   const [editingKey, setEditingKey] = useState<string | null>(null)
@@ -71,7 +70,7 @@ function AssistantContent() {
   const handleEditClick = useCallback((assistantId: string) => {
     // Before opening the edit dialog, refresh the assistants to get the latest data
     const requestId = ++refreshRequestRef.current
-    refreshAssistants()
+    useAssistant.getState().refreshAssistants()
       .then(() => {
         if (refreshRequestRef.current !== requestId) return
         setEditingKey(assistantId)

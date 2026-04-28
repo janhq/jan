@@ -222,10 +222,9 @@ export const useAssistant = create<AssistantState>((set, get) => ({
     try {
       const assistants = await getServiceHub().assistants().getAssistants()
       if (assistants) {
-        set({
-          assistants,
-          loading: false
-        })
+        set({ assistants, loading: false })
+      } else {
+        set({ loading: false })
       }
     } catch (error) {
       toast.error('Failed to refresh assistants', {
