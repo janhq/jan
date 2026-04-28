@@ -1340,6 +1340,11 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         rope_freq_base: 0.0,
         rope_freq_scale: 0.0,
         ctx_shift: false,
-        parallel: 1
+        parallel: 1,
+        reasoning: "auto".to_string(),
+        cache_ram: -1,
+        cache_reuse: 0,
+        swa_full: false,
+        keep: 0,
     }
 }

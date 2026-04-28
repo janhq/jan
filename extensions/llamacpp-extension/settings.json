@@ -354,67 +354,49 @@
     }
   },
   {
-    "key": "mirostat",
-    "title": "Mirostat Mode",
-    "description": "Use Mirostat sampling (0: disabled, 1: Mirostat V1, 2: Mirostat V2).",
-    "controllerType": "dropdown",
+    "key": "cache_ram",
+    "title": "Prompt Cache RAM (MiB)",
+    "description": "Maximum prompt cache size in MiB (--cache-ram). -1 = unlimited, 0 = disabled.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": -1,
+      "placeholder": "-1",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "cache_reuse",
+    "title": "Cache Reuse",
+    "description": "Min chunk size of matching prefix tokens to reuse from cache (--cache-reuse). 0 = disabled.",
+    "controllerType": "input",
     "controllerProps": {
       "value": 0,
-      "options": [
-        { "value": 0, "name": "Disabled" },
-        { "value": 1, "name": "Mirostat V1" },
-        { "value": 2, "name": "Mirostat V2" }
-      ]
-    }
-  },
-  {
-    "key": "mirostat_lr",
-    "title": "Mirostat Learning Rate",
-    "description": "Mirostat learning rate (eta).",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 0.1,
-      "placeholder": "0.1",
+      "placeholder": "0",
       "type": "number",
       "textAlign": "right",
-      "min": 0,
-      "step": 0.01
+      "min": 0
     }
   },
   {
-    "key": "mirostat_ent",
-    "title": "Mirostat Target Entropy",
-    "description": "Mirostat target entropy (tau).",
+    "key": "swa_full",
+    "title": "Full SWA Cache",
+    "description": "Use full-size SWA cache (--swa-full). May improve quality at the cost of memory.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": false
+    }
+  },
+  {
+    "key": "keep",
+    "title": "Keep First N Tokens",
+    "description": "Number of tokens from the initial prompt to keep when context is shifted (--keep). -1 = keep all.",
     "controllerType": "input",
     "controllerProps": {
-      "value": 5.0,
-      "placeholder": "5.0",
+      "value": 0,
+      "placeholder": "0",
       "type": "number",
-      "textAlign": "right",
-      "min": 0,
-      "step": 0.01
-    }
-  },
-  {
-    "key": "grammar_file",
-    "title": "Grammar File",
-    "description": "Path to a BNF-like grammar file to constrain generations.",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": "",
-      "placeholder": "path/to/grammar.gbnf",
-      "type": "text"
-    }
-  },
-  {
-    "key": "json_schema_file",
-    "title": "JSON Schema File",
-    "description": "Path to a JSON schema file to constrain generations.",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": "",
-      "placeholder": "path/to/schema.json",
-      "type": "text"
+      "textAlign": "right"
     }
   }
 ]
