@@ -6,8 +6,8 @@
       "checking": "Checking extension status..."
     },
     "notInstalled": {
-      "title": "Jan completes tasks in your browser",
-      "description": "Install the extension to give Jan browser access",
+      "title": "RongxinAI completes tasks in your browser",
+      "description": "Install the extension to give RongxinAI browser access",
       "getExtension": "Get Extension"
     }
   },
@@ -56,11 +56,11 @@
   "serverStatusInactive": "Server {{serverKey}} deactivated successfully",
   "runtimeSettings": {
     "title": "Runtime Settings",
-    "description": "Configure how Jan manages and retries MCP servers.",
+    "description": "Configure how RongxinAI manages and retries MCP servers.",
     "toolCallTimeout": "Tool call timeout (seconds)",
     "toolCallTimeoutDesc": "Maximum time to wait for an MCP tool response before timing out.",
     "smartToolRouting": "Smart MCP tool routing",
-    "smartToolRoutingDesc": "When enabled, Jan selects relevant MCP servers before loading tools. Disable to always load the full MCP tool list.",
+    "smartToolRoutingDesc": "When enabled, RongxinAI selects relevant MCP servers before loading tools. Disable to always load the full MCP tool list.",
     "useLightweightRouterModel": "Use a dedicated model for routing",
     "useLightweightRouterModelDesc": "When smart routing is on, run the routing step with a separate (often smaller) model instead of the chat model. Turn off to always use the active chat model for routing.",
     "routerModel": "Routing model",

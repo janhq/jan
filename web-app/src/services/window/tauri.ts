@@ -97,7 +97,7 @@ export class TauriWindowService extends DefaultWindowService {
       await this.openWindow({
         url: '/logs',
         label: 'logs-app-window',
-        title: 'App Logs - Jan',
+        title: 'App Logs - RongxinAI',
         width: 800,
         height: 600,
         resizable: true,
@@ -114,7 +114,7 @@ export class TauriWindowService extends DefaultWindowService {
       await this.openWindow({
         url: '/system-monitor',
         label: 'system-monitor-window',
-        title: 'System Monitor - Jan',
+        title: 'System Monitor - RongxinAI',
         width: 1000,
         height: 700,
         resizable: true,
@@ -131,7 +131,7 @@ export class TauriWindowService extends DefaultWindowService {
       await this.openWindow({
         url: '/local-api-server/logs',
         label: 'logs-window-local-api-server',
-        title: 'Local API Server Logs - Jan',
+        title: 'Local API Server Logs - RongxinAI',
         width: 800,
         height: 600,
         resizable: true,

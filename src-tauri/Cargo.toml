@@ -38,7 +38,6 @@ desktop = [
     "deep-link",
     "hardware",
     "mlx",
-    "foundation-models"
 ]
 mobile = [
     "tauri/protocol-asset",
