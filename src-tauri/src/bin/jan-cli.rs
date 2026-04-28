@@ -841,7 +841,7 @@ async fn handle_serve(args: ServeArgs) {
             }
             Err(_) if looks_like_hf_repo(&model_id) => {
                 // Looks like a HuggingFace repo ID — download then resolve.
-                auto_download_hf_model(&model_id, args.select).await;
+                auto_download_hf_model(&model_id, select).await;
                 match resolve_model_engine(&model_id) {
                     Ok((eng, mp, mmp)) => (
                         eng,

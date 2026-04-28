@@ -10,6 +10,26 @@ const stringify = (value: unknown): string => {
   }
 }
 
+type ToolResponsePart = {
+  text?: string
+}
+
+type ToolCallLike = {
+  tool?: {
+    function?: {
+      name?: string
+    }
+  }
+  name?: string
+  response?: {
+    content?: ToolResponsePart[] | unknown
+  } | unknown
+  result?: unknown
+}
+
+const asToolCallLike = (value: unknown): ToolCallLike =>
+  typeof value === 'object' && value !== null ? (value as ToolCallLike) : {}
+
 export const extractToolContextFromContent = (
   content: ThreadContent[]
 ): string => {
@@ -38,9 +58,12 @@ export const extractToolContextFromMetadata = (
 
   const entries = toolCalls
     .map((call) => {
-      const toolName =
-        (call as any)?.tool?.function?.name || (call as any)?.name || 'tool'
-      const responseContent = (call as any)?.response?.content
+      const parsedCall = asToolCallLike(call)
+      const toolName = parsedCall.tool?.function?.name || parsedCall.name || 'tool'
+      const responseContent =
+        typeof parsedCall.response === 'object' && parsedCall.response !== null
+          ? (parsedCall.response as { content?: unknown }).content
+          : undefined
       if (Array.isArray(responseContent)) {
         const text = responseContent
           .map((part) =>
@@ -50,7 +73,7 @@ export const extractToolContextFromMetadata = (
           .join('\n')
         return text ? `${toolName}: ${text}` : ''
       }
-      const responseText = stringify((call as any)?.response ?? (call as any)?.result)
+      const responseText = stringify(parsedCall.response ?? parsedCall.result)
       return responseText ? `${toolName}: ${responseText}` : ''
     })
     .filter(Boolean)
