@@ -538,9 +538,55 @@ export const useModelProvider = create<ModelProviderState>()(
             }
           })
         }
+
+        if (version <= 11 && state?.providers) {
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp') return
+
+            // Reasoning moved from extension-level to per-model settings —
+            // strip any stale entry from the provider settings panel.
+            if (provider.settings) {
+              provider.settings = provider.settings.filter(
+                (s) => s.key !== 'reasoning'
+              )
+            }
+
+            if (provider.models) {
+              provider.models.forEach((model) => {
+                if (!model.settings) model.settings = {}
+
+                if (!model.settings.reasoning) {
+                  model.settings.reasoning = {
+                    ...modelSettings.reasoning,
+                    controller_props: {
+                      ...modelSettings.reasoning.controller_props,
+                    },
+                  }
+                }
+              })
+            }
+          })
+        }
+
+        if (version <= 12 && state?.providers) {
+          // Reset ctx_len from the prior 8192 default to '' so llama.cpp picks
+          // (auto-fit when enabled, model default otherwise). Preserve any
+          // user-customised value.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp' || !provider.models) return
+            provider.models.forEach((model) => {
+              const ctx = model.settings?.ctx_len as
+                | { controller_props?: { value?: unknown } }
+                | undefined
+              if (ctx?.controller_props?.value === 8192) {
+                ctx.controller_props.value = ''
+              }
+            })
+          })
+        }
         return state
       },
-      version: 11,
+      version: 13,
     }
   )
 )
