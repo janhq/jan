@@ -206,6 +206,18 @@ pub fn add_cuda_paths(command: &mut tokio::process::Command) -> bool {
     found
 }
 
+/// Returns true when running inside a Flatpak sandbox.
+pub fn is_flatpak() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        Path::new("/.flatpak-info").exists() || std::env::var_os("FLATPAK_ID").is_some()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn find_cuda_paths_windows() -> CudaPaths {
     use std::collections::HashSet;

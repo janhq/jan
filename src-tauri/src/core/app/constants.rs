@@ -1,5 +1,6 @@
 // App Configuration Constants
 pub const CONFIGURATION_FILE_NAME: &str = "settings.json";
+pub const TAURI_BUNDLE_IDENTIFIER: &str = "jan.ai.app";
 
 // Categorised lists of Jan data directories and files.
 // The factory-reset logic selectively deletes by category based on user choices.

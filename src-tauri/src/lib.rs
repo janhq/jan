@@ -115,7 +115,7 @@ macro_rules! invoke_commands_with_extras {
 )]
 pub fn run() {
     let mut builder = tauri::Builder::default();
-    #[cfg(desktop)]
+    #[cfg(feature = "desktop")]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
           println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
@@ -231,7 +231,7 @@ pub fn run() {
             store.save().expect("Failed to save store");
             // Migration completed
 
-            #[cfg(desktop)]
+            #[cfg(feature = "desktop")]
             if option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true" {
                 log::info!("Enabling system tray icon");
                 let _ = setup::setup_tray(app);
@@ -255,7 +255,7 @@ pub fn run() {
             }
 
             setup_mcp(app);
-            #[cfg(desktop)]
+            #[cfg(feature = "desktop")]
             setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
             Ok(())

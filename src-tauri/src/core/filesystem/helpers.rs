@@ -1,6 +1,6 @@
 use crate::core::app::commands::get_jan_data_folder_path;
-use jan_utils::normalize_file_path;
-use std::path::PathBuf;
+use jan_utils::{normalize_file_path, normalize_path};
+use std::path::{Path, PathBuf};
 use tauri::Runtime;
 
 pub fn resolve_path<R: Runtime>(app_handle: tauri::AppHandle<R>, path: &str) -> PathBuf {
