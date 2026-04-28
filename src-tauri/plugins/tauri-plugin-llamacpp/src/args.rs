@@ -5,6 +5,18 @@ fn default_parallel() -> i32 {
  }
 // NOTE: Frontend may send extra keys (e.g. embedding_model_id for RAG). Serde ignores
 // unknown fields here — there is no #[serde(deny_unknown_fields)].
+fn default_reasoning() -> String {
+    "auto".to_string()
+}
+fn default_cache_ram() -> i32 {
+    -1
+}
+fn default_cache_reuse() -> i32 {
+    0
+}
+fn default_keep() -> i32 {
+    0
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlamacppConfig {
     pub version_backend: String,
@@ -47,6 +59,16 @@ pub struct LlamacppConfig {
     pub ctx_shift: bool,
     #[serde(default = "default_parallel")]
     pub parallel: i32,
+    #[serde(default = "default_reasoning")]
+    pub reasoning: String,
+    #[serde(default = "default_cache_ram")]
+    pub cache_ram: i32,
+    #[serde(default = "default_cache_reuse")]
+    pub cache_reuse: i32,
+    #[serde(default)]
+    pub swa_full: bool,
+    #[serde(default = "default_keep")]
+    pub keep: i32,
 }
 
 /// Minimum llama.cpp build number that changed --flash-attn from a boolean
@@ -103,8 +125,34 @@ impl ArgumentBuilder {
             self.args.push("--no-webui".to_string());
         }
 
-        // Jinja template support
         self.args.push("--jinja".to_string());
+
+        match self.config.reasoning.as_str() {
+            "on" | "off" => {
+                self.args.push("--reasoning".to_string());
+                self.args.push(self.config.reasoning.clone());
+            }
+            _ => {}
+        }
+
+        if self.config.cache_ram >= 0 {
+            self.args.push("--cache-ram".to_string());
+            self.args.push(self.config.cache_ram.to_string());
+        }
+
+        if self.config.cache_reuse > 0 {
+            self.args.push("--cache-reuse".to_string());
+            self.args.push(self.config.cache_reuse.to_string());
+        }
+
+        if self.config.swa_full {
+            self.args.push("--swa-full".to_string());
+        }
+
+        if self.config.keep != 0 {
+            self.args.push("--keep".to_string());
+            self.args.push(self.config.keep.to_string());
+        }
 
         // Model path (required)
         self.args.push("-m".to_string());
@@ -323,9 +371,17 @@ impl ArgumentBuilder {
     }
 
     fn add_text_generation_args(&mut self) {
-        if self.config.ctx_size > 0 && !self.config.fit {
+        // With fit on, llama.cpp's fit code handles sizing. With fit off and
+        // no --ctx-size, it would load at n_ctx_train and OOM on small GPUs;
+        // fall back to 4096.
+        if !self.config.fit {
+            let ctx = if self.config.ctx_size > 0 {
+                self.config.ctx_size
+            } else {
+                4096
+            };
             self.args.push("--ctx-size".to_string());
-            self.args.push(self.config.ctx_size.to_string());
+            self.args.push(ctx.to_string());
         }
 
         if self.config.n_predict > 0 {
@@ -446,6 +502,11 @@ mod tests {
             rope_freq_scale: 1.0,
             ctx_shift: false,
             parallel: 1,
+            reasoning: "auto".to_string(),
+            cache_ram: -1,
+            cache_reuse: 0,
+            swa_full: false,
+            keep: 0,
         }
     }
 
@@ -842,6 +903,30 @@ mod tests {
     }
 
     #[test]
+    fn test_ctx_size_falls_back_to_4096_when_fit_off_and_unset() {
+        let mut config = default_config();
+        config.fit = false;
+        config.ctx_size = 0;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--ctx-size", "4096");
+    }
+
+    #[test]
+    fn test_ctx_size_omitted_when_fit_on() {
+        let mut config = default_config();
+        config.fit = true;
+        config.ctx_size = 8192;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--ctx-size");
+    }
+
+    #[test]
     fn test_n_predict() {
         let mut config = default_config();
         config.n_predict = 512;
@@ -1148,6 +1233,139 @@ mod tests {
 
         assert_arg_pair(&args, "--parallel", "1");
         assert_has_flag(&args, "-kvu");
+    }
+
+    #[test]
+    fn test_reasoning_auto_default_not_added() {
+        let config = default_config();
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--reasoning");
+    }
+
+    #[test]
+    fn test_reasoning_on_passes_value() {
+        let mut config = default_config();
+        config.reasoning = "on".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--reasoning", "on");
+    }
+
+    #[test]
+    fn test_reasoning_off_passes_value() {
+        let mut config = default_config();
+        config.reasoning = "off".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--reasoning", "off");
+    }
+
+    #[test]
+    fn test_cache_ram_default_unlimited_not_added() {
+        let config = default_config();
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--cache-ram");
+    }
+
+    #[test]
+    fn test_cache_ram_zero_disables() {
+        let mut config = default_config();
+        config.cache_ram = 0;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--cache-ram", "0");
+    }
+
+    #[test]
+    fn test_cache_ram_custom_value() {
+        let mut config = default_config();
+        config.cache_ram = 4096;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--cache-ram", "4096");
+    }
+
+    #[test]
+    fn test_cache_reuse_default_not_added() {
+        let config = default_config();
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--cache-reuse");
+    }
+
+    #[test]
+    fn test_cache_reuse_custom_value() {
+        let mut config = default_config();
+        config.cache_reuse = 256;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--cache-reuse", "256");
+    }
+
+    #[test]
+    fn test_swa_full_default_not_added() {
+        let config = default_config();
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--swa-full");
+    }
+
+    #[test]
+    fn test_swa_full_enabled() {
+        let mut config = default_config();
+        config.swa_full = true;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_has_flag(&args, "--swa-full");
+    }
+
+    #[test]
+    fn test_keep_default_not_added() {
+        let config = default_config();
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--keep");
+    }
+
+    #[test]
+    fn test_keep_custom_value() {
+        let mut config = default_config();
+        config.keep = 32;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--keep", "32");
+    }
+
+    #[test]
+    fn test_keep_negative_keep_all() {
+        let mut config = default_config();
+        config.keep = -1;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--keep", "-1");
     }
 
     #[test]

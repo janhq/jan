@@ -29,6 +29,8 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LeftSidebar } from '@/components/left-sidebar'
 import { WindowControls } from '@/components/WindowControls'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
+import ErrorDialog from '@/containers/dialogs/ErrorDialog'
+import MissingDependenciesDialog from '@/containers/dialogs/MissingDependenciesDialog'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -155,6 +157,8 @@ function RootLayout() {
           {/* <TanStackRouterDevtools position="bottom-right" /> */}
           <ToolApproval />
           <AttachmentIngestionDialog />
+          <ErrorDialog />
+          <MissingDependenciesDialog />
           <OutOfContextPromiseModal />
         </TranslationProvider>
       </ServiceHubProvider>

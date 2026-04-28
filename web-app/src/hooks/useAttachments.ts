@@ -310,10 +310,14 @@ export const useAttachments = create<AttachmentsStore>()((set) => ({
 // Attempt to hydrate settings from the RAG extension, retrying briefly until it is registered
 const MAX_INIT_ATTEMPTS = 5
 const INIT_RETRY_DELAY_MS = 300
-;(async () => {
+export const initAttachments = async () => {
   for (let i = 0; i < MAX_INIT_ATTEMPTS; i += 1) {
     const success = await useAttachments.getState().loadSettingsDefs()
     if (success) return
     await new Promise((resolve) => setTimeout(resolve, INIT_RETRY_DELAY_MS))
   }
-})()
+}
+
+if (process.env.NODE_ENV !== 'test') {
+  void initAttachments()
+}

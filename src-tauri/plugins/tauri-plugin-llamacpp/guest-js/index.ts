@@ -31,8 +31,8 @@ function asI32(v: any, defaultValue = 0): number {
   return n
 }
 
-function asBool(v: any): boolean {
-  if (v === '' || v === null || v === undefined) return false
+function asBool(v: any, defaultValue = false): boolean {
+  if (v === '' || v === null || v === undefined) return defaultValue
   return v === true || v === 'true' || v === 1 || v === '1'
 }
 
@@ -94,6 +94,11 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     parallel: asI32(config.parallel, 1),
 
     embedding_model_id: asString(config.embedding_model_id),
+    reasoning: asString(config.reasoning, 'auto'),
+    cache_ram: asI32(config.cache_ram, -1),
+    cache_reuse: asI32(config.cache_reuse, 0),
+    swa_full: asBool(config.swa_full),
+    keep: asI32(config.keep, 0),
   }
 }
 

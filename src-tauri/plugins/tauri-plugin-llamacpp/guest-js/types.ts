@@ -68,6 +68,11 @@ export type LlamacppConfig = {
   parallel: number
   /** Folder name under llamacpp/models used for RAG/file embeddings; empty = auto */
   embedding_model_id: string
+  reasoning: string
+  cache_ram: number
+  cache_reuse: number
+  swa_full: boolean
+  keep: number
 }
 
 export type ModelPlan = {
