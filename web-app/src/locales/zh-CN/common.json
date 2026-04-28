@@ -301,6 +301,10 @@
       "title": "消息元数据"
     }
   },
+  "errorDialog": {
+    "titleFallback": "出了点问题",
+    "details": "详细信息"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "所有会话已取消收藏",
@@ -317,6 +321,14 @@
     "deleteThread": {
       "title": "删除会话",
       "description": "此会话已被永久删除。"
+    },
+    "errorCopied": {
+      "title": "复制成功",
+      "description": "错误信息已复制到剪贴板"
+    },
+    "errorCopyFailed": {
+      "title": "复制失败",
+      "description": "无法将错误信息复制到剪贴板"
     },
     "editMessage": {
       "title": "编辑消息",

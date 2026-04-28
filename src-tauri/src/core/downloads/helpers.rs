@@ -342,25 +342,40 @@ pub fn _convert_headers(
     Ok(header_map)
 }
 
-pub async fn _get_file_size(
-    client: &reqwest::Client,
-    url: &str,
-) -> Result<u64, Box<dyn std::error::Error>> {
-    let resp = client.head(url).send().await?;
-    if !resp.status().is_success() {
-        return Err(format!("Failed to get file size: HTTP status {}", resp.status()).into());
-    }
-    // this is buggy, always return 0 for HEAD request
-    // Ok(resp.content_length().unwrap_or(0))
+/// Best-effort file size probe via HEAD. Returns 0 when the server blocks HEAD,
+/// times out, omits Content-Length, or otherwise misbehaves — the actual GET
+/// request will surface any real URL/auth errors.
+pub async fn _get_file_size(client: &reqwest::Client, url: &str) -> u64 {
+    const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
 
-    match resp.headers().get("content-length") {
-        Some(value) => {
-            let value_str = value.to_str()?;
-            let value_u64: u64 = value_str.parse()?;
-            Ok(value_u64)
+    let resp = match tokio::time::timeout(HEAD_TIMEOUT, client.head(url).send()).await {
+        Ok(Ok(resp)) => resp,
+        Ok(Err(e)) => {
+            log::warn!("HEAD {url} failed ({e}); proceeding without known size");
+            return 0;
         }
-        None => Ok(0),
+        Err(_) => {
+            log::warn!(
+                "HEAD {url} timed out after {}s; proceeding without known size",
+                HEAD_TIMEOUT.as_secs()
+            );
+            return 0;
+        }
+    };
+
+    if !resp.status().is_success() {
+        log::warn!(
+            "HEAD {url} returned HTTP {}; proceeding without known size",
+            resp.status()
+        );
+        return 0;
     }
+
+    resp.headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0)
 }
 
 // ===== MAIN DOWNLOAD FUNCTIONS =====
@@ -391,9 +406,7 @@ pub async fn _download_files_internal(
     let mut file_sizes: HashMap<String, u64> = HashMap::new();
     for item in items.iter() {
         let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
-        let size = _get_file_size(&client, &item.url)
-            .await
-            .map_err(err_to_string)?;
+        let size = _get_file_size(&client, &item.url).await;
         file_sizes.insert(item.url.clone(), size);
     }
 
@@ -534,7 +547,7 @@ async fn download_single_file(
     item: &DownloadItem,
     save_path: &std::path::Path,
     file_id: String,
-    _file_size: u64,
+    file_size: u64,
     ctx: DownloadCtx,
 ) -> Result<std::path::PathBuf, String> {
     let DownloadCtx {
@@ -627,7 +640,13 @@ async fn download_single_file(
     if actual_url != item.url {
         log::info!("Downloading via Jan mirror: {}", actual_url);
     }
-    
+    // If HEAD gave us no size, refine the running total from the GET response
+    // so the UI can progress past "Initializing" and show a real percentage.
+    if file_size == 0 {
+        if let Some(content_length) = resp.content_length() {
+            progress_tracker.add_to_total(initial_progress + content_length);
+        }
+    }
     let mut stream = resp.bytes_stream();
 
     let file = if should_resume {

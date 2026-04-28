@@ -1,6 +1,6 @@
 // WARNING: These APIs will be deprecated soon due to removing FS API access from frontend.
 // It's added to ensure the legacy implementation from frontend still functions before removal.
-use super::helpers::resolve_path;
+use super::helpers::{resolve_app_path_within_jan_data_folder, resolve_path};
 use super::models::{DialogOpenOptions, FileStat};
 use rfd::AsyncFileDialog;
 use std::fs;
@@ -199,17 +199,9 @@ pub fn decompress<R: Runtime>(
     path: &str,
     output_dir: &str,
 ) -> Result<(), String> {
-    let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
-    let path_buf = jan_utils::normalize_path(&jan_data_folder.join(path));
-
-    let output_dir_buf = jan_utils::normalize_path(&jan_data_folder.join(output_dir));
-    if !output_dir_buf.starts_with(&jan_data_folder) {
-        return Err(format!(
-            "Error: output directory {} is not under jan_data_folder {}",
-            output_dir_buf.to_string_lossy(),
-            jan_data_folder.to_string_lossy(),
-        ));
-    }
+    let path_buf = std::path::PathBuf::from(path);
+    let (_jan_data_folder, output_dir_buf) =
+        resolve_app_path_within_jan_data_folder(app, output_dir)?;
 
     // Ensure output directory exists
     fs::create_dir_all(&output_dir_buf).map_err(|e| {

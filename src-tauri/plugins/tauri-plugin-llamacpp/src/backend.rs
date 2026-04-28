@@ -804,6 +804,415 @@ pub fn should_migrate_backend(
 }
 
 // ============================================================================
+// Backend Path & Installation Commands
+// ============================================================================
+
+#[tauri::command]
+pub fn get_backend_dir(backend: String, version: String, jan_data_folder: String) -> String {
+    PathBuf::from(&jan_data_folder)
+        .join("llamacpp")
+        .join("backends")
+        .join(&version)
+        .join(&backend)
+        .to_string_lossy()
+        .to_string()
+}
+
+#[tauri::command]
+pub fn get_backend_exe_path(
+    backend: String,
+    version: String,
+    jan_data_folder: String,
+    is_windows: bool,
+) -> String {
+    let backend_dir = PathBuf::from(get_backend_dir(backend, version, jan_data_folder));
+    let exe_name = if is_windows {
+        "llama-server.exe"
+    } else {
+        "llama-server"
+    };
+
+    let build_path = backend_dir.join("build").join("bin").join(exe_name);
+    if build_path.exists() {
+        return build_path.to_string_lossy().to_string();
+    }
+
+    backend_dir.join(exe_name).to_string_lossy().to_string()
+}
+
+#[tauri::command]
+pub fn check_backend_installed(
+    backend: String,
+    version: String,
+    jan_data_folder: String,
+    is_windows: bool,
+) -> bool {
+    let exe_path =
+        PathBuf::from(get_backend_exe_path(backend, version, jan_data_folder, is_windows));
+    exe_path.exists()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BackendVerificationResult {
+    pub verified: bool,
+    pub missing_libraries: Vec<String>,
+    pub resolved_libraries: Vec<String>,
+}
+
+fn expected_gpu_lib_name(backend: &str) -> Option<&'static str> {
+    let b = backend.to_lowercase();
+    let is_windows = cfg!(target_os = "windows");
+    if b.contains("cuda") {
+        Some(if is_windows { "ggml-cuda.dll" } else { "libggml-cuda.so" })
+    } else if b.contains("vulkan") {
+        Some(if is_windows { "ggml-vulkan.dll" } else { "libggml-vulkan.so" })
+    } else {
+        None
+    }
+}
+
+fn verify_backend_dependencies(
+    bin_dir: &PathBuf,
+    exe_path: &PathBuf,
+    backend: &str,
+) -> Result<BackendVerificationResult, crate::error::LlamacppError> {
+    if !bin_dir.exists() {
+        return Err(crate::error::LlamacppError::new(
+            crate::error::ErrorCode::BinaryNotFound,
+            "Backend directory not found".into(),
+            Some(bin_dir.to_string_lossy().to_string()),
+        ));
+    }
+
+    let start = std::time::Instant::now();
+    let mut missing: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // Existence check runs before parsing so a deleted lib is caught without
+    // handing a bad path to goblin.
+    let gpu_lib_path: Option<PathBuf> = if cfg!(target_os = "macos") {
+        None
+    } else {
+        expected_gpu_lib_name(backend).and_then(|name| {
+            let path = bin_dir.join(name);
+            if path.exists() {
+                Some(path)
+            } else {
+                missing.insert(name.to_string());
+                None
+            }
+        })
+    };
+
+    // Skip CPU variants (ggml-cpu-haswell, etc.) — they're loaded only when
+    // the host's detected features match, so parsing them false-flags deps.
+    let mut paths: Vec<PathBuf> = vec![exe_path.clone()];
+    if let Some(p) = gpu_lib_path {
+        paths.push(p);
+    }
+
+    let analysis = crate::deps_analyzer::analyze_out_of_process(bin_dir, &paths);
+
+    let resolved: std::collections::HashSet<String> = analysis.resolved.into_iter().collect();
+    for name in analysis.missing {
+        missing.insert(name);
+    }
+
+    // A lib may be resolved by one binary but missing for another — keep only
+    // libs that no binary resolved.
+    let mut truly_missing: Vec<String> =
+        missing.difference(&resolved).cloned().collect();
+    let mut resolved_vec: Vec<String> = resolved.into_iter().collect();
+    truly_missing.sort();
+    resolved_vec.sort();
+
+    let elapsed = start.elapsed();
+    log::info!(
+        "verify_backend_dependencies: scanned {} in {:.2}s ({} resolved, {} missing)",
+        bin_dir.display(),
+        elapsed.as_secs_f64(),
+        resolved_vec.len(),
+        truly_missing.len(),
+    );
+
+    Ok(BackendVerificationResult {
+        verified: truly_missing.is_empty(),
+        missing_libraries: truly_missing,
+        resolved_libraries: resolved_vec,
+    })
+}
+
+#[tauri::command]
+pub async fn verify_backend_installation(
+    backend: String,
+    version: String,
+    jan_data_folder: String,
+    is_windows: bool,
+) -> Result<BackendVerificationResult, crate::error::LlamacppError> {
+    let exe_path =
+        PathBuf::from(get_backend_exe_path(backend.clone(), version.clone(), jan_data_folder.clone(), is_windows));
+    if !exe_path.exists() {
+        return Err(crate::error::LlamacppError::new(
+            crate::error::ErrorCode::BinaryNotFound,
+            "Backend executable not found".into(),
+            Some(exe_path.to_string_lossy().to_string()),
+        ));
+    }
+    // Libs sit next to the exe (build/bin/ when present); backend_dir is too high.
+    let bin_dir = exe_path
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(get_backend_dir(backend.clone(), version, jan_data_folder)));
+    tokio::task::spawn_blocking(move || verify_backend_dependencies(&bin_dir, &exe_path, &backend))
+        .await
+        .map_err(|e| crate::error::LlamacppError::new(
+            crate::error::ErrorCode::InternalError,
+            "Dependency verification task panicked".into(),
+            Some(e.to_string()),
+        ))?
+}
+
+// ============================================================================
+// Remote Backend Fetching
+// ============================================================================
+
+#[derive(Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+    assets: Vec<GithubAsset>,
+}
+
+#[derive(Deserialize)]
+struct GithubAsset {
+    name: String,
+}
+
+/// Subset of the app's ProxyConfig needed to build a reqwest proxy. Kept local
+/// to avoid a cross-crate dependency on the app crate. Shape must stay in sync
+/// with the TS `getProxyConfig()` payload and the app's `ProxyConfig` struct.
+#[derive(Deserialize, Clone, Debug)]
+pub struct ProxyConfig {
+    pub url: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub ignore_ssl: Option<bool>,
+}
+
+fn build_http_client(proxy: Option<&ProxyConfig>) -> Result<reqwest::Client, String> {
+    let mut builder = reqwest::Client::builder().user_agent("jan-app");
+
+    if let Some(cfg) = proxy {
+        if !cfg.url.trim().is_empty() {
+            let mut p = reqwest::Proxy::all(&cfg.url)
+                .map_err(|e| format!("Invalid proxy URL: {}", e))?;
+            if let (Some(u), Some(pw)) = (&cfg.username, &cfg.password) {
+                if !u.is_empty() {
+                    p = p.basic_auth(u, pw);
+                }
+            }
+            builder = builder.proxy(p);
+            if cfg.ignore_ssl.unwrap_or(false) {
+                builder = builder.danger_accept_invalid_certs(true);
+            }
+        }
+    }
+
+    builder
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))
+}
+
+#[tauri::command]
+pub async fn fetch_remote_supported_backends(
+    supported_backends: Vec<String>,
+    proxy: Option<ProxyConfig>,
+) -> Result<Vec<BackendInfo>, String> {
+    let client = build_http_client(proxy.as_ref())?;
+
+    let releases: Vec<GithubRelease> = {
+        let primary = client
+            .get("https://api.github.com/repos/janhq/llama.cpp/releases")
+            .send()
+            .await;
+
+        match primary {
+            Ok(resp) if resp.status().is_success() => resp
+                .json::<Vec<GithubRelease>>()
+                .await
+                .map_err(|e| format!("Failed to parse GitHub releases JSON: {}", e))?,
+            _ => {
+                // Fallback to catalog mirror
+                let fallback = client
+                    .get("https://catalog.jan.ai/llama.cpp/releases/releases.json")
+                    .send()
+                    .await
+                    .map_err(|e| format!("Both GitHub and fallback requests failed: {}", e))?;
+
+                fallback
+                    .json::<Vec<GithubRelease>>()
+                    .await
+                    .map_err(|e| format!("Failed to parse fallback releases JSON: {}", e))?
+            }
+        }
+    };
+
+    // Take the first 10 (already sorted descending by tag_name from GitHub)
+    let mut result: Vec<BackendInfo> = Vec::new();
+    let mut sorted_releases = releases;
+    sorted_releases.sort_by(|a, b| b.tag_name.cmp(&a.tag_name));
+
+    for release in sorted_releases.into_iter().take(10) {
+        let version = &release.tag_name;
+        for asset in &release.assets {
+            // Expected format: llama-{version}-bin-{backend}.tar.gz
+            let prefix = format!("llama-{}-bin-", version);
+            let suffix = ".tar.gz";
+            if asset.name.starts_with(&prefix) && asset.name.ends_with(suffix) {
+                let backend = asset.name[prefix.len()..asset.name.len() - suffix.len()].to_string();
+                let mapped = map_old_backend_to_new(backend.clone());
+                if supported_backends.contains(&backend) || supported_backends.contains(&mapped) {
+                    result.push(BackendInfo {
+                        version: version.clone(),
+                        backend,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+// ============================================================================
+// Backend Download Item Builder
+// ============================================================================
+
+#[derive(Serialize, Deserialize)]
+pub struct BackendDownloadItem {
+    pub url: String,
+    pub save_path: String,
+    pub model_id: String,
+}
+
+/// Internal helper: check if a CUDA runtime library is present at the new
+/// location (`backend_dir/build/bin/{libname}`) without performing any
+/// migration side-effects.
+fn check_cuda_installed_internal(backend_dir: &str, cuda_version: &str, os_type: &str) -> bool {
+    let libname: &str = match (os_type, cuda_version) {
+        ("windows", "11.7") => "cudart64_110.dll",
+        ("windows", "12.0") => "cudart64_12.dll",
+        ("windows", "13.0") => "cudart64_13.dll",
+        ("linux", "11.7") => "libcudart.so.11.0",
+        ("linux", "12.0") => "libcudart.so.12",
+        ("linux", "13.0") => "libcudart.so.13",
+        _ => return false,
+    };
+
+    PathBuf::from(backend_dir)
+        .join("build")
+        .join("bin")
+        .join(libname)
+        .exists()
+}
+
+#[tauri::command]
+pub fn build_backend_download_items(
+    backend: String,
+    version: String,
+    source: String,
+    jan_data_folder: String,
+    os_type: String,
+) -> Result<Vec<BackendDownloadItem>, String> {
+    let backend_dir = get_backend_dir(backend.clone(), version.clone(), jan_data_folder.clone());
+    let task_id = format!("llamacpp-{}-{}", version, backend).replace('.', "-");
+    let platform_name = if os_type == "windows" { "win" } else { "linux" };
+
+    // Base URL for the main backend archive
+    let backend_url = match source.as_str() {
+        "github" => format!(
+            "https://github.com/janhq/llama.cpp/releases/download/{}/llama-{}-bin-{}.tar.gz",
+            version, version, backend
+        ),
+        _ => format!(
+            "https://catalog.jan.ai/llama.cpp/releases/{}/llama-{}-bin-{}.tar.gz",
+            version, version, backend
+        ),
+    };
+
+    let save_path = format!("{}/backend.tar.gz", backend_dir);
+
+    let mut items = vec![BackendDownloadItem {
+        url: backend_url,
+        save_path,
+        model_id: task_id.clone(),
+    }];
+
+    // CUDA runtime items
+    if backend.contains("cu11.7") || backend.contains("cuda-11") {
+        let already_installed =
+            check_cuda_installed_internal(&backend_dir, "11.7", &os_type);
+        if !already_installed {
+            let cuda_url = match source.as_str() {
+                "github" => format!(
+                    "https://github.com/janhq/llama.cpp/releases/download/{}/cudart-llama-bin-{}-cu11.7-x64.tar.gz",
+                    version, platform_name
+                ),
+                _ => format!(
+                    "https://catalog.jan.ai/llama.cpp/releases/{}/cudart-llama-bin-{}-cu11.7-x64.tar.gz",
+                    version, platform_name
+                ),
+            };
+            items.push(BackendDownloadItem {
+                url: cuda_url,
+                save_path: format!("{}/build/bin/cuda11.tar.gz", backend_dir),
+                model_id: task_id.clone(),
+            });
+        }
+    } else if backend.contains("cu12.0") || backend.contains("cuda-12") {
+        let already_installed =
+            check_cuda_installed_internal(&backend_dir, "12.0", &os_type);
+        if !already_installed {
+            let cuda_url = match source.as_str() {
+                "github" => format!(
+                    "https://github.com/janhq/llama.cpp/releases/download/{}/cudart-llama-bin-{}-cu12.0-x64.tar.gz",
+                    version, platform_name
+                ),
+                _ => format!(
+                    "https://catalog.jan.ai/llama.cpp/releases/{}/cudart-llama-bin-{}-cu12.0-x64.tar.gz",
+                    version, platform_name
+                ),
+            };
+            items.push(BackendDownloadItem {
+                url: cuda_url,
+                save_path: format!("{}/build/bin/cuda12.tar.gz", backend_dir),
+                model_id: task_id.clone(),
+            });
+        }
+    } else if backend.contains("cuda-13") {
+        let already_installed =
+            check_cuda_installed_internal(&backend_dir, "13.0", &os_type);
+        if !already_installed {
+            let cuda_url = match source.as_str() {
+                "github" => format!(
+                    "https://github.com/janhq/llama.cpp/releases/download/{}/cudart-llama-bin-{}-cu13.0-x64.tar.gz",
+                    version, platform_name
+                ),
+                _ => format!(
+                    "https://catalog.jan.ai/llama.cpp/releases/{}/cudart-llama-bin-{}-cu13.0-x64.tar.gz",
+                    version, platform_name
+                ),
+            };
+            items.push(BackendDownloadItem {
+                url: cuda_url,
+                save_path: format!("{}/build/bin/cuda13.tar.gz", backend_dir),
+                model_id: task_id.clone(),
+            });
+        }
+    }
+
+    Ok(items)
+}
+
+// ============================================================================
 // Settings Update Handler
 // ============================================================================
 
@@ -1319,5 +1728,322 @@ mod tests {
 
         let result = should_migrate_backend(new_backend, available).unwrap();
         assert_eq!(result, None);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tests for get_backend_dir
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_get_backend_dir_path_format() {
+        let result = get_backend_dir(
+            "linux-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            "/home/user/.jan".to_string(),
+        );
+        assert!(result.contains("llamacpp"));
+        assert!(result.contains("backends"));
+        assert!(result.contains("b7523"));
+        assert!(result.contains("linux-common_cpus-x64"));
+        // Ensure the segments are in the right order
+        let path = PathBuf::from(&result);
+        let components: Vec<_> = path.components().collect();
+        let names: Vec<String> = components
+            .iter()
+            .map(|c| c.as_os_str().to_string_lossy().to_string())
+            .collect();
+        let llamacpp_idx = names.iter().position(|n| n == "llamacpp").unwrap();
+        let backends_idx = names.iter().position(|n| n == "backends").unwrap();
+        let version_idx = names.iter().position(|n| n == "b7523").unwrap();
+        let backend_idx = names.iter().position(|n| n == "linux-common_cpus-x64").unwrap();
+        assert!(llamacpp_idx < backends_idx);
+        assert!(backends_idx < version_idx);
+        assert!(version_idx < backend_idx);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tests for get_backend_exe_path
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_get_backend_exe_path_no_build_dir_linux() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let jan_data = temp_dir.path().to_string_lossy().to_string();
+
+        let result = get_backend_exe_path(
+            "linux-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            jan_data.clone(),
+            false,
+        );
+        // Should fall back to root dir (build dir doesn't exist)
+        assert!(result.ends_with("llama-server"));
+        assert!(!result.ends_with("llama-server.exe"));
+    }
+
+    #[test]
+    fn test_get_backend_exe_path_no_build_dir_windows() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let jan_data = temp_dir.path().to_string_lossy().to_string();
+
+        let result = get_backend_exe_path(
+            "win-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            jan_data,
+            true,
+        );
+        assert!(result.ends_with("llama-server.exe"));
+    }
+
+    #[test]
+    fn test_get_backend_exe_path_with_build_dir() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let jan_data = temp_dir.path().to_string_lossy().to_string();
+
+        // Create the build/bin directory and place the exe there
+        let backend_dir = PathBuf::from(&jan_data)
+            .join("llamacpp")
+            .join("backends")
+            .join("b7523")
+            .join("linux-common_cpus-x64");
+        let build_bin = backend_dir.join("build").join("bin");
+        fs::create_dir_all(&build_bin).unwrap();
+        File::create(build_bin.join("llama-server")).unwrap();
+
+        let result = get_backend_exe_path(
+            "linux-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            jan_data,
+            false,
+        );
+        assert!(result.contains("build"));
+        assert!(result.contains("bin"));
+        assert!(result.ends_with("llama-server"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Tests for check_backend_installed
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_check_backend_installed_true() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let jan_data = temp_dir.path().to_string_lossy().to_string();
+
+        let backend_dir = PathBuf::from(&jan_data)
+            .join("llamacpp")
+            .join("backends")
+            .join("b7523")
+            .join("linux-common_cpus-x64");
+        fs::create_dir_all(&backend_dir).unwrap();
+        File::create(backend_dir.join("llama-server")).unwrap();
+
+        let result = check_backend_installed(
+            "linux-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            jan_data,
+            false,
+        );
+        assert!(result);
+    }
+
+    #[test]
+    fn test_check_backend_installed_false_when_missing() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let jan_data = temp_dir.path().to_string_lossy().to_string();
+
+        let result = check_backend_installed(
+            "linux-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            jan_data,
+            false,
+        );
+        assert!(!result);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tests for verify_backend_installation
+    // -------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_verify_backend_installation_returns_err_when_exe_missing() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let jan_data = temp_dir.path().to_string_lossy().to_string();
+
+        let result = verify_backend_installation(
+            "linux-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            jan_data,
+            false,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err.code, crate::error::ErrorCode::BinaryNotFound));
+    }
+
+    #[test]
+    fn test_verify_backend_dependencies_returns_err_on_missing_dir() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let nonexistent = temp_dir.path().join("does-not-exist");
+
+        let exe = nonexistent.join("llama-server");
+        let result = verify_backend_dependencies(&nonexistent, &exe, "linux-common_cpus-x64");
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err.code, crate::error::ErrorCode::BinaryNotFound));
+    }
+
+    #[test]
+    fn test_verify_backend_dependencies_skips_unparseable_files() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        // An unparseable file in the dir should be silently skipped, not error.
+        fs::write(temp_dir.path().join("llama-server"), b"not a real binary").unwrap();
+        fs::write(temp_dir.path().join("libggml.so"), b"not a real binary").unwrap();
+
+        let dir = temp_dir.path().to_path_buf();
+        let exe = dir.join("llama-server");
+        let result = verify_backend_dependencies(&dir, &exe, "linux-common_cpus-x64");
+
+        // Succeeds with an empty result — nothing parseable, nothing missing.
+        assert!(result.is_ok());
+        let r = result.unwrap();
+        assert!(r.verified);
+        assert!(r.missing_libraries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_verify_backend_installation_scans_whole_backend_dir() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let jan_data = temp_dir.path().to_string_lossy().to_string();
+
+        // Create the backend dir with a stub exe and a stub DLL beside it.
+        let backend_dir = PathBuf::from(&jan_data)
+            .join("llamacpp")
+            .join("backends")
+            .join("b7523")
+            .join("linux-common_cpus-x64");
+        fs::create_dir_all(&backend_dir).unwrap();
+        fs::write(backend_dir.join("llama-server"), b"not a real binary").unwrap();
+        fs::write(backend_dir.join("libggml.so"), b"not a real binary").unwrap();
+
+        // Both files are unparseable stubs — verify_backend_installation must
+        // return Ok (nothing missing) rather than Err, confirming it walks the
+        // whole directory and skips non-binaries rather than hard-failing.
+        let result = verify_backend_installation(
+            "linux-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            jan_data,
+            false,
+        )
+        .await;
+        assert!(result.is_ok());
+        let r = result.unwrap();
+        assert!(r.verified);
+    }
+
+    #[test]
+    fn test_is_virtual_windows_dll() {
+        assert!(crate::deps_analyzer::is_virtual_windows_dll("api-ms-win-core-memory-l1-1-0.dll"));
+        assert!(crate::deps_analyzer::is_virtual_windows_dll("API-MS-WIN-CORE-LIBRARYLOADER-L1-2-0.DLL"));
+        assert!(crate::deps_analyzer::is_virtual_windows_dll("ext-ms-win-ntuser-draw-l1-1-0.dll"));
+        assert!(!crate::deps_analyzer::is_virtual_windows_dll("KERNEL32.dll"));
+        assert!(!crate::deps_analyzer::is_virtual_windows_dll("libcuda.so.1"));
+        assert!(!crate::deps_analyzer::is_virtual_windows_dll("libvulkan.so.1"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Tests for build_backend_download_items
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_build_backend_download_items_non_cuda_returns_one_item() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let jan_data = temp_dir.path().to_string_lossy().to_string();
+
+        let items = build_backend_download_items(
+            "linux-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            "github".to_string(),
+            jan_data,
+            "linux".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(items.len(), 1);
+        assert!(items[0].url.contains("linux-common_cpus-x64"));
+        assert!(items[0].url.contains("github.com"));
+    }
+
+    #[test]
+    fn test_build_backend_download_items_cuda12_returns_two_items() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let jan_data = temp_dir.path().to_string_lossy().to_string();
+
+        let items = build_backend_download_items(
+            "linux-cuda-12-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            "github".to_string(),
+            jan_data,
+            "linux".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(items.len(), 2);
+        assert!(items[1].url.contains("cu12.0"));
+        assert!(items[1].save_path.ends_with("cuda12.tar.gz"));
+        // All items must share the same model_id for unified progress tracking
+        assert_eq!(items[0].model_id, items[1].model_id);
+    }
+
+    #[test]
+    fn test_build_backend_download_items_cu11_returns_two_items() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let jan_data = temp_dir.path().to_string_lossy().to_string();
+
+        let items = build_backend_download_items(
+            "linux-cu11.7-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            "cdn".to_string(),
+            jan_data,
+            "linux".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(items.len(), 2);
+        assert!(items[1].url.contains("cu11.7"));
+        assert!(items[1].save_path.ends_with("cuda11.tar.gz"));
+        // All items must share the same model_id for unified progress tracking
+        assert_eq!(items[0].model_id, items[1].model_id);
+    }
+
+    #[test]
+    fn test_build_backend_download_items_github_vs_cdn_urls() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let jan_data = temp_dir.path().to_string_lossy().to_string();
+
+        let github_items = build_backend_download_items(
+            "linux-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            "github".to_string(),
+            jan_data.clone(),
+            "linux".to_string(),
+        )
+        .unwrap();
+
+        let cdn_items = build_backend_download_items(
+            "linux-common_cpus-x64".to_string(),
+            "b7523".to_string(),
+            "cdn".to_string(),
+            jan_data,
+            "linux".to_string(),
+        )
+        .unwrap();
+
+        assert!(github_items[0].url.contains("github.com"));
+        assert!(cdn_items[0].url.contains("catalog.jan.ai"));
+        assert_ne!(github_items[0].url, cdn_items[0].url);
     }
 }

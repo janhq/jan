@@ -8,8 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest --run",
-    "test:coverage": "vitest --coverage --run"
+    "test": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest --run",
+    "test:coverage": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest --coverage --run"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.0",

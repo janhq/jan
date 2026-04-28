@@ -563,3 +563,125 @@ pub fn cli_get_config() -> Result<serde_json::Value, String> {
     let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     serde_json::from_str(&data).map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── looks_like_hf_repo ─────────────────────────────────────────────────
+
+    #[test]
+    fn hf_repo_valid_basic() {
+        assert!(looks_like_hf_repo("janhq/Jan-code-4b-gguf"));
+        assert!(looks_like_hf_repo("openai/whisper"));
+        assert!(looks_like_hf_repo("a/b"));
+    }
+
+    #[test]
+    fn hf_repo_valid_with_dots_dashes_underscores() {
+        assert!(looks_like_hf_repo("user.name/repo-name"));
+        assert!(looks_like_hf_repo("user_name/repo.v2"));
+        assert!(looks_like_hf_repo("Org-1/Model_2.gguf"));
+    }
+
+    #[test]
+    fn hf_repo_rejects_paths() {
+        assert!(!looks_like_hf_repo("/abs/path"));
+        assert!(!looks_like_hf_repo("./relative"));
+        assert!(!looks_like_hf_repo("~/home"));
+    }
+
+    #[test]
+    fn hf_repo_rejects_no_slash() {
+        assert!(!looks_like_hf_repo("noslashhere"));
+    }
+
+    #[test]
+    fn hf_repo_rejects_empty_components() {
+        assert!(!looks_like_hf_repo("/repo"));
+        assert!(!looks_like_hf_repo("owner/"));
+        assert!(!looks_like_hf_repo("/"));
+    }
+
+    #[test]
+    fn hf_repo_rejects_multiple_slashes() {
+        assert!(!looks_like_hf_repo("owner/repo/extra"));
+    }
+
+    #[test]
+    fn hf_repo_rejects_invalid_chars() {
+        assert!(!looks_like_hf_repo("owner/repo name"));
+        assert!(!looks_like_hf_repo("own*er/repo"));
+        assert!(!looks_like_hf_repo("owner/re@po"));
+    }
+
+    // ── ModelYml deserialization ──────────────────────────────────────────
+
+    #[test]
+    fn model_yml_minimal_required_field() {
+        let yml = "model_path: /tmp/x.gguf\n";
+        let parsed: ModelYml = serde_yaml::from_str(yml).unwrap();
+        assert_eq!(parsed.model_path, "/tmp/x.gguf");
+        assert_eq!(parsed.size_bytes, 0);
+        assert!(!parsed.embedding);
+        assert!(parsed.name.is_none());
+        assert!(parsed.mmproj_path.is_none());
+        assert!(parsed.capabilities.is_empty());
+    }
+
+    #[test]
+    fn model_yml_full() {
+        let yml = "model_path: relative/model.gguf\n\
+                   name: My Model\n\
+                   size_bytes: 1024\n\
+                   embedding: true\n\
+                   mmproj_path: relative/mmproj.gguf\n\
+                   capabilities:\n  - vision\n  - tools\n";
+        let parsed: ModelYml = serde_yaml::from_str(yml).unwrap();
+        assert_eq!(parsed.model_path, "relative/model.gguf");
+        assert_eq!(parsed.name.as_deref(), Some("My Model"));
+        assert_eq!(parsed.size_bytes, 1024);
+        assert!(parsed.embedding);
+        assert_eq!(parsed.mmproj_path.as_deref(), Some("relative/mmproj.gguf"));
+        assert_eq!(parsed.capabilities, vec!["vision", "tools"]);
+    }
+
+    #[test]
+    fn model_yml_missing_model_path_errors() {
+        let yml = "name: bad\n";
+        let parsed: Result<ModelYml, _> = serde_yaml::from_str(yml);
+        assert!(parsed.is_err());
+    }
+
+    // ── HfFileInfo construction ───────────────────────────────────────────
+
+    #[test]
+    fn hf_file_info_clone() {
+        let f = HfFileInfo {
+            filename: "x.gguf".into(),
+            size: 100,
+            sha256: Some("abc".into()),
+            download_url: "https://hf.co/x".into(),
+        };
+        let c = f.clone();
+        assert_eq!(c.filename, "x.gguf");
+        assert_eq!(c.size, 100);
+        assert_eq!(c.sha256.as_deref(), Some("abc"));
+    }
+
+    // ── State constructors ────────────────────────────────────────────────
+
+    #[test]
+    fn state_constructors_do_not_panic() {
+        let _ = init_llamacpp_state();
+        let _ = init_mlx_state();
+    }
+
+    // ── cli_get_data_folder returns a path ────────────────────────────────
+
+    #[test]
+    fn cli_get_data_folder_returns_non_empty_path() {
+        let p = cli_get_data_folder();
+        assert!(!p.as_os_str().is_empty());
+    }
+}

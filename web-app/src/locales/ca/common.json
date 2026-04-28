@@ -302,6 +302,10 @@
   "attachmentEmbeddedIndicator": "Incrustat per a RAG",
   "viewInjectedContent": "Mostra el contingut injectat",
   "injectedContentTitle": "Contingut del fitxer injectat",
+  "errorDialog": {
+    "titleFallback": "Alguna cosa ha anat malament",
+    "details": "Detalls"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "S’han desmarcat tots els fils",
@@ -318,6 +322,14 @@
     "deleteThread": {
       "title": "Fil suprimit",
       "description": "Aquest fil s’ha suprimit definitivament."
+    },
+    "errorCopied": {
+      "title": "Còpia correcta",
+      "description": "La informació de l'error s'ha copiat al porta-retalls"
+    },
+    "errorCopyFailed": {
+      "title": "No s'ha pogut copiar",
+      "description": "No s'ha pogut copiar la informació de l'error al porta-retalls"
     },
     "editMessage": {
       "title": "Missatge editat",

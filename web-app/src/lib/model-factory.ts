@@ -301,6 +301,33 @@ function createFoundationModelsFetch(
 }
 
 /**
+ * Map of model keywords to their respective reasoning tags.
+ * Used for models that use tags other than the default 'think'.
+ */
+const REASONING_TAG_MAP: Record<string, string> = {
+  gemma: 'thought',
+}
+
+/**
+ * The default tag used for reasoning extraction if no specific override is found.
+ */
+const DEFAULT_REASONING_TAG = 'think'
+
+/**
+ * Determines the reasoning tag name based on the model ID.
+ * Defaults to 'think' if no specific override is found in the map.
+ */
+function getReasoningTagName(modelId: string): string {
+  const lowerId = modelId.toLowerCase()
+  for (const [keyword, tag] of Object.entries(REASONING_TAG_MAP)) {
+    if (lowerId.includes(keyword)) {
+      return tag
+    }
+  }
+  return DEFAULT_REASONING_TAG
+}
+
+/**
  * Factory for creating language models based on provider type.
  * Supports native AI SDK providers (Anthropic, Google) and OpenAI-compatible providers.
  */
@@ -407,7 +434,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model,
       middleware: extractReasoningMiddleware({
-        tagName: 'think',
+        tagName: getReasoningTagName(modelId),
         separator: '\n',
       }),
     })
@@ -497,7 +524,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model: model,
       middleware: extractReasoningMiddleware({
-        tagName: 'think',
+        tagName: getReasoningTagName(modelId),
         separator: '\n',
       }),
     })
@@ -571,7 +598,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model,
       middleware: extractReasoningMiddleware({
-        tagName: 'think',
+        tagName: getReasoningTagName(modelId),
         separator: '\n',
       }),
     })
@@ -731,6 +758,14 @@ export class ModelFactory {
       fetch: fetchImpl,
     })
 
-    return openAICompatible.languageModel(modelId)
+    const model = openAICompatible.languageModel(modelId)
+
+    return wrapLanguageModel({
+      model,
+      middleware: extractReasoningMiddleware({
+        tagName: getReasoningTagName(modelId),
+        separator: '\n',
+      }),
+    })
   }
 }

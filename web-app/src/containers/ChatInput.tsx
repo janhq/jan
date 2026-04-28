@@ -1095,7 +1095,7 @@ const ChatInput = memo(function ChatInput({
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
   }
 
-  const processImageFiles = async (files: File[]) => {
+  const processImageFiles = useCallback(async (files: File[]) => {
     const maxSize = 10 * 1024 * 1024 // 10MB in bytes
     const oversizedFiles: string[] = []
     const invalidTypeFiles: string[] = []
@@ -1278,7 +1278,7 @@ const ChatInput = memo(function ChatInput({
     } else {
       setMessage('')
     }
-  }
+  }, [attachmentsKey, currentThreadId, setAttachmentsForThread, serviceHub, setFileIngestProgress])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files

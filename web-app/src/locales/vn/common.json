@@ -301,6 +301,10 @@
       "title": "Siêu dữ liệu tin nhắn"
     }
   },
+  "errorDialog": {
+    "titleFallback": "Đã xảy ra lỗi",
+    "details": "Chi tiết"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "Tất cả các chủ đề đã được bỏ yêu thích",
@@ -317,6 +321,14 @@
     "deleteThread": {
       "title": "Xóa chủ đề",
       "description": "Chủ đề này đã bị xóa vĩnh viễn."
+    },
+    "errorCopied": {
+      "title": "Sao chép thành công",
+      "description": "Thông tin lỗi đã được sao chép vào bộ nhớ tạm"
+    },
+    "errorCopyFailed": {
+      "title": "Không thể sao chép",
+      "description": "Không thể sao chép thông tin lỗi vào bộ nhớ tạm"
     },
     "editMessage": {
       "title": "Chỉnh sửa tin nhắn",

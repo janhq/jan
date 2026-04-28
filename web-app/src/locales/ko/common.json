@@ -338,6 +338,10 @@
   "attachmentEmbeddedIndicator": "RAG용으로 임베딩됨",
   "viewInjectedContent": "삽입된 콘텐츠 보기",
   "injectedContentTitle": "삽입된 파일 콘텐츠",
+  "errorDialog": {
+    "titleFallback": "문제가 발생했습니다",
+    "details": "세부 정보"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "모든 스레드 즐겨찾기 해제됨",
@@ -354,6 +358,14 @@
     "deleteThread": {
       "title": "스레드 삭제",
       "description": "이 스레드는 영구적으로 삭제되었습니다."
+    },
+    "errorCopied": {
+      "title": "복사되었습니다",
+      "description": "오류 정보가 클립보드에 복사되었습니다"
+    },
+    "errorCopyFailed": {
+      "title": "복사에 실패했습니다",
+      "description": "오류 정보를 클립보드에 복사하지 못했습니다"
     },
     "editMessage": {
       "title": "메시지 수정",

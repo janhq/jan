@@ -300,6 +300,10 @@
     "noProjectsFound": "Aucun projet trouvé",
     "tryDifferentSearch": "Essayez un autre terme de recherche"
   },
+  "errorDialog": {
+    "titleFallback": "Une erreur s'est produite",
+    "details": "Détails"
+  },
   "toast": {
     "allThreadsUnfavorited": {
       "title": "Toutes les discussions retirées des favoris",
@@ -316,6 +320,14 @@
     "deleteThread": {
       "title": "Supprimer la discussion",
       "description": "Cette discussion a été supprimée définitivement."
+    },
+    "errorCopied": {
+      "title": "Copie réussie",
+      "description": "Les informations d'erreur ont été copiées dans le presse-papiers"
+    },
+    "errorCopyFailed": {
+      "title": "Échec de la copie",
+      "description": "Impossible de copier les informations d'erreur dans le presse-papiers"
     },
     "editMessage": {
       "title": "Modifier le message",
