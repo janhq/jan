@@ -1278,7 +1278,7 @@ const ChatInput = memo(function ChatInput({
     } else {
       setMessage('')
     }
-  }, [attachmentsKey, currentThreadId, setAttachmentsForThread, serviceHub, setFileIngestProgress])
+  }, [attachmentsKey, currentThreadId, setAttachmentsForThread, serviceHub])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
