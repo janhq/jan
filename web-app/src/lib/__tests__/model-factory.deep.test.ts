@@ -1,7 +1,7 @@
 /**
  * Deep coverage tests for model-factory.ts internal functions.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -93,6 +93,15 @@ function getOpts(): any {
   return (globalThis as any).__capturedModelOpts
 }
 
+type ProviderObject = {
+  provider: string
+  api_key?: string
+  base_url?: string
+  custom_header?: Array<{ header: string; value: string }>
+  api_key_fallbacks?: string[]
+  [key: string]: unknown
+}
+
 const mkProvider = (
   provider: string,
   overrides: Partial<ProviderObject> = {}
@@ -105,13 +114,20 @@ const mkProvider = (
   }) as ProviderObject
 
 describe('model-factory deep coverage', () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>
+
   beforeEach(() => {
     vi.clearAllMocks()
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     ;(globalThis as any).__capturedModelOpts = null
     ;(globalThis as any).__capturedGoogleCfg = null
     ;(globalThis as any).__capturedOpenAICfg = null
     ;(globalThis as any).__capturedXaiCfg = null
     mockStartModel.mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore()
   })
 
   /* providerMetadataExtractor */
@@ -324,8 +340,11 @@ describe('model-factory deep coverage', () => {
   /* custom headers on google, openai, xai */
   describe('custom headers', () => {
     it('google passes custom headers', async () => {
+      const { createOpenAICompatible } = await import('@ai-sdk/openai-compatible')
       await ModelFactory.createModel('g', mkProvider('google', { custom_header: [{ header: 'X-G', value: 'v' }] }), {})
-      expect((globalThis as any).__capturedGoogleCfg.headers).toEqual({ 'X-G': 'v' })
+      expect(vi.mocked(createOpenAICompatible)).toHaveBeenCalledWith(
+        expect.objectContaining({ headers: expect.objectContaining({ 'X-G': 'v' }) })
+      )
     })
 
     it('openai passes custom headers', async () => {
