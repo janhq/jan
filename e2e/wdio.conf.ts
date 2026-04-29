@@ -1,10 +1,13 @@
 import { spawn, spawnSync, ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
+import { createConnection } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { Options } from '@wdio/types'
 
 const repoRoot = resolve(__dirname, '..')
+
+const DRIVER_PORT = 4444
 
 // Built Tauri binary. Override with JAN_BINARY for nightly/installed builds.
 const defaultBinary =
@@ -16,6 +19,31 @@ const janBinary = process.env.JAN_BINARY ?? defaultBinary
 
 let tauriDriver: ChildProcess | undefined
 let profileDir: string | undefined
+let profileEnv: Record<string, string> = {}
+
+async function waitForPort(
+  port: number,
+  host: string,
+  timeoutMs: number
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const ok = await new Promise<boolean>((res) => {
+      const sock = createConnection({ port, host })
+      sock.once('connect', () => {
+        sock.end()
+        res(true)
+      })
+      sock.once('error', () => {
+        sock.destroy()
+        res(false)
+      })
+    })
+    if (ok) return
+    await new Promise((r) => setTimeout(r, 200))
+  }
+  throw new Error(`tauri-driver did not open port ${port} within ${timeoutMs}ms`)
+}
 
 /**
  * Per-run profile isolation.
@@ -27,18 +55,18 @@ let profileDir: string | undefined
  *
  * Set JAN_KEEP_PROFILE=1 to skip cleanup when debugging.
  */
-function makeProfileEnv(): NodeJS.ProcessEnv {
+function makeProfileEnv(): Record<string, string> {
   profileDir = mkdtempSync(join(tmpdir(), 'jan-e2e-'))
-  const env: NodeJS.ProcessEnv = { ...process.env }
+  const overrides: Record<string, string> = {}
   if (process.platform === 'win32') {
-    env.APPDATA = profileDir
-    env.LOCALAPPDATA = profileDir
+    overrides.APPDATA = profileDir
+    overrides.LOCALAPPDATA = profileDir
   } else {
-    env.XDG_DATA_HOME = profileDir
-    env.XDG_CONFIG_HOME = join(profileDir, 'config')
-    env.XDG_CACHE_HOME = join(profileDir, 'cache')
+    overrides.XDG_DATA_HOME = profileDir
+    overrides.XDG_CONFIG_HOME = join(profileDir, 'config')
+    overrides.XDG_CACHE_HOME = join(profileDir, 'cache')
   }
-  return env
+  return overrides
 }
 
 export const config: Options.Testrunner = {
@@ -52,14 +80,21 @@ export const config: Options.Testrunner = {
     {
       browserName: 'wry',
       // tauri-driver reads these to launch the app under WebKitWebDriver / Edge Driver.
+      // `env` is forwarded to the spawned Jan process so per-run profile dirs
+      // reach the app even if tauri-driver doesn't inherit our environment.
       'tauri:options': {
         application: janBinary,
+        get env() {
+          return profileEnv
+        },
       },
     } as WebdriverIO.Capabilities,
   ],
 
   hostname: '127.0.0.1',
-  port: 4444,
+  port: DRIVER_PORT,
+  connectionRetryTimeout: 120_000,
+  connectionRetryCount: 3,
 
   logLevel: 'info',
   framework: 'mocha',
@@ -81,15 +116,18 @@ export const config: Options.Testrunner = {
     }
   },
 
-  beforeSession() {
-    const env = makeProfileEnv()
+  async beforeSession() {
+    profileEnv = makeProfileEnv()
     tauriDriver = spawn('tauri-driver', [], {
       stdio: [null, process.stdout, process.stderr],
-      env,
+      // Also set the overrides on tauri-driver itself, so any child it
+      // spawns inherits them as a belt-and-braces fallback.
+      env: { ...process.env, ...profileEnv },
     })
     tauriDriver.on('error', (err) => {
       throw new Error(`tauri-driver failed to start: ${err.message}`)
     })
+    await waitForPort(DRIVER_PORT, '127.0.0.1', 30_000)
   },
 
   afterSession() {
