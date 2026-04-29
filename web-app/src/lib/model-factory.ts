@@ -53,12 +53,14 @@ import {
   OpenAICompatibleChatLanguageModel,
 } from '@ai-sdk/openai-compatible'
 import { createAnthropic } from '@ai-sdk/anthropic'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createXai } from '@ai-sdk/xai'
 import { invoke } from '@tauri-apps/api/core'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
+import { LLAMACPP_ONLY_PARAM_KEYS } from '@/lib/predefinedParams'
 
 /**
  * Llama.cpp timings structure from the response
@@ -131,6 +133,19 @@ const CLIENT_SIDE_PARAM_KEYS: ReadonlySet<string> = new Set([
   'auto_compact',
 ])
 
+function filterParameters(
+  parameters: Record<string, unknown>,
+  keepLlamacppOnly: boolean
+): Record<string, unknown> {
+  if (keepLlamacppOnly) return parameters
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(parameters)) {
+    if (LLAMACPP_ONLY_PARAM_KEYS.has(k)) continue
+    out[k] = v
+  }
+  return out
+}
+
 /**
  * Inference parameters that Cerebras does not support and must be stripped
  * before the request body is sent to the Cerebras API.
@@ -193,7 +208,8 @@ function createCerebrasAwareFetch(
  */
 function createCustomFetch(
   baseFetch: typeof globalThis.fetch,
-  parameters: Record<string, unknown>
+  parameters: Record<string, unknown>,
+  keepLlamacppOnly = false
 ): typeof globalThis.fetch {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     if (init?.method === 'POST' || !init?.method) {
@@ -203,6 +219,7 @@ function createCustomFetch(
       const normalised: Record<string, unknown> = {}
       for (const [key, value] of Object.entries(parameters)) {
         if (CLIENT_SIDE_PARAM_KEYS.has(key)) continue
+        if (!keepLlamacppOnly && LLAMACPP_ONLY_PARAM_KEYS.has(key)) continue
         // max_output_tokens → max_tokens (OpenAI-compatible field name)
         const targetKey = key === 'max_output_tokens' ? 'max_tokens' : key
         normalised[targetKey] = value
@@ -355,6 +372,33 @@ function createFoundationModelsFetch(
 }
 
 /**
+ * Map of model keywords to their respective reasoning tags.
+ * Used for models that use tags other than the default 'think'.
+ */
+const REASONING_TAG_MAP: Record<string, string> = {
+  gemma: 'thought',
+}
+
+/**
+ * The default tag used for reasoning extraction if no specific override is found.
+ */
+const DEFAULT_REASONING_TAG = 'think'
+
+/**
+ * Determines the reasoning tag name based on the model ID.
+ * Defaults to 'think' if no specific override is found in the map.
+ */
+function getReasoningTagName(modelId: string): string {
+  const lowerId = modelId.toLowerCase()
+  for (const [keyword, tag] of Object.entries(REASONING_TAG_MAP)) {
+    if (lowerId.includes(keyword)) {
+      return tag
+    }
+  }
+  return DEFAULT_REASONING_TAG
+}
+
+/**
  * Factory for creating language models based on provider type.
  * Supports native AI SDK providers (Anthropic, Google) and OpenAI-compatible providers.
  */
@@ -386,6 +430,7 @@ export class ModelFactory {
         return this.createOpenAIModel(modelId, provider, parameters)
       case 'google':
       case 'gemini':
+        return this.createGoogleModel(modelId, provider, parameters)
       case 'azure':
       case 'groq':
       case 'together':
@@ -444,7 +489,7 @@ export class ModelFactory {
       throw new Error(`No running session found for model: ${modelId}`)
     }
 
-    const customFetch = createCustomFetch(httpFetch, parameters)
+    const customFetch = createCustomFetch(httpFetch, parameters, true)
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'llamacpp',
@@ -464,7 +509,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model,
       middleware: extractReasoningMiddleware({
-        tagName: 'think',
+        tagName: getReasoningTagName(modelId),
         separator: '\n',
       }),
     })
@@ -479,6 +524,7 @@ export class ModelFactory {
     provider?: ProviderObject,
     parameters: Record<string, unknown> = {}
   ): Promise<LanguageModel> {
+    parameters = filterParameters(parameters, false)
     // Start the model first if provider is available
     if (provider) {
       try {
@@ -554,7 +600,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model: model,
       middleware: extractReasoningMiddleware({
-        tagName: 'think',
+        tagName: getReasoningTagName(modelId),
         separator: '\n',
       }),
     })
@@ -569,6 +615,7 @@ export class ModelFactory {
     provider?: ProviderObject,
     parameters: Record<string, unknown> = {}
   ): Promise<LanguageModel> {
+    parameters = filterParameters(parameters, false)
     const availability = await invoke<string>(
       'plugin:foundation-models|check_foundation_models_availability',
       {}
@@ -628,7 +675,7 @@ export class ModelFactory {
     return wrapLanguageModel({
       model,
       middleware: extractReasoningMiddleware({
-        tagName: 'think',
+        tagName: getReasoningTagName(modelId),
         separator: '\n',
       }),
     })
@@ -670,6 +717,44 @@ export class ModelFactory {
     })
 
     return anthropic(modelId)
+  }
+
+  /**
+   * Create a Google/Gemini model using the official AI SDK
+   */
+  private static createGoogleModel(
+    modelId: string,
+    provider: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): LanguageModel {
+    const headers: Record<string, string> = {}
+
+    // Add custom headers if specified
+    if (provider.custom_header) {
+      provider.custom_header.forEach((customHeader) => {
+        headers[customHeader.header] = customHeader.value
+      })
+    }
+
+    const keyChain = providerRemoteApiKeyChain(provider)
+    const fetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            parameters,
+            'x-api-key'
+          )
+        : createCustomFetch(getRuntimeFetch(), parameters)
+
+    const google = createGoogleGenerativeAI({
+      apiKey: keyChain[0] ?? provider.api_key ?? '',
+      baseURL: provider.base_url,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+      fetch: fetchImpl,
+    })
+
+    return google(modelId)
   }
 
   /**
@@ -788,7 +873,15 @@ export class ModelFactory {
       fetch: fetchImpl,
     })
 
-    return openAICompatible.languageModel(modelId)
+    const model = openAICompatible.languageModel(modelId)
+
+    return wrapLanguageModel({
+      model,
+      middleware: extractReasoningMiddleware({
+        tagName: getReasoningTagName(modelId),
+        separator: '\n',
+      }),
+    })
   }
 
   /**

@@ -24,17 +24,26 @@ use crate::core::{
 ///
 /// A strict JSON schema converter inside the upstream server rejects those schemas.
 /// To be robust, we default `type` to `"string"` for description-only leaf schemas.
+/// Keep this behavior aligned with `normalizeToolInputSchema` in the frontend.
 pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::Value) {
     match schema {
         serde_json::Value::Object(map) => {
             let has_description = map.contains_key("description");
             let has_type = map.contains_key("type");
+            let is_object_type = map.get("type").and_then(|v| v.as_str()) == Some("object");
             let has_nested_schema_keywords = map.contains_key("properties")
                 || map.contains_key("items")
                 || map.contains_key("anyOf")
                 || map.contains_key("oneOf")
                 || map.contains_key("allOf")
                 || map.contains_key("$ref");
+
+            if is_object_type && !map.contains_key("properties") {
+                map.insert(
+                    "properties".to_string(),
+                    serde_json::Value::Object(serde_json::Map::new()),
+                );
+            }
 
             // Only patch leaf nodes (description without `type` AND without nested schema keywords).
             if has_description && !has_type && !has_nested_schema_keywords {
@@ -58,7 +67,7 @@ pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::V
     }
 }
 
-fn normalize_openai_tools_in_chat_body(body: &mut serde_json::Value) {
+pub(crate) fn normalize_openai_tools_in_chat_body(body: &mut serde_json::Value) {
     let tools = match body.get_mut("tools") {
         Some(t) => t,
         None => return,
@@ -83,7 +92,7 @@ fn normalize_openai_tools_in_chat_body(body: &mut serde_json::Value) {
     }
 }
 
-fn http_status_indicates_api_key_retry(status: StatusCode) -> bool {
+pub(crate) fn http_status_indicates_api_key_retry(status: StatusCode) -> bool {
     matches!(
         status,
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
@@ -91,7 +100,7 @@ fn http_status_indicates_api_key_retry(status: StatusCode) -> bool {
 }
 
 /// Transform Anthropic /messages API body to OpenAI /chat/completions body
-fn transform_anthropic_to_openai(body: &serde_json::Value) -> Option<serde_json::Value> {
+pub(crate) fn transform_anthropic_to_openai(body: &serde_json::Value) -> Option<serde_json::Value> {
     let model = body.get("model")?.as_str()?;
     let messages = body.get("messages")?;
 
@@ -160,7 +169,7 @@ fn transform_anthropic_to_openai(body: &serde_json::Value) -> Option<serde_json:
 }
 
 /// Convert Anthropic message format to OpenAI format
-fn convert_messages(
+pub(crate) fn convert_messages(
     anth_messages: &serde_json::Value,
     system_prompt: Option<&serde_json::Value>,
 ) -> Option<serde_json::Value> {
@@ -336,7 +345,7 @@ fn convert_messages(
 }
 
 /// Convert text parts to OpenAI content value (string for single text, array for mixed)
-fn text_parts_to_content(parts: &[serde_json::Value]) -> serde_json::Value {
+pub(crate) fn text_parts_to_content(parts: &[serde_json::Value]) -> serde_json::Value {
     if parts.is_empty() {
         serde_json::Value::String(String::new())
     } else if parts.len() == 1 && parts[0].get("type").and_then(|t| t.as_str()) == Some("text") {
@@ -353,7 +362,7 @@ fn text_parts_to_content(parts: &[serde_json::Value]) -> serde_json::Value {
 }
 
 /// Convert image/media blocks to OpenAI format
-fn convert_media_block(block: &serde_json::Value, parts: &mut Vec<serde_json::Value>) {
+pub(crate) fn convert_media_block(block: &serde_json::Value, parts: &mut Vec<serde_json::Value>) {
     let block_type = block.get("type").and_then(|v| v.as_str()).unwrap_or("");
     if block_type == "image" {
         if let Some(source) = block.get("source") {
@@ -381,7 +390,7 @@ fn convert_media_block(block: &serde_json::Value, parts: &mut Vec<serde_json::Va
 }
 
 /// Extract text content from a tool_result content field
-fn extract_tool_result_content(content: Option<&serde_json::Value>) -> String {
+pub(crate) fn extract_tool_result_content(content: Option<&serde_json::Value>) -> String {
     match content {
         Some(c) if c.is_string() => c.as_str().unwrap_or("").to_string(),
         Some(c) if c.is_array() => c
@@ -403,7 +412,7 @@ fn extract_tool_result_content(content: Option<&serde_json::Value>) -> String {
 }
 
 /// Transform OpenAI non-streaming response to Anthropic /messages format
-fn transform_openai_response_to_anthropic(response: &serde_json::Value) -> serde_json::Value {
+pub(crate) fn transform_openai_response_to_anthropic(response: &serde_json::Value) -> serde_json::Value {
     let choice = response
         .get("choices")
         .and_then(|c| c.as_array())
@@ -533,7 +542,7 @@ fn load_assistant_config(
     Ok((instructions, model))
 }
 
-fn parse_openai_messages(messages: &serde_json::Value) -> Result<Vec<serde_json::Value>, String> {
+pub(crate) fn parse_openai_messages(messages: &serde_json::Value) -> Result<Vec<serde_json::Value>, String> {
     let arr = messages
         .as_array()
         .ok_or("Request body must include 'messages' as an array")?;
@@ -558,7 +567,7 @@ fn parse_openai_messages(messages: &serde_json::Value) -> Result<Vec<serde_json:
     Ok(out)
 }
 
-fn set_system_prompt(messages: &mut Vec<serde_json::Value>, system_prompt: &str) {
+pub(crate) fn set_system_prompt(messages: &mut Vec<serde_json::Value>, system_prompt: &str) {
     messages.retain(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"));
     messages.insert(
         0,
@@ -569,7 +578,7 @@ fn set_system_prompt(messages: &mut Vec<serde_json::Value>, system_prompt: &str)
     );
 }
 
-fn extract_tool_calls(response: &serde_json::Value) -> Vec<serde_json::Value> {
+pub(crate) fn extract_tool_calls(response: &serde_json::Value) -> Vec<serde_json::Value> {
     response
         .get("choices")
         .and_then(|c| c.as_array())
@@ -581,7 +590,7 @@ fn extract_tool_calls(response: &serde_json::Value) -> Vec<serde_json::Value> {
         .unwrap_or_default()
 }
 
-fn extract_choice_message(response: &serde_json::Value) -> Option<&serde_json::Value> {
+pub(crate) fn extract_choice_message(response: &serde_json::Value) -> Option<&serde_json::Value> {
     response
         .get("choices")
         .and_then(|c| c.as_array())
@@ -668,7 +677,7 @@ async fn resolve_upstream_for_model(
     Err(format!("No upstream session found for model '{model_id}'"))
 }
 
-fn copy_optional_chat_params(from: &serde_json::Value, into: &mut serde_json::Map<String, serde_json::Value>) {
+pub(crate) fn copy_optional_chat_params(from: &serde_json::Value, into: &mut serde_json::Map<String, serde_json::Value>) {
     for key in [
         "temperature",
         "top_p",
@@ -716,8 +725,11 @@ async fn collect_mcp_openai_tools(
         for tool in tools {
             tool_to_server.insert(tool.name.to_string(), server_name.clone());
 
-            // Reuse the same schema conversion as the `get_tools` command.
-            let parameters = serde_json::Value::Object((*tool.input_schema).clone());
+            // Normalize schemas before sending them to strict OpenAI-compatible providers.
+            // The `get_tools` Tauri command still returns raw schemas; the frontend
+            // normalizes those separately before provider registration.
+            let mut parameters = serde_json::Value::Object((*tool.input_schema).clone());
+            normalize_openai_tool_parameters_schema(&mut parameters);
             let description = tool
                 .description
                 .as_ref()
@@ -2594,7 +2606,7 @@ async fn proxy_request(
         .unwrap())
 }
 
-fn add_cors_headers_with_host_and_origin(
+pub(crate) fn add_cors_headers_with_host_and_origin(
     builder: hyper::http::response::Builder,
     _host: &str,
     origin: &str,
@@ -2691,10 +2703,19 @@ async fn start_server_internal(
         .parse()
         .map_err(|e| format!("Invalid address: {e}"))?;
 
+    // When binding to all interfaces (0.0.0.0), the user explicitly wants the server
+    // reachable from any network interface. Allow any host header so LAN clients
+    // (e.g. 192.168.x.x) are not rejected with "Invalid host header".
+    let effective_trusted_hosts = if host == "0.0.0.0" {
+        vec![vec!["*".to_string()]]
+    } else {
+        trusted_hosts
+    };
+
     let config = ProxyConfig {
         prefix,
         proxy_api_key,
-        trusted_hosts,
+        trusted_hosts: effective_trusted_hosts,
         host: host.clone(),
         port,
         enable_server_tool_execution,
@@ -2773,7 +2794,7 @@ pub async fn stop_server(
 }
 
 /// Helper to format an Anthropic SSE event with proper event type and delimiters
-fn sse_event(data: &serde_json::Value) -> Bytes {
+pub(crate) fn sse_event(data: &serde_json::Value) -> Bytes {
     let event_type = data
         .get("type")
         .and_then(|t| t.as_str())

@@ -76,6 +76,7 @@
   "noThreadsYetDesc": "Commencez une nouvelle conversation pour voir l'historique de vos discussions ici.",
   "downloads": "Téléchargements",
   "downloading": "Téléchargement en cours",
+  "uploadingAttachments": "Téléversement des pièces jointes…",
   "cancelDownload": "Annuler le téléchargement",
   "downloadCancelled": "Téléchargement annulé",
   "downloadComplete": "Téléchargement terminé",
@@ -298,7 +299,12 @@
     "update": "Mettre à jour",
     "searchProjects": "Rechercher des projets...",
     "noProjectsFound": "Aucun projet trouvé",
-    "tryDifferentSearch": "Essayez un autre terme de recherche"
+    "tryDifferentSearch": "Essayez un autre terme de recherche",
+    "uploadingFiles": "Téléversement des fichiers…"
+  },
+  "errorDialog": {
+    "titleFallback": "Une erreur s'est produite",
+    "details": "Détails"
   },
   "toast": {
     "allThreadsUnfavorited": {
@@ -316,6 +322,14 @@
     "deleteThread": {
       "title": "Supprimer la discussion",
       "description": "Cette discussion a été supprimée définitivement."
+    },
+    "errorCopied": {
+      "title": "Copie réussie",
+      "description": "Les informations d'erreur ont été copiées dans le presse-papiers"
+    },
+    "errorCopyFailed": {
+      "title": "Échec de la copie",
+      "description": "Impossible de copier les informations d'erreur dans le presse-papiers"
     },
     "editMessage": {
       "title": "Modifier le message",
