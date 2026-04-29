@@ -1,0 +1,115 @@
+---
+title: Perplexity
+description: A step-by-step guide on integrating Jan with Perplexity.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Perplexity integration,
+    Perplexity,
+    Agent API,
+    Search API,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings, Plus } from 'lucide-react'
+
+# Perplexity
+
+## Integrate Perplexity with Jan
+
+[Perplexity](https://www.perplexity.ai/) provides an [Agent API](https://docs.perplexity.ai/docs/agent/quickstart)
+that returns grounded, citation-backed answers from the live web. The Agent API is OpenAI-compatible
+(it speaks both the Chat Completions and Responses API formats), so Jan can talk to it through the same
+OpenAI-compatible client used for the other cloud providers.
+
+Perplexity also exposes a standalone [Search API](https://docs.perplexity.ai/docs/search/quickstart)
+that returns ranked web results without an LLM in the loop — useful as a research building block.
+
+## Integrate Perplexity with Jan
+
+<Steps>
+
+### Step 1: Get Your API Key
+1. Visit your [Perplexity API Keys](https://www.perplexity.ai/account/api/keys) page and sign in
+2. Create & copy a new API key or copy your existing one
+
+<Callout type='info'>
+The Agent API is metered. See [Perplexity's pricing](https://docs.perplexity.ai/docs/getting-started/pricing)
+for current rates.
+</Callout>
+
+### Step 2: Configure Jan
+
+1. Navigate to the **Settings** page (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Model Providers**, select **Perplexity**
+3. Insert your **API Key**
+
+### Step 3: Start Using Perplexity Models
+
+1. Pick any existing **Chat** or create a new one
+2. Select a Perplexity model from the **model selector**
+3. Start chatting
+
+</Steps>
+
+## Configuration
+
+**Base URL:** `https://api.perplexity.ai`
+
+Jan calls Perplexity through its OpenAI-compatible interface. The Agent API endpoint
+(`/v1/responses`, alias of `/v1/agent`) and the chat completions endpoint
+(`/v1/chat/completions`) are both reachable from the configured base URL.
+
+**Model Field Settings:**
+- Specify a model ID exactly as it appears in [Perplexity's model directory](https://docs.perplexity.ai/docs/agent/models)
+- Routed third-party models are also available through the Agent API (e.g. `openai/gpt-5.4`,
+  `anthropic/claude-sonnet-4-6`) — see [Agent API models](https://docs.perplexity.ai/docs/agent/models)
+  for the complete and up-to-date list.
+
+## Using the Search API
+
+For raw, ranked web search results (no model in the loop), use Perplexity's
+[Search API](https://docs.perplexity.ai/docs/search/quickstart) directly:
+
+```bash
+curl -X POST https://api.perplexity.ai/search \
+  -H "Authorization: Bearer $PERPLEXITY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "latest open-source LLM releases",
+    "max_results": 10
+  }'
+```
+
+See the [Search API reference](https://docs.perplexity.ai/api-reference/search-post) for the full
+parameter list (including `search_domain_filter`, `search_recency_filter`, and date filters).
+
+## Troubleshooting
+
+Common issues and solutions:
+
+**1. API Key Issues**
+- Verify your API key is correct and not expired
+- Check that your Perplexity account has API access enabled
+- Ensure you have sufficient credit on your account
+
+**2. Connection Problems**
+- Check your internet connection
+- Verify Perplexity's [status page](https://status.perplexity.com)
+- Look for error messages in [Jan's logs](/docs/desktop/troubleshooting#how-to-get-error-logs)
+
+**3. Model Unavailable**
+- Confirm the model is currently listed under [Agent API models](https://docs.perplexity.ai/docs/agent/models)
+- Verify the model ID format matches Perplexity's directory exactly
+
+Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH) or check the
+[Perplexity documentation](https://docs.perplexity.ai).

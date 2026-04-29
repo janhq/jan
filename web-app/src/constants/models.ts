@@ -100,12 +100,12 @@ export const providerModels = {
     supportsN: true,
   },
   perplexity: {
-    models: ['sonar', 'sonar-pro', 'sonar-reasoning-pro'],
+    models: true,
     supportsCompletion: true,
-    supportsStreaming: ['sonar', 'sonar-pro', 'sonar-reasoning-pro'],
-    supportsJSON: ['sonar', 'sonar-pro', 'sonar-reasoning-pro'],
-    supportsImages: [],
-    supportsToolCalls: ['sonar', 'sonar-pro', 'sonar-reasoning-pro'],
+    supportsStreaming: true,
+    supportsJSON: true,
+    supportsImages: false,
+    supportsToolCalls: true,
     supportsN: true,
   },
   minimax: {
