@@ -3,7 +3,6 @@ import {
   getProviderLogo,
   getProviderTitle,
   getReadableLanguageName,
-  toGigabytes,
   formatMegaBytes,
   formatDuration,
   getModelDisplayName,
@@ -70,60 +69,6 @@ describe('getReadableLanguageName', () => {
 
   it('handles empty strings', () => {
     expect(getReadableLanguageName('')).toBe('')
-  })
-})
-
-describe('toGigabytes', () => {
-  it('returns empty string for falsy inputs', () => {
-    expect(toGigabytes(0)).toBe('')
-    expect(toGigabytes(null as unknown as number)).toBe('')
-    expect(toGigabytes(undefined as unknown as number)).toBe('')
-  })
-
-  it('formats bytes correctly', () => {
-    expect(toGigabytes(500)).toBe('500B')
-    expect(toGigabytes(1000)).toBe('1000B')
-  })
-
-  it('formats kilobytes correctly', () => {
-    expect(toGigabytes(1025)).toBe('1.00KB')
-    expect(toGigabytes(2048)).toBe('2.00KB')
-    expect(toGigabytes(1536)).toBe('1.50KB')
-  })
-
-  it('formats exactly 1024 bytes as bytes', () => {
-    expect(toGigabytes(1024)).toBe('1024B')
-  })
-
-  it('formats megabytes correctly', () => {
-    expect(toGigabytes(1024 ** 2 + 1)).toBe('1.00MB')
-    expect(toGigabytes(1024 ** 2 * 2.5)).toBe('2.50MB')
-  })
-
-  it('formats exactly 1024^2 bytes as KB', () => {
-    expect(toGigabytes(1024 ** 2)).toBe('1024.00KB')
-  })
-
-  it('formats gigabytes correctly', () => {
-    expect(toGigabytes(1024 ** 3 + 1)).toBe('1.00GB')
-    expect(toGigabytes(1024 ** 3 * 1.5)).toBe('1.50GB')
-  })
-
-  it('formats exactly 1024^3 bytes as MB', () => {
-    expect(toGigabytes(1024 ** 3)).toBe('1024.00MB')
-  })
-
-  it('respects hideUnit option', () => {
-    expect(toGigabytes(1025, { hideUnit: true })).toBe('1.00')
-    expect(toGigabytes(1024 ** 2 + 1, { hideUnit: true })).toBe('1.00')
-    expect(toGigabytes(500, { hideUnit: true })).toBe('500')
-    expect(toGigabytes(1024, { hideUnit: true })).toBe('1024')
-  })
-
-  it('respects toFixed option', () => {
-    expect(toGigabytes(1536, { toFixed: 1 })).toBe('1.5KB')
-    expect(toGigabytes(1536, { toFixed: 3 })).toBe('1.500KB')
-    expect(toGigabytes(1024 ** 2 * 1.5, { toFixed: 0 })).toBe('2MB')
   })
 })
 
