@@ -16,6 +16,7 @@
   "searchPlaceholder": "Search for models on Hugging Face...",
   "scoreSummary": {
     "score": "Score",
+    "fitScore": "Fit score",
     "hubScore": "Hub Score",
     "scoring": "Scoring...",
     "personalizedScore": "Personalized score",

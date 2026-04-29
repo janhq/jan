@@ -405,7 +405,7 @@ function HubModelDetailContent() {
               <div className="flex items-center -center gap-2 mb-4">
                 <IconRocket size={20} className="text-muted-foreground" />
                 <h2 className="text-lg font-semibold text-foreground">
-                  Fit score
+                  {t('hub:scoreSummary.fitScore')}
                 </h2>
                 {isScoreReady ? (
                   <>
@@ -569,7 +569,7 @@ function HubModelDetailContent() {
                               </span>
                               {isBestQuant && (
                                 <Badge className="ml-2" variant="success">
-                                  Best Quant
+                                  {t('hub:scoreSummary.bestQuant')}
                                 </Badge>
                               )}
                             </td>

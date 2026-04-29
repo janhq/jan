@@ -60,7 +60,7 @@ export interface HubModelScoreRequest {
 export interface HubModelScoreResult {
   status: ModelScoreStatus
   overall?: number
-  estimated_tps: number
+  estimated_tps: number | null
   breakdown?: ModelScoreBreakdown
   used_builtin_fallback: boolean
   reason?: string

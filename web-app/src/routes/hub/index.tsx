@@ -727,7 +727,7 @@ function HubContent() {
                                     <span className="text-foreground">
                                       {modelScores[
                                         model.model_name
-                                      ]?.estimated_tps.toFixed(1)}{' '}
+                                      ]?.estimated_tps?.toFixed(1)}{' '}
                                       tok/sec
                                     </span>
                                   </div>
