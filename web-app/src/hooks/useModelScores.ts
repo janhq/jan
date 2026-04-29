@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { localStorageKey } from '@/constants/localStorage'
-import { fileStorage } from '@/lib/fileStorage'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import type {
@@ -112,7 +111,7 @@ export const useModelScore = create<ModelScoreState>()(
     }),
     {
       name: localStorageKey.modelScores,
-      storage: createJSONStorage(() => fileStorage),
+      storage: createJSONStorage(() => localStorage),
     }
   )
 )
