@@ -6,10 +6,19 @@ command: Jan
 finish-args:
   - --socket=wayland # Permission needed to show the window
   - --socket=fallback-x11 # Permission needed to show the window on X11
-  - --device=dri
+  - --device=all # Full GPU access including NVIDIA CUDA compute
   - --share=ipc
   - --share=network
   - --socket=pulseaudio # for future multimodality
+  - --env=LD_LIBRARY_PATH=/app/lib:/usr/lib/extensions/vulkan/nvidia/lib:/usr/lib/extensions/cuda/lib
+
+add-extensions:
+  org.freedesktop.Platform.GL:
+    directory: lib/GL
+    merge-dirs: vulkan/icd.d;glvnd/egl_vendor.d;OpenCL/vendors;lib
+    subdirectories: true
+    no-autodownload: true
+    autodelete: false
 
 cleanup:
   - /include
@@ -97,3 +106,4 @@ modules:
       - install -Dm644 usr/share/icons/hicolor/32x32/apps/Jan.png /app/share/icons/hicolor/32x32/apps/ai.jan.Jan.png
       - install -Dm644 usr/share/icons/hicolor/256x256@2/apps/Jan.png /app/share/icons/hicolor/256x256@2/apps/ai.jan.Jan.png
       - install -Dm644 ai.jan.Jan.metainfo.xml /app/share/metainfo/ai.jan.Jan.metainfo.xml
+      - mkdir -p /app/lib/GL

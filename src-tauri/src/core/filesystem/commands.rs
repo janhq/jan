@@ -1,6 +1,8 @@
 // WARNING: These APIs will be deprecated soon due to removing FS API access from frontend.
 // It's added to ensure the legacy implementation from frontend still functions before removal.
-use super::helpers::{resolve_app_path_within_jan_data_folder, resolve_path};
+use super::helpers::{
+    resolve_app_path_within_jan_data_folder, resolve_path, resolve_path_within_jan_data_folder,
+};
 use super::models::{DialogOpenOptions, FileStat};
 use rfd::AsyncFileDialog;
 use std::fs;
@@ -159,14 +161,8 @@ pub fn write_yaml(
 ) -> Result<(), String> {
     // TODO: have an internal function to check scope
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
-    let save_path = jan_utils::normalize_path(&jan_data_folder.join(save_path));
-    if !save_path.starts_with(&jan_data_folder) {
-        return Err(format!(
-            "Error: save path {} is not under jan_data_folder {}",
-            save_path.to_string_lossy(),
-            jan_data_folder.to_string_lossy(),
-        ));
-    }
+    let (_canonical_data, save_path) =
+        resolve_path_within_jan_data_folder(&jan_data_folder, save_path)?;
     let file = fs::File::create(&save_path).map_err(|e| e.to_string())?;
     let mut writer = std::io::BufWriter::new(file);
     serde_yaml::to_writer(&mut writer, &data).map_err(|e| e.to_string())?;
@@ -179,14 +175,7 @@ pub fn read_yaml<R: Runtime>(
     path: &str,
 ) -> Result<serde_json::Value, String> {
     let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
-    let path = jan_utils::normalize_path(&jan_data_folder.join(path));
-    if !path.starts_with(&jan_data_folder) {
-        return Err(format!(
-            "Error: path {} is not under jan_data_folder {}",
-            path.to_string_lossy(),
-            jan_data_folder.to_string_lossy(),
-        ));
-    }
+    let (_canonical_data, path) = resolve_path_within_jan_data_folder(&jan_data_folder, path)?;
     let file = fs::File::open(&path).map_err(|e| e.to_string())?;
     let reader = std::io::BufReader::new(file);
     let data: serde_json::Value = serde_yaml::from_reader(reader).map_err(|e| e.to_string())?;

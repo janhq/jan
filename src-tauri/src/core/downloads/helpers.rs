@@ -1,9 +1,9 @@
 use super::models::{DownloadEvent, DownloadItem, ProgressTracker, ProxyConfig};
 use crate::core::app::commands::get_jan_data_folder_path;
+use crate::core::filesystem::helpers::resolve_path_within_jan_data_folder;
 use crate::core::updater::session::get_session_id;
 use crate::core::updater::hmac_client::SignedRequestHeaders;
 use futures_util::StreamExt;
-use jan_utils::normalize_path;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::path::Path;
@@ -425,16 +425,8 @@ pub async fn _download_files_internal(
     let mut download_tasks = Vec::new();
 
     for (index, item) in items.iter().enumerate() {
-        let save_path = jan_data_folder.join(&item.save_path);
-        let save_path = normalize_path(&save_path);
-
-        if !save_path.starts_with(&jan_data_folder) {
-            return Err(format!(
-                "Path {} is outside of Jan data folder {}",
-                save_path.display(),
-                jan_data_folder.display()
-            ));
-        }
+        let (canonical_data, save_path) =
+            resolve_path_within_jan_data_folder(&jan_data_folder, &item.save_path)?;
 
         // Spawn download task for each file
         let item_clone = item.clone();
@@ -451,6 +443,11 @@ pub async fn _download_files_internal(
         };
 
         let task = tokio::spawn(async move {
+            log::debug!(
+                "Downloading {} into Jan data folder {}",
+                item_clone.url,
+                canonical_data.display()
+            );
             download_single_file(app_clone, &item_clone, &save_path, file_id, file_size, ctx).await
         });
 
