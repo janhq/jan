@@ -266,6 +266,9 @@ function HubContent() {
       : { count: 0, getScrollElement: () => null, estimateSize: () => 0 }
   )
   const virtualItems = rowVirtualizer.getVirtualItems()
+  // Primitive dep: only changes value when the set of visible rows changes,
+  // not on every scroll tick (unlike the virtualItems array reference).
+  const visibleIndices = virtualItems.map((v) => v.index).join(',')
 
   const getRepresentativeVariant = useCallback(
     (model: CatalogModel) =>
@@ -293,10 +296,12 @@ function HubContent() {
     virtualItems.forEach((virtualItem) => {
       const model = filteredModels[virtualItem.index]
       if (!model || modelScores[model.model_name]) return
-
       void fetchModelScore(model)
     })
-  }, [fetchModelScore, filteredModels, modelScores, virtualItems])
+    // visibleIndices (not virtualItems) is the dep so this only re-runs when
+    // the set of visible rows actually changes, not on every scroll event.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchModelScore, filteredModels, modelScores, visibleIndices])
 
   const fetchHuggingFaceModel = async (searchValue: string) => {
     if (

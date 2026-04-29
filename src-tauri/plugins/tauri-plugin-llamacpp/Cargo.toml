@@ -15,6 +15,11 @@ base64 = "0.22.1"
 byteorder = "1.5.0"
 hmac = "0.12.1"
 jan-utils = { path = "../../utils" }
+# llmfit-core pulls in `ureq` (an HTTP client) as a transitive dependency.
+# llmfit-core itself uses it only for optional model-card fetching that is NOT
+# exercised by this integration -- all scoring is local/offline. No network
+# calls are made during hub model scoring. Track upstream if a no-network
+# feature flag becomes available: https://github.com/janhq/jan/pull/7784
 llmfit-core = "0.8.9"
 lddtree = "0.5"
 walkdir = "2"
