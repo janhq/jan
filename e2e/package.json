@@ -1,7 +1,6 @@
 {
   "name": "jan-e2e",
   "private": true,
-  "type": "module",
   "scripts": {
     "test": "wdio run wdio.conf.ts"
   },
