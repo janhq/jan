@@ -268,6 +268,9 @@ function SetupScreen() {
   }, [defaultVariant, llamaProvider])
 
   const handleQuickStart = useCallback(() => {
+    // Don't start a new download if one is already in progress
+    if (isDownloading) return
+
     // If metadata is still loading, queue the download
     if (!defaultVariant || !janNewModel || !isSupportCheckComplete) {
       setQuickStartQueued(true)
@@ -289,6 +292,7 @@ function SetupScreen() {
       true // Skip verification for faster download
     )
   }, [
+    isDownloading,
     defaultVariant,
     janNewModel,
     isSupportCheckComplete,
@@ -300,7 +304,7 @@ function SetupScreen() {
   // Auto-start download when screen is shown
   const hasAutoStarted = useRef(false)
   useEffect(() => {
-    if (hasAutoStarted.current || isDownloaded) return
+    if (hasAutoStarted.current || isDownloaded || isDownloading) return
     hasAutoStarted.current = true
     handleQuickStart()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -357,6 +361,7 @@ function SetupScreen() {
   useEffect(() => {
     if (
       quickStartQueued &&
+      !isDownloading &&
       defaultVariant &&
       janNewModel &&
       isSupportCheckComplete
@@ -379,6 +384,7 @@ function SetupScreen() {
     }
   }, [
     quickStartQueued,
+    isDownloading,
     defaultVariant,
     janNewModel,
     isSupportCheckComplete,
