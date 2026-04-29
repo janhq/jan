@@ -20,6 +20,9 @@
   "openrouter": {
     "title": "OpenRouter"
   },
+  "perplexity": {
+    "title": "Perplexity"
+  },
   "huggingface": {
     "title": "Hugging Face"
   }
