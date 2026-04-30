@@ -18,6 +18,7 @@ thiserror = "2.0"
 tokio = { version = "1", features = ["full"] }
 log = "0.4"
 pdf-extract = "0.7"
+pdf_oxide = "0.3"
 zip = "0.6"
 quick-xml = { version = "0.31", features = ["serialize"] }
 csv = "1.3"
