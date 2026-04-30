@@ -13,5 +13,42 @@
   "useModel": "Use this model",
   "downloadModel": "Download model",
   "tools": "Tools",
-  "searchPlaceholder": "Search for models on Hugging Face..."
+  "searchPlaceholder": "Search for models on Hugging Face...",
+  "scoreSummary": {
+    "score": "Score",
+    "fitScore": "Fit score",
+    "hubScore": "Hub Score",
+    "scoring": "Scoring...",
+    "personalizedScore": "Personalized score",
+    "notAvailable": "Not available",
+    "na": "N/A",
+    "outOf100": "out of 100",
+    "quality": "Quality",
+    "speed": "Speed",
+    "fit": "Fit",
+    "context": "Context",
+    "tps": "TPS",
+    "bestQuant": "Best Quant",
+    "fitLevel": "Fit Level",
+    "runMode": "Run Mode",
+    "memRequiredGb": "Mem Required (GB)",
+    "utilizationPct": "Utilization (%)",
+    "useCase": "Use Case",
+    "disabledDescription": "This model type does not support local llmfit scoring yet.",
+    "pendingDescription": "A score will appear after local analysis completes.",
+    "token-sec": "token/sec",
+    "fitLevels": {
+      "perfect": "Perfect",
+      "good": "Good",
+      "marginal": "Marginal",
+      "tooTight": "Too Tight"
+    },
+    "runModes": {
+      "gpu": "GPU",
+      "cpuOffload": "CPU Offload",
+      "cpuOnly": "CPU Only",
+      "moeOffload": "MoE Offload",
+      "tensorParallel": "Tensor Parallel"
+    }
+  }
 }

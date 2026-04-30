@@ -1,4 +1,5 @@
-use super::types::GgufMetadata;
+use super::scoring::score_hub_model_internal;
+use super::types::{GgufMetadata, HubModelScoreRequest, HubModelScoreResult};
 use super::utils::{estimate_kv_cache_internal, read_gguf_metadata_internal};
 use crate::gguf::types::{KVCacheError, KVCacheEstimate, ModelSupportStatus};
 use std::collections::HashMap;
@@ -151,6 +152,13 @@ pub async fn is_model_supported(
     Ok(ModelSupportStatus::Yellow)
 }
 
+#[tauri::command]
+pub async fn score_hub_model<R: tauri::Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    request: HubModelScoreRequest,
+) -> Result<HubModelScoreResult, String> {
+    score_hub_model_internal(app_handle, request).await
+}
 /// Compatibility check for Apple Silicon Macs (unified memory architecture).
 ///
 /// On Apple Silicon, CPU and GPU share a single physical memory pool. Unlike
