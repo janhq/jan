@@ -7,7 +7,7 @@ use rmcp::{
     ServiceExt,
 };
 use serde_json::Value;
-use std::{collections::HashMap, env, process::Stdio, sync::Arc, time::Duration};
+use std::{collections::HashMap, env, path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_http::reqwest;
 use tokio::{
@@ -573,7 +573,20 @@ async fn schedule_mcp_start_task<R: Runtime>(
         let uv_path = if cfg!(windows) {
             bin_path.join("uv.exe")
         } else {
-            bin_path.join("uv")
+            let jan_uv_path = bin_path.join("jan-uv");
+            let bundled_uv = bin_path.join("uv");
+
+            if jan_uv_path.exists() {
+                jan_uv_path
+            } else if bundled_uv.exists() {
+                bundled_uv
+            } else {
+                log::warn!(
+                    "Neither jan-uv nor bundled uv found in {:?}; falling back to system uv",
+                    bin_path
+                );
+                PathBuf::from("uv")
+            }
         };
         if config_params.command.clone() == "uvx" && can_override_uvx(uv_path.display().to_string())
         {
