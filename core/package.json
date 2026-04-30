@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@npmcli/arborist": "^7.1.0",
+    "@tauri-apps/api": "2.8.0",
     "@types/node": "^22.10.0",
     "@types/react": "19.1.2",
     "@vitest/coverage-v8": "^2.1.8",
@@ -47,7 +48,13 @@
     "ulidx": "^2.3.0"
   },
   "peerDependencies": {
+    "@tauri-apps/api": "^2.8.0",
     "react": "19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@tauri-apps/api": {
+      "optional": true
+    }
   },
   "packageManager": "yarn@4.5.3"
 }
