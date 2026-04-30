@@ -13,6 +13,7 @@ vi.mock('../backend', () => ({
   downloadBackend: vi.fn(),
   listSupportedBackends: vi.fn(),
   getBackendDir: vi.fn(),
+  mapUpstreamAssetToInternal: vi.fn(),
 }))
 
 // Mock tauri-plugin-llamacpp-api (partial mock)
@@ -736,6 +737,145 @@ describe('llamacpp_extension', () => {
           'linux-avx2-x64',
           'v2.0.0'
         )
+      })
+    })
+  })
+
+  describe('installBackend', () => {
+    const archivePath = '/home/user/Downloads/llama-b7037-bin-linux-vulkan-x64.tar.gz'
+    const archiveName = 'llama-b7037-bin-linux-vulkan-x64.tar.gz'
+    const backendDir = '/path/to/backends/linux-vulkan-x64/b7037'
+
+    beforeEach(async () => {
+      vi.stubGlobal('IS_WINDOWS', false)
+
+      const { joinPath } = await import('@janhq/core')
+      const { getBackendDir, mapUpstreamAssetToInternal } = await import('../backend')
+      const { basename } = await import('@tauri-apps/api/path')
+      const { mapOldBackendToNew } = await import('@janhq/tauri-plugin-llamacpp-api')
+
+      vi.mocked(basename).mockResolvedValue(archiveName)
+      vi.mocked(joinPath).mockImplementation((paths: string[]) =>
+        Promise.resolve(paths.join('/'))
+      )
+      vi.mocked(getBackendDir).mockResolvedValue(backendDir)
+      vi.mocked(mapUpstreamAssetToInternal).mockReturnValue('linux-vulkan-x64')
+      vi.mocked(mapOldBackendToNew).mockResolvedValue('vulkan')
+
+      extension['config'] = { version_backend: '', device: '' } as any
+      extension['configureBackends'] = vi.fn().mockResolvedValue(undefined)
+      extension['setStoredBackendType'] = vi.fn().mockResolvedValue(undefined)
+      extension['getSettings'] = vi.fn().mockResolvedValue([
+        { key: 'version_backend', controllerProps: { value: '' } },
+      ])
+      extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+    })
+
+    it('throws when archive path does not exist', async () => {
+      const { fs } = await import('@janhq/core')
+      vi.mocked(fs.existsSync).mockResolvedValue(false)
+
+      await expect(extension.installBackend(archivePath)).rejects.toThrow(
+        'Invalid path or file'
+      )
+    })
+
+    it('throws when archive name does not match expected format', async () => {
+      const { fs } = await import('@janhq/core')
+      const { basename } = await import('@tauri-apps/api/path')
+
+      vi.mocked(fs.existsSync).mockResolvedValue(true)
+      vi.mocked(basename).mockResolvedValue('random-archive.zip')
+
+      await expect(
+        extension.installBackend('/some/random-archive.zip')
+      ).rejects.toThrow('Failed to parse archive name')
+    })
+
+    it('succeeds without flattening when binary is found directly after extraction', async () => {
+      const { fs } = await import('@janhq/core')
+      const { invoke } = await import('@tauri-apps/api/core')
+
+      vi.mocked(invoke).mockResolvedValue(undefined)
+      vi.mocked(fs.existsSync)
+        .mockResolvedValueOnce(true) // archive path exists
+        .mockResolvedValueOnce(true) // hasBinaryAt(backendDir): build/bin/llama-server found
+
+      await extension.installBackend(archivePath)
+
+      expect(invoke).toHaveBeenCalledWith('decompress', {
+        path: archivePath,
+        outputDir: backendDir,
+      })
+      expect(fs.rm).not.toHaveBeenCalledWith(backendDir)
+    })
+
+    it('flattens single wrapper directory when binary is nested inside it', async () => {
+      const { fs } = await import('@janhq/core')
+      const { basename } = await import('@tauri-apps/api/path')
+      const { invoke } = await import('@tauri-apps/api/core')
+
+      const wrapperDir = `${backendDir}/wrapper`
+      const childPath = `${wrapperDir}/llama-server`
+
+      vi.mocked(invoke).mockResolvedValue(undefined)
+      vi.mocked(fs.existsSync)
+        .mockResolvedValueOnce(true)  // archive exists
+        .mockResolvedValueOnce(false) // hasBinaryAt(backendDir): build/bin not found
+        .mockResolvedValueOnce(false) // hasBinaryAt(backendDir): direct binary not found
+        .mockResolvedValueOnce(true)  // hasBinaryAt(wrapperDir): build/bin found
+      vi.mocked(fs.readdirSync)
+        .mockResolvedValueOnce([wrapperDir]) // backendDir listing
+        .mockResolvedValueOnce([childPath])  // wrapperDir children
+      vi.mocked(fs.fileStat).mockResolvedValue({ isDirectory: true, size: 0 })
+      vi.mocked(fs.mv).mockResolvedValue(undefined)
+      vi.mocked(fs.rm).mockResolvedValue(undefined)
+      vi.mocked(basename)
+        .mockResolvedValueOnce(archiveName)    // parsing archive name
+        .mockResolvedValueOnce('llama-server') // child name during flatten
+
+      await extension.installBackend(archivePath)
+
+      expect(fs.mv).toHaveBeenCalledWith(childPath, `${backendDir}/llama-server`)
+      expect(fs.rm).toHaveBeenCalledWith(wrapperDir)
+    })
+
+    it('removes backendDir and throws when no binary is found anywhere', async () => {
+      const { fs } = await import('@janhq/core')
+      const { invoke } = await import('@tauri-apps/api/core')
+
+      vi.mocked(invoke).mockResolvedValue(undefined)
+      vi.mocked(fs.existsSync)
+        .mockResolvedValueOnce(true) // archive exists
+        .mockResolvedValue(false)    // all hasBinaryAt checks return false
+      vi.mocked(fs.readdirSync).mockResolvedValue([])
+      vi.mocked(fs.rm).mockResolvedValue(undefined)
+
+      await expect(extension.installBackend(archivePath)).rejects.toThrow(
+        'Not a supported backend archive'
+      )
+      expect(fs.rm).toHaveBeenCalledWith(backendDir)
+    })
+
+    it('auto-selects the newly installed backend and emits settingsChanged', async () => {
+      const { fs, events } = await import('@janhq/core')
+      const { invoke } = await import('@tauri-apps/api/core')
+
+      vi.mocked(invoke).mockResolvedValue(undefined)
+      vi.mocked(fs.existsSync)
+        .mockResolvedValueOnce(true) // archive exists
+        .mockResolvedValueOnce(true) // binary found directly
+
+      await extension.installBackend(archivePath)
+
+      const updatedSettings = vi.mocked(extension['updateSettings']).mock.calls[0][0]
+      const versionSetting = updatedSettings.find(
+        (s: { key?: string }) => s.key === 'version_backend'
+      )
+      expect(versionSetting?.controllerProps?.value).toContain('b7037')
+      expect(events.emit).toHaveBeenCalledWith('settingsChanged', {
+        key: 'version_backend',
+        value: expect.stringContaining('b7037'),
       })
     })
   })

@@ -33,6 +33,7 @@ import {
   verifyBackendInstallation,
   getBackendExePath,
   getBackendDir,
+  mapUpstreamAssetToInternal,
 } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 import {
@@ -325,7 +326,9 @@ export default class llamacpp_extension extends AIEngine {
             'No supported backend binaries found for this system. Backend selection and auto-update will be unavailable.'
           )
         } else {
-          version_backends.sort((a, b) => b.version.localeCompare(a.version))
+          version_backends.sort((a, b) =>
+            b.version.localeCompare(a.version, undefined, { numeric: true })
+          )
         }
       } catch (error) {
         throw new Error(
@@ -1195,11 +1198,23 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error(`Invalid backend archive name: ${archiveName}`)
     }
 
-    // Include prefix in the backend identifier if present
-    const backendIdentifier = prefix ? `${prefix}${backend}` : backend
+    // Upstream ggml-org archives (e.g. ubuntu-vulkan-x64) are named
+    // differently from Jan's internal backend identifiers (e.g.
+    // linux-vulkan-common_cpus-x64). If the user installed a vanilla upstream
+    // archive, translate the stem so the backend lands in a directory whose
+    // name matches `determineSupportedBackends` — otherwise it installs on
+    // disk but never appears in the UI dropdown (issue #7973).
+    //
+    // Custom-prefixed forks (k_, ik_, etc.) keep their original stem: their
+    // backend names are meant to be distinct.
+    const internal = !prefix ? mapUpstreamAssetToInternal(backend) : null
+    const backendIdentifier = prefix
+      ? `${prefix}${backend}`
+      : (internal ?? backend)
 
     logger.info(
-      `Detected prefix: ${prefix || 'none'}, version: ${version}, backend: ${backendIdentifier}`
+      `Detected prefix: ${prefix || 'none'}, version: ${version}, backend: ${backendIdentifier}` +
+        (internal ? ` (mapped from upstream stem "${backend}")` : '')
     )
 
     const backendDir = await getBackendDir(backendIdentifier, version)
@@ -1211,12 +1226,49 @@ export default class llamacpp_extension extends AIEngine {
       throw new Error(`Failed to decompress archive: ${String(e)}`)
     }
 
-    const binPath =
-      platformName === 'win'
-        ? await joinPath([backendDir, 'build', 'bin', 'llama-server.exe'])
-        : await joinPath([backendDir, 'build', 'bin', 'llama-server'])
+    // Ensure the extracted layout matches what get_local_installed_backends
+    // expects: {backendDir}/build/bin/llama-server[.exe] or
+    // {backendDir}/llama-server[.exe]. Some archives include a single
+    // top-level wrapper directory; flatten it when that happens.
+    const exeName = platformName === 'win' ? 'llama-server.exe' : 'llama-server'
 
-    if (!fs.existsSync(binPath)) {
+    // fs.existsSync routes through globalThis.core.api and returns a Promise
+    // despite the "Sync" suffix — await is required, not just harmless.
+    const hasBinaryAt = async (dir: string): Promise<boolean> =>
+      (await fs.existsSync(await joinPath([dir, 'build', 'bin', exeName]))) ||
+      (await fs.existsSync(await joinPath([dir, exeName])))
+
+    let binaryFound = await hasBinaryAt(backendDir)
+    if (!binaryFound) {
+      // fs.readdirSync returns ABSOLUTE paths, not names — so we basename
+      // each entry before re-joining onto destinations.
+      const entries = await fs.readdirSync(backendDir)
+      for (const entryPath of entries) {
+        const stat = await fs.fileStat(entryPath)
+        if (!stat?.isDirectory) continue
+        if (!(await hasBinaryAt(entryPath))) continue
+
+        try {
+          const children = await fs.readdirSync(entryPath)
+          for (const childPath of children) {
+            const childName = await basename(childPath)
+            await fs.mv(childPath, await joinPath([backendDir, childName]))
+          }
+          await fs.rm(entryPath)
+          binaryFound = true
+        } catch (flattenErr) {
+          logger.error(
+            `Failed to flatten wrapper directory ${entryPath}: ${String(flattenErr)}`
+          )
+          throw new Error(
+            `Failed to flatten backend archive wrapper directory: ${String(flattenErr)}`
+          )
+        }
+        break
+      }
+    }
+
+    if (!binaryFound) {
       await fs.rm(backendDir)
       throw new Error(
         'Not a supported backend archive! Missing llama-server binary.'
@@ -1225,8 +1277,31 @@ export default class llamacpp_extension extends AIEngine {
 
     try {
       await this.configureBackends()
+
+      // Auto-select the newly installed backend so the user sees it in use
+      // right away, rather than having to discover it in the dropdown.
+      const newVersionBackend = `${version}/${backendIdentifier}`
+      const settings = await this.getSettings()
+      await this.updateSettings(
+        settings.map((item) => {
+          if (item.key === 'version_backend') {
+            item.controllerProps.value = newVersionBackend
+          }
+          return item
+        })
+      )
+      this.config.version_backend = newVersionBackend
+      this.setStoredBackendType(await mapOldBackendToNew(backendIdentifier))
+
+      if (events && typeof events.emit === 'function') {
+        events.emit('settingsChanged', {
+          key: 'version_backend',
+          value: newVersionBackend,
+        })
+      }
+
       logger.info(
-        `Backend ${backendIdentifier}/${version} installed and UI refreshed`
+        `Backend ${backendIdentifier}/${version} installed and selected`
       )
     } catch (e) {
       logger.error('Backend installed but failed to refresh UI', e)
