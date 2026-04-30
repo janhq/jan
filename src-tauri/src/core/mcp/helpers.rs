@@ -159,6 +159,31 @@ pub async fn run_mcp_commands<R: Runtime>(
     Ok(())
 }
 
+/// Computes the clamped exponential backoff delay in milliseconds.
+///
+/// `attempt` is 0-indexed (0 = first failure). Invalid multipliers (NaN, negative,
+/// zero, < 1.0) fall back to 1.0 so the delay never decreases. Overflow to
+/// infinity caps at `max_delay_ms`. Result is always >= `base_delay_ms`.
+pub(super) fn compute_backoff_delay(
+    base_delay_ms: u64,
+    max_delay_ms: u64,
+    multiplier: f64,
+    attempt: u32,
+) -> u64 {
+    let safe_multiplier = if multiplier.is_finite() && multiplier >= 1.0 {
+        multiplier
+    } else {
+        1.0
+    };
+    let raw_delay = base_delay_ms as f64 * safe_multiplier.powi(attempt as i32);
+    let delay_ms = if raw_delay.is_finite() {
+        raw_delay as u64
+    } else {
+        max_delay_ms
+    };
+    delay_ms.min(max_delay_ms).max(base_delay_ms)
+}
+
 /// Monitor MCP server health and auto-reconnect on failure with exponential backoff
 pub async fn monitor_mcp_server_handle<R: Runtime>(
     app: AppHandle<R>,
@@ -263,10 +288,12 @@ pub async fn monitor_mcp_server_handle<R: Runtime>(
         let base_delay_ms = settings.base_restart_delay_ms;
         let max_delay_ms = settings.max_restart_delay_ms;
         let multiplier = settings.backoff_multiplier;
-        let delay_ms = (base_delay_ms as f64
-            * multiplier.powi((consecutive_failures - 1) as i32))
-            as u64;
-        let capped_delay_ms = delay_ms.min(max_delay_ms);
+        let capped_delay_ms = compute_backoff_delay(
+            base_delay_ms,
+            max_delay_ms,
+            multiplier,
+            consecutive_failures - 1,
+        );
 
         log::info!(
             "MCP server {name} reconnect attempt {} in {}ms",
