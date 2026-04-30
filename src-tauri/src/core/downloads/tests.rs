@@ -3,6 +3,8 @@ use super::models::*;
 use crate::core::filesystem::helpers::resolve_path_within_jan_data_folder;
 use reqwest::header::HeaderMap;
 use std::collections::HashMap;
+use std::panic;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // Helper function to create a minimal proxy config for testing
 fn create_test_proxy_config(url: &str) -> ProxyConfig {
@@ -324,6 +326,14 @@ fn test_err_to_string() {
     let error = "Test error";
     let result = err_to_string(error);
     assert_eq!(result, "Error: Test error");
+}
+
+#[test]
+fn test_handle_emit_result_does_not_panic_on_error() {
+    let result = panic::catch_unwind(|| {
+        handle_emit_result("download-progress", Err("frontend listener disconnected".into()));
+    });
+    assert!(result.is_ok());
 }
 
 #[test]
@@ -661,4 +671,57 @@ fn test_download_event_zero_values() {
 fn test_download_manager_state_default_is_empty() {
     let s = DownloadManagerState::default();
     assert_eq!(s.cancel_tokens.len(), 0);
+}
+
+// ===== emit error handling =====
+
+#[test]
+fn test_ok_emit_does_not_panic() {
+    handle_emit_result("some-event", Ok(()));
+}
+
+#[tokio::test]
+async fn test_cleanup_failed_validation_removes_file_and_dir() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!("jan-cleanup-test-{unique}"));
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    let file = dir.join("model.gguf");
+    tokio::fs::write(&file, b"data").await.unwrap();
+
+    cleanup_failed_validation(&file).await;
+
+    assert!(!file.exists(), "file should be removed after failed validation");
+    assert!(!dir.exists(), "empty parent dir should be removed after failed validation");
+}
+
+#[tokio::test]
+async fn test_cleanup_failed_validation_noops_on_missing_file() {
+    let dir = std::env::temp_dir().join("jan-cleanup-nonexistent");
+    let file = dir.join("ghost.gguf");
+    // must not panic even when the file does not exist
+    cleanup_failed_validation(&file).await;
+}
+
+#[tokio::test]
+async fn test_cleanup_failed_validation_leaves_nonempty_dir() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!("jan-cleanup-nonempty-{unique}"));
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    let target = dir.join("model.gguf");
+    let sibling = dir.join("other.gguf");
+    tokio::fs::write(&target, b"data").await.unwrap();
+    tokio::fs::write(&sibling, b"sibling").await.unwrap();
+
+    cleanup_failed_validation(&target).await;
+
+    assert!(!target.exists(), "target file should be removed");
+    assert!(dir.exists(), "non-empty dir should not be removed");
+
+    let _ = tokio::fs::remove_dir_all(&dir).await;
 }
