@@ -63,6 +63,7 @@ type NavMainItem = {
   isActive?: boolean
   shortcut?: React.ReactNode
   onClick?: () => void
+  testId?: string
 }
 
 const getNavMainItems = (
@@ -127,6 +128,7 @@ const getNavMainItems = (
     title: 'common:hub',
     url: route.hub.index,
     animatedIcon: BlocksIcon,
+    testId: 'nav-hub',
   },
   {
     title: 'common:settings',
@@ -161,6 +163,7 @@ function NavMainItemWithAnimatedIcon({
         onMouseEnter={() => iconRef.current?.startAnimation()}
         onMouseLeave={() => iconRef.current?.stopAnimation()}
         onClick={item.onClick}
+        data-testid={item.testId}
       >
         {item.url ? <Link to={item.url}>{content}</Link> : content}
       </SidebarMenuButton>
