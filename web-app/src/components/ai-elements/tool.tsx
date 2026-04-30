@@ -1,4 +1,3 @@
-
 import { useControllableState } from '@radix-ui/react-use-controllable-state'
 import {
   Collapsible,
@@ -7,7 +6,7 @@ import {
 } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import type { ToolUIPart } from 'ai'
-import { ChevronDownIcon, WrenchIcon } from 'lucide-react'
+import { ChevronDownIcon, Loader2, WrenchIcon } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
 import {
   createContext,
@@ -104,6 +103,8 @@ export const ToolHeader = memo(
   ({ className, title, state, type }: ToolHeaderProps) => {
     const { isOpen } = useTool()
     const toolName = title ?? type.split('-').slice(1).join('-')
+    const isRunning = state === 'input-streaming' || state === 'input-available'
+    const Icon = isRunning ? Loader2 : WrenchIcon
 
     return (
       <CollapsibleTrigger
@@ -112,7 +113,7 @@ export const ToolHeader = memo(
           className
         )}
       >
-        <WrenchIcon className="size-4" />
+        <Icon className={cn('size-4', isRunning && 'animate-spin')} />
         <span>{getStatusText(state, toolName)}</span>
         <ChevronDownIcon
           className={cn(
@@ -137,9 +138,7 @@ export const ToolContent = memo(
       )}
       {...props}
     >
-      <div className="ml-2 pl-4 border-l-2 border-dotted">
-        {children}
-      </div>
+      <div className="ml-2 pl-4 border-l-2 border-dotted">{children}</div>
     </CollapsibleContent>
   )
 )

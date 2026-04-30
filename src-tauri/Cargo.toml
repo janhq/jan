@@ -74,6 +74,7 @@ hyper = { version = "0.14", features = ["server"] }
 jan-utils = { path = "./utils" }
 libloading = "0.8.7"
 log = "0.4"
+png = "0.18"
 rand = "0.8"
 rmcp = { version = "0.8.5", features = [
     "client",

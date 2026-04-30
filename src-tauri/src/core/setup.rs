@@ -349,16 +349,30 @@ pub fn setup_mcp<R: Runtime>(app: &App<R>) {
 #[cfg(desktop)]
 pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
     use crate::core::state::AppState;
-    use crate::core::tray_status::{render_bar, render_dot, write_clipboard, TrayHandles};
+    use crate::core::tray_status::{
+        render_copy_icon, render_dot, render_segmented_bar, write_clipboard, TrayHandles,
+    };
 
     //* Dynamic status rows: populated immediately with placeholders, then refreshed
     //  every ~5 s by the frontend hook `useTrayStatusSync` invoking `update_tray_status`.
+
+    //* Server block — stacked Pico-style: status row ("Server Running") on top
+    //  and a separate copy-icon-prefixed URL row beneath. Clicking the URL row
+    //  copies the cached server URL.
     let status_server = IconMenuItem::with_id(
         app.handle(),
         "status_server",
-        "Server  — stopped —",
+        "Server Stopped",
         true,
         Some(render_dot(false)),
+        None::<&str>,
+    )?;
+    let status_server_url = IconMenuItem::with_id(
+        app.handle(),
+        "status_server_url",
+        "—",
+        false,
+        Some(render_copy_icon()),
         None::<&str>,
     )?;
     let status_model = MenuItem::with_id(
@@ -368,7 +382,7 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
         true,
         None::<&str>,
     )?;
-    //* RAM split across two rows — text caption + stand-alone progress bar —
+    //* RAM split across two rows — text caption + stand-alone segmented bar —
     //  so only BAR_WIDTH drives the overall menu width (Pico-style narrow panel).
     let status_ram_text = MenuItem::with_id(
         app.handle(),
@@ -382,33 +396,24 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
         "status_ram_bar",
         "",
         true,
-        Some(render_bar(0)),
+        Some(render_segmented_bar(0)),
         None::<&str>,
     )?;
 
-    let copy_url_i = MenuItem::with_id(
-        app.handle(),
-        "copy_api_url",
-        "Copy API URL",
-        true,
-        None::<&str>,
-    )?;
     let show_i = MenuItem::with_id(app.handle(), "open", "Open Atomic Chat", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app.handle(), "quit", "Quit", true, None::<&str>)?;
 
     let sep1 = PredefinedMenuItem::separator(app.handle())?;
-    let sep2 = PredefinedMenuItem::separator(app.handle())?;
 
     let menu = Menu::with_items(
         app.handle(),
         &[
             &status_server,
+            &status_server_url,
             &status_model,
             &status_ram_text,
             &status_ram_bar,
             &sep1,
-            &copy_url_i,
-            &sep2,
             &show_i,
             &quit_i,
         ],
@@ -422,6 +427,7 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
         };
         let new_handles = TrayHandles {
             server: status_server.clone(),
+            server_url_row: status_server_url.clone(),
             model: status_model.clone(),
             ram_text: status_ram_text.clone(),
             ram_bar: status_ram_bar.clone(),
@@ -465,7 +471,10 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
             "quit" => {
                 app.exit(0);
             }
-            "copy_api_url" => {
+            "status_server_url" => {
+                //* Clicking the URL row copies the cached server URL — the row's
+                //  display text may be truncated, so we always copy the full URL
+                //  stashed in `TrayHandles::server_url`.
                 let state = app.state::<AppState>();
                 let url = state
                     .tray_handles
@@ -477,9 +486,9 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
                     })
                     .unwrap_or_default();
                 if url.is_empty() {
-                    log::debug!("Copy API URL: no URL recorded yet");
+                    log::debug!("Copy URL: no URL recorded yet");
                 } else if let Err(e) = write_clipboard(&url) {
-                    log::warn!("Copy API URL failed: {e}");
+                    log::warn!("Copy URL failed: {e}");
                 }
             }
             // Live status rows are non-interactive — clicking them is a no-op.

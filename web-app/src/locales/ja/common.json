@@ -79,6 +79,7 @@
   "downloadCancelled": "ダウンロードがキャンセルされました",
   "downloadComplete": "ダウンロード完了",
   "thinking": "考え中...",
+  "working": "作業中...",
   "thought": "思考",
   "callingTool": "ツールを呼び出し中",
   "completed": "完了",

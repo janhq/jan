@@ -27,6 +27,8 @@ import { extractFilesFromPrompt, FileMetadata } from '@/lib/fileMetadata'
 import { AttachmentChip } from '@/containers/AttachmentChip'
 import { useMemo } from 'react'
 import { Button } from '@/components/ui/button'
+import { Shimmer } from '@/components/ai-elements/shimmer'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -66,6 +68,7 @@ export const MessageItem = memo(
     onEdit,
     onDelete,
   }: MessageItemProps) => {
+    const { t } = useTranslation()
     const selectedModel = useModelProvider((state) => state.selectedModel)
     // Global "Disable reasoning" toggle: some providers (e.g. MiniMax) ignore
     // every known API flag and keep streaming chain-of-thought. Hide those
@@ -109,6 +112,29 @@ export const MessageItem = memo(
     }, [message.parts])
 
     const isStreaming = isLastMessage && status === CHAT_STATUS.STREAMING
+
+    // When a tool call has just completed and the assistant is still
+    // streaming the next part (text or another tool), show a "Working…"
+    // shimmer at the end of the bubble so the UI never feels frozen —
+    // especially when reasoning is disabled and the reasoning panel
+    // (which would otherwise act as the activity indicator) is hidden.
+    const showWorkingShimmer = useMemo(() => {
+      if (!isLastMessage) return false
+      if (message.role !== 'assistant') return false
+      if (status !== CHAT_STATUS.STREAMING) return false
+      const visibleParts = message.parts.filter(
+        (p) => !(p.type === CONTENT_TYPE.REASONING && disableReasoning)
+      )
+      const lastVisible = visibleParts[visibleParts.length - 1]
+      if (!lastVisible || typeof lastVisible.type !== 'string') return false
+      if (!lastVisible.type.startsWith('tool-')) return false
+      const toolState = (lastVisible as { state?: string }).state
+      return (
+        toolState === 'output-available' ||
+        toolState === 'output-error' ||
+        toolState === 'output-denied'
+      )
+    }, [isLastMessage, message.role, message.parts, status, disableReasoning])
 
     // Extract file metadata from message text (for user messages with attachments)
     const attachedFiles = useMemo(() => {
@@ -352,6 +378,12 @@ export const MessageItem = memo(
               return renderToolPart(part, i)
           }
         })}
+
+        {showWorkingShimmer && (
+          <div className="flex flex-row items-center gap-2 mt-2">
+            <Shimmer duration={1}>{t('common:working')}</Shimmer>
+          </div>
+        )}
 
         {/* Message actions for user messages */}
         {message.role === 'user' && !hideActions && (
