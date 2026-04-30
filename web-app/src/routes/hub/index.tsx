@@ -190,7 +190,8 @@ function HubContent() {
               ?.models.some(
                 (m: { id: string }) =>
                   m.id === variant.model_id ||
-                  m.id === `${model.developer}/${sanitizeModelId(variant.model_id)}`
+                  m.id === `${model.developer}/${sanitizeModelId(variant.model_id)}` ||
+                  m.id === `${model.developer}/${variant.model_id}`
               )
 
             return isLlamaCppDownloaded || isMlxDownloaded

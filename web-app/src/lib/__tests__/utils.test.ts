@@ -8,6 +8,7 @@ import {
   formatMegaBytes,
   formatDuration,
   getModelDisplayName,
+  sanitizeModelId,
 } from '../utils'
 
 describe('getProviderLogo', () => {
@@ -280,6 +281,30 @@ describe('formatDuration', () => {
     expect(formatDuration(start, 60000)).toBe('1m 0s') // exactly 1 minute
     expect(formatDuration(start, 3600000)).toBe('1h 0m 0s') // exactly 1 hour
     expect(formatDuration(start, 86400000)).toBe('1d 0h 0m 0s') // exactly 1 day
+  })
+})
+
+describe('sanitizeModelId', () => {
+  it('preserves typical Hub / catalog model name segments', () => {
+    expect(sanitizeModelId('Qwen3-VL-2B-Thinking-4bit')).toBe(
+      'Qwen3-VL-2B-Thinking-4bit'
+    )
+  })
+
+  it('replaces dots with underscores', () => {
+    expect(sanitizeModelId('model.name.v2')).toBe('model_name_v2')
+  })
+
+  it('strips characters outside the allowed set', () => {
+    expect(sanitizeModelId('x!y@z#')).toBe('xyz')
+  })
+
+  it('removes spaces without inserting hyphens', () => {
+    expect(sanitizeModelId('a b c')).toBe('abc')
+  })
+
+  it('keeps path-like ids used with developer prefix', () => {
+    expect(sanitizeModelId('org/model-1.0')).toBe('org/model-1_0')
   })
 })
 
