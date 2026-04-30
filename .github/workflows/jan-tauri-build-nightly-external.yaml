@@ -25,6 +25,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name != github.repository
     uses: ./.github/workflows/template-tauri-build-macos-external.yml
     needs: [get-update-version]
+    secrets: inherit
     with:
       ref: ${{ github.ref }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
@@ -34,6 +35,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name != github.repository
     uses: ./.github/workflows/template-tauri-build-windows-x64-external.yml
     needs: [get-update-version]
+    secrets: inherit
     with:
       ref: ${{ github.ref }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
@@ -43,6 +45,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name != github.repository
     uses: ./.github/workflows/template-tauri-build-linux-x64-external.yml
     needs: [get-update-version]
+    secrets: inherit
     with:
       ref: ${{ github.ref }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}

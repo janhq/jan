@@ -26,13 +26,9 @@ import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import {
   convertThreadMessagesToUIMessages,
-  extractContentPartsFromUIMessage,
 } from '@/lib/messages'
 import { newUserThreadContent } from '@/lib/completion'
 import {
-  ThreadMessage,
-  MessageStatus,
-  ChatCompletionRole,
   ContentType,
 } from '@janhq/core'
 import { createImageAttachment } from '@/types/attachment'
@@ -54,17 +50,15 @@ import { ExtensionManager } from '@/lib/extension'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useMessageQueue } from '@/stores/message-queue-store'
-import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
+import { useToolCallExecutor } from '@/hooks/useToolCallExecutor'
+import { useTitleSummarizer } from '@/hooks/useTitleSummarizer'
+import { useMessageFinishHandler } from '@/hooks/useMessageFinishHandler'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
   SUBMITTED: 'submitted',
 } as const
-
-// Title summarization constants
-const MAX_TITLE_SUMMARIZATION_ATTEMPTS = 3
-const TITLE_SUMMARIZATION_MIN_LENGTH = 50
 
 type ThreadModel = {
   id: string
@@ -106,26 +100,21 @@ function ThreadDetail() {
     (state) => state.clearAttachments
   )
 
-  // Session data for tool call tracking
+  const addToolOutputRef = useRef<
+    (payload: {
+      state?: 'output-error'
+      tool: string
+      toolCallId: string
+      errorText?: string
+      output?: unknown
+    }) => void
+  >(() => undefined)
   const getSessionData = useChatSessions((state) => state.getSessionData)
   const sessionData = getSessionData(threadId)
-
-  // AbortController for cancelling tool calls
-  const toolCallAbortController = useRef<AbortController | null>(null)
-
-  // Title auto-summarization state
-  const titleAbortRef = useRef<AbortController | null>(null)
-  const titleAttemptsRef = useRef(0)
 
   // Check if we should follow up with tool calls (respects abort signal)
   const followUpMessage = useCallback(
     ({ messages }: { messages: UIMessage[] }) => {
-      if (
-        !toolCallAbortController.current ||
-        toolCallAbortController.current?.signal.aborted
-      ) {
-        return false
-      }
       return lastAssistantMessageIsCompleteWithToolCalls({ messages })
     },
     []
@@ -169,6 +158,26 @@ function ThreadDetail() {
   const setContinueFromContentRef = useRef<((content: string) => void) | null>(
     null
   )
+  const { summarizeTitle, resetTitleSummarizer, abortTitleSummarization } =
+    useTitleSummarizer(threadId)
+  const { executeQueuedToolCalls, enqueueToolCall } = useToolCallExecutor({
+    threadId,
+    projectId,
+    serviceHub,
+    addToolOutput: (payload) => addToolOutputRef.current(payload),
+  })
+  const onFinish = useMessageFinishHandler({
+    threadId,
+    addMessage,
+    updateMessage,
+    setPendingContinueMessage,
+    setContinueFromContent: (content) =>
+      setContinueFromContentRef.current?.(content),
+    setContextLimitError,
+    handleContextSizeIncrease: () => handleContextSizeIncreaseRef.current?.(),
+    executeQueuedToolCalls,
+    summarizeTitle,
+  })
 
   // Use the AI SDK chat hook
   const {
@@ -187,243 +196,11 @@ function ThreadDetail() {
     sessionTitle: thread?.title,
     systemMessage,
     experimental_throttle: 50,
-    onFinish: ({ message, isAbort }) => {
-      const msgMeta = message.metadata as Record<string, unknown> | undefined
-      const finishReason = msgMeta?.finishReason as string | undefined
-
-      // Context limit hit: send partial content as prefill so the model continues
-      // from where it stopped. The stream wrapper injects it as the first text-delta
-      // of the new message, so the user sees the partial text immediately.
-      if (!isAbort && finishReason === 'length') {
-        const selectedModelState = useModelProvider.getState().selectedModel
-        const usage = msgMeta?.usage as
-          | { inputTokens?: number; outputTokens?: number }
-          | undefined
-        const totalTokens =
-          (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
-        const ctxLen =
-          (selectedModelState?.settings?.ctx_len?.controller_props
-            ?.value as number) ?? 32768
-        const isContextLimit = totalTokens >= ctxLen * 0.9
-
-        if (isContextLimit) {
-          const autoIncrease =
-            selectedModelState?.settings?.auto_increase_ctx_len
-              ?.controller_props?.value ?? true
-          if (autoIncrease) {
-            const partialText = message.parts
-              .filter((p) => p.type === 'text')
-              .map((p) => (p as { type: 'text'; text: string }).text)
-              .join('')
-            if (partialText) {
-              setContinueFromContentRef.current?.(partialText)
-              // Keep the partial message visible while the model reloads
-              setPendingContinueMessage(message)
-            }
-            handleContextSizeIncreaseRef.current?.()
-          } else {
-            setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
-          }
-        }
-        return
-      }
-
-      if (!isAbort && message.parts.length) setPendingContinueMessage(null)
-
-      // Persist assistant message to backend (skip if aborted).
-      // For continuations, message.parts already contains partial + new content
-      // because the stream wrapper prepended the partial text as the first delta.
-      if (!isAbort && message.role === 'assistant') {
-        const contentParts = extractContentPartsFromUIMessage(message)
-
-        if (contentParts.length > 0) {
-          const messageMetadata = (message.metadata || {}) as Record<
-            string,
-            unknown
-          >
-
-          const assistantMessage: ThreadMessage = {
-            type: 'text',
-            role: ChatCompletionRole.Assistant,
-            content: contentParts,
-            id: message.id,
-            object: 'thread.message',
-            thread_id: threadId,
-            status: MessageStatus.Ready,
-            created_at: Date.now(),
-            completed_at: Date.now(),
-            metadata: messageMetadata,
-          }
-
-          // Check if message with this ID already exists (onFinish can be called multiple times)
-          const existingMessages = useMessages.getState().getMessages(threadId)
-          const existingMessage = existingMessages.find(
-            (m) => m.id === message.id
-          )
-
-          if (existingMessage) {
-            updateMessage(assistantMessage)
-          } else {
-            addMessage(assistantMessage)
-          }
-        }
-      }
-
-      // Create a new AbortController for tool calls
-      toolCallAbortController.current = new AbortController()
-      const signal = toolCallAbortController.current.signal
-
-      // Get cached tool names from store (initialized in useTools hook)
-      const ragToolNames = useAppState.getState().ragToolNames
-      const mcpToolNames = useAppState.getState().mcpToolNames
-
-      // Process tool calls sequentially, requesting approval for each if needed
-      ;(async () => {
-        for (const toolCall of sessionData.tools) {
-          // Check if already aborted before starting
-          if (signal.aborted) {
-            break
-          }
-
-          try {
-            const toolName = toolCall.toolName
-
-            // Built-in RAG tools are internal and should not require approval.
-            const approved = ragToolNames.has(toolName)
-              ? true
-              : await useToolApproval
-                  .getState()
-                  .showApprovalModal(toolName, threadId, toolCall.input)
-
-            if (!approved) {
-              // User denied the tool call
-              addToolOutput({
-                state: 'output-error',
-                tool: toolCall.toolName,
-                toolCallId: toolCall.toolCallId,
-                errorText: 'Tool execution denied by user',
-              })
-              continue
-            }
-
-            let result
-
-            // Route to the appropriate service based on tool name
-            if (ragToolNames.has(toolName)) {
-              result = await serviceHub.rag().callTool({
-                toolName,
-                arguments: toolCall.input,
-                threadId,
-                projectId: projectId,
-                scope: projectId ? 'project' : 'thread',
-              })
-            } else if (mcpToolNames.has(toolName)) {
-              result = await serviceHub.mcp().callTool({
-                toolName,
-                arguments: toolCall.input,
-              })
-            } else {
-              // Tool not found in either service
-              result = {
-                error: `Tool '${toolName}' not found in any service`,
-              }
-            }
-
-            if (result.error) {
-              addToolOutput({
-                state: 'output-error',
-                tool: toolCall.toolName,
-                toolCallId: toolCall.toolCallId,
-                errorText: `Error: ${result.error}`,
-              })
-            } else {
-              addToolOutput({
-                tool: toolCall.toolName,
-                toolCallId: toolCall.toolCallId,
-                output: result.content,
-              })
-            }
-          } catch (error) {
-            // Ignore abort errors
-            if ((error as Error).name !== 'AbortError') {
-              console.error('Tool call error:', error)
-              addToolOutput({
-                state: 'output-error',
-                tool: toolCall.toolName,
-                toolCallId: toolCall.toolCallId,
-                errorText: `Error: ${JSON.stringify(error)}`,
-              })
-            }
-          }
-        }
-
-        // Clear tools after processing all
-        sessionData.tools = []
-        toolCallAbortController.current = null
-      })().catch((error) => {
-        // Ignore abort errors
-        if (error.name !== 'AbortError') {
-          console.error('Tool call error:', error)
-        }
-        sessionData.tools = []
-        toolCallAbortController.current = null
-      })
-
-      // Auto-summarize thread title after the first assistant response.
-      // The thread title is the user's first message (set in ChatInput on creation),
-      // so we use it directly as the summarization input.
-      // Skipped if already summarized, manually renamed, or max attempts reached.
-      console.log('[ThreadTitle] onFinish fired, isAbort:', isAbort)
-      if (!isAbort) {
-        const currentThread = useThreads.getState().threads[threadId]
-        console.log('[ThreadTitle] thread:', !!currentThread, 'titleSummarized:', currentThread?.metadata?.titleSummarized, 'attempts:', titleAttemptsRef.current)
-        if (
-          currentThread &&
-          !currentThread.metadata?.titleSummarized &&
-          titleAttemptsRef.current < MAX_TITLE_SUMMARIZATION_ATTEMPTS
-        ) {
-          const titleText = currentThread.title
-          console.log('[ThreadTitle] titleText length:', titleText?.length, 'threshold:', TITLE_SUMMARIZATION_MIN_LENGTH)
-
-          if (titleText && titleText.length >= TITLE_SUMMARIZATION_MIN_LENGTH) {
-            // Cancel any previous in-flight summarization
-            titleAbortRef.current?.abort()
-            const controller = new AbortController()
-            titleAbortRef.current = controller
-            titleAttemptsRef.current++
-            const originalTitle = titleText
-
-            console.log('[ThreadTitle] calling generateThreadTitle...')
-            generateThreadTitle(titleText, controller.signal).then((title) => {
-              console.log('[ThreadTitle] result:', title, 'aborted:', controller.signal.aborted)
-              if (!title || controller.signal.aborted) return
-              // Don't overwrite if the user manually renamed while we were generating
-              const thread = useThreads.getState().threads[threadId]
-              if (!thread || thread.title !== originalTitle) return
-
-              useThreads.getState().updateThread(threadId, {
-                title,
-                metadata: { ...thread.metadata, titleSummarized: true },
-              })
-              titleAbortRef.current = null
-            })
-          } else if (titleText) {
-            // Short messages are already good titles — mark as done
-            useThreads.getState().updateThread(threadId, {
-              metadata: {
-                ...currentThread.metadata,
-                titleSummarized: true,
-              },
-            })
-          }
-        }
-      }
-    },
-    onToolCall: ({ toolCall }) => {
-      sessionData.tools.push(toolCall)
-    },
+    onFinish,
+    onToolCall: ({ toolCall }) => enqueueToolCall({ toolCall }),
     sendAutomaticallyWhen: followUpMessage,
   })
+  addToolOutputRef.current = addToolOutput
 
   // Get disabled tools for this thread to trigger re-render when they change
   const disabledTools = useToolAvailable((state) =>
@@ -498,9 +275,7 @@ function ThreadDetail() {
   useEffect(() => {
     setCurrentThreadId(threadId)
     // Reset title summarization state for the new thread
-    titleAbortRef.current?.abort()
-    titleAbortRef.current = null
-    titleAttemptsRef.current = 0
+    resetTitleSummarizer()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId])
 
@@ -555,7 +330,7 @@ function ThreadDetail() {
 
   useEffect(() => {
     return () => {
-      titleAbortRef.current?.abort()
+      abortTitleSummarization()
       setCurrentThreadId(undefined)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -568,8 +343,7 @@ function ThreadDetail() {
       files?: Array<{ type: string; mediaType: string; url: string }>
     ) => {
       // Cancel any in-flight title summarization so it doesn't compete with this request
-      titleAbortRef.current?.abort()
-      titleAbortRef.current = null
+      abortTitleSummarization()
 
       // Get all attachments from the store (includes both images and documents)
       const allAttachments = getAttachments(attachmentsKey)
@@ -717,6 +491,7 @@ function ThreadDetail() {
       clearAttachmentsForThread,
       serviceHub,
       selectedProvider,
+      abortTitleSummarization,
     ]
   )
 
@@ -785,8 +560,7 @@ function ThreadDetail() {
   // - For assistant messages: finds the closest preceding user message, deletes from there
   const handleRegenerate = useCallback((messageId?: string) => {
     // Cancel any in-flight title summarization before regenerating
-    titleAbortRef.current?.abort()
-    titleAbortRef.current = null
+    abortTitleSummarization()
 
     const currentLocalMessages = useMessages.getState().getMessages(threadId)
 
@@ -827,7 +601,7 @@ function ThreadDetail() {
     // Call the AI SDK regenerate function - it will handle truncating the UI messages
     // and generating a new response from the selected message
     regenerate(messageId ? { messageId } : undefined)
-  }, [threadId, deleteMessage, regenerate])
+  }, [threadId, deleteMessage, regenerate, abortTitleSummarization])
 
   // Handle edit message - updates the message and regenerates from it
   const handleEditMessage = useCallback(

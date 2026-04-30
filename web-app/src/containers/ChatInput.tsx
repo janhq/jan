@@ -22,7 +22,6 @@ import { ArrowRight, PlusIcon } from 'lucide-react'
 import {
   IconPhoto,
   IconAtom,
-  IconTool,
   IconCodeCircle2,
   IconPlayerStopFilled,
   IconX,
@@ -54,7 +53,6 @@ import {
 import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
-import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTools } from '@/hooks/useTools'
@@ -88,6 +86,7 @@ import { useJanBrowserExtension } from '@/hooks/useJanBrowserExtension'
 import { PromptVisionModel } from '@/containers/PromptVisionModel'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { AssistantsMenu } from '@/components/AssistantsMenu'
+import { ToolDropdown } from '@/containers/chat-input/ToolDropdown'
 
 type ChatInputProps = {
   className?: string
@@ -455,10 +454,15 @@ const ChatInput = memo(function ChatInput({
           : assistants.find((a) => a.id === selectedAssistantId)
 
         setCurrentAssistant(assistant)
+        const threadModelId = selectedModel?.id ?? defaultModel(selectedProvider)
+        if (!threadModelId) {
+          setMessage('Please select a model to start chatting.')
+          return
+        }
 
         const newThread = await createThread(
           {
-            id: selectedModel?.id ?? defaultModel(selectedProvider),
+            id: threadModelId,
             provider: selectedProvider,
           },
           prompt, // Use prompt as thread title
@@ -1836,55 +1840,14 @@ const ChatInput = memo(function ChatInput({
                       MCPToolComponent={MCPToolComponent}
                     />
                   ) : (
-                    // Use default tools dropdown
-                    <Tooltip
-                      open={tooltipShown === 'tools'}
-                      onOpenChange={(newValue) => newValue ? setTooltipShown('tools') : setTooltipShown(false)}
-                    >
-                      <TooltipTrigger
-                        asChild
-                        disabled={dropdownToolsAvailable}
-                      >
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={(e) => {
-                            setDropdownToolsAvailable(false)
-                            e.stopPropagation()
-                          }}
-                        >
-                          <DropdownToolsAvailable
-                            initialMessage={initialMessage}
-                            onOpenChange={(isOpen) => {
-                              setDropdownToolsAvailable(isOpen)
-                              if (isOpen) {
-                                setTooltipShown(false)
-                              }
-                            }}
-                          >
-                            {() => {
-                              return (
-                                <div
-                                  className={cn(
-                                    'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer',
-                                  )}
-                                >
-                                  <IconTool
-                                    size={18}
-                                    className={cn(
-                                      'text-muted-foreground',
-                                    )}
-                                  />
-                                </div>
-                              )
-                            }}
-                          </DropdownToolsAvailable>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('tools')}</p>
-                      </TooltipContent>
-                    </Tooltip>
+                    <ToolDropdown
+                      tooltipShown={tooltipShown}
+                      setTooltipShown={setTooltipShown}
+                      dropdownToolsAvailable={dropdownToolsAvailable}
+                      setDropdownToolsAvailable={setDropdownToolsAvailable}
+                      initialMessage={initialMessage}
+                      toolsLabel={t('tools')}
+                    />
                   ))}
 
                 {/* Agent mode toggle hidden — kept as dead code for future use */}

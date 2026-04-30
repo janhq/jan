@@ -15,6 +15,9 @@ on:
         type: string
         default: 'nightly'
         description: 'The channel to use for this job'
+    secrets:
+      JAN_SIGNING_KEY:
+        required: false
 jobs:
   build-windows-x64-external:
     runs-on: windows-latest
@@ -160,6 +163,8 @@ jobs:
         shell: bash
         run: |
           make build
+        env:
+          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY != '' && secrets.JAN_SIGNING_KEY || 'local-dev-test-key-not-for-production' }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
