@@ -93,6 +93,7 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     ctx_shift: asBool(config.ctx_shift),
     parallel: asI32(config.parallel, 1),
 
+    embedding_model_id: asString(config.embedding_model_id),
     reasoning: asString(config.reasoning, 'auto'),
     cache_ram: asI32(config.cache_ram, -1),
     cache_reuse: asI32(config.cache_reuse, 0),

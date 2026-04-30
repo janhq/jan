@@ -146,6 +146,18 @@
     }
   },
   {
+    "key": "embedding_model_id",
+    "title": "Embedding model ID (RAG / file uploads)",
+    "description": "Jan llama.cpp model folder name used for embeddings when ingesting files (default bundle uses sentence-transformer-mini). Leave empty to auto-pick an installed embedding model, or download the default from Hugging Face. Offline: import a BERT/nomic-bert embedding GGUF, then enter its model ID here.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "e.g. my-local-embedder (empty = auto / default)",
+      "type": "text",
+      "textAlign": "left"
+    }
+  },
+  {
     "key": "device",
     "title": "Devices for Offload",
     "description": "Comma-separated list of devices to use for offloading (e.g., 'CUDA0', 'CUDA0,CUDA1'). Leave empty to use default/CPU only.",

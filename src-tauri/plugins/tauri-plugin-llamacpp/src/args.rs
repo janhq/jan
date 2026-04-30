@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 fn default_parallel() -> i32 {
      1
  }
+// NOTE: Frontend may send extra keys (e.g. embedding_model_id for RAG). Serde ignores
+// unknown fields here — there is no #[serde(deny_unknown_fields)].
 fn default_reasoning() -> String {
     "auto".to_string()
 }

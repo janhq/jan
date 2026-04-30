@@ -9,7 +9,7 @@ import {
   IconTool,
   IconAtom,
   IconWorld,
-  IconCodeCircle2,
+  IconCircles,
 } from '@tabler/icons-react'
 import { Fragment, memo } from 'react'
 
@@ -40,7 +40,7 @@ const Capabilities = memo(function Capabilities({ capabilities }: CapabilitiesPr
         } else if (capability === 'reasoning') {
           icon = <IconAtom className="size-3.5" />
         } else if (capability === 'embeddings' || isEmbedding) {
-          icon = <IconCodeCircle2 className="size-3.5" />
+          icon = <IconCircles className="size-3.5" />
         } else if (capability === 'web_search') {
           icon = <IconWorld className="size-3.5" />
         } else {
