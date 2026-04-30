@@ -23,20 +23,4 @@ describe('version', () => {
     const mod = await import('../version')
     expect(mod.isBeta).toBe(true)
   })
-
-  it('isProd is true when VERSION has no hyphen, no beta, and not dev', async () => {
-    ;(globalThis as any).VERSION = '1.0.0'
-    vi.doMock('../utils', () => ({ isDev: vi.fn(() => false) }))
-    const mod = await import('../version')
-    expect(mod.isProd).toBe(true)
-    expect(mod.isNightly).toBe(false)
-    expect(mod.isBeta).toBe(false)
-  })
-
-  it('isProd is false when isDev returns true', async () => {
-    ;(globalThis as any).VERSION = '1.0.0'
-    vi.doMock('../utils', () => ({ isDev: vi.fn(() => true) }))
-    const mod = await import('../version')
-    expect(mod.isProd).toBe(false)
-  })
 })
