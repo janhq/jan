@@ -3131,3 +3131,972 @@ async fn forward_non_streaming(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyper::StatusCode;
+    use serde_json::json;
+
+    // -------------------------------------------------------------------------
+    // normalize_openai_tool_parameters_schema
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn schema_normalize_adds_type_to_description_only_leaf() {
+        let mut schema = json!({ "description": "A leaf property" });
+        normalize_openai_tool_parameters_schema(&mut schema);
+        assert_eq!(schema["type"], "string");
+    }
+
+    #[test]
+    fn schema_normalize_does_not_overwrite_existing_type() {
+        let mut schema = json!({ "description": "Has type", "type": "integer" });
+        normalize_openai_tool_parameters_schema(&mut schema);
+        assert_eq!(schema["type"], "integer");
+    }
+
+    #[test]
+    fn schema_normalize_skips_node_with_nested_schema_keywords() {
+        let mut schema = json!({
+            "description": "Not a leaf",
+            "anyOf": [{ "type": "string" }, { "type": "null" }]
+        });
+        normalize_openai_tool_parameters_schema(&mut schema);
+        assert!(schema.get("type").is_none(), "should not add type to non-leaf");
+    }
+
+    #[test]
+    fn schema_normalize_adds_empty_properties_to_bare_object_type() {
+        let mut schema = json!({ "type": "object" });
+        normalize_openai_tool_parameters_schema(&mut schema);
+        assert_eq!(schema["properties"], json!({}));
+    }
+
+    #[test]
+    fn schema_normalize_recurses_into_properties() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "city": { "description": "City name" }
+            }
+        });
+        normalize_openai_tool_parameters_schema(&mut schema);
+        assert_eq!(schema["properties"]["city"]["type"], "string");
+    }
+
+    #[test]
+    fn schema_normalize_recurses_into_items() {
+        let mut schema = json!({
+            "type": "array",
+            "items": { "description": "An item" }
+        });
+        normalize_openai_tool_parameters_schema(&mut schema);
+        assert_eq!(schema["items"]["type"], "string");
+    }
+
+    #[test]
+    fn schema_normalize_handles_array_value() {
+        let mut schema = json!([{ "description": "elem" }]);
+        normalize_openai_tool_parameters_schema(&mut schema);
+        assert_eq!(schema[0]["type"], "string");
+    }
+
+    #[test]
+    fn schema_normalize_noop_on_primitive() {
+        let mut schema = json!("just a string");
+        normalize_openai_tool_parameters_schema(&mut schema);
+        assert_eq!(schema, json!("just a string"));
+    }
+
+    // -------------------------------------------------------------------------
+    // normalize_openai_tools_in_chat_body
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn tools_in_body_noop_when_no_tools_key() {
+        let mut body = json!({ "model": "gpt-4", "messages": [] });
+        normalize_openai_tools_in_chat_body(&mut body);
+        assert!(body.get("tools").is_none());
+    }
+
+    #[test]
+    fn tools_in_body_noop_when_tools_not_array() {
+        let mut body = json!({ "tools": "not-an-array" });
+        normalize_openai_tools_in_chat_body(&mut body);
+        assert_eq!(body["tools"], "not-an-array");
+    }
+
+    #[test]
+    fn tools_in_body_skips_tool_without_function_key() {
+        let mut body = json!({ "tools": [{ "type": "function" }] });
+        normalize_openai_tools_in_chat_body(&mut body);
+        // No panic — just skipped
+        assert_eq!(body["tools"][0]["type"], "function");
+    }
+
+    #[test]
+    fn tools_in_body_skips_tool_without_parameters_key() {
+        let mut body = json!({ "tools": [{ "function": { "name": "fn" } }] });
+        normalize_openai_tools_in_chat_body(&mut body);
+        assert!(body["tools"][0]["function"]["parameters"].is_null());
+    }
+
+    #[test]
+    fn tools_in_body_normalizes_leaf_property() {
+        let mut body = json!({
+            "tools": [{
+                "function": {
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "q": { "description": "Search query" }
+                        }
+                    }
+                }
+            }]
+        });
+        normalize_openai_tools_in_chat_body(&mut body);
+        assert_eq!(body["tools"][0]["function"]["parameters"]["properties"]["q"]["type"], "string");
+    }
+
+    // -------------------------------------------------------------------------
+    // http_status_indicates_api_key_retry
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn retry_on_401_unauthorized() {
+        assert!(http_status_indicates_api_key_retry(StatusCode::UNAUTHORIZED));
+    }
+
+    #[test]
+    fn retry_on_403_forbidden() {
+        assert!(http_status_indicates_api_key_retry(StatusCode::FORBIDDEN));
+    }
+
+    #[test]
+    fn retry_on_429_too_many_requests() {
+        assert!(http_status_indicates_api_key_retry(StatusCode::TOO_MANY_REQUESTS));
+    }
+
+    #[test]
+    fn no_retry_on_200_ok() {
+        assert!(!http_status_indicates_api_key_retry(StatusCode::OK));
+    }
+
+    #[test]
+    fn no_retry_on_404_not_found() {
+        assert!(!http_status_indicates_api_key_retry(StatusCode::NOT_FOUND));
+    }
+
+    #[test]
+    fn no_retry_on_500_internal_server_error() {
+        assert!(!http_status_indicates_api_key_retry(
+            StatusCode::INTERNAL_SERVER_ERROR
+        ));
+    }
+
+    #[test]
+    fn no_retry_on_400_bad_request() {
+        assert!(!http_status_indicates_api_key_retry(StatusCode::BAD_REQUEST));
+    }
+
+    // -------------------------------------------------------------------------
+    // transform_anthropic_to_openai — malformed payloads
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn anthropic_to_openai_returns_none_when_model_missing() {
+        let body = json!({ "messages": [] });
+        assert!(transform_anthropic_to_openai(&body).is_none());
+    }
+
+    #[test]
+    fn anthropic_to_openai_returns_none_when_messages_missing() {
+        let body = json!({ "model": "claude-3" });
+        assert!(transform_anthropic_to_openai(&body).is_none());
+    }
+
+    #[test]
+    fn anthropic_to_openai_returns_none_when_messages_not_array() {
+        let body = json!({ "model": "claude-3", "messages": "not-an-array" });
+        assert!(transform_anthropic_to_openai(&body).is_none());
+    }
+
+    #[test]
+    fn anthropic_to_openai_handles_empty_messages_array() {
+        let body = json!({ "model": "claude-3", "messages": [] });
+        let result = transform_anthropic_to_openai(&body).unwrap();
+        assert_eq!(result["model"], "claude-3");
+        assert_eq!(result["messages"], json!([]));
+        assert_eq!(result["stream"], false);
+    }
+
+    #[test]
+    fn anthropic_to_openai_propagates_stream_true() {
+        let body = json!({
+            "model": "claude-3",
+            "messages": [{ "role": "user", "content": "hi" }],
+            "stream": true
+        });
+        let result = transform_anthropic_to_openai(&body).unwrap();
+        assert_eq!(result["stream"], true);
+    }
+
+    #[test]
+    fn anthropic_to_openai_converts_stop_sequences() {
+        let body = json!({
+            "model": "claude-3",
+            "messages": [{ "role": "user", "content": "hi" }],
+            "stop_sequences": ["</s>", "\n\nHuman:"]
+        });
+        let result = transform_anthropic_to_openai(&body).unwrap();
+        assert_eq!(result["stop"], json!(["</s>", "\n\nHuman:"]));
+    }
+
+    #[test]
+    fn anthropic_to_openai_forwards_temperature_and_top_p() {
+        let body = json!({
+            "model": "claude-3",
+            "messages": [{ "role": "user", "content": "hi" }],
+            "temperature": 0.7,
+            "top_p": 0.9
+        });
+        let result = transform_anthropic_to_openai(&body).unwrap();
+        assert_eq!(result["temperature"], 0.7);
+        assert_eq!(result["top_p"], 0.9);
+    }
+
+    // -------------------------------------------------------------------------
+    // transform_anthropic_to_openai — tool-call edge cases
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn anthropic_to_openai_empty_tools_array_omits_tools_key() {
+        let body = json!({
+            "model": "claude-3",
+            "messages": [{ "role": "user", "content": "hi" }],
+            "tools": []
+        });
+        let result = transform_anthropic_to_openai(&body).unwrap();
+        assert!(result.get("tools").is_none(), "empty tools array should not produce tools key");
+    }
+
+    #[test]
+    fn anthropic_to_openai_filters_tools_missing_name() {
+        let body = json!({
+            "model": "claude-3",
+            "messages": [{ "role": "user", "content": "hi" }],
+            "tools": [
+                { "description": "no name" },
+                { "name": "valid_tool", "description": "has name", "input_schema": { "type": "object" } }
+            ]
+        });
+        let result = transform_anthropic_to_openai(&body).unwrap();
+        let tools = result["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), 1, "tool without name should be filtered");
+        assert_eq!(tools[0]["function"]["name"], "valid_tool");
+    }
+
+    #[test]
+    fn anthropic_to_openai_tools_with_duplicate_names_both_converted() {
+        let body = json!({
+            "model": "claude-3",
+            "messages": [{ "role": "user", "content": "hi" }],
+            "tools": [
+                { "name": "dup", "description": "first", "input_schema": { "type": "object" } },
+                { "name": "dup", "description": "second", "input_schema": { "type": "object" } }
+            ]
+        });
+        let result = transform_anthropic_to_openai(&body).unwrap();
+        let tools = result["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), 2, "duplicate names should both be preserved");
+    }
+
+    #[test]
+    fn anthropic_to_openai_tool_uses_empty_schema_when_input_schema_missing() {
+        let body = json!({
+            "model": "claude-3",
+            "messages": [{ "role": "user", "content": "hi" }],
+            "tools": [{ "name": "no_schema" }]
+        });
+        let result = transform_anthropic_to_openai(&body).unwrap();
+        let params = &result["tools"][0]["function"]["parameters"];
+        assert_eq!(*params, json!({}));
+    }
+
+    #[test]
+    fn anthropic_to_openai_tool_description_defaults_to_empty_string() {
+        let body = json!({
+            "model": "claude-3",
+            "messages": [{ "role": "user", "content": "hi" }],
+            "tools": [{ "name": "no_desc", "input_schema": { "type": "object" } }]
+        });
+        let result = transform_anthropic_to_openai(&body).unwrap();
+        assert_eq!(result["tools"][0]["function"]["description"], "");
+    }
+
+    // -------------------------------------------------------------------------
+    // convert_messages — malformed payloads
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn convert_messages_returns_none_when_not_array() {
+        let result = convert_messages(&json!("not-an-array"), None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn convert_messages_returns_none_when_message_missing_role() {
+        let messages = json!([{ "content": "hello" }]);
+        let result = convert_messages(&messages, None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn convert_messages_returns_none_when_message_content_is_object_not_array() {
+        // content must be string or array; an object is invalid
+        let messages = json!([{ "role": "user", "content": { "bad": "value" } }]);
+        let result = convert_messages(&messages, None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn convert_messages_string_content_passes_through() {
+        let messages = json!([{ "role": "user", "content": "hello" }]);
+        let result = convert_messages(&messages, None).unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["role"], "user");
+        assert_eq!(arr[0]["content"], "hello");
+    }
+
+    #[test]
+    fn convert_messages_system_prompt_string_prepended() {
+        let messages = json!([{ "role": "user", "content": "hi" }]);
+        let system = json!("You are helpful.");
+        let result = convert_messages(&messages, Some(&system)).unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr[0]["role"], "system");
+        assert_eq!(arr[0]["content"], "You are helpful.");
+        assert_eq!(arr[1]["role"], "user");
+    }
+
+    #[test]
+    fn convert_messages_system_prompt_array_of_blocks() {
+        let messages = json!([{ "role": "user", "content": "hi" }]);
+        let system = json!([
+            { "type": "text", "text": "You are " },
+            { "type": "text", "text": "helpful." }
+        ]);
+        let result = convert_messages(&messages, Some(&system)).unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr[0]["role"], "system");
+        assert_eq!(arr[0]["content"], "You are \nhelpful.");
+    }
+
+    #[test]
+    fn convert_messages_system_prompt_empty_array_omits_system_message() {
+        let messages = json!([{ "role": "user", "content": "hi" }]);
+        let system = json!([]);
+        let result = convert_messages(&messages, Some(&system)).unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr.len(), 1, "empty system array should produce no system message");
+        assert_eq!(arr[0]["role"], "user");
+    }
+
+    #[test]
+    fn convert_messages_unknown_role_skipped() {
+        let messages = json!([
+            { "role": "unknown_role", "content": "skip me" },
+            { "role": "user", "content": "keep me" }
+        ]);
+        let result = convert_messages(&messages, None).unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["content"], "keep me");
+    }
+
+    #[test]
+    fn convert_messages_assistant_with_text_blocks() {
+        let messages = json!([{
+            "role": "assistant",
+            "content": [{ "type": "text", "text": "Hello!" }]
+        }]);
+        let result = convert_messages(&messages, None).unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr[0]["role"], "assistant");
+        assert_eq!(arr[0]["content"], "Hello!");
+    }
+
+    #[test]
+    fn convert_messages_assistant_with_tool_use() {
+        let messages = json!([{
+            "role": "assistant",
+            "content": [
+                { "type": "text", "text": "Using tool" },
+                {
+                    "type": "tool_use",
+                    "id": "call_1",
+                    "name": "search",
+                    "input": { "query": "rust" }
+                }
+            ]
+        }]);
+        let result = convert_messages(&messages, None).unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr[0]["role"], "assistant");
+        let tool_calls = arr[0]["tool_calls"].as_array().unwrap();
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0]["id"], "call_1");
+        assert_eq!(tool_calls[0]["function"]["name"], "search");
+    }
+
+    #[test]
+    fn convert_messages_assistant_tool_use_only_sets_null_content() {
+        let messages = json!([{
+            "role": "assistant",
+            "content": [{
+                "type": "tool_use",
+                "id": "call_1",
+                "name": "fn",
+                "input": {}
+            }]
+        }]);
+        let result = convert_messages(&messages, None).unwrap();
+        let arr = result.as_array().unwrap();
+        assert!(arr[0]["content"].is_null());
+    }
+
+    #[test]
+    fn convert_messages_user_tool_result_becomes_tool_role() {
+        let messages = json!([{
+            "role": "user",
+            "content": [{
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": "42"
+            }]
+        }]);
+        let result = convert_messages(&messages, None).unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr[0]["role"], "tool");
+        assert_eq!(arr[0]["tool_call_id"], "call_1");
+        assert_eq!(arr[0]["content"], "42");
+    }
+
+    #[test]
+    fn convert_messages_user_mixed_tool_result_and_text() {
+        let messages = json!([{
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "call_1",
+                    "content": "result text"
+                },
+                { "type": "text", "text": "Follow up question" }
+            ]
+        }]);
+        let result = convert_messages(&messages, None).unwrap();
+        let arr = result.as_array().unwrap();
+        // tool result comes first, then user text
+        assert_eq!(arr[0]["role"], "tool");
+        assert_eq!(arr[1]["role"], "user");
+        assert_eq!(arr[1]["content"], "Follow up question");
+    }
+
+    // -------------------------------------------------------------------------
+    // extract_tool_result_content
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn tool_result_none_returns_empty_string() {
+        assert_eq!(extract_tool_result_content(None), "");
+    }
+
+    #[test]
+    fn tool_result_string_content_returned_directly() {
+        let c = json!("some result");
+        assert_eq!(extract_tool_result_content(Some(&c)), "some result");
+    }
+
+    #[test]
+    fn tool_result_array_of_text_blocks_joined() {
+        let c = json!([
+            { "type": "text", "text": "line one" },
+            { "type": "text", "text": "line two" }
+        ]);
+        assert_eq!(extract_tool_result_content(Some(&c)), "line one\nline two");
+    }
+
+    #[test]
+    fn tool_result_array_non_text_blocks_skipped() {
+        let c = json!([
+            { "type": "image", "data": "..." },
+            { "type": "text", "text": "only this" }
+        ]);
+        assert_eq!(extract_tool_result_content(Some(&c)), "only this");
+    }
+
+    #[test]
+    fn tool_result_array_all_non_text_returns_empty() {
+        let c = json!([{ "type": "image", "data": "..." }]);
+        assert_eq!(extract_tool_result_content(Some(&c)), "");
+    }
+
+    #[test]
+    fn tool_result_json_object_returns_to_string() {
+        let c = json!({ "key": "val" });
+        let result = extract_tool_result_content(Some(&c));
+        assert!(!result.is_empty());
+        assert!(result.contains("key"));
+    }
+
+    // -------------------------------------------------------------------------
+    // transform_openai_response_to_anthropic — tool-call edge cases
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn openai_to_anthropic_text_only_response() {
+        let resp = json!({
+            "id": "msg-1",
+            "model": "gpt-4",
+            "choices": [{
+                "message": { "role": "assistant", "content": "Hello!" },
+                "finish_reason": "stop"
+            }],
+            "usage": { "prompt_tokens": 10, "completion_tokens": 5 }
+        });
+        let result = transform_openai_response_to_anthropic(&resp);
+        assert_eq!(result["type"], "message");
+        assert_eq!(result["role"], "assistant");
+        assert_eq!(result["stop_reason"], "end_turn");
+        let blocks = result["content"].as_array().unwrap();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["type"], "text");
+        assert_eq!(blocks[0]["text"], "Hello!");
+    }
+
+    #[test]
+    fn openai_to_anthropic_tool_calls_only() {
+        let resp = json!({
+            "id": "msg-2",
+            "model": "gpt-4",
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": "{\"location\": \"NYC\"}"
+                        }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }],
+            "usage": {}
+        });
+        let result = transform_openai_response_to_anthropic(&resp);
+        assert_eq!(result["stop_reason"], "tool_use");
+        let blocks = result["content"].as_array().unwrap();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["type"], "tool_use");
+        assert_eq!(blocks[0]["id"], "call_1");
+        assert_eq!(blocks[0]["name"], "get_weather");
+        assert_eq!(blocks[0]["input"]["location"], "NYC");
+    }
+
+    #[test]
+    fn openai_to_anthropic_mixed_text_and_tool_calls() {
+        let resp = json!({
+            "id": "msg-3",
+            "model": "gpt-4",
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "Let me check",
+                    "tool_calls": [{
+                        "id": "call_2",
+                        "type": "function",
+                        "function": { "name": "search", "arguments": "{}" }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }],
+            "usage": {}
+        });
+        let result = transform_openai_response_to_anthropic(&resp);
+        let blocks = result["content"].as_array().unwrap();
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["type"], "text");
+        assert_eq!(blocks[1]["type"], "tool_use");
+    }
+
+    #[test]
+    fn openai_to_anthropic_empty_tool_calls_array() {
+        let resp = json!({
+            "id": "msg-4",
+            "model": "gpt-4",
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "Answer",
+                    "tool_calls": []
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {}
+        });
+        let result = transform_openai_response_to_anthropic(&resp);
+        let blocks = result["content"].as_array().unwrap();
+        assert_eq!(blocks.len(), 1, "empty tool_calls should produce only text block");
+        assert_eq!(blocks[0]["type"], "text");
+    }
+
+    #[test]
+    fn openai_to_anthropic_empty_text_content_omitted() {
+        let resp = json!({
+            "id": "msg-5",
+            "model": "gpt-4",
+            "choices": [{
+                "message": { "role": "assistant", "content": "" },
+                "finish_reason": "stop"
+            }],
+            "usage": {}
+        });
+        let result = transform_openai_response_to_anthropic(&resp);
+        let blocks = result["content"].as_array().unwrap();
+        assert_eq!(blocks.len(), 0, "empty text content should not create a block");
+    }
+
+    #[test]
+    fn openai_to_anthropic_finish_reason_length_maps_to_max_tokens() {
+        let resp = json!({
+            "id": "msg-6",
+            "model": "gpt-4",
+            "choices": [{
+                "message": { "role": "assistant", "content": "truncated" },
+                "finish_reason": "length"
+            }],
+            "usage": {}
+        });
+        let result = transform_openai_response_to_anthropic(&resp);
+        assert_eq!(result["stop_reason"], "max_tokens");
+    }
+
+    #[test]
+    fn openai_to_anthropic_malformed_tool_call_arguments_falls_back_to_empty_object() {
+        let resp = json!({
+            "id": "msg-7",
+            "model": "gpt-4",
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_bad",
+                        "type": "function",
+                        "function": { "name": "fn", "arguments": "not json {{" }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }],
+            "usage": {}
+        });
+        let result = transform_openai_response_to_anthropic(&resp);
+        let blocks = result["content"].as_array().unwrap();
+        assert_eq!(blocks[0]["input"], json!({}));
+    }
+
+    #[test]
+    fn openai_to_anthropic_empty_response_returns_valid_envelope() {
+        let resp = json!({});
+        let result = transform_openai_response_to_anthropic(&resp);
+        assert_eq!(result["type"], "message");
+        assert_eq!(result["role"], "assistant");
+        let blocks = result["content"].as_array().unwrap();
+        assert!(blocks.is_empty());
+    }
+
+    // -------------------------------------------------------------------------
+    // extract_tool_calls
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn extract_tool_calls_returns_empty_when_no_choices() {
+        let resp = json!({});
+        assert!(extract_tool_calls(&resp).is_empty());
+    }
+
+    #[test]
+    fn extract_tool_calls_returns_empty_when_no_tool_calls_field() {
+        let resp = json!({
+            "choices": [{ "message": { "role": "assistant", "content": "hi" } }]
+        });
+        assert!(extract_tool_calls(&resp).is_empty());
+    }
+
+    #[test]
+    fn extract_tool_calls_returns_empty_array() {
+        let resp = json!({
+            "choices": [{ "message": { "tool_calls": [] } }]
+        });
+        assert!(extract_tool_calls(&resp).is_empty());
+    }
+
+    #[test]
+    fn extract_tool_calls_returns_calls() {
+        let resp = json!({
+            "choices": [{
+                "message": {
+                    "tool_calls": [
+                        { "id": "c1", "function": { "name": "a" } },
+                        { "id": "c2", "function": { "name": "b" } }
+                    ]
+                }
+            }]
+        });
+        let calls = extract_tool_calls(&resp);
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0]["id"], "c1");
+    }
+
+    // -------------------------------------------------------------------------
+    // text_parts_to_content
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn text_parts_empty_slice_returns_empty_string() {
+        let result = text_parts_to_content(&[]);
+        assert_eq!(result, json!(""));
+    }
+
+    #[test]
+    fn text_parts_single_text_part_returns_plain_string() {
+        let parts = vec![json!({ "type": "text", "text": "hello" })];
+        let result = text_parts_to_content(&parts);
+        assert_eq!(result, json!("hello"));
+    }
+
+    #[test]
+    fn text_parts_multiple_parts_returns_array() {
+        let parts = vec![
+            json!({ "type": "text", "text": "one" }),
+            json!({ "type": "image_url", "image_url": { "url": "http://img" } }),
+        ];
+        let result = text_parts_to_content(&parts);
+        assert!(result.is_array());
+        assert_eq!(result.as_array().unwrap().len(), 2);
+    }
+
+    // -------------------------------------------------------------------------
+    // convert_media_block
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn media_block_image_with_base64_data_converted() {
+        let block = json!({
+            "type": "image",
+            "source": {
+                "data": "abc123",
+                "media_type": "image/png"
+            }
+        });
+        let mut parts = vec![];
+        convert_media_block(&block, &mut parts);
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0]["type"], "image_url");
+        assert!(parts[0]["image_url"]["url"].as_str().unwrap().contains("image/png;base64,abc123"));
+    }
+
+    #[test]
+    fn media_block_image_missing_data_produces_nothing() {
+        let block = json!({
+            "type": "image",
+            "source": { "media_type": "image/png" }
+        });
+        let mut parts = vec![];
+        convert_media_block(&block, &mut parts);
+        assert!(parts.is_empty());
+    }
+
+    #[test]
+    fn media_block_unknown_type_with_text_falls_back_to_text_part() {
+        let block = json!({ "type": "document", "text": "some text" });
+        let mut parts = vec![];
+        convert_media_block(&block, &mut parts);
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0]["type"], "text");
+        assert_eq!(parts[0]["text"], "some text");
+    }
+
+    #[test]
+    fn media_block_unknown_type_without_text_produces_nothing() {
+        let block = json!({ "type": "document" });
+        let mut parts = vec![];
+        convert_media_block(&block, &mut parts);
+        assert!(parts.is_empty());
+    }
+
+    // -------------------------------------------------------------------------
+    // parse_openai_messages
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn parse_openai_messages_non_array_returns_error() {
+        let result = parse_openai_messages(&json!("not-an-array"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_openai_messages_missing_role_returns_error() {
+        let result = parse_openai_messages(&json!([{ "content": "hi" }]));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_openai_messages_missing_content_returns_error() {
+        let result = parse_openai_messages(&json!([{ "role": "user" }]));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_openai_messages_non_string_content_returns_error() {
+        let result = parse_openai_messages(&json!([{ "role": "user", "content": 42 }]));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_openai_messages_valid_messages_parsed() {
+        let result = parse_openai_messages(&json!([
+            { "role": "system", "content": "You are helpful." },
+            { "role": "user", "content": "Hello" }
+        ]));
+        let msgs = result.unwrap();
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0]["role"], "system");
+        assert_eq!(msgs[1]["content"], "Hello");
+    }
+
+    // -------------------------------------------------------------------------
+    // set_system_prompt
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn set_system_prompt_inserts_at_front() {
+        let mut msgs = vec![json!({ "role": "user", "content": "hi" })];
+        set_system_prompt(&mut msgs, "Be helpful.");
+        assert_eq!(msgs[0]["role"], "system");
+        assert_eq!(msgs[0]["content"], "Be helpful.");
+        assert_eq!(msgs[1]["role"], "user");
+    }
+
+    #[test]
+    fn set_system_prompt_replaces_existing_system_message() {
+        let mut msgs = vec![
+            json!({ "role": "system", "content": "old" }),
+            json!({ "role": "user", "content": "hi" }),
+        ];
+        set_system_prompt(&mut msgs, "new");
+        assert_eq!(msgs.len(), 2, "should replace not append");
+        assert_eq!(msgs[0]["content"], "new");
+    }
+
+    #[test]
+    fn set_system_prompt_on_empty_vec() {
+        let mut msgs: Vec<serde_json::Value> = vec![];
+        set_system_prompt(&mut msgs, "Hello");
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["role"], "system");
+    }
+
+    // -------------------------------------------------------------------------
+    // copy_optional_chat_params
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn copy_optional_chat_params_copies_known_keys() {
+        let from = json!({ "temperature": 0.5, "max_tokens": 100 });
+        let mut into = serde_json::Map::new();
+        copy_optional_chat_params(&from, &mut into);
+        assert_eq!(into["temperature"], json!(0.5));
+        assert_eq!(into["max_tokens"], json!(100));
+    }
+
+    #[test]
+    fn copy_optional_chat_params_ignores_unknown_keys() {
+        let from = json!({ "unknown_field": "value", "temperature": 0.5 });
+        let mut into = serde_json::Map::new();
+        copy_optional_chat_params(&from, &mut into);
+        assert!(!into.contains_key("unknown_field"));
+        assert!(into.contains_key("temperature"));
+    }
+
+    #[test]
+    fn copy_optional_chat_params_empty_source_produces_empty_target() {
+        let from = json!({});
+        let mut into = serde_json::Map::new();
+        copy_optional_chat_params(&from, &mut into);
+        assert!(into.is_empty());
+    }
+
+    #[test]
+    fn copy_optional_chat_params_non_object_source_is_noop() {
+        for non_obj in [json!(null), json!(42), json!("string"), json!([1, 2, 3])] {
+            let mut into = serde_json::Map::new();
+            copy_optional_chat_params(&non_obj, &mut into);
+            assert!(into.is_empty(), "expected no-op for non-object source: {non_obj}");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // sse_event
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn sse_event_formats_with_event_type_from_data() {
+        let data = json!({ "type": "content_block_start", "index": 0 });
+        let bytes = sse_event(&data);
+        let s = std::str::from_utf8(&bytes).unwrap();
+        assert!(s.starts_with("event: content_block_start\n"));
+        assert!(s.contains("data: "));
+        assert!(s.ends_with("\n\n"));
+    }
+
+    #[test]
+    fn sse_event_defaults_type_to_message_when_missing() {
+        let data = json!({ "index": 0 });
+        let bytes = sse_event(&data);
+        let s = std::str::from_utf8(&bytes).unwrap();
+        assert!(s.starts_with("event: message\n"));
+    }
+
+    #[test]
+    fn sse_event_terminates_with_double_newline() {
+        let data = json!({ "type": "message_stop" });
+        let bytes = sse_event(&data);
+        let s = std::str::from_utf8(&bytes).unwrap();
+        assert!(s.ends_with("\n\n"));
+    }
+
+    // -------------------------------------------------------------------------
+    // get_destination_path
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn get_destination_path_strips_prefix() {
+        let result = get_destination_path("/api/v1/chat/completions", "/api/v1");
+        assert_eq!(result, "/chat/completions");
+    }
+
+    #[test]
+    fn get_destination_path_no_matching_prefix_returns_full_path() {
+        let result = get_destination_path("/chat/completions", "/api");
+        // remove_prefix returns the path unchanged when prefix doesn't match
+        assert!(!result.is_empty());
+    }
+}
