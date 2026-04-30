@@ -4,6 +4,8 @@
 <dict>
   <key>CFBundleIdentifier</key>
   <string>jan.ai.app</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>Jan captures your screen when you use the screen-to-text shortcut so text can be added to your chat.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
