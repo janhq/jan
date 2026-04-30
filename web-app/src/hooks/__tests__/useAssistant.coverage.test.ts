@@ -1,15 +1,30 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useAssistant, defaultAssistant } from '../useAssistant'
 
-const mockCreateAssistant = vi.fn().mockResolvedValue(undefined)
-const mockDeleteAssistant = vi.fn().mockResolvedValue(undefined)
+const mocks = vi.hoisted(() => ({
+  mockToast: vi.fn(),
+  mockCreateAssistant: vi.fn().mockResolvedValue(undefined),
+  mockDeleteAssistant: vi.fn().mockResolvedValue(undefined),
+  mockGetAssistants: vi.fn().mockResolvedValue([]),
+}))
+vi.mock('sonner', () => ({
+  toast: {
+    error: mocks.mockToast,
+  },
+}))
+
+const mockCreateAssistant = mocks.mockCreateAssistant
+const mockDeleteAssistant = mocks.mockDeleteAssistant
+const mockGetAssistants = mocks.mockGetAssistants
+const mockToast = mocks.mockToast
 
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({
     assistants: () => ({
       createAssistant: mockCreateAssistant,
       deleteAssistant: mockDeleteAssistant,
+      getAssistants: mockGetAssistants,
     }),
   }),
 }))
@@ -24,6 +39,7 @@ vi.mock('@/constants/localStorage', () => ({
 describe('useAssistant - coverage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.mockGetAssistants.mockResolvedValue([defaultAssistant])
     localStorage.clear()
     act(() => {
       useAssistant.setState({
@@ -218,5 +234,52 @@ describe('useAssistant - coverage', () => {
 
     // currentAssistant should still be jan
     expect(result.current.currentAssistant?.id).toBe('jan')
+  })
+
+  it('refreshAssistants should fetch fresh data and update state', async () => {
+    const freshAssistants = [
+      { ...defaultAssistant, name: 'Fresh Jan' },
+      { id: 'a2', name: 'A2', avatar: '', description: '', instructions: '', created_at: 2, parameters: {} },
+    ]
+    mockGetAssistants.mockResolvedValue(freshAssistants as any)
+
+    const { result } = renderHook(() => useAssistant())
+
+    expect(result.current.loading).toBe(true)
+
+    await act(async () => {
+      await result.current.refreshAssistants()
+    })
+
+    expect(result.current.assistants).toEqual(freshAssistants)
+    expect(result.current.loading).toBe(false)
+  })
+
+  it('refreshAssistants should set loading:true before fetch starts', async () => {
+    const deferred = vi.fn().mockReturnValue(new Promise((resolve) => setTimeout(resolve, 100)))
+    mockGetAssistants.mockReturnValue(deferred())
+
+    const { result } = renderHook(() => useAssistant())
+
+    expect(result.current.loading).toBe(true)
+  })
+
+  it('refreshAssistants should show toast error on failure', async () => {
+    mockGetAssistants.mockRejectedValue(new Error('Network error'))
+
+    const { result } = renderHook(() => useAssistant())
+
+    await act(async () => {
+      await result.current.refreshAssistants()
+    })
+
+    expect(mockToast).toHaveBeenCalledWith('Failed to refresh assistants', {
+      description: 'Network error',
+    })
+    expect(result.current.loading).toBe(false)
+  })
+
+  afterEach(() => {
+    mockToast.mockClear()
   })
 })

@@ -1,6 +1,7 @@
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { Assistant as CoreAssistant } from '@janhq/core'
 import { create } from 'zustand'
+import { toast } from 'sonner'
 import { localStorageKey } from '@/constants/localStorage'
 
 interface AssistantState {
@@ -17,6 +18,7 @@ interface AssistantState {
   ) => void
   setDefaultAssistant: (id: string) => void
   setAssistants: (assistants: Assistant[] | null) => void
+  refreshAssistants: () => Promise<void>
 }
 
 const setLastUsedAssistantId = (assistantId: string) => {
@@ -212,6 +214,22 @@ export const useAssistant = create<AssistantState>((set, get) => ({
         loading: false
       })
     } else {
+      set({ loading: false })
+    }
+  },
+  refreshAssistants: async () => {
+    set({ loading: true })
+    try {
+      const assistants = await getServiceHub().assistants().getAssistants()
+      if (assistants) {
+        set({ assistants, loading: false })
+      } else {
+        set({ loading: false })
+      }
+    } catch (error) {
+      toast.error('Failed to refresh assistants', {
+        description: error instanceof Error ? error.message : String(error),
+      })
       set({ loading: false })
     }
   },
