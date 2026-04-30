@@ -59,6 +59,14 @@
   "addProvider": "Anbieter hinzufügen",
   "addOpenAIProvider": "OpenAI Anbieter hinzufügen",
   "enterNameForProvider": "Namen für den Anbieter eingeben",
+  "registry": {
+    "refresh": "Katalog aktualisieren",
+    "refreshing": "Wird aktualisiert...",
+    "lastUpdated": "Zuletzt aktualisiert: {{when}}",
+    "neverUpdated": "Noch nicht geladen",
+    "successDescription": "Anbieterkatalog wurde aktualisiert.",
+    "errorDescription": "Katalog konnte nicht aktualisiert werden. Zwischenspeicher oder integrierte Anbieter werden verwendet."
+  },
   "llamacpp": {
     "concurrentMode": {
       "perSlotContextWarning": "Kontext pro Slot entspricht ctx_size geteilt durch die Slot-Anzahl. Weniger Slots bedeuten mehr Kontext pro Anfrage."

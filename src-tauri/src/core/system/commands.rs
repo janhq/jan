@@ -16,13 +16,43 @@ fn is_safe_to_delete(path: &std::path::Path) -> bool {
     count >= 3
 }
 
+fn remove_dir_all_with_retry(path: &std::path::Path) {
+    const MAX_ATTEMPTS: u32 = 5;
+    const RETRY_DELAY_MS: u64 = 500;
+
+    for attempt in 1..=MAX_ATTEMPTS {
+        match fs::remove_dir_all(path) {
+            Ok(()) => {
+                if attempt > 1 {
+                    log::info!("Removed {} on attempt {}", path.display(), attempt);
+                }
+                return;
+            }
+            Err(e) if attempt < MAX_ATTEMPTS => {
+                log::warn!(
+                    "Failed to remove {} (attempt {}/{}): {e}",
+                    path.display(),
+                    attempt,
+                    MAX_ATTEMPTS
+                );
+                std::thread::sleep(std::time::Duration::from_millis(RETRY_DELAY_MS));
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to remove {} after {} attempts: {e}",
+                    path.display(),
+                    MAX_ATTEMPTS
+                );
+            }
+        }
+    }
+}
+
 fn remove_jan_data_contents(data_folder: &std::path::Path) {
     for subdir in JAN_DATA_SUBDIRS {
         let path = data_folder.join(subdir);
         if path.is_dir() {
-            if let Err(e) = fs::remove_dir_all(&path) {
-                log::warn!("Failed to remove {}: {e}", path.display());
-            }
+            remove_dir_all_with_retry(&path);
         }
     }
     for file in JAN_DATA_FILES {
@@ -110,6 +140,10 @@ pub fn factory_reset<R: Runtime>(app_handle: tauri::AppHandle<R>, state: State<'
         }
         let _ = cleanup_llama_processes(app_handle.clone()).await;
 
+        // Windows needs time to release file handles after TerminateProcess
+        #[cfg(windows)]
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
         if data_folder.exists() {
             if !is_safe_to_delete(&data_folder) {
                 log::error!(
@@ -118,7 +152,39 @@ pub fn factory_reset<R: Runtime>(app_handle: tauri::AppHandle<R>, state: State<'
                 );
                 return;
             }
+
+            // Preserve downloaded llamacpp backends across factory reset so the user
+            // doesn't have to re-download CUDA/Vulkan binaries (can be hundreds of MB).
+            let backends_dir = data_folder.join("llamacpp").join("backends");
+            let temp_backends = std::env::temp_dir().join("atomic-chat-backends-preserve");
+            let backends_preserved = if backends_dir.is_dir() {
+                if temp_backends.exists() {
+                    let _ = fs::remove_dir_all(&temp_backends);
+                }
+                match fs::rename(&backends_dir, &temp_backends) {
+                    Ok(()) => {
+                        log::info!("Preserved llamacpp backends to temp dir");
+                        true
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to preserve llamacpp backends: {e}");
+                        false
+                    }
+                }
+            } else {
+                false
+            };
+
             remove_jan_data_contents(&data_folder);
+
+            if backends_preserved {
+                let llamacpp_dir = data_folder.join("llamacpp");
+                let _ = fs::create_dir_all(&llamacpp_dir);
+                match fs::rename(&temp_backends, &backends_dir) {
+                    Ok(()) => log::info!("Restored llamacpp backends after factory reset"),
+                    Err(e) => log::warn!("Failed to restore llamacpp backends: {e}"),
+                }
+            }
         }
 
         // Reset the configuration

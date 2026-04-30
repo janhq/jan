@@ -63,6 +63,7 @@ import { RenderMarkdown } from '@/containers/RenderMarkdown'
 
 type SearchParams = {
   repo: string
+  engine?: 'mlx' | 'gguf'
 }
 
 function pickDefaultQuant(model: CatalogModel) {
@@ -93,6 +94,10 @@ export const Route = createFileRoute(route.hub.index as any)({
   component: HubContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
     repo: search.repo as SearchParams['repo'],
+    engine:
+      search.engine === 'mlx' || search.engine === 'gguf'
+        ? search.engine
+        : undefined,
   }),
 })
 
@@ -101,6 +106,7 @@ function HubContent() {
   const parentRef = useRef(null)
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const serviceHub = useServiceHub()
+  const { engine: engineSearchParam } = Route.useSearch()
 
   const { t } = useTranslation()
 
@@ -132,7 +138,11 @@ function HubContent() {
   )
 
   const [searchValue, setSearchValue] = useState('')
-  const [sortSelected, setSortSelected] = useState('newest')
+  const [sortSelected, setSortSelected] = useState(
+    engineSearchParam === 'mlx' || engineSearchParam === 'gguf'
+      ? engineSearchParam
+      : 'newest'
+  )
   const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>(
     {}
   )

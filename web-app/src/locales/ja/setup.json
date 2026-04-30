@@ -10,7 +10,7 @@
   "orDivider": "または",
   "localModel": "ローカルモデルをセットアップ",
   "remoteProvider": "リモートプロバイダーをセットアップ",
-  "turboQuantTagline": "Google の TurboQuant でお使いのデバイス上のローカル AI モデル - 一般的な環境でも高速に動作します。",
+  "turboQuantTagline": "お使いのデバイス上のローカル AI モデル — 一般的な環境でも高速に動作します。",
   "skip": "スキップ",
   "modelUnavailable": "まだカタログにありません — 接続後に Hub を開いてください。"
 }

@@ -1,5 +1,5 @@
 import { getJanDataFolderPath, fs, joinPath } from '@janhq/core'
-import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
+import { getSystemInfo } from './hardware'
 import {
   getLocalInstalledBackendsInternal,
   normalizeFeatures,
@@ -7,7 +7,8 @@ import {
   listSupportedBackendsFromRust,
   BackendVersion,
   getSupportedFeaturesFromRust,
-} from '@janhq/tauri-plugin-llamacpp-api'
+  mapOldBackendToNew,
+} from '../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
 
 const LLAMACPP_RELEASES_API =
   'https://api.github.com/repos/janhq/llama.cpp/releases/latest'
@@ -44,17 +45,26 @@ export async function fetchRemoteBackends(): Promise<BackendVersion[]> {
     return []
   }
 
-  const archSuffix = arch.includes('aarch64') || arch.includes('arm64')
-    ? 'arm64'
-    : 'x64'
+  const archSuffix =
+    arch.includes('aarch64') || arch.includes('arm64') ? 'arm64' : 'x64'
 
   try {
-    const resp = await fetch(LLAMACPP_RELEASES_API, {
-      headers: { 'User-Agent': 'atomic-chat' },
-    })
+    console.info(`[fetchRemoteBackends] Fetching ${LLAMACPP_RELEASES_API}...`)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15_000)
+    let resp: Response
+    try {
+      resp = await fetch(LLAMACPP_RELEASES_API, {
+        headers: { 'User-Agent': 'atomic-chat' },
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timeout)
+    }
     if (!resp.ok) {
+      const rateLimitRemaining = resp.headers.get('x-ratelimit-remaining')
       console.warn(
-        `[fetchRemoteBackends] GitHub API returned ${resp.status}, using local backends only`
+        `[fetchRemoteBackends] GitHub API returned ${resp.status} (rate-limit-remaining: ${rateLimitRemaining}), using local backends only`
       )
       return []
     }
@@ -104,6 +114,8 @@ export function getBackendDownloadUrl(
   version: string,
   backend: string
 ): string {
+  version = version.replace(/\uFEFF/g, '').trim()
+  backend = backend.replace(/\uFEFF/g, '').trim()
   return `${LLAMACPP_DOWNLOAD_BASE}/${version}/llama-${version}-bin-${backend}.tar.gz`
 }
 
@@ -139,10 +151,36 @@ export async function listSupportedBackends(): Promise<BackendVersion[]> {
     remoteBackendVersions.map((b) => `${b.version}/${b.backend}`)
   )
 
-  return listSupportedBackendsFromRust(
+  const mergedBackends = await listSupportedBackendsFromRust(
     remoteBackendVersions,
     localBackendVersions
   )
+
+  // Only Windows uses the hardware-gated llama.cpp backend matrix. Keep macOS on
+  // its separate turboquant flow and avoid altering Linux behavior here.
+  if (osType !== 'windows') {
+    return mergedBackends
+  }
+
+  const supportedSet = new Set(supportedBackends)
+  const filteredBackends = await Promise.all(
+    mergedBackends.map(async (backendInfo) => ({
+      backendInfo,
+      normalizedBackend: await mapOldBackendToNew(backendInfo.backend),
+    }))
+  )
+
+  const supportedMergedBackends = filteredBackends
+    .filter(({ normalizedBackend }) => supportedSet.has(normalizedBackend))
+    .map(({ backendInfo }) => backendInfo)
+
+  console.info(
+    '[listSupportedBackends] windows filtered backends:',
+    supportedMergedBackends.length,
+    supportedMergedBackends.map((b) => `${b.version}/${b.backend}`)
+  )
+
+  return supportedMergedBackends
 }
 
 export async function getBackendDir(
@@ -154,8 +192,8 @@ export async function getBackendDir(
     janDataFolderPath,
     'llamacpp',
     'backends',
-    version,
-    backend,
+    version.replace(/\uFEFF/g, '').trim(),
+    backend.replace(/\uFEFF/g, '').trim(),
   ])
   return backendDir
 }

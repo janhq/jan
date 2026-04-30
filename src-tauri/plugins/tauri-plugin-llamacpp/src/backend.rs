@@ -100,7 +100,7 @@ pub async fn get_local_installed_backends(
         }
 
         let version_name = match version_path.file_name() {
-            Some(name) => name.to_string_lossy().to_string(),
+            Some(name) => name.to_string_lossy().replace('\u{FEFF}', "").trim().to_string(),
             None => continue,
         };
 
@@ -114,7 +114,7 @@ pub async fn get_local_installed_backends(
             let backend_path = backend_entry.path();
 
             let backend_name = match backend_path.file_name() {
-                Some(name) => name.to_string_lossy().to_string(),
+                Some(name) => name.to_string_lossy().replace('\u{FEFF}', "").trim().to_string(),
                 None => continue,
             };
 
@@ -248,6 +248,33 @@ pub fn determine_supported_backends(
     Ok(supported_backends)
 }
 
+fn is_windows_backend(backend: &str) -> bool {
+    backend.starts_with("win-")
+}
+
+fn compare_backend_versions_for_sort(left: &BackendInfo, right: &BackendInfo) -> std::cmp::Ordering {
+    if is_windows_backend(&left.backend) && is_windows_backend(&right.backend) {
+        let left_version = parse_backend_version(left.version.clone());
+        let right_version = parse_backend_version(right.version.clone());
+        let version_cmp = right_version.cmp(&left_version);
+        if version_cmp != std::cmp::Ordering::Equal {
+            return version_cmp;
+        }
+    }
+
+    let order_cmp = right.order.cmp(&left.order);
+    if order_cmp != std::cmp::Ordering::Equal {
+        return order_cmp;
+    }
+
+    let version_cmp = right.version.cmp(&left.version);
+    if version_cmp != std::cmp::Ordering::Equal {
+        return version_cmp;
+    }
+
+    left.backend.cmp(&right.backend)
+}
+
 #[tauri::command]
 pub async fn list_supported_backends(
     remote_backend_versions: Vec<BackendInfo>,
@@ -281,14 +308,7 @@ pub async fn list_supported_backends(
 
     let mut merged: Vec<BackendInfo> = merged_map.into_values().collect();
 
-    merged.sort_by(|a, b| {
-        let order_cmp = b.order.cmp(&a.order);
-        if order_cmp == std::cmp::Ordering::Equal {
-            a.backend.cmp(&b.backend)
-        } else {
-            order_cmp
-        }
-    });
+    merged.sort_by(compare_backend_versions_for_sort);
 
     for entry in &merged {
         log::info!(
@@ -507,8 +527,7 @@ pub fn find_latest_version_for_backend(
         return None;
     }
 
-    // Sort by order (higher = newer)
-    matching_backends.sort_by(|a, b| b.order.cmp(&a.order));
+    matching_backends.sort_by(compare_backend_versions_for_sort);
 
     Some(format!(
         "{}/{}",
@@ -567,7 +586,10 @@ pub async fn prioritize_backends(
             .collect();
 
         if !matching_backends.is_empty() {
-            let best = matching_backends[0];
+            let best = matching_backends
+                .into_iter()
+                .max_by(|left, right| compare_backend_versions_for_sort(right, left))
+                .unwrap();
             log::info!(
                 "Determined best available backend: {}/{} (Category: \"{}\")",
                 best.version,
@@ -846,14 +868,15 @@ pub fn handle_setting_update(
         });
     }
 
-    // Handle version_backend update
-    let parts: Vec<&str> = value.split('/').collect();
+    // Handle version_backend update — strip BOM that may persist in saved settings
+    let clean_value = value.replace('\u{FEFF}', "");
+    let parts: Vec<&str> = clean_value.split('/').collect();
     if parts.len() != 2 {
-        return Err(format!("Invalid backend format: {}", value));
+        return Err(format!("Invalid backend format: {}", clean_value));
     }
 
-    let version = parts[0].to_string();
-    let backend = parts[1].to_string();
+    let version = parts[0].trim().to_string();
+    let backend = parts[1].trim().to_string();
 
     if version.is_empty() || backend.is_empty() {
         return Err(format!("Invalid backend format: {}", value));
@@ -969,10 +992,12 @@ pub async fn install_bundled_backend<R: Runtime>(
 
     let version = fs::read_to_string(&version_file)
         .map_err(|e| format!("read version.txt: {}", e))?
+        .replace('\u{FEFF}', "")
         .trim()
         .to_string();
     let backend = fs::read_to_string(&backend_file)
         .map_err(|e| format!("read backend.txt: {}", e))?
+        .replace('\u{FEFF}', "")
         .trim()
         .to_string();
 
@@ -1431,6 +1456,26 @@ mod tests {
     }
 
     #[test]
+    fn test_find_latest_version_for_windows_backend_uses_version_not_order() {
+        let backends = vec![
+            BackendInfo {
+                version: "b7524".into(),
+                backend: "win-cuda-12-common_cpus-x64".into(),
+                order: 1_800_000_000,
+            },
+            BackendInfo {
+                version: "b7525".into(),
+                backend: "win-cuda-12-common_cpus-x64".into(),
+                order: 0,
+            },
+        ];
+
+        let result =
+            find_latest_version_for_backend(backends, "win-cuda-12-common_cpus-x64".to_string());
+        assert_eq!(result, Some("b7525/win-cuda-12-common_cpus-x64".to_string()));
+    }
+
+    #[test]
     fn test_find_latest_version_for_backend_with_migration() {
         let backends = vec![
             BackendInfo {
@@ -1498,6 +1543,32 @@ mod tests {
         assert!(!result.update_needed);
         assert_eq!(result.new_version, "0");
         assert_eq!(result.target_backend, None);
+    }
+
+    #[tokio::test]
+    async fn test_check_backend_for_updates_windows_uses_version_not_order() {
+        let current = "b7524/win-cuda-12-common_cpus-x64".to_string();
+        let available = vec![
+            BackendInfo {
+                version: "b7524".into(),
+                backend: "win-cuda-12-common_cpus-x64".into(),
+                order: 1_800_000_000,
+            },
+            BackendInfo {
+                version: "b7525".into(),
+                backend: "win-cuda-12-common_cpus-x64".into(),
+                order: 0,
+            },
+        ];
+
+        let result = check_backend_for_updates(current, available).await.unwrap();
+
+        assert!(result.update_needed);
+        assert_eq!(result.new_version, "b7525");
+        assert_eq!(
+            result.target_backend,
+            Some("b7525/win-cuda-12-common_cpus-x64".to_string())
+        );
     }
 
     // --- Tests for validate_backend_string ---

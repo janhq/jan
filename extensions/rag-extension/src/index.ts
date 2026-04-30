@@ -11,7 +11,7 @@ import {
 } from '@janhq/core'
 import './env.d'
 import { getRAGTools, RETRIEVE, LIST_ATTACHMENTS, GET_CHUNKS } from './tools'
-import * as ragApi from '@janhq/tauri-plugin-rag-api'
+import * as ragApi from '../../../src-tauri/plugins/tauri-plugin-rag/guest-js/index'
 
 export default class RagExtension extends RAGExtension {
   private config = {
@@ -173,7 +173,12 @@ export default class RagExtension extends RAGExtension {
       const msg = e instanceof Error ? e.message : JSON.stringify(e)
       return {
         error: msg,
-        content: [{ type: 'text', text: `List attachments failed: ${JSON.stringify(msg)}` }],
+        content: [
+          {
+            type: 'text',
+            text: `List attachments failed: ${JSON.stringify(msg)}`,
+          },
+        ],
       }
     }
   }
@@ -186,7 +191,11 @@ export default class RagExtension extends RAGExtension {
     const query = String(args['query'] || '')
     let fileIds = args['file_ids'] as string[] | string | undefined
     if (typeof fileIds === 'string') {
-      try { fileIds = JSON.parse(fileIds) } catch { fileIds = undefined }
+      try {
+        fileIds = JSON.parse(fileIds)
+      } catch {
+        fileIds = undefined
+      }
     }
     if (fileIds != null && !Array.isArray(fileIds)) {
       fileIds = undefined
@@ -194,7 +203,8 @@ export default class RagExtension extends RAGExtension {
     const scope = String(args['scope'] || 'thread')
 
     // Use project_id as threadId when scope is project
-    const effectiveThreadId = scope === 'project' ? projectId || threadId : threadId
+    const effectiveThreadId =
+      scope === 'project' ? projectId || threadId : threadId
 
     const s = this.config
     const topK = (args['top_k'] as number) || s.retrievalLimit || 3
@@ -212,7 +222,11 @@ export default class RagExtension extends RAGExtension {
         ],
       }
     }
-    if (!query || (!threadId && scope === 'thread') || (scope === 'project' && !effectiveThreadId)) {
+    if (
+      !query ||
+      (!threadId && scope === 'thread') ||
+      (scope === 'project' && !effectiveThreadId)
+    ) {
       return {
         error: 'Missing thread_id, project_id, or query',
         content: [{ type: 'text', text: 'Missing required parameters' }],
@@ -334,7 +348,12 @@ export default class RagExtension extends RAGExtension {
 
       let chunks
       if (scope === 'project' && vec.getChunksForProject) {
-        chunks = await vec.getChunksForProject(threadId, fileId, startOrder, endOrder)
+        chunks = await vec.getChunksForProject(
+          threadId,
+          fileId,
+          startOrder,
+          endOrder
+        )
       } else {
         chunks = await vec.getChunks!(threadId, fileId, startOrder, endOrder)
       }
@@ -380,7 +399,9 @@ export default class RagExtension extends RAGExtension {
       ExtensionTypeEnum.VectorDB
     ) as unknown as VectorDBExtension
     if (!vec?.ingestFileForProject) {
-      throw new Error('Vector DB extension does not support project-level ingestion')
+      throw new Error(
+        'Vector DB extension does not support project-level ingestion'
+      )
     }
 
     // Load settings

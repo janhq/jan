@@ -11,7 +11,24 @@
   "orDivider": "or",
   "localModel": "Set up local model",
   "remoteProvider": "Set up remote provider",
-  "turboQuantTagline": "Local AI models on your device with Google's TurboQuant - blazing fast on average hardware.",
+  "turboQuantTagline": "Local AI models on your device — blazing fast on average hardware.",
   "skip": "Skip",
-  "modelUnavailable": "Not in catalog yet — open Hub after connection."
+  "modelUnavailable": "Not in catalog yet — open Hub after connection.",
+  "backendStep": {
+    "title": "Optimize llama.cpp for your GPU",
+    "description": "We can install a faster backend tailored to your hardware. The base CPU build is already bundled — this is the recommended optional upgrade.",
+    "detecting": "Detecting your hardware…",
+    "recommendTitle": "Recommended: {{backend}}",
+    "recommendDesc": "We detected a compatible GPU on this device. Downloading the optimal backend will significantly speed up local model inference.",
+    "downloadAction": "Download optimal backend",
+    "stayOnCpu": "Stay on CPU",
+    "downloadingTitle": "Downloading backend…",
+    "downloadingDesc": "Fetching the {{backend}} build. This may take a few minutes depending on your connection.",
+    "switchingTitle": "Switching backend",
+    "switchingDesc": "Activating {{backend}} without a restart…",
+    "restartTitle": "Backend ready",
+    "restartDesc": "The optimal backend has been downloaded. It will activate the next time you start Atomic Chat.",
+    "restartLater": "Continue setup",
+    "restartNow": "Restart now"
+  }
 }

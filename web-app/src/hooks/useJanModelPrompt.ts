@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { useModelProvider } from './useModelProvider'
 import { useDownloadStore } from './useDownloadStore'
-import { predefinedProviders } from '@/constants/providers'
+import { isKnownProvider } from '@/stores/provider-registry-store'
 
 export type JanModelPromptDismissedState = {
   dismissed: boolean
@@ -40,9 +40,7 @@ export const useJanModelPrompt = () => {
 
   // Check if user would be on SetupScreen (no valid providers)
   const hasValidProviders = providers.some((provider) => {
-    const isPredefinedProvider = predefinedProviders.some(
-      (p) => p.provider === provider.provider
-    )
+    const isPredefinedProvider = isKnownProvider(provider.provider)
     if (!isPredefinedProvider) {
       return provider.models.length > 0
     }

@@ -29,6 +29,9 @@
     "resources": ["resources/pre-install/**/*", "resources/LICENSE", "resources/bin/jan-cli.exe", "resources/llamacpp-backend/**/*"],
     "externalBin": ["resources/bin/bun", "resources/bin/uv"],
     "windows": {
+      "nsis": {
+        "installerHooks": "./windows/hooks.nsh"
+      },
       "webviewInstallMode": {
         "silent": true,
         "type": "downloadBootstrapper"

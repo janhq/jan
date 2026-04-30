@@ -830,6 +830,9 @@ async def _run_session_dashboard(
     stop_flag = session_dir / "dashboard.stop"
 
     try:
+        # `screen=False` keeps the rendered frames in the regular terminal
+        # scrollback so the LAST live frame stays on screen after `Live`
+        # exits — which is exactly what the marketing screencast wants.
         with Live(
             render(state),
             console=console,
@@ -884,8 +887,8 @@ async def _run_session_dashboard(
             pass
         await client.aclose()
 
-    console.print()
-    console.print("[bold green]All agents finished.[/bold green]")
+    # Keep the final live frame visible — no extra summary panel, no clear,
+    # so the marketer's screen recording ends on the full dashboard.
     try:
         console.input("[dim]Press Enter to close this window...[/dim] ")
     except (EOFError, KeyboardInterrupt):

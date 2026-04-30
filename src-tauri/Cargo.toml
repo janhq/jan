@@ -152,6 +152,7 @@ zbus = { version = "5", default-features = false, features = ["tokio"] }
 [target.'cfg(windows)'.dependencies]
 libc = "0.2.172"
 windows-sys = { version = "0.60.2", features = ["Win32_Storage_FileSystem"] }
+winreg = "0.52"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 reqwest = { version = "0.11", features = ["json", "blocking", "stream", "native-tls-vendored"] }

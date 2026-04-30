@@ -2,6 +2,7 @@ import { createRootRoute, Outlet } from '@tanstack/react-router'
 // import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
+import BackendUpdater from '@/containers/dialogs/BackendUpdater'
 import { Fragment } from 'react/jsx-runtime'
 import { ThemeProvider } from '@/providers/ThemeProvider'
 import { InterfaceProvider } from '@/providers/InterfaceProvider'
@@ -22,7 +23,8 @@ import { TranslationProvider } from '@/i18n/TranslationContext'
 import OutOfContextPromiseModal from '@/containers/dialogs/OutOfContextDialog'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
 import WhatsNewDialog from '@/containers/dialogs/WhatsNewDialog'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { localStorageKey } from '@/constants/localStorage'
 import GlobalError from '@/containers/GlobalError'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
@@ -35,6 +37,38 @@ export const Route = createRootRoute({
   errorComponent: ({ error }) => <GlobalError error={error} />,
 })
 
+const SETUP_COMPLETED_EVENT = 'app:setup-completed'
+
+/// Tracks the `setup-completed` localStorage flag so we can defer mounting
+/// `<BackendUpdater />` until after the dedicated onboarding flow finishes.
+/// During onboarding the SetupBackendStep handles backend recommendations
+/// inline; mounting the global dialog before then would surface a duplicate
+/// modal on top of the setup screen.
+function useSetupCompleted(): boolean {
+  const [completed, setCompleted] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem(localStorageKey.setupCompleted) === 'true'
+  })
+
+  useEffect(() => {
+    const sync = () => {
+      setCompleted(
+        localStorage.getItem(localStorageKey.setupCompleted) === 'true'
+      )
+    }
+    // Same-tab signal dispatched explicitly by SetupScreen when it persists
+    // the flag (the native 'storage' event only fires across tabs).
+    window.addEventListener(SETUP_COMPLETED_EVENT, sync)
+    window.addEventListener('storage', sync)
+    return () => {
+      window.removeEventListener(SETUP_COMPLETED_EVENT, sync)
+      window.removeEventListener('storage', sync)
+    }
+  }, [])
+
+  return completed
+}
+
 const AppLayout = () => {
   const { showJanModelPrompt } = useJanModelPrompt()
   const {
@@ -46,6 +80,7 @@ const AppLayout = () => {
   // Feeds live server / model / RAM state into the macOS menu-bar tray.
   // No-op outside macOS Tauri builds (see hook implementation).
   useTrayStatusSync()
+  const isSetupCompleted = useSetupCompleted()
 
   return (
     <div className="bg-neutral-50 dark:bg-background size-full relative">
@@ -66,6 +101,7 @@ const AppLayout = () => {
           />
         )}
         <DialogAppUpdater />
+        {isSetupCompleted && <BackendUpdater />}
         <WhatsNewDialog />
         <LeftSidebar />
         <SidebarInset>

@@ -114,7 +114,7 @@ export const getProviderTitle = (provider: string) => {
     case 'jan':
       return 'Atomic Chat'
     case 'llamacpp':
-      return 'Llama.cpp + TurboQuant'
+      return IS_WINDOWS ? 'Llama.cpp' : 'Llama.cpp + TurboQuant'
     case 'mlx':
       return 'MLX'
     case 'openai':

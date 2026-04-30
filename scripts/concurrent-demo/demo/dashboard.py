@@ -166,33 +166,43 @@ def _render_agent_panel(state: AgentState, *, compact: bool = False) -> Panel:
 def render(state: DashboardState) -> Group:
     """Build the full dashboard renderable for one frame."""
     agent_list = list(state.agents.values())
-    cols = _grid_columns(len(agent_list))
 
-    grid = Table(box=None, show_header=False, show_edge=False, padding=(0, 1), expand=True)
-    for _ in range(cols):
-        grid.add_column(ratio=1)
+    # In `compact` mode (the multi-window dashboard) each agent already has
+    # its own Terminal window, so the per-agent grid here is redundant and
+    # eats vertical space — skip it. In single-window mode the grid is the
+    # only place to see agents, so we still build it.
+    grid: Table | None = None
+    if not state.compact:
+        cols = _grid_columns(len(agent_list))
+        grid = Table(
+            box=None, show_header=False, show_edge=False, padding=(0, 1), expand=True
+        )
+        for _ in range(cols):
+            grid.add_column(ratio=1)
 
-    row: list[Panel] = []
-    for agent in agent_list:
-        row.append(_render_agent_panel(agent, compact=state.compact))
-        if len(row) == cols:
+        row: list[Panel] = []
+        for agent in agent_list:
+            row.append(_render_agent_panel(agent, compact=state.compact))
+            if len(row) == cols:
+                grid.add_row(*row)
+                row = []
+        if row:
+            while len(row) < cols:
+                row.append(Panel(Text(""), border_style="bright_black"))
             grid.add_row(*row)
-            row = []
-    if row:
-        while len(row) < cols:
-            row.append(Panel(Text(""), border_style="bright_black"))
-        grid.add_row(*row)
 
     done = sum(1 for a in agent_list if a.status == "done")
     running = sum(1 for a in agent_list if a.status == "running")
     errored = sum(1 for a in agent_list if a.status == "error")
-    # Sum across all agents (not only `running`) so the hero number doesn't
-    # collapse to 0 once they finish; track the peak so the marketer's
-    # screen recording freezes on the highest aggregate throughput observed.
+    # Sum across all agents (not just `running`) and lock on to the peak so
+    # the hero number stays meaningful after agents finish — otherwise a sum
+    # filtered by `running` collapses to 0 and the marketer's recording ends
+    # on an empty score.
     current_tps = sum(a.tps for a in agent_list)
     if current_tps > state.peak_combined_tps:
         state.peak_combined_tps = current_tps
     display_tps = max(current_tps, state.peak_combined_tps)
+    total_tokens = sum(a.tokens for a in agent_list)
 
     header_text = Text.from_markup(
         f"[bold cyan]\u26a1 Atomic-Chat \u2014 Concurrent Demo[/]    "
@@ -204,14 +214,24 @@ def render(state: DashboardState) -> Group:
 
     hero_ascii = _HERO_FIGLET.renderText(f"{display_tps:.1f} TPS").rstrip("\n")
     brand_text = Text(_BRAND_ASCII, style="bold bright_magenta", no_wrap=True)
-    number_text = Text(hero_ascii, style="bold bright_red", no_wrap=True)
+    number_text = Text(hero_ascii, style="bold bright_yellow", no_wrap=True)
 
-    hero_row = Table.grid(padding=(0, 3), expand=True)
-    hero_row.add_column(justify="left")
-    hero_row.add_column(justify="right")
+    # No `expand=True` — columns auto-fit to their contents so brand and TPS
+    # block sit shoulder-to-shoulder. The whole row is then centred in the panel.
+    hero_row = Table.grid(padding=(0, 2))
+    hero_row.add_column()
+    hero_row.add_column()
     hero_row.add_row(brand_text, number_text)
 
-    hero_block = hero_row
+    # Compact total-tokens line directly under the hero so it never gets
+    # clipped when the agent grid grows — kept as plain styled text (not
+    # figlet) to stay within one row.
+    tokens_caption = Text.from_markup(
+        f"[bold bright_white]\u03a3 {total_tokens}[/] [dim]total tokens generated[/]",
+        justify="center",
+    )
+
+    hero_block = Group(Align.center(hero_row), Align.center(tokens_caption))
 
     agg_text = Text.from_markup(
         f"[bold bright_green]{done}/{len(agent_list)} done[/]   "
@@ -229,12 +249,14 @@ def render(state: DashboardState) -> Group:
             "(enable Concurrent Mode or Expose Prometheus /metrics)[/]"
         )
 
-    return Group(
+    parts: list = [
         Panel(Align.left(header_text), border_style="cyan"),
         Panel(hero_block, border_style="bright_magenta", padding=(1, 2)),
-        grid,
-        Panel(Group(agg_text, server_text), border_style="cyan"),
-    )
+    ]
+    if grid is not None:
+        parts.append(grid)
+    parts.append(Panel(Group(agg_text, server_text), border_style="cyan"))
+    return Group(*parts)
 
 
 async def run_dashboard(

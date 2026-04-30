@@ -367,6 +367,9 @@ export class ModelFactory {
       case 'perplexity':
       case 'moonshot':
       case 'minimax':
+      case 'openrouter':
+      case 'huggingface':
+      case 'nvidia':
         return this.createOpenAICompatibleModel(modelId, provider, override)
 
       case 'xai':

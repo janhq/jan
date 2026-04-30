@@ -59,6 +59,14 @@
   "addProvider": "Tambah Penyedia",
   "addOpenAIProvider": "Tambah Penyedia OpenAI",
   "enterNameForProvider": "Masukkan nama untuk penyedia",
+  "registry": {
+    "refresh": "Segarkan katalog",
+    "refreshing": "Menyegarkan...",
+    "lastUpdated": "Terakhir diperbarui: {{when}}",
+    "neverUpdated": "Belum dimuat",
+    "successDescription": "Katalog penyedia diperbarui.",
+    "errorDescription": "Tidak dapat memperbarui katalog. Menggunakan cache atau penyedia bawaan."
+  },
   "llamacpp": {
     "concurrentMode": {
       "perSlotContextWarning": "Konteks per slot sama dengan ctx_size dibagi jumlah slot. Semakin sedikit slot, semakin banyak konteks per permintaan."

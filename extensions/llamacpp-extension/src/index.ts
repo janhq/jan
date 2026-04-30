@@ -44,6 +44,7 @@ import {
   type EmbedBatchResult,
 } from './util'
 import { basename } from '@tauri-apps/api/path'
+import { getSystemUsage, getSystemInfo } from './hardware'
 import {
   loadLlamaModel,
   readGgufMetadata,
@@ -64,8 +65,9 @@ import {
   handleSettingUpdate,
   installBundledBackend,
   checkBackendForUpdates as checkBackendForUpdatesFromRust,
-} from '@janhq/tauri-plugin-llamacpp-api'
-import { getSystemUsage, getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
+  getSupportedFeaturesFromRust,
+  normalizeFeatures,
+} from '../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
 
 // Error message constant - matches web-app/src/utils/error.ts
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
@@ -125,6 +127,40 @@ function parseBuildNumber(version: string): number | null {
   return match ? parseInt(match[1], 10) : null
 }
 
+function stripBom(s: string): string {
+  return s.replace(/\uFEFF/g, '').trim()
+}
+
+function backendCategoryToLabel(category: string): string {
+  switch (category) {
+    case 'cuda-cu13.0': return 'CUDA 13'
+    case 'cuda-cu12.0': return 'CUDA 12'
+    case 'cuda-cu11.7': return 'CUDA 11'
+    case 'vulkan': return 'Vulkan'
+    default: return category
+  }
+}
+
+function get_backend_category(backend: string): string {
+  if (backend.includes('cuda-13-common_cpus')) return 'cuda-cu13.0'
+  if (backend.includes('cuda-12-common_cpus') || backend.includes('cu12.0'))
+    return 'cuda-cu12.0'
+  if (backend.includes('cuda-11-common_cpus') || backend.includes('cu11.7'))
+    return 'cuda-cu11.7'
+  if (backend.includes('vulkan')) return 'vulkan'
+  if (backend.includes('common_cpus')) return 'common_cpus'
+  if (backend.includes('avx512')) return 'avx512'
+  if (backend.includes('avx2')) return 'avx2'
+  if (
+    backend.includes('avx') &&
+    !backend.includes('avx2') &&
+    !backend.includes('avx512')
+  )
+    return 'avx'
+  if (backend.includes('noavx')) return 'noavx'
+  return 'unknown'
+}
+
 // Folder structure for llamacpp extension:
 // <Jan's data folder>/llamacpp
 //  - models/<modelId>/
@@ -151,6 +187,8 @@ export default class llamacpp_extension extends AIEngine {
   private apiSecret: string = 'JustAskNow'
   private isConfiguringBackends: boolean = false
   private isUpdatingBackend: boolean = false
+  private isInitializing: boolean = true
+  private configureBackendsPromise: Promise<void> | null = null
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   private sessionCache = new Map<string, SessionInfo>()
   /// Tracks the ctx_size a model was last loaded with so the Local API
@@ -166,6 +204,54 @@ export default class llamacpp_extension extends AIEngine {
 
     let settings = structuredClone(SETTINGS) // Clone to modify settings definition before registration
 
+    // Preserve persisted `version_backend` across sessions on Windows/Linux.
+    //
+    // `registerSettings()` (in core extension.ts) keeps the persisted value
+    // ONLY if the new `options` list contains it; otherwise it silently
+    // resets value to `options[0]`. On every cold start the persisted
+    // `options` may be a stale subset (e.g. `[bundled]`) that no longer
+    // contains the previously selected GPU backend (e.g. CUDA), in which
+    // case the persisted value is wiped to bundled — silently undoing the
+    // user's last hot-swap.
+    //
+    // Solution: before calling `registerSettings(SETTINGS)` (which arrives
+    // with empty options), inject the persisted value into the new options
+    // list so the deduplication check passes and the value survives.
+    //
+    // Limited to non-macOS to keep turboquant/MLX flow on macOS untouched
+    // (per design decision).
+    if (!IS_MAC) {
+      try {
+        const persistedSettings = await this.getSettings()
+        const persistedVbRaw = persistedSettings.find(
+          (s) => s.key === 'version_backend'
+        )?.controllerProps?.value
+        const persistedVb =
+          typeof persistedVbRaw === 'string' ? stripBom(persistedVbRaw) : ''
+        if (
+          persistedVb &&
+          persistedVb !== 'none' &&
+          persistedVb.includes('/')
+        ) {
+          const vbSetting = settings.find((s) => s.key === 'version_backend')
+          if (vbSetting && 'options' in vbSetting.controllerProps) {
+            vbSetting.controllerProps.options = [
+              { value: persistedVb, name: persistedVb },
+            ]
+            vbSetting.controllerProps.value = persistedVb
+            logger.info(
+              `[onLoad] Preserving persisted version_backend across registerSettings: ${persistedVb}`
+            )
+          }
+        }
+      } catch (err) {
+        logger.warn(
+          '[onLoad] Failed to read persisted settings for version_backend preservation:',
+          err
+        )
+      }
+    }
+
     // This makes the settings (including the backend options and initial value) available to the Jan UI.
     this.registerSettings(settings)
 
@@ -179,6 +265,24 @@ export default class llamacpp_extension extends AIEngine {
       )
     }
     this.config = loadedConfig as LlamacppConfig
+
+    // Strip any BOM characters persisted from earlier PowerShell-generated files
+    if (this.config.version_backend) {
+      const cleaned = stripBom(this.config.version_backend)
+      if (cleaned !== this.config.version_backend) {
+        this.config.version_backend = cleaned
+        const allSettings = await this.getSettings()
+        await this.updateSettings(
+          allSettings.map((item) => {
+            if (item.key === 'version_backend') {
+              item.controllerProps.value = cleaned
+            }
+            return item
+          })
+        )
+        logger.info(`Cleaned BOM from version_backend: "${cleaned}"`)
+      }
+    }
 
     // Migration v1: upgrade f16 KV cache defaults to q8_0
     await this.migrateKvCacheDefaults()
@@ -195,6 +299,9 @@ export default class llamacpp_extension extends AIEngine {
 
     // This sets the base directory where model files for this provider are stored.
     this.getProviderPath()
+
+    // Activate a pending backend that was downloaded before the last restart.
+    await this.activatePendingBackend()
 
     // Set up validation event listeners to bridge Tauri events to frontend
     this.unlistenValidationStarted = await listen<{
@@ -221,15 +328,21 @@ export default class llamacpp_extension extends AIEngine {
     )
 
     //* configureBackends может долго качать движок — не await, иначе весь UI ждёт завершения.
-    void this.configureBackends().catch((err) => {
-      //! Раньше отклонённый промис терялся; без лога сложно понять вечный «loading» в настройках.
-      logger.error('configureBackends failed:', err)
-    })
+    this.configureBackendsPromise = this.configureBackends()
+      .catch((err) => {
+        //! Раньше отклонённый промис терялся; без лога сложно понять вечный «loading» в настройках.
+        logger.error('configureBackends failed:', err)
+      })
+      .finally(() => {
+        this.isInitializing = false
+        this.configureBackendsPromise = null
+      })
   }
 
   private getStoredBackendType(): string | null {
     try {
-      return localStorage.getItem('llama_cpp_backend_type')
+      const val = localStorage.getItem('llama_cpp_backend_type')
+      return val ? stripBom(val) : null
     } catch (error) {
       logger.warn('Failed to read backend type from localStorage:', error)
       return null
@@ -339,6 +452,46 @@ export default class llamacpp_extension extends AIEngine {
     localStorage.setItem(MIGRATION_KEY, '1')
   }
 
+  private async activatePendingBackend(): Promise<void> {
+    const pending = localStorage.getItem('llama_cpp_pending_backend')
+    if (!pending) return
+
+    const cleaned = stripBom(pending)
+    const parts = cleaned.split('/')
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      logger.warn(`Invalid pending backend string "${cleaned}", clearing`)
+      localStorage.removeItem('llama_cpp_pending_backend')
+      return
+    }
+
+    const [version, backend] = [parts[0].trim(), parts[1].trim()]
+
+    try {
+      const installed = await isBackendInstalled(backend, version)
+      if (!installed) {
+        logger.warn(
+          `Pending backend ${cleaned} not found on disk, clearing`
+        )
+        localStorage.removeItem('llama_cpp_pending_backend')
+        return
+      }
+
+      logger.info(
+        `Activating pending backend from previous download: ${cleaned}`
+      )
+      const result = await this.updateBackend(cleaned)
+      if (result.wasUpdated) {
+        logger.info(`Pending backend ${cleaned} activated successfully`)
+      } else {
+        logger.warn(`Failed to activate pending backend ${cleaned}`)
+      }
+    } catch (err) {
+      logger.error('Error activating pending backend:', err)
+    } finally {
+      localStorage.removeItem('llama_cpp_pending_backend')
+    }
+  }
+
   private async tryInstallBundledBackend(): Promise<string | null> {
     try {
       const janDataFolderPath = await getJanDataFolderPath()
@@ -374,8 +527,112 @@ export default class llamacpp_extension extends AIEngine {
     this.isConfiguringBackends = true
 
     try {
+      // Sanitize any BOM characters left over from previous sessions
+      if (this.config.version_backend) {
+        this.config.version_backend = stripBom(this.config.version_backend)
+      }
+
       // Install bundled backend from app resources if no local backends exist
       const bundledBackendString = await this.tryInstallBundledBackend()
+
+      // Immediately apply a backend so the model can load without
+      // waiting for the remote backend list (GitHub API can be slow/down).
+      //
+      // If the persisted UI settings (localStorage `@janhq/llamacpp-extension`)
+      // were lost between launches — e.g. the user wiped WebView2 storage via
+      // `make dev-windows-cpu`, ran a factoryReset, or the WebView2 cache got
+      // corrupted — `this.config.version_backend` arrives empty even though a
+      // GPU backend may still be physically installed in the data folder.
+      // Without recovery the next branch would silently re-pin bundled CPU and
+      // the user would lose their previously selected backend on every restart.
+      //
+      // Recovery: scan installed backends on disk and pick the best one. This
+      // is intentionally limited to non-macOS to keep the existing
+      // turboquant/MLX flow on macOS untouched (per design decision).
+      const currentVB = this.config.version_backend || ''
+      const persistedMissing =
+        !currentVB || currentVB === 'none' || !currentVB.includes('/')
+
+      if (persistedMissing && !IS_MAC) {
+        try {
+          const localInstalled = await getLocalInstalledBackends()
+          if (localInstalled.length > 0) {
+            const recovered = await this.determineBestBackend(localInstalled)
+            if (recovered && recovered.includes('/')) {
+              this.config.version_backend = recovered
+              const recoveredType = recovered.split('/')[1]
+              if (recoveredType) {
+                this.setStoredBackendType(recoveredType)
+              }
+              logger.info(
+                `[configureBackends] Recovered version_backend from disk: ${recovered} (localStorage was empty)`
+              )
+            }
+          }
+        } catch (err) {
+          logger.warn(
+            'Failed to recover backends from disk; will fall back to bundled:',
+            err
+          )
+        }
+      }
+
+      if (bundledBackendString) {
+        const vbAfterRecovery = this.config.version_backend || ''
+        if (
+          !vbAfterRecovery ||
+          vbAfterRecovery === 'none' ||
+          !vbAfterRecovery.includes('/')
+        ) {
+          this.config.version_backend = bundledBackendString
+          logger.info(
+            `Applied bundled backend immediately: ${bundledBackendString}`
+          )
+        }
+      }
+
+      // GPU-backend detection deliberately does NOT run here anymore.
+      //
+      // Previously this method ran `detectIdealBackendType()` on every
+      // app launch (and again after the remote release fetch), which
+      // showed up in the logs as a periodic "we're trying to install a
+      // better backend" pass — even though no install ever happened
+      // unless the user clicked through the dialog. The user found
+      // this opaque and asked for it to be turned off entirely.
+      //
+      // Detection now happens only at the two explicit user-facing
+      // entry points, both of which call `recheckOptimalBackend()`:
+      //   1. `SetupBackendStep` on first-launch onboarding.
+      //   2. The manual "Find optimal backend" button in provider
+      //      settings.
+      //
+      // `configureBackends()` keeps its other responsibilities:
+      // bundled-backend extraction, settings registration, and
+      // version auto-upgrade for the same backend family.
+
+      // --- Early settings registration with bundled backend ---
+      // Register settings with at least the bundled backend so the UI
+      // isn't stuck in "loading" while the GitHub API responds.
+      if (bundledBackendString) {
+        const earlySettings = structuredClone(SETTINGS)
+        const earlyBackendIdx = earlySettings.findIndex(
+          (item) => item.key === 'version_backend'
+        )
+        if (earlyBackendIdx !== -1) {
+          const earlySetting = earlySettings[earlyBackendIdx]
+          const currentVB = this.config.version_backend || ''
+          const earlyOptions = [
+            { value: bundledBackendString, name: bundledBackendString },
+          ]
+          if (currentVB && currentVB !== bundledBackendString) {
+            earlyOptions.unshift({ value: currentVB, name: currentVB })
+          }
+          earlySetting.controllerProps.options = earlyOptions
+          earlySetting.controllerProps.value = currentVB || bundledBackendString
+        }
+        this.registerSettings(earlySettings)
+        logger.info('[configureBackends] Early settings registered with bundled backend')
+      }
 
       let version_backends: {
         version: string
@@ -384,7 +641,11 @@ export default class llamacpp_extension extends AIEngine {
       }[] = []
 
       try {
+        logger.info('[configureBackends] Fetching supported backends...')
         version_backends = await listSupportedBackends()
+        logger.info(
+          `[configureBackends] Got ${version_backends.length} backends: ${version_backends.map((b) => `${b.version}/${b.backend}`).join(', ')}`
+        )
         if (version_backends.length === 0) {
           throw new Error(
             'No supported backend binaries found for this system. Backend selection and auto-update will be unavailable.'
@@ -393,11 +654,23 @@ export default class llamacpp_extension extends AIEngine {
           version_backends.sort((a, b) => (b.order ?? 0) - (a.order ?? 0))
         }
       } catch (error) {
-        throw new Error(
-          `Failed to fetch supported backends: ${
-            error instanceof Error ? error.message : error
-          }`
-        )
+        if (bundledBackendString) {
+          logger.warn(
+            `Failed to fetch supported backends (${
+              error instanceof Error ? error.message : error
+            }), continuing with bundled backend: ${bundledBackendString}`
+          )
+          const [bVer, bBack] = bundledBackendString.split('/')
+          if (bVer && bBack) {
+            version_backends = [{ version: bVer, backend: bBack, order: 0 }]
+          }
+        } else {
+          throw new Error(
+            `Failed to fetch supported backends: ${
+              error instanceof Error ? error.message : error
+            }`
+          )
+        }
       }
 
       // Get stored backend preference
@@ -407,74 +680,9 @@ export default class llamacpp_extension extends AIEngine {
       // Calculate the "best" backend first, as it's used for fallback and defaults
       bestAvailableBackendString =
         await this.determineBestBackend(version_backends)
-
-      // Auto-download optimal GPU backend if it's not installed locally,
-      // or if a newer version is available remotely.
-      // The app continues immediately with the bundled/current backend while
-      // the better backend downloads in the background.
-      // Only for Windows/Linux — macOS uses turboquant from a different repo.
-      if (bestAvailableBackendString && !IS_MAC) {
-        const [bestVersion, bestType] = bestAvailableBackendString.split('/')
-        if (bestVersion && bestType) {
-          const localBackends = await getLocalInstalledBackends()
-          const bundledType = bundledBackendString?.split('/')[1]
-
-          // Find the best backend TYPE via priority (CUDA > Vulkan > CPU),
-          // then check if the latest remote version of that type needs downloading.
-          const bestCategory = bestType
-          const localOfSameType = localBackends.filter(
-            (b) => b.backend === bestCategory
-          )
-          const hasLocalOfSameType = localOfSameType.length > 0
-
-          // Determine which version to download: either the best is not local at all,
-          // or a newer remote version exists for the same backend type.
-          let targetDownload: string | null = null
-
-          if (!hasLocalOfSameType && bestCategory !== bundledType) {
-            // No local backend of this type — first-time GPU backend download
-            targetDownload = bestAvailableBackendString
-          } else if (hasLocalOfSameType) {
-            // Check if a newer version is available remotely for this type
-            const localVersion = localOfSameType[0].version
-            const localBuild = parseBuildNumber(localVersion)
-            const remoteBuild = parseBuildNumber(bestVersion)
-            if (
-              localBuild !== null &&
-              remoteBuild !== null &&
-              remoteBuild > localBuild
-            ) {
-              targetDownload = `${bestVersion}/${bestCategory}`
-              logger.info(
-                `Newer version available for ${bestCategory}: ${localVersion} → ${bestVersion}`
-              )
-            }
-          }
-
-          if (targetDownload) {
-            logger.info(
-              `Backend ${targetDownload} not installed locally, downloading in background...`
-            )
-            this.downloadAndInstallBackend(targetDownload)
-              .then(async () => {
-                logger.info(
-                  `Background download of ${targetDownload} complete, switching backend`
-                )
-                try {
-                  await this.updateBackend(targetDownload!)
-                } catch (err) {
-                  logger.warn('Failed to switch to downloaded backend:', err)
-                }
-              })
-              .catch((err) => {
-                logger.warn(
-                  `Background download of ${targetDownload} failed, continuing with current backend:`,
-                  err
-                )
-              })
-          }
-        }
-      }
+      logger.info(
+        `[configureBackends] Best backend: ${bestAvailableBackendString}, storedType: ${storedBackendType || '(none)'}`
+      )
 
       if (storedBackendType) {
         // Delegate migration check to Rust
@@ -505,15 +713,40 @@ export default class llamacpp_extension extends AIEngine {
           logger.info(
             `Using stored backend preference: ${bestAvailableBackendString}`
           )
-        } else {
+        } else if (IS_MAC) {
+          // macOS turboquant flow expects stale storedType to be cleared so
+          // the bundled backend can take over via the force-switch block.
           logger.warn(
             `Stored backend type '${effectiveStoredBackendType}' not available, falling back to best backend`
           )
-          // Clear the invalid stored preference
           this.clearStoredBackendType()
-          // bestAvailableBackendString remains as the priority one calculated earlier
+        } else {
+          // Windows/Linux: GitHub may be temporarily unreachable / rate-
+          // limited, so the user's preference may simply not be visible in
+          // version_backends right now. Keep the stored preference; the
+          // installed-on-disk guards below ensure we don't downgrade to
+          // bundled CPU when the saved backend is still on the filesystem.
+          logger.warn(
+            `Stored backend type '${effectiveStoredBackendType}' not in remote/local list right now; keeping preference (network may be unstable)`
+          )
         }
       }
+
+      // Compute once whether the currently-saved version_backend is actually
+      // present on disk. Used below to:
+      //   - keep the saved option visible in the dropdown even when the
+      //     remote backend list (`version_backends`) doesn't include it,
+      //   - skip the auto-upgrade swap if the "newer" target isn't
+      //     downloaded yet,
+      //   - skip the fresh-installation fallback when the saved backend is
+      //     still installed locally (e.g. GitHub temporarily unavailable).
+      const savedVB = stripBom(this.config.version_backend || '')
+      const [savedVbVer, savedVbBack] = savedVB.split('/')
+      const savedVbIsInstalled =
+        !!savedVbVer?.trim() &&
+        !!savedVbBack?.trim() &&
+        savedVB.includes('/') &&
+        (await isBackendInstalled(savedVbBack.trim(), savedVbVer.trim()))
 
       let settings = structuredClone(SETTINGS)
       const backendSettingIndex = settings.findIndex(
@@ -530,6 +763,31 @@ export default class llamacpp_extension extends AIEngine {
           const key = `${b.version}/${b.backend}`
           return { value: key, name: key }
         })
+
+        // Always surface the installed-on-disk saved backend in the dropdown,
+        // even when the remote list (e.g. GitHub) didn't return it. Without
+        // this the user sees an empty/incomplete options list after a
+        // restart with no network.
+        if (
+          savedVbIsInstalled &&
+          !(
+            backendSetting.controllerProps.options as Array<{
+              value: string
+              name: string
+            }>
+          ).some((o) => o.value === savedVB)
+        ) {
+          backendSetting.controllerProps.options = [
+            { value: savedVB, name: savedVB },
+            ...(backendSetting.controllerProps.options as Array<{
+              value: string
+              name: string
+            }>),
+          ]
+          logger.info(
+            `Saved backend ${savedVB} not present in version_backends list — pinning it into options (installed locally)`
+          )
+        }
 
         // Set the recommended backend based on bestAvailableBackendString
         if (bestAvailableBackendString) {
@@ -600,7 +858,7 @@ export default class llamacpp_extension extends AIEngine {
 
       this.registerSettings(settings)
 
-      let effectiveBackendString = this.config.version_backend
+      let effectiveBackendString = stripBom(this.config.version_backend || '')
 
       // Auto-upgrade to the latest downloaded version of the same backend type
       if (
@@ -612,28 +870,45 @@ export default class llamacpp_extension extends AIEngine {
         const currentType = effectiveBackendString.split('/')[1]?.trim()
         const bestType = bestAvailableBackendString.split('/')[1]?.trim()
         if (currentType && bestType && currentType === bestType) {
-          logger.info(
-            `Auto-upgrading backend to latest version: ${effectiveBackendString} → ${bestAvailableBackendString}`
-          )
-          effectiveBackendString = bestAvailableBackendString
+          // Only swap when the "newer" target is actually downloaded.
+          // Otherwise we'd end up with config pointing at a backend that
+          // isn't on disk yet — e.g. after an app update where the bundled
+          // CPU got bumped, but the user's CUDA backend hasn't been
+          // re-downloaded for the new release tag.
+          const [bestVer, bestBack] = bestAvailableBackendString.split('/')
+          const bestIsInstalled =
+            !!bestVer?.trim() &&
+            !!bestBack?.trim() &&
+            (await isBackendInstalled(bestBack.trim(), bestVer.trim()))
 
-          this.config.version_backend = effectiveBackendString
+          if (!bestIsInstalled) {
+            logger.info(
+              `Skipping auto-upgrade ${effectiveBackendString} → ${bestAvailableBackendString}: target not installed locally`
+            )
+          } else {
+            logger.info(
+              `Auto-upgrading backend to latest version: ${effectiveBackendString} → ${bestAvailableBackendString}`
+            )
+            effectiveBackendString = bestAvailableBackendString
 
-          const updatedSettings = await this.getSettings()
-          await this.updateSettings(
-            updatedSettings.map((item) => {
-              if (item.key === 'version_backend') {
-                item.controllerProps.value = effectiveBackendString
-              }
-              return item
-            })
-          )
+            this.config.version_backend = effectiveBackendString
 
-          if (events && typeof events.emit === 'function') {
-            events.emit('settingsChanged', {
-              key: 'version_backend',
-              value: effectiveBackendString,
-            })
+            const updatedSettings = await this.getSettings()
+            await this.updateSettings(
+              updatedSettings.map((item) => {
+                if (item.key === 'version_backend') {
+                  item.controllerProps.value = effectiveBackendString
+                }
+                return item
+              })
+            )
+
+            if (events && typeof events.emit === 'function') {
+              events.emit('settingsChanged', {
+                key: 'version_backend',
+                value: effectiveBackendString,
+              })
+            }
           }
         }
       }
@@ -673,16 +948,27 @@ export default class llamacpp_extension extends AIEngine {
         }
       }
 
-      // Handle fresh installation case where version_backend might be 'none' or invalid
-      if (
-        (!effectiveBackendString ||
-          effectiveBackendString === 'none' ||
-          !effectiveBackendString.includes('/') ||
-          !version_backends.some(
-            (e) => `${e.version}/${e.backend}` === effectiveBackendString
-          )) &&
-        bestAvailableBackendString
-      ) {
+      // Handle fresh installation case where version_backend might be 'none' or invalid.
+      //
+      // The previous condition also reset to bundled whenever the saved
+      // backend was missing from `version_backends` — but that list comes
+      // partly from a remote GitHub fetch which can fail or return a
+      // truncated set, leading to a CUDA→CPU regression on every restart.
+      // Guard the fallback with `savedVbIsInstalled`: only force-fallback
+      // when the saved backend is genuinely gone from disk.
+      const savedNotInList =
+        !!effectiveBackendString &&
+        effectiveBackendString.includes('/') &&
+        !version_backends.some(
+          (e) => `${e.version}/${e.backend}` === effectiveBackendString
+        )
+      const savedBackendVanished =
+        !effectiveBackendString ||
+        effectiveBackendString === 'none' ||
+        !effectiveBackendString.includes('/') ||
+        (savedNotInList && !savedVbIsInstalled)
+
+      if (savedBackendVanished && bestAvailableBackendString) {
         effectiveBackendString = bestAvailableBackendString
         logger.info(
           `Fresh installation or invalid backend detected, using: ${effectiveBackendString}`
@@ -707,7 +993,16 @@ export default class llamacpp_extension extends AIEngine {
             value: effectiveBackendString,
           })
         }
+      } else if (savedNotInList && savedVbIsInstalled) {
+        logger.warn(
+          `Saved backend ${effectiveBackendString} not in remote list but installed locally — keeping it active`
+        )
       }
+
+      // Late-phase GPU-backend detection has also been removed —
+      // see the comment near the top of this function. Any
+      // recommendation now flows through `recheckOptimalBackend()`,
+      // which is invoked only by user-driven UI surfaces.
     } finally {
       this.isConfiguringBackends = false
     }
@@ -742,9 +1037,51 @@ export default class llamacpp_extension extends AIEngine {
     return result.backend_string
   }
 
+  /**
+   * Uses hardware detection (CUDA/Vulkan driver info) to determine the ideal
+   * backend type for this machine. Returns the backend name string
+   * (e.g. "win-cuda-13-common_cpus-x64") or null if CPU is already optimal.
+   */
+  private async detectIdealBackendType(): Promise<string | null> {
+    try {
+      const sysInfo = await getSystemInfo()
+      const rawFeatures = await getSupportedFeaturesFromRust(
+        sysInfo.os_type,
+        sysInfo.cpu.extensions,
+        sysInfo.gpus
+      )
+      const features = normalizeFeatures(rawFeatures)
+
+      let hasEnoughVram = false
+      for (const gpuInfo of sysInfo.gpus) {
+        if (gpuInfo.total_memory >= 6 * 1024) {
+          hasEnoughVram = true
+          break
+        }
+      }
+
+      const arch = sysInfo.cpu.arch
+      const archSuffix =
+        arch.includes('aarch64') || arch.includes('arm64') ? 'arm64' : 'x64'
+      const prefix = sysInfo.os_type === 'windows' ? 'win' : 'linux'
+
+      if (features.cuda13) return `${prefix}-cuda-13-common_cpus-${archSuffix}`
+      if (features.cuda12) return `${prefix}-cuda-12-common_cpus-${archSuffix}`
+      if (features.cuda11) return `${prefix}-cuda-11-common_cpus-${archSuffix}`
+      if (features.vulkan && hasEnoughVram)
+        return `${prefix}-vulkan-common_cpus-${archSuffix}`
+
+      return null
+    } catch (err) {
+      logger.warn('detectIdealBackendType failed:', err)
+      return null
+    }
+  }
+
   async updateBackend(
     targetBackendString: string
   ): Promise<{ wasUpdated: boolean; newBackend: string }> {
+    targetBackendString = stripBom(targetBackendString)
     if (this.isUpdatingBackend) {
       logger.warn(
         'Backend update already in progress, skipping new update request'
@@ -863,6 +1200,195 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  /**
+   * Downloads a recommended GPU backend and applies it without restarting
+   * the app whenever possible. Called by the frontend when the user
+   * confirms the better-backend popup.
+   *
+   * Sequencing rationale:
+   *   1. Persist `llama_cpp_pending_backend` BEFORE the download so that any
+   *      observer reacting to `AppEvent.onBackendDownloadFinished` sees the
+   *      pending key already on disk (the download-finished event is emitted
+   *      from inside `downloadAndInstallBackend` and previously beat the
+   *      pending write, leaving the provider settings page without its
+   *      "Restart to activate" pill until a tab refresh).
+   *      `activatePendingBackend()` already gates on `isBackendInstalled()`,
+   *      so a partial download leaves no harmful state.
+   *   2. After a successful download, attempt `applyBackendLive()` for a
+   *      hot-swap. On success the pending key is dropped and the UI reacts
+   *      to `app:backend-hotswapped`. On failure the pending key stays put
+   *      and the user falls back to the classic "restart required" flow.
+   */
+  async downloadRecommendedBackend(backendString: string): Promise<void> {
+    backendString = stripBom(backendString)
+    logger.info(`downloadRecommendedBackend: downloading ${backendString}`)
+    localStorage.setItem('llama_cpp_pending_backend', backendString)
+    try {
+      await this.downloadAndInstallBackend(backendString)
+    } catch (err) {
+      // Download failed — drop the pending marker so the next app launch
+      // doesn't try to "activate" a backend that was never installed.
+      localStorage.removeItem('llama_cpp_pending_backend')
+      throw err
+    }
+    localStorage.removeItem('llama_cpp_better_backend_recommendation')
+
+    try {
+      await this.applyBackendLive(backendString)
+      logger.info(
+        `downloadRecommendedBackend: applied backend ${backendString} live (no restart needed)`
+      )
+    } catch (err) {
+      logger.warn(
+        `downloadRecommendedBackend: hot-swap failed for ${backendString}, falling back to pending-restart flow:`,
+        err
+      )
+    }
+  }
+
+  /**
+   * Apply a freshly-downloaded backend to the running process: stop any
+   * loaded llama.cpp models, swap `version_backend` via `updateBackend()`,
+   * clear the pending marker, and notify the UI via a window event.
+   *
+   * Failure modes:
+   *   - `unload()` throws when a session can't be cleanly stopped → we log
+   *     and continue, because `updateBackend()` only mutates settings and
+   *     does not require an empty session table.
+   *   - `updateBackend()` throws → we propagate. Caller leaves the pending
+   *     marker in place so `activatePendingBackend()` retries on next launch.
+   */
+  private async applyBackendLive(backendString: string): Promise<void> {
+    let loaded: string[] = []
+    try {
+      loaded = await this.getLoadedModels()
+    } catch (err) {
+      logger.warn('applyBackendLive: getLoadedModels failed (continuing):', err)
+    }
+
+    for (const modelId of loaded) {
+      try {
+        await this.unload(modelId)
+      } catch (err) {
+        logger.warn(
+          `applyBackendLive: failed to unload model ${modelId} (continuing):`,
+          err
+        )
+      }
+    }
+
+    const result = await this.updateBackend(backendString)
+    if (!result.wasUpdated) {
+      throw new Error(
+        `updateBackend reported wasUpdated=false for ${backendString}`
+      )
+    }
+
+    localStorage.removeItem('llama_cpp_pending_backend')
+
+    // Decoupled from `AppEvent` enum on purpose: a hot-swap completion is
+    // a pure UI concern (the dialog/pill in the web app) and does not
+    // need to traverse the cross-extension event bus. `window` is always
+    // available inside the Tauri WebView2 context where this extension
+    // runs.
+    if (typeof window !== 'undefined' && window.dispatchEvent) {
+      window.dispatchEvent(
+        new CustomEvent('app:backend-hotswapped', {
+          detail: { backend: backendString },
+        })
+      )
+    }
+  }
+
+  /**
+   * Manually re-runs hardware detection and returns a recommendation if a
+   * better GPU backend than the current one is available. Used by:
+   *   - the dedicated Windows onboarding step (`SetupBackendStep`) to surface
+   *     the recommendation deterministically, even after the early/late
+   *     auto-emit gates have been disabled by `llama_cpp_onboarding_done`;
+   *   - the manual "Find optimal backend" button in provider settings.
+   *
+   * Side effects (kept consistent with `configureBackends()` early-phase):
+   *   - Writes `llama_cpp_better_backend_recommendation` to localStorage so
+   *     the existing `useBackendUpdater` mount path picks it up too.
+   *   - Emits `AppEvent.onBetterBackendDetected` so the dialog/component
+   *     listening through the hook reflects the latest state.
+   *
+   * Returns the recommendation payload, or `null` when the device is already
+   * on the optimal backend category (or detection couldn't decide).
+   */
+  async recheckOptimalBackend(): Promise<{
+    currentBackend: string
+    recommendedBackend: string
+    recommendedCategory: string
+  } | null> {
+    if (IS_MAC) {
+      return null
+    }
+    try {
+      logger.info('recheckOptimalBackend: detecting ideal backend type')
+      const idealType = await this.detectIdealBackendType()
+      if (!idealType) {
+        // CPU is already the best the hardware can do, or detection failed.
+        logger.info(
+          'recheckOptimalBackend: no GPU backend recommended (CPU is optimal or detection failed)'
+        )
+        localStorage.removeItem('llama_cpp_better_backend_recommendation')
+        return null
+      }
+
+      const idealCat = get_backend_category(idealType)
+      const currentBackend = stripBom(this.config.version_backend || '')
+      const currentType = currentBackend.split('/')[1] || ''
+      const currentCat = get_backend_category(currentType)
+      if (idealCat === currentCat) {
+        // Already on the optimal family — no recommendation to surface.
+        logger.info(
+          `recheckOptimalBackend: already on optimal category ${currentCat} (${currentBackend})`
+        )
+        localStorage.removeItem('llama_cpp_better_backend_recommendation')
+        return null
+      }
+
+      // Build the recommendation from the currently-installed backend
+      // version. We deliberately do NOT call `listSupportedBackends()`
+      // here — that round-trips to api.github.com and was observed to
+      // hang the manual "Find optimal backend" button under slow
+      // networks / rate-limited responses.
+      //
+      // Using the current version is safe because:
+      //   - Atomic Chat ships with a known bundled `version_backend`,
+      //     so `currentBackend.split('/')[0]` is always a real GitHub
+      //     release tag (e.g. `b8770`) with all per-platform variants.
+      //   - `configureBackends()` on the next launch resolves the
+      //     installed family to its latest version via
+      //     `findLatestVersionForBackend()` — version drift is
+      //     handled by the existing version-update toast, not here.
+      const fallbackVersion = currentBackend.split('/')[0] || 'latest'
+      const recommendedBackend = `${fallbackVersion}/${idealType}`
+
+      const payload = {
+        currentBackend,
+        recommendedBackend,
+        recommendedCategory: backendCategoryToLabel(idealCat),
+      }
+      logger.info(
+        `recheckOptimalBackend: surfacing recommendation ${recommendedBackend} (${payload.recommendedCategory})`
+      )
+      localStorage.setItem(
+        'llama_cpp_better_backend_recommendation',
+        JSON.stringify(payload)
+      )
+      if (events && typeof events.emit === 'function') {
+        events.emit(AppEvent.onBetterBackendDetected, payload)
+      }
+      return payload
+    } catch (err) {
+      logger.warn('recheckOptimalBackend failed:', err)
+      return null
+    }
+  }
+
   async checkBackendForUpdates(): Promise<{
     updateNeeded: boolean
     newVersion: string
@@ -964,8 +1490,22 @@ export default class llamacpp_extension extends AIEngine {
       if (this.isUpdatingBackend) {
         return
       }
+      // During initialization, configureBackends handles all backend
+      // setup; any updateSettings calls (e.g. BOM migration) should
+      // only touch in-memory config without triggering downloads.
+      if (this.isInitializing || this.isConfiguringBackends) {
+        if (typeof value === 'string') {
+          this.config[key] = stripBom(value) as any
+        } else {
+          this.config[key] = value
+        }
+        return
+      }
     }
 
+    if (key === 'version_backend' && typeof value === 'string') {
+      value = stripBom(value) as T
+    }
     this.config[key] = value
 
     if (key === 'version_backend') {
@@ -1707,6 +2247,20 @@ export default class llamacpp_extension extends AIEngine {
     isEmbedding: boolean = false,
     bypassAutoUnload: boolean = false
   ): Promise<SessionInfo> {
+    if (this.configureBackendsPromise) {
+      const vb = this.config.version_backend || ''
+      if (!vb || vb === 'none' || !vb.includes('/')) {
+        logger.info(
+          `Waiting for backend configuration to complete before loading model "${modelId}"...`
+        )
+        await this.configureBackendsPromise
+      } else {
+        logger.info(
+          `Backend already configured (${vb}), loading model "${modelId}" without waiting for full backend list`
+        )
+      }
+    }
+
     const sInfo = await this.findSessionByModel(modelId)
     if (sInfo) {
       throw new Error('Model already loaded!!')
@@ -2012,6 +2566,8 @@ export default class llamacpp_extension extends AIEngine {
     backend: string,
     version: string
   ): Promise<void> {
+    backend = stripBom(backend)
+    version = stripBom(version)
     const backendKey = `${version}/${backend}`
     if (await isBackendInstalled(backend, version)) {
       return
@@ -2046,14 +2602,17 @@ export default class llamacpp_extension extends AIEngine {
   private async downloadAndInstallBackend(
     backendString: string
   ): Promise<void> {
+    backendString = stripBom(backendString)
     const parts = backendString.split('/')
     if (parts.length !== 2 || !parts[0] || !parts[1]) {
       throw new Error(`Invalid backend string: ${backendString}`)
     }
-    const [version, backend] = parts
+    const [version, backend] = [stripBom(parts[0]), stripBom(parts[1])]
 
     if (await isBackendInstalled(backend, version)) {
-      logger.info(`Backend ${backendString} is already installed, skipping download`)
+      logger.info(
+        `Backend ${backendString} is already installed, skipping download`
+      )
       return
     }
 
@@ -2070,20 +2629,71 @@ export default class llamacpp_extension extends AIEngine {
     logger.info(`Downloading backend ${backendString} from ${url}`)
 
     if (events && typeof events.emit === 'function') {
-      events.emit(AppEvent.onAppUpdateDownloadStarted, {
-        type: 'backend',
+      events.emit(AppEvent.onBackendDownloadStarted, {
         backend: backendString,
+        status: 'downloading',
       })
     }
 
     try {
-      const taskId = `backend-download-${version}-${backend}`
-      await invoke<void>('download_files', {
-        items: [{ url, save_path: archivePath }],
-        taskId,
-        headers: {},
-        resume: false,
-      })
+      // Route the file transfer through `download-extension` so the
+      // standard top-left download manager picks it up via the same
+      // `DownloadEvent.onFileDownloadUpdate` channel that model
+      // downloads use. The legacy `AppEvent.onBackendDownload*`
+      // events are still emitted because the BackendUpdater dialog
+      // listens to them for the recommend → downloading →
+      // restart-required state machine.
+      //
+      // Prefix the taskId with `llamacpp-backend-` so the cancel
+      // button in the standard UI takes the
+      // `download.id.startsWith('llamacpp')` branch and can call
+      // `cancelDownload(taskId)` instead of the model-abort path.
+      const taskId = `llamacpp-backend-${version}/${backend}`
+      const downloadManager = window.core?.extensionManager?.getByName(
+        '@janhq/download-extension'
+      ) as
+        | {
+            downloadFiles?: (
+              items: { url: string; save_path: string }[],
+              taskId: string,
+              onProgress?: (transferred: number, total: number) => void,
+              resume?: boolean
+            ) => Promise<void>
+          }
+        | undefined
+
+      const onProgress = (transferred: number, total: number) => {
+        if (events && typeof events.emit === 'function') {
+          events.emit(DownloadEvent.onFileDownloadUpdate, {
+            modelId: taskId,
+            percent: total > 0 ? transferred / total : 0,
+            size: { transferred, total },
+            downloadType: 'Backend',
+          })
+        }
+      }
+
+      if (downloadManager?.downloadFiles) {
+        await downloadManager.downloadFiles(
+          [{ url, save_path: archivePath }],
+          taskId,
+          onProgress,
+          false
+        )
+      } else {
+        // Best-effort fallback when the download-extension is not
+        // available — preserves backend installation but the standard
+        // UI won't reflect progress.
+        logger.warn(
+          'download-extension not available, falling back to raw download_files invoke'
+        )
+        await invoke<void>('download_files', {
+          items: [{ url, save_path: archivePath }],
+          taskId,
+          headers: {},
+          resume: false,
+        })
+      }
 
       logger.info(`Download complete, extracting to ${targetDir}`)
       await invoke('decompress', {
@@ -2119,11 +2729,35 @@ export default class llamacpp_extension extends AIEngine {
       logger.info(`Backend ${backendString} installed successfully`)
 
       if (events && typeof events.emit === 'function') {
-        events.emit(AppEvent.onAppUpdateDownloadFinished, {
-          type: 'backend',
+        // Clear from the standard download manager UI.
+        events.emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
+          modelId: `llamacpp-backend-${backendString}`,
+          downloadType: 'Backend',
+        })
+        events.emit(AppEvent.onBackendDownloadFinished, {
           backend: backendString,
+          status: 'completed',
         })
       }
+    } catch (downloadErr) {
+      const errorMessage =
+        downloadErr instanceof Error
+          ? downloadErr.message
+          : String(downloadErr)
+      if (events && typeof events.emit === 'function') {
+        // Clear the standard download manager row on failure too.
+        events.emit(DownloadEvent.onFileDownloadError, {
+          modelId: `llamacpp-backend-${backendString}`,
+          error: errorMessage,
+          downloadType: 'Backend',
+        })
+        events.emit(AppEvent.onBackendDownloadFinished, {
+          backend: backendString,
+          status: 'failed',
+          error: errorMessage,
+        })
+      }
+      throw downloadErr
     } finally {
       try {
         if (await fs.existsSync(archivePath)) {
@@ -2424,6 +3058,13 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   async getDevices(): Promise<DeviceList[]> {
+    if (this.configureBackendsPromise) {
+      const vb = this.config.version_backend || ''
+      if (!vb || vb === 'none' || !vb.includes('/')) {
+        await this.configureBackendsPromise
+      }
+    }
+
     const cfg = this.config
     const [version, backend] = cfg.version_backend.split('/')
     if (!version || !backend) {

@@ -4,7 +4,12 @@ import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle, getModelDisplayName } from '@/lib/utils'
-import { createFileRoute, Link, useParams } from '@tanstack/react-router'
+import {
+  createFileRoute,
+  Link,
+  useNavigate,
+  useParams,
+} from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import Capabilities from '@/containers/Capabilities'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
@@ -35,11 +40,16 @@ import {
   IconFolderPlus,
   IconLoader,
   IconRefresh,
+  IconRocket,
+  IconSearch,
   IconUpload,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { predefinedProviders } from '@/constants/providers'
+import {
+  isKnownProvider,
+  useProviderRegistryStore,
+} from '@/stores/provider-registry-store'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { switchToModel } from '@/utils/switchModel'
@@ -49,7 +59,7 @@ import { basenameNoExt } from '@/lib/utils'
 import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
-import { EngineManager } from '@janhq/core'
+import { AppEvent, EngineManager, events } from '@janhq/core'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -72,6 +82,66 @@ function ProviderDetail() {
   const [loadingModels, setLoadingModels] = useState<string[]>([])
   const [refreshingModels, setRefreshingModels] = useState(false)
   const [isInstallingBackend, setIsInstallingBackend] = useState(false)
+  const [isRecheckingBackend, setIsRecheckingBackend] = useState(false)
+  /// Mirrors `localStorage.llama_cpp_pending_backend` so the provider
+  /// settings page can surface a "restart to activate" pill next to
+  /// the (still-old) `version_backend` value once a recommended GPU
+  /// backend has finished downloading. Updated reactively via
+  /// `AppEvent.onBackendDownloadFinished` so the user gets feedback
+  /// without having to refresh.
+  const [pendingBackend, setPendingBackend] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null
+    const raw = localStorage.getItem('llama_cpp_pending_backend')
+    return raw ? raw.replace(/\uFEFF/g, '').trim() : null
+  })
+
+  useEffect(() => {
+    const refresh = () => {
+      const raw = localStorage.getItem('llama_cpp_pending_backend')
+      setPendingBackend(raw ? raw.replace(/\uFEFF/g, '').trim() : null)
+    }
+    const onFinished = (payload: { status: string }) => {
+      if (payload?.status === 'completed') refresh()
+    }
+    /// Hot-swap path: the extension already cleared
+    /// `llama_cpp_pending_backend` and updated `version_backend` settings.
+    /// Drop the pill immediately and pull fresh provider settings so the
+    /// `version_backend` row reflects the new value without a tab refresh.
+    ///
+    /// We deliberately read `setProviders` from the Zustand store via
+    /// `getState()` instead of capturing the destructured binding from
+    /// `useModelProvider()` — that destructuring happens later in the
+    /// component body, so referencing it here would hit a TDZ
+    /// `ReferenceError` on the very first render.
+    const onHotswapped = () => {
+      setPendingBackend(null)
+      void serviceHub
+        .providers()
+        .getProviders()
+        .then((providers) => {
+          useModelProvider.getState().setProviders(providers)
+        })
+        .catch((err) => {
+          console.warn('Failed to refresh providers after hot-swap:', err)
+        })
+    }
+    events.on(AppEvent.onBackendDownloadFinished, onFinished)
+    window.addEventListener('storage', refresh)
+    window.addEventListener('app:backend-hotswapped', onHotswapped)
+    return () => {
+      events.off(AppEvent.onBackendDownloadFinished, onFinished)
+      window.removeEventListener('storage', refresh)
+      window.removeEventListener('app:backend-hotswapped', onHotswapped)
+    }
+  }, [serviceHub])
+
+  const handleRestartForPendingBackend = useCallback(async () => {
+    try {
+      await window.core?.api?.relaunch()
+    } catch (err) {
+      console.error('Failed to relaunch for pending backend:', err)
+    }
+  }, [])
   const [importingModel, setImportingModel] = useState<string | null>(null)
   const [isTogglingDflash, setIsTogglingDflash] = useState(false)
   /// `isTogglingDflash` covers fast operations (lookup + MLX reload) and
@@ -83,10 +153,19 @@ function ProviderDetail() {
   const [dflashUnsupportedModel, setDflashUnsupportedModel] = useState<
     string | null
   >(null)
-  const { installBackend } = useBackendUpdater()
+  const {
+    installBackend,
+    recheckOptimalBackend,
+    downloadRecommendedBackend,
+    recommendationPhase,
+  } = useBackendUpdater()
   const { providerName } = useParams({ from: Route.id })
+  const navigate = useNavigate()
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
+  const hasDownloadedModels =
+    (provider?.models.filter((m) => m.id !== EMBEDDING_MODEL_ID).length ?? 0) >
+    0
 
   // Check if llamacpp/mlx provider needs backend configuration
   const needsBackendConfig =
@@ -283,45 +362,52 @@ function ProviderDetail() {
   // This ensures all screens receive the event intermediately
 
   const handleRefreshModels = async () => {
-    if (!provider || !provider.base_url) {
-      toast.error(t('providers:models'), {
-        description: t('providers:refreshModelsError'),
-      })
-      return
-    }
+    if (!provider) return
 
     setRefreshingModels(true)
     try {
-      const modelIds = await serviceHub
-        .providers()
-        .fetchModelsFromProvider(provider)
+      // Pull the latest manifest from our remote registry on GitHub. We
+      // intentionally do NOT hit the provider's own `/models` endpoint here
+      // — that path is unreliable across providers and runtimes (some hang,
+      // some require an API key the user hasn't entered yet, etc.). The
+      // registry is the canonical, curated source.
+      try {
+        await useProviderRegistryStore.getState().refresh({ force: true })
+      } catch (err) {
+        console.warn(
+          `[providers:${provider.provider}] registry refresh failed:`,
+          err
+        )
+      }
 
-      // Create new models from the fetched IDs
-      const newModels: Model[] = modelIds.map((id) => ({
-        id,
-        model: id,
-        name: id,
-        capabilities: ['completion'], // Default capability
-        version: '1.0',
-      }))
-
-      // Filter out models that already exist
-      const existingModelIds = provider.models.map((m) => m.id)
-      const modelsToAdd = newModels.filter(
-        (model) => !existingModelIds.includes(model.id)
-      )
-
-      if (modelsToAdd.length > 0) {
-        // Update the provider with new models
-        const updatedModels = [...provider.models, ...modelsToAdd]
-        updateProvider(providerName, {
-          ...provider,
-          models: updatedModels,
+      const state = useProviderRegistryStore.getState()
+      if (state.error) {
+        toast.error(t('providers:models'), {
+          description: state.error,
         })
+        return
+      }
 
+      // Count models that will newly appear on this provider after the
+      // registry merge — for the success toast.
+      const fresh = await serviceHub.providers().getProviders()
+      const registryProvider = fresh.find(
+        (p) => p.provider === provider.provider
+      )
+      const existingIds = new Set(provider.models.map((m) => m.id))
+      const newCount = registryProvider
+        ? registryProvider.models.filter((m) => !existingIds.has(m.id)).length
+        : 0
+
+      // `setProviders` merges new models from registry into useModelProvider
+      // while preserving API keys, base URLs, and user-tweaked settings on
+      // a per-provider basis. Existing models are NEVER removed.
+      setProviders(fresh)
+
+      if (newCount > 0) {
         toast.success(t('providers:models'), {
           description: t('providers:refreshModelsSuccess', {
-            count: modelsToAdd.length,
+            count: newCount,
             provider: provider.provider,
           }),
         })
@@ -330,15 +416,17 @@ function ProviderDetail() {
           description: t('providers:noNewModels'),
         })
       }
-    } catch (error) {
+    } catch (err) {
       console.error(
-        t('providers:refreshModelsFailed', { provider: provider.provider }),
-        error
+        `[providers:${provider.provider}] refresh failed:`,
+        err
       )
+      const detail =
+        err instanceof Error && err.message
+          ? err.message
+          : t('providers:refreshModelsFailed', { provider: provider.provider })
       toast.error(t('providers:models'), {
-        description: t('providers:refreshModelsFailed', {
-          provider: provider.provider,
-        }),
+        description: detail,
       })
     } finally {
       setRefreshingModels(false)
@@ -587,6 +675,71 @@ function ProviderDetail() {
       setIsInstallingBackend(false)
     }
   }, [provider, serviceHub, refreshSettings, t, installBackend])
+
+  /// Manual replacement for the legacy auto-popup: re-runs hardware
+  /// detection on demand and, when a better backend is available,
+  /// immediately kicks off the download. The user explicitly asked
+  /// to find AND install — surfacing an extra confirmation dialog
+  /// would just add a wasted click.
+  ///
+  /// UI surfaces:
+  ///   - `Checking…` spinner replaces the button label only during
+  ///     the (fast) detection phase. Once detection resolves we
+  ///     return the button to idle and let the global
+  ///     `<BackendUpdater />` dialog (mounted in `__root.tsx`) show
+  ///     `downloading` → `restart-required` progress via the shared
+  ///     `useBackendUpdater` event-driven state.
+  ///
+  /// Only meaningful for the llama.cpp provider on Windows / Linux —
+  /// the macOS turboquant pipeline doesn't expose alternate backend
+  /// types here.
+  const handleFindOptimalBackend = useCallback(async () => {
+    if (provider?.provider !== 'llamacpp') return
+    setIsRecheckingBackend(true)
+    try {
+      const result = await recheckOptimalBackend()
+      if (!result) {
+        toast.success(t('settings:backendUpdater.alreadyOptimal'))
+        return
+      }
+      // Pass the freshly-detected backend explicitly: the hook's
+      // internal `recommendation` state has been queued via
+      // `setRecommendation(result)` inside `recheckOptimalBackend`
+      // but React has not committed the re-render yet, so a
+      // `downloadRecommendedBackend()` call without an argument
+      // would still see the previous (often null) closure value and
+      // silently bail.
+      void downloadRecommendedBackend(result.recommendedBackend).catch(
+        (err) => {
+          console.error('Optimal backend download failed:', err)
+          toast.error(t('settings:backendUpdater.downloadFailed'))
+        }
+      )
+    } catch (error) {
+      console.error('Failed to recheck optimal backend:', error)
+      toast.error(t('settings:backendUpdater.findOptimalFailed'))
+    } finally {
+      setIsRecheckingBackend(false)
+    }
+  }, [provider, recheckOptimalBackend, downloadRecommendedBackend, t])
+
+  /// "Find optimal backend" stays busy until the whole pipeline is done:
+  /// detection → download → hot-swap. Without this, the local
+  /// `isRecheckingBackend` flips back to false the moment detection
+  /// resolves (a few ms), so the spinner appears to flicker even though
+  /// the heavy lifting is still going on inside `useBackendUpdater`.
+  const isOptimalBackendBusy =
+    isRecheckingBackend ||
+    recommendationPhase === 'downloading' ||
+    recommendationPhase === 'hotswapping'
+
+  const optimalBackendLabel = isRecheckingBackend
+    ? t('settings:backendUpdater.findOptimalChecking')
+    : recommendationPhase === 'downloading'
+      ? t('settings:backendUpdater.findOptimalDownloading')
+      : recommendationPhase === 'hotswapping'
+        ? t('settings:backendUpdater.findOptimalSwitching')
+        : t('settings:backendUpdater.findOptimalAction')
 
   return (
     <div className="flex flex-col h-svh w-full">
@@ -894,6 +1047,85 @@ function ProviderDetail() {
                                       : 'Install Backend from File'}
                                   </span>
                                 </Button>
+                                {/* "Find optimal backend" replaces the
+                                    legacy auto-popup nag — it runs the
+                                    same hardware detection on demand and
+                                    immediately starts the download when
+                                    a better backend is available. The
+                                    explicit min-width keeps layout
+                                    stable when the label flips between
+                                    "Find optimal backend" and the
+                                    shorter "Checking…" loading state.
+                                    Hidden on macOS because that platform
+                                    uses the separate turboquant
+                                    pipeline with no alternate backend
+                                    matrix. */}
+                                {provider?.provider === 'llamacpp' &&
+                                  (IS_WINDOWS || IS_LINUX) && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={handleFindOptimalBackend}
+                                      disabled={isOptimalBackendBusy}
+                                      className="min-w-[12rem] justify-start"
+                                    >
+                                      {isOptimalBackendBusy ? (
+                                        <IconLoader
+                                          size={12}
+                                          className="animate-spin text-muted-foreground"
+                                        />
+                                      ) : (
+                                        <IconRocket
+                                          size={12}
+                                          className="text-muted-foreground"
+                                        />
+                                      )}
+                                      <span>{optimalBackendLabel}</span>
+                                    </Button>
+                                  )}
+                              </div>
+                            )}
+                          {/* Pending-backend banner: appears as soon as
+                              the just-downloaded backend is sitting in
+                              `llama_cpp_pending_backend` and waiting
+                              for `activatePendingBackend()` on the
+                              next launch. The `version_backend`
+                              setting itself can't be hot-swapped while
+                              the llama-server is running, so without
+                              this pill the user sees no change
+                              between "I clicked Find optimal" and "I
+                              restarted the app". */}
+                          {setting.key === 'version_backend' &&
+                            provider?.provider === 'llamacpp' &&
+                            pendingBackend && (
+                              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-dashed border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-xs">
+                                <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                                  {t(
+                                    'settings:backendUpdater.pendingBackendLabel'
+                                  )}
+                                </span>
+                                <code className="font-mono text-foreground/80">
+                                  {pendingBackend}
+                                </code>
+                                <span className="text-muted-foreground">
+                                  {t(
+                                    'settings:backendUpdater.pendingBackendHint'
+                                  )}
+                                </span>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="ml-auto"
+                                  onClick={handleRestartForPendingBackend}
+                                >
+                                  <IconRefresh
+                                    size={12}
+                                    className="text-muted-foreground"
+                                  />
+                                  <span>
+                                    {t('settings:backendUpdater.restartNow')}
+                                  </span>
+                                </Button>
                               </div>
                             )}
                         </>
@@ -939,12 +1171,40 @@ function ProviderDetail() {
                             <DialogAddModel provider={provider} />
                           </>
                         )}
+                      {provider &&
+                        (provider.provider === 'llamacpp' ||
+                          provider.provider === 'mlx') &&
+                        !hasDownloadedModels && (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="min-w-[8rem] justify-center"
+                            onClick={() =>
+                              navigate({
+                                to: route.hub.index,
+                                search: {
+                                  engine:
+                                    provider.provider === 'mlx'
+                                      ? 'mlx'
+                                      : 'gguf',
+                                },
+                              })
+                            }
+                          >
+                            <IconSearch size={18} />
+                            <span>{t('providers:findModel')}</span>
+                          </Button>
+                        )}
                       {provider && provider.provider === 'llamacpp' && (
                         <ImportVisionModelDialog
                           provider={provider}
                           onSuccess={handleModelImportSuccess}
                           trigger={
-                            <Button variant="secondary" size="sm">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="min-w-[8rem] justify-center"
+                            >
                               <IconFolderPlus
                                 size={18}
                                 className="text-muted-foreground"
@@ -959,7 +1219,11 @@ function ProviderDetail() {
                           provider={provider}
                           onSuccess={handleModelImportSuccess}
                           trigger={
-                            <Button variant="secondary" size="sm">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="min-w-[8rem] justify-center"
+                            >
                               <IconFolderPlus
                                 size={18}
                                 className="text-muted-foreground"
@@ -1006,10 +1270,9 @@ function ProviderDetail() {
                                 // predefined providers it's only visible once
                                 // an API key has been set.
                                 if (!provider) return null
-                                const isPredefined =
-                                  predefinedProviders.some(
-                                    (p) => p.provider === provider.provider
-                                  )
+                                const isPredefined = isKnownProvider(
+                                  provider.provider
+                                )
                                 const showFavorite =
                                   !isPredefined ||
                                   Boolean(provider.api_key?.length)

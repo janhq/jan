@@ -10,7 +10,7 @@
   "orDivider": "o",
   "localModel": "Configurar modelo local",
   "remoteProvider": "Configurar proveedor remoto",
-  "turboQuantTagline": "Modelos de IA locales en tu dispositivo con TurboQuant de Google - rápidos en hardware de gama media.",
+  "turboQuantTagline": "Modelos de IA locales en tu dispositivo — rápidos en hardware de gama media.",
   "skip": "Omitir",
   "modelUnavailable": "Aún no está en el catálogo — abre el Hub tras conectar."
 }

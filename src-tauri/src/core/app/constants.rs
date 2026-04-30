@@ -8,6 +8,8 @@ pub const JAN_DATA_SUBDIRS: &[&str] = &[
     "llamacpp",
     "mlx",
     "openclaw",
+    "models",
+    "db",
     ".npx",
     ".uvx",
 ];

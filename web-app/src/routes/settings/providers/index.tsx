@@ -7,7 +7,11 @@ import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useNavigate } from '@tanstack/react-router'
-import { IconCirclePlus, IconSettings } from '@tabler/icons-react'
+import {
+  IconCirclePlus,
+  IconRefresh,
+  IconSettings,
+} from '@tabler/icons-react'
 import { cn, getProviderTitle } from '@/lib/utils'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { AddProviderDialog } from '@/containers/dialogs'
@@ -17,6 +21,7 @@ import { openAIProviderSettings } from '@/constants/providers'
 import cloneDeep from 'lodash/cloneDeep'
 import { toast } from 'sonner'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { useProviderRegistryStore } from '@/stores/provider-registry-store'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.model_providers as any)({
@@ -26,8 +31,76 @@ export const Route = createFileRoute(route.settings.model_providers as any)({
 function ModelProviders() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const { providers, addProvider, updateProvider } = useModelProvider()
+  const { providers, addProvider, updateProvider, setProviders } =
+    useModelProvider()
   const navigate = useNavigate()
+
+  const registryStatus = useProviderRegistryStore((s) => s.status)
+  const registryFetchedAt = useProviderRegistryStore((s) => s.fetchedAt)
+  const refreshRegistry = useProviderRegistryStore((s) => s.refresh)
+  const isRegistryLoading = registryStatus === 'loading'
+
+  const lastUpdatedLabel = useMemo(() => {
+    if (!registryFetchedAt) {
+      return t('provider:registry.neverUpdated', {
+        defaultValue: 'Not yet loaded',
+      })
+    }
+    try {
+      const formatted = new Date(registryFetchedAt).toLocaleString()
+      return t('provider:registry.lastUpdated', {
+        when: formatted,
+        defaultValue: `Last updated: ${formatted}`,
+      })
+    } catch {
+      return ''
+    }
+  }, [registryFetchedAt, t])
+
+  const handleRefreshRegistry = useCallback(async () => {
+    const errorMessage = t('provider:registry.errorDescription', {
+      defaultValue:
+        'Could not refresh provider catalog. Using cached or built-in providers.',
+    })
+    console.info('[providers] manual refresh requested')
+    try {
+      await refreshRegistry({ force: true })
+    } catch (err) {
+      // Defensive — `refresh` is implemented to never throw, but if a future
+      // change regresses that we still want to surface a clean error toast.
+      console.warn('[providers] refresh threw unexpectedly:', err)
+      toast.error(errorMessage)
+      return
+    }
+
+    const state = useProviderRegistryStore.getState()
+    if (state.error) {
+      console.warn('[providers] refresh resolved with error:', state.error)
+      toast.error(errorMessage)
+      return
+    }
+
+    toast.success(
+      t('provider:registry.successDescription', {
+        defaultValue: 'Provider catalog updated.',
+      })
+    )
+
+    // Re-pull providers through the service in the background so the visible
+    // list (driven by `useModelProvider`) picks up newly added entries and
+    // models. `setProviders` preserves API keys, base URLs, and user-tweaked
+    // settings per provider. Doing this off the await chain ensures the
+    // toast appears immediately and the button never stays disabled if
+    // `getProviders()` is slow (e.g. while runtime engines enumerate models).
+    void (async () => {
+      try {
+        const fresh = await serviceHub.providers().getProviders()
+        setProviders(fresh)
+      } catch (err) {
+        console.warn('[providers] failed to apply refreshed registry:', err)
+      }
+    })()
+  }, [refreshRegistry, serviceHub, setProviders, t])
 
   const sortedProviders = useMemo(() => {
     const providerPriority: Record<string, number> = {
@@ -97,16 +170,40 @@ function ModelProviders() {
           <span className="font-medium text-base font-studio">
             {t('common:settings')}
           </span>
-          <AddProviderDialog onCreateProvider={createProvider}>
+          <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
               className="flex items-center gap-2 relative z-20"
+              onClick={handleRefreshRegistry}
+              disabled={isRegistryLoading}
+              title={lastUpdatedLabel}
             >
-              <IconCirclePlus size={16} />
-              <span>{t('provider:addProvider')}</span>
+              <IconRefresh
+                size={16}
+                className={cn(isRegistryLoading && 'animate-spin')}
+              />
+              <span>
+                {isRegistryLoading
+                  ? t('provider:registry.refreshing', {
+                      defaultValue: 'Refreshing...',
+                    })
+                  : t('provider:registry.refresh', {
+                      defaultValue: 'Refresh catalog',
+                    })}
+              </span>
             </Button>
-          </AddProviderDialog>
+            <AddProviderDialog onCreateProvider={createProvider}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2 relative z-20"
+              >
+                <IconCirclePlus size={16} />
+                <span>{t('provider:addProvider')}</span>
+              </Button>
+            </AddProviderDialog>
+          </div>
         </div>
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">

@@ -59,6 +59,14 @@
   "addProvider": "新增提供者",
   "addOpenAIProvider": "新增 OpenAI 提供者",
   "enterNameForProvider": "輸入提供者名稱",
+  "registry": {
+    "refresh": "重新整理目錄",
+    "refreshing": "正在重新整理...",
+    "lastUpdated": "最後更新：{{when}}",
+    "neverUpdated": "尚未載入",
+    "successDescription": "提供者目錄已更新。",
+    "errorDescription": "無法重新整理目錄。正在使用快取或內建提供者。"
+  },
   "llamacpp": {
     "concurrentMode": {
       "perSlotContextWarning": "每個槽位的上下文等於 ctx_size 除以槽位數量。槽位越少，每個請求可用的上下文越大。"

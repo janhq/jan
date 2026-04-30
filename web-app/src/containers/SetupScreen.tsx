@@ -5,7 +5,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { localStorageKey } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useEffect, useMemo, useCallback, useRef } from 'react'
+import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
 import { AppEvent, DownloadEvent, EngineManager, events } from '@janhq/core'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
 import { DEFAULT_MODEL_QUANTIZATIONS } from '@/constants/models'
@@ -21,6 +21,7 @@ import {
 import { useResolvedRecommendedModels } from '@/hooks/useResolvedRecommendedModels'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import HeaderPage from './HeaderPage'
+import SetupBackendStep from './SetupBackendStep'
 import { useModelSources } from '@/hooks/useModelSources'
 import { useShallow } from 'zustand/shallow'
 import { HuggingFaceAuthorAvatar } from '@/components/HuggingFaceAuthorAvatar'
@@ -59,11 +60,46 @@ type SetupScreenProps = {
   onSkipped?: () => void
 }
 
+/// Onboarding step machine.
+///   - 'backend' — Windows-only first step that detects the GPU and offers
+///     to download the optimal llama.cpp backend. Skipped on macOS/Linux
+///     and on Windows after the user has been through it once
+///     (`localStorageKey.llamacppOnboardingDone` is set).
+///   - 'model' — the existing model recommendation/selection screen.
+type OnboardingStep = 'backend' | 'model'
+
+function getInitialStep(): OnboardingStep {
+  if (typeof window === 'undefined') return 'model'
+  if (!IS_WINDOWS) return 'model'
+  // Already completed the dedicated step in a previous session.
+  if (localStorage.getItem(localStorageKey.llamacppOnboardingDone)) {
+    return 'model'
+  }
+  return 'backend'
+}
+
 function SetupScreen({ onSkipped }: SetupScreenProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { getProviderByName, selectModelProvider, setProviders } =
     useModelProvider()
+
+  const [step, setStep] = useState<OnboardingStep>(getInitialStep)
+
+  const handleBackendStepDone = useCallback(
+    (status: 'downloaded' | 'skipped') => {
+      try {
+        localStorage.setItem(localStorageKey.llamacppOnboardingDone, status)
+      } catch (err) {
+        console.warn(
+          '[SetupScreen] failed to persist llamacpp onboarding flag',
+          err
+        )
+      }
+      setStep('model')
+    },
+    []
+  )
 
   const {
     downloads,
@@ -265,6 +301,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
 
       toast.dismiss(`model-validation-started-${catalogId}`)
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
+      // Notify the root layout so it can mount the global BackendUpdater
+      // dialog now that the dedicated onboarding flow has completed.
+      window.dispatchEvent(new Event('app:setup-completed'))
       localStorage.setItem(
         localStorageKey.lastUsedModel,
         JSON.stringify({ provider: providerName, model: modelId })
@@ -308,6 +347,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
 
   const handleSkip = useCallback(() => {
     localStorage.setItem(localStorageKey.setupCompleted, 'true')
+    // Same-tab signal — see useSetupCompleted in routes/__root.tsx.
+    window.dispatchEvent(new Event('app:setup-completed'))
     localStorage.removeItem(localStorageKey.lastUsedModel)
     onSkipped?.()
     void navigate({
@@ -316,6 +357,13 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       search: {},
     })
   }, [navigate, onSkipped])
+
+  // Windows: dedicated llama.cpp backend step runs first. Once the user
+  // either downloads or skips it the flag is persisted so subsequent
+  // launches skip straight to model selection.
+  if (step === 'backend') {
+    return <SetupBackendStep onDone={handleBackendStepDone} />
+  }
 
   return (
     <div className="relative flex h-svh w-full flex-col overflow-hidden">

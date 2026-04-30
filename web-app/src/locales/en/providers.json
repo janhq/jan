@@ -7,6 +7,7 @@
   "refreshing": "Refreshing...",
   "refresh": "Refresh",
   "import": "Import",
+  "findModel": "Find model",
   "importModelSuccess": "Model {{provider}} has been imported successfully.",
   "importModelError": "Failed to import model:",
   "stop": "Stop",
@@ -59,6 +60,14 @@
   "addProvider": "Add Provider",
   "addOpenAIProvider": "Add OpenAI Provider",
   "enterNameForProvider": "Enter name for provider",
+  "registry": {
+    "refresh": "Refresh catalog",
+    "refreshing": "Refreshing...",
+    "lastUpdated": "Last updated: {{when}}",
+    "neverUpdated": "Not yet loaded",
+    "successDescription": "Provider catalog updated.",
+    "errorDescription": "Could not refresh provider catalog. Using cached or built-in providers."
+  },
   "llamacpp": {
     "concurrentMode": {
       "perSlotContextWarning": "Per-slot context equals ctx_size divided by slot count. Lower slot counts give each request more context."

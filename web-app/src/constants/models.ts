@@ -3,6 +3,7 @@
  */
 
 import type { CatalogModel } from '@/services/models/types'
+import type { Recommendation } from '@/services/recommended-models-registry'
 
 export const EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
 
@@ -17,26 +18,40 @@ export const DEFAULT_MODEL_QUANTIZATIONS = ['iq4_xs', 'q4_k_m']
  */
 export const SETUP_SCREEN_QUANTIZATIONS = ['q4_k_m']
 
-//* Рекомендуемые модели: Hub и экран первичной настройки (совпадение с каталогом по extractModelName)
-export const HUB_RECOMMENDED_MODELS: ReadonlyArray<{
-  modelName: string
-  descriptionKey: string
-}> = [
+/**
+ * Bundled fallback for the recommended-models registry. Mirrors the contents
+ * of `atomic-chat-conf/models/recommended.json` so the client can render the
+ * Recommended section on the very first launch (before the manifest fetch
+ * resolves) and when the network is unavailable.
+ *
+ * Platform filtering happens at runtime in
+ * `recommended-models-registry-store.ts` — keep `platforms` declarative here
+ * (do NOT inline `IS_MACOS` ternaries) so the baseline mirrors the manifest
+ * shape verbatim.
+ */
+export const BASELINE_RECOMMENDED_MODELS: ReadonlyArray<Recommendation> = [
   {
-    modelName: 'unsloth/gemma-4-E4B-it-GGUF',
-    descriptionKey: 'hub:recEverydayUse',
+    model_name: 'unsloth/gemma-4-E4B-it-GGUF',
+    description_key: 'hub:recEverydayUse',
   },
   {
-    modelName: 'unsloth/Qwen3.5-9B-GGUF',
-    descriptionKey: 'hub:recVisionKnowledge',
+    model_name: 'unsloth/Qwen3.5-9B-GGUF',
+    description_key: 'hub:recVisionKnowledge',
   },
   {
-    modelName: 'meta-llama/Meta-Llama-3.1-8B-Instruct-GGUF',
-    descriptionKey: 'hub:recFinetuningChat',
+    model_name: 'mlx-community/gemma-4-e4b-it-4bit',
+    description_key: 'hub:recForMlx',
+    platforms: ['macos'],
   },
   {
-    modelName: 'mlx-community/Qwen3.5-9B-MLX-4bit',
-    descriptionKey: 'hub:recForMlx',
+    model_name: 'mlx-community/Qwen3.5-9B-MLX-4bit',
+    description_key: 'hub:recForMlx',
+    platforms: ['macos'],
+  },
+  {
+    model_name: 'meta-llama/Meta-Llama-3.1-8B-Instruct-GGUF',
+    description_key: 'hub:recFinetuningChat',
+    platforms: ['windows', 'linux'],
   },
 ]
 
@@ -44,6 +59,27 @@ const GEMMA4_HF =
   'https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main'
 const QWEN_MLX_HF =
   'https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit/resolve/main'
+
+//! MLX-fallback инжектится только на macOS — иначе утекает через useState-инициализацию
+//! useResolvedRecommendedModels и через прямое чтение в routes/hub/$modelId.tsx
+const MLX_QWEN_FALLBACK: CatalogModel = {
+  model_name: 'mlx-community/Qwen3.5-9B-MLX-4bit',
+  developer: 'mlx-community',
+  library_name: 'mlx',
+  description:
+    '**Tags**: Image-Text-to-Text, MLX, Safetensors, qwen3_5, vision-language-model, 4-bit, conversational',
+  downloads: 73490,
+  num_safetensors: 1,
+  safetensors_files: [
+    {
+      model_id: 'mlx-community/Qwen3.5-9B-MLX-4bit',
+      path: `${QWEN_MLX_HF}/model.safetensors`,
+      file_size: '5.6 GB',
+    },
+  ],
+  is_mlx: true,
+  readme: `${QWEN_MLX_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
+}
 
 export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
   Record<string, CatalogModel>
@@ -187,24 +223,9 @@ export const RECOMMENDED_MODEL_FALLBACKS: Readonly<
     ],
     readme: `${GEMMA4_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
   },
-  'mlx-community/Qwen3.5-9B-MLX-4bit': {
-    model_name: 'mlx-community/Qwen3.5-9B-MLX-4bit',
-    developer: 'mlx-community',
-    library_name: 'mlx',
-    description:
-      '**Tags**: Image-Text-to-Text, MLX, Safetensors, qwen3_5, vision-language-model, 4-bit, conversational',
-    downloads: 73490,
-    num_safetensors: 1,
-    safetensors_files: [
-      {
-        model_id: 'mlx-community/Qwen3.5-9B-MLX-4bit',
-        path: `${QWEN_MLX_HF}/model.safetensors`,
-        file_size: '5.6 GB',
-      },
-    ],
-    is_mlx: true,
-    readme: `${QWEN_MLX_HF.replace('/resolve/main', '')}/resolve/main/README.md`,
-  },
+  ...(IS_MACOS
+    ? { 'mlx-community/Qwen3.5-9B-MLX-4bit': MLX_QWEN_FALLBACK }
+    : {}),
 }
 
 export const JAN_V2_VL_MODEL_HF_REPO = 'janhq/Jan-v2-VL-high-gguf'
@@ -214,34 +235,73 @@ export const JAN_V2_VL_QUANTIZATIONS = ['q4_k_m', 'q4_k_s', 'q4_0', 'q3_k_m']
  * Provider model capabilities - copied from token.js package
  */
 export const providerModels = {
-  // OpenAI — source: https://developers.openai.com/api/docs/models (Apr 2026)
-  // GPT-4o retired 3 Apr 2026; GPT-4.x / o-series removed from main catalog.
+  // OpenAI — set verified against the live /v1/models response on macOS build (Apr 2026).
+  // o3-mini is reasoning-only (text), so it is excluded from supportsImages.
   'openai': {
     models: [
       'gpt-5.4',
       'gpt-5.4-mini',
       'gpt-5.4-nano',
+      'gpt-5',
+      'gpt-5-mini',
+      'gpt-4.5-preview',
+      'gpt-4.1',
+      'gpt-4o',
+      'gpt-4o-mini',
+      'o3-mini',
+      'gpt-4-turbo',
     ],
     supportsCompletion: true,
     supportsStreaming: [
       'gpt-5.4',
       'gpt-5.4-mini',
       'gpt-5.4-nano',
+      'gpt-5',
+      'gpt-5-mini',
+      'gpt-4.5-preview',
+      'gpt-4.1',
+      'gpt-4o',
+      'gpt-4o-mini',
+      'o3-mini',
+      'gpt-4-turbo',
     ],
     supportsJSON: [
       'gpt-5.4',
       'gpt-5.4-mini',
       'gpt-5.4-nano',
+      'gpt-5',
+      'gpt-5-mini',
+      'gpt-4.5-preview',
+      'gpt-4.1',
+      'gpt-4o',
+      'gpt-4o-mini',
+      'o3-mini',
+      'gpt-4-turbo',
     ],
     supportsImages: [
       'gpt-5.4',
       'gpt-5.4-mini',
       'gpt-5.4-nano',
+      'gpt-5',
+      'gpt-5-mini',
+      'gpt-4.5-preview',
+      'gpt-4.1',
+      'gpt-4o',
+      'gpt-4o-mini',
+      'gpt-4-turbo',
     ],
     supportsToolCalls: [
       'gpt-5.4',
       'gpt-5.4-mini',
       'gpt-5.4-nano',
+      'gpt-5',
+      'gpt-5-mini',
+      'gpt-4.5-preview',
+      'gpt-4.1',
+      'gpt-4o',
+      'gpt-4o-mini',
+      'o3-mini',
+      'gpt-4-turbo',
     ],
     supportsN: true,
   },

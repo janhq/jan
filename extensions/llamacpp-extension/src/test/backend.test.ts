@@ -4,7 +4,7 @@ import {
   getBackendExePath,
   isBackendInstalled,
 } from '../backend'
-import { getSystemInfo } from '@janhq/tauri-plugin-hardware-api'
+import { getSystemInfo } from '../hardware'
 import { fs, getJanDataFolderPath } from '@janhq/core'
 
 // Mock constants: Hardcode path string directly inside the mock to avoid hoisting issues
@@ -23,7 +23,7 @@ vi.mock('@janhq/core', () => ({
     emit: vi.fn(),
   },
 }))
-vi.mock('@janhq/tauri-plugin-hardware-api', () => ({
+vi.mock('../hardware', () => ({
   getSystemInfo: vi.fn(),
 }))
 

@@ -6,6 +6,8 @@ pub mod extensions;
 pub mod filesystem;
 pub mod http;
 pub mod mcp;
+#[cfg(target_os = "windows")]
+pub mod notifications;
 pub mod server;
 pub mod setup;
 pub mod state;

@@ -58,3 +58,39 @@ yarn dev
 - **«The service is no longer running»** — обычно значит, что процесс уже завершён (закрыли окно или нажали Ctrl+C). Просто заново запусти `yarn dev`.
 - **Окно не открывается / зависает** — убедись, что порт 1420 свободен (`lsof -i :1420`), заверши старые процессы и снова `yarn dev`.
 - **После смены ветки или pull** — при необходимости выполни `make dev` один раз (полная установка и сборка), дальше снова только `yarn dev`.
+
+---
+
+## Where Atomic Chat stores data on Windows
+
+Dev (`make dev-windows-cpu` / `yarn dev`) and the installed `Atomic Chat.exe` **share the same data folders** — there is no separate dev profile. Anything you delete from these paths affects both.
+
+| Path | Contents | Cleared by |
+|---|---|---|
+| `%APPDATA%\Atomic Chat\data\llamacpp\backends\` | Downloaded llama.cpp backend builds (CPU / CUDA / Vulkan) | `make dev-windows-cpu`, `make clean-windows-all`, uninstaller (Delete app data) |
+| `%APPDATA%\Atomic Chat\data\models\` | Downloaded GGUF / MLX models | factory reset (UI), `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Atomic Chat\data\threads\` | Chat history | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Atomic Chat\data\extensions\` | Installed extensions (`@janhq/*`, `llamacpp-extension`, …) | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Atomic Chat\data\logs\app.log` | Application logs (`tauri_plugin_log`) | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Atomic Chat\data\store.json` | Migration / version store | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Atomic Chat\data\mcp_config.json` | MCP servers config | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\chat.atomic.app\settings.json` | Current `AppConfiguration` (`{ data_folder: ... }`) — new installs | `make clean-windows-all`, uninstaller (Tauri default) |
+| `%APPDATA%\Atomic-Chat\settings.json` | Legacy `settings.json` (only present on older installs) | `make clean-windows-all`, uninstaller |
+| `%LOCALAPPDATA%\chat.atomic.app\EBWebView\` | WebView2 storage incl. `localStorage` (`setupCompleted`, `llama_cpp_pending_backend`, `llama_cpp_better_backend_recommendation`, …) | `make dev-windows-cpu` (Local Storage only), `make clean-windows-all`, uninstaller |
+
+### Why three different APPDATA folders
+
+`[Cargo.toml].name = "Atomic-Chat"` ≠ `productName = "Atomic Chat"` ≠ `identifier = "chat.atomic.app"`. This is intentional historical layout; renaming any of them would break user-data migrations. Just be aware that the same product writes into three sibling APPDATA directories.
+
+### How to reset for testing
+
+| Need | Command |
+|---|---|
+| Re-test the bundled CPU backend → GPU auto-download flow | `make dev-windows-cpu` (clears only `backends/` + WebView2 Local Storage + `settings.json`) |
+| Full wipe (all data, settings, WebView2 cache) — true first-launch | `make clean-windows-all CONFIRM=1` |
+| In-app reset (keeps downloaded backends and the active backend selection) | `Settings → General → Reset to Factory Default` |
+| End-user uninstall + delete data | Uninstaller → enable **Delete app data** checkbox |
+
+### Custom data folder
+
+If a user has relocated the data folder via `Settings → Advanced → Change data folder location` (`change_app_data_folder`), the uninstaller and `make clean-windows-all` **do not** delete that custom path — only the default `%APPDATA%\Atomic Chat\` is cleaned. Removing a custom data folder is the user's responsibility.

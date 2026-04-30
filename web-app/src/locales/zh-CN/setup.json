@@ -10,7 +10,7 @@
   "orDivider": "或",
   "localModel": "设置本地模型",
   "remoteProvider": "设置远程提供商",
-  "turboQuantTagline": "通过 Google TurboQuant 在您的设备上运行本地 AI 模型 - 在普通家庭硬件上同样飞快。",
+  "turboQuantTagline": "在您的设备上运行本地 AI 模型 — 在普通家庭硬件上同样飞快。",
   "skip": "跳过",
   "modelUnavailable": "尚未收录于目录 — 连接后请打开 Hub。"
 }

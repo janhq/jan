@@ -2,7 +2,7 @@
  * Tauri Providers Service - Desktop implementation
  */
 
-import { predefinedProviders } from '@/constants/providers'
+import { ensureRegistryLoaded } from '@/stores/provider-registry-store'
 import { providerModels } from '@/constants/models'
 import { EngineManager, SettingComponentProps } from '@janhq/core'
 import { ModelCapabilities } from '@/types/models'
@@ -20,30 +20,40 @@ export class TauriProvidersService extends DefaultProvidersService {
 
   async getProviders(): Promise<ModelProvider[]> {
     try {
-      const builtinProviders = predefinedProviders.map((provider) => {
-        let models = provider.models as Model[]
-        if (Object.keys(providerModels).includes(provider.provider)) {
-          const builtInModels = providerModels[
-            provider.provider as unknown as keyof typeof providerModels
-          ].models as unknown as string[]
+      const registryProviders = await ensureRegistryLoaded()
+      const builtinProviders = registryProviders
+        .map((provider) => {
+          let models = (provider.models ?? []) as Model[]
 
-          if (Array.isArray(builtInModels)) {
-            models = builtInModels.map((model) => {
-              const modelManifest = models.find((e) => e.id === model)
-              // TODO: Check chat_template for tool call support
-              return {
-                ...(modelManifest ?? { id: model, name: model }),
-                capabilities: getModelCapabilities(provider.provider, model),
-              } as Model
-            })
+          // Registry is the canonical source for the cloud catalog. We only
+          // synthesize models from the in-code `providerModels` lookup when the
+          // registry hasn't supplied any (back-compat for older manifests).
+          if (
+            models.length === 0 &&
+            Object.keys(providerModels).includes(provider.provider)
+          ) {
+            const builtInModels = providerModels[
+              provider.provider as unknown as keyof typeof providerModels
+            ].models as unknown as string[]
+
+            if (Array.isArray(builtInModels)) {
+              models = builtInModels.map(
+                (model) =>
+                  ({
+                    id: model,
+                    name: model,
+                    capabilities: getModelCapabilities(provider.provider, model),
+                  }) as Model
+              )
+            }
           }
-        }
 
-        return {
-          ...provider,
-          models,
-        }
-      }).filter(Boolean)
+          return {
+            ...provider,
+            models,
+          }
+        })
+        .filter(Boolean)
 
       const runtimeProviders: ModelProvider[] = []
       for (const [providerName, value] of EngineManager.instance().engines) {
@@ -136,6 +146,16 @@ export class TauriProvidersService extends DefaultProvidersService {
       throw new Error('Provider must have base_url configured')
     }
 
+    const url = `${provider.base_url}/models`
+    const hasApiKey = Boolean(provider.api_key)
+
+    // The Tauri HTTP plugin runs requests through the Rust IPC layer, which
+    // means they DO NOT appear in the WebView Network tab. Surface them via
+    // explicit console logs so the user can see something is happening.
+    console.info(
+      `[providers:${provider.provider}] GET ${url} (api_key=${hasApiKey ? 'present' : 'missing'})`
+    )
+
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -151,7 +171,7 @@ export class TauriProvidersService extends DefaultProvidersService {
       }
 
       // Only add authentication headers if API key is provided
-      if (provider.api_key) {
+      if (hasApiKey) {
         headers['x-api-key'] = provider.api_key
         headers['Authorization'] = `Bearer ${provider.api_key}`
       }
@@ -162,11 +182,41 @@ export class TauriProvidersService extends DefaultProvidersService {
         })
       }
 
-      // Always use Tauri's fetch to avoid CORS issues
-      const response = await fetchTauri(`${provider.base_url}/models`, {
-        method: 'GET',
-        headers,
-      })
+      // Hard timeout: the Tauri HTTP plugin does not always honour
+      // AbortSignal on macOS, so we race the request against a manual timer.
+      // 12s is generous for a /models endpoint but bounded enough to not
+      // leave the UI spinner running indefinitely.
+      const FETCH_MODELS_TIMEOUT_MS = 12000
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), FETCH_MODELS_TIMEOUT_MS)
+
+      let response: Response
+      try {
+        response = (await Promise.race([
+          fetchTauri(url, {
+            method: 'GET',
+            headers,
+            signal: controller.signal,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `Request to ${provider.provider} timed out after ${FETCH_MODELS_TIMEOUT_MS}ms`
+                  )
+                ),
+              FETCH_MODELS_TIMEOUT_MS
+            )
+          ),
+        ])) as Response
+      } finally {
+        clearTimeout(timer)
+      }
+
+      console.info(
+        `[providers:${provider.provider}] response ${response.status} ${response.statusText}`
+      )
 
       if (!response.ok) {
         // Provide more specific error messages based on status code (aligned with web implementation)
@@ -189,32 +239,81 @@ export class TauriProvidersService extends DefaultProvidersService {
         }
       }
 
-      const data = await response.json()
+      // The Tauri HTTP plugin has been observed to hang on `response.json()`
+      // for some providers. Read raw text under a timeout, parse synchronously.
+      const BODY_READ_TIMEOUT_MS = 8000
+      const rawText = await Promise.race([
+        response.text(),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `Reading response body from ${provider.provider} timed out after ${BODY_READ_TIMEOUT_MS}ms`
+                )
+              ),
+            BODY_READ_TIMEOUT_MS
+          )
+        ),
+      ])
+      console.info(
+        `[providers:${provider.provider}] body received (${rawText.length} bytes)`
+      )
 
-      // Handle different response formats that providers might use
-      if (data.data && Array.isArray(data.data)) {
-        // OpenAI format: { data: [{ id: "model-id" }, ...] }
-        return data.data
-          .map((model: { id: string }) => model.id)
-          .filter(Boolean)
-      } else if (Array.isArray(data)) {
-        // Direct array format: ["model-id1", "model-id2", ...]
-        return data
-          .filter(Boolean)
-          .map((model) =>
-            typeof model === 'object' && 'id' in model ? model.id : model
-          )
-      } else if (data.models && Array.isArray(data.models)) {
-        // Alternative format: { models: [...] }
-        return data.models
-          .map((model: string | { id: string }) =>
-            typeof model === 'string' ? model : model.id
-          )
-          .filter(Boolean)
-      } else {
+      let data: unknown
+      try {
+        data = JSON.parse(rawText) as unknown
+      } catch (err) {
+        throw new Error(
+          `Failed to parse JSON response from ${provider.provider}: ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
+
+      // Handle different response formats that providers might use.
+      const obj =
+        data && typeof data === 'object'
+          ? (data as Record<string, unknown>)
+          : null
+
+      const collected: string[] = (() => {
+        if (obj && Array.isArray(obj.data)) {
+          // OpenAI format: { data: [{ id: "model-id" }, ...] }
+          return (obj.data as Array<{ id?: string }>)
+            .map((model) => model?.id ?? '')
+            .filter(Boolean)
+        }
+        if (Array.isArray(data)) {
+          // Direct array format: ["model-id1", "model-id2", ...]
+          return (data as Array<unknown>)
+            .map((model) =>
+              typeof model === 'string'
+                ? model
+                : model && typeof model === 'object' && 'id' in model
+                  ? String((model as { id?: unknown }).id ?? '')
+                  : ''
+            )
+            .filter(Boolean)
+        }
+        if (obj && Array.isArray(obj.models)) {
+          // Alternative format: { models: [...] }
+          return (obj.models as Array<unknown>)
+            .map((model) =>
+              typeof model === 'string'
+                ? model
+                : model && typeof model === 'object' && 'id' in model
+                  ? String((model as { id?: unknown }).id ?? '')
+                  : ''
+            )
+            .filter(Boolean)
+        }
         console.warn('Unexpected response format from provider API:', data)
         return []
-      }
+      })()
+
+      console.info(
+        `[providers:${provider.provider}] parsed ${collected.length} model ids`
+      )
+      return collected
     } catch (error) {
       console.error('Error fetching models from provider:', error)
 

@@ -59,6 +59,14 @@
   "addProvider": "Ajouter un fournisseur",
   "addOpenAIProvider": "Ajouter un fournisseur OpenAI",
   "enterNameForProvider": "Entrez le nom du fournisseur",
+  "registry": {
+    "refresh": "Actualiser le catalogue",
+    "refreshing": "Actualisation...",
+    "lastUpdated": "Dernière mise à jour : {{when}}",
+    "neverUpdated": "Pas encore chargé",
+    "successDescription": "Catalogue des fournisseurs mis à jour.",
+    "errorDescription": "Impossible d'actualiser le catalogue. Utilisation du cache ou des fournisseurs intégrés."
+  },
   "llamacpp": {
     "concurrentMode": {
       "perSlotContextWarning": "Le contexte par slot est égal à ctx_size divisé par le nombre de slots. Moins de slots signifient plus de contexte par requête."

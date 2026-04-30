@@ -32,10 +32,6 @@ vi.mock('@ai-sdk/anthropic', () => ({
   createAnthropic: vi.fn(() => vi.fn(() => ({ type: 'anthropic' }))),
 }))
 
-vi.mock('@ai-sdk/google', () => ({
-  createGoogleGenerativeAI: vi.fn(() => vi.fn(() => ({ type: 'google' }))),
-}))
-
 vi.mock('ai', () => ({
   wrapLanguageModel: vi.fn(({ model }) => model),
   extractReasoningMiddleware: vi.fn(() => ({})),
@@ -70,9 +66,7 @@ describe('ModelFactory', () => {
         models: [],
         settings: [],
         active: true,
-        custom_header: [
-          { header: 'anthropic-version', value: '2023-06-01' },
-        ],
+        custom_header: [{ header: 'anthropic-version', value: '2023-06-01' }],
       }
 
       const model = await ModelFactory.createModel('claude-3-opus', provider)
@@ -162,9 +156,7 @@ describe('ModelFactory', () => {
         models: [],
         settings: [],
         active: true,
-        custom_header: [
-          { header: 'X-Custom-Header', value: 'custom-value' },
-        ],
+        custom_header: [{ header: 'X-Custom-Header', value: 'custom-value' }],
       }
 
       const model = await ModelFactory.createModel('custom-model', provider)
@@ -239,7 +231,7 @@ describe('ModelFactory', () => {
     it('should throw when available but no session is found after start', async () => {
       mockedInvoke
         .mockResolvedValueOnce('available') // check_foundation_models_availability
-        .mockResolvedValueOnce(null)        // find_foundation_models_session
+        .mockResolvedValueOnce(null) // find_foundation_models_session
 
       await expect(
         ModelFactory.createModel('apple/on-device', foundationModelsProvider)
@@ -251,7 +243,8 @@ describe('ModelFactory', () => {
     it('should create a model when available and session exists', async () => {
       mockedInvoke
         .mockResolvedValueOnce('available') // check_foundation_models_availability
-        .mockResolvedValueOnce({            // find_foundation_models_session
+        .mockResolvedValueOnce({
+          // find_foundation_models_session
           pid: 12345,
           port: 9876,
           model_id: 'apple/on-device',

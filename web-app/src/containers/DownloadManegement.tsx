@@ -448,8 +448,9 @@ export function DownloadManagement() {
         <PopoverContent
           side="bottom"
           align="start"
-          className="p-0 overflow-hidden text-sm select-none rounded-2xl -ml-8"
+          className="p-0 overflow-hidden text-sm select-none rounded-2xl"
           sideOffset={6}
+          collisionPadding={8}
           onFocusOutside={(e) => e.preventDefault}
         >
           <div className="flex flex-col">

@@ -242,7 +242,7 @@ jobs:
   # Windows  (x86_64 — NSIS + MSI, DigiCert KeyLocker code signing)
   # ──────────────────────────────────────────────────────────────
   build-windows:
-    if: false # Temporarily disabled in CI
+    if: github.event_name == 'push' || inputs.build_windows
     # Pinned to windows-2022 — DigiCert KSP is incompatible with Server 2025
     runs-on: windows-2022
     needs: create-draft-release
@@ -604,12 +604,14 @@ jobs:
           asset_content_type: text/plain
 
   # ──────────────────────────────────────────────────────────────
-  # Tauri updater manifest  (currently macOS-only)
+  # Tauri updater manifest  (macOS + Windows; tolerant of either being skipped)
   # ──────────────────────────────────────────────────────────────
   publish-latest-json:
-    if: always() && needs.create-draft-release.result == 'success' && needs.build-macos.result == 'success'
+    if: |
+      always() && needs.create-draft-release.result == 'success' &&
+      (needs.build-macos.result == 'success' || needs.build-windows.result == 'success')
     runs-on: ubuntu-latest
-    needs: [create-draft-release, build-macos]
+    needs: [create-draft-release, build-macos, build-windows]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -619,20 +621,43 @@ jobs:
           VERSION: ${{ needs.create-draft-release.outputs.version }}
           MAC_SIG: ${{ needs.build-macos.outputs.mac_sig }}
           TAR_NAME: ${{ needs.build-macos.outputs.tar_name }}
+          MAC_RESULT: ${{ needs.build-macos.result }}
+          WIN_SIG: ${{ needs.build-windows.outputs.win_sig }}
+          EXE_NAME: ${{ needs.build-windows.outputs.exe_name }}
+          WIN_RESULT: ${{ needs.build-windows.result }}
         run: |
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
           DARWIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${TAR_NAME// /.}"
+          WIN_URL="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v${VERSION}/${EXE_NAME// /.}"
 
+          # Fill in the platform blocks only for jobs that actually
+          # succeeded; delete the others so Tauri's updater doesn't see a
+          # half-populated entry and try to fetch an empty URL.
           jq --arg version "$VERSION" \
              --arg pub_date "$PUB_DATE" \
              --arg darwin_sig "$MAC_SIG" \
              --arg darwin_url "$DARWIN_URL" \
+             --arg win_sig "$WIN_SIG" \
+             --arg win_url "$WIN_URL" \
+             --arg mac_result "$MAC_RESULT" \
+             --arg win_result "$WIN_RESULT" \
              '.version = $version
               | .pub_date = $pub_date
-              | .platforms["darwin-aarch64"].signature = $darwin_sig
-              | .platforms["darwin-aarch64"].url = $darwin_url
-              | .platforms["darwin-x86_64"].signature = $darwin_sig
-              | .platforms["darwin-x86_64"].url = $darwin_url' \
+              | (if $mac_result == "success" then
+                  .platforms["darwin-aarch64"].signature = $darwin_sig
+                  | .platforms["darwin-aarch64"].url = $darwin_url
+                  | .platforms["darwin-x86_64"].signature = $darwin_sig
+                  | .platforms["darwin-x86_64"].url = $darwin_url
+                else
+                  del(.platforms["darwin-aarch64"])
+                  | del(.platforms["darwin-x86_64"])
+                end)
+              | (if $win_result == "success" then
+                  .platforms["windows-x86_64"].signature = $win_sig
+                  | .platforms["windows-x86_64"].url = $win_url
+                else
+                  del(.platforms["windows-x86_64"])
+                end)' \
              src-tauri/latest.json.template > latest.json
 
           cat latest.json

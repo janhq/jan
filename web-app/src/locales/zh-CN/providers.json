@@ -59,6 +59,14 @@
   "addProvider": "添加提供商",
   "addOpenAIProvider": "添加 OpenAI 提供商",
   "enterNameForProvider": "输入提供商名称",
+  "registry": {
+    "refresh": "刷新目录",
+    "refreshing": "刷新中...",
+    "lastUpdated": "最后更新：{{when}}",
+    "neverUpdated": "尚未加载",
+    "successDescription": "提供商目录已更新。",
+    "errorDescription": "无法刷新目录。正在使用缓存或内置提供商。"
+  },
   "llamacpp": {
     "concurrentMode": {
       "perSlotContextWarning": "每个槽位的上下文等于 ctx_size 除以槽位数量。槽位越少，每个请求可用的上下文越大。"

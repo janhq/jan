@@ -7,6 +7,15 @@
 #   powershell -ExecutionPolicy Bypass -File scripts/dev-windows.ps1
 #   - or -
 #   make dev-windows
+#
+# Flags:
+#   -SkipBackendDownload  Reuse the llamacpp backend already present under
+#                         src-tauri/resources/llamacpp-backend (used by
+#                         `make dev-windows-fast` for quick iteration).
+
+param(
+    [switch]$SkipBackendDownload
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -328,9 +337,23 @@ if (Test-Path $backendTxtPath) {
     $existingBackend = (Get-Content $backendTxtPath -Raw).Trim()
 }
 
-if ((Test-Path $llamaServerExe) -and ($existingBackend -eq $backend)) {
+$skipDownload = $false
+if ($SkipBackendDownload -and (Test-Path $llamaServerExe)) {
+    $existingLabel = if ($existingBackend) { $existingBackend } else { '<unknown>' }
+    Write-Host "  -SkipBackendDownload: reusing existing backend ($existingLabel), no fetch." -ForegroundColor Yellow
+    if ($existingBackend) { $backend = $existingBackend }
+    $skipDownload = $true
+} elseif ((Test-Path $llamaServerExe) -and ($existingBackend -eq $backend)) {
     Write-Host "  llamacpp backend ($backend) already exists, skipping download."
+    $skipDownload = $true
+}
+
+if ($skipDownload) {
+    # nothing to do
 } else {
+    if ($SkipBackendDownload) {
+        Write-Host '  -SkipBackendDownload set, but no llama-server.exe found — falling back to download.' -ForegroundColor Yellow
+    }
     if ($existingBackend -and ($existingBackend -ne $backend)) {
         Write-Host "  Backend changed: $existingBackend -> $backend, re-downloading..." -ForegroundColor Yellow
         Remove-Item -Recurse -Force $llamacppDir -ErrorAction SilentlyContinue

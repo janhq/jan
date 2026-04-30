@@ -7,6 +7,7 @@
   "refreshing": "Обновление…",
   "refresh": "Обновить",
   "import": "Импортировать",
+  "findModel": "Найти модель",
   "importModelSuccess": "Модель {{provider}} успешно импортирована.",
   "importModelError": "Не удалось импортировать модель:",
   "stop": "Остановить",
@@ -59,6 +60,14 @@
   "addProvider": "Добавить поставщика",
   "addOpenAIProvider": "Добавить поставщика OpenAI",
   "enterNameForProvider": "Введите имя поставщика",
+  "registry": {
+    "refresh": "Обновить каталог",
+    "refreshing": "Обновление...",
+    "lastUpdated": "Последнее обновление: {{when}}",
+    "neverUpdated": "Ещё не загружено",
+    "successDescription": "Каталог провайдеров обновлён.",
+    "errorDescription": "Не удалось обновить каталог. Используется кэш или встроенный список."
+  },
   "llamacpp": {
     "concurrentMode": {
       "perSlotContextWarning": "Контекст на слот равен ctx_size, делённому на число слотов. Меньше слотов — больше контекста на каждый запрос."

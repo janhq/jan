@@ -10,7 +10,7 @@
   "orDivider": "lub",
   "localModel": "Ustaw lokalny model",
   "remoteProvider": "Ustaw dostawcę modeli zdalnych",
-  "turboQuantTagline": "Lokalne modele AI na urządzeniu z TurboQuant od Google - szybko nawet na przeciętnym sprzęcie.",
+  "turboQuantTagline": "Lokalne modele AI na urządzeniu — szybko nawet na przeciętnym sprzęcie.",
   "skip": "Pomiń",
   "modelUnavailable": "Jeszcze nie ma w katalogu — otwórz Hub po połączeniu."
 }

@@ -10,7 +10,7 @@
   "orDivider": "nebo",
   "localModel": "Nastavit místní model",
   "remoteProvider": "Nastavit vzdáleného poskytovatele",
-  "turboQuantTagline": "Lokální AI modely na vašem zařízení s TurboQuant od Google - rychlé i na běžném hardwaru.",
+  "turboQuantTagline": "Lokální AI modely na vašem zařízení — rychlé i na běžném hardwaru.",
   "skip": "Přeskočit",
   "modelUnavailable": "Zatím není v katalogu — po připojení otevřete Hub."
 }

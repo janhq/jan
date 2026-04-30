@@ -59,6 +59,14 @@
   "addProvider": "Dodaj Dostawcę",
   "addOpenAIProvider": "Dodaj Dostawcę OpenAI",
   "enterNameForProvider": "Wprowadź nazwę dostawcy",
+  "registry": {
+    "refresh": "Odśwież katalog",
+    "refreshing": "Odświeżanie...",
+    "lastUpdated": "Ostatnia aktualizacja: {{when}}",
+    "neverUpdated": "Jeszcze nie załadowano",
+    "successDescription": "Katalog dostawców został zaktualizowany.",
+    "errorDescription": "Nie udało się odświeżyć katalogu. Używana jest pamięć podręczna lub wbudowani dostawcy."
+  },
   "llamacpp": {
     "concurrentMode": {
       "perSlotContextWarning": "Kontekst na slot to ctx_size podzielone przez liczbę slotów. Mniej slotów oznacza więcej kontekstu na żądanie."

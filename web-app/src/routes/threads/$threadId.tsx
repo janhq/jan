@@ -14,6 +14,8 @@ import { useAssistant } from '@/hooks/useAssistant'
 import { useTools } from '@/hooks/useTools'
 import { useAppState } from '@/hooks/useAppState'
 import { useInitialMessage } from '@/hooks/useInitialMessage'
+import { useOptimisticUserMessage } from '@/hooks/useOptimisticUserMessage'
+import { buildOptimisticUserMessage } from '@/lib/optimisticUserMessage'
 import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { renderInstructions } from '@/lib/instructionTemplate'
@@ -36,7 +38,7 @@ import {
   ChatCompletionRole,
   ContentType,
 } from '@janhq/core'
-import { createImageAttachment } from '@/types/attachment'
+import { Attachment, createImageAttachment } from '@/types/attachment'
 import {
   useChatAttachments,
   NEW_THREAD_ATTACHMENT_KEY,
@@ -156,6 +158,17 @@ function ThreadDetail() {
     useState<UIMessage | null>(null)
   const [isAutoIncreasingContext, setIsAutoIncreasingContext] = useState(false)
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
+
+  // Optimistic user message shown while the home → new thread initial-message
+  // path indexes attachments. Lives in a shared Zustand store published by
+  // ChatInput **before** navigation, so the bubble is visible on the very
+  // first paint of ThreadDetail (no empty-conversation flash) and survives
+  // React StrictMode's mount → unmount → remount dev cycle. Cleared
+  // synchronously right before sendMessage queues the real UIMessage so
+  // there is no visual jump.
+  const pendingInitialUserMessage = useOptimisticUserMessage(
+    (s) => s.byThread[threadId]
+  )
 
   // Refs so onFinish (captured in closure) always calls the latest callbacks
   const handleContextSizeIncreaseRef = useRef<(() => void) | null>(null)
@@ -425,6 +438,12 @@ function ThreadDetail() {
     }
   }, [status, chatMessages])
 
+  // Note: no unmount cleanup of the optimistic bubble store here. React
+  // StrictMode in dev simulates mount → unmount → remount on initial mount;
+  // clearing on unmount would wipe the entry between the two mounts and
+  // produce the "white screen during indexing" symptom. The store entry is
+  // cleared explicitly inside processAndSendMessage (success or error).
+
   useEffect(() => {
     setCurrentThreadId(threadId)
     const assistant = assistants.find(
@@ -495,17 +514,24 @@ function ThreadDetail() {
   const processAndSendMessage = useCallback(
     async (
       text: string,
-      files?: Array<{ type: string; mediaType: string; url: string }>
+      files?: Array<{ type: string; mediaType: string; url: string }>,
+      documentsFromPayload?: Attachment[]
     ) => {
-      // Get all attachments from the store (includes both images and documents)
-      const allAttachments = getAttachments(attachmentsKey)
+      // Documents may be passed explicitly via the initial-message payload
+      // (home → new thread flow). In that case the store has already been
+      // cleared synchronously on send to avoid the chip lingering in the
+      // input. For in-thread sends no payload is provided and we read the
+      // attachments from the store as before.
+      const documentAttachments =
+        documentsFromPayload ??
+        getAttachments(attachmentsKey).filter((a) => a.type === 'document')
       console.log(
         '[processAndSendMessage] attachmentsKey:',
         attachmentsKey,
-        'allAttachments:',
-        allAttachments.length,
+        'docsSource:',
+        documentsFromPayload ? 'payload' : 'store',
         'docs:',
-        allAttachments.filter((a) => a.type === 'document').length
+        documentAttachments.length
       )
 
       // Convert image files to attachments for persistence
@@ -520,11 +546,39 @@ function ThreadDetail() {
         })
       })
 
-      // Combine image attachments with document attachments from the store
+      // Combine image attachments with document attachments
       const combinedAttachments = [
         ...(imageAttachments || []),
-        ...allAttachments.filter((a) => a.type === 'document'),
+        ...documentAttachments,
       ]
+
+      // Reuse the messageId reserved by the optimistic bubble (published by
+      // ChatInput before navigation) if available; otherwise mint a fresh
+      // one. Sharing the id ensures the real UIMessage queued via
+      // sendMessage replaces the optimistic bubble in-place without a
+      // visual jump.
+      const reservedMessage =
+        useOptimisticUserMessage.getState().byThread[threadId]
+      const messageId = reservedMessage?.id ?? generateId()
+
+      // Safety net: if the optimistic bubble wasn't published (e.g. the
+      // user submitted from inside the thread page rather than via
+      // ChatInput on home, but it's still the very first message and there
+      // are attachments), publish one now so the user doesn't stare at an
+      // empty conversation while the document is being indexed.
+      const showOptimisticBubble =
+        chatMessages.length === 0 && combinedAttachments.length > 0
+      if (showOptimisticBubble && !reservedMessage) {
+        const optimisticUIMessage = buildOptimisticUserMessage({
+          threadId,
+          text,
+          documents: combinedAttachments,
+          messageId,
+        })
+        if (optimisticUIMessage) {
+          useOptimisticUserMessage.getState().set(threadId, optimisticUIMessage)
+        }
+      }
 
       // Process attachments (ingest images, parse/index documents)
       let processedAttachments = combinedAttachments
@@ -550,12 +604,19 @@ function ThreadDetail() {
           }
         } catch (error) {
           console.error('Failed to process attachments:', error)
+          useOptimisticUserMessage.getState().clear(threadId)
           // Don't send message if attachment processing failed
           return
         }
       }
 
-      const messageId = generateId()
+      // The thread row is created optimistically in the local store on
+      // home → new-thread navigation; backend persistence happens in the
+      // background. Wait for it to land before issuing message-related
+      // backend ops that depend on the thread FK existing. Resolves
+      // immediately for already-persisted threads (in-thread sends).
+      await useThreads.getState().awaitThreadPersistence(threadId)
+
       // Create and persist the user message to the backend with all processed attachments
       const userMessage = newUserThreadContent(
         threadId,
@@ -592,6 +653,10 @@ function ThreadDetail() {
         'messageId:',
         messageId
       )
+      // Hide the optimistic bubble in the same synchronous block as
+      // sendMessage so React 18 batches both updates and the user sees the
+      // real bubble appear in the same position without a flicker.
+      useOptimisticUserMessage.getState().clear(threadId)
       sendMessage({
         parts,
         id: messageId,
@@ -622,6 +687,7 @@ function ThreadDetail() {
       serviceHub,
       selectedProvider,
       selectedModel,
+      chatMessages.length,
     ]
   )
 
@@ -639,7 +705,11 @@ function ThreadDetail() {
     initialMessageSentRef.current = true
     ;(async () => {
       try {
-        await processAndSendMessage(message.text, message.files)
+        await processAndSendMessage(
+          message.text,
+          message.files,
+          message.documents
+        )
       } catch (error) {
         console.error('[ThreadPage] Failed to process initial message:', error)
       }
@@ -912,6 +982,26 @@ function ThreadDetail() {
                   />
                 )
               })}
+              {pendingInitialUserMessage && (
+                <>
+                  <MessageItem
+                    key={`pending-user-${pendingInitialUserMessage.id}`}
+                    message={pendingInitialUserMessage}
+                    isFirstMessage={chatMessages.length === 0}
+                    isLastMessage={true}
+                    status={status}
+                    reasoningContainerRef={reasoningContainerRef}
+                    onRegenerate={handleRegenerate}
+                    onEdit={handleEditMessage}
+                    onDelete={handleDeleteMessage}
+                    hideActions
+                    isAnimating={false}
+                  />
+                  <div className="flex flex-row items-center gap-2 mt-2">
+                    <Shimmer duration={1}>Indexing attachments...</Shimmer>
+                  </div>
+                </>
+              )}
               {pendingContinueMessage && status === 'submitted' && (
                 <MessageItem
                   key={`continue-placeholder-${pendingContinueMessage.id}`}

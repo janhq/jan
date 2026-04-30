@@ -60,6 +60,10 @@ export enum AppEvent {
   onAppUpdateDownloadSuccess = 'onAppUpdateDownloadSuccess',
   onModelImported = 'onModelImported',
 
+  onBackendDownloadStarted = 'onBackendDownloadStarted',
+  onBackendDownloadFinished = 'onBackendDownloadFinished',
+  onBetterBackendDetected = 'onBetterBackendDetected',
+
   onUserSubmitQuickAsk = 'onUserSubmitQuickAsk',
   onSelectedText = 'onSelectedText',
 

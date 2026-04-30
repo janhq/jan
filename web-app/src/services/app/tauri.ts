@@ -9,10 +9,11 @@ import type { LogEntry } from './types'
 import { DefaultAppService } from './default'
 
 export class TauriAppService extends DefaultAppService {
+  private static readonly BACKEND_PRESERVE_KEYS = [
+    'llama_cpp_backend_type',
+  ]
+
   async factoryReset(): Promise<void> {
-    // Kill background processes and remove data folder
-    // Note: We can't import stopAllModels directly to avoid circular dependency
-    // Instead we'll use the engine manager directly
     const { EngineManager } = await import('@janhq/core')
     for (const [, engine] of EngineManager.instance().engines) {
       const activeModels = await engine.getLoadedModels()
@@ -20,7 +21,19 @@ export class TauriAppService extends DefaultAppService {
         await Promise.all(activeModels.map((model: string) => engine.unload(model)))
       }
     }
+
+    const savedBackend: Record<string, string> = {}
+    for (const key of TauriAppService.BACKEND_PRESERVE_KEYS) {
+      const val = window.localStorage.getItem(key)
+      if (val) savedBackend[key] = val
+    }
+
     window.localStorage.clear()
+
+    for (const [key, val] of Object.entries(savedBackend)) {
+      window.localStorage.setItem(key, val)
+    }
+
     window.localStorage.setItem(localStorageKey.factoryResetPending, 'true')
     await invoke('factory_reset')
   }

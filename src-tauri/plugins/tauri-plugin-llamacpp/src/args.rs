@@ -74,15 +74,18 @@ pub struct ArgumentBuilder {
 }
 
 impl ArgumentBuilder {
-    pub fn new(config: LlamacppConfig, is_embedding: bool) -> Result<Self, String> {
+    pub fn new(mut config: LlamacppConfig, is_embedding: bool) -> Result<Self, String> {
+        config.version_backend = config.version_backend.replace('\u{FEFF}', "");
         let mut parts = config.version_backend.splitn(2, '/');
         let version = parts
             .next()
             .ok_or("Invalid version_backend format")?
+            .trim()
             .to_string();
         let backend = parts
             .next()
             .ok_or("Invalid version_backend format")?
+            .trim()
             .to_string();
 
         Ok(Self {

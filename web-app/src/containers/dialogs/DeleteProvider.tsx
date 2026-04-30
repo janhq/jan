@@ -17,7 +17,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { predefinedProviders } from '@/constants/providers'
+import { isKnownProvider } from '@/stores/provider-registry-store'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 
 type Props = {
@@ -30,7 +30,7 @@ const DeleteProvider = ({ provider }: Props) => {
   const router = useRouter()
   if (
     !provider ||
-    predefinedProviders.some((e) => e.provider === provider.provider) ||
+    isKnownProvider(provider.provider) ||
     EngineManager.instance().get(provider.provider)
   )
     return null

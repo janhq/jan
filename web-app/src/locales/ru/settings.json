@@ -314,13 +314,17 @@
     }
   },
   "backendUpdater": {
-    "newBackendVersion": "Новая версия Llamacpp {{version}}",
-    "backendUpdateAvailable": "Доступно обновление Llamacpp",
+    "newBackendVersion": "Новая версия бэкенда {{version}}",
+    "backendUpdateAvailable": "Доступно обновление бэкенда",
     "remindMeLater": "Отложить",
     "updating": "Обновление…",
     "updateNow": "Обновить",
-    "updateSuccess": "Llamacpp успешно обновлено",
-    "updateError": "Не удалось обновить Llamacpp"
+    "updateSuccess": "Бэкенд успешно обновлён",
+    "updateError": "Не удалось обновить бэкенд",
+    "downloadingBackend": "Загрузка оптимального GPU-бэкенда...",
+    "downloadingBackendDesc": "Обнаружен лучший бэкенд для вашего оборудования. Установка выполняется в фоновом режиме.",
+    "downloadComplete": "Бэкенд {{backend}} успешно установлен!",
+    "downloadFailed": "Не удалось загрузить GPU-бэкенд"
   },
   "backendInstallSuccess": "Компонент успешно установлен",
   "backendInstallError": "Не удалось установить компонент",

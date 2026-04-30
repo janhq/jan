@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 
+import { Attachment } from '@/types/attachment'
+
 export type InitialMessageFile = {
   type: string
   mediaType: string
@@ -9,6 +11,7 @@ export type InitialMessageFile = {
 export type InitialMessagePayload = {
   text: string
   files?: InitialMessageFile[]
+  documents?: Attachment[]
 }
 
 type InitialMessageStore = {

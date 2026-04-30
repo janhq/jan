@@ -22,6 +22,12 @@ export const localStorageKey = {
   defaultAssistantId: 'default-assistant-id',
   favoriteModels: 'favorite-models',
   setupCompleted: 'setup-completed',
+  // Marks that the user has completed (either Skip or Download) the dedicated
+  // Windows-only llama.cpp backend onboarding step. Once set, the extension
+  // stops emitting `onBetterBackendDetected` events automatically — the
+  // recommendation can still be surfaced manually via the "Find optimal
+  // backend" button in provider settings.
+  llamacppOnboardingDone: 'llama_cpp_onboarding_done',
   threadManagement: 'thread-management',
   modelSupportCache: 'jan_model_support_cache',
   recentSearches: 'recent-searches',

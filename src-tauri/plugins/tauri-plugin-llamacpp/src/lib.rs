@@ -14,6 +14,7 @@ mod path;
 mod process;
 pub mod state;
 pub use args::LlamacppConfig;
+pub use backend::install_bundled_backend;
 pub use cleanup::cleanup_llama_processes;
 pub use commands::load_llama_model_impl;
 pub use state::{LLamaBackendSession, LlamacppState};

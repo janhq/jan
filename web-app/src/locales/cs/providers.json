@@ -59,6 +59,14 @@
   "addProvider": "Přidat poskytovatele",
   "addOpenAIProvider": "Přidat OpenAI poskytovatele",
   "enterNameForProvider": "Zadejte název pro poskytovatele",
+  "registry": {
+    "refresh": "Aktualizovat katalog",
+    "refreshing": "Aktualizuji...",
+    "lastUpdated": "Naposledy aktualizováno: {{when}}",
+    "neverUpdated": "Zatím nenačteno",
+    "successDescription": "Katalog poskytovatelů byl aktualizován.",
+    "errorDescription": "Nepodařilo se aktualizovat katalog. Používá se mezipaměť nebo vestavěný seznam."
+  },
   "llamacpp": {
     "concurrentMode": {
       "perSlotContextWarning": "Kontext na slot se rovná ctx_size dělenému počtem slotů. Méně slotů znamená více kontextu pro každý požadavek."

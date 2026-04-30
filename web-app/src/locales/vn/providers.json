@@ -59,6 +59,14 @@
   "addProvider": "Thêm nhà cung cấp",
   "addOpenAIProvider": "Thêm nhà cung cấp OpenAI",
   "enterNameForProvider": "Nhập tên cho nhà cung cấp",
+  "registry": {
+    "refresh": "Làm mới danh mục",
+    "refreshing": "Đang làm mới...",
+    "lastUpdated": "Cập nhật lần cuối: {{when}}",
+    "neverUpdated": "Chưa được tải",
+    "successDescription": "Đã cập nhật danh mục nhà cung cấp.",
+    "errorDescription": "Không thể làm mới danh mục. Đang dùng bộ nhớ cache hoặc nhà cung cấp tích hợp."
+  },
   "llamacpp": {
     "concurrentMode": {
       "perSlotContextWarning": "Ngữ cảnh mỗi slot bằng ctx_size chia cho số slot. Ít slot hơn đồng nghĩa mỗi yêu cầu có nhiều ngữ cảnh hơn."

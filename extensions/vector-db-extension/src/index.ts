@@ -1,6 +1,16 @@
-import { VectorDBExtension, type SearchMode, type VectorDBStatus, type VectorChunkInput, type VectorSearchResult, type AttachmentFileInfo, type VectorDBFileInput, type VectorDBIngestOptions, AIEngine } from '@janhq/core'
-import * as vecdb from '@janhq/tauri-plugin-vector-db-api'
-import * as ragApi from '@janhq/tauri-plugin-rag-api'
+import {
+  VectorDBExtension,
+  type SearchMode,
+  type VectorDBStatus,
+  type VectorChunkInput,
+  type VectorSearchResult,
+  type AttachmentFileInfo,
+  type VectorDBFileInput,
+  type VectorDBIngestOptions,
+  AIEngine,
+} from '@janhq/core'
+import * as vecdb from '../../../src-tauri/plugins/tauri-plugin-vector-db/guest-js/index'
+import * as ragApi from '../../../src-tauri/plugins/tauri-plugin-rag/guest-js/index'
 
 export default class VectorDBExt extends VectorDBExtension {
   async onLoad(): Promise<void> {
@@ -10,7 +20,7 @@ export default class VectorDBExt extends VectorDBExtension {
   onUnload(): void {}
 
   async getStatus(): Promise<VectorDBStatus> {
-    return await vecdb.getStatus() as VectorDBStatus
+    return (await vecdb.getStatus()) as VectorDBStatus
   }
 
   private collectionForThread(threadId: string): string {
@@ -21,16 +31,33 @@ export default class VectorDBExt extends VectorDBExtension {
     return `project_${projectId}`
   }
 
-  async createCollectionForProject(projectId: string, dimension: number): Promise<void> {
-    return await vecdb.createCollection(this.collectionForProject(projectId), dimension)
+  async createCollectionForProject(
+    projectId: string,
+    dimension: number
+  ): Promise<void> {
+    return await vecdb.createCollection(
+      this.collectionForProject(projectId),
+      dimension
+    )
   }
 
   async createCollection(threadId: string, dimension: number): Promise<void> {
-    return await vecdb.createCollection(this.collectionForThread(threadId), dimension)
+    return await vecdb.createCollection(
+      this.collectionForThread(threadId),
+      dimension
+    )
   }
 
-  async insertChunks(threadId: string, fileId: string, chunks: VectorChunkInput[]): Promise<void> {
-    return await vecdb.insertChunks(this.collectionForThread(threadId), fileId, chunks)
+  async insertChunks(
+    threadId: string,
+    fileId: string,
+    chunks: VectorChunkInput[]
+  ): Promise<void> {
+    return await vecdb.insertChunks(
+      this.collectionForThread(threadId),
+      fileId,
+      chunks
+    )
   }
 
   async searchCollection(
@@ -41,7 +68,14 @@ export default class VectorDBExt extends VectorDBExtension {
     mode?: SearchMode,
     fileIds?: string[]
   ): Promise<VectorSearchResult[]> {
-    return await vecdb.searchCollection(this.collectionForThread(threadId), query_embedding, limit, threshold, mode, fileIds) as VectorSearchResult[]
+    return (await vecdb.searchCollection(
+      this.collectionForThread(threadId),
+      query_embedding,
+      limit,
+      threshold,
+      mode,
+      fileIds
+    )) as VectorSearchResult[]
   }
 
   async deleteChunks(threadId: string, ids: string[]): Promise<void> {
@@ -52,8 +86,16 @@ export default class VectorDBExt extends VectorDBExtension {
     return await vecdb.deleteCollection(this.collectionForThread(threadId))
   }
 
-  async insertChunksForProject(projectId: string, fileId: string, chunks: VectorChunkInput[]): Promise<void> {
-    return await vecdb.insertChunks(this.collectionForProject(projectId), fileId, chunks)
+  async insertChunksForProject(
+    projectId: string,
+    fileId: string,
+    chunks: VectorChunkInput[]
+  ): Promise<void> {
+    return await vecdb.insertChunks(
+      this.collectionForProject(projectId),
+      fileId,
+      chunks
+    )
   }
 
   async searchCollectionForProject(
@@ -64,10 +106,20 @@ export default class VectorDBExt extends VectorDBExtension {
     mode?: SearchMode,
     fileIds?: string[]
   ): Promise<VectorSearchResult[]> {
-    return await vecdb.searchCollection(this.collectionForProject(projectId), query_embedding, limit, threshold, mode, fileIds) as VectorSearchResult[]
+    return (await vecdb.searchCollection(
+      this.collectionForProject(projectId),
+      query_embedding,
+      limit,
+      threshold,
+      mode,
+      fileIds
+    )) as VectorSearchResult[]
   }
 
-  async deleteChunksForProject(projectId: string, ids: string[]): Promise<void> {
+  async deleteChunksForProject(
+    projectId: string,
+    ids: string[]
+  ): Promise<void> {
     return await vecdb.deleteChunks(this.collectionForProject(projectId), ids)
   }
 
@@ -75,9 +127,16 @@ export default class VectorDBExt extends VectorDBExtension {
     return await vecdb.deleteCollection(this.collectionForProject(projectId))
   }
 
-  async ingestFileForProject(projectId: string, file: VectorDBFileInput, opts: VectorDBIngestOptions): Promise<AttachmentFileInfo> {
+  async ingestFileForProject(
+    projectId: string,
+    file: VectorDBFileInput,
+    opts: VectorDBIngestOptions
+  ): Promise<AttachmentFileInfo> {
     // First, parse the document and get embeddings to determine dimension
-    const text = await ragApi.parseDocument(file.path, file.type || 'application/octet-stream')
+    const text = await ragApi.parseDocument(
+      file.path,
+      file.type || 'application/octet-stream'
+    )
     const chunks = await this.chunkText(text, opts.chunkSize, opts.chunkOverlap)
 
     // Get embeddings to determine dimension - use a default if no chunks
@@ -92,21 +151,31 @@ export default class VectorDBExt extends VectorDBExtension {
     await this.createCollectionForProject(projectId, collectionDimension)
 
     // Now check for duplicates
-    const existingFiles = await vecdb.listAttachments(this.collectionForProject(projectId)).catch(() => [])
-    const duplicate = existingFiles.find((f: any) => f.name === file.name && f.path === file.path)
+    const existingFiles = await vecdb
+      .listAttachments(this.collectionForProject(projectId))
+      .catch(() => [])
+    const duplicate = existingFiles.find(
+      (f: any) => f.name === file.name && f.path === file.path
+    )
     if (duplicate) {
-      throw new Error(`File '${file.name}' has already been attached to this project`)
+      throw new Error(
+        `File '${file.name}' has already been attached to this project`
+      )
     }
 
     if (!chunks.length) {
-      const fi = await vecdb.createFile(this.collectionForProject(projectId), file)
+      const fi = await vecdb.createFile(
+        this.collectionForProject(projectId),
+        file
+      )
       return fi
     }
 
     // Re-embed if we got dimension from createCollection
     const embeddings = await this.embedTexts(chunks)
     const finalDimension = embeddings[0]?.length || 0
-    if (finalDimension <= 0) throw new Error('Embedding dimension not available')
+    if (finalDimension <= 0)
+      throw new Error('Embedding dimension not available')
 
     // Ensure collection has correct dimension
     if (finalDimension !== collectionDimension) {
@@ -114,19 +183,30 @@ export default class VectorDBExt extends VectorDBExtension {
       await this.createCollectionForProject(projectId, finalDimension)
     }
 
-    const fi = await vecdb.createFile(this.collectionForProject(projectId), file)
+    const fi = await vecdb.createFile(
+      this.collectionForProject(projectId),
+      file
+    )
     await vecdb.insertChunks(
       this.collectionForProject(projectId),
       fi.id,
       chunks.map((t, i) => ({ text: t, embedding: embeddings[i] }))
     )
-    const infos = await vecdb.listAttachments(this.collectionForProject(projectId))
+    const infos = await vecdb.listAttachments(
+      this.collectionForProject(projectId)
+    )
     const updated = infos.find((e) => e.id === fi.id)
     return updated || { ...fi, chunk_count: chunks.length }
   }
 
-  async listAttachmentsForProject(projectId: string, limit?: number): Promise<AttachmentFileInfo[]> {
-    return await vecdb.listAttachments(this.collectionForProject(projectId), limit) as AttachmentFileInfo[]
+  async listAttachmentsForProject(
+    projectId: string,
+    limit?: number
+  ): Promise<AttachmentFileInfo[]> {
+    return (await vecdb.listAttachments(
+      this.collectionForProject(projectId),
+      limit
+    )) as AttachmentFileInfo[]
   }
 
   async getChunksForProject(
@@ -135,7 +215,12 @@ export default class VectorDBExt extends VectorDBExtension {
     startOrder: number,
     endOrder: number
   ): Promise<VectorSearchResult[]> {
-    return await vecdb.getChunks(this.collectionForProject(projectId), fileId, startOrder, endOrder) as VectorSearchResult[]
+    return (await vecdb.getChunks(
+      this.collectionForProject(projectId),
+      fileId,
+      startOrder,
+      endOrder
+    )) as VectorSearchResult[]
   }
 
   async deleteFileForProject(projectId: string, fileId: string): Promise<void> {
@@ -143,13 +228,21 @@ export default class VectorDBExt extends VectorDBExtension {
   }
 
   // Optional helper for chunking
-  private async chunkText(text: string, chunkSize: number, chunkOverlap: number): Promise<string[]> {
+  private async chunkText(
+    text: string,
+    chunkSize: number,
+    chunkOverlap: number
+  ): Promise<string[]> {
     return await vecdb.chunkText(text, chunkSize, chunkOverlap)
   }
 
   private async embedTexts(texts: string[]): Promise<number[][]> {
-    const llm = window.core?.extensionManager.getByName('@janhq/llamacpp-extension') as AIEngine & {
-      embed?: (texts: string[]) => Promise<{ data: Array<{ embedding: number[]; index: number }> }>
+    const llm = window.core?.extensionManager.getByName(
+      '@janhq/llamacpp-extension'
+    ) as AIEngine & {
+      embed?: (
+        texts: string[]
+      ) => Promise<{ data: Array<{ embedding: number[]; index: number }> }>
     }
     if (!llm?.embed) throw new Error('llamacpp extension not available')
 
@@ -162,18 +255,34 @@ export default class VectorDBExt extends VectorDBExtension {
     return out
   }
 
-  async ingestFile(threadId: string, file: VectorDBFileInput, opts: VectorDBIngestOptions): Promise<AttachmentFileInfo> {
+  async ingestFile(
+    threadId: string,
+    file: VectorDBFileInput,
+    opts: VectorDBIngestOptions
+  ): Promise<AttachmentFileInfo> {
     // Check for duplicate file (same name + path)
-    const existingFiles = await vecdb.listAttachments(this.collectionForThread(threadId)).catch(() => [])
-    const duplicate = existingFiles.find((f: any) => f.name === file.name && f.path === file.path)
+    const existingFiles = await vecdb
+      .listAttachments(this.collectionForThread(threadId))
+      .catch(() => [])
+    const duplicate = existingFiles.find(
+      (f: any) => f.name === file.name && f.path === file.path
+    )
     if (duplicate) {
-      throw new Error(`File '${file.name}' has already been attached to this thread`)
+      throw new Error(
+        `File '${file.name}' has already been attached to this thread`
+      )
     }
 
-    const text = await ragApi.parseDocument(file.path, file.type || 'application/octet-stream')
+    const text = await ragApi.parseDocument(
+      file.path,
+      file.type || 'application/octet-stream'
+    )
     const chunks = await this.chunkText(text, opts.chunkSize, opts.chunkOverlap)
     if (!chunks.length) {
-      const fi = await vecdb.createFile(this.collectionForThread(threadId), file)
+      const fi = await vecdb.createFile(
+        this.collectionForThread(threadId),
+        file
+      )
       return fi
     }
     const embeddings = await this.embedTexts(chunks)
@@ -186,13 +295,21 @@ export default class VectorDBExt extends VectorDBExtension {
       fi.id,
       chunks.map((t, i) => ({ text: t, embedding: embeddings[i] }))
     )
-    const infos = await vecdb.listAttachments(this.collectionForThread(threadId))
+    const infos = await vecdb.listAttachments(
+      this.collectionForThread(threadId)
+    )
     const updated = infos.find((e) => e.id === fi.id)
     return updated || { ...fi, chunk_count: chunks.length }
   }
 
-  async listAttachments(threadId: string, limit?: number): Promise<AttachmentFileInfo[]> {
-    return await vecdb.listAttachments(this.collectionForThread(threadId), limit) as AttachmentFileInfo[]
+  async listAttachments(
+    threadId: string,
+    limit?: number
+  ): Promise<AttachmentFileInfo[]> {
+    return (await vecdb.listAttachments(
+      this.collectionForThread(threadId),
+      limit
+    )) as AttachmentFileInfo[]
   }
 
   async getChunks(
@@ -201,7 +318,12 @@ export default class VectorDBExt extends VectorDBExtension {
     startOrder: number,
     endOrder: number
   ): Promise<VectorSearchResult[]> {
-    return await vecdb.getChunks(this.collectionForThread(threadId), fileId, startOrder, endOrder) as VectorSearchResult[]
+    return (await vecdb.getChunks(
+      this.collectionForThread(threadId),
+      fileId,
+      startOrder,
+      endOrder
+    )) as VectorSearchResult[]
   }
 
   async deleteFile(threadId: string, fileId: string): Promise<void> {

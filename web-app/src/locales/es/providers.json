@@ -59,6 +59,14 @@
   "addProvider": "Agregar proveedor",
   "addOpenAIProvider": "Agregar proveedor OpenAI",
   "enterNameForProvider": "Ingresa un nombre para el proveedor",
+  "registry": {
+    "refresh": "Actualizar catálogo",
+    "refreshing": "Actualizando...",
+    "lastUpdated": "Última actualización: {{when}}",
+    "neverUpdated": "Aún no cargado",
+    "successDescription": "Catálogo de proveedores actualizado.",
+    "errorDescription": "No se pudo actualizar el catálogo. Usando caché o proveedores integrados."
+  },
   "llamacpp": {
     "concurrentMode": {
       "perSlotContextWarning": "El contexto por ranura equivale a ctx_size dividido por el número de ranuras. Menos ranuras dan más contexto por solicitud."

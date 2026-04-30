@@ -30,7 +30,7 @@ describe('getProviderLogo', () => {
 
 describe('getProviderTitle', () => {
   it('returns formatted titles for special providers', () => {
-    expect(getProviderTitle('llamacpp')).toBe('Llama.cpp')
+    expect(getProviderTitle('llamacpp')).toBe('AtomicTurboQuant')
     expect(getProviderTitle('openai')).toBe('OpenAI')
     expect(getProviderTitle('openrouter')).toBe('OpenRouter')
     expect(getProviderTitle('gemini')).toBe('Gemini')

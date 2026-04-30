@@ -19,7 +19,7 @@ import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
-import { predefinedProviders } from '@/constants/providers'
+import { isKnownProvider } from '@/stores/provider-registry-store'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { getLastUsedModel } from '@/utils/getModelToStart'
@@ -246,9 +246,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
 
         // Skip models that require API key but don't have one (except llamacpp)
         // For custom providers, allow if they have at least one model loaded
-        const isPredefined = predefinedProviders.some((e) =>
-          e.provider.includes(provider.provider)
-        )
+        const isPredefined = isKnownProvider(provider.provider)
         if (
           provider &&
           provider.provider !== 'llamacpp' &&
@@ -329,12 +327,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider() {
           if (!aIsLocal && bIsLocal) return 1
 
           // Custom providers without API key but with models should be treated like "have API key"
-          const aIsPredefined = predefinedProviders.some((e) =>
-            e.provider.includes(a.provider)
-          )
-          const bIsPredefined = predefinedProviders.some((e) =>
-            e.provider.includes(b.provider)
-          )
+          const aIsPredefined = isKnownProvider(a.provider)
+          const bIsPredefined = isKnownProvider(b.provider)
           const aHasApiKeyOrCustomModel =
             (a.api_key?.length ?? 0) > 0 ||
             (!aIsPredefined && a.models.length > 0)

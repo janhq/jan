@@ -77,9 +77,16 @@ export function DataProvider() {
 
   useEffect(() => {
     if (localStorage.getItem(localStorageKey.factoryResetPending) === 'true') {
+      const backendType = localStorage.getItem('llama_cpp_backend_type')
+
       localStorage.clear()
+
+      if (backendType) {
+        localStorage.setItem('llama_cpp_backend_type', backendType)
+      }
+
       console.log(
-        'Factory reset detected — localStorage force-cleared on startup'
+        'Factory reset detected — localStorage force-cleared on startup (backend preserved)'
       )
     }
   }, [])

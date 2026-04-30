@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
-import { predefinedProviders } from '@/constants/providers'
+import { isKnownProvider } from '@/stores/provider-registry-store'
 import { localStorageKey } from '@/constants/localStorage'
 
 type ThreadModel = {
@@ -53,11 +53,10 @@ function Index() {
 
   // Conditional to check if there are any valid providers
   // required min 1 api_key or 1 model in llama.cpp or jan provider
-  // Custom providers (not in predefinedProviders) don't require api_key but need models
+  // Custom providers (not registered in the system catalog) don't require
+  // api_key but must have models.
   const hasValidProviders = providers.some((provider) => {
-    const isPredefinedProvider = predefinedProviders.some(
-      (p) => p.provider === provider.provider
-    )
+    const isPredefinedProvider = isKnownProvider(provider.provider)
 
     // Custom providers don't need API key validation but must have models
     if (!isPredefinedProvider) {
