@@ -50,6 +50,8 @@
     "vision": "Vision",
     "proactive": "Proactive (Experimental)",
     "embeddings": "Embeddings",
+    "reasoning": "Reasoning",
+    "webSearch": "Web Search",
     "notAvailable": "Not available yet",
     "warning": {
       "title": "Proceed with Caution",

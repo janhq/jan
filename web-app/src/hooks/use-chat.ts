@@ -1,7 +1,6 @@
 import {
   CustomChatTransport,
 } from '@/lib/custom-chat-transport'
-// import { useCapabilities } from "@/stores/capabilities-store";
 import {
   Chat,
   type UIMessage,
@@ -15,6 +14,8 @@ import {
 import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { useChatSessions } from '@/stores/chat-session-store'
 import { useAppState } from '@/hooks/useAppState'
+import { useCapabilityToggles, DEFAULT_CAPABILITY_TOGGLES } from '@/stores/capability-toggles-store'
+import { useShallow } from 'zustand/react/shallow'
 
 type CustomChatOptions = Omit<ChatInit<UIMessage>, 'transport'> &
   Pick<UseChatOptions<UIMessage>, 'experimental_throttle' | 'resume'> & {
@@ -76,6 +77,16 @@ export function useChat(
       transportRef.current.setOnTokenUsage(onTokenUsage)
     }
   }, [onTokenUsage])
+
+  // Sync capability toggles (web search, reasoning, embeddings) to the transport
+  const capabilityToggles = useCapabilityToggles(
+    useShallow((state) => sessionId ? (state.threads[sessionId] ?? DEFAULT_CAPABILITY_TOGGLES) : null)
+  )
+  useEffect(() => {
+    if (transportRef.current && capabilityToggles) {
+      transportRef.current.setCapabilityToggles(capabilityToggles)
+    }
+  }, [capabilityToggles])
 
   // Memoize to prevent calling ensureSession (which has side effects) on every render
   const chat = useMemo(() => {
