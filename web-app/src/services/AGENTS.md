@@ -1,6 +1,19 @@
-# Provider Registry — Agent Notes
+# Remote Registries — Agent Notes
 
-> **Scope**: this document applies when editing files that participate in the
+This file documents two parallel remote-configuration features:
+
+1. **Provider registry** — cloud-provider catalog (OpenAI, Anthropic, …).
+2. **Recommended-models registry** — Hub + onboarding recommendation list.
+
+Both follow the same architecture (loader → cache → store → consumers, with a
+bundled baseline fallback) and are published from the same upstream repo
+[`AtomicBot-ai/atomic-chat-conf`](https://github.com/AtomicBot-ai/atomic-chat-conf).
+Section 1 below covers the provider registry; **section 2** covers the
+recommended-models registry.
+
+# 1. Provider Registry
+
+> **Scope**: this section applies when editing files that participate in the
 > remote provider-registry feature:
 >
 > - [provider-registry.ts](./provider-registry.ts) — the network loader.
@@ -175,3 +188,157 @@ The full suite has pre-existing unrelated failures
 (`models.test.ts`, `useReleaseNotes.test.ts`, `interface.test.tsx`,
 `SettingsMenu.test.tsx`, `utils.test.ts > getProviderTitle`); investigate
 those independently, do not block registry work on them.
+
+# 2. Recommended-Models Registry
+
+> **Scope**: this section applies when editing files that participate in the
+> remote recommended-models feature:
+>
+> - [recommended-models-registry.ts](./recommended-models-registry.ts) — the network loader.
+> - [../stores/recommended-models-registry-store.ts](../stores/recommended-models-registry-store.ts) — Zustand wrapper.
+> - [../constants/models.ts](../constants/models.ts) — bundled `BASELINE_RECOMMENDED_MODELS`.
+> - [../hooks/useResolvedRecommendedModels.ts](../hooks/useResolvedRecommendedModels.ts) — sole React consumer.
+
+## Why this exists
+
+The `Recommended` section in **Hub** (`/hub`) and the **Setup / onboarding**
+screen used to read from a hard-coded `HUB_RECOMMENDED_MODELS` array in
+`constants/models.ts`. Adding or rotating a recommendation required a full
+release. The recommended-models registry moves that list into a public
+manifest at
+[`AtomicBot-ai/atomic-chat-conf/models/recommended.json`](https://github.com/AtomicBot-ai/atomic-chat-conf/blob/main/models/recommended.json),
+fetched at startup and cached for one hour. Adding a new model = open a PR
+against that repo.
+
+## Manifest shape
+
+```json
+{
+  "schema_version": 1,
+  "updated_at": "2026-04-30T12:00:00Z",
+  "recommendations": [
+    { "model_name": "owner/repo", "description_key": "hub:recEverydayUse" },
+    {
+      "model_name": "mlx-community/...",
+      "description_key": "hub:recForMlx",
+      "platforms": ["macos"]
+    }
+  ]
+}
+```
+
+| Field             | Required | Notes                                                           |
+| ----------------- | -------- | --------------------------------------------------------------- |
+| `model_name`      | yes      | Hugging Face repo id.                                            |
+| `description_key` | yes      | Must start with `hub:` and exist in `locales/*/hub.json`.        |
+| `platforms`       | no       | Subset of `["macos", "windows", "linux"]`. Omit ⇒ all platforms. |
+| `active`          | no       | Defaults to `true`. Set to `false` to hide an entry.             |
+
+## Data flow
+
+```mermaid
+flowchart LR
+    subgraph confRepo [atomic-chat-conf]
+        modelsJson[models/recommended.json]
+        modelsSchema[models/schema.json]
+    end
+    rawCdn["raw.githubusercontent.com"]
+    modelsJson --> rawCdn
+
+    subgraph janClient [Atomic-Chat web-app]
+        loader[services/recommended-models-registry.ts]
+        store[stores/recommended-models-registry-store.ts]
+        baseline[constants/models.BASELINE_RECOMMENDED_MODELS]
+        platformFilter["filterRecommendationsForPlatform IS_MACOS / IS_WINDOWS / IS_LINUX"]
+        hook[hooks/useResolvedRecommendedModels.ts]
+        hub[routes/hub/index.tsx]
+        setup[containers/SetupScreen.tsx]
+    end
+
+    rawCdn -->|"TTL 1h"| loader
+    loader --> store
+    baseline -.fallback.-> store
+    store --> platformFilter --> hook
+    hook --> hub
+    hook --> setup
+```
+
+## Cache rules
+
+- TTL: `CACHE_TTL_MS = 60 * 60 * 1000` (1 hour) — same as the provider registry.
+- `localStorage` keys (intentionally distinct from the provider-registry keys):
+  - `jan_recommended_models_cache_v1`
+  - `jan_recommended_models_cache_ts_v1`
+- A stale cache is reused as **fallback** only when the network attempt
+  fails. If there is no cache at all, `BASELINE_RECOMMENDED_MODELS` wins.
+
+## Schema versioning
+
+Same rules as the provider registry: bump `SUPPORTED_SCHEMA_VERSION` in
+`recommended-models-registry.ts` **before** publishing a manifest with a
+higher version. Adding a new recommendation entry is **not** a schema change.
+
+## Platform filtering
+
+The store keeps the platform-neutral list (so the cache stays portable). All
+filtering happens via the pure helper
+`filterRecommendationsForPlatform(list, os)` exposed by the loader and used
+by both `useResolvedRecommendedModels` and the
+`getRecommendationsForCurrentPlatformSync` accessor.
+
+The legacy MLX defense-in-depth check inside
+`useResolvedRecommendedModels.ts` (`if (!IS_MACOS && processed.is_mlx) return`)
+stays — it runs *after* the manifest filter and protects against future
+manifests that forget to mark MLX entries as `platforms: ["macos"]`.
+
+## Heavy `RECOMMENDED_MODEL_FALLBACKS` does NOT live in the registry
+
+`RECOMMENDED_MODEL_FALLBACKS` in [`../constants/models.ts`](../constants/models.ts)
+is the offline-only `CatalogModel` snapshot (full quants/mmproj/file paths)
+used by [`../routes/hub/$modelId.tsx`](../routes/hub/$modelId.tsx) when the
+HF API is unreachable. It is intentionally **not** moved into the manifest
+— that would bloat the file by ~10× without any operational benefit. Treat
+it as a separate concern.
+
+## How to add or update a recommendation
+
+### For non-developers (preferred path)
+
+1. Open `models/recommended.json` in `AtomicBot-ai/atomic-chat-conf` on
+   GitHub, click **Edit**, append (or modify) an entry, bump `updated_at`.
+2. CI runs `ajv validate` and a duplicate-entry check; both must be green.
+3. After merge, every Atomic Chat client picks up the change within an
+   hour, or immediately on next launch.
+
+### For developers (only when the entry shape changes)
+
+1. Update `recommended-models-registry.ts`:
+   - Bump `SUPPORTED_SCHEMA_VERSION` if breaking.
+   - Extend `sanitizeRecommendation` / `Recommendation` for the new field.
+2. Update `models/schema.json` in the registry repo.
+3. Ship the client first, **then** publish the registry change.
+4. Mirror the new shape in `BASELINE_RECOMMENDED_MODELS` so first-launch
+   parity is preserved.
+
+## Do NOT
+
+- **Do not** restore the old `HUB_RECOMMENDED_MODELS` constant. Read from
+  `useRecommendedModelsRegistryStore` (React) or
+  `getRecommendationsForCurrentPlatformSync()` (non-React).
+- **Do not** inline `IS_MACOS` ternaries inside `BASELINE_RECOMMENDED_MODELS`
+  — keep `platforms: ["macos"]` declarative so the baseline mirrors the
+  manifest verbatim.
+- **Do not** move `RECOMMENDED_MODEL_FALLBACKS` into the manifest.
+- **Do not** share cache keys with the provider registry.
+- **Do not** edit `models/recommended.json` inside `Atomic-Chat`. It does
+  not exist here. The single source of truth is the `atomic-chat-conf` repo.
+
+## Tests
+
+```bash
+npx vitest run src/services/__tests__/recommended-models-registry.test.ts
+```
+
+Covers the loader's six failure-mode branches plus
+`filterRecommendationsForPlatform`. As with the provider registry, do not
+block on pre-existing unrelated failures elsewhere in the suite.

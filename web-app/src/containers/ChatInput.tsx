@@ -43,6 +43,8 @@ import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 import { useInitialMessage } from '@/hooks/useInitialMessage'
+import { useOptimisticUserMessage } from '@/hooks/useOptimisticUserMessage'
+import { buildOptimisticUserMessage } from '@/lib/optimisticUserMessage'
 import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
 import { useAssistant } from '@/hooks/useAssistant'
@@ -473,10 +475,25 @@ const ChatInput = memo(function ChatInput({
           url: att.dataUrl!,
         }))
 
+      // Snapshot documents synchronously before any await/navigation so the
+      // store can be cleared immediately while we still know what to forward
+      // to the new thread page.
+      const docsSnapshot = attachments
+        .filter((att) => att.type === 'document')
+        .map((att) => ({ ...att }))
+
       const messagePayload = {
         text: prompt,
         files: files.length > 0 ? files : [],
+        documents: docsSnapshot.length > 0 ? docsSnapshot : undefined,
       }
+
+      // Clear input UI immediately so the chip and text disappear in the
+      // same frame as the click. Otherwise the chip lingers under the new
+      // thread's key (transferAttachments runs during await createThread)
+      // until processAttachmentsForSend finishes indexing the document.
+      setPrompt('')
+      clearAttachmentsForThread(attachmentsKey)
 
       if (isTemporaryChat) {
         // Stash payload in-memory keyed by the temporary thread id; the thread
@@ -576,14 +593,28 @@ const ChatInput = memo(function ChatInput({
 
         useInitialMessage.getState().set(newThread.id, messagePayload)
 
+        // Publish the optimistic user bubble before navigation so the
+        // thread page renders it on its very first paint, even under
+        // React StrictMode's mount → unmount → remount dev cycle. The
+        // store-backed approach is independent of useState lazy-init
+        // timing.
+        const optimisticBubble = buildOptimisticUserMessage({
+          threadId: newThread.id,
+          text: prompt,
+          imageFiles: files,
+          documents: docsSnapshot,
+        })
+        if (optimisticBubble) {
+          useOptimisticUserMessage
+            .getState()
+            .set(newThread.id, optimisticBubble)
+        }
+
         router.navigate({
           to: route.threadsDetail,
           params: { threadId: newThread.id },
         })
       }
-
-      setPrompt('')
-      clearAttachmentsForThread(attachmentsKey)
     }
   }
 

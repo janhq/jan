@@ -29,6 +29,7 @@ type ThreadState = {
     projectMetadata?: { id: string; name: string; updated_at: number },
     isTemporary?: boolean
   ) => Promise<Thread>
+  awaitThreadPersistence: (threadId: string) => Promise<void>
   updateCurrentThreadModel: (model: ThreadModel) => void
   getFilteredThreads: (searchTerm: string) => Thread[]
   updateCurrentThreadAssistant: (assistant: Assistant) => void
@@ -37,6 +38,12 @@ type ThreadState = {
   deleteAllThreadsByProject: (projectId: string) => void
   searchIndex: Fzf<Thread[]> | null
 }
+
+// Tracks in-flight backend persistence for threads created optimistically so
+// callers (e.g. the thread page when issuing the first sendMessage) can wait
+// for the row to land in storage before issuing dependent operations. Kept
+// outside the store to avoid forcing re-renders when a promise lands.
+const pendingThreadPersistence = new Map<string, Promise<void>>()
 
 const buildSearchIndex = (threads: Record<string, Thread>): Fzf<Thread[]> =>
   new Fzf<Thread[]>(
@@ -111,9 +118,12 @@ export const useThreads = create<ThreadState>()((set, get) => ({
 
     let currentIndex = searchIndex
     if (!currentIndex?.find) {
-      currentIndex = new Fzf<Thread[]>(filteredThreadsValues.filter(t => t.title), {
-        selector: (item: Thread) => item.title ?? '',
-      })
+      currentIndex = new Fzf<Thread[]>(
+        filteredThreadsValues.filter((t) => t.title),
+        {
+          selector: (item: Thread) => item.title ?? '',
+        }
+      )
       set({ searchIndex: currentIndex })
     }
 
@@ -314,35 +324,69 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         },
       }),
     }
-    return await getServiceHub()
+
+    // Optimistic local-store update so navigation can happen immediately
+    // without waiting for the backend round-trip. The persistence promise
+    // is tracked separately so dependent operations (e.g. the thread page
+    // submitting the first message) can await the row before issuing
+    // backend ops that depend on the FK.
+    set((state) => {
+      const existingThreads = Object.values(state.threads)
+      const reorderedThreads = [newThread, ...existingThreads]
+      get().setThreads(reorderedThreads)
+      return { currentThreadId: newThread.id }
+    })
+
+    if (isTemporary) {
+      return newThread
+    }
+
+    const persistPromise = getServiceHub()
       .threads()
       .createThread(newThread)
       .then((createdThread) => {
-        if (!isTemporary) {
-          posthog.capture('thread_created', {
-            thread_id: createdThread.id,
-            model_id: model.id,
-            provider: model.provider,
-            has_assistant: Boolean(assistant),
-            has_project: Boolean(projectMetadata),
-          })
-        }
-        set((state) => {
-          // Get all existing threads as an array
-          const existingThreads = Object.values(state.threads)
-
-          // Create new array with the new thread at the beginning
-          const reorderedThreads = [createdThread, ...existingThreads]
-
-          // Use setThreads to handle proper ordering (this will assign order 1, 2, 3...)
-          get().setThreads(reorderedThreads)
-
-          return {
-            currentThreadId: createdThread.id,
-          }
+        posthog.capture('thread_created', {
+          thread_id: createdThread.id,
+          model_id: model.id,
+          provider: model.provider,
+          has_assistant: Boolean(assistant),
+          has_project: Boolean(projectMetadata),
         })
-        return createdThread
+        // Reconcile the locally-stored thread with whatever fields the
+        // backend may have normalized or added (e.g. assistants payload).
+        set((state) => ({
+          threads: {
+            ...state.threads,
+            [createdThread.id]: {
+              ...state.threads[createdThread.id],
+              ...createdThread,
+            },
+          },
+        }))
       })
+      .catch((err) => {
+        console.error('[Threads] Failed to persist thread:', err)
+        throw err
+      })
+      .finally(() => {
+        // Drop the entry once settled so subsequent awaitThreadPersistence
+        // calls return immediately for already-persisted threads.
+        pendingThreadPersistence.delete(newThread.id)
+      })
+
+    pendingThreadPersistence.set(newThread.id, persistPromise)
+    return newThread
+  },
+  awaitThreadPersistence: async (threadId) => {
+    const pending = pendingThreadPersistence.get(threadId)
+    if (!pending) return
+    try {
+      await pending
+    } catch {
+      // Errors are already logged by the persist promise; callers should
+      // continue and let downstream ops surface their own failures rather
+      // than silently aborting on a transient persistence error.
+    }
   },
   updateCurrentThreadAssistant: (assistant) => {
     set((state) => {
@@ -353,7 +397,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
           .threads()
           .updateThread({
             ...currentThread,
-            assistants: assistant ? [{ ...assistant, model: currentThread.model }] : [],
+            assistants: assistant
+              ? [{ ...assistant, model: currentThread.model }]
+              : [],
           })
       return {
         threads: {
@@ -442,7 +488,19 @@ export const useThreads = create<ThreadState>()((set, get) => ({
         updated: Date.now() / 1000,
       }
 
-      getServiceHub().threads().updateThread(updatedThread)
+      // If the thread was created optimistically and is still being
+      // persisted, defer the backend update until the row exists to avoid
+      // a race that produces a 404 / FK error. For already-persisted
+      // threads this branch is skipped and the write happens immediately.
+      const pendingPersist = pendingThreadPersistence.get(threadId)
+      const writeBackend = () => {
+        getServiceHub().threads().updateThread(updatedThread)
+      }
+      if (pendingPersist) {
+        pendingPersist.then(writeBackend, writeBackend)
+      } else {
+        writeBackend()
+      }
 
       const newThreads = { ...state.threads, [threadId]: updatedThread }
       return {

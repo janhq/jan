@@ -16,7 +16,7 @@ use tauri::{
 use tauri_plugin_store::Store;
 
 use crate::core::app::commands::get_jan_data_folder_path;
-use crate::core::mcp::constants::DEFAULT_MCP_CONFIG;
+use crate::core::mcp::constants::default_mcp_config;
 use crate::core::mcp::helpers::add_server_config;
 
 use super::{
@@ -328,7 +328,7 @@ pub fn setup_mcp<R: Runtime>(app: &App<R>) {
         let config_path = get_jan_data_folder_path(app_handle.clone()).join("mcp_config.json");
         if !config_path.exists() {
             log::info!("mcp_config.json not found, creating default config");
-            if let Err(e) = fs::write(&config_path, DEFAULT_MCP_CONFIG) {
+            if let Err(e) = fs::write(&config_path, default_mcp_config()) {
                 log::error!("Failed to create default MCP config: {e}");
             }
         }

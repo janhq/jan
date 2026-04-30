@@ -3,6 +3,7 @@
  */
 
 import type { CatalogModel } from '@/services/models/types'
+import type { Recommendation } from '@/services/recommended-models-registry'
 
 export const EMBEDDING_MODEL_ID = 'sentence-transformer-mini'
 
@@ -17,37 +18,41 @@ export const DEFAULT_MODEL_QUANTIZATIONS = ['iq4_xs', 'q4_k_m']
  */
 export const SETUP_SCREEN_QUANTIZATIONS = ['q4_k_m']
 
-//* Рекомендуемые модели: Hub и экран первичной настройки (совпадение с каталогом по extractModelName)
-//! MLX-репозитории отдаём только на macOS — синхронно с фильтром в useModelSources.ts
-export const HUB_RECOMMENDED_MODELS: ReadonlyArray<{
-  modelName: string
-  descriptionKey: string
-}> = [
+/**
+ * Bundled fallback for the recommended-models registry. Mirrors the contents
+ * of `atomic-chat-conf/models/recommended.json` so the client can render the
+ * Recommended section on the very first launch (before the manifest fetch
+ * resolves) and when the network is unavailable.
+ *
+ * Platform filtering happens at runtime in
+ * `recommended-models-registry-store.ts` — keep `platforms` declarative here
+ * (do NOT inline `IS_MACOS` ternaries) so the baseline mirrors the manifest
+ * shape verbatim.
+ */
+export const BASELINE_RECOMMENDED_MODELS: ReadonlyArray<Recommendation> = [
   {
-    modelName: 'unsloth/gemma-4-E4B-it-GGUF',
-    descriptionKey: 'hub:recEverydayUse',
+    model_name: 'unsloth/gemma-4-E4B-it-GGUF',
+    description_key: 'hub:recEverydayUse',
   },
   {
-    modelName: 'unsloth/Qwen3.5-9B-GGUF',
-    descriptionKey: 'hub:recVisionKnowledge',
+    model_name: 'unsloth/Qwen3.5-9B-GGUF',
+    description_key: 'hub:recVisionKnowledge',
   },
-  ...(IS_MACOS
-    ? [
-        {
-          modelName: 'mlx-community/gemma-4-e4b-it-4bit',
-          descriptionKey: 'hub:recForMlx',
-        },
-        {
-          modelName: 'mlx-community/Qwen3.5-9B-MLX-4bit',
-          descriptionKey: 'hub:recForMlx',
-        },
-      ]
-    : [
-        {
-          modelName: 'meta-llama/Meta-Llama-3.1-8B-Instruct-GGUF',
-          descriptionKey: 'hub:recFinetuningChat',
-        },
-      ]),
+  {
+    model_name: 'mlx-community/gemma-4-e4b-it-4bit',
+    description_key: 'hub:recForMlx',
+    platforms: ['macos'],
+  },
+  {
+    model_name: 'mlx-community/Qwen3.5-9B-MLX-4bit',
+    description_key: 'hub:recForMlx',
+    platforms: ['macos'],
+  },
+  {
+    model_name: 'meta-llama/Meta-Llama-3.1-8B-Instruct-GGUF',
+    description_key: 'hub:recFinetuningChat',
+    platforms: ['windows', 'linux'],
+  },
 ]
 
 const GEMMA4_HF =

@@ -5,7 +5,7 @@ use tokio::sync::oneshot;
 use tokio::time::timeout;
 
 use super::{
-    constants::DEFAULT_MCP_CONFIG,
+    constants::{default_filesystem_root, default_mcp_config, LEGACY_FILESYSTEM_PLACEHOLDER},
     helpers::{restart_active_mcp_servers, start_mcp_server},
 };
 use crate::core::{
@@ -346,7 +346,7 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
     // Create default empty config if file doesn't exist
     if !path.exists() {
         log::info!("mcp_config.json not found, creating default empty config");
-        fs::write(&path, DEFAULT_MCP_CONFIG)
+        fs::write(&path, default_mcp_config())
             .map_err(|e| format!("Failed to create default MCP config: {e}"))?;
     }
 
@@ -405,6 +405,37 @@ pub async fn get_mcp_configs<R: Runtime>(app: AppHandle<R>) -> Result<String, St
             }),
         );
         mutated = true;
+    }
+
+    // Migration: replace legacy filesystem placeholder path with the per-user
+    // default sandbox. Affects only configs that still hold our own original
+    // placeholder; user-edited paths are left untouched.
+    if let Some(fs_server) = mcp_servers
+        .get_mut("filesystem")
+        .and_then(|v| v.as_object_mut())
+    {
+        if let Some(args) = fs_server.get_mut("args").and_then(|v| v.as_array_mut()) {
+            let mut replaced = false;
+            for arg in args.iter_mut() {
+                if arg.as_str() == Some(LEGACY_FILESYSTEM_PLACEHOLDER) {
+                    let root = default_filesystem_root();
+                    if let Err(e) = fs::create_dir_all(&root) {
+                        log::warn!(
+                            "Failed to pre-create default MCP filesystem sandbox at {}: {e}",
+                            root.display()
+                        );
+                    }
+                    *arg = Value::String(root.to_string_lossy().into_owned());
+                    replaced = true;
+                }
+            }
+            if replaced {
+                log::info!(
+                    "Migrating config: replaced legacy filesystem placeholder with default sandbox"
+                );
+                mutated = true;
+            }
+        }
     }
 
     // Persist any mutations back to disk
