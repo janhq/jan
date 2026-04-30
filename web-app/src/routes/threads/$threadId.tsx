@@ -56,6 +56,7 @@ import { useAgentMode } from '@/hooks/useAgentMode'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { generateThreadTitle } from '@/lib/thread-title-summarizer'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
+import { ExportThreadMenu } from '@/containers/ExportThreadMenu'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -1054,6 +1055,7 @@ function ThreadDetail() {
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
           <DropdownModelProvider model={threadModel} />
+          <ExportThreadMenu threadId={threadId} threadTitle={thread?.title} />
         </div>
       </HeaderPage>
       <div className="flex flex-1 flex-col h-full overflow-hidden">
