@@ -50,7 +50,7 @@ export const openAIProviderSettings = [
  * In-app baseline of providers that cannot (or should not) live in the remote
  * registry. The registry-store seeds itself from this list on first load.
  */
-export const BASELINE_PROVIDERS = [
+export const BASELINE_PROVIDERS: ProviderObject[] = [
   {
     active: true,
     api_key: '',
@@ -85,4 +85,4 @@ export const BASELINE_PROVIDERS = [
     ],
     models: [],
   },
-] as const
+]

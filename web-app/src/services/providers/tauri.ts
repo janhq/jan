@@ -171,7 +171,7 @@ export class TauriProvidersService extends DefaultProvidersService {
       }
 
       // Only add authentication headers if API key is provided
-      if (hasApiKey) {
+      if (provider.api_key) {
         headers['x-api-key'] = provider.api_key
         headers['Authorization'] = `Bearer ${provider.api_key}`
       }
