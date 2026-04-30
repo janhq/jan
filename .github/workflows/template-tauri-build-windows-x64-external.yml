@@ -160,6 +160,8 @@ jobs:
         shell: bash
         run: |
           make build
+        env:
+          JAN_SIGNING_KEY: ci-test-key-not-for-production
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

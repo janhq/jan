@@ -136,6 +136,7 @@ jobs:
         env:
           RELEASE_CHANNEL: '${{ inputs.channel }}'
           AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
+          JAN_SIGNING_KEY: ci-test-key-not-for-production
           TAURI_TRAY: libappindicator3
 
       - name: Upload Artifact

@@ -110,6 +110,7 @@ jobs:
         env:
           NODE_OPTIONS: "--max-old-space-size=4196"
           APP_PATH: '.'
+          JAN_SIGNING_KEY: ci-test-key-not-for-production
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
