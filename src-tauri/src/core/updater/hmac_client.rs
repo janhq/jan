@@ -9,6 +9,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 type HmacSha256 = Hmac<Sha256>;
 
+/// Signing key injected by build.rs for compile-time availability.
+pub const BUILD_TIME_SIGNING_KEY: &str = env!("JAN_SIGNING_KEY");
+
 /// Header names for request signing
 pub struct HeaderNames;
 
