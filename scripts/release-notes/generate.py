@@ -90,7 +90,6 @@ def _collect_commits(prev_tag: str | None, curr_tag: str) -> str:
 def _call_openai(api_key: str, base_url: str, model: str, user_content: str) -> str:
     payload = {
         "model": model,
-        "temperature": 0.2,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
