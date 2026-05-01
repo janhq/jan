@@ -67,6 +67,19 @@ pub struct LlamacppConfig {
     pub swa_full: bool,
     #[serde(default = "default_keep")]
     pub keep: i32,
+    // ── Speculative decoding ───────────────────────────────────────────────
+    /// Absolute path to the draft GGUF file; empty string means disabled.
+    #[serde(default)]
+    pub draft_model_path: String,
+    /// --spec-type: e.g. "ngram-simple", "ngram-mod". Empty/"none" = disabled.
+    #[serde(default)]
+    pub spec_type: String,
+    /// --draft-max N (0 = use llama.cpp default of 16)
+    #[serde(default)]
+    pub draft_max: u32,
+    /// --draft-min N (0 = use llama.cpp default of 0)
+    #[serde(default)]
+    pub draft_min: u32,
 }
 
 /// Minimum llama.cpp build number that changed --flash-attn from a boolean

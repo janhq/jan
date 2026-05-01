@@ -388,5 +388,48 @@
       "type": "number",
       "textAlign": "right"
     }
+  },
+  {
+    "key": "spec_type",
+    "title": "Speculative type",
+    "description": "Model-free speculative decoding using token history patterns. Works without a draft model. Can be combined with a draft model.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "none",
+      "options": [
+        { "value": "none", "name": "none (disabled)" },
+        { "value": "ngram-simple", "name": "ngram-simple — simple n-gram pattern matching" },
+        { "value": "ngram-mod", "name": "ngram-mod — shared n-gram hash pool (good for reasoning models)" },
+        { "value": "ngram-cache", "name": "ngram-cache — n-gram cache lookup" },
+        { "value": "ngram-map-k", "name": "ngram-map-k — n-gram map with keys" },
+        { "value": "ngram-map-k4v", "name": "ngram-map-k4v — n-gram map with keys and values (experimental)" }
+      ]
+    }
+  },
+  {
+    "key": "draft_max",
+    "title": "Max draft tokens per step",
+    "description":
+      "Number of tokens to draft for speculative decoding (default: 16)",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "16",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "draft_min",
+    "title": "Min draft tokens per step",
+    "description":
+      "Minimum number of draft tokens to use for speculative decoding (default: 0)",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "0",
+      "type": "number",
+      "textAlign": "right"
+    }
   }
 ]

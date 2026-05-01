@@ -1345,5 +1345,9 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         cache_reuse: 0,
         swa_full: false,
         keep: 0,
+        draft_model_path: String::new(),
+        spec_type: String::new(),
+        draft_max: 0,
+        draft_min: 0,
     }
 }

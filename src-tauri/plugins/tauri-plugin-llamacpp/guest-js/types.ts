@@ -71,6 +71,10 @@ export type LlamacppConfig = {
   cache_reuse: number
   swa_full: boolean
   keep: number
+  draft_model_path: string
+  spec_type: string 
+  draft_max: number       
+  draft_min: number
 }
 
 export type ModelPlan = {

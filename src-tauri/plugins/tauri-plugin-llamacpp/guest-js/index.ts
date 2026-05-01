@@ -98,6 +98,11 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     cache_reuse: asI32(config.cache_reuse, 0),
     swa_full: asBool(config.swa_full),
     keep: asI32(config.keep, 0),
+
+    draft_model_path: asString(config.draft_model_path, ''),
+    spec_type: asString(config.spec_type, 'auto'), 
+    draft_max: asI32(config.draft_max, 0),       
+    draft_min: asI32(config.draft_min, 0),
   }
 }
 
