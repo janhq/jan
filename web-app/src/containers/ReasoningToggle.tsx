@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { IconBulb, IconBulbOff } from '@tabler/icons-react'
+import { IconBulb } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -42,16 +42,19 @@ const ReasoningToggle = memo(function ReasoningToggle({
           <Button
             variant="ghost"
             size="icon-xs"
-            className={cn(className)}
+            className={cn(
+              enabled &&
+                'bg-blue-500/10 text-blue-500 hover:bg-blue-500/15 hover:text-blue-500',
+              className
+            )}
             aria-label={label}
             aria-pressed={enabled}
             onClick={handleClick}
           >
-            {enabled ? (
-              <IconBulb size={18} className="text-muted-foreground" />
-            ) : (
-              <IconBulbOff size={18} className="text-muted-foreground" />
-            )}
+            <IconBulb
+              size={18}
+              className={cn(enabled ? 'text-blue-500' : 'text-muted-foreground')}
+            />
           </Button>
         </TooltipTrigger>
         <TooltipContent>

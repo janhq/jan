@@ -356,8 +356,9 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
     //* Dynamic status rows: populated immediately with placeholders, then refreshed
     //  every ~5 s by the frontend hook `useTrayStatusSync` invoking `update_tray_status`.
 
-    //* Server block — stacked Pico-style: status row ("Server Running") on top
-    //  and a separate copy-icon-prefixed URL row beneath. Clicking the URL row
+    //* Server block — stacked Pico-style: status row ("Server Running") on top,
+    //  copy-icon-prefixed URL row beneath, and an actionable "Stop Server"
+    //  button (hidden while the server is stopped). Clicking the URL row
     //  copies the cached server URL.
     let status_server = IconMenuItem::with_id(
         app.handle(),
@@ -375,10 +376,28 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
         Some(render_copy_icon()),
         None::<&str>,
     )?;
-    let status_model = MenuItem::with_id(
+    //* Server toggle row. Starts as "Start Server" assuming the proxy is not
+    //  yet up; `update_tray_status` swaps the label to "Stop Server" the
+    //  moment the frontend reports `server_running == true`. Click is routed
+    //  to the frontend via `tray-stop-server` / `tray-start-server` events so
+    //  React owns the actual start/stop flow (model loading, status pings).
+    let status_stop = MenuItem::with_id(
         app.handle(),
-        "status_model",
-        "Model  — no model loaded —",
+        "status_stop",
+        "Start Server",
+        true,
+        None::<&str>,
+    )?;
+
+    //* Model block — a disabled "Model" header above the live model name.
+    //  The header is kept static (and disabled, so it renders muted) so the
+    //  block reads as a section label, mirroring Pico AI Server's panel.
+    let status_model_label =
+        MenuItem::with_id(app.handle(), "status_model_label", "Model", false, None::<&str>)?;
+    let status_model_value = MenuItem::with_id(
+        app.handle(),
+        "status_model_value",
+        "— no model loaded —",
         true,
         None::<&str>,
     )?;
@@ -403,17 +422,25 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
     let show_i = MenuItem::with_id(app.handle(), "open", "Open Atomic Chat", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app.handle(), "quit", "Quit", true, None::<&str>)?;
 
-    let sep1 = PredefinedMenuItem::separator(app.handle())?;
+    //* Three separators carve the menu into Pico-style sections so the rows
+    //  feel grouped instead of one long list.
+    let sep_after_server = PredefinedMenuItem::separator(app.handle())?;
+    let sep_after_model = PredefinedMenuItem::separator(app.handle())?;
+    let sep_before_actions = PredefinedMenuItem::separator(app.handle())?;
 
     let menu = Menu::with_items(
         app.handle(),
         &[
             &status_server,
             &status_server_url,
-            &status_model,
+            &status_stop,
+            &sep_after_server,
+            &status_model_label,
+            &status_model_value,
+            &sep_after_model,
             &status_ram_text,
             &status_ram_bar,
-            &sep1,
+            &sep_before_actions,
             &show_i,
             &quit_i,
         ],
@@ -428,10 +455,13 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
         let new_handles = TrayHandles {
             server: status_server.clone(),
             server_url_row: status_server_url.clone(),
-            model: status_model.clone(),
+            stop_button: status_stop.clone(),
+            model_label: status_model_label.clone(),
+            model_value: status_model_value.clone(),
             ram_text: status_ram_text.clone(),
             ram_bar: status_ram_bar.clone(),
             server_url: std::sync::Mutex::new(String::new()),
+            is_running: std::sync::Mutex::new(false),
         };
         match handles_arc.lock() {
             Ok(mut guard) => *guard = Some(new_handles),
@@ -491,8 +521,38 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
                     log::warn!("Copy URL failed: {e}");
                 }
             }
+            "status_stop" => {
+                //* Defer to the frontend instead of calling `proxy::stop_server`
+                //  / `proxy::start_server` directly: the React store owns
+                //  `serverStatus` and the start path needs the full Local API
+                //  Server config (host/port/prefix/api_key/...) plus model
+                //  loading. Routing through events keeps the UI, status hook
+                //  and tray in sync without duplicating that logic in Rust.
+                let state = app.state::<AppState>();
+                let running = state
+                    .tray_handles
+                    .lock()
+                    .ok()
+                    .and_then(|g| {
+                        g.as_ref()
+                            .and_then(|h| h.is_running.lock().ok().map(|v| *v))
+                    })
+                    .unwrap_or(false);
+                let event = if running {
+                    "tray-stop-server"
+                } else {
+                    "tray-start-server"
+                };
+                if let Err(e) = app.emit(event, ()) {
+                    log::warn!("Failed to emit {event}: {e}");
+                }
+            }
             // Live status rows are non-interactive — clicking them is a no-op.
-            "status_server" | "status_model" | "status_ram_text" | "status_ram_bar" => {}
+            "status_server"
+            | "status_model_label"
+            | "status_model_value"
+            | "status_ram_text"
+            | "status_ram_bar" => {}
             other => {
                 log::debug!("tray menu item {other} not handled");
             }

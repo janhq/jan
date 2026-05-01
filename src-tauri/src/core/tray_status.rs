@@ -23,19 +23,31 @@ use tauri::{
 ///
 /// The Pico-style layout splits the server block into a status row
 /// (`Server Running` / `Server Stopped`) and a separate, copy-icon-prefixed URL
-/// row. The RAM block likewise lives across two rows: a text caption + a
-/// segmented bar so the bar — not the longest text — drives the menu width.
+/// row, with an actionable "Stop Server" button beneath. The model block uses
+/// a disabled "Model" header above its value to mirror Pico's section labels;
+/// the RAM block uses a text caption above a segmented bar so the bar — not
+/// the longest text — drives the menu width.
 #[cfg(desktop)]
 pub struct TrayHandles {
     pub server: IconMenuItem<Wry>,
     pub server_url_row: IconMenuItem<Wry>,
-    pub model: MenuItem<Wry>,
+    /// Actionable "Stop Server" row. Hidden when the server is stopped.
+    pub stop_button: MenuItem<Wry>,
+    /// Disabled "Model" header (always shows the literal label).
+    pub model_label: MenuItem<Wry>,
+    /// Mutable model name displayed beneath the header.
+    pub model_value: MenuItem<Wry>,
     pub ram_text: MenuItem<Wry>,
     pub ram_bar: IconMenuItem<Wry>,
     /// Last known server URL (kept so the URL row click works even when the
     /// server is currently stopped, and remains the source of truth instead of
     /// re-parsing the row's display text).
     pub server_url: Mutex<String>,
+    /// Last reported running state. The tray click handler reads this to
+    /// decide whether the Stop/Start button should emit `tray-stop-server` or
+    /// `tray-start-server`, and whether to label the row "Stop Server" or
+    /// "Start Server" between status pushes.
+    pub is_running: Mutex<bool>,
 }
 
 #[cfg(desktop)]
@@ -59,9 +71,32 @@ pub struct TrayStatusPayload {
 /// instead of being upscaled 1:2 by the OS the way a raw 1× RGBA buffer is.
 #[cfg(desktop)]
 const SCALE: u32 = 2;
-/// Logical point size of the server-status / copy-icon glyphs.
+/// Logical point height of the menu-icon slot. **muda forces every
+/// `IconMenuItem` icon to exactly this height** via
+/// `NSImage.setSize(NSSize { width: w * 18 / h, height: 18 })`
+/// (see `muda::platform_impl::macos::icon::to_nsimage`, called with
+/// `Some(18.0)` for menu items). Bitmap dimensions only control
+/// supersampling quality; we cannot make an icon shorter than 18 pt — only
+/// _appear_ shorter by drawing into a larger transparent canvas.
 #[cfg(desktop)]
-const DOT_SIZE_PT: u32 = 16;
+const MENU_ICON_SLOT_PT: u32 = 18;
+/// Visible diameter of the server-status dot in points. Matches the in-app
+/// active-model indicator (Tailwind `size-2` = 8 px, `bg-green-500`) used in
+/// `ModelInfoHoverCard.tsx`. The dot is drawn centred inside a square
+/// `MENU_ICON_SLOT_PT × MENU_ICON_SLOT_PT` canvas so the surrounding
+/// transparent padding shrinks it down from muda's forced 18 pt slot.
+#[cfg(desktop)]
+const DOT_VISIBLE_PT: u32 = 8;
+/// Extra oversampling specifically for the dot. At an 8 pt diameter the
+/// anti-aliasing band is a large fraction of the glyph, so we render at
+/// 4× density and let muda downsample — the resulting circle reads as crisp
+/// as the sub-pixel-rendered CSS `bg-green-500 rounded-full` chip in the UI.
+#[cfg(desktop)]
+const DOT_OVERSAMPLE: u32 = SCALE * 2;
+/// Logical canvas size of the copy glyph. The glyph is drawn edge-to-edge in
+/// this canvas so muda's forced 18 pt slot is filled — keeping the icon at
+/// the same visual weight as the row text, matching what the user prefers
+/// over the shrunk-with-padding variant used for the status dot.
 #[cfg(desktop)]
 const COPY_ICON_SIZE_PT: u32 = 16;
 /// Logical width of the stand-alone RAM bar row. Picked so the bar — not the
@@ -172,27 +207,39 @@ fn encode_hidpi_png(rgba: Vec<u8>, width: u32, height: u32, scale: u32) -> Image
         .to_owned()
 }
 
-/// Filled circle for the server-status row. Green when `running`, neutral gray
-/// otherwise. Rendered at `DOT_SIZE_PT * SCALE` and emitted as a @2x PNG so
-/// the AA edge stays sharp on Retina menus.
+/// Filled circle for the server-status row.
+///
+/// Green when `running` (matches the in-app `bg-green-500` active-model
+/// indicator, `#22c55e`), neutral gray otherwise.
+///
+/// muda forces every menu-item icon to render at `MENU_ICON_SLOT_PT` (18 pt)
+/// tall, scaling width to preserve aspect ratio. To produce a visually
+/// _smaller_ dot we draw a `DOT_VISIBLE_PT`-wide circle inside a square
+/// `MENU_ICON_SLOT_PT × MENU_ICON_SLOT_PT` canvas — muda displays the canvas
+/// at 18 pt, the transparent padding shrinks the dot to roughly
+/// `DOT_VISIBLE_PT` on screen. Buffer is oversampled `DOT_OVERSAMPLE`× so the
+/// edge stays crisp after muda's downscale.
 #[cfg(desktop)]
 pub fn render_dot(running: bool) -> Image<'static> {
     let (r, g, b) = if running {
-        (0x22, 0xc5, 0x5e) // emerald-500
+        (0x22, 0xc5, 0x5e) // tailwind green-500
     } else {
         (0x6b, 0x72, 0x80) // slate-500
     };
 
-    let size = DOT_SIZE_PT * SCALE;
-    let mut buf = vec![0u8; (size * size * 4) as usize];
-    let center = (size as f32 - 1.0) / 2.0;
-    // Inset by SCALE so the AA band at the edge is `SCALE` source pixels wide,
-    // i.e. exactly one logical-point of softness at any oversampling factor.
-    let aa_band = SCALE as f32;
-    let radius = size as f32 / 2.0 - aa_band / 2.0;
+    let canvas = MENU_ICON_SLOT_PT * DOT_OVERSAMPLE;
+    let dot_diameter = DOT_VISIBLE_PT * DOT_OVERSAMPLE;
+    let mut buf = vec![0u8; (canvas * canvas * 4) as usize];
+    let center = (canvas as f32 - 1.0) / 2.0;
+    // 1-source-pixel anti-alias band keeps the edge crisp at any oversampling
+    // factor (≈ 0.25 logical pt of softness at 4×). Wider bands make small
+    // dots look glowing/blurry; this gives the same hard look as the
+    // sub-pixel-rendered CSS `bg-green-500 rounded-full` chip in the web UI.
+    let aa_band: f32 = 1.0;
+    let radius = dot_diameter as f32 / 2.0 - aa_band / 2.0;
 
-    for y in 0..size {
-        for x in 0..size {
+    for y in 0..canvas {
+        for x in 0..canvas {
             let dx = x as f32 - center;
             let dy = y as f32 - center;
             let dist = (dx * dx + dy * dy).sqrt();
@@ -204,12 +251,12 @@ pub fn render_dot(running: bool) -> Image<'static> {
                 0.0
             };
             if alpha > 0.0 {
-                put_pixel(&mut buf, x, y, size, r, g, b, alpha.round() as u8);
+                put_pixel(&mut buf, x, y, canvas, r, g, b, alpha.round() as u8);
             }
         }
     }
 
-    encode_hidpi_png(buf, size, size, SCALE)
+    encode_hidpi_png(buf, canvas, canvas, DOT_OVERSAMPLE)
 }
 
 /// AA-rounded-rect fill into `buf`. `(x, y, w, h)` is the rectangle origin and
@@ -254,19 +301,19 @@ fn draw_rounded_rect(
 }
 
 /// `doc.on.doc`-style copy glyph: a back rectangle peeking out behind a front
-/// rectangle. Rendered at `COPY_ICON_SIZE_PT * SCALE` pixels and emitted as an
-/// @2x PNG so the rounded corners don't smear when the OS rasterises onto a
-/// Retina menu.
+/// rectangle. Drawn edge-to-edge in a `COPY_ICON_SIZE_PT × COPY_ICON_SIZE_PT`
+/// canvas so muda's forced 18 pt slot is filled — same visual weight as the
+/// row text. Rendered at `SCALE`× density so the rounded corners stay crisp
+/// after muda's downscale.
 #[cfg(desktop)]
 pub fn render_copy_icon() -> Image<'static> {
     let size = COPY_ICON_SIZE_PT * SCALE;
     let mut buf = vec![0u8; (size * size * 4) as usize];
     let color = (0x9c, 0xa3, 0xaf); // slate-400, reads as muted in both light/dark menus
 
-    // All offsets are quoted in logical points and multiplied by SCALE so the
-    // glyph keeps the same visual size regardless of the oversampling factor.
-    let s = SCALE as f32;
-    let radius = 1.5 * s;
+    // Offsets quoted in logical points and multiplied by SCALE so the glyph
+    // keeps the same visual size regardless of the oversampling factor.
+    let radius = 1.5 * SCALE as f32;
 
     // Back document — slightly transparent so it visibly sits "behind".
     draw_rounded_rect(
@@ -447,19 +494,40 @@ pub async fn update_tray_status(app: AppHandle, payload: TrayStatusPayload) -> R
         }
     }
 
-    // Model row text (no icon). Truncated identically to the URL so the menu
-    // width is bounded by `BAR_WIDTH` regardless of model id length.
-    let model_text = if payload.model_label.trim().is_empty() {
-        "Model  — no model loaded —".to_string()
+    // Stop / Start toggle: re-label the row depending on whether the server
+    // is currently running, so a single menu slot acts as the inverse of the
+    // current state. The actual start/stop is dispatched to the frontend via
+    // `tray-stop-server` / `tray-start-server` events (see
+    // `setup::setup_tray`), which is why we also stash `is_running` here for
+    // the click handler to read.
+    let stop_text = if payload.server_running {
+        "Stop Server"
     } else {
-        format!(
-            "Model  {}",
-            truncate_tail(&payload.model_label, ROW_MAX_CHARS)
-        )
+        "Start Server"
     };
     handles
-        .model
-        .set_text(&model_text)
+        .stop_button
+        .set_text(stop_text)
+        .map_err(|e| e.to_string())?;
+    handles
+        .stop_button
+        .set_enabled(true)
+        .map_err(|e| e.to_string())?;
+    if let Ok(mut flag) = handles.is_running.lock() {
+        *flag = payload.server_running;
+    }
+
+    // Model block: a disabled "Model" header (kept static) above the actual
+    // model name. Splitting these into two rows mirrors Pico's section labels
+    // and lets us truncate just the value while keeping the header crisp.
+    let model_value = if payload.model_label.trim().is_empty() {
+        "— no model loaded —".to_string()
+    } else {
+        truncate_tail(&payload.model_label, ROW_MAX_CHARS)
+    };
+    handles
+        .model_value
+        .set_text(&model_value)
         .map_err(|e| e.to_string())?;
 
     // RAM caption above the bar — kept verbose ("X.X / Y.Y GB · NN%") since the
