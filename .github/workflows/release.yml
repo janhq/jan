@@ -69,6 +69,22 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Resolve previous published release tag
+        id: prev
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURR_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+        run: |
+          set +e
+          PREV_TAG=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name 2>/dev/null)
+          set -e
+          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "null" ] || [ "$PREV_TAG" = "$CURR_TAG" ]; then
+            echo "No previous published release found (or equals current tag); will fall back to git history"
+            PREV_TAG=""
+          fi
+          echo "Previous published release: ${PREV_TAG:-<none>}"
+          echo "prev_tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
+
       - name: Generate release notes via OpenAI
         id: gen
         env:
@@ -76,6 +92,7 @@ jobs:
           OPENAI_MODEL: ${{ vars.RELEASE_NOTES_MODEL || 'gpt-5-mini' }}
           OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || 'https://api.openai.com/v1' }}
           CURR_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+          PREV_TAG: ${{ steps.prev.outputs.prev_tag }}
           REPO: ${{ github.repository }}
         run: |
           set +e
