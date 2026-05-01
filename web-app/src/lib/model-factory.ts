@@ -59,6 +59,7 @@ import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
+import { LLAMACPP_ONLY_PARAM_KEYS } from '@/lib/predefinedParams'
 
 /**
  * Llama.cpp timings structure from the response
@@ -131,6 +132,19 @@ const CLIENT_SIDE_PARAM_KEYS: ReadonlySet<string> = new Set([
   'auto_compact',
 ])
 
+function filterParameters(
+  parameters: Record<string, unknown>,
+  keepLlamacppOnly: boolean
+): Record<string, unknown> {
+  if (keepLlamacppOnly) return parameters
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(parameters)) {
+    if (LLAMACPP_ONLY_PARAM_KEYS.has(k)) continue
+    out[k] = v
+  }
+  return out
+}
+
 /**
  * Create a custom fetch function that injects additional parameters into the
  * request body, normalising key names for OpenAI-compatible APIs:
@@ -139,7 +153,8 @@ const CLIENT_SIDE_PARAM_KEYS: ReadonlySet<string> = new Set([
  */
 function createCustomFetch(
   baseFetch: typeof globalThis.fetch,
-  parameters: Record<string, unknown>
+  parameters: Record<string, unknown>,
+  keepLlamacppOnly = false
 ): typeof globalThis.fetch {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     if (init?.method === 'POST' || !init?.method) {
@@ -149,6 +164,7 @@ function createCustomFetch(
       const normalised: Record<string, unknown> = {}
       for (const [key, value] of Object.entries(parameters)) {
         if (CLIENT_SIDE_PARAM_KEYS.has(key)) continue
+        if (!keepLlamacppOnly && LLAMACPP_ONLY_PARAM_KEYS.has(key)) continue
         // max_output_tokens → max_tokens (OpenAI-compatible field name)
         const targetKey = key === 'max_output_tokens' ? 'max_tokens' : key
         normalised[targetKey] = value
@@ -414,7 +430,7 @@ export class ModelFactory {
       throw new Error(`No running session found for model: ${modelId}`)
     }
 
-    const customFetch = createCustomFetch(httpFetch, parameters)
+    const customFetch = createCustomFetch(httpFetch, parameters, true)
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'llamacpp',
@@ -449,6 +465,7 @@ export class ModelFactory {
     provider?: ProviderObject,
     parameters: Record<string, unknown> = {}
   ): Promise<LanguageModel> {
+    parameters = filterParameters(parameters, false)
     // Start the model first if provider is available
     if (provider) {
       try {
@@ -539,6 +556,7 @@ export class ModelFactory {
     provider?: ProviderObject,
     parameters: Record<string, unknown> = {}
   ): Promise<LanguageModel> {
+    parameters = filterParameters(parameters, false)
     const availability = await invoke<string>(
       'plugin:foundation-models|check_foundation_models_availability',
       {}
