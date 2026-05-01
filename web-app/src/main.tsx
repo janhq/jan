@@ -7,11 +7,6 @@ import { routeTree } from './routeTree.gen'
 
 import './index.css'
 import './i18n'
-import { migrateAllLocalStorageKeys } from './lib/fileStorage'
-
-// Migrate all localStorage data to file-based storage on startup
-// so users updating the app don't lose their settings.
-migrateAllLocalStorageKeys()
 
 // Mobile-specific viewport and styling setup
 const setupMobileViewport = () => {

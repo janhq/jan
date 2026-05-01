@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
-import { fileStorage } from '@/lib/fileStorage'
 
 type AgentModeState = {
   /** Map of threadId → agent mode enabled */
@@ -56,7 +55,7 @@ export const useAgentMode = create<AgentModeState>()(
     }),
     {
       name: localStorageKey.agentMode,
-      storage: createJSONStorage(() => fileStorage),
+      storage: createJSONStorage(() => localStorage),
     }
   )
 )
