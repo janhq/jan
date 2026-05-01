@@ -67,8 +67,17 @@ jobs:
         working-directory: docs
         run: export NODE_ENV=production && yarn build && cp _redirects out/_redirects && cp _headers out/_headers
 
+      # pages-action requires apiToken + accountId; fork PRs do not receive secrets, so skip deploy (see GitHub docs).
+      - name: Verify Cloudflare secrets
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] || [ -z "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "::error::Set repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (Cloudflare dashboard: My Profile → API Tokens, and Account ID on any zone or Workers/Pages overview)."
+            exit 1
+          fi
+
       - name: Publish to Cloudflare Pages PR Preview and Staging
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -80,7 +89,7 @@ jobs:
         id: deployCloudflarePages
 
       - uses: mshick/add-pr-comment@v2
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         with:
           message: |
               Preview URL: ${{ steps.deployCloudflarePages.outputs.url }}
