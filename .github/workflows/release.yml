@@ -51,6 +51,56 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────────────────────────
+  # Polished release notes (LLM-generated from git log between tags)
+  # On failure: warning only — default GitHub-generated notes remain.
+  # ──────────────────────────────────────────────────────────────
+  enrich-release-notes:
+    needs: create-draft-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate release notes via OpenAI
+        id: gen
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.RELEASE_NOTES_MODEL || 'gpt-5-mini' }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || 'https://api.openai.com/v1' }}
+          CURR_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set +e
+          python3 scripts/release-notes/generate.py > /tmp/release-notes.md
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || [ ! -s /tmp/release-notes.md ]; then
+            echo "::warning::LLM release notes generation failed (rc=$rc); keeping default GitHub-generated notes"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "===== Generated notes ====="
+          cat /tmp/release-notes.md
+          echo "==========================="
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Update draft release body
+        if: steps.gen.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+        run: |
+          gh release edit "$TAG" --notes-file /tmp/release-notes.md
+
+  # ──────────────────────────────────────────────────────────────
   # macOS  (universal binary — arm64 + x86_64)
   # ──────────────────────────────────────────────────────────────
   build-macos:
