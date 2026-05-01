@@ -21,6 +21,7 @@ pub fn resolve_path<R: Runtime>(app_handle: tauri::AppHandle<R>, path: &str) -> 
         path.canonicalize().unwrap_or(path)
     }
 }
+
 fn resolve_path_input(path: &str, jan_data_folder: &Path) -> PathBuf {
     if path.starts_with("file:/") || path.starts_with("file:\\") {
         let normalized = normalize_file_path(path);

@@ -81,7 +81,7 @@ export function ModelSetting({
         models: updatedModels,
       })
 
-      // Call debounced stopModel only when updating settings that require restart,
+      // Call debounced stopModel only when updating ctx_len, ngl, chat_template, or offload_mmproj
       // and only if the model is currently running
       if (
         key === 'ctx_len' ||
@@ -90,8 +90,7 @@ export function ModelSetting({
         key === 'offload_mmproj' ||
         key === 'batch_size' ||
         key === 'cpu_moe' ||
-        key === 'n_cpu_moe' ||
-        key === 'reasoning'
+        key === 'n_cpu_moe'
       ) {
         // Check if model is running before stopping it
         serviceHub
@@ -129,21 +128,12 @@ export function ModelSetting({
           {Object.entries(model.settings || {})
           .reduce<[string, unknown][]>((acc, entry) => {
             if (entry[0] === 'auto_increase_ctx_len') return acc
-            if (entry[0] === 'reasoning') return acc
             if (entry[0] === 'ctx_len') {
               const autoIncrease = Object.entries(model.settings || {}).find(
                 ([k]) => k === 'auto_increase_ctx_len'
               )
               if (autoIncrease) acc.push(autoIncrease)
             }
-            acc.push(entry)
-            return acc
-          }, [])
-          .reduce<[string, unknown][]>((acc, entry) => {
-            const reasoning = Object.entries(model.settings || {}).find(
-              ([k]) => k === 'reasoning'
-            )
-            if (reasoning && acc.length === 0) acc.push(reasoning)
             acc.push(entry)
             return acc
           }, [])
@@ -162,8 +152,7 @@ export function ModelSetting({
                   className={cn(
                     'flex items-start justify-between gap-8',
                     (key === 'chat_template' ||
-                      key === 'override_tensor_buffer_t' ||
-                      config.controller_type === 'dropdown') &&
+                      key === 'override_tensor_buffer_t') &&
                       'flex-col gap-1 w-full'
                   )}
                 >

@@ -1,5 +1,8 @@
 // App Configuration Constants
 pub const CONFIGURATION_FILE_NAME: &str = "settings.json";
+
+/// Tauri bundle `identifier` from `tauri.conf.json`. Used only as a fallback
+/// source for legacy config recovery.
 pub const TAURI_BUNDLE_IDENTIFIER: &str = "jan.ai.app";
 
 // Categorised lists of Jan data directories and files.

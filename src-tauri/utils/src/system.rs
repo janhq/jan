@@ -1,5 +1,10 @@
 use std::path::Path;
 
+/// Returns true when the current process is running inside a Flatpak sandbox
+pub fn is_flatpak() -> bool {
+    Path::new("/.flatpak-info").exists()
+}
+
 /// Checks if npx can be overridden with bun binary
 pub fn can_override_npx(bun_path: String) -> bool {
     // We need to check the CPU for the AVX2 instruction support if we are running under MacOS
@@ -206,18 +211,6 @@ pub fn add_cuda_paths(command: &mut tokio::process::Command) -> bool {
     found
 }
 
-/// Returns true when running inside a Flatpak sandbox.
-pub fn is_flatpak() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        Path::new("/.flatpak-info").exists() || std::env::var_os("FLATPAK_ID").is_some()
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        false
-    }
-}
-
 #[cfg(target_os = "windows")]
 fn find_cuda_paths_windows() -> CudaPaths {
     use std::collections::HashSet;
@@ -318,6 +311,7 @@ fn find_cuda_paths_linux() -> CudaPaths {
     if is_flatpak() {
         collect_flatpak_gl_paths(&mut cuda_lib_paths);
     }
+
     if let Ok(entries) = std::fs::read_dir("/usr/local") {
         for entry in entries.flatten() {
             if let Some(name) = entry.file_name().to_str() {
@@ -402,6 +396,7 @@ fn collect_flatpak_gl_paths(cuda_lib_paths: &mut std::collections::HashSet<Strin
     #[cfg(feature = "logging")]
     log::info!("Searched Flatpak GL extension paths for NVIDIA libraries");
 }
+
 pub fn setup_windows_process_flags(command: &mut tokio::process::Command) {
     #[cfg(all(windows, target_arch = "x86_64"))]
     {

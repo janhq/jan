@@ -76,6 +76,7 @@
   "noThreadsYetDesc": "Starte eine neue Unterhaltung, um deinen Threadverlauf hier anzuzeigen.",
   "downloads": "Downloads",
   "downloading": "Downloading",
+  "uploadingAttachments": "Anhänge werden hochgeladen…",
   "cancelDownload": "Download abbrechen",
   "downloadCancelled": "Download wurde abgebrochen",
   "downloadComplete": "Download abgeschlossen",
@@ -299,7 +300,8 @@
     "update": "Aktualisieren",
     "searchProjects": "Projekte durchsuchen...",
     "noProjectsFound": "Keine Projekte gefunden",
-    "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff"
+    "tryDifferentSearch": "Versuchen Sie einen anderen Suchbegriff",
+    "uploadingFiles": "Dateien werden hochgeladen…"
   },
   "errorDialog": {
     "titleFallback": "Etwas ist schiefgelaufen",

@@ -676,21 +676,25 @@ export class DefaultModelsService implements ModelsService {
               }
             }
 
-            const contentToolContext = extractToolContextFromContent(
-              message.content ?? []
-            )
-            const metadataToolContext = contentToolContext
-              ? ''
-              : extractToolContextFromMetadata(message.metadata)
-            const toolContext = contentToolContext || metadataToolContext
-
-            if (toolContext) {
+            const toolContextFromContent = extractToolContextFromContent(message)
+            const toolContextFromMetadata =
+              toolContextFromContent.length > 0
+                ? ''
+                : extractToolContextFromMetadata(message)
+            const toolContext = [toolContextFromContent, toolContextFromMetadata]
+              .filter((entry) => entry.length > 0)
+              .join('\n\n')
+            if (toolContext.length > 0) {
               if (typeof content === 'string') {
-                content = content
-                  ? `${content}\n\n${toolContext}`
-                  : toolContext
+                content = content ? `${content}\n\n${toolContext}` : toolContext
               } else if (Array.isArray(content)) {
-                content = [...content, { type: 'text', text: toolContext }]
+                content = [
+                  ...content,
+                  {
+                    type: 'text',
+                    text: toolContext,
+                  },
+                ]
               }
             }
 

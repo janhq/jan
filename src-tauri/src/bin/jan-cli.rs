@@ -13,7 +13,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 // Import the library crate so we can access core modules.
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::cli::{
-    cli_delete_thread, cli_get_config, cli_get_data_folder, cli_get_thread,
+    cli_delete_thread, cli_get_data_folder, cli_get_thread,
     cli_list_messages, cli_list_threads, discover_llamacpp_binary,
     discover_mlx_binary, download_hf_model, fetch_hf_gguf_files, init_llamacpp_state,
     init_mlx_state, list_models, load_llama_model_impl, load_mlx_model_impl,
@@ -819,7 +819,7 @@ async fn handle_serve(args: ServeArgs) {
         detach: _,
         log: _,
         verbose,
-        select,
+        select: _,
     } = args;
 
     // When --fit is on, let llama.cpp decide the context size automatically
@@ -841,7 +841,7 @@ async fn handle_serve(args: ServeArgs) {
             }
             Err(_) if looks_like_hf_repo(&model_id) => {
                 // Looks like a HuggingFace repo ID — download then resolve.
-                auto_download_hf_model(&model_id, select).await;
+                auto_download_hf_model(&model_id, args.select).await;
                 match resolve_model_engine(&model_id) {
                     Ok((eng, mp, mmp)) => (
                         eng,
@@ -1339,11 +1339,6 @@ fn build_llamacpp_config(n_gpu_layers: i32, ctx_size: i32, timeout: i32, fit: bo
         rope_freq_base: 0.0,
         rope_freq_scale: 0.0,
         ctx_shift: false,
-        parallel: 1,
-        reasoning: "auto".to_string(),
-        cache_ram: -1,
-        cache_reuse: 0,
-        swa_full: false,
-        keep: 0,
+        parallel: 1
     }
 }

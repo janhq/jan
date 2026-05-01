@@ -76,6 +76,7 @@
   "noThreadsYetDesc": "Bắt đầu một cuộc trò chuyện mới để xem lịch sử chủ đề của bạn ở đây.",
   "downloads": "Tải xuống",
   "downloading": "Đang tải xuống",
+  "uploadingAttachments": "Đang tải lên tệp đính kèm…",
   "cancelDownload": "Hủy tải xuống",
   "downloadCancelled": "Đã hủy tải xuống",
   "downloadComplete": "Tải xuống hoàn tất",
@@ -253,6 +254,7 @@
     "searchProjects": "Tìm kiếm dự án...",
     "noProjectsFound": "Không tìm thấy dự án nào",
     "tryDifferentSearch": "Thử từ khóa tìm kiếm khác",
+    "uploadingFiles": "Đang tải lên tệp…",
     "deleteProjectDialog": {
       "title": "Xóa dự án",
       "permanentDelete": "Điều này sẽ xóa vĩnh viễn tất cả các chủ đề.",

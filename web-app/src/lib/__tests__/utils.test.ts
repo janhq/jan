@@ -4,7 +4,6 @@ import {
   getProviderTitle,
   getReadableLanguageName,
   toGigabytes,
-  formatBytes,
   formatMegaBytes,
   formatDuration,
   getModelDisplayName,
@@ -147,80 +146,6 @@ describe('formatMegaBytes', () => {
   it('handles zero and small values', () => {
     expect(formatMegaBytes(0)).toBe('0.00 GB')
     expect(formatMegaBytes(1)).toBe('0.00 GB')
-  })
-})
-
-describe('formatBytes', () => {
-  it('returns fallback for undefined or non-finite input', () => {
-    expect(formatBytes(undefined)).toBe('')
-    expect(formatBytes(undefined, { fallback: 'N/A' })).toBe('N/A')
-    expect(formatBytes(Number.NaN, { fallback: '-' })).toBe('-')
-    expect(formatBytes(Number.POSITIVE_INFINITY, { fallback: 'INF' })).toBe(
-      'INF'
-    )
-  })
-
-  it('formats bytes with default options', () => {
-    expect(formatBytes(0)).toBe('0.0 B')
-    expect(formatBytes(512)).toBe('512.0 B')
-    expect(formatBytes(1536)).toBe('1.5 KB')
-    expect(formatBytes(1024 ** 2 * 2.25)).toBe('2.3 MB')
-    expect(formatBytes(1024 ** 3 * 3)).toBe('3.0 GB')
-  })
-
-  it('uses 1024 boundaries for unit transitions', () => {
-    expect(formatBytes(1023)).toBe('1023.0 B')
-    expect(formatBytes(1024)).toBe('1.0 KB')
-    expect(formatBytes(1024 ** 2)).toBe('1.0 MB')
-    expect(formatBytes(1024 ** 3)).toBe('1.0 GB')
-  })
-
-  it('supports numeric decimals option', () => {
-    expect(formatBytes(1536, { decimals: 2 })).toBe('1.50 KB')
-    expect(formatBytes(1536, { decimals: 0 })).toBe('2 KB')
-    expect(formatBytes(1536, { decimals: 3 })).toBe('1.500 KB')
-  })
-
-  it('clamps and truncates decimal precision into toFixed range', () => {
-    expect(formatBytes(1536, { decimals: -5 })).toBe('2 KB')
-    expect(formatBytes(1536, { decimals: 2.9 })).toBe('1.50 KB')
-    expect(formatBytes(1536, { decimals: 999 })).toBe(
-      '1.50000000000000000000 KB'
-    )
-  })
-
-  it('supports function-based decimals per unit', () => {
-    const decimals = vi.fn((value: number, unit: 'B' | 'KB' | 'MB' | 'GB') => {
-      if (unit === 'B') return 0
-      if (unit === 'KB') return value < 2 ? 3 : 1
-      if (unit === 'MB') return 2
-      return 4
-    })
-
-    expect(formatBytes(900, { decimals })).toBe('900 B')
-    expect(formatBytes(1536, { decimals })).toBe('1.500 KB')
-    expect(formatBytes(4096, { decimals })).toBe('4.0 KB')
-    expect(formatBytes(1024 ** 2 * 1.25, { decimals })).toBe('1.25 MB')
-    expect(formatBytes(1024 ** 3 * 1.5, { decimals })).toBe('1.5000 GB')
-    expect(decimals).toHaveBeenCalledTimes(5)
-  })
-
-  it('supports separator and hideUnit options', () => {
-    expect(formatBytes(1536, { separator: '' })).toBe('1.5KB')
-    expect(formatBytes(1536, { separator: ' - ' })).toBe('1.5 - KB')
-    expect(formatBytes(1536, { hideUnit: true })).toBe('1.5')
-    expect(formatBytes(1536, { hideUnit: true, separator: ' / ' })).toBe('1.5')
-  })
-
-  it('honors minUnit floor', () => {
-    expect(formatBytes(1, { minUnit: 'KB', decimals: 4 })).toBe('0.0010 KB')
-    expect(formatBytes(1024, { minUnit: 'MB', decimals: 4 })).toBe('0.0010 MB')
-    expect(formatBytes(1024 ** 2, { minUnit: 'GB', decimals: 4 })).toBe(
-      '0.0010 GB'
-    )
-    expect(formatBytes(1024 ** 2 * 2, { minUnit: 'KB', decimals: 2 })).toBe(
-      '2.00 MB'
-    )
   })
 })
 

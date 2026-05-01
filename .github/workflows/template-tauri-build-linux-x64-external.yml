@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
 
@@ -50,7 +50,7 @@ jobs:
           cp .github/scripts/icon-${{ inputs.channel }}.png src-tauri/icons/icon.png
 
       - name: Installing node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
@@ -136,8 +136,8 @@ jobs:
         env:
           RELEASE_CHANNEL: '${{ inputs.channel }}'
           AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
-          JAN_SIGNING_KEY: ci-test-key-not-for-production
           TAURI_TRAY: libappindicator3
+          JAN_SIGNING_KEY: ci-test-key-not-for-production
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

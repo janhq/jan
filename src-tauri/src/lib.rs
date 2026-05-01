@@ -115,7 +115,7 @@ macro_rules! invoke_commands_with_extras {
 )]
 pub fn run() {
     let mut builder = tauri::Builder::default();
-    #[cfg(feature = "desktop")]
+    #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
           println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
@@ -255,7 +255,7 @@ pub fn run() {
             }
 
             setup_mcp(app);
-            #[cfg(feature = "desktop")]
+            #[cfg(desktop)]
             setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
             Ok(())

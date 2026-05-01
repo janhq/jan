@@ -34,6 +34,7 @@ on:
       - 'web-app/**'
       - '!README.md'
 
+# Dev/test key for CI debug builds (build.rs injects via cargo:rustc-env).
 env:
   JAN_SIGNING_KEY: ci-test-key-not-for-production
 
@@ -43,11 +44,11 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.base_ref }}
       - name: Use Node.js 20.x
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
@@ -78,17 +79,64 @@ jobs:
           name: ref-lcov.info
           path: coverage/lcov.info
 
+  base_branch_rust_cov:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+
+      - name: Install Tauri dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Create Tauri resource stubs for CI
+        run: |
+          TRIPLE=$(rustc -vV | awk '/^host:/ { print $2 }')
+          mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/icons
+          touch src-tauri/resources/pre-install/.gitkeep
+          touch src-tauri/resources/LICENSE
+          touch src-tauri/resources/bin/jan-cli
+          for bin in uv bun; do
+            touch "src-tauri/resources/bin/${bin}-${TRIPLE}"
+          done
+          # Icons are gitignored; generate_context!() requires them at compile time
+          for icon in 32x32.png 128x128.png 128x128@2x.png icon.icns icon.ico; do
+            [ -f "src-tauri/icons/$icon" ] || cp src-tauri/icons/icon.png "src-tauri/icons/$icon"
+          done
+
+      - name: Run Rust test coverage
+        run: |
+          cargo llvm-cov clean --workspace --manifest-path src-tauri/Cargo.toml
+          cargo llvm-cov --no-report --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
+          cargo llvm-cov --no-report --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
+          cargo llvm-cov --no-report --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
+          cargo llvm-cov --no-report --manifest-path src-tauri/utils/Cargo.toml
+          cargo llvm-cov report --lcov --output-path rust-lcov.info --manifest-path src-tauri/Cargo.toml
+
+      - name: Upload Rust code coverage for ref branch
+        uses: actions/upload-artifact@v4
+        with:
+          name: ref-rust-lcov.info
+          path: rust-lcov.info
+
   test-on-macos:
     runs-on: 'macos-latest'
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Installing node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
@@ -123,12 +171,12 @@ jobs:
     runs-on: windows-desktop-${{ matrix.antivirus-tools }}
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Installing node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
@@ -162,7 +210,7 @@ jobs:
     runs-on: 'windows-latest'
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -171,7 +219,7 @@ jobs:
           choco install --yes --no-progress make
 
       - name: Installing node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
@@ -212,7 +260,7 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -228,7 +276,7 @@ jobs:
           swap-storage: true
 
       - name: Installing node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
@@ -266,16 +314,16 @@ jobs:
   coverage-check:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    needs: base_branch_cov
+    needs: [base_branch_cov, base_branch_rust_cov]
     continue-on-error: true
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Installing node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
       - name: 'Cleanup cache'
@@ -295,20 +343,53 @@ jobs:
         run: |
           make lint
 
-      - name: Run test coverage
+      - name: Run TypeScript test coverage
         run: |
           yarn test:coverage
+
+      - name: Install Tauri dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Run Rust test coverage
+        run: ./scripts/rust-coverage.sh
+
+      - name: Merge coverage reports
+        run: |
+          cat ./coverage/lcov.info rust-lcov.info > merged-lcov.info
 
       - name: Download code coverage report from base branch
         uses: actions/download-artifact@v4
         with:
           name: ref-lcov.info
+
+      - name: Download Rust code coverage report from base branch
+        id: download-rust-cov
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ref-rust-lcov.info
+          path: base-rust-cov
+
+      - name: Merge base branch coverage reports
+        run: |
+          if [ -f ./base-rust-cov/rust-lcov.info ]; then
+            cat ./lcov.info ./base-rust-cov/rust-lcov.info > base-merged-lcov.info
+          else
+            echo "Rust base coverage not available, using TS-only coverage"
+            cp ./lcov.info base-merged-lcov.info
+          fi
+
       - name: Generate Code Coverage report
         id: code-coverage
         uses: barecheck/code-coverage-action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          lcov-file: './coverage/lcov.info'
-          base-lcov-file: './lcov.info'
+          lcov-file: './merged-lcov.info'
+          base-lcov-file: './base-merged-lcov.info'
           send-summary-comment: true
           show-annotations: 'warning'

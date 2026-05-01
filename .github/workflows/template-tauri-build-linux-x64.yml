@@ -45,7 +45,7 @@ on:
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
         required: false
       JAN_SIGNING_KEY:
-        required: false
+        required: true
     outputs:
       DEB_SIG:
         value: ${{ jobs.build-linux-x64.outputs.DEB_SIG }}
@@ -64,7 +64,7 @@ jobs:
       contents: write
     steps:
       - name: Getting the repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
 
@@ -89,7 +89,7 @@ jobs:
           cp .github/scripts/icon-${{ inputs.channel }}.png src-tauri/icons/icon.png
 
       - name: Installing node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
