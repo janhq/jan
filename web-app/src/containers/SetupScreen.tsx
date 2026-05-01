@@ -524,11 +524,36 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                               }}
                               className="w-full shrink-0 rounded-full px-5 font-semibold sm:w-auto"
                             >
-                              {rowDownloaded
-                                ? t('hub:downloaded')
-                                : rowDownloading
-                                  ? t('setup:downloading')
-                                  : t('hub:download')}
+                              {/* Reserve width for the widest possible label so the
+                                  button doesn't reflow when its state flips between
+                                  Download / Downloading… / Downloaded. */}
+                              <span className="grid">
+                                <span
+                                  aria-hidden="true"
+                                  className="invisible col-start-1 row-start-1"
+                                >
+                                  {t('setup:downloading')}
+                                </span>
+                                <span
+                                  aria-hidden="true"
+                                  className="invisible col-start-1 row-start-1"
+                                >
+                                  {t('hub:downloaded')}
+                                </span>
+                                <span
+                                  aria-hidden="true"
+                                  className="invisible col-start-1 row-start-1"
+                                >
+                                  {t('hub:download')}
+                                </span>
+                                <span className="col-start-1 row-start-1">
+                                  {rowDownloaded
+                                    ? t('hub:downloaded')
+                                    : rowDownloading
+                                      ? t('setup:downloading')
+                                      : t('hub:download')}
+                                </span>
+                              </span>
                             </Button>
                             {rowDownloading && rowTrackId ? (
                               <p

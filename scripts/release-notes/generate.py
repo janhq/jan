@@ -151,7 +151,15 @@ def main() -> int:
 
     try:
         notes = _call_openai(api_key, base_url, model, user_content)
-    except (urllib.error.URLError, urllib.error.HTTPError, KeyError, json.JSONDecodeError) as exc:
+    except urllib.error.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        logger.error("OpenAI HTTP %s: %s — body: %s", exc.code, exc.reason, body)
+        return 1
+    except (urllib.error.URLError, KeyError, json.JSONDecodeError) as exc:
         logger.error("OpenAI call failed: %s", exc)
         return 1
 
