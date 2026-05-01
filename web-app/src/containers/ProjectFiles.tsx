@@ -8,7 +8,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { cn, formatBytes } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { createDocumentAttachment, type Attachment } from '@/types/attachment'
@@ -29,6 +29,18 @@ type ProjectFile = {
   type?: string
   size?: number
   chunk_count: number
+}
+
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes <= 0) return ''
+  const units = ['B', 'KB', 'MB', 'GB']
+  let i = 0
+  let val = bytes
+  while (val >= 1024 && i < units.length - 1) {
+    val /= 1024
+    i++
+  }
+  return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
 const SUPPORTED_EXTENSIONS = [
@@ -583,11 +595,7 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
                   </TooltipContent>
                 </Tooltip>
                 <p className="text-xs text-muted-foreground">
-                  {file.size
-                    ? formatBytes(file.size, {
-                        decimals: (_, unit) => (unit === 'B' ? 0 : 1),
-                      })
-                    : ''}
+                  {file.size ? formatBytes(file.size) : ''}
                   {file.chunk_count > 0 &&
                     ` · ${t('common:files.chunksCount', { count: file.chunk_count })}`}
                 </p>

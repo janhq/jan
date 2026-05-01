@@ -1,4 +1,22 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=JAN_SIGNING_KEY");
+
+    let signing_key = std::env::var("JAN_SIGNING_KEY").unwrap_or_else(|_| {
+        let profile = std::env::var("PROFILE").unwrap_or_default();
+        if profile == "release" {
+            panic!("JAN_SIGNING_KEY must be set for release builds");
+        }
+
+        "local-dev-test-key-not-for-production".to_string()
+    });
+
+    let profile = std::env::var("PROFILE").unwrap_or_default();
+    if profile == "release" && signing_key.trim().is_empty() {
+        panic!("JAN_SIGNING_KEY must be non-empty for release builds");
+    }
+
+    println!("cargo:rustc-env=JAN_SIGNING_KEY={signing_key}");
+
     #[cfg(not(feature = "cli"))]
     {
         tauri_build::build();

@@ -200,59 +200,6 @@ export const toGigabytes = (
   }
 }
 
-export type ByteUnit = 'B' | 'KB' | 'MB' | 'GB'
-
-export type FormatBytesOptions = {
-  decimals?: number | ((value: number, unit: ByteUnit) => number)
-  separator?: string
-  hideUnit?: boolean
-  minUnit?: ByteUnit
-  fallback?: string
-}
-
-const BYTE_UNITS: ByteUnit[] = ['B', 'KB', 'MB', 'GB']
-
-export function formatBytes(
-  bytes: number | undefined,
-  options?: FormatBytesOptions
-): string {
-  const fallback = options?.fallback ?? ''
-
-  if (bytes === undefined || !Number.isFinite(bytes)) {
-    return fallback
-  }
-
-  const minUnitIndex =
-    options?.minUnit === undefined ? 0 : BYTE_UNITS.indexOf(options.minUnit)
-
-  let unitIndex = 0
-  let scaledValue = bytes
-
-  while (scaledValue >= 1024 && unitIndex < BYTE_UNITS.length - 1) {
-    scaledValue /= 1024
-    unitIndex++
-  }
-
-  while (unitIndex < minUnitIndex) {
-    scaledValue /= 1024
-    unitIndex++
-  }
-
-  const unit = BYTE_UNITS[unitIndex]
-  const rawDecimals =
-    typeof options?.decimals === 'function'
-      ? options.decimals(scaledValue, unit)
-      : options?.decimals ?? 1
-  const decimals = Math.min(20, Math.max(0, Math.trunc(rawDecimals)))
-  const formattedValue = scaledValue.toFixed(decimals)
-
-  if (options?.hideUnit) {
-    return formattedValue
-  }
-
-  return `${formattedValue}${options?.separator ?? ' '}${unit}`
-}
-
 export function formatMegaBytes(mb: number) {
   const tb = mb / (1024 * 1024)
   if (tb >= 1) {

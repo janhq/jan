@@ -1,5 +1,5 @@
 import TextareaAutosize from 'react-textarea-autosize'
-import { cn, formatBytes } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react'
@@ -910,6 +910,18 @@ const ChatInput = memo(function ChatInput({
     }
   }
 
+  const formatBytes = (bytes?: number): string => {
+    if (!bytes || bytes <= 0) return ''
+    const units = ['B', 'KB', 'MB', 'GB']
+    let i = 0
+    let val = bytes
+    while (val >= 1024 && i < units.length - 1) {
+      val /= 1024
+      i++
+    }
+    return `${val.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+  }
+
   const hashBase64 = async (base64: string): Promise<string> => {
     const binary = atob(base64)
     const bytes = new Uint8Array(binary.length)
@@ -1505,10 +1517,7 @@ const ChatInput = memo(function ChatInput({
                                       ? `.${ext}`
                                       : 'document'}
                                   {att.size
-                                    ? ` · ${formatBytes(att.size, {
-                                        decimals: (_, unit) =>
-                                          unit === 'B' ? 0 : 1,
-                                      })}`
+                                    ? ` · ${formatBytes(att.size)}`
                                     : ''}
                                 </div>
                               </div>

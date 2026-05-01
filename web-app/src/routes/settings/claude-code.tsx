@@ -28,7 +28,7 @@ import {
 import { IconChevronDown, IconPlus, IconX } from '@tabler/icons-react'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import Capabilities from '@/containers/Capabilities'
-import { formatBytes, getModelDisplayName, isLocalProvider } from '@/lib/utils'
+import { getModelDisplayName, isLocalProvider } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.claude_code as any)({
@@ -634,6 +634,11 @@ function JanCodeRecommendation({
       )
   }
 
+  const formatBytes = (bytes: number) => {
+    if (!bytes) return '0'
+    return (bytes / (1024 * 1024 * 1024)).toFixed(1)
+  }
+
   if (selectedModel === defaultVariant?.model_id) return null
 
   return (
@@ -674,16 +679,8 @@ function JanCodeRecommendation({
               />
             </svg>
             <span>
-              {formatBytes(downloadProgress.current, {
-                hideUnit: true,
-                minUnit: 'GB',
-              })}{' '}
-              /{' '}
-              {formatBytes(downloadProgress.total, {
-                hideUnit: true,
-                minUnit: 'GB',
-              })}
-              GB
+              {formatBytes(downloadProgress.current)} /{' '}
+              {formatBytes(downloadProgress.total)}GB
             </span>
           </div>
         ) : (

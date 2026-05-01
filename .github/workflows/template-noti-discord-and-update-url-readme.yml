@@ -31,7 +31,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: '0'
           token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
