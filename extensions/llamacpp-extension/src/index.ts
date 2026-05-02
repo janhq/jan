@@ -1565,8 +1565,7 @@ export default class llamacpp_extension extends AIEngine {
 
         if (
           cleanKey &&
-          valueParts.length > 0 &&
-          !cleanKey.startsWith('LLAMA')
+          valueParts.length > 0
         ) {
           target[cleanKey] = valueParts.join('=').trim()
         }

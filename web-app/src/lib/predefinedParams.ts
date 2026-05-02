@@ -55,6 +55,13 @@ export const paramsSettings = {
     description:
       'Number of most relevant documents to retrieve. Higher values return more results.',
   },
+  thinking_budget_tokens: {
+    key: 'thinking_budget_tokens',
+    value: 480,
+    title: 'Thinking Budget',
+    description:
+      'Limits thinking to the specified number of tokens. Either -1 (unconstrained thought), 0 (no thinking) or the number of tokens to limit to.'
+  },
   mirostat: {
     key: 'mirostat',
     value: 0,
