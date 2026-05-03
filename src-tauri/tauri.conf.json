@@ -64,6 +64,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["resources/LICENSE"]
+    "resources": ["resources/LICENSE"],
+    "category": "Utility"
   }
 }
