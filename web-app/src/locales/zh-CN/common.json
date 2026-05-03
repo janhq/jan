@@ -396,5 +396,8 @@
       "title": "线程已移除",
       "description": "线程已成功从\"{{projectName}}\"中移除"
     }
+  },
+  "errors": {
+    "selectModelToStartChatting": "Please select a model to start chatting."
   }
 }

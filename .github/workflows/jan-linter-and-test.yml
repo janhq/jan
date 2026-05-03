@@ -125,6 +125,11 @@ jobs:
   test-on-macos:
     runs-on: 'macos-latest'
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    env:
+      # make test → build-cli uses cargo --release; build.rs requires a non-empty key. Fork PRs
+      # cannot read repo secrets, so fall back to the same dev-only default as build.rs (non-release).
+      JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY != '' && secrets.JAN_SIGNING_KEY || 'local-dev-test-key-not-for-production' }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - name: Getting the repo
         uses: actions/checkout@v4
@@ -155,8 +160,6 @@ jobs:
       - name: Linter and test
         run: |
           make test
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
   test-on-windows:
     if: github.event_name == 'push'
@@ -165,6 +168,8 @@ jobs:
       matrix:
         antivirus-tools: ['mcafee', 'bit-defender']
     runs-on: windows-desktop-${{ matrix.antivirus-tools }}
+    env:
+      JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY != '' && secrets.JAN_SIGNING_KEY || 'local-dev-test-key-not-for-production' }}
     steps:
       - name: Getting the repo
         uses: actions/checkout@v4
@@ -204,6 +209,9 @@ jobs:
   test-on-windows-pr:
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: 'windows-latest'
+    env:
+      JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY != '' && secrets.JAN_SIGNING_KEY || 'local-dev-test-key-not-for-production' }}
+      NODE_OPTIONS: '--max-old-space-size=2048'
     steps:
       - name: Getting the repo
         uses: actions/checkout@v4
@@ -248,12 +256,12 @@ jobs:
         shell: powershell
         run: |
           make test
-        env:
-          NODE_OPTIONS: '--max-old-space-size=2048'
 
   test-on-ubuntu:
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || 'ubuntu-latest' }}
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    env:
+      JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY != '' && secrets.JAN_SIGNING_KEY || 'local-dev-test-key-not-for-production' }}
     steps:
       - name: Getting the repo
         uses: actions/checkout@v4

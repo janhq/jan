@@ -474,7 +474,8 @@
   },
   "errors": {
     "fileTooLarge": "File too large",
-    "fileTooLargeDescription": "{{fileName}} exceeds the {{maxFileSizeMB}}MB limit"
+    "fileTooLargeDescription": "{{fileName}} exceeds the {{maxFileSizeMB}}MB limit",
+    "selectModelToStartChatting": "Please select a model to start chatting."
   },
   "files": {
     "chunksCount": "{{count}} chunks"

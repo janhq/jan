@@ -397,5 +397,8 @@
       "title": "Fil eliminat del projecte",
       "description": "El fil s’ha eliminat de \"{{projectName}}\" correctament"
     }
+  },
+  "errors": {
+    "selectModelToStartChatting": "Please select a model to start chatting."
   }
 }

@@ -42,6 +42,14 @@ on:
         required: false
       JAN_SIGNING_KEY:
         required: false
+      DELTA_AWS_REGION:
+        required: false
+      GITHUB_TOKEN:
+        required: false
+      POSTHOG_KEY:
+        required: false
+      POSTHOG_HOST:
+        required: false
 jobs:
   build-linux-x64:
     runs-on: ubuntu-22.04

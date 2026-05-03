@@ -9,6 +9,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 type HmacSha256 = Hmac<Sha256>;
 
+/// HMAC signing key from `JAN_SIGNING_KEY`, forwarded into `rustc` by `build.rs` (`cargo:rustc-env`).
+/// Release builds fail in the build script if the host env var is unset or empty. Debug builds use a
+/// documented dev-only default (see `build.rs`).
+pub const BUILD_TIME_SIGNING_KEY: &str = env!("JAN_SIGNING_KEY");
+
 /// Header names for request signing
 pub struct HeaderNames;
 

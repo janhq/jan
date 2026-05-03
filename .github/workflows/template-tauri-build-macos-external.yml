@@ -15,6 +15,9 @@ on:
         type: string
         default: 'nightly'
         description: 'The channel to use for this job'
+    secrets:
+      JAN_SIGNING_KEY:
+        required: false
 jobs:
   build-macos-external:
     runs-on: macos-latest
@@ -110,6 +113,7 @@ jobs:
         env:
           NODE_OPTIONS: "--max-old-space-size=4196"
           APP_PATH: '.'
+          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY != '' && secrets.JAN_SIGNING_KEY || 'local-dev-test-key-not-for-production' }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

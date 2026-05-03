@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
 import {
@@ -76,6 +76,8 @@ export function SecurityConfigDialog({
 }: SecurityConfigDialogProps) {
   // Tab state
   const [activeTab, setActiveTab] = useState<TabType>('auth')
+  const activeTabRef = useRef<TabType>(activeTab)
+  activeTabRef.current = activeTab
 
   // Security status state
   const [status, setStatus] = useState<SecurityStatus | null>(null)
@@ -158,7 +160,7 @@ export function SecurityConfigDialog({
     }
   }, [])
 
-  // Load data when dialog opens
+  // Load data when dialog opens; if user left the dialog on Devices/Logs, refresh that list
   useEffect(() => {
     if (isOpen) {
       fetchStatus()
@@ -167,17 +169,14 @@ export function SecurityConfigDialog({
       setConfirmPassword('')
       setShowToken(false)
       setShowPassword(false)
+      const tab = activeTabRef.current
+      if (tab === 'devices') {
+        void fetchDevices()
+      } else if (tab === 'logs') {
+        void fetchLogs()
+      }
     }
-  }, [isOpen, fetchStatus])
-
-  // Load tab-specific data
-  useEffect(() => {
-    if (isOpen && activeTab === 'devices') {
-      fetchDevices()
-    } else if (isOpen && activeTab === 'logs') {
-      fetchLogs()
-    }
-  }, [isOpen, activeTab, fetchDevices, fetchLogs])
+  }, [isOpen, fetchStatus, fetchDevices, fetchLogs])
 
   // Handle auth mode change
   const handleAuthModeChange = async (newMode: AuthMode) => {
@@ -332,40 +331,61 @@ export function SecurityConfigDialog({
     return token.slice(0, 4) + '*'.repeat(token.length - 8) + token.slice(-4)
   }
 
-  // Render tab buttons
-  const renderTabs = () => (
+  // While loading, avoid native disabled on tab buttons: getByRole('button', …) excludes disabled
+  // controls by default. Use aria-disabled + click guard so labels stay queryable.
+  const renderTabs = (tabsDisabled: boolean) => (
     <div className="flex gap-1 p-1 bg-secondary/50 rounded-lg mb-4">
       <button
-        onClick={() => setActiveTab('auth')}
+        type="button"
+        aria-disabled={tabsDisabled}
+        onClick={() => {
+          if (tabsDisabled) return
+          setActiveTab('auth')
+        }}
         className={cn(
           'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
           activeTab === 'auth'
             ? 'bg-background text-foreground shadow-sm'
-            : 'text-muted-foreground hover:text-foreground'
+            : 'text-muted-foreground hover:text-foreground',
+          tabsDisabled && 'cursor-not-allowed opacity-60'
         )}
       >
         <IconKey size={16} />
         Authentication
       </button>
       <button
-        onClick={() => setActiveTab('devices')}
+        type="button"
+        aria-disabled={tabsDisabled}
+        onClick={() => {
+          if (tabsDisabled) return
+          setActiveTab('devices')
+          void fetchDevices()
+        }}
         className={cn(
           'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
           activeTab === 'devices'
             ? 'bg-background text-foreground shadow-sm'
-            : 'text-muted-foreground hover:text-foreground'
+            : 'text-muted-foreground hover:text-foreground',
+          tabsDisabled && 'cursor-not-allowed opacity-60'
         )}
       >
         <IconDevices size={16} />
         Devices
       </button>
       <button
-        onClick={() => setActiveTab('logs')}
+        type="button"
+        aria-disabled={tabsDisabled}
+        onClick={() => {
+          if (tabsDisabled) return
+          setActiveTab('logs')
+          void fetchLogs()
+        }}
         className={cn(
           'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1 justify-center',
           activeTab === 'logs'
             ? 'bg-background text-foreground shadow-sm'
-            : 'text-muted-foreground hover:text-foreground'
+            : 'text-muted-foreground hover:text-foreground',
+          tabsDisabled && 'cursor-not-allowed opacity-60'
         )}
       >
         <IconHistory size={16} />
@@ -831,18 +851,24 @@ export function SecurityConfigDialog({
             </DialogDescription>
           </DialogHeader>
 
-          {isLoadingStatus ? (
-            <div className="flex items-center justify-center py-12">
-              <IconLoader2 className="animate-spin h-8 w-8 text-muted-foreground" />
-            </div>
-          ) : (
-            <div className="flex-1 overflow-y-auto">
-              {renderTabs()}
-              {activeTab === 'auth' && renderAuthTab()}
-              {activeTab === 'devices' && renderDevicesTab()}
-              {activeTab === 'logs' && renderLogsTab()}
-            </div>
-          )}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            {renderTabs(isLoadingStatus)}
+            {isLoadingStatus ? (
+              <div
+                className="flex flex-1 items-center justify-center py-12"
+                aria-busy="true"
+                aria-label="Loading security settings"
+              >
+                <IconLoader2 className="animate-spin h-8 w-8 text-muted-foreground" />
+              </div>
+            ) : (
+              <>
+                {activeTab === 'auth' && renderAuthTab()}
+                {activeTab === 'devices' && renderDevicesTab()}
+                {activeTab === 'logs' && renderLogsTab()}
+              </>
+            )}
+          </div>
 
           <DialogFooter>
             <Button variant="ghost" size="sm" onClick={onClose}>

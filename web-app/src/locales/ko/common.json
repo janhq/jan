@@ -460,7 +460,8 @@
   },
   "errors": {
     "fileTooLarge": "파일이 너무 큽니다",
-    "fileTooLargeDescription": "{{fileName}}이(가) {{maxFileSizeMB}}MB 제한을 초과합니다"
+    "fileTooLargeDescription": "{{fileName}}이(가) {{maxFileSizeMB}}MB 제한을 초과합니다",
+    "selectModelToStartChatting": "Please select a model to start chatting."
   },
   "files": {
     "chunksCount": "청크 {{count}}개"

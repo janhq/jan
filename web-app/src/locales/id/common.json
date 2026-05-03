@@ -396,5 +396,8 @@
     "noProjectsFound": "Tidak ada proyek ditemukan",
     "tryDifferentSearch": "Coba kata kunci pencarian lain",
     "uploadingFiles": "Mengunggah file…"
+  },
+  "errors": {
+    "selectModelToStartChatting": "Please select a model to start chatting."
   }
 }
