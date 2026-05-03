@@ -18,8 +18,23 @@ on:
 
 jobs:
   build-windows-portable:
-    uses: janhq/jan/.github/workflows/template-tauri-build-windows-x64.yml@main
-    secrets: inherit
+    uses: ./.github/workflows/template-tauri-build-windows-x64.yml
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+      DELTA_AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+      DELTA_AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+      DELTA_AWS_REGION: ${{ secrets.DELTA_AWS_REGION }}
+      AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+      POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
     with:
       ref: ${{ inputs.build_ref }}
       public_provider: "none"
