@@ -221,7 +221,10 @@ jobs:
   #       set-public-provider,
   #       sync-temp-to-latest,
   #     ]
-  #   secrets: inherit
+  #   # Forward only secrets the Discord/readme template uses (avoid secrets: inherit).
+  #   secrets:
+  #     PAT_SERVICE_ACCOUNT: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+  #     DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
   #   if: github.event_name == 'schedule'
   #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
   #   with:
@@ -240,7 +243,10 @@ jobs:
   #       set-public-provider,
   #       sync-temp-to-latest,
   #     ]
-  #   secrets: inherit
+  #   # Forward only secrets the Discord/readme template uses (avoid secrets: inherit).
+  #   secrets:
+  #     PAT_SERVICE_ACCOUNT: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+  #     DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
   #   if: github.event_name == 'push'
   #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
   #   with:
@@ -259,7 +265,10 @@ jobs:
   #       set-public-provider,
   #       sync-temp-to-latest,
   #     ]
-  #   secrets: inherit
+  #   # Forward only secrets the Discord/readme template uses (avoid secrets: inherit).
+  #   secrets:
+  #     PAT_SERVICE_ACCOUNT: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+  #     DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
   #   if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'aws-s3'
   #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
   #   with:
