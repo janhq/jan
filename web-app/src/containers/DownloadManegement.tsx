@@ -16,6 +16,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { DownloadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { formatBytes } from '@/lib/utils'
 
 export function DownloadManagement() {
   const { t } = useTranslation()
@@ -352,11 +353,6 @@ export function DownloadManagement() {
     onAppUpdateDownloadError,
   ])
 
-  function renderGB(bytes: number): string {
-    const gb = bytes / 1024 ** 3
-    return ((gb * 100) / 100).toFixed(2)
-  }
-
   return (
     <>
       <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
@@ -420,7 +416,15 @@ export function DownloadManagement() {
                             %
                           </p>
                           <p className="text-xs">
-                            {`${renderGB(appUpdateState.downloadedBytes)} / ${renderGB(appUpdateState.totalBytes)}`}{' '}
+                            {`${formatBytes(appUpdateState.downloadedBytes, {
+                              hideUnit: true,
+                              minUnit: 'GB',
+                              decimals: 2,
+                            })} / ${formatBytes(appUpdateState.totalBytes, {
+                              hideUnit: true,
+                              minUnit: 'GB',
+                              decimals: 2,
+                            })}`}{' '}
                             GB
                           </p>
                         </div>
@@ -438,34 +442,34 @@ export function DownloadManagement() {
                         </p>
                         <div className="shrink-0 flex items-center space-x-0.5">
                           <Button variant="secondary" size="icon-xs" onClick={() => {
-                              // TODO: Consolidate cancellation logic
-                              if (download.id.startsWith('llamacpp') || download.id.startsWith('mlx')) {
-                                const downloadManager =
-                                  window.core.extensionManager.getByName(
-                                    '@janhq/download-extension'
-                                  )
-                                downloadManager.cancelDownload(download.id)
-                              } else {
-                                serviceHub
-                                  .models()
-                                  .abortDownload(download.name)
-                                  .then(() => {
-                                    toast.info(
-                                      t('common:toast.downloadCancelled.title'),
-                                      {
-                                        id: 'cancel-download',
-                                        description: t(
-                                          'common:toast.downloadCancelled.description'
-                                        ),
-                                      }
-                                    )
-                                    if (downloadProcesses.length === 0) {
-                                      setIsPopoverOpen(false)
+                            // TODO: Consolidate cancellation logic
+                            if (download.id.startsWith('llamacpp') || download.id.startsWith('mlx')) {
+                              const downloadManager =
+                                window.core.extensionManager.getByName(
+                                  '@janhq/download-extension'
+                                )
+                              downloadManager.cancelDownload(download.id)
+                            } else {
+                              serviceHub
+                                .models()
+                                .abortDownload(download.name)
+                                .then(() => {
+                                  toast.info(
+                                    t('common:toast.downloadCancelled.title'),
+                                    {
+                                      id: 'cancel-download',
+                                      description: t(
+                                        'common:toast.downloadCancelled.description'
+                                      ),
                                     }
-                                  })
-                              }
-                              setIsPopoverOpen(false)
-                            }} >
+                                  )
+                                  if (downloadProcesses.length === 0) {
+                                    setIsPopoverOpen(false)
+                                  }
+                                })
+                            }
+                            setIsPopoverOpen(false)
+                          }} >
                             <IconX
                               size={16}
                               className="text-muted-foreground cursor-pointer"
@@ -489,10 +493,22 @@ export function DownloadManagement() {
                           </p>
                           <p className="text-xs">
                             {download.total > 0
-                              ? `${renderGB(download.current)} / ${renderGB(download.total)} GB`
-                              : download.current > 0
-                                ? `${renderGB(download.current)} GB`
-                                : ''}
+                              ? `${formatBytes(download.current, {
+                                hideUnit: true,
+                                minUnit: 'GB',
+                                decimals: 2,
+                              })} / ${formatBytes(download.total, {
+                                hideUnit: true,
+                                minUnit: 'GB',
+                                decimals: 2,
+                              })} GB`
+                              : download.current > 0 ?
+                                `${formatBytes(download.current, {
+                                  hideUnit: true,
+                                  minUnit: 'GB',
+                                  decimals: 2,
+                                })} GB` : ''
+                            }
                           </p>
                         </div>
                       </div>
@@ -500,7 +516,7 @@ export function DownloadManagement() {
                   ))}
                 </div>
               </>
-              ) : (
+            ) : (
               <div className="px-3 py-8 flex flex-col items-center justify-center text-center space-y-2">
                 <DownloadIcon className="text-muted-foreground/50 size-6" />
                 <p className="text-muted-foreground leading-normal">
