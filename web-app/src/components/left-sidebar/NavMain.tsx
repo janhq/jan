@@ -76,6 +76,7 @@ const getNavMainItems = (
     title: 'common:newChat',
     animatedIcon: MessageCircleIcon,
     onClick: onNewChat,
+    testId: 'nav-new-chat',
     shortcut: (
       <KbdGroup className="ml-auto scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
@@ -102,6 +103,7 @@ const getNavMainItems = (
     title: 'common:projects.new',
     animatedIcon: FolderPlusIcon,
     onClick: onNewProject,
+    testId: 'nav-new-project',
     shortcut: (
       <KbdGroup className="ml-auto scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
@@ -134,6 +136,7 @@ const getNavMainItems = (
     title: 'common:settings',
     url: route.settings.general,
     animatedIcon: SettingsIcon,
+    testId: 'nav-settings',
   },
 ]
 

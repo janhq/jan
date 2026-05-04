@@ -207,7 +207,7 @@ function General() {
   }, [t, checkForUpdate])
 
   return (
-    <div className="flex flex-col h-svh w-full">
+    <div className="flex flex-col h-svh w-full" data-testid="settings-page">
       <HeaderPage>
         <div className="flex items-center gap-2 w-full">
           <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
