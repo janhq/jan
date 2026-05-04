@@ -246,6 +246,55 @@ These settings are for fine-tuning model behavior and advanced use cases:
 | **Grammar File** | Constrain output format | Empty | For structured output (JSON, code, etc.) |
 | **JSON Schema File** | Enforce JSON structure | Empty | When you need specific JSON formats |
 
+## Speculative Decoding
+
+Speculative decoding is a technique that speeds up token generation by predicting multiple tokens ahead using a cheaper method, then verifying them with the main model in a single forward pass. Accepted tokens are essentially free, so throughput improves without changing output quality.
+
+Jan supports two modes that can be combined:
+
+### Draft Model Mode
+
+A smaller, compatible model generates draft tokens for the main model to accept or reject.
+
+**Requirements:**
+- Both models must share the **same tokenizer** (same vocabulary)
+- The draft model must already be installed in Jan
+- Both models load from disk — make sure you have enough RAM/VRAM
+
+**How to set up:**
+1. Install a smaller model with the same architecture (e.g., Llama-3.2-3B as a draft for Llama-3.1-8B)
+2. Open the main model's settings (gear icon in the chat)
+3. Select the draft model from the **Draft Model** dropdown
+4. Optionally adjust **Max Draft Tokens** (default 16) and **Min Draft Tokens**
+5. The model restarts automatically with speculative decoding enabled
+
+### Model-Free Mode (N-gram)
+
+Uses token history patterns from the current conversation to predict future tokens — no draft model needed. This is enabled via the **Speculative Type** setting.
+
+| Value | Description |
+|-------|-------------|
+| `none` | Disabled (default) |
+| `ngram-simple` | Simple n-gram lookup, minimal overhead |
+| `ngram-mod` | Modified n-gram — recommended for reasoning models |
+| `ngram-cache` | N-gram with caching for long repetitive outputs |
+| `ngram-map-k` | Advanced key-mapped n-gram |
+| `ngram-map-k4v` | Experimental extended variant |
+
+<Callout type="info">
+Model-free speculative decoding works best when the output has predictable patterns — reasoning models (DeepSeek-R1, QwQ, etc.) benefit most from `ngram-mod` because their chain-of-thought outputs are repetitive.
+</Callout>
+
+### Combining Both Modes
+
+You can enable both a draft model and a speculative type at the same time. The n-gram method fills in gaps when the draft model's predictions are rejected.
+
+### Performance Tips
+
+- **Draft model size**: Smaller is faster. A draft model 5–10x smaller than the main model is a good starting point
+- **Max draft tokens**: Higher values (e.g., 32) help when draft acceptance rate is high; lower values reduce wasted work when acceptance is low
+- **Acceptance rate**: If the draft model is too different from the main model, acceptance rates will be low and speculative decoding may slow things down — try a different draft model
+
 ## Troubleshooting Common Issues
 
 **Models won't load:**
