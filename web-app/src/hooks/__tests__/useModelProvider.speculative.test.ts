@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useModelProvider } from '../useModelProvider'
+import { modelSettings } from '@/lib/predefined'
 
 vi.mock('@/lib/fileStorage', () => ({
   fileStorage: {
@@ -83,8 +84,6 @@ describe('useModelProvider - speculative decoding migration (version <= 13)', ()
 
     it('draft_model_id predefined setting has expected defaults', () => {
       // This verifies modelSettings.draft_model_id shape matches what migration writes
-      const { modelSettings } = require('@/lib/predefined')
-
       expect(modelSettings.draft_model_id).toBeDefined()
       expect(modelSettings.draft_model_id.key).toBe('draft_model_id')
       expect(modelSettings.draft_model_id.controller_type).toBe('dropdown')
@@ -92,8 +91,6 @@ describe('useModelProvider - speculative decoding migration (version <= 13)', ()
     })
 
     it('draft_max predefined setting has expected defaults', () => {
-      const { modelSettings } = require('@/lib/predefined')
-
       expect(modelSettings.draft_max).toBeDefined()
       expect(modelSettings.draft_max.key).toBe('draft_max')
       expect(modelSettings.draft_max.controller_type).toBe('input')
@@ -101,8 +98,6 @@ describe('useModelProvider - speculative decoding migration (version <= 13)', ()
     })
 
     it('draft_min predefined setting has expected defaults', () => {
-      const { modelSettings } = require('@/lib/predefined')
-
       expect(modelSettings.draft_min).toBeDefined()
       expect(modelSettings.draft_min.key).toBe('draft_min')
       expect(modelSettings.draft_min.controller_type).toBe('input')
