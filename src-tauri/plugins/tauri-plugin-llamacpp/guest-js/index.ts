@@ -100,8 +100,8 @@ export function normalizeLlamacppConfig(config: any): LlamacppConfig {
     keep: asI32(config.keep, 0),
 
     draft_model_path: asString(config.draft_model_path, ''),
-    spec_type: asString(config.spec_type, 'auto'), 
-    draft_max: asI32(config.draft_max, 0),       
+    spec_type: asString(config.spec_type, ''),
+    draft_max: asI32(config.draft_max, 0),
     draft_min: asI32(config.draft_min, 0),
   }
 }

@@ -609,7 +609,7 @@ function ProviderDetail() {
                       ) : (
                         <DynamicControllerSetting
                           controllerType={setting.controller_type}
-                          controllerProps={setting.controller_props}
+                          controllerProps={setting.key === 'draft_model_id' ? { options: provider?.models.map((model) => ({ value: model.id, name: model.displayName })) } : setting.controller_props} //TODO: add
                           className={cn(setting.key === 'device' && 'hidden')}
                           onChange={(newValue) => {
                             if (provider) {

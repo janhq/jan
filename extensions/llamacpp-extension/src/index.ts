@@ -1717,7 +1717,7 @@ export default class llamacpp_extension extends AIEngine {
     // Resolve draft model path for speculative decoding.
     // draft_model_id refers to another llamacpp model whose GGUF is used as the draft.
     // Falls back to draft_model_id from overrideSettings (set via per-model UI settings).
-    const draftModelId = modelConfig.draft_model_id ?? (overrideSettings as any)?.draft_model_id ?? undefined
+    const draftModelId = cfg.draft_model_id ?? (overrideSettings as any)?.draft_model_id ?? undefined
     if (draftModelId) {
       try {
         const draftConfigPath = await joinPath([
@@ -1737,16 +1737,6 @@ export default class llamacpp_extension extends AIEngine {
       } catch (e) {
         logger.warn(`Failed to resolve draft model "${draftModelId}": ${e}`)
       }
-    }
-    // Per-model spec_type / draft_max / draft_min from model.yml or overrideSettings
-    if (modelConfig.spec_type && !cfg.spec_type) {
-      cfg.spec_type = modelConfig.spec_type
-    }
-    if (modelConfig.draft_max != null && !cfg.draft_max) {
-      cfg.draft_max = modelConfig.draft_max
-    }
-    if (modelConfig.draft_min != null && !cfg.draft_min) {
-      cfg.draft_min = modelConfig.draft_min
     }
 
     // Migrate old env vars

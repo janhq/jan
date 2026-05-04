@@ -392,18 +392,28 @@
   {
     "key": "spec_type",
     "title": "Speculative type",
-    "description": "Model-free speculative decoding using token history patterns. Works without a draft model. Can be combined with a draft model.",
+    "description": "Model-free speculative decoding using token history patterns. Works without a draft model. Can be combined with a draft model. None = disabled. ngram-mod - good for reasoning models. ",
     "controllerType": "dropdown",
     "controllerProps": {
       "value": "none",
       "options": [
-        { "value": "none", "name": "none (disabled)" },
-        { "value": "ngram-simple", "name": "ngram-simple — simple n-gram pattern matching" },
-        { "value": "ngram-mod", "name": "ngram-mod — shared n-gram hash pool (good for reasoning models)" },
-        { "value": "ngram-cache", "name": "ngram-cache — n-gram cache lookup" },
-        { "value": "ngram-map-k", "name": "ngram-map-k — n-gram map with keys" },
-        { "value": "ngram-map-k4v", "name": "ngram-map-k4v — n-gram map with keys and values (experimental)" }
+        { "value": "none", "name": "none" },
+        { "value": "ngram-simple", "name": "ngram-simple" },
+        { "value": "ngram-mod", "name": "ngram-mod" },
+        { "value": "ngram-cache", "name": "ngram-cache" },
+        { "value": "ngram-map-k", "name": "ngram-map-k" },
+        { "value": "ngram-map-k4v", "name": "ngram-map-k4v (experimental)" }
       ]
+    }
+  },
+  {
+    "key": "draft_model_id",
+    "title": "Draft Model",
+    "description": "Small model that generates drafts. A draft model is the most used approach in speculative decoding.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "none",
+      "options": []
     }
   },
   {
@@ -413,7 +423,7 @@
       "Number of tokens to draft for speculative decoding (default: 16)",
     "controllerType": "input",
     "controllerProps": {
-      "value": "",
+      "value": 16,
       "placeholder": "16",
       "type": "number",
       "textAlign": "right"
@@ -426,7 +436,7 @@
       "Minimum number of draft tokens to use for speculative decoding (default: 0)",
     "controllerType": "input",
     "controllerProps": {
-      "value": "",
+      "value": 0,
       "placeholder": "0",
       "type": "number",
       "textAlign": "right"

@@ -220,6 +220,9 @@ impl ArgumentBuilder {
             self.add_fit_settings();
         }
 
+        // Speculative decoding (draft model and/or spec-type)
+        self.add_speculative_decoding_args();
+
         self.args
     }
 
@@ -467,6 +470,30 @@ impl ArgumentBuilder {
             }
         }
     }
+    fn add_speculative_decoding_args(&mut self) {
+        // Draft model path (resolved absolute path, empty means not configured)
+        if !self.config.draft_model_path.is_empty() {
+            self.args.push("--model-draft".to_string());
+            self.args.push(self.config.draft_model_path.clone());
+        }
+
+        // Spec type for model-free speculative decoding (ngram-simple, ngram-mod, …)
+        if !self.config.spec_type.is_empty() && self.config.spec_type != "none" {
+            self.args.push("--spec-type".to_string());
+            self.args.push(self.config.spec_type.clone());
+        }
+
+        // Draft token counts (0 = use llama.cpp defaults)
+        if self.config.draft_max > 0 {
+            self.args.push("--draft-max".to_string());
+            self.args.push(self.config.draft_max.to_string());
+        }
+
+        if self.config.draft_min > 0 {
+            self.args.push("--draft-min".to_string());
+            self.args.push(self.config.draft_min.to_string());
+        }
+    }
 }
 // -- Tests
 #[cfg(test)]
@@ -518,6 +545,10 @@ mod tests {
             cache_reuse: 0,
             swa_full: false,
             keep: 0,
+            draft_model_path: String::new(),
+            spec_type: String::new(),
+            draft_max: 0,
+            draft_min: 0,
         }
     }
 
