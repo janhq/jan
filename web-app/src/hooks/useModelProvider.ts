@@ -313,8 +313,6 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
-        console.info(version)
-
         if (version <= 2 && state?.providers) {
           state.providers.forEach((provider) => {
             // Update cont_batching description for llamacpp provider
