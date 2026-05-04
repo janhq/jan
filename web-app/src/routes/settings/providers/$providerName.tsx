@@ -76,6 +76,10 @@ function ProviderDetail() {
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
+  const draftModelCandidates = provider?.models
+    .filter(
+      (m) => !m.settings?.embedding?.controller_props?.value
+    ).map((model) => ({ value: model.id, name: model.displayName  ?? model.id }));
 
   // Check if llamacpp/mlx provider needs backend configuration
   const needsBackendConfig =
@@ -286,6 +290,18 @@ function ProviderDetail() {
         return 'text-destructive'
     }
   }, [])
+
+  const getControllerProps = useCallback((setting: ProviderSetting) => {
+    switch(setting.key) {
+      case 'draft_model_id':
+        return {
+          ...setting.controller_props,
+          options: draftModelCandidates
+        };
+      default:
+        return setting.controller_props;
+    }
+  }, [draftModelCandidates]);
 
   const handleTestApiKeys = useCallback(async () => {
     if (!provider?.base_url) {
@@ -609,7 +625,7 @@ function ProviderDetail() {
                       ) : (
                         <DynamicControllerSetting
                           controllerType={setting.controller_type}
-                          controllerProps={setting.key === 'draft_model_id' ? { options: provider?.models.map((model) => ({ value: model.id, name: model.displayName })) } : setting.controller_props} //TODO: add
+                          controllerProps={getControllerProps(setting)}
                           className={cn(setting.key === 'device' && 'hidden')}
                           onChange={(newValue) => {
                             if (provider) {
