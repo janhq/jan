@@ -160,42 +160,6 @@ export async function downloadBackend(
     '@janhq/download-extension'
   )
   const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
-
-  const downloadItems = [
-    {
-      url: backendUrl,
-      save_path: await joinPath([backendDir, 'backend.tar.gz']),
-      proxy: proxyConfig,
-      model_id: taskId,
-    },
-  ]
-
-  // also download CUDA runtime + cuBLAS + cuBLASLt if needed
-  const cudaVariants = [
-    { patterns: ['cu11.7', 'cuda-11'], version: '11.7', archive: 'cuda11' },
-    { patterns: ['cu12.0', 'cuda-12'], version: '12.0', archive: 'cuda12' },
-    // Note: cuda-13 only has one pattern; there is no 'cu13.0'-style backend name in use yet.
-    { patterns: ['cuda-13'],           version: '13.0', archive: 'cuda13' },
-  ]
-
-  for (const cuda of cudaVariants) {
-    if (
-      cuda.patterns.some((p) => backend.includes(p)) &&
-      !(await _isCudaInstalled(backendDir, cuda.version))
-    ) {
-      const cudaFile = `cudart-llama-bin-${platformName}-cu${cuda.version}-x64.tar.gz`
-      downloadItems.push({
-        url:
-          source === 'github'
-            ? `https://github.com/janhq/llama.cpp/releases/download/${version}/${cudaFile}`
-            : `https://catalog.jan.ai/llama.cpp/releases/${version}/${cudaFile}`,
-        save_path: await joinPath([backendDir, 'build', 'bin', `${cuda.archive}.tar.gz`]),
-        proxy: proxyConfig,
-        model_id: taskId,
-      })
-      break
-    }
-  }
   const downloadType = 'Engine'
 
   console.log(

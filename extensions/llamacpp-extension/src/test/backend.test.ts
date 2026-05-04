@@ -424,7 +424,7 @@ describe('Backend functions', () => {
       )
     })
 
-    it('should include cudart for cuda-13 if not installed', async () => {
+    it('should include cudart for cuda-13 if Rust returns two items', async () => {
       vi.stubGlobal('IS_WINDOWS', false)
       vi.mocked(getSystemInfo).mockResolvedValue({
         os_type: 'linux',
@@ -437,36 +437,31 @@ describe('Backend functions', () => {
         ],
       } as any)
 
-      await downloadBackend('linux-cuda-13-common_cpus-x64', 'v1.0.0')
+      const taskId = 'llamacpp-v1-0-0-linux-cuda-13-common_cpus-x64'
+      const mockItems = [
+        {
+          url: 'https://github.com/janhq/llama.cpp/releases/download/v1.0.0/llama-v1.0.0-bin-linux-cuda-13-common_cpus-x64.tar.gz',
+          save_path: `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/linux-cuda-13-common_cpus-x64/backend.tar.gz`,
+          model_id: taskId,
+        },
+        {
+          url: 'https://github.com/janhq/llama.cpp/releases/download/v1.0.0/cudart-llama-bin-linux-cu13.0-x64.tar.gz',
+          save_path: `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/linux-cuda-13-common_cpus-x64/build/bin/cuda13.tar.gz`,
+          model_id: taskId,
+        },
+      ]
 
-      const downloadItems = vi.mocked(mockDownloadManager.downloadFiles).mock
-        .calls[0][0]
-      expect(downloadItems.length).toBe(2)
-      expect(downloadItems[1].url).toContain(
-        'cudart-llama-bin-linux-cu13.0-x64.tar.gz'
-      )
-      expect(downloadItems[1].save_path).toBe(
-        `${MOCK_JAN_PATH_STRING}/llamacpp/backends/v1.0.0/linux-cuda-13-common_cpus-x64/build/bin/cuda13.tar.gz`
-      )
-    })
-
-    it('should include cudart for cuda-13 if not installed', async () => {
-      vi.stubGlobal('IS_WINDOWS', false)
-      vi.mocked(getSystemInfo).mockResolvedValue({
-        os_type: 'linux',
-        cpu: { arch: 'x86_64', extensions: [] },
-        gpus: [
-          {
-            driver_version: '560.00',
-            nvidia_info: { compute_capability: '12.0' },
-          },
-        ],
-      } as any)
+      vi.mocked(invoke).mockImplementation(async (command: string) => {
+        if (command === 'plugin:llamacpp|build_backend_download_items')
+          return mockItems
+        if (command === 'decompress') return undefined
+        return undefined
+      })
 
       await downloadBackend('linux-cuda-13-common_cpus-x64', 'v1.0.0')
 
-      const downloadItems = vi.mocked(mockDownloadManager.downloadFiles).mock
-        .calls[0][0]
+      const downloadItems =
+        vi.mocked(mockDownloadManager.downloadFiles).mock.calls[0][0]
       expect(downloadItems.length).toBe(2)
       expect(downloadItems[1].url).toContain(
         'cudart-llama-bin-linux-cu13.0-x64.tar.gz'
