@@ -1421,4 +1421,169 @@ mod tests {
         assert_arg_pair(&args, "--parallel", "4");
         assert_no_flag(&args, "-kvu");
     }
+
+    // ── Speculative decoding tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_speculative_decoding_no_args_by_default() {
+        let config = default_config();
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--model-draft");
+        assert_no_flag(&args, "--spec-type");
+        assert_no_flag(&args, "--draft-max");
+        assert_no_flag(&args, "--draft-min");
+    }
+
+    #[test]
+    fn test_speculative_decoding_draft_model_path_added() {
+        let mut config = default_config();
+        config.draft_model_path = "/path/to/draft.gguf".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path/to/main.gguf", 8080, None);
+
+        assert_arg_pair(&args, "--model-draft", "/path/to/draft.gguf");
+    }
+
+    #[test]
+    fn test_speculative_decoding_draft_model_path_empty_not_added() {
+        let mut config = default_config();
+        config.draft_model_path = String::new();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--model-draft");
+    }
+
+    #[test]
+    fn test_speculative_decoding_spec_type_ngram_mod_added() {
+        let mut config = default_config();
+        config.spec_type = "ngram-mod".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--spec-type", "ngram-mod");
+    }
+
+    #[test]
+    fn test_speculative_decoding_spec_type_ngram_simple_added() {
+        let mut config = default_config();
+        config.spec_type = "ngram-simple".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--spec-type", "ngram-simple");
+    }
+
+    #[test]
+    fn test_speculative_decoding_spec_type_none_not_added() {
+        let mut config = default_config();
+        config.spec_type = "none".to_string();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--spec-type");
+    }
+
+    #[test]
+    fn test_speculative_decoding_spec_type_empty_not_added() {
+        let mut config = default_config();
+        config.spec_type = String::new();
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--spec-type");
+    }
+
+    #[test]
+    fn test_speculative_decoding_draft_max_added_when_nonzero() {
+        let mut config = default_config();
+        config.draft_max = 32;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--draft-max", "32");
+    }
+
+    #[test]
+    fn test_speculative_decoding_draft_max_zero_not_added() {
+        let config = default_config(); // draft_max defaults to 0
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--draft-max");
+    }
+
+    #[test]
+    fn test_speculative_decoding_draft_min_added_when_nonzero() {
+        let mut config = default_config();
+        config.draft_min = 4;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--draft-min", "4");
+    }
+
+    #[test]
+    fn test_speculative_decoding_draft_min_zero_not_added() {
+        let config = default_config(); // draft_min defaults to 0
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--draft-min");
+    }
+
+    #[test]
+    fn test_speculative_decoding_all_args_combined() {
+        let mut config = default_config();
+        config.draft_model_path = "/drafts/llama-3b.gguf".to_string();
+        config.spec_type = "ngram-mod".to_string();
+        config.draft_max = 16;
+        config.draft_min = 2;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("main-model", "/path/to/main.gguf", 8080, None);
+
+        assert_arg_pair(&args, "--model-draft", "/drafts/llama-3b.gguf");
+        assert_arg_pair(&args, "--spec-type", "ngram-mod");
+        assert_arg_pair(&args, "--draft-max", "16");
+        assert_arg_pair(&args, "--draft-min", "2");
+    }
+
+    #[test]
+    fn test_speculative_decoding_draft_model_without_spec_type() {
+        let mut config = default_config();
+        config.draft_model_path = "/drafts/draft.gguf".to_string();
+        // spec_type stays empty
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_arg_pair(&args, "--model-draft", "/drafts/draft.gguf");
+        assert_no_flag(&args, "--spec-type");
+    }
+
+    #[test]
+    fn test_speculative_decoding_spec_type_without_draft_model() {
+        let mut config = default_config();
+        config.spec_type = "ngram-cache".to_string();
+        // draft_model_path stays empty
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert_no_flag(&args, "--model-draft");
+        assert_arg_pair(&args, "--spec-type", "ngram-cache");
+    }
 }
