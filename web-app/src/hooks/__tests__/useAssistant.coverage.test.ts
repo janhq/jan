@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useAssistant, defaultAssistant } from '../useAssistant'
 
@@ -276,9 +276,5 @@ describe('useAssistant - coverage', () => {
       description: 'Network error',
     })
     expect(result.current.loading).toBe(false)
-  })
-
-  afterEach(() => {
-    mockToast.mockClear()
   })
 })
