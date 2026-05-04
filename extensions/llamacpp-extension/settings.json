@@ -405,41 +405,5 @@
         { "value": "ngram-map-k4v", "name": "ngram-map-k4v (experimental)" }
       ]
     }
-  },
-  {
-    "key": "draft_model_id",
-    "title": "Draft Model",
-    "description": "Small model that generates drafts. A draft model is the most used approach in speculative decoding.",
-    "controllerType": "dropdown",
-    "controllerProps": {
-      "value": "none",
-      "options": []
-    }
-  },
-  {
-    "key": "draft_max",
-    "title": "Max draft tokens per step",
-    "description":
-      "Number of tokens to draft for speculative decoding (default: 16)",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 16,
-      "placeholder": "16",
-      "type": "number",
-      "textAlign": "right"
-    }
-  },
-  {
-    "key": "draft_min",
-    "title": "Min draft tokens per step",
-    "description":
-      "Minimum number of draft tokens to use for speculative decoding (default: 0)",
-    "controllerType": "input",
-    "controllerProps": {
-      "value": 0,
-      "placeholder": "0",
-      "type": "number",
-      "textAlign": "right"
-    }
   }
 ]
