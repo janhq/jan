@@ -147,6 +147,60 @@ function filterParameters(
 }
 
 /**
+ * Inference parameters that Cerebras does not support and must be stripped
+ * before the request body is sent to the Cerebras API.
+ */
+const CEREBRAS_UNSUPPORTED_KEYS: ReadonlySet<string> = new Set([
+  'top_k',
+  'repeat_penalty',
+  'frequency_penalty',
+  'presence_penalty',
+])
+
+/**
+ * Request-body fields injected by the AI SDK at call time that Cerebras
+ * does not accept.  These are distinct from inference *parameters* (which
+ * come from the Jan UI) and must be stripped from every outgoing request.
+ *
+ * - `parallel_tool_calls` — sent by the AI SDK when tools are enabled;
+ *   Cerebras rejects it with 400 Bad Request.
+ * - `stream_options`      — belt-and-suspenders guard; `includeUsage:false`
+ *   should prevent it, but strip it here too just in case.
+ */
+const CEREBRAS_UNSUPPORTED_BODY_KEYS: ReadonlySet<string> = new Set([
+  'parallel_tool_calls',
+  'stream_options',
+])
+
+/**
+ * Wraps a fetch implementation to:
+ *  1. Strip Cerebras-incompatible fields from every POST request body.
+ *  2. Log the outgoing request and any error responses to the console so
+ *     issues can be diagnosed from DevTools / electron logs.
+ */
+function createCerebrasAwareFetch(
+  baseFetch: typeof globalThis.fetch
+): typeof globalThis.fetch {
+  return async (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> => {
+    if (init?.method === 'POST' || !init?.method) {
+      const body = init?.body ? JSON.parse(init.body as string) : {}
+
+      // Strip fields Cerebras rejects at the request level
+      for (const key of CEREBRAS_UNSUPPORTED_BODY_KEYS) {
+        delete body[key]
+      }
+
+      init = { ...init, body: JSON.stringify(body) }
+    }
+
+    return baseFetch(input, init)
+  }
+}
+
+/**
  * Create a custom fetch function that injects additional parameters into the
  * request body, normalising key names for OpenAI-compatible APIs:
  * - `max_output_tokens` is remapped to `max_tokens`
@@ -391,6 +445,9 @@ export class ModelFactory {
 
       case 'xai':
         return this.createXaiModel(modelId, provider, parameters)
+
+      case 'cerebras':
+        return this.createCerebrasModel(modelId, provider, parameters)
 
       default:
         return this.createOpenAICompatibleModel(modelId, provider, parameters)
@@ -825,5 +882,67 @@ export class ModelFactory {
         separator: '\n',
       }),
     })
+  }
+
+  /**
+   * Create a Cerebras model via OpenAI-compatible with Cerebras-specific
+   * settings.
+   *
+   * Cerebras rejects `stream_options` (HTTP 422), so `includeUsage` is
+   * disabled.  Unsupported inference parameters (`top_k`, `repeat_penalty`,
+   * `frequency_penalty`, `presence_penalty`) are stripped before they reach
+   * the request body.
+   */
+  private static createCerebrasModel(
+    modelId: string,
+    provider: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): LanguageModel {
+    const headers: Record<string, string> = {}
+
+    if (provider.custom_header) {
+      provider.custom_header.forEach((customHeader) => {
+        headers[customHeader.header] = customHeader.value
+      })
+    }
+
+    const keyChain = providerRemoteApiKeyChain(provider)
+    // Set Authorization manually for the single-key path; the multi-key path
+    // uses createApiKeyRotatingFetch which injects the header itself.
+    if (keyChain.length === 1) {
+      headers['Authorization'] = `Bearer ${keyChain[0]}`
+    }
+
+    // Strip parameters that Cerebras does not support (module-level constant)
+    const filtered: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(parameters)) {
+      if (!CEREBRAS_UNSUPPORTED_KEYS.has(key)) {
+        filtered[key] = value
+      }
+    }
+
+    const baseFetchImpl =
+      keyChain.length > 1
+        ? createApiKeyRotatingFetch(
+            getRuntimeFetch(),
+            keyChain,
+            filtered,
+            'authorization-bearer'
+          )
+        : createCustomFetch(getRuntimeFetch(), filtered)
+
+    // Layer Cerebras-specific body sanitisation and debug logging on top
+    const fetchImpl = createCerebrasAwareFetch(baseFetchImpl)
+
+    const openAICompatible = createOpenAICompatible({
+      name: provider.provider,
+      baseURL: provider.base_url || 'https://api.cerebras.ai/v1',
+      headers,
+      // Cerebras rejects stream_options; disable to prevent 422 errors
+      includeUsage: false,
+      fetch: fetchImpl,
+    })
+
+    return openAICompatible.languageModel(modelId)
   }
 }

@@ -451,6 +451,55 @@ export const predefinedProviders = [
   {
     active: true,
     api_key: '',
+    base_url: 'https://api.cerebras.ai/v1',
+    explore_models_url: 'https://cloud.cerebras.ai/models',
+    provider: 'cerebras',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Cerebras API uses API keys for authentication. Visit your [Cerebras Cloud Dashboard](https://cloud.cerebras.ai/) to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. See the [Cerebras API documentation](https://inference-docs.cerebras.ai/api-reference/chat-completions) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.cerebras.ai/v1',
+          value: 'https://api.cerebras.ai/v1',
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'gpt-oss-120b',
+        name: 'OpenAI GPT OSS 120B',
+        version: '1.0',
+        description: 'OpenAI open-source 120B model on Cerebras wafer-scale inference.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'llama3.1-8b',
+        name: 'Llama 3.1 8B',
+        version: '1.0',
+        description: 'Meta Llama 3.1 8B — lightweight, fast inference.',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
+  },
+  {
+    active: true,
+    api_key: '',
     base_url: 'https://integrate.api.nvidia.com/v1',
     explore_models_url: 'https://build.nvidia.com/models',
     provider: 'nvidia',
