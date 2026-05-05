@@ -39,10 +39,46 @@ pub(crate) fn normalize_openai_schema_root(schema: &mut serde_json::Value) {
 }
 
 pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::Value) {
-    normalize_openai_schema_tree(schema);
+    match schema {
+        serde_json::Value::Object(map) => {
+            let has_description = map.contains_key("description");
+            let has_type = map.contains_key("type");
+            let is_object_type = map.get("type").and_then(|v| v.as_str()) == Some("object");
+            let has_nested_schema_keywords = map.contains_key("properties")
+                || map.contains_key("items")
+                || map.contains_key("anyOf")
+                || map.contains_key("oneOf")
+                || map.contains_key("allOf")
+                || map.contains_key("$ref");
+
+            if is_object_type && !map.contains_key("properties") {
+                map.insert(
+                    "properties".to_string(),
+                    serde_json::Value::Object(serde_json::Map::new()),
+                );
+            }
+
+            if has_description && !has_type && !has_nested_schema_keywords {
+                map.insert(
+                    "type".to_string(),
+                    serde_json::Value::String("string".to_string()),
+                );
+            }
+
+            for value in map.values_mut() {
+                normalize_openai_tool_parameters_schema(value);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for value in arr.iter_mut() {
+                normalize_openai_tool_parameters_schema(value);
+            }
+        }
+        _ => {}
+    }
 }
 
-fn normalize_openai_schema_tree(schema: &mut serde_json::Value) {
+fn normalize_openai_responses_schema(schema: &mut serde_json::Value) {
     match schema {
         serde_json::Value::String(_) => {
             normalize_openai_schema_root(schema);
@@ -76,7 +112,7 @@ fn normalize_openai_schema_tree(schema: &mut serde_json::Value) {
             for key in ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"] {
                 if let Some(children) = map.get_mut(key).and_then(|value| value.as_object_mut()) {
                     for child in children.values_mut() {
-                        normalize_openai_schema_tree(child);
+                        normalize_openai_responses_schema(child);
                     }
                 }
             }
@@ -95,21 +131,21 @@ fn normalize_openai_schema_tree(schema: &mut serde_json::Value) {
                 "contentSchema",
             ] {
                 if let Some(value) = map.get_mut(key) {
-                    normalize_openai_schema_tree(value);
+                    normalize_openai_responses_schema(value);
                 }
             }
 
             for key in ["anyOf", "oneOf", "allOf", "prefixItems"] {
                 if let Some(children) = map.get_mut(key).and_then(|value| value.as_array_mut()) {
                     for child in children.iter_mut() {
-                        normalize_openai_schema_tree(child);
+                        normalize_openai_responses_schema(child);
                     }
                 }
             }
         }
         serde_json::Value::Array(arr) => {
             for v in arr.iter_mut() {
-                normalize_openai_schema_tree(v);
+                normalize_openai_responses_schema(v);
             }
         }
         _ => {}
@@ -162,7 +198,7 @@ pub(crate) fn normalize_openai_tools_in_responses_body(body: &mut serde_json::Va
             None => return true,
         };
 
-        normalize_openai_tool_parameters_schema(parameters);
+        normalize_openai_responses_schema(parameters);
         true
     });
 }
@@ -183,7 +219,7 @@ pub(crate) fn normalize_openai_text_format_schema_in_responses_body(body: &mut s
         None => return,
     };
 
-    normalize_openai_tool_parameters_schema(schema);
+    normalize_openai_responses_schema(schema);
 }
 
 pub(crate) fn normalize_openai_responses_body(body: &mut serde_json::Value) {
@@ -1165,6 +1201,37 @@ async fn resolve_proxy_model_id(
     }
 
     resolved_model
+}
+
+async fn rewrite_request_model_to_available_fallback(
+    json_body: &mut serde_json::Value,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    sessions: Arc<Mutex<HashMap<i32, LLamaBackendSession>>>,
+    mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+) -> Result<bool, &'static str> {
+    let Some(requested_model_id) = json_body.get("model").and_then(|v| v.as_str()) else {
+        return Ok(false);
+    };
+
+    let resolved_model_id = resolve_proxy_model_id(
+        Some(requested_model_id),
+        provider_configs,
+        sessions,
+        mlx_sessions,
+    )
+    .await
+    .ok_or("No models are available")?;
+
+    log::debug!(
+        "Extracted model_id: {requested_model_id}, resolved to: {resolved_model_id}"
+    );
+
+    if requested_model_id == resolved_model_id {
+        return Ok(false);
+    }
+
+    json_body["model"] = serde_json::json!(resolved_model_id);
+    Ok(true)
 }
 
 pub(crate) fn copy_optional_chat_params(from: &serde_json::Value, into: &mut serde_json::Map<String, serde_json::Value>) {
@@ -2390,37 +2457,35 @@ async fn proxy_request(
                         }
                     }
 
-                    if let Some(requested_model_id) = json_body.get("model").and_then(|v| v.as_str()) {
-                        let resolved_model_id = match resolve_proxy_model_id(
-                            Some(requested_model_id),
-                            provider_configs.clone(),
-                            sessions.clone(),
-                            mlx_sessions.clone(),
-                        )
-                        .await {
-                            Some(v) => v,
-                            None => {
-                                let mut error_response =
-                                    Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
-                                error_response = add_cors_headers_with_host_and_origin(
-                                    error_response,
-                                    &host_header,
-                                    &origin_header,
-                                    &config.trusted_hosts,
-                                );
-                                return Ok(error_response
-                                    .body(Body::from("No models are available"))
-                                    .unwrap());
-                            }
-                        };
-                        log::debug!("Extracted model_id: {requested_model_id}, resolved to: {resolved_model_id}");
-
-                        if requested_model_id != resolved_model_id {
-                            json_body["model"] = serde_json::json!(resolved_model_id);
-                            if let Ok(normalized_bytes) = serde_json::to_vec(&json_body) {
-                                buffered_body = Some(normalized_bytes.into());
-                            }
+                    let model_was_rewritten = match rewrite_request_model_to_available_fallback(
+                        &mut json_body,
+                        provider_configs.clone(),
+                        sessions.clone(),
+                        mlx_sessions.clone(),
+                    )
+                    .await {
+                        Ok(changed) => changed,
+                        Err(error_msg) => {
+                            let mut error_response =
+                                Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
+                            error_response = add_cors_headers_with_host_and_origin(
+                                error_response,
+                                &host_header,
+                                &origin_header,
+                                &config.trusted_hosts,
+                            );
+                            return Ok(error_response.body(Body::from(error_msg)).unwrap());
                         }
+                    };
+
+                    if model_was_rewritten {
+                        if let Ok(normalized_bytes) = serde_json::to_vec(&json_body) {
+                            buffered_body = Some(normalized_bytes.into());
+                        }
+                    }
+
+                    if let Some(model_id) = json_body.get("model").and_then(|v| v.as_str()) {
+                        log::debug!("Extracted model_id: {model_id}");
 
                         // First, check if there's a registered remote provider for this model
                         let pc = provider_configs.lock().await;
@@ -2430,26 +2495,26 @@ async fn proxy_request(
                             .iter()
                             .find(|(_, config)| {
                                 // Check if any model in this provider matches
-                                config.models.iter().any(|m| m == &resolved_model_id)
+                                config.models.iter().any(|m| m == model_id)
                             })
                             .map(|(_, config)| config.provider.clone())
                             .or_else(|| {
                                 // Try to find by provider name in model_id (e.g., "anthropic/claude-3-opus")
-                                if let Some(sep_pos) = resolved_model_id.find('/') {
-                                    let potential_provider: &str = &resolved_model_id[..sep_pos];
+                                if let Some(sep_pos) = model_id.find('/') {
+                                    let potential_provider: &str = &model_id[..sep_pos];
                                     if pc.contains_key(potential_provider) {
                                         return Some(potential_provider.to_string());
                                     }
                                 }
                                 // Also check if the model_id itself matches a provider name
-                                pc.get(&resolved_model_id).map(|c| c.provider.clone())
+                                pc.get(model_id).map(|c| c.provider.clone())
                             });
 
                         drop(pc);
 
                         if let Some(ref provider) = provider_name {
                             // Found a remote provider, stream the response directly
-                            log::info!("Found remote provider '{provider}' for model '{resolved_model_id}'");
+                            log::info!("Found remote provider '{provider}' for model '{model_id}'");
 
                             // Get the provider config
                             let pc2 = provider_configs.lock().await;
@@ -2478,7 +2543,7 @@ async fn proxy_request(
                             let sessions_guard = sessions.lock().await;
 
                             // Use original model_id for local session lookup
-                            let sessions_find_model = resolved_model_id.as_str();
+                            let sessions_find_model = model_id;
 
                             // Check both llama.cpp and MLX sessions
                             let llama_session = sessions_guard
@@ -2507,7 +2572,7 @@ async fn proxy_request(
 
                             if total_sessions == 0 {
                                 log::warn!(
-                                    "Request for model '{resolved_model_id}' but no models are running."
+                                    "Request for model '{model_id}' but no models are running."
                                 );
                                 let mut error_response =
                                     Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
@@ -2525,19 +2590,19 @@ async fn proxy_request(
                             if let Some(session) = llama_session {
                                 let target_port = session.info.port;
                                 session_api_keys = vec![session.info.api_key.clone()];
-                                log::debug!("Found llama.cpp session for model_id {resolved_model_id}");
+                                log::debug!("Found llama.cpp session for model_id {model_id}");
                                 target_base_url = Some(format!(
                                     "http://127.0.0.1:{target_port}/v1{destination_path}"
                                 ));
                             } else if let Some(info) = mlx_session {
                                 let target_port = info.port;
                                 session_api_keys = vec![info.api_key.clone()];
-                                log::debug!("Found MLX session for model_id {resolved_model_id}");
+                                log::debug!("Found MLX session for model_id {model_id}");
                                 target_base_url = Some(format!(
                                     "http://127.0.0.1:{target_port}/v1{destination_path}"
                                 ));
                             } else {
-                                log::warn!("No running session found for model_id: {resolved_model_id}");
+                                log::warn!("No running session found for model_id: {model_id}");
                                 let mut error_response =
                                     Response::builder().status(StatusCode::NOT_FOUND);
                                 error_response = add_cors_headers_with_host_and_origin(
@@ -2548,7 +2613,7 @@ async fn proxy_request(
                                 );
                                 return Ok(error_response
                                     .body(Body::from(format!(
-                                        "No running session found for model '{resolved_model_id}'"
+                                        "No running session found for model '{model_id}'"
                                     )))
                                     .unwrap());
                             }

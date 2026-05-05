@@ -461,6 +461,25 @@ mod tests {
     }
 
     #[test]
+    fn normalize_openai_tool_parameters_schema_preserves_bare_string_shorthand() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "query": "string",
+                "filters": {
+                    "type": "array",
+                    "items": "string"
+                }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(schema["properties"]["query"], json!("string"));
+        assert_eq!(schema["properties"]["filters"]["items"], json!("string"));
+    }
+
+    #[test]
     fn normalize_openai_tool_parameters_schema_wraps_nested_bare_string_schema_positions() {
         let mut schema = json!({
             "type": "object",
