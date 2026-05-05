@@ -461,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    fn normalize_openai_tool_parameters_schema_preserves_bare_string_shorthand() {
+    fn normalize_openai_tool_parameters_schema_wraps_bare_string_shorthand_in_schema_positions() {
         let mut schema = json!({
             "type": "object",
             "properties": {
@@ -475,8 +475,11 @@ mod tests {
 
         proxy::normalize_openai_tool_parameters_schema(&mut schema);
 
-        assert_eq!(schema["properties"]["query"], json!("string"));
-        assert_eq!(schema["properties"]["filters"]["items"], json!("string"));
+        assert_eq!(schema["properties"]["query"], json!({ "type": "string" }));
+        assert_eq!(
+            schema["properties"]["filters"]["items"],
+            json!({ "type": "string" })
+        );
     }
 
     #[test]

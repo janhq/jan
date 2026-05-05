@@ -39,7 +39,17 @@ pub(crate) fn normalize_openai_schema_root(schema: &mut serde_json::Value) {
 }
 
 pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::Value) {
+    normalize_openai_tool_parameters_schema_at(schema, true);
+}
+
+fn normalize_openai_tool_parameters_schema_at(
+    schema: &mut serde_json::Value,
+    is_schema_position: bool,
+) {
     match schema {
+        serde_json::Value::String(_) if is_schema_position => {
+            normalize_openai_schema_root(schema);
+        }
         serde_json::Value::Object(map) => {
             let has_description = map.contains_key("description");
             let has_type = map.contains_key("type");
@@ -65,13 +75,32 @@ pub(crate) fn normalize_openai_tool_parameters_schema(schema: &mut serde_json::V
                 );
             }
 
-            for value in map.values_mut() {
-                normalize_openai_tool_parameters_schema(value);
+            for (key, value) in map.iter_mut() {
+                match key.as_str() {
+                    "properties" | "patternProperties" | "$defs" | "definitions" | "dependentSchemas" => {
+                        if let serde_json::Value::Object(children) = value {
+                            for child in children.values_mut() {
+                                normalize_openai_tool_parameters_schema_at(child, true);
+                            }
+                        }
+                    }
+                    "items" | "additionalProperties" | "contains" | "not" | "if" | "then" | "else" => {
+                        normalize_openai_tool_parameters_schema_at(value, true);
+                    }
+                    "anyOf" | "oneOf" | "allOf" | "prefixItems" => {
+                        if let serde_json::Value::Array(children) = value {
+                            for child in children.iter_mut() {
+                                normalize_openai_tool_parameters_schema_at(child, true);
+                            }
+                        }
+                    }
+                    _ => normalize_openai_tool_parameters_schema_at(value, false),
+                }
             }
         }
         serde_json::Value::Array(arr) => {
             for value in arr.iter_mut() {
-                normalize_openai_tool_parameters_schema(value);
+                normalize_openai_tool_parameters_schema_at(value, is_schema_position);
             }
         }
         _ => {}
