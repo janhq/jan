@@ -1586,4 +1586,17 @@ mod tests {
         assert_no_flag(&args, "--model-draft");
         assert_arg_pair(&args, "--spec-type", "ngram-cache");
     }
+
+    #[test]
+    fn test_speculative_decoding_deserializes_unsigned_counts_from_json() {
+        let mut value = serde_json::to_value(default_config()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.insert("draft_max".to_string(), serde_json::json!(16));
+        object.insert("draft_min".to_string(), serde_json::json!(2));
+
+        let config: LlamacppConfig = serde_json::from_value(value).unwrap();
+
+        assert_eq!(config.draft_max, 16);
+        assert_eq!(config.draft_min, 2);
+    }
 }

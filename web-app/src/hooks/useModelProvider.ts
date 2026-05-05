@@ -585,7 +585,6 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
-        
         if (version <= 13 && state?.providers) {
           state.providers.forEach((provider) => {
             if (provider.models && provider.provider === 'llamacpp') {

@@ -136,6 +136,11 @@ describe('normalizeLlamacppConfig - speculative decoding fields', () => {
       const result = normalizeLlamacppConfig({ ...baseConfig, draft_max: 16.9 })
       expect(result.draft_max).toBe(16)
     })
+
+    it('clamps negative values to 0', () => {
+      const result = normalizeLlamacppConfig({ ...baseConfig, draft_max: -3 })
+      expect(result.draft_max).toBe(0)
+    })
   })
 
   describe('draft_min', () => {
@@ -156,6 +161,11 @@ describe('normalizeLlamacppConfig - speculative decoding fields', () => {
 
     it('returns 0 when null', () => {
       const result = normalizeLlamacppConfig({ ...baseConfig, draft_min: null })
+      expect(result.draft_min).toBe(0)
+    })
+
+    it('clamps negative values to 0', () => {
+      const result = normalizeLlamacppConfig({ ...baseConfig, draft_min: -1 })
       expect(result.draft_min).toBe(0)
     })
   })

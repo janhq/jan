@@ -16,7 +16,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { cn, getModelDisplayName } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useAppState } from '@/hooks/useAppState'
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 
 type ModelSettingProps = {
   provider: ProviderObject
@@ -33,18 +33,25 @@ export function ModelSetting({
   const setActiveModels = useAppState((state) => state.setActiveModels)
 
   // All non-embedding llamacpp models except the current one (candidates for draft model)
-  const draftModelCandidates = providers
-    .filter((p) => p.provider === 'llamacpp')
-    .flatMap((p) => p.models)
-    .filter(
-      (m) =>
-        m.id !== model.id &&
-        !m.settings?.embedding?.controller_props?.value
-    )
-    .map((model) => ({ value: model.id, name: model.displayName  ?? model.id }));
+  const draftModelCandidates = useMemo(
+    () =>
+      providers
+        .filter((p) => p.provider === 'llamacpp')
+        .flatMap((p) => p.models)
+        .filter(
+          (candidate) =>
+            candidate.id !== model.id &&
+            !candidate.settings?.embedding?.controller_props?.value
+        )
+        .map((candidate) => ({
+          value: candidate.id,
+          name: candidate.displayName ?? candidate.id,
+        })),
+    [model.id, providers]
+  )
 
   const getControllerProps = useCallback((config: ProviderSetting) => {
-    switch(config.key) {
+    switch (config.key) {
       case 'draft_model_id':
         return {
           ...config.controller_props,
@@ -53,14 +60,14 @@ export function ModelSetting({
             ...draftModelCandidates,
           ],
           value: config.controller_props?.value,
-        };
+        }
       default:
         return {
           ...config.controller_props,
           value: config.controller_props?.value,
         }
     }
-  }, [draftModelCandidates]);
+  }, [draftModelCandidates])
 
   // Create a debounced version of stopModel that waits 500ms after the last call
   const debouncedStopModel = debounce((modelId: string) => {

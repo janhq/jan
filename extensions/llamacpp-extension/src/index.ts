@@ -1717,7 +1717,10 @@ export default class llamacpp_extension extends AIEngine {
     // Resolve draft model path for speculative decoding.
     // draft_model_id refers to another llamacpp model whose GGUF is used as the draft.
     // Falls back to draft_model_id from overrideSettings (set via per-model UI settings).
-    const draftModelId = cfg.draft_model_id ?? (overrideSettings as any)?.draft_model_id ?? undefined
+    const draftModelId =
+      cfg.draft_model_id && cfg.draft_model_id !== 'none'
+        ? cfg.draft_model_id
+        : undefined
     if (draftModelId) {
       try {
         const draftConfigPath = await joinPath([
