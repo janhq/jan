@@ -2456,31 +2456,32 @@ async fn proxy_request(
                             }
                         }
                     }
+                    if destination_path == "/responses" {
+                        let model_was_rewritten = match rewrite_request_model_to_available_fallback(
+                            &mut json_body,
+                            provider_configs.clone(),
+                            sessions.clone(),
+                            mlx_sessions.clone(),
+                        )
+                        .await {
+                            Ok(changed) => changed,
+                            Err(error_msg) => {
+                                let mut error_response =
+                                    Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
+                                error_response = add_cors_headers_with_host_and_origin(
+                                    error_response,
+                                    &host_header,
+                                    &origin_header,
+                                    &config.trusted_hosts,
+                                );
+                                return Ok(error_response.body(Body::from(error_msg)).unwrap());
+                            }
+                        };
 
-                    let model_was_rewritten = match rewrite_request_model_to_available_fallback(
-                        &mut json_body,
-                        provider_configs.clone(),
-                        sessions.clone(),
-                        mlx_sessions.clone(),
-                    )
-                    .await {
-                        Ok(changed) => changed,
-                        Err(error_msg) => {
-                            let mut error_response =
-                                Response::builder().status(StatusCode::SERVICE_UNAVAILABLE);
-                            error_response = add_cors_headers_with_host_and_origin(
-                                error_response,
-                                &host_header,
-                                &origin_header,
-                                &config.trusted_hosts,
-                            );
-                            return Ok(error_response.body(Body::from(error_msg)).unwrap());
-                        }
-                    };
-
-                    if model_was_rewritten {
-                        if let Ok(normalized_bytes) = serde_json::to_vec(&json_body) {
-                            buffered_body = Some(normalized_bytes.into());
+                        if model_was_rewritten {
+                            if let Ok(normalized_bytes) = serde_json::to_vec(&json_body) {
+                                buffered_body = Some(normalized_bytes.into());
+                            }
                         }
                     }
 
