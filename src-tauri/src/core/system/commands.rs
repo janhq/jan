@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_llamacpp::cleanup_llama_processes;
+use toml_edit::{value, DocumentMut, Item, Table};
 
 use crate::core::app::commands::{
     default_data_folder_path, get_jan_data_folder_path, update_app_configuration,
@@ -686,6 +687,170 @@ pub fn clear_claude_code_env() -> Result<(), String> {
     }
 }
 
+fn codex_home_dir_from_env_and_home(
+    codex_home_env: Option<String>,
+    home_dir: Option<PathBuf>,
+) -> Result<PathBuf, String> {
+    if let Some(codex_home) = codex_home_env.filter(|value| !value.trim().is_empty()) {
+        return Ok(PathBuf::from(codex_home));
+    }
+
+    if let Some(home_dir) = home_dir {
+        return Ok(home_dir.join(".codex"));
+    }
+
+    let fallback_home = std::env::var(if cfg!(target_os = "windows") {
+        "USERPROFILE"
+    } else {
+        "HOME"
+    })
+    .map_err(|_| "Unable to resolve home directory".to_string())?;
+
+    Ok(PathBuf::from(fallback_home).join(".codex"))
+}
+
+fn codex_config_path() -> Result<PathBuf, String> {
+    let codex_home = codex_home_dir_from_env_and_home(std::env::var("CODEX_HOME").ok(), dirs::home_dir())?;
+    Ok(codex_home.join("config.toml"))
+}
+
+const CODEX_JAN_PROFILE: &str = "jan";
+const CODEX_DEFAULT_MODEL_CONTEXT_WINDOW: i64 = 272_000;
+const CODEX_DEFAULT_AUTO_COMPACT_TOKEN_LIMIT: i64 = 244_800;
+
+fn codex_provider_table(base_url: &str, api_key: Option<&str>) -> Table {
+    let mut provider = Table::new();
+    provider["name"] = value("Jan");
+    provider["base_url"] = value(base_url.to_string());
+    provider["wire_api"] = value("responses");
+    provider["request_max_retries"] = value(0);
+    provider["stream_max_retries"] = value(0);
+
+    if let Some(key) = api_key.filter(|value| !value.trim().is_empty()) {
+        provider["experimental_bearer_token"] = value(key.to_string());
+    }
+
+    provider
+}
+
+fn load_codex_document(config_path: &std::path::Path) -> Result<DocumentMut, String> {
+    if config_path.exists() {
+        let content = fs::read_to_string(config_path).map_err(|e| e.to_string())?;
+        if content.trim().is_empty() {
+            Ok(DocumentMut::new())
+        } else {
+            content.parse::<DocumentMut>().map_err(|e| e.to_string())
+        }
+    } else {
+        Ok(DocumentMut::new())
+    }
+}
+
+#[tauri::command]
+pub fn write_codex_config(
+    base_url: String,
+    api_key: Option<String>,
+    model: Option<String>,
+) -> Result<(), String> {
+    let config_path = codex_config_path()?;
+    let config_dir = config_path
+        .parent()
+        .ok_or_else(|| "Unable to resolve Codex config directory".to_string())?;
+
+    fs::create_dir_all(config_dir).map_err(|e| e.to_string())?;
+
+    let mut document = load_codex_document(&config_path)?;
+    document["profile"] = value(CODEX_JAN_PROFILE);
+    document["model_context_window"] = value(CODEX_DEFAULT_MODEL_CONTEXT_WINDOW);
+    document["model_auto_compact_token_limit"] = value(CODEX_DEFAULT_AUTO_COMPACT_TOKEN_LIMIT);
+
+    if !document["model_providers"].is_table() {
+        document["model_providers"] = Item::Table(Table::new());
+    }
+
+    let providers = document["model_providers"]
+        .as_table_mut()
+        .ok_or_else(|| "Failed to initialize Codex provider table".to_string())?;
+    providers[CODEX_JAN_PROFILE] = Item::Table(codex_provider_table(&base_url, api_key.as_deref()));
+
+    if !document["profiles"].is_table() {
+        document["profiles"] = Item::Table(Table::new());
+    }
+
+    let profiles = document["profiles"]
+        .as_table_mut()
+        .ok_or_else(|| "Failed to initialize Codex profiles table".to_string())?;
+
+    let mut jan_profile = Table::new();
+    jan_profile["model_provider"] = value(CODEX_JAN_PROFILE);
+    jan_profile["model"] = value(
+        model
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_default(),
+    );
+    profiles[CODEX_JAN_PROFILE] = Item::Table(jan_profile);
+
+    fs::write(&config_path, document.to_string()).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_codex_config(model: Option<String>) -> Result<(), String> {
+    let config_path = codex_config_path()?;
+    if !config_path.exists() {
+        return Ok(());
+    }
+
+    let mut document = load_codex_document(&config_path)?;
+
+    if document["profile"].as_str() == Some(CODEX_JAN_PROFILE) {
+        document.remove("profile");
+    }
+
+    if document["model_context_window"].as_integer() == Some(CODEX_DEFAULT_MODEL_CONTEXT_WINDOW) {
+        document.remove("model_context_window");
+    }
+
+    if document["model_auto_compact_token_limit"].as_integer()
+        == Some(CODEX_DEFAULT_AUTO_COMPACT_TOKEN_LIMIT)
+    {
+        document.remove("model_auto_compact_token_limit");
+    }
+
+    if let Some(providers) = document["model_providers"].as_table_mut() {
+        providers.remove(CODEX_JAN_PROFILE);
+        if providers.is_empty() {
+            document.remove("model_providers");
+        }
+    }
+
+    if let Some(profiles) = document["profiles"].as_table_mut() {
+        let should_remove = match profiles.get(CODEX_JAN_PROFILE) {
+            Some(Item::Table(profile)) => {
+                profile["model_provider"].as_str() == Some(CODEX_JAN_PROFILE)
+                    && match model.as_deref() {
+                        Some(selected_model) if !selected_model.trim().is_empty() => {
+                            profile["model"].as_str() == Some(selected_model)
+                        }
+                        _ => profile["model"].as_str() == Some("")
+                    }
+            }
+            _ => false,
+        };
+
+        if should_remove {
+            profiles.remove(CODEX_JAN_PROFILE);
+        }
+
+        if profiles.is_empty() {
+            document.remove("profiles");
+        }
+    }
+
+    fs::write(&config_path, document.to_string()).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Determine the best writable directory for the Jan CLI install (Unix only).
 #[cfg(unix)]
 fn jan_cli_install_dir() -> Result<PathBuf, String> {
@@ -869,6 +1034,7 @@ mod tests {
     use crate::core::app::constants::*;
     use std::fs;
     use tempfile::tempdir;
+    use toml_edit::DocumentMut;
 
     fn create_all_data(dir: &std::path::Path) {
         for subdir in JAN_DATA_SUBDIRS {
@@ -886,6 +1052,51 @@ mod tests {
 
     fn exists_all(dir: &std::path::Path, names: &[&str]) -> bool {
         names.iter().all(|n| dir.join(n).exists())
+    }
+
+    #[test]
+    fn test_codex_profile_config_is_written() {
+        let mut document = DocumentMut::new();
+        document["profile"] = value(CODEX_JAN_PROFILE);
+        document["model_context_window"] = value(CODEX_DEFAULT_MODEL_CONTEXT_WINDOW);
+        document["model_auto_compact_token_limit"] = value(CODEX_DEFAULT_AUTO_COMPACT_TOKEN_LIMIT);
+        document["model_providers"] = Item::Table(Table::new());
+        document["profiles"] = Item::Table(Table::new());
+
+        let providers = document["model_providers"].as_table_mut().unwrap();
+        providers[CODEX_JAN_PROFILE] = Item::Table(codex_provider_table(
+            "http://127.0.0.1:1337/v1",
+            Some("secret"),
+        ));
+
+        let profiles = document["profiles"].as_table_mut().unwrap();
+        let mut jan_profile = Table::new();
+        jan_profile["model_provider"] = value(CODEX_JAN_PROFILE);
+        jan_profile["model"] = value("jan-pro");
+        profiles[CODEX_JAN_PROFILE] = Item::Table(jan_profile);
+
+        let output = document.to_string();
+
+        assert!(output.contains("profile = \"jan\""));
+        assert!(output.contains("model_context_window = 272000"));
+        assert!(output.contains("model_auto_compact_token_limit = 244800"));
+        assert!(output.contains("[model_providers.jan]"));
+        assert!(output.contains("base_url = \"http://127.0.0.1:1337/v1\""));
+        assert!(output.contains("experimental_bearer_token = \"secret\""));
+        assert!(output.contains("[profiles.jan]"));
+        assert!(output.contains("model_provider = \"jan\""));
+        assert!(output.contains("model = \"jan-pro\""));
+    }
+
+    #[test]
+    fn test_codex_home_dir_prefers_codex_home_env() {
+        let path = codex_home_dir_from_env_and_home(
+            Some(r"C:\Users\alice\Codex Home".to_string()),
+            Some(PathBuf::from("/ignored-home")),
+        )
+        .unwrap();
+
+        assert_eq!(path, PathBuf::from(r"C:\Users\alice\Codex Home"));
     }
 
     #[test]

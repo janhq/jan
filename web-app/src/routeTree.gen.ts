@@ -23,6 +23,7 @@ import { Route as SettingsHttpsProxyRouteImport } from './routes/settings/https-
 import { Route as SettingsHardwareRouteImport } from './routes/settings/hardware'
 import { Route as SettingsGeneralRouteImport } from './routes/settings/general'
 import { Route as SettingsExtensionsRouteImport } from './routes/settings/extensions'
+import { Route as SettingsCodexRouteImport } from './routes/settings/codex'
 import { Route as SettingsClaudeCodeRouteImport } from './routes/settings/claude-code'
 import { Route as SettingsAttachmentsRouteImport } from './routes/settings/attachments'
 import { Route as SettingsAssistantRouteImport } from './routes/settings/assistant'
@@ -102,6 +103,11 @@ const SettingsExtensionsRoute = SettingsExtensionsRouteImport.update({
   path: '/settings/extensions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsCodexRoute = SettingsCodexRouteImport.update({
+  id: '/settings/codex',
+  path: '/settings/codex',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsClaudeCodeRoute = SettingsClaudeCodeRouteImport.update({
   id: '/settings/claude-code',
   path: '/settings/claude-code',
@@ -154,6 +160,7 @@ export interface FileRoutesByFullPath {
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/claude-code': typeof SettingsClaudeCodeRoute
+  '/settings/codex': typeof SettingsCodexRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
@@ -178,6 +185,7 @@ export interface FileRoutesByTo {
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/claude-code': typeof SettingsClaudeCodeRoute
+  '/settings/codex': typeof SettingsCodexRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
@@ -203,6 +211,7 @@ export interface FileRoutesById {
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/claude-code': typeof SettingsClaudeCodeRoute
+  '/settings/codex': typeof SettingsCodexRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
@@ -229,6 +238,7 @@ export interface FileRouteTypes {
     | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/claude-code'
+    | '/settings/codex'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
@@ -253,6 +263,7 @@ export interface FileRouteTypes {
     | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/claude-code'
+    | '/settings/codex'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
@@ -277,6 +288,7 @@ export interface FileRouteTypes {
     | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/claude-code'
+    | '/settings/codex'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
@@ -302,6 +314,7 @@ export interface RootRouteChildren {
   SettingsAssistantRoute: typeof SettingsAssistantRoute
   SettingsAttachmentsRoute: typeof SettingsAttachmentsRoute
   SettingsClaudeCodeRoute: typeof SettingsClaudeCodeRoute
+  SettingsCodexRoute: typeof SettingsCodexRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsHardwareRoute: typeof SettingsHardwareRoute
@@ -417,6 +430,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsExtensionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/codex': {
+      id: '/settings/codex'
+      path: '/settings/codex'
+      fullPath: '/settings/codex'
+      preLoaderRoute: typeof SettingsCodexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings/claude-code': {
       id: '/settings/claude-code'
       path: '/settings/claude-code'
@@ -486,6 +506,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsAssistantRoute: SettingsAssistantRoute,
   SettingsAttachmentsRoute: SettingsAttachmentsRoute,
   SettingsClaudeCodeRoute: SettingsClaudeCodeRoute,
+  SettingsCodexRoute: SettingsCodexRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsHardwareRoute: SettingsHardwareRoute,

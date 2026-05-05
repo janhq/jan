@@ -11,6 +11,7 @@ import {
   IconFeather,
   IconPalette,
   IconPlus,
+  IconTerminal2,
   IconTopologyStar3,
   IconLock,
   IconCpu,
@@ -146,6 +147,11 @@ const SettingsMenu = () => {
       icon: ({ size, className }: { size?: number; className?: string }) => (
         <img src="/images/code-claude.svg" width={size} height={size} className={cn(className, 'dark:invert opacity-60')} />
       ),
+    },
+    {
+      title: 'common:codex',
+      route: route.settings.codex,
+      icon: IconTerminal2,
     },
   ]
 
