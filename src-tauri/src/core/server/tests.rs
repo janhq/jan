@@ -34,6 +34,12 @@ mod tests {
     }
 
     #[test]
+    fn test_get_destination_path_responses() {
+        let result = proxy::get_destination_path("/v1/responses", "/v1");
+        assert_eq!(result, "/responses");
+    }
+
+    #[test]
     fn test_messages_in_cors_whitelist() {
         let whitelisted_paths = ["/", "/openapi.json", "/favicon.ico", "/messages"];
         assert!(whitelisted_paths.contains(&"/messages"));
@@ -117,6 +123,42 @@ mod tests {
         assert!(allowed_headers.contains(&"authorization"));
         assert!(allowed_headers.contains(&"content-type"));
         assert!(allowed_headers.contains(&"x-api-key"));
+    }
+
+    #[test]
+    fn should_forward_upstream_request_header_excludes_content_length() {
+        assert!(!proxy::should_forward_upstream_request_header(
+            &hyper::header::CONTENT_LENGTH
+        ));
+    }
+
+    #[test]
+    fn should_forward_upstream_request_header_keeps_content_type() {
+        assert!(proxy::should_forward_upstream_request_header(
+            &hyper::header::CONTENT_TYPE
+        ));
+    }
+
+    #[test]
+    fn choose_proxy_model_id_preserves_available_requested_model() {
+        let model_id = proxy::choose_proxy_model_id(
+            Some("gpt-5.4-mini"),
+            true,
+            Some("Qwen3_5-35B-A3B-Q4_K_M"),
+        );
+
+        assert_eq!(model_id.as_deref(), Some("gpt-5.4-mini"));
+    }
+
+    #[test]
+    fn choose_proxy_model_id_falls_back_to_running_local_model() {
+        let model_id = proxy::choose_proxy_model_id(
+            Some("gpt-5.4-mini"),
+            false,
+            Some("Qwen3_5-35B-A3B-Q4_K_M"),
+        );
+
+        assert_eq!(model_id.as_deref(), Some("Qwen3_5-35B-A3B-Q4_K_M"));
     }
 
     // Tests for X-Api-Key header authentication support
@@ -407,6 +449,54 @@ mod tests {
         proxy::normalize_openai_tool_parameters_schema(&mut schema);
 
         assert_eq!(schema, original);
+    }
+
+    #[test]
+    fn normalize_openai_schema_root_wraps_bare_string_type() {
+        let mut schema = json!("string");
+
+        proxy::normalize_openai_schema_root(&mut schema);
+
+        assert_eq!(schema, json!({ "type": "string" }));
+    }
+
+    #[test]
+    fn normalize_openai_tool_parameters_schema_wraps_nested_bare_string_schema_positions() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "query": "string",
+                "filters": {
+                    "type": "array",
+                    "items": "string"
+                },
+                "choice": {
+                    "anyOf": [
+                        "string",
+                        { "type": "integer" }
+                    ]
+                }
+            }
+        });
+
+        proxy::normalize_openai_tool_parameters_schema(&mut schema);
+
+        assert_eq!(
+            schema["properties"]["query"],
+            json!({ "type": "string" })
+        );
+        assert_eq!(
+            schema["properties"]["filters"]["items"],
+            json!({ "type": "string" })
+        );
+        assert_eq!(
+            schema["properties"]["choice"]["anyOf"][0],
+            json!({ "type": "string" })
+        );
+        assert_eq!(
+            schema["properties"]["choice"]["anyOf"][1],
+            json!({ "type": "integer" })
+        );
     }
 
     #[test]
@@ -865,6 +955,327 @@ mod tests {
         let original = body.clone();
         proxy::normalize_openai_tools_in_chat_body(&mut body);
         assert_eq!(body, original);
+    }
+
+    #[test]
+    fn normalize_openai_tools_in_responses_body_patches_function_parameters() {
+        let mut body = json!({
+            "tools": [{
+                "type": "function",
+                "name": "lookup",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"description": "Search term"}
+                    }
+                }
+            }]
+        });
+
+        proxy::normalize_openai_tools_in_responses_body(&mut body);
+
+        assert_eq!(
+            body["tools"][0]["parameters"]["properties"]["query"]["type"],
+            json!("string")
+        );
+    }
+
+    #[test]
+    fn normalize_openai_tools_in_responses_body_drops_non_function_tools() {
+        let mut body = json!({
+            "tools": [
+                {
+                    "type": "function",
+                    "name": "lookup",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"description": "Search term"}
+                        }
+                    }
+                },
+                {
+                    "type": "web_search_preview",
+                    "user_location": {"type": "approximate"}
+                }
+            ]
+        });
+
+        proxy::normalize_openai_tools_in_responses_body(&mut body);
+
+        assert_eq!(body["tools"].as_array().unwrap().len(), 1);
+        assert_eq!(body["tools"][0]["type"], json!("function"));
+        assert_eq!(
+            body["tools"][0]["parameters"]["properties"]["query"]["type"],
+            json!("string")
+        );
+    }
+
+    #[test]
+    fn normalize_openai_tools_in_responses_body_wraps_bare_string_parameter_schema() {
+        let mut body = json!({
+            "tools": [{
+                "type": "function",
+                "name": "lookup",
+                "parameters": "string"
+            }]
+        });
+
+        proxy::normalize_openai_tools_in_responses_body(&mut body);
+
+        assert_eq!(body["tools"][0]["parameters"], json!({ "type": "string" }));
+    }
+
+    #[test]
+    fn normalize_openai_text_format_schema_in_responses_body_wraps_bare_string_schema() {
+        let mut body = json!({
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "codex_output_schema",
+                    "schema": "string"
+                }
+            }
+        });
+
+        proxy::normalize_openai_text_format_schema_in_responses_body(&mut body);
+
+        assert_eq!(
+            body["text"]["format"]["schema"],
+            json!({ "type": "string" })
+        );
+    }
+
+    #[test]
+    fn normalize_openai_input_in_responses_body_patches_string_message_content() {
+        let mut body = json!({
+            "input": [
+                {
+                    "role": "developer",
+                    "content": "Talk like a pirate."
+                },
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": "Are semicolons optional in JavaScript?"
+                }
+            ]
+        });
+
+        proxy::normalize_openai_input_in_responses_body(&mut body);
+
+        assert_eq!(
+            body["input"][0]["content"],
+            json!([{ "type": "input_text", "text": "Talk like a pirate." }])
+        );
+        assert_eq!(
+            body["input"][1]["content"],
+            json!([{ "type": "input_text", "text": "Are semicolons optional in JavaScript?" }])
+        );
+    }
+
+    #[test]
+    fn normalize_openai_input_in_responses_body_leaves_non_message_items_unchanged() {
+        let mut body = json!({
+            "input": [
+                {
+                    "type": "function_call_output",
+                    "call_id": "fc_123",
+                    "output": "ok"
+                },
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "ready" }]
+                }
+            ]
+        });
+        let original = body.clone();
+
+        proxy::normalize_openai_input_in_responses_body(&mut body);
+
+        assert_eq!(body, original);
+    }
+
+    #[test]
+    fn normalize_openai_input_in_responses_body_collapses_prompt_sources_into_single_system_message() {
+        let mut body = json!({
+            "instructions": "Follow repo conventions.",
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "first user" }]
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": "fc_123",
+                    "output": "ok"
+                },
+                {
+                    "type": "message",
+                    "role": "developer",
+                    "content": "Talk like a pirate."
+                },
+                {
+                    "type": "message",
+                    "role": "system",
+                    "content": "You are helpful."
+                },
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{ "type": "output_text", "text": "hello" }]
+                }
+            ]
+        });
+
+        proxy::normalize_openai_input_in_responses_body(&mut body);
+
+        let input = body["input"].as_array().unwrap();
+        assert!(body.get("instructions").is_none());
+        assert_eq!(input[0]["role"], json!("system"));
+        assert_eq!(input[1]["role"], json!("user"));
+        assert_eq!(input[2]["type"], json!("function_call_output"));
+        assert_eq!(input[3]["role"], json!("assistant"));
+        assert_eq!(
+            input[0]["content"],
+            json!([{ "type": "input_text", "text": "Follow repo conventions.\n\nTalk like a pirate.\n\nYou are helpful." }])
+        );
+    }
+
+    #[test]
+    fn normalize_openai_reasoning_in_responses_body_uses_summary_when_content_missing() {
+        let mut body = json!({
+            "input": [{
+                "type": "reasoning",
+                "summary": [
+                    {"type": "summary_text", "text": "Need to inspect files."}
+                ],
+                "encrypted_content": "opaque"
+            }]
+        });
+
+        proxy::normalize_openai_reasoning_in_responses_body(&mut body);
+
+        assert_eq!(
+            body["input"][0]["content"],
+            json!([{ "type": "text", "text": "Need to inspect files." }])
+        );
+    }
+
+    #[test]
+    fn normalize_openai_reasoning_in_responses_body_drops_encrypted_only_reasoning() {
+        let mut body = json!({
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hi" }]
+                },
+                {
+                    "type": "reasoning",
+                    "summary": [],
+                    "encrypted_content": "opaque"
+                }
+            ]
+        });
+
+        proxy::normalize_openai_reasoning_in_responses_body(&mut body);
+
+        assert_eq!(body["input"].as_array().unwrap().len(), 1);
+        assert_eq!(body["input"][0]["type"], json!("message"));
+    }
+
+    #[test]
+    fn normalize_unsupported_items_in_responses_body_maps_local_shell_and_custom_tool_items() {
+        let mut body = json!({
+            "input": [
+                {
+                    "type": "local_shell_call",
+                    "call_id": "shell-1",
+                    "status": "completed",
+                    "action": {
+                        "type": "exec",
+                        "command": ["pwd"],
+                        "working_directory": "/tmp"
+                    }
+                },
+                {
+                    "type": "custom_tool_call",
+                    "call_id": "tool-1",
+                    "name": "custom_tool",
+                    "input": "{\"foo\":true}"
+                },
+                {
+                    "type": "custom_tool_call_output",
+                    "call_id": "tool-1",
+                    "output": "ok"
+                }
+            ]
+        });
+
+        proxy::normalize_unsupported_items_in_responses_body(&mut body);
+
+        assert_eq!(body["input"][0]["type"], json!("function_call"));
+        assert_eq!(body["input"][0]["name"], json!("local_shell"));
+        assert_eq!(body["input"][1]["type"], json!("function_call"));
+        assert_eq!(body["input"][1]["name"], json!("custom_tool"));
+        assert_eq!(
+            body["input"][1]["arguments"],
+            json!("{\"input\":\"{\\\"foo\\\":true}\"}")
+        );
+        assert_eq!(body["input"][2]["type"], json!("function_call_output"));
+    }
+
+    #[test]
+    fn normalize_unsupported_items_in_responses_body_wraps_raw_custom_tool_input_as_json_arguments() {
+        let mut body = json!({
+            "input": [
+                {
+                    "type": "custom_tool_call",
+                    "call_id": "patch-1",
+                    "name": "apply_patch",
+                    "input": "*** Begin Patch\n*** Update File: demo.txt\n@@\n-old\n+new\n*** End Patch"
+                }
+            ]
+        });
+
+        proxy::normalize_unsupported_items_in_responses_body(&mut body);
+
+        assert_eq!(body["input"][0]["type"], json!("function_call"));
+        assert_eq!(body["input"][0]["name"], json!("apply_patch"));
+        assert_eq!(
+            body["input"][0]["arguments"],
+            json!("{\"input\":\"*** Begin Patch\\n*** Update File: demo.txt\\n@@\\n-old\\n+new\\n*** End Patch\"}")
+        );
+    }
+
+    #[test]
+    fn normalize_unsupported_items_in_responses_body_drops_unrepresentable_items() {
+        let mut body = json!({
+            "input": [
+                {
+                    "type": "web_search_call",
+                    "status": "completed",
+                    "action": {"type": "search", "query": "weather"}
+                },
+                {
+                    "type": "compaction",
+                    "encrypted_content": "opaque"
+                },
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hi" }]
+                }
+            ]
+        });
+
+        proxy::normalize_unsupported_items_in_responses_body(&mut body);
+
+        assert_eq!(body["input"].as_array().unwrap().len(), 1);
+        assert_eq!(body["input"][0]["type"], json!("message"));
     }
 
     #[test]
