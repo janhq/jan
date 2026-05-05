@@ -10,6 +10,8 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SystemMonitorRouteImport } from './routes/system-monitor'
+import { Route as ScreenCaptureRegionRouteImport } from './routes/screen-capture-region'
+import { Route as ScreenCaptureOverlayRouteImport } from './routes/screen-capture-overlay'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HubIndexRouteImport } from './routes/hub/index'
@@ -35,6 +37,16 @@ import { Route as SettingsProvidersProviderNameRouteImport } from './routes/sett
 const SystemMonitorRoute = SystemMonitorRouteImport.update({
   id: '/system-monitor',
   path: '/system-monitor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScreenCaptureRegionRoute = ScreenCaptureRegionRouteImport.update({
+  id: '/screen-capture-region',
+  path: '/screen-capture-region',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScreenCaptureOverlayRoute = ScreenCaptureOverlayRouteImport.update({
+  id: '/screen-capture-overlay',
+  path: '/screen-capture-overlay',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LogsRoute = LogsRouteImport.update({
@@ -147,6 +159,8 @@ const SettingsProvidersProviderNameRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/logs': typeof LogsRoute
+  '/screen-capture-overlay': typeof ScreenCaptureOverlayRoute
+  '/screen-capture-region': typeof ScreenCaptureRegionRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -171,6 +185,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/logs': typeof LogsRoute
+  '/screen-capture-overlay': typeof ScreenCaptureOverlayRoute
+  '/screen-capture-region': typeof ScreenCaptureRegionRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -196,6 +212,8 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/logs': typeof LogsRoute
+  '/screen-capture-overlay': typeof ScreenCaptureOverlayRoute
+  '/screen-capture-region': typeof ScreenCaptureRegionRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -222,6 +240,8 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/logs'
+    | '/screen-capture-overlay'
+    | '/screen-capture-region'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
@@ -246,6 +266,8 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/logs'
+    | '/screen-capture-overlay'
+    | '/screen-capture-region'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
@@ -270,6 +292,8 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/logs'
+    | '/screen-capture-overlay'
+    | '/screen-capture-region'
     | '/system-monitor'
     | '/hub/$modelId'
     | '/local-api-server/logs'
@@ -295,6 +319,8 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LogsRoute: typeof LogsRoute
+  ScreenCaptureOverlayRoute: typeof ScreenCaptureOverlayRoute
+  ScreenCaptureRegionRoute: typeof ScreenCaptureRegionRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
   HubModelIdRoute: typeof HubModelIdRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
@@ -324,6 +350,20 @@ declare module '@tanstack/react-router' {
       path: '/system-monitor'
       fullPath: '/system-monitor'
       preLoaderRoute: typeof SystemMonitorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/screen-capture-region': {
+      id: '/screen-capture-region'
+      path: '/screen-capture-region'
+      fullPath: '/screen-capture-region'
+      preLoaderRoute: typeof ScreenCaptureRegionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/screen-capture-overlay': {
+      id: '/screen-capture-overlay'
+      path: '/screen-capture-overlay'
+      fullPath: '/screen-capture-overlay'
+      preLoaderRoute: typeof ScreenCaptureOverlayRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/logs': {
@@ -479,6 +519,8 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LogsRoute: LogsRoute,
+  ScreenCaptureOverlayRoute: ScreenCaptureOverlayRoute,
+  ScreenCaptureRegionRoute: ScreenCaptureRegionRoute,
   SystemMonitorRoute: SystemMonitorRoute,
   HubModelIdRoute: HubModelIdRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,

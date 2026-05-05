@@ -103,7 +103,14 @@ jobs:
       - name: Install Tauri dependencies
         run: |
           sudo apt update
-          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 libappindicator3-dev
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 libappindicator3-dev libpipewire-0.3-dev libgbm-dev clang libclang-dev
+
+      - name: Patch libspa 0.9.2 for newer PipeWire headers
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo fetch --manifest-path src-tauri/Cargo.toml
+          python3 scripts/patch-libspa.py
 
       - name: Update app version base public_provider
         run: |

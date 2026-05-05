@@ -42,6 +42,10 @@ describe('useGeneralSetting', () => {
       spellCheckChatInput: true,
       tokenCounterCompact: true,
       huggingfaceToken: undefined,
+      screenCaptureToTextEnabled: false,
+      screenCaptureShortcut: 'CommandOrControl+Shift+KeyS',
+      screenCaptureInstructionTemplate: '',
+      screenCaptureFloatingToolbarEnabled: false,
     })
 
     // Setup default mock behavior to prevent errors
