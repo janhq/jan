@@ -325,11 +325,6 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       }),
     }
 
-    // Optimistic local-store update so navigation can happen immediately
-    // without waiting for the backend round-trip. The persistence promise
-    // is tracked separately so dependent operations (e.g. the thread page
-    // submitting the first message) can await the row before issuing
-    // backend ops that depend on the FK.
     set((state) => {
       const existingThreads = Object.values(state.threads)
       const reorderedThreads = [newThread, ...existingThreads]
@@ -352,30 +347,46 @@ export const useThreads = create<ThreadState>()((set, get) => ({
           has_assistant: Boolean(assistant),
           has_project: Boolean(projectMetadata),
         })
-        // Reconcile the locally-stored thread with whatever fields the
-        // backend may have normalized or added (e.g. assistants payload).
-        set((state) => ({
-          threads: {
-            ...state.threads,
-            [createdThread.id]: {
-              ...state.threads[createdThread.id],
-              ...createdThread,
-            },
-          },
-        }))
+
+        set((state) => {
+          const nextThreads = { ...state.threads }
+
+          if (createdThread.id !== newThread.id) {
+            delete nextThreads[newThread.id]
+          }
+
+          nextThreads[createdThread.id] = {
+            ...nextThreads[createdThread.id],
+            ...createdThread,
+          }
+
+          return {
+            threads: nextThreads,
+            currentThreadId:
+              state.currentThreadId === newThread.id
+                ? createdThread.id
+                : state.currentThreadId,
+            searchIndex: buildSearchIndex(nextThreads),
+          }
+        })
+
+        return createdThread
       })
       .catch((err) => {
         console.error('[Threads] Failed to persist thread:', err)
         throw err
       })
       .finally(() => {
-        // Drop the entry once settled so subsequent awaitThreadPersistence
-        // calls return immediately for already-persisted threads.
         pendingThreadPersistence.delete(newThread.id)
       })
 
-    pendingThreadPersistence.set(newThread.id, persistPromise)
-    return newThread
+    pendingThreadPersistence.set(
+      newThread.id,
+      persistPromise.then(() => {})
+    )
+
+    const createdThread = await persistPromise
+    return createdThread
   },
   awaitThreadPersistence: async (threadId) => {
     const pending = pendingThreadPersistence.get(threadId)

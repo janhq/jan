@@ -3,18 +3,18 @@ import {
   SidebarGroupLabel,
   SidebarMenu,
   SidebarGroupAction,
-} from "@/components/ui/sidebar"
+} from '@/components/ui/sidebar'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { MoreHorizontal } from "lucide-react"
-import { useMemo, useState } from "react"
+} from '@/components/ui/dropdown-menu'
+import { MoreHorizontal } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useThreads } from "@/hooks/useThreads"
-import ThreadList from "@/containers/ThreadList"
-import { DeleteAllThreadsDialog } from "@/containers/dialogs/DeleteAllThreadsDialog"
+import { useThreads } from '@/hooks/useThreads'
+import ThreadList from '@/containers/ThreadList'
+import { DeleteAllThreadsDialog } from '@/containers/dialogs/DeleteAllThreadsDialog'
 
 export function NavChats() {
   const { t } = useTranslation()
@@ -35,7 +35,7 @@ export function NavChats() {
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
       <SidebarGroupLabel>{t('common:chats')}</SidebarGroupLabel>
-      {threadsWithoutProject.length > 1 && 
+      {threadsWithoutProject.length > 1 && (
         <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
           <DropdownMenuTrigger asChild>
             <SidebarGroupAction className="hover:bg-sidebar-foreground/8">
@@ -50,7 +50,7 @@ export function NavChats() {
             />
           </DropdownMenuContent>
         </DropdownMenu>
-      }
+      )}
       <SidebarMenu>
         <ThreadList threads={threadsWithoutProject} />
       </SidebarMenu>
