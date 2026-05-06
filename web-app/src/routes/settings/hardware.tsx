@@ -154,7 +154,10 @@ function HardwareContent() {
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">
         <SettingsMenu />
-        <div className="p-4 pt-0 w-full overflow-y-auto">
+        <div
+          className="p-4 pt-0 w-full overflow-y-auto"
+          data-testid="settings-panel-hardware"
+        >
           {isLoading ? (
             <div className="flex items-center justify-center h-32">
               <div className="text-muted-foreground">
@@ -164,7 +167,10 @@ function HardwareContent() {
           ) : (
             <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
               {/* OS Information */}
-              <Card title={t('settings:hardware.os')}>
+              <Card
+                title={t('settings:hardware.os')}
+                testId="settings-hardware-os"
+              >
                 <CardItem
                   title={t('settings:hardware.name')}
                   actions={
@@ -184,7 +190,10 @@ function HardwareContent() {
               </Card>
 
               {/* CPU Information */}
-              <Card title={t('settings:hardware.cpu')}>
+              <Card
+                title={t('settings:hardware.cpu')}
+                testId="settings-hardware-cpu"
+              >
                 <CardItem
                   title={t('settings:hardware.model')}
                   actions={
@@ -241,7 +250,10 @@ function HardwareContent() {
               </Card>
 
               {/* RAM Information */}
-              <Card title={t('settings:hardware.memory')}>
+              <Card
+                title={t('settings:hardware.memory')}
+                testId="settings-hardware-memory"
+              >
                 <CardItem
                   title={t('settings:hardware.totalRam')}
                   actions={

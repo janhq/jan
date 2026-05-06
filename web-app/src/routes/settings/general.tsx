@@ -207,7 +207,7 @@ function General() {
   }, [t, checkForUpdate])
 
   return (
-    <div className="flex flex-col h-svh w-full">
+    <div className="flex flex-col h-svh w-full" data-testid="settings-page">
       <HeaderPage>
         <div className="flex items-center gap-2 w-full">
           <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
@@ -431,7 +431,11 @@ function General() {
                 })}
                 actions={
                   <FactoryResetDialog onReset={resetApp}>
-                    <Button variant="destructive" size="sm">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      data-testid="factory-reset-trigger"
+                    >
                       {t('common:reset')}
                     </Button>
                   </FactoryResetDialog>

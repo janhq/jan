@@ -115,7 +115,7 @@ describe('Interface Settings Route', () => {
     const Component = InterfaceRoute.component as React.ComponentType
     render(<Component />)
 
-    const resetButtons = screen.getAllByTestId('button')
+    const resetButtons = screen.getAllByTestId('settings-interface-reset')
     expect(resetButtons.length).toBeGreaterThan(0)
   })
 
@@ -123,7 +123,7 @@ describe('Interface Settings Route', () => {
     const Component = InterfaceRoute.component as React.ComponentType
     render(<Component />)
 
-    const resetButtons = screen.getAllByTestId('button')
+    const resetButtons = screen.getAllByTestId('settings-interface-reset')
     expect(resetButtons.length).toBeGreaterThan(0)
 
     // Check that buttons are clickable
@@ -136,7 +136,7 @@ describe('Interface Settings Route', () => {
     const Component = InterfaceRoute.component as React.ComponentType
     render(<Component />)
 
-    const resetButtons = screen.getAllByTestId('button')
+    const resetButtons = screen.getAllByTestId('settings-interface-reset')
     expect(resetButtons.length).toBeGreaterThan(0)
 
     // Verify buttons can be clicked without errors

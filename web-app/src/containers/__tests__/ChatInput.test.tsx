@@ -319,13 +319,13 @@ describe('ChatInput', () => {
     expect(ta).toBeInTheDocument()
     expect(ta).toHaveAttribute('placeholder', 'common:placeholder.chatInput')
     // send button is present
-    expect(document.querySelector('[data-test-id="send-message-button"]')).toBeTruthy()
+    expect(document.querySelector('[data-testid="send-message-button"]')).toBeTruthy()
   })
 
   it('disables the send button when prompt is empty', () => {
     renderInput()
     const btn = document.querySelector(
-      '[data-test-id="send-message-button"]'
+      '[data-testid="send-message-button"]'
     ) as HTMLButtonElement
     expect(btn.disabled).toBe(true)
   })
@@ -334,7 +334,7 @@ describe('ChatInput', () => {
     promptState = 'hello'
     renderInput()
     const btn = document.querySelector(
-      '[data-test-id="send-message-button"]'
+      '[data-testid="send-message-button"]'
     ) as HTMLButtonElement
     expect(btn.disabled).toBe(false)
   })
@@ -376,7 +376,7 @@ describe('ChatInput', () => {
     const onSubmit = vi.fn()
     renderInput({ onSubmit })
     const btn = document.querySelector(
-      '[data-test-id="send-message-button"]'
+      '[data-testid="send-message-button"]'
     ) as HTMLButtonElement
     fireEvent.click(btn)
     expect(onSubmit).toHaveBeenCalledWith('button submit', undefined)
@@ -386,7 +386,7 @@ describe('ChatInput', () => {
     promptState = 'stream stuff'
     renderInput({ chatStatus: 'streaming' })
     expect(
-      document.querySelector('[data-test-id="send-message-button"]')
+      document.querySelector('[data-testid="send-message-button"]')
     ).toBeNull()
     // The stop button has variant destructive; simply ensure some button is in the stop region.
     const btns = document.querySelectorAll('button')

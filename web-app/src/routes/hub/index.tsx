@@ -437,6 +437,7 @@ function HubContent() {
                 />
               )}
               <input
+                data-testid="hub-search"
                 placeholder={t('hub:searchPlaceholder')}
                 value={searchValue}
                 onChange={handleSearchChange}

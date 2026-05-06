@@ -106,6 +106,7 @@ export function RenameThreadDialog({
             onKeyDown={handleKeyDown}
             placeholder={t('common:threadTitle')}
             aria-label={t('common:threadTitle')}
+            data-testid="thread-rename-input"
           />
           <DialogFooter className="mt-2 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
@@ -118,6 +119,7 @@ export function RenameThreadDialog({
               onClick={handleRename}
               size="sm"
               className="w-full sm:w-auto"
+              data-testid="thread-rename-confirm"
             >
               {t('common:rename')}
             </Button>

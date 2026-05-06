@@ -114,6 +114,7 @@ export function DeleteThreadDialog({
               size="sm"
               className="w-full sm:w-auto"
               aria-label={`${t('common:delete')} ${thread.title || t('common:newThread')}`}
+              data-testid="thread-delete-confirm"
             >
               {t('common:delete')}
             </Button>

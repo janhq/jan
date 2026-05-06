@@ -63,6 +63,7 @@ type NavMainItem = {
   isActive?: boolean
   shortcut?: React.ReactNode
   onClick?: () => void
+  testId?: string
 }
 
 const getNavMainItems = (
@@ -75,6 +76,7 @@ const getNavMainItems = (
     title: 'common:newChat',
     animatedIcon: MessageCircleIcon,
     onClick: onNewChat,
+    testId: 'nav-new-chat',
     shortcut: (
       <KbdGroup className="ml-auto scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
@@ -101,6 +103,7 @@ const getNavMainItems = (
     title: 'common:projects.new',
     animatedIcon: FolderPlusIcon,
     onClick: onNewProject,
+    testId: 'nav-new-project',
     shortcut: (
       <KbdGroup className="ml-auto scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
@@ -127,11 +130,13 @@ const getNavMainItems = (
     title: 'common:hub',
     url: route.hub.index,
     animatedIcon: BlocksIcon,
+    testId: 'nav-hub',
   },
   {
     title: 'common:settings',
     url: route.settings.general,
     animatedIcon: SettingsIcon,
+    testId: 'nav-settings',
   },
 ]
 
@@ -161,6 +166,7 @@ function NavMainItemWithAnimatedIcon({
         onMouseEnter={() => iconRef.current?.startAnimation()}
         onMouseLeave={() => iconRef.current?.stopAnimation()}
         onClick={item.onClick}
+        data-testid={item.testId}
       >
         {item.url ? <Link to={item.url}>{content}</Link> : content}
       </SidebarMenuButton>

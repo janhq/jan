@@ -103,7 +103,7 @@ export default function AddProjectDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent data-testid="add-project-dialog">
         <DialogHeader>
           <DialogTitle>
             {editingKey ? t('projects.addProjectDialog.editTitle') : t('projects.addProjectDialog.createTitle')}

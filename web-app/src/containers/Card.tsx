@@ -5,6 +5,7 @@ type CardProps = {
   title?: string
   children?: ReactNode
   header?: ReactNode
+  testId?: string
 }
 
 type CardItemProps = {
@@ -16,6 +17,7 @@ type CardItemProps = {
   column?: boolean
   className?: string
   classNameWrapperAction?: string
+  testId?: string
 }
 
 export function CardItem({
@@ -27,10 +29,12 @@ export function CardItem({
   align = 'center',
   column,
   actions,
+  testId,
 }: CardItemProps) {
   return (
     <>
       <div
+        data-testid={testId}
         className={cn(
           'flex justify-between mt-2 first:mt-0 border-b border-border/40 pb-3 last:border-none last:pb-0 gap-8',
           descriptionOutside && 'border-0',
@@ -70,9 +74,12 @@ export function CardItem({
   )
 }
 
-export function Card({ title, children, header }: CardProps) {
+export function Card({ title, children, header, testId }: CardProps) {
   return (
-    <div className="bg-card p-4 rounded-lg text-muted-foreground w-full">
+    <div
+      data-testid={testId}
+      className="bg-card p-4 rounded-lg text-muted-foreground w-full"
+    >
       {title && (
         <h1 className="text-foreground font-studio font-medium text-base mb-4">
           {title}

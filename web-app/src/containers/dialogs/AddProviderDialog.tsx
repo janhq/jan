@@ -73,6 +73,7 @@ export function AddProviderDialog({
             className="mt-2"
             placeholder={t('provider:enterNameForProvider')}
             onKeyDown={handleKeyDown}
+            data-testid="add-provider-name"
           />
           <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
@@ -93,6 +94,7 @@ export function AddProviderDialog({
                 className="w-full sm:w-auto"
                 size="sm"
                 aria-label={t('common:create')}
+                data-testid="add-provider-confirm"
               >
                 {t('common:create')}
               </Button>

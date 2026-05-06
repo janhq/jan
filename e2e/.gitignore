@@ -1,0 +1,5 @@
+node_modules
+.wdio-logs
+logs
+*.log
+screenshots/

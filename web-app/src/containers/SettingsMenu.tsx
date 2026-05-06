@@ -106,23 +106,32 @@ const SettingsMenu = () => {
       title: 'common:general',
       route: route.settings.general,
       icon: IconAdjustmentsHorizontal,
+      testId: 'settings-tab-general',
     },
     // "Appearance" is implemented by the existing Interface settings route.
     {
       title: 'common:appearance',
       route: route.settings.interface,
       icon: IconPalette,
+      testId: 'settings-tab-interface',
     },
-    { title: 'common:assistants', route: route.settings.assistant, icon: IconFeather },
+    {
+      title: 'common:assistants',
+      route: route.settings.assistant,
+      icon: IconFeather,
+      testId: 'settings-tab-assistant',
+    },
     {
       title: 'common:local_api_server',
       route: route.settings.local_api_server,
       icon: IconCircles,
+      testId: 'settings-tab-local-api-server',
     },
     {
       title: 'common:keyboardShortcuts',
       route: route.settings.shortcuts,
       icon: IconCommand,
+      testId: 'settings-tab-shortcuts',
     },
     {
       title: 'common:hardware',
@@ -130,8 +139,14 @@ const SettingsMenu = () => {
       hasSubMenu: false,
       isEnabled: true,
       icon: IconCpu,
+      testId: 'settings-tab-hardware',
     },
-    { title: 'common:privacy', route: route.settings.privacy, icon: IconLock },
+    {
+      title: 'common:privacy',
+      route: route.settings.privacy,
+      icon: IconLock,
+      testId: 'settings-tab-privacy',
+    },
   ]
 
   const integrationSettings = [
@@ -139,6 +154,7 @@ const SettingsMenu = () => {
       title: 'common:connectors',
       route: route.settings.mcp_servers,
       icon: IconTopologyStar3,
+      testId: 'settings-tab-mcp-servers',
     },
     {
       title: 'common:claude_code',
@@ -146,6 +162,7 @@ const SettingsMenu = () => {
       icon: ({ size, className }: { size?: number; className?: string }) => (
         <img src="/images/code-claude.svg" width={size} height={size} className={cn(className, 'dark:invert opacity-60')} />
       ),
+      testId: 'settings-tab-claude-code',
     },
   ]
 
@@ -158,6 +175,7 @@ const SettingsMenu = () => {
             <div key={menu.title}>
               <Link
                 to={menu.route}
+                data-testid={menu.testId}
                 className="block px-2 gap-1.5 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary py-1 w-full rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
               >
                 <div className="flex items-center gap-2">
@@ -181,6 +199,7 @@ const SettingsMenu = () => {
                 <Link
                   key={menu.title}
                   to={menu.route}
+                  data-testid={menu.testId}
                   className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:dark:bg-secondary/60 hover:bg-secondary rounded-sm [&.active]:dark:bg-secondary/80 [&.active]:bg-secondary"
                 >
                   <menu.icon size={18} className="shrink-0 text-muted-foreground" />
@@ -197,7 +216,11 @@ const SettingsMenu = () => {
                 {t('common:modelProviders')}
               </span>
               <AddProviderDialog onCreateProvider={createProvider}>
-                <Button variant="ghost" size="icon-xs">
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  data-testid="settings-add-provider"
+                >
                   <IconPlus size={12} />
                 </Button>
               </AddProviderDialog>
@@ -213,6 +236,7 @@ const SettingsMenu = () => {
                 return (
                   <div
                     key={provider.provider}
+                    data-testid={`provider-sidebar-${provider.provider}`}
                     className={cn(
                       'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-foreground',
                       isRouteActive && 'bg-secondary',

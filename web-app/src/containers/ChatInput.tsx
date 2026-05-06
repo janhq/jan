@@ -2005,7 +2005,7 @@ const ChatInput = memo(function ChatInput({
                   variant="default"
                   size="icon-sm"
                   disabled={!prompt.trim() || ingestingAny}
-                  data-test-id="send-message-button"
+                  data-testid="send-message-button"
                   onClick={() => handleSendMessage(prompt)}
                   className="rounded-full mr-1 mb-1"
                 >

@@ -135,7 +135,7 @@ const ThreadItem = memo(
     }
 
     return (
-      <SidebarMenuItem>
+      <SidebarMenuItem data-testid={`thread-item-${thread.id}`}>
         {currentProjectId ?
           <Link to="/threads/$threadId" params={{ threadId: thread.id }} className="bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block max-w-full overflow-hidden">
               <span className="block truncate" title={thread.title || t('common:newThread')}>{thread.title || t('common:newThread')}</span>
@@ -156,6 +156,7 @@ const ThreadItem = memo(
           <DropdownMenuTrigger asChild>
             <SidebarMenuAction
               showOnHover
+              data-testid={`thread-more-${thread.id}`}
               className={cn("hover:bg-sidebar-foreground/8", currentProjectId && 'mt-4 mr-2')}
             >
               <MoreHorizontal />
@@ -167,7 +168,10 @@ const ThreadItem = memo(
             side={isMobile ? 'bottom' : 'right'}
             align={isMobile ? 'end' : 'start'}
           >
-            <DropdownMenuItem onSelect={() => setRenameOpen(true)}>
+            <DropdownMenuItem
+              onSelect={() => setRenameOpen(true)}
+              data-testid={`thread-rename-${thread.id}`}
+            >
               <Pencil className="size-4" />
               <span>{t('common:rename')}</span>
             </DropdownMenuItem>
@@ -227,6 +231,7 @@ const ThreadItem = memo(
             <DropdownMenuSeparator />
             <DropdownMenuItem
               variant="destructive"
+              data-testid={`thread-delete-${thread.id}`}
               disabled={thread.title === 'What is Jan?' && !localStorage.getItem('setup-completed')}
               onSelect={() => {
                 if (thread.title !== 'What is Jan?' || localStorage.getItem('setup-completed')) {
