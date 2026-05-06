@@ -14,6 +14,7 @@ import { ImportVisionModelDialog } from '@/containers/dialogs/ImportVisionModelD
 import { ImportMlxModelDialog } from '@/containers/dialogs/ImportMlxModelDialog'
 import { ModelSetting } from '@/containers/ModelSetting'
 import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
+import { DialogDeleteAllModels } from '@/containers/dialogs/DeleteAllModels'
 import { FavoriteModelAction } from '@/containers/FavoriteModelAction'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
@@ -998,6 +999,11 @@ function ProviderDetail() {
                           <DialogAddModel provider={provider} />
                         </>
                       )}
+                      {provider &&
+                        (provider.provider === 'llamacpp' ||
+                          provider.provider === 'mlx') && (
+                          <DialogDeleteAllModels provider={provider} />
+                        )}
                       {provider && provider.provider === 'llamacpp' && (
                         <ImportVisionModelDialog
                           provider={provider}

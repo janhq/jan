@@ -33,6 +33,18 @@
     "cancel": "Cancel",
     "delete": "Delete"
   },
+  "deleteAllModels": {
+    "button": "Delete All",
+    "title": "Delete all downloaded models?",
+    "description": "This will permanently remove {{count}} model(s) from disk.",
+    "sizeLabel": "Disk space to be freed:",
+    "calculating": "Calculating…",
+    "warning": "This action cannot be undone.",
+    "confirm": "Delete {{count}} model(s)",
+    "deleting": "Deleting…",
+    "success": "Deleted {{count}} model(s).",
+    "partialFailure": "Failed to delete {{count}} model(s). See console for details."
+  },
   "deleteProvider": {
     "title": "Delete Provider",
     "description": "Delete this provider and all its models. This action cannot be undone.",
