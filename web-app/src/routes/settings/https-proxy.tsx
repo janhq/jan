@@ -49,7 +49,10 @@ function HTTPSProxyContent() {
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">
         <SettingsMenu />
-        <div className="p-4 pt-0 w-full overflow-y-auto">
+        <div
+          className="p-4 pt-0 w-full overflow-y-auto"
+          data-testid="settings-panel-https-proxy"
+        >
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Proxy Configuration */}
             <Card
@@ -59,6 +62,7 @@ function HTTPSProxyContent() {
                     {t('settings:httpsProxy.proxy')}
                   </h1>
                   <Switch
+                    data-testid="settings-https-proxy-enabled"
                     checked={proxyEnabled}
                     onCheckedChange={toggleProxy}
                   />
@@ -72,6 +76,7 @@ function HTTPSProxyContent() {
                   <div className="space-y-2">
                     <p>{t('settings:httpsProxy.proxyUrlDesc')}</p>
                     <Input
+                      data-testid="settings-https-proxy-url"
                       className="w-full"
                       placeholder={t('settings:httpsProxy.proxyUrlPlaceholder')}
                       value={proxyUrl}
