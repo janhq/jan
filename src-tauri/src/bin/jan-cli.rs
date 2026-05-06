@@ -166,7 +166,8 @@ struct ServeArgs {
     /// CPU threads for inference (0 = auto-detect)
     #[arg(long, default_value_t = 0)]
     threads: i32,
-    /// API key required by clients (sets LLAMA_API_KEY / MLX_API_KEY on the server)
+    /// API key required by clients (sets LLAMA_API_KEY on the server; MLX
+    /// path runs without auth and binds to loopback)
     #[arg(long, default_value = "")]
     api_key: String,
     /// Run in the background (detach from terminal) and print the PID
@@ -221,9 +222,6 @@ enum ModelsCommands {
         /// Seconds to wait for the model server to become ready
         #[arg(long, default_value_t = 120)]
         timeout: u64,
-        /// API key required by clients (sets MLX_API_KEY on the server)
-        #[arg(long, default_value = "")]
-        api_key: String,
     },
 }
 
@@ -370,7 +368,6 @@ async fn handle_models(cmd: ModelsCommands) {
             ctx_size,
             embedding,
             timeout,
-            api_key,
         } => {
             use std::path::Path;
 
@@ -402,10 +399,9 @@ async fn handle_models(cmd: ModelsCommands) {
             };
 
             let mlx_state = Arc::new(init_mlx_state());
-            let mut envs: HashMap<String, String> = HashMap::new();
-            if !api_key.is_empty() {
-                envs.insert("MLX_API_KEY".to_string(), api_key);
-            }
+            // mlx-vlm has no auth layer; the loopback bind in the plugin is
+            // the only protection. `envs` stays empty by default.
+            let envs: HashMap<String, String> = HashMap::new();
 
             match load_mlx_model_impl(
                 mlx_state.mlx_server_process.clone(),
@@ -878,10 +874,10 @@ async fn handle_serve(args: ServeArgs) {
         };
 
         let mlx_state = Arc::new(init_mlx_state());
-        let mut envs: HashMap<String, String> = HashMap::new();
-        if !api_key.is_empty() {
-            envs.insert("MLX_API_KEY".to_string(), api_key);
-        }
+        // mlx-vlm has no auth; loopback bind in the plugin is the only
+        // protection. `api_key` from the shared `Args` is consumed on the
+        // llamacpp branch below, so ignore it here.
+        let envs: HashMap<String, String> = HashMap::new();
 
         match load_mlx_model_impl(
             mlx_state.mlx_server_process.clone(),
@@ -1232,8 +1228,10 @@ async fn start_model_server(
             }
         };
         let mlx_state = Arc::new(init_mlx_state());
-        let mut envs: HashMap<String, String> = HashMap::new();
-        if !api_key.is_empty() { envs.insert("MLX_API_KEY".to_string(), api_key.clone()); }
+        // mlx-vlm has no auth layer; loopback bind in the Rust plugin is
+        // the only protection. `api_key` is consumed on the llamacpp branch
+        // below, ignore here.
+        let envs: HashMap<String, String> = HashMap::new();
         let effective_ctx_size = if fit { 0 } else { ctx_size };
         let info = match load_mlx_model_impl(
             mlx_state.mlx_server_process.clone(),

@@ -58,7 +58,8 @@ import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 
 /**
- * Llama.cpp timings structure from the response
+ * Legacy llama.cpp / dflash timings structure (kept for backward
+ * compatibility while users still have the old binary on disk).
  */
 interface LlamaCppTimings {
   prompt_n?: number
@@ -67,49 +68,99 @@ interface LlamaCppTimings {
   prompt_per_second?: number
 }
 
-interface LlamaCppChunk {
+/**
+ * mlx-vlm OpenAI-compatible `usage` block; emitted on every streaming
+ * chunk and on the final non-streaming response. See
+ * `mlx_vlm.server.UsageStats` upstream.
+ */
+interface MlxVlmUsage {
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+  prompt_tps?: number
+  generation_tps?: number
+  peak_memory?: number
+}
+
+interface ProviderMetricsChunk {
+  usage?: MlxVlmUsage
   timings?: LlamaCppTimings
 }
 
+interface NormalizedMetrics {
+  promptTokens: number | null
+  completionTokens: number | null
+  tokensPerSecond: number | null
+  promptPerSecond: number | null
+}
+
+const buildFromUsage = (usage: MlxVlmUsage): NormalizedMetrics => ({
+  promptTokens: usage.prompt_tokens ?? null,
+  completionTokens: usage.completion_tokens ?? null,
+  tokensPerSecond: usage.generation_tps ?? null,
+  promptPerSecond: usage.prompt_tps ?? null,
+})
+
+const buildFromTimings = (timings: LlamaCppTimings): NormalizedMetrics => ({
+  promptTokens: timings.prompt_n ?? null,
+  completionTokens: timings.predicted_n ?? null,
+  tokensPerSecond: timings.predicted_per_second ?? null,
+  promptPerSecond: timings.prompt_per_second ?? null,
+})
+
+const hasAnyMetric = (m: NormalizedMetrics): boolean =>
+  m.promptTokens != null ||
+  m.completionTokens != null ||
+  m.tokensPerSecond != null ||
+  m.promptPerSecond != null
+
 /**
- * Custom metadata extractor for MLX that extracts timing information
- * and converts it to token usage format. MLX uses the same timing structure
- * as llama.cpp.
+ * Custom metadata extractor for MLX that pulls token / TPS metrics from
+ * the OpenAI-compatible `usage` block emitted by mlx-vlm. Falls back to
+ * the legacy `timings.*` shape so older dflash binaries shipped in user
+ * machines keep rendering TPS until they are upgraded.
  */
 const providerMetadataExtractor: MetadataExtractor = {
   extractMetadata: async ({ parsedBody }: { parsedBody: unknown }) => {
-    const body = parsedBody as LlamaCppChunk
-    if (body?.timings) {
-      return {
-        providerMetadata: {
-          promptTokens: body.timings.prompt_n ?? null,
-          completionTokens: body.timings.predicted_n ?? null,
-          tokensPerSecond: body.timings.predicted_per_second ?? null,
-          promptPerSecond: body.timings.prompt_per_second ?? null,
-        },
+    const body = parsedBody as ProviderMetricsChunk
+    if (body?.usage) {
+      const metrics = buildFromUsage(body.usage)
+      if (hasAnyMetric(metrics)) {
+        return { providerMetadata: { ...metrics } }
       }
+    }
+    if (body?.timings) {
+      return { providerMetadata: { ...buildFromTimings(body.timings) } }
     }
     return undefined
   },
   createStreamExtractor: () => {
+    let lastUsage: MlxVlmUsage | undefined
     let lastTimings: LlamaCppTimings | undefined
 
     return {
       processChunk: (parsedChunk: unknown) => {
-        const chunk = parsedChunk as LlamaCppChunk
+        const chunk = parsedChunk as ProviderMetricsChunk
+        // Each mlx-vlm streaming chunk carries the full running usage; keep
+        // the most recent one so the final metadata reflects end-of-stream
+        // counts and TPS.
+        if (chunk?.usage) {
+          lastUsage = chunk.usage
+        }
         if (chunk?.timings) {
           lastTimings = chunk.timings
         }
       },
       buildMetadata: () => {
+        if (lastUsage) {
+          const metrics = buildFromUsage(lastUsage)
+          if (hasAnyMetric(metrics)) {
+            return { providerMetadata: { ...metrics } }
+          }
+        }
         if (lastTimings) {
           return {
-            providerMetadata: {
-              promptTokens: lastTimings.prompt_n ?? null,
-              completionTokens: lastTimings.predicted_n ?? null,
-              tokensPerSecond: lastTimings.predicted_per_second ?? null,
-              promptPerSecond: lastTimings.prompt_per_second ?? null,
-            },
+            providerMetadata: { ...buildFromTimings(lastTimings) },
           }
         }
         return undefined
@@ -491,24 +542,13 @@ export class ModelFactory {
 
     // Use the same IPC-channel streaming fetch that llamacpp uses —
     // tauri_plugin_http's ReadableStream bridge does not relay SSE chunks.
-    const baseFetch = createLocalStreamingFetch(httpFetch, parameters)
-
-    const customFetch: typeof httpFetch = async (
-      input: RequestInfo | URL,
-      init?: RequestInit
-    ): Promise<Response> => {
-      if (init?.signal) {
-        init.signal.addEventListener('abort', () => {
-          httpFetch(`${baseUrl}/v1/cancel`, {
-            method: 'POST',
-            headers: { ...authHeaders, 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-          }).catch(() => {})
-        })
-      }
-
-      return baseFetch(input, init)
-    }
+    //
+    // Cancellation: mlx-vlm has no `/v1/cancel` endpoint (the legacy dflash
+    // server did, but the new backend cancels in-flight generation when the
+    // client TCP connection drops). The IPC streaming bridge propagates
+    // `AbortSignal` to the underlying socket teardown for us, so we simply
+    // forward `init` and rely on the backend's disconnect handler.
+    const customFetch = createLocalStreamingFetch(httpFetch, parameters)
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'mlx',

@@ -80,7 +80,6 @@ export default class mlx_extension extends AIEngine {
 
   private config: any = {}
   private providerPath!: string
-  private apiSecret: string = 'JanMLX'
   private loadingModels = new Map<string, Promise<SessionInfo>>()
 
   /// Tracks the `ctx_size` actually used for the currently loaded session
@@ -176,15 +175,6 @@ export default class mlx_extension extends AIEngine {
     if (key === 'timeout') {
       this.timeout = value as number
     }
-  }
-
-  private async generateApiKey(modelId: string, port: string): Promise<string> {
-    // Reuse the llamacpp plugin's API key generation
-    const hash = await invoke<string>('plugin:llamacpp|generate_api_key', {
-      modelId: modelId + port,
-      apiSecret: this.apiSecret,
-    })
-    return hash
   }
 
   override async get(modelId: string): Promise<modelInfo | undefined> {
@@ -351,10 +341,11 @@ export default class mlx_extension extends AIEngine {
     })
     const port = await this.getRandomPort()
 
-    const api_key = await this.generateApiKey(modelId, String(port))
-    const envs: Record<string, string> = {
-      MLX_API_KEY: api_key,
-    }
+    // mlx-vlm has no auth layer; we bind the server to 127.0.0.1 in the
+    // tauri-plugin-mlx Rust shim instead. `envs` stays around so we can
+    // forward `HF_*` / `MLX_TRUST_REMOTE_CODE` style toggles in the future
+    // without re-plumbing the plugin contract.
+    const envs: Record<string, string> = {}
 
     // Resolve model path - could be absolute or relative
     let modelPath: string
@@ -552,9 +543,12 @@ export default class mlx_extension extends AIEngine {
 
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
     const url = `${baseUrl}/chat/completions`
+    /// mlx-vlm runs without any auth layer; the server binds to 127.0.0.1
+    /// in the Rust plugin (`--host 127.0.0.1`), which is the only protection
+    /// we rely on. `sessionInfo.api_key` is preserved on the type for ABI
+    /// compatibility but is always empty for MLX sessions.
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${sessionInfo.api_key}`,
     }
 
     const body = JSON.stringify(opts)

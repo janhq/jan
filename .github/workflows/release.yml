@@ -200,7 +200,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make download-llamacpp-backend
 
-      - name: Download DFlash MLX server
+      - name: Download MLX server (mlx-vlm)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make build-mlx-server
