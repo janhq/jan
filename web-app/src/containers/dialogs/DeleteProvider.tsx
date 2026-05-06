@@ -68,7 +68,11 @@ const DeleteProvider = ({ provider }: Props) => {
       actions={
         <Dialog>
           <DialogTrigger asChild>
-            <Button variant="destructive" size="sm">
+            <Button
+              variant="destructive"
+              size="sm"
+              data-testid="provider-delete-trigger"
+            >
               {t('providers:deleteProvider.delete')}
             </Button>
           </DialogTrigger>
@@ -95,6 +99,7 @@ const DeleteProvider = ({ provider }: Props) => {
                   variant="destructive"
                   size="sm"
                   onClick={removeProvider}
+                  data-testid="provider-delete-confirm"
                 >
                   {t('providers:deleteProvider.delete')}
                 </Button>

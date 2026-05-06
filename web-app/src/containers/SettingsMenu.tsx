@@ -216,7 +216,11 @@ const SettingsMenu = () => {
                 {t('common:modelProviders')}
               </span>
               <AddProviderDialog onCreateProvider={createProvider}>
-                <Button variant="ghost" size="icon-xs">
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  data-testid="settings-add-provider"
+                >
                   <IconPlus size={12} />
                 </Button>
               </AddProviderDialog>
@@ -232,6 +236,7 @@ const SettingsMenu = () => {
                 return (
                   <div
                     key={provider.provider}
+                    data-testid={`provider-sidebar-${provider.provider}`}
                     className={cn(
                       'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-secondary/60 py-1 w-full rounded-sm text-foreground',
                       isRouteActive && 'bg-secondary',

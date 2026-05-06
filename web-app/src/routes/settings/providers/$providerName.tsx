@@ -565,7 +565,10 @@ function ProviderDetail() {
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">
         <SettingsMenu />
-        <div className="p-4 pt-0 w-full overflow-y-auto">
+        <div
+          className="p-4 pt-0 w-full overflow-y-auto"
+          data-testid={`provider-page-${providerName}`}
+        >
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             <div className="flex items-center justify-between">
               <h1 className="font-medium text-base">
@@ -574,6 +577,7 @@ function ProviderDetail() {
               <Switch
                 checked={provider?.active ?? false}
                 onCheckedChange={(checked) => provider && updateProvider(providerName, { active: checked })}
+                data-testid={`provider-active-${providerName}`}
               />
             </div>
 
