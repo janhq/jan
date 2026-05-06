@@ -49,7 +49,14 @@ export function FontSizeSwitcher({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="w-full justify-between" title={t('common:adjustFontSize')}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full justify-between"
+          title={t('common:adjustFontSize')}
+          data-testid="font-size-switcher-trigger"
+          data-font-size-active={fontSize}
+        >
           {fontSizeOptions.find(
             (item: { value: string; label: string }) => item.value === fontSize
           )?.label || t('common:medium')}
@@ -60,6 +67,7 @@ export function FontSizeSwitcher({
         {fontSizeOptions.map((item: { value: string; label: string }) => (
           <DropdownMenuItem
             key={item.value}
+            data-testid={`font-size-option-${item.value}`}
             className={cn(
               'cursor-pointer my-0.5',
               fontSize === item.value && 'bg-secondary-foreground/8'

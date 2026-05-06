@@ -56,7 +56,14 @@ export function ThemeSwitcher({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="w-full justify-between" title={t('common:editTheme')}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full justify-between"
+          title={t('common:editTheme')}
+          data-testid="theme-switcher-trigger"
+          data-theme-active={activeTheme}
+        >
           {themeOptions.find(
             (item: { value: string; label: string }) => item.value === activeTheme
           )?.label || t('common:auto')}
@@ -67,6 +74,7 @@ export function ThemeSwitcher({
         {themeOptions.map((item) => (
           <DropdownMenuItem
             key={item.value}
+            data-testid={`theme-option-${item.value}`}
             className={cn(
               'cursor-pointer my-0.5',
               activeTheme === item.value && 'bg-secondary-foreground/8'
