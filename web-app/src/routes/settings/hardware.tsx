@@ -167,8 +167,10 @@ function HardwareContent() {
           ) : (
             <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
               {/* OS Information */}
-              <div data-testid="settings-hardware-os">
-              <Card title={t('settings:hardware.os')}>
+              <Card
+                title={t('settings:hardware.os')}
+                testId="settings-hardware-os"
+              >
                 <CardItem
                   title={t('settings:hardware.name')}
                   actions={
@@ -186,11 +188,12 @@ function HardwareContent() {
                   }
                 />
               </Card>
-              </div>
 
               {/* CPU Information */}
-              <div data-testid="settings-hardware-cpu">
-              <Card title={t('settings:hardware.cpu')}>
+              <Card
+                title={t('settings:hardware.cpu')}
+                testId="settings-hardware-cpu"
+              >
                 <CardItem
                   title={t('settings:hardware.model')}
                   actions={
@@ -245,11 +248,12 @@ function HardwareContent() {
                   }
                 />
               </Card>
-              </div>
 
               {/* RAM Information */}
-              <div data-testid="settings-hardware-memory">
-              <Card title={t('settings:hardware.memory')}>
+              <Card
+                title={t('settings:hardware.memory')}
+                testId="settings-hardware-memory"
+              >
                 <CardItem
                   title={t('settings:hardware.totalRam')}
                   actions={
@@ -298,7 +302,6 @@ function HardwareContent() {
                   }
                 />
               </Card>
-              </div>
 
               {/* Llamacpp Devices Information */}
               {!IS_MACOS && llamacpp && (
