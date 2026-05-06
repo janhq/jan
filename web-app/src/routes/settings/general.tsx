@@ -431,7 +431,11 @@ function General() {
                 })}
                 actions={
                   <FactoryResetDialog onReset={resetApp}>
-                    <Button variant="destructive" size="sm">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      data-testid="factory-reset-trigger"
+                    >
                       {t('common:reset')}
                     </Button>
                   </FactoryResetDialog>
